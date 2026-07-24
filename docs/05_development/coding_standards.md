@@ -74,9 +74,68 @@ class userRepository:        # 禁止 camelCase
 
 ---
 
-## 2. 项目结构规范（Project Structure）
+## 2. 类型标注规范（Type Annotations）
 
-### 2.1 目录职责
+> 所有有明确返回值的函数必须标注返回类型。这是目前主流 Python/FastAPI 企业项目一致的做法，最利于维护和 IDE 类型推导。
+
+### 2.1 各层返回类型约定
+
+| 层 | 返回类型示例 |
+|----|-------------|
+| API 端点 | `-> dict`、`-> UserOut`、`-> RootResponse` |
+| Service | `-> User`（Model）、`-> TokenOut`（Schema） |
+| Repository | `-> User \| None`、`-> list[User]`、`-> Page[User]` |
+| 工具函数 | `-> bool`、`-> str`、`-> None` |
+| 生命周期函数 | `-> AsyncIterator[None]` |
+| `__init__` | `-> None` |
+
+### 2.2 正确与错误示例
+
+```python
+from collections.abc import AsyncIterator
+
+# ✅ 正确：所有函数标注返回类型
+def setup_logging() -> None:
+    ...
+
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    ...
+    yield
+    ...
+
+@router.get("/health")
+async def health() -> dict:
+    return success(data={"status": "ok"})
+
+async def get_by_id(self, user_id: int) -> User | None:
+    return await User.filter(id=user_id).first()
+
+def mask_phone(phone: str) -> str:
+    return phone[:3] + "****" + phone[7:]
+
+# ❌ 禁止：缺少返回类型
+def setup_logging():          # 缺少 -> None
+    ...
+
+async def health():           # 缺少 -> dict
+    return success(...)
+
+async def get_by_id(self, user_id: int):  # 缺少 -> User | None
+    return await User.filter(id=user_id).first()
+```
+
+### 2.3 例外
+
+以下情况可以不标注返回类型：
+
+- 始终抛出异常的函数（如 `raise BusinessException(...)`）
+- `@app.exception_handler` 装饰的函数（FastAPI 内部处理）
+
+---
+
+## 3. 项目结构规范（Project Structure）
+
+### 3.1 目录职责
 
 ```
 app/
@@ -145,7 +204,7 @@ common/                         core/
 
 ---
 
-## 3. API 开发规范
+## 4. API 开发规范
 
 ### 3.1 路由文件组织
 
@@ -189,7 +248,7 @@ async def create_user(
 
 ---
 
-## 4. Service 开发规范
+## 5. Service 开发规范
 
 ### 4.1 类结构
 
@@ -253,7 +312,7 @@ async def create_order(self, user_id: int, data: OrderCreate) -> Order:
 
 ---
 
-## 5. Repository 开发规范
+## 6. Repository 开发规范
 
 ### 5.1 方法粒度
 
@@ -314,7 +373,7 @@ class Page(BaseModel, Generic[T]):
 
 ---
 
-## 6. Model 开发规范
+## 7. Model 开发规范
 
 ### 6.1 定义
 
@@ -350,7 +409,7 @@ class User(Model):
 
 ---
 
-## 7. Schema 开发规范
+## 8. Schema 开发规范
 
 ### 7.1 定义
 
@@ -390,7 +449,7 @@ class UserOut(BaseModel):
 
 ---
 
-## 8. Exception 规范
+## 9. Exception 规范
 
 ### 8.1 统一异常类
 
@@ -442,7 +501,7 @@ if order.status != OrderStatus.PENDING:
 
 ---
 
-## 9. Logging 规范
+## 10. Logging 规范
 
 ### 9.1 日志格式
 
@@ -510,7 +569,7 @@ logger.info("method=%s path=%s status=%d duration=%dms",
 
 ---
 
-## 10. Response 规范
+## 11. Response 规范
 
 ### 10.1 统一信封
 
@@ -562,7 +621,7 @@ async def register(data: UserCreate, service: UserService = Depends()):
 
 ---
 
-## 11. Git 规范
+## 12. Git 规范
 
 ### 11.1 Branch 命名
 
@@ -640,7 +699,7 @@ main
 
 ---
 
-## 12. Testing 规范
+## 13. Testing 规范
 
 ### 12.1 测试结构
 
@@ -693,7 +752,7 @@ async def test_register_success():
 
 ---
 
-## 13. Code Review Checklist
+## 14. Code Review Checklist
 
 每次 PR 逐项检查：
 
@@ -710,6 +769,7 @@ async def test_register_success():
 - [ ] Schema 后缀正确（Create / Out / Update / Login / ListItem）
 - [ ] 新增 Enum 已在 `common/enums/` 中定义
 - [ ] 无 Magic Number，使用 `common/constants/` 中的常量
+- [ ] 所有函数标注返回类型（`-> None`、`-> dict`、`-> User` 等）
 
 ### 异常与响应
 
@@ -741,7 +801,7 @@ async def test_register_success():
 
 ---
 
-## 14. 依赖规则（Dependency Rules）
+## 15. 依赖规则（Dependency Rules）
 
 ### 14.1 分层依赖图
 
@@ -826,7 +886,7 @@ async def test_register_success():
 
 ---
 
-## 15. 性能规范（Performance Guidelines）
+## 16. 性能规范（Performance Guidelines）
 
 ### 15.1 N+1 查询问题
 
