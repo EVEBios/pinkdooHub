@@ -1,0 +1,68 @@
+# ==================== Python ====================
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+*.manifest
+
+# Virtual Environment
+.venv/
+venv/
+env/
+*venv/
+
+# ==================== Environment ====================
+.env
+.env.local
+.env.*.local
+*.env
+
+# ==================== 数据库 ====================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==================== 日志 ====================
+*.log
+logs/
+
+# ==================== 测试 & 覆盖率 ====================
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+.tox/
+nosetests.xml
+coverage.xml
+
+# ==================== 类型检查 ====================
+.mypy_cache/
+.pyre/
+.pytype/
+
+# ==================== IDE 编辑器 ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ==================== OS 系统文件 ====================
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==================== 其他 ====================
+*.tmp
+*.bak
+*.orig

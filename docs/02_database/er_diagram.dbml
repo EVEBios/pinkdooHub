@@ -1,0 +1,135 @@
+Table users {
+  id bigint [pk, increment]
+  
+  username varchar [not null, unique]
+  
+  password varchar [not null]
+  
+  nickname varchar
+  
+  phone varchar [unique]
+
+  avatar varchar
+
+  role tinyint [default: 1, note: '1:user 2:admin']
+
+  status tinyint [default: 1, note: '1:正常 0:禁用']
+
+  created_at datetime
+
+  updated_at datetime
+}
+
+Table products {
+  id bigint [pk, increment]
+
+  name varchar [not null]
+
+  product_type tinyint [not null, note: '1:experience 2:kit']
+
+  description text
+
+  price decimal(10,2) [not null]
+
+  status tinyint [default: 0, note: '0:draft 1:online 2:offline']
+
+  created_at datetime
+
+  updated_at datetime
+}
+
+Table product_experiences {
+  id bigint [pk, increment]
+
+  product_id bigint [not null, unique]
+
+  duration int [not null, note: '体验时长（小时）']
+
+  capacity int [not null, note: '可体验人数']
+
+  day_type varchar [not null, note: 'weekday | weekend']
+
+  created_at datetime
+
+  updated_at datetime
+}
+
+Table product_kits {
+  id bigint [pk, increment]
+
+  product_id bigint [not null, unique]
+
+  stock int [not null]
+
+  sold_count int [default: 0]
+
+  created_at datetime
+
+  updated_at datetime
+}
+
+Table product_images {
+  id bigint [pk, increment]
+
+  product_id bigint [not null]
+
+  image_url varchar [not null]
+
+  is_cover boolean [default: false, note: '是否封面图']
+
+  sort int [default: 0]
+
+  created_at datetime
+
+  updated_at datetime
+}
+
+Ref: product_experiences.product_id > products.id
+
+Ref: product_kits.product_id > products.id
+
+Ref: product_images.product_id > products.id
+
+Table orders {
+  id bigint [pk, increment]
+
+  order_no varchar [not null, unique, note: '订单编号']
+
+  user_id bigint [not null]
+
+  total_amount decimal(10,2) [not null, note: '订单总金额']
+
+  status tinyint [not null, default: 0, note: '0:待支付 1:已支付 2:已取消 3:已完成']
+
+  remark varchar
+
+  created_at datetime
+
+  updated_at datetime
+}
+
+Table order_items {
+  id bigint [pk, increment]
+
+  order_id bigint [not null]
+
+  product_id bigint [not null]
+
+  product_name varchar [not null, note: '下单时商品名称快照']
+
+  product_price decimal(10,2) [not null, note: '下单时商品价格快照']
+
+  quantity int [not null, default: 1]
+
+  subtotal decimal(10,2) [not null]
+
+  created_at datetime
+
+  updated_at datetime
+}
+
+Ref: orders.user_id > users.id
+
+Ref: order_items.order_id > orders.id
+
+Ref: order_items.product_id > products.id
