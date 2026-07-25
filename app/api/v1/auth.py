@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends
 from app.common.response import success
 from app.core.security import create_access_token
 from app.repositories.user_repo import UserRepository
-from app.schemas.auth import TokenOut
-from app.schemas.user import UserCreate, UserLogin, UserOut
+from app.schemas.auth import LoginRequest, TokenOut
+from app.schemas.user import UserCreate, UserOut
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -29,7 +29,7 @@ async def register(
 
 @router.post("/login", response_model=TokenOut)
 async def login(
-    data: UserLogin,
+    data: LoginRequest,
     user_repo: UserRepository = Depends(),
 ) -> TokenOut:
     """用户登录。

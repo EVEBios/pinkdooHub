@@ -31,13 +31,6 @@ class UserCreate(BaseModel):
     phone: str | None = Field(None, pattern=PHONE_PATTERN)
 
 
-class UserLogin(BaseModel):
-    """登录请求。"""
-
-    username: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=1)
-
-
 class PasswordChange(BaseModel):
     """修改密码请求。"""
 

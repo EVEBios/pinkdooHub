@@ -21,7 +21,8 @@ from app.common.exceptions.user import (
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.user import PasswordChange, UserCreate, UserLogin
+from app.schemas.auth import LoginRequest
+from app.schemas.user import PasswordChange, UserCreate
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class UserService:
         logger.info("User registered: user_id=%d username=%s", user.id, user.username)
         return user
 
-    async def login(self, data: UserLogin) -> User:
+    async def login(self, data: LoginRequest) -> User:
         """用户登录。
 
         流程：查用户 → 验状态 → 验密码 → 返回用户
