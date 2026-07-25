@@ -47,8 +47,19 @@ class UserUpdate(BaseModel):
     phone: str | None = Field(None, pattern=PHONE_PATTERN)
 
 
-class UserOut(BaseModel):
-    """用户响应——不含 password。"""
+class _EnumSerializerMixin:
+    """Mixin：将 IntEnum 字段序列化为小写字符串。
+
+    UserOut 和 UserListItem 共享此逻辑。
+    """
+
+    @field_serializer("role", "status")
+    def serialize_enum(self, v: object) -> str:
+        return v.name.lower()  # type: ignore[union-attr]
+
+
+class UserOut(_EnumSerializerMixin, BaseModel):
+    """用户详情响应——不含 password。"""
 
     id: int
     username: str
@@ -62,7 +73,18 @@ class UserOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    @field_serializer("role", "status")
-    def serialize_enum(self, v: object) -> str:
-        """IntEnum → API 小写字符串。"""
-        return v.name.lower()  # type: ignore[union-attr]
+
+class UserListItem(_EnumSerializerMixin, BaseModel):
+    """用户列表项——后台列表用，比 UserOut 更轻量。
+
+    排除 phone、avatar、updated_at，减少列表接口的响应体积。
+    """
+
+    id: int
+    username: str
+    nickname: str
+    role: UserRole
+    status: UserStatus
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

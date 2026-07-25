@@ -23,7 +23,7 @@
 | 层 | 文件命名 | 类命名 |
 |----|----------|--------|
 | Model | `user.py` | `User` |
-| Schema | `user.py` | `UserCreate`、`UserOut`、`UserUpdate` |
+| Schema | `user.py` | `UserCreate`、`UserOut`、`UserUpdate`、`UserListItem` |
 | Repository | `user_repo.py` | `UserRepository` |
 | Service | `user_service.py` | `UserService` |
 | API 路由 | `users.py`、`admin_users.py` | —（函数式） |
