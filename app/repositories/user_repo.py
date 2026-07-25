@@ -25,3 +25,8 @@ class UserRepository:
     async def create(self, **kwargs) -> User:
         """创建用户，返回包含 id 的完整 User 对象。"""
         return await User.create(**kwargs)
+
+    async def update(self, user: User, **kwargs) -> User:
+        """部分更新用户字段，自动保存。"""
+        await user.update_from_dict(kwargs).save()
+        return user

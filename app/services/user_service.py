@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from app.common.enums.user import UserStatus
 from app.common.exceptions.user import (
     IncorrectPassword,
+    OldPasswordIncorrect,
     PhoneAlreadyExists,
     UserDisabled,
     UsernameAlreadyExists,
@@ -20,7 +21,7 @@ from app.common.exceptions.user import (
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.user import UserCreate, UserLogin
+from app.schemas.user import PasswordChange, UserCreate, UserLogin
 
 logger = logging.getLogger(__name__)
 
@@ -86,3 +87,15 @@ class UserService:
 
         logger.info("User logged in: user_id=%d username=%s", user.id, user.username)
         return user
+
+    async def change_password(self, user: User, data: PasswordChange) -> None:
+        """修改密码。
+
+        流程：验证旧密码 → 哈希新密码 → 更新
+        """
+        if not verify_password(data.old_password, user.password):
+            raise OldPasswordIncorrect()
+
+        hashed = hash_password(data.new_password)
+        await self.user_repo.update(user, password=hashed)
+        logger.info("Password changed: user_id=%d", user.id)

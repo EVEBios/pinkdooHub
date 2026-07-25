@@ -38,6 +38,15 @@ class UserLogin(BaseModel):
     password: str = Field(..., min_length=1)
 
 
+class PasswordChange(BaseModel):
+    """修改密码请求。"""
+
+    old_password: str = Field(..., min_length=1)
+    new_password: str = Field(
+        ..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH
+    )
+
+
 class UserUpdate(BaseModel):
     """修改个人信息请求。"""
 
