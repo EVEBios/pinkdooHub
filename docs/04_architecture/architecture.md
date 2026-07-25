@@ -647,7 +647,7 @@ _ENV_FILE = str(Path(__file__).resolve().parent.parent.parent / ".env")
 class Settings(BaseSettings):
     # 应用
     app_name: str = "pinkdooHub"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     app_env: str = "development"
     app_debug: bool = True
 
