@@ -44,6 +44,7 @@ from fastapi import FastAPI
 from app.api.v1.router import router as v1_router
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.db.database import close_db, init_db
 from app.middleware.exception import register_exception_handlers
 from app.schemas.common import RootResponse
 
@@ -92,14 +93,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[2/4] Config loaded  env=%s  debug=%s", settings.app_env, settings.app_debug)
 
     # ── Step 3: Init Infrastructure ────────────────────
-    # Phase 2+ 将在此初始化：
-    #   await init_db()          # Tortoise ORM 连接 MySQL/SQLite
+    # 按依赖顺序初始化：DB → Redis → 后台任务
+    await init_db()
+    # Phase 3+ 将在此初始化：
     #   await init_redis()       # Redis 连接池
     #   await init_scheduler()   # 后台定时任务 (APScheduler / Celery)
-    #
-    # 注意：这些是 async 操作，因为它们需要网络 I/O。
-    # lifespan 是 async context manager，所以可以直接 await。
-    logger.info("[3/4] Infrastructure — nothing to init (Phase 1)")
+    logger.info("[3/4] Infrastructure initialized")
 
     # ── Step 4: All Systems Ready ──────────────────────
     # 路由已在 app.include_router() 时注册。
@@ -132,11 +131,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[1/3] Stopped accepting new requests")
 
     # ── Step 2: Cleanup Resources ──────────────────────
-    # Phase 2+ 将在此释放资源：
-    #   await close_db()        # 关闭数据库连接池
+    # 按启动逆序释放资源：后台任务 → Redis → DB
+    # Phase 3+ 将在此释放：
     #   await close_redis()     # 关闭 Redis 连接
     #   await stop_scheduler()  # 停止后台任务
-    logger.info("[2/3] Cleanup — nothing to release (Phase 1)")
+    await close_db()
+    logger.info("[2/3] Resources released")
 
     # ── Step 3: Final Flush ─────────────────────────────
     logger.info("[3/3] Shutting down logger")
