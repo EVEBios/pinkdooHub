@@ -63,19 +63,33 @@ class Settings(BaseSettings):
     }
 
     @model_validator(mode="after")
-    def validate_jwt_secret(self) -> "Settings":
-        """确保生产环境不使用开发默认密钥。
+    def validate_settings(self) -> "Settings":
+        """配置合法性校验。
 
-        开发环境允许使用默认值，方便本地调试。
-        生产/预发布环境必须设置强随机密钥。
+        在 .env 加载完毕后执行，检查所有配置项是否合法。
+        越早发现配置错误越好——不要等到运行时报错。
         """
-        if self.app_env != "production":
-            return self
-        if self.jwt_secret_key in _UNSAFE_JWT_VALUES:
+
+        # ── 环境名 ────────────────────────────
+        if self.app_env not in ("development", "testing", "production"):
             raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random string "
-                "in production. Use `openssl rand -hex 32` to generate one."
+                f"APP_ENV must be development/testing/production, got '{self.app_env}'"
             )
+
+        # ── 数据库引擎 ────────────────────────
+        if self.db_engine not in ("sqlite", "mysql"):
+            raise ValueError(
+                f"DB_ENGINE must be sqlite or mysql, got '{self.db_engine}'"
+            )
+
+        # ── JWT 密钥（仅生产环境）──────────────
+        if self.app_env == "production":
+            if self.jwt_secret_key in _UNSAFE_JWT_VALUES:
+                raise ValueError(
+                    "JWT_SECRET_KEY must be set to a strong random string "
+                    "in production. Use `openssl rand -hex 32` to generate one."
+                )
+
         return self
 
 
