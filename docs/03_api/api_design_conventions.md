@@ -270,6 +270,7 @@ Authorization: Bearer <access_token>
 | 1004 | 旧密码不正确 |
 | 1005 | 用户已被禁用 |
 | 1006 | Token 已过期 |
+| 1007 | 手机号已被注册 |
 
 ### 8.4 商品模块错误码（2xxx）
 

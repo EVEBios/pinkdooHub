@@ -26,17 +26,24 @@ class UserService:
     async def register(self, data: UserCreate) -> User:
         """注册新用户。
 
-        流程：查重 → 哈希密码 → 入库
+        流程：用户名查重 → 手机号查重 → 哈希密码 → 入库
+        在业务层完成所有校验，不依赖数据库报错。
         """
-        # 1. 查重
+        # 1. 用户名查重
         existing = await self.user_repo.get_by_username(data.username)
         if existing:
             raise BusinessException(code=1001, message="Username already exists")
 
-        # 2. 哈希密码
+        # 2. 手机号查重
+        if data.phone:
+            existing = await self.user_repo.get_by_phone(data.phone)
+            if existing:
+                raise BusinessException(code=1007, message="Phone already exists")
+
+        # 3. 哈希密码
         hashed = hash_password(data.password)
 
-        # 3. 入库（不含 password 的响应由 Schema 过滤）
+        # 4. 入库
         user = await self.user_repo.create(
             username=data.username,
             password=hashed,

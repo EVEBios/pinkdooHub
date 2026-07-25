@@ -18,6 +18,10 @@ class UserRepository:
         """根据用户名查询用户。"""
         return await User.filter(username=username).first()
 
+    async def get_by_phone(self, phone: str) -> User | None:
+        """根据手机号查询用户。"""
+        return await User.filter(phone=phone).first()
+
     async def create(self, **kwargs) -> User:
         """创建用户，返回包含 id 的完整 User 对象。"""
         return await User.create(**kwargs)
