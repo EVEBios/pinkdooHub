@@ -20,6 +20,7 @@
 | 订单 API | [order_api.md](../03_api/order_api.md) |
 | 数据库设计 | [database_design.md](../02_database/database_design.md) |
 | ER 图 | [er_diagram.dbml](../02_database/er_diagram.dbml) |
+| Code Review 清单 | [code_review_checklist.md](../07_process/code_review_checklist.md) |
 | 需求文档 | [../01_requirements/](../01_requirements/) |
 
 ---
@@ -139,3 +140,56 @@ Code Change
 ```
 
 **四件套原则：Code + Test + Documentation + Commit。缺一不可。**
+
+---
+
+## 8. AI Review 流程
+
+每完成一个功能模块，AI 必须执行以下步骤：
+
+### Step 1: 自动检查清单
+
+对照 [Code Review Checklist](../07_process/code_review_checklist.md) 逐项检查：
+- Architecture（分层、依赖方向）
+- Security（密码哈希、密钥保护、SQL 注入）
+- Naming & Types（命名规范、类型标注）
+- Exception & Response（统一异常、统一响应格式）
+- Database（字段设计、索引、nullable）
+- Testing（新增测试、异常覆盖、边界覆盖）
+- Logging（关键操作、无 print、无敏感信息）
+- Documentation（API/DB/changelog 更新）
+
+### Step 2: 生成 Review Report
+
+```
+## AI Code Review Report
+
+### Changes
+[本次修改的文件清单]
+
+### Architecture Check
+[通过 / 发现问题及说明]
+
+### Security Check
+[通过 / 发现问题及说明]
+
+### Documentation Check
+[通过 / 需更新：具体文件列表]
+
+### Test Coverage
+- 新增测试: N 条
+- 通过: N/N
+
+### Action Items
+- [ ] [如需要] 升级版本号
+- [ ] [如需要] 数据库迁移 (aerich migrate)
+- [ ] [如需要] 新增依赖
+- [ ] [如需要] 新增测试
+```
+
+### Step 3: 提醒开发者
+
+完成 Review Report 后，主动提醒：
+- 是否需要版本升级（semver）
+- 是否需要数据库迁移
+- 是否需要新增测试或补充边界用例
