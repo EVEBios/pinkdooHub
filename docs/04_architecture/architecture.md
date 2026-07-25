@@ -15,7 +15,9 @@
 | 缓存 | Redis | - |
 | 迁移工具 | Aerich | 0.9.3 |
 | ASGI 服务器 | Uvicorn | 0.51 |
-| 配置管理 | python-dotenv | 1.2 |
+| 配置管理 | pydantic-settings | 2.14 |
+| 密码加密 | passlib[bcrypt] | 1.7.4 |
+| 时区数据 | tzdata | —（Windows 必需） |
 
 ### 1.2 选型理由
 
@@ -626,27 +628,51 @@ JWT_REFRESH_TOKEN_EXPIRE=604800 # 7 天
 ### 5.2 配置类（app/core/config.py）
 
 ```python
+from pathlib import Path
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+_ENV_FILE = str(Path(__file__).resolve().parent.parent.parent / ".env")
+
 class Settings(BaseSettings):
+    # 应用
     app_name: str = "pinkdooHub"
+    app_version: str = "0.1.0"
     app_env: str = "development"
+    app_debug: bool = True
 
     # 数据库
     db_engine: str = "sqlite"
     db_sqlite_path: str = "./db.sqlite3"
+    db_host: str = "127.0.0.1"
+    db_port: int = 3306
+    db_user: str = "root"
+    db_password: str = ""
+    db_name: str = "pinkdoohub"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
     # JWT
-    jwt_secret_key: str
+    jwt_secret_key: str = "dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire: int = 7200
     jwt_refresh_token_expire: int = 604800
 
-    class Config:
-        env_file = ".env"
+    model_config = {
+        "env_file": _ENV_FILE,
+        "env_file_encoding": "utf-8",
+    }
+
+    @model_validator(mode="after")
+    def validate_settings(self) -> "Settings":
+        if self.app_env not in ("development", "testing", "production"):
+            raise ValueError(f"APP_ENV must be development/testing/production")
+        if self.db_engine not in ("sqlite", "mysql"):
+            raise ValueError(f"DB_ENGINE must be sqlite or mysql")
+        if self.app_env == "production" and self.jwt_secret_key == "dev-secret-change-in-production":
+            raise ValueError("JWT_SECRET_KEY must be set in production")
+        return self
 
 settings = Settings()
 ```
