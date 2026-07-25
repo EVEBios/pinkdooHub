@@ -1,14 +1,14 @@
-"""认证 API —— 注册、登录、Token 刷新。
+"""认证 API —— 注册、登录。
 
-Phase 2: 仅实现 POST /auth/register。
-Phase 3: 将加入 login、refresh、JWT 认证。
+Phase 2: POST /auth/register, POST /auth/login。
+Phase 3: 将加入 JWT 签发、refresh、认证中间件。
 """
 
 from fastapi import APIRouter, Depends
 
 from app.common.response import success
 from app.repositories.user_repo import UserRepository
-from app.schemas.user import UserCreate, UserOut
+from app.schemas.user import UserCreate, UserLogin, UserOut
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -19,11 +19,22 @@ async def register(
     data: UserCreate,
     user_repo: UserRepository = Depends(),
 ) -> UserOut:
-    """用户注册。
-
-    校验参数 → 查重 → 哈希密码 → 入库。
-    成功返回用户信息（不含 password）。
-    """
+    """用户注册。"""
     service = UserService(user_repo)
     user = await service.register(data)
+    return user
+
+
+@router.post("/login", response_model=UserOut)
+async def login(
+    data: UserLogin,
+    user_repo: UserRepository = Depends(),
+) -> UserOut:
+    """用户登录。
+
+    验证用户名、状态、密码，成功返回用户信息。
+    Phase 3 将在此签发 JWT Token。
+    """
+    service = UserService(user_repo)
+    user = await service.login(data)
     return user

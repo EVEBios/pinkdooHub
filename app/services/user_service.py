@@ -8,11 +8,18 @@
 
 import logging
 
-from app.common.exceptions.user import PhoneAlreadyExists, UsernameAlreadyExists
-from app.core.security import hash_password
+from app.common.enums.user import UserStatus
+from app.common.exceptions.user import (
+    IncorrectPassword,
+    PhoneAlreadyExists,
+    UserDisabled,
+    UsernameAlreadyExists,
+    UserNotFound,
+)
+from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreate, UserLogin
 
 logger = logging.getLogger(__name__)
 
@@ -51,4 +58,26 @@ class UserService:
             phone=data.phone,
         )
         logger.info("User registered: user_id=%d username=%s", user.id, user.username)
+        return user
+
+    async def login(self, data: UserLogin) -> User:
+        """用户登录。
+
+        流程：查用户 → 验状态 → 验密码 → 返回用户
+        Phase 3 将在此处签发 JWT Token。
+        """
+        # 1. 查用户
+        user = await self.user_repo.get_by_username(data.username)
+        if not user:
+            raise UserNotFound()
+
+        # 2. 验状态
+        if user.status == UserStatus.DISABLED:
+            raise UserDisabled()
+
+        # 3. 验密码
+        if not verify_password(data.password, user.password):
+            raise IncorrectPassword()
+
+        logger.info("User logged in: user_id=%d username=%s", user.id, user.username)
         return user
