@@ -36,7 +36,7 @@
 | 响应输出 | `Out` | `UserOut`、`ProductOut`、`OrderOut` |
 | 更新请求 | `Update` | `UserUpdate`、`ProductUpdate` |
 | 列表项（轻量） | `ListItem` | `ProductListItem`、`OrderListItem` |
-| 登录请求 | `Login` | `UserLogin` |
+| 登录请求 | `LoginRequest` | `LoginRequest`（`schemas/auth.py`） |
 | Token 响应 | `TokenOut` | `TokenOut` |
 
 ### 1.4 正确与错误示例
@@ -223,18 +223,20 @@ common/                         core/
 
 ```python
 from fastapi import APIRouter, Depends
+from app.common.response import success
 from app.schemas.user import UserCreate, UserOut
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-@router.post("", response_model=UserOut, status_code=201)
+@router.post("", status_code=201)
 async def create_user(
     data: UserCreate,
     service: UserService = Depends()
 ):
     """创建用户"""
-    return await service.create(data)
+    user = await service.create(data)
+    return success(data=UserOut.model_validate(user).model_dump())
 ```
 
 ### 3.3 约束
@@ -242,7 +244,8 @@ async def create_user(
 | ✅ 必须 | ❌ 禁止 |
 |---------|---------|
 | 请求体用 Pydantic Schema 校验 | 在 API 层写数据库查询 |
-| `response_model` 明确声明 | 裸 `dict` 作为返回值 |
+| 返回 `success(data=... )` | 手写 `{"code":0,...}` 或裸 dict |
+| `UserOut.model_validate()` 过滤敏感字段 | 直接返回 ORM Model |
 | 通过 `Depends()` 注入 Service | API 函数中写业务逻辑 |
 | 每个端点有 docstring | 无文档的端点 |
 

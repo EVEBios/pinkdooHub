@@ -86,7 +86,7 @@ pinkdooHub/
 │   │
 │   ├── schemas/                # Pydantic Schema —— 请求/响应数据结构
 │   │   ├── __init__.py
-│   │   ├── user.py             #   UserCreate, UserLogin, UserOut, UserUpdate, ...
+│   │   ├── user.py             #   UserCreate, UserOut, UserUpdate, UserListItem, ...
 │   │   ├── product.py          #   ProductCreate, ProductUpdate, ProductOut, ...
 │   │   └── order.py            #   OrderCreate, OrderOut, OrderItemOut, ...
 │   │
@@ -220,20 +220,29 @@ pinkdooHub/
 ```python
 # app/api/v1/auth.py
 from fastapi import APIRouter, Depends
-from app.schemas.user import UserCreate, UserLogin, TokenOut
-from app.services.auth_service import AuthService
+from app.common.response import success
+from app.schemas.auth import LoginRequest
+from app.schemas.user import UserCreate, UserOut
+from app.services.user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-@router.post("/register", response_model=TokenOut, status_code=201)
-async def register(data: UserCreate, service: AuthService = Depends()):
+@router.post("/register", status_code=201)
+async def register(data: UserCreate, user_repo: UserRepository = Depends()):
     """用户注册"""
-    return await service.register(data)
+    service = UserService(user_repo)
+    user = await service.register(data)
+    return success(data=UserOut.model_validate(user).model_dump())
 
-@router.post("/login", response_model=TokenOut)
-async def login(data: UserLogin, service: AuthService = Depends()):
+@router.post("/login")
+async def login(data: LoginRequest, user_repo: UserRepository = Depends()):
     """用户登录"""
-    return await service.login(data)
+    service = UserService(user_repo)
+    user = await service.login(data)
+    return success(data={
+        "access_token": create_access_token(user.id),
+        "user": UserOut.model_validate(user).model_dump(),
+    })
 ```
 
 **约束**：
