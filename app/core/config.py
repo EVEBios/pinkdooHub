@@ -6,7 +6,16 @@
 全项目通过 `from app.core.config import settings` 使用同一个实例。
 """
 
+from pathlib import Path
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+# 开发环境默认密钥——生产环境必须用环境变量覆盖
+_DEV_JWT_SECRET = "dev-secret-change-in-production"
+_UNSAFE_JWT_VALUES = {"", _DEV_JWT_SECRET, "change-me"}
+
+# .env 路径 —— 从 config.py 位置推导项目根目录
+_ENV_FILE = str(Path(__file__).resolve().parent.parent.parent / ".env")
 
 
 class Settings(BaseSettings):
@@ -43,15 +52,31 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════════════
     # JWT
     # ═══════════════════════════════════════════════
-    jwt_secret_key: str = ""            # 生产环境必须设置为强随机字符串
+    jwt_secret_key: str = _DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire: int = 7200     # 2 小时
     jwt_refresh_token_expire: int = 604800   # 7 天
 
     model_config = {
-        "env_file": ".env",
+        "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",
     }
+
+    @model_validator(mode="after")
+    def validate_jwt_secret(self) -> "Settings":
+        """确保生产环境不使用开发默认密钥。
+
+        开发环境允许使用默认值，方便本地调试。
+        生产/预发布环境必须设置强随机密钥。
+        """
+        if self.app_env != "production":
+            return self
+        if self.jwt_secret_key in _UNSAFE_JWT_VALUES:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random string "
+                "in production. Use `openssl rand -hex 32` to generate one."
+            )
+        return self
 
 
 settings = Settings()
