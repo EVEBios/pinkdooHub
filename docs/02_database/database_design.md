@@ -43,8 +43,8 @@ users
 | nickname | VARCHAR | - | 用户昵称 |
 | phone | VARCHAR | UNIQUE | 手机号码 |
 | avatar | VARCHAR | - | 头像 URL |
-| role | TINYINT | DEFAULT 1 | 1:普通用户 2:管理员 |
-| status | TINYINT | DEFAULT 1 | 1:正常 0:禁用 |
+| role | TINYINT | DEFAULT 1 | 1:普通用户 2:管理员 3:超级管理员 |
+| status | TINYINT | DEFAULT 1 | 1:正常 2:禁用 |
 | created_at | DATETIME | - | 注册时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 

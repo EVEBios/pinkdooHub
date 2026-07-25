@@ -472,8 +472,8 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 
 | 模块 | 内容 | 数据库 (TINYINT) | API (string) | Python Enum |
 |------|------|-------------------|--------------|-------------|
-| 用户 | 角色 | `1` / `2` | `"user"` / `"admin"` | `UserRole` |
-| 用户 | 状态 | `0` / `1` | `"disabled"` / `"normal"` | `UserStatus` |
+| 用户 | 角色 | `1` / `2` / `3` | `"user"` / `"admin"` / `"super_admin"` | `UserRole` |
+| 用户 | 状态 | `1` / `2` | `"normal"` / `"disabled"` | `UserStatus` |
 | 商品 | 类型 | `1` / `2` | `"experience"` / `"kit"` | `ProductType` |
 | 商品 | 状态 | `0` / `1` / `2` | `"draft"` / `"online"` / `"offline"` | `ProductStatus` |
 | 订单 | 状态 | `0` / `1` / `2` / `3` | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |

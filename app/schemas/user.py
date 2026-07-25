@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from app.common.constants.validation import (
     NICKNAME_MAX_LENGTH,
@@ -61,3 +61,8 @@ class UserOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("role", "status")
+    def serialize_enum(self, v: object) -> str:
+        """IntEnum → API 小写字符串。"""
+        return v.name.lower()  # type: ignore[union-attr]
