@@ -480,7 +480,7 @@ ALLOWED_IMAGE_TYPES = ("jpg", "png", "webp")
 # app/common/constants/validation.py
 USERNAME_MIN_LENGTH = 3
 USERNAME_MAX_LENGTH = 32
-PASSWORD_MIN_LENGTH = 6
+PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 64
 
 # app/common/constants/defaults.py

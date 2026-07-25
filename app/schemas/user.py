@@ -9,7 +9,7 @@ from app.common.constants.validation import (
     NICKNAME_MIN_LENGTH,
     PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
-    PHONE_LENGTH,
+    PHONE_PATTERN,
     USERNAME_MAX_LENGTH,
     USERNAME_MIN_LENGTH,
 )
@@ -28,7 +28,7 @@ class UserCreate(BaseModel):
     nickname: str = Field(
         ..., min_length=NICKNAME_MIN_LENGTH, max_length=NICKNAME_MAX_LENGTH
     )
-    phone: str | None = Field(None, pattern=rf"^\d{{{PHONE_LENGTH}}}$")
+    phone: str | None = Field(None, pattern=PHONE_PATTERN)
 
 
 class UserLogin(BaseModel):
@@ -44,7 +44,7 @@ class UserUpdate(BaseModel):
     nickname: str | None = Field(
         None, min_length=NICKNAME_MIN_LENGTH, max_length=NICKNAME_MAX_LENGTH
     )
-    phone: str | None = Field(None, pattern=rf"^\d{{{PHONE_LENGTH}}}$")
+    phone: str | None = Field(None, pattern=PHONE_PATTERN)
 
 
 class UserOut(BaseModel):

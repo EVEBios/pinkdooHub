@@ -420,7 +420,7 @@ from app.common.enums.user import UserRole, UserStatus
 
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
-    password: str = Field(..., min_length=6, max_length=64)
+    password: str = Field(..., min_length=8, max_length=64)
     nickname: str = Field(..., min_length=1, max_length=32)
     phone: str | None = Field(None, pattern=r"^\d{11}$")
 
