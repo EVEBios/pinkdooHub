@@ -67,8 +67,8 @@
 
 | 数据库 (TINYINT) | API (string) | Python Enum |
 |-------------------|--------------|-------------|
-| `users.role` 1/2 | `"user"` / `"admin"` | `UserRole` |
-| `users.status` 0/1 | `"disabled"` / `"normal"` | `UserStatus` |
+| `users.role` 1/2/3 | `"user"` / `"admin"` / `"super_admin"` | `UserRole` |
+| `users.status` 1/2 | `"normal"` / `"disabled"` | `UserStatus` |
 | `products.product_type` 1/2 | `"experience"` / `"kit"` | `ProductType` |
 | `products.status` 0/1/2 | `"draft"` / `"online"` / `"offline"` | `ProductStatus` |
 | `orders.status` 0/1/2/3 | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |

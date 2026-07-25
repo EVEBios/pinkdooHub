@@ -442,10 +442,11 @@ from enum import IntEnum
 class UserRole(IntEnum):
     USER = 1
     ADMIN = 2
+    SUPER_ADMIN = 3
 
 class UserStatus(IntEnum):
-    DISABLED = 0
     NORMAL = 1
+    DISABLED = 2
 
 # app/common/enums/product.py
 class ProductType(IntEnum):
