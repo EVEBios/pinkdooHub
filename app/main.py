@@ -50,6 +50,8 @@ from app.db.database import init_db
 from app.middleware.exception import register_exception_handlers
 from app.schemas.common import RootResponse
 
+import os as _os
+
 logger = logging.getLogger(__name__)
 
 
@@ -164,7 +166,9 @@ app = FastAPI(
 )
 
 # ── 数据库 ──────────────────────────────────────
-init_db(app)
+# 测试环境由 conftest 管理数据库，跳过此注册
+if _os.getenv("TESTING") != "1":
+    init_db(app)
 
 # ── 路由注册 ────────────────────────────────────
 app.include_router(auth_router, prefix="/api/v1")

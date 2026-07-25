@@ -1,8 +1,4 @@
-"""用户 API —— 个人信息管理。
-
-Phase 2: GET /users/me, PUT /users/me/password。
-Phase 3: 将加入个人资料修改、头像上传。
-"""
+"""用户 API —— 个人信息管理。"""
 
 from fastapi import APIRouter, Depends
 
@@ -16,10 +12,10 @@ from app.services.user_service import UserService
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/me", response_model=UserOut)
-async def get_me(current_user: User = Depends(get_current_user)) -> UserOut:
+@router.get("/me")
+async def get_me(current_user: User = Depends(get_current_user)):
     """获取当前登录用户信息。"""
-    return current_user
+    return success(data=UserOut.model_validate(current_user).model_dump())
 
 
 @router.put("/me/password")
@@ -28,10 +24,7 @@ async def change_password(
     current_user: User = Depends(get_current_user),
     user_repo: UserRepository = Depends(),
 ):
-    """修改密码。
-
-    需要提供旧密码验证身份。
-    """
+    """修改密码。"""
     service = UserService(user_repo)
     await service.change_password(current_user, data)
     return success(message="Password changed")
