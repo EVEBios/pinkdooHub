@@ -1,12 +1,14 @@
 """Tortoise ORM 数据库连接管理。
 
+通过 register_tortoise() 与 FastAPI 生命周期集成，
+自动处理连接池的建立和释放，为每个请求维护数据库上下文。
+
 根据 DB_ENGINE 自动切换 SQLite（开发）和 MySQL（生产）。
-init_db() 和 close_db() 分别用于应用启动和关闭。
 """
 
 import logging
 
-from tortoise import Tortoise
+from tortoise.contrib.fastapi import register_tortoise
 
 from app.core.config import settings
 
@@ -48,22 +50,17 @@ def _get_db_config() -> dict:
     }
 
 
-async def init_db() -> None:
-    """初始化数据库连接。
+def init_db(app) -> None:
+    """向 FastAPI 应用注册 Tortoise ORM。
 
-    启动时调用，建立连接池并自动建表（开发环境）。
-    生产环境应使用 Aerich 迁移代替 generate_schemas()。
+    自动在 startup 时建立连接并建表，在 shutdown 时关闭连接。
+    替代手动 lifespan 管理。
     """
     config = _get_db_config()
-    await Tortoise.init(config=config)
-    await Tortoise.generate_schemas()
-    logger.info("Database connected: engine=%s", settings.db_engine)
-
-
-async def close_db() -> None:
-    """关闭数据库连接。
-
-    关闭时调用，等待所有进行中的查询完成后释放连接。
-    """
-    await Tortoise.close_connections()
-    logger.info("Database disconnected")
+    register_tortoise(
+        app,
+        config=config,
+        generate_schemas=True,
+        add_exception_handlers=True,
+    )
+    logger.info("Database registered: engine=%s", settings.db_engine)

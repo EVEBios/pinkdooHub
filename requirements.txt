@@ -4,6 +4,8 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.14.2
 asyncclick==8.3.0.3
+bcrypt==3.2.2
+cffi==2.1.0
 click==8.4.2
 colorama==0.4.6
 dictdiffer==0.10.0
@@ -12,6 +14,8 @@ fastapi==0.139.2
 h11==0.16.0
 idna==3.18
 iso8601==2.1.0
+passlib==1.7.4
+pycparser==3.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
 pydantic_core==2.46.4
@@ -22,4 +26,5 @@ tomlkit==0.15.1
 tortoise-orm==1.1.7
 typing-inspection==0.4.2
 typing_extensions==4.16.0
+tzdata==2026.3
 uvicorn==0.51.0

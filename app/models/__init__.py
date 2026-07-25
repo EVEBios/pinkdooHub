@@ -1,0 +1,1 @@
+from app.models.user import User  # noqa: F401 — 确保 Tortoise 能发现此模型

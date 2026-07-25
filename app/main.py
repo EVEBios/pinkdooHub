@@ -41,10 +41,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.db.database import close_db, init_db
+from app.db.database import init_db
 from app.middleware.exception import register_exception_handlers
 from app.schemas.common import RootResponse
 
@@ -93,8 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[2/4] Config loaded  env=%s  debug=%s", settings.app_env, settings.app_debug)
 
     # ── Step 3: Init Infrastructure ────────────────────
-    # 按依赖顺序初始化：DB → Redis → 后台任务
-    await init_db()
+    # DB 通过 register_tortoise() 注册，自动管理连接生命周期
     # Phase 3+ 将在此初始化：
     #   await init_redis()       # Redis 连接池
     #   await init_scheduler()   # 后台定时任务 (APScheduler / Celery)
@@ -131,11 +131,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[1/3] Stopped accepting new requests")
 
     # ── Step 2: Cleanup Resources ──────────────────────
-    # 按启动逆序释放资源：后台任务 → Redis → DB
+    # DB 连接由 register_tortoise() 自动关闭
     # Phase 3+ 将在此释放：
     #   await close_redis()     # 关闭 Redis 连接
     #   await stop_scheduler()  # 停止后台任务
-    await close_db()
     logger.info("[2/3] Resources released")
 
     # ── Step 3: Final Flush ─────────────────────────────
@@ -163,8 +162,11 @@ app = FastAPI(
     lifespan=lifespan,  # ← 核心：把生命周期函数注入 FastAPI
 )
 
+# ── 数据库 ──────────────────────────────────────
+init_db(app)
+
 # ── 路由注册 ────────────────────────────────────
-# Phase 2+ 将按模块拆分：auth、users、products、orders...
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────
