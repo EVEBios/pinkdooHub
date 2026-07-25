@@ -68,6 +68,7 @@ class UserOut(_EnumSerializerMixin, BaseModel):
     avatar: str | None
     role: UserRole
     status: UserStatus
+    last_login_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -85,6 +86,7 @@ class UserListItem(_EnumSerializerMixin, BaseModel):
     nickname: str
     role: UserRole
     status: UserStatus
+    last_login_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

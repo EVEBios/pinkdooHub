@@ -7,6 +7,7 @@
 """
 
 import logging
+from datetime import datetime, timezone
 
 from app.common.enums.user import UserStatus
 from app.common.exceptions.user import (
@@ -78,6 +79,10 @@ class UserService:
         # 3. 验密码
         if not verify_password(data.password, user.password):
             raise IncorrectPassword()
+
+        # 4. 更新最后登录时间
+        user.last_login_at = datetime.now(timezone.utc)
+        await user.save(update_fields=["last_login_at"])
 
         logger.info("User logged in: user_id=%d username=%s", user.id, user.username)
         return user

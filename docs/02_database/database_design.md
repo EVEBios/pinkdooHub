@@ -45,6 +45,7 @@ users
 | avatar | VARCHAR | - | 头像 URL |
 | role | TINYINT | DEFAULT 1 | 1:普通用户 2:管理员 3:超级管理员 |
 | status | TINYINT | DEFAULT 1 | 1:正常 2:禁用 |
+| last_login_at | DATETIME | - | 最后登录时间 |
 | created_at | DATETIME | - | 注册时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
