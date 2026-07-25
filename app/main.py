@@ -43,6 +43,7 @@ from fastapi import FastAPI
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
+from app.api.v1.users import router as users_router
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.db.database import init_db
@@ -167,6 +168,7 @@ init_db(app)
 
 # ── 路由注册 ────────────────────────────────────
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(users_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────
