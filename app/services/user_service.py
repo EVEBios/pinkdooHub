@@ -8,7 +8,7 @@
 
 import logging
 
-from app.core.exceptions import BusinessException
+from app.common.exceptions.user import PhoneAlreadyExists, UsernameAlreadyExists
 from app.core.security import hash_password
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
@@ -32,13 +32,13 @@ class UserService:
         # 1. 用户名查重
         existing = await self.user_repo.get_by_username(data.username)
         if existing:
-            raise BusinessException(code=1001, message="Username already exists")
+            raise UsernameAlreadyExists()
 
         # 2. 手机号查重
         if data.phone:
             existing = await self.user_repo.get_by_phone(data.phone)
             if existing:
-                raise BusinessException(code=1007, message="Phone already exists")
+                raise PhoneAlreadyExists()
 
         # 3. 哈希密码
         hashed = hash_password(data.password)
