@@ -301,12 +301,20 @@ POST /api/v1/auth/login
 POST /api/v1/auth/refresh
 ```
 
-使用 refresh_token 获取新的 access_token。
+使用 refresh_token 获取新的 access_token。仅返回 access token，不轮换 refresh。
 
-**Header**
+**请求参数**
 
-```
-Authorization: Bearer <refresh_token>
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| refresh_token | string | 是 | 登录时获取的 refresh token |
+
+**请求示例**
+
+```json
+{
+    "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+}
 ```
 
 **成功响应**
@@ -317,10 +325,33 @@ Authorization: Bearer <refresh_token>
     "message": "success",
     "data": {
         "access_token": "eyJhbGciOiJIUzI1NiIs...",
-        "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
         "token_type": "Bearer",
         "expires_in": 7200
     }
+}
+```
+
+### 5.4 登出
+
+```
+POST /api/v1/auth/logout
+```
+
+撤销当前 session 的 refresh token。
+
+**Header**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "Logged out",
+    "data": null
 }
 ```
 

@@ -793,12 +793,17 @@ def create_access_token(user_id: int) -> str:
         settings.jwt_secret_key, algorithm=settings.jwt_algorithm
     )
 
-def create_refresh_token(user_id: int) -> str:
-    expire = datetime.utcnow() + timedelta(seconds=settings.jwt_refresh_token_expire)
-    return jwt.encode(
-        {"sub": str(user_id), "exp": expire, "type": "refresh"},
-        settings.jwt_secret_key, algorithm=settings.jwt_algorithm
-    )
+def create_access_token(user_id: int, jti: str) -> str:
+    # {"sub":"1", "type":"access", "jti":"uuid", "exp":..., "iat":...}
+    ...
+
+def create_refresh_token(user_id: int, jti: str) -> str:
+    # 同一次登录的 access/refresh 共用 jti
+    ...
+
+def decode_token(token: str, expected_type: str) -> dict:
+    # 验证 type 声明，防止 access token 被当作 refresh 使用
+    ...
 ```
 
 ### 6.4 依赖注入（app/api/deps.py）
@@ -836,12 +841,16 @@ import redis.asyncio as aioredis
 
 redis_client = aioredis.from_url(settings.redis_url)
 
-# Token 黑名单：登出或 refresh 后将旧 token 加入
-async def blacklist_token(token: str, ttl: int):
-    await redis_client.setex(f"bl:{token}", ttl, "1")
+# Refresh Token 存储：key = rt:{jti}, value = user_id
+async def save_refresh_token(jti: str, user_id: int) -> None:
+    await redis_client.set(f"rt:{jti}", str(user_id), ex=settings.jwt_refresh_token_expire)
 
-async def is_token_blacklisted(token: str) -> bool:
-    return await redis_client.exists(f"bl:{token}")
+async def verify_refresh_token(jti: str) -> int | None:
+    value = await redis_client.get(f"rt:{jti}")
+    return int(value) if value else None
+
+async def delete_refresh_token(jti: str) -> None:
+    await redis_client.delete(f"rt:{jti}")
 
 # 接口限流：key = ip + endpoint
 async def rate_limit(key: str, max_requests: int, window: int) -> bool:

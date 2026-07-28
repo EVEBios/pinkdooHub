@@ -21,7 +21,9 @@ with JWT, view their profile, and change their password.
 | Method | URI | Auth | Description |
 |--------|-----|------|-------------|
 | POST | `/api/v1/auth/register` | No | User registration |
-| POST | `/api/v1/auth/login` | No | Login, returns JWT |
+| POST | `/api/v1/auth/login` | No | Login, returns access + refresh tokens |
+| POST | `/api/v1/auth/refresh` | No | Exchange refresh for new access token |
+| POST | `/api/v1/auth/logout` | Bearer | Revoke refresh token |
 | GET | `/api/v1/users/me` | Bearer | Get current user |
 | PUT | `/api/v1/users/me/password` | Bearer | Change password |
 
@@ -54,8 +56,9 @@ with JWT, view their profile, and change their password.
 | Schema | Purpose |
 |--------|---------|
 | `LoginRequest` | Login request |
-| `TokenOut` | JWT + user response |
-| `RefreshTokenRequest` | Token refresh (Phase 3) |
+| `TokenOut` | Login response — access + refresh tokens + user |
+| `RefreshRequest` | Refresh token exchange request |
+| `RefreshOut` | Refresh response — new access token only |
 
 **Exceptions (app/common/exceptions/user.py)**
 
@@ -68,7 +71,8 @@ with JWT, view their profile, and change their password.
 | Component | File |
 |-----------|------|
 | Configuration | `app/core/config.py` — 14 fields via pydantic-settings |
-| Security | `app/core/security.py` — bcrypt hash + JWT (HS256) |
+| Security | `app/core/security.py` — bcrypt + JWT (HS256, jti, type validation) |
+| Redis | `app/core/redis.py` — Refresh token store (rt:{jti}) |
 | Logging | `app/core/logging.py` — DEBUG/INFO env-aware |
 | Database | `app/db/database.py` — register_tortoise (SQLite/MySQL) |
 | DI | `app/api/deps.py` — get_current_user via FastAPI Depends |
@@ -127,7 +131,7 @@ with JWT, view their profile, and change their password.
 
 ### Known Limitations
 
-- No refresh token rotation (single token, no blacklist)
+- No refresh token rotation (Phase 4)
 - No login audit log
 - No rate limiting on login/register
 - No email verification
