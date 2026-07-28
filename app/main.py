@@ -46,6 +46,7 @@ from app.api.v1.router import router as v1_router
 from app.api.v1.users import router as users_router
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.core.redis import close_redis, init_redis
 from app.db.database import init_db
 from app.middleware.exception import register_exception_handlers
 from app.schemas.common import RootResponse
@@ -97,10 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[2/4] Config loaded  env=%s  debug=%s", settings.app_env, settings.app_debug)
 
     # ── Step 3: Init Infrastructure ────────────────────
-    # DB 通过 register_tortoise() 注册，自动管理连接生命周期
-    # Phase 3+ 将在此初始化：
-    #   await init_redis()       # Redis 连接池
-    #   await init_scheduler()   # 后台定时任务 (APScheduler / Celery)
+    await init_redis()
     logger.info("[3/4] Infrastructure initialized")
 
     # ── Step 4: All Systems Ready ──────────────────────
@@ -134,10 +132,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[1/3] Stopped accepting new requests")
 
     # ── Step 2: Cleanup Resources ──────────────────────
-    # DB 连接由 register_tortoise() 自动关闭
-    # Phase 3+ 将在此释放：
-    #   await close_redis()     # 关闭 Redis 连接
-    #   await stop_scheduler()  # 停止后台任务
+    await close_redis()
     logger.info("[2/3] Resources released")
 
     # ── Step 3: Final Flush ─────────────────────────────

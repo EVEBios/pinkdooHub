@@ -1,8 +1,4 @@
-"""Auth Schema —— 认证流程请求/响应数据结构。
-
-登录/注册/刷新 Token 属于"认证流程"，不是用户资源。
-REST 视角：/auth/* 处理凭证，/users/* 处理资源。
-"""
+"""Auth Schema —— 认证流程请求/响应数据结构。"""
 
 from pydantic import BaseModel, Field
 
@@ -18,15 +14,24 @@ class LoginRequest(BaseModel):
 
 
 class TokenOut(BaseModel):
-    """登录/注册响应——JWT Token + 用户信息。"""
+    """登录响应——双 Token + 用户信息。"""
 
     access_token: str
+    refresh_token: str
     token_type: str = "Bearer"
     expires_in: int = settings.jwt_access_token_expire
     user: UserOut
 
 
-class RefreshTokenRequest(BaseModel):
-    """刷新 Token 请求（Phase 3 接入）。"""
+class RefreshRequest(BaseModel):
+    """刷新 Token 请求。"""
 
     refresh_token: str = Field(..., min_length=1)
+
+
+class RefreshOut(BaseModel):
+    """刷新响应——只返回新的 access token。"""
+
+    access_token: str
+    token_type: str = "Bearer"
+    expires_in: int = settings.jwt_access_token_expire

@@ -6,6 +6,17 @@ import uuid
 
 os.environ["TESTING"] = "1"
 
+# ── 用 fakeredis 替代真实 Redis ──────────────────
+import fakeredis.aioredis
+
+import app.core.redis as _redis_module
+
+_test_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+
+_redis_module._redis = _test_redis
+_redis_module.init_redis = lambda: None  # no-op, already initialized
+_redis_module.close_redis = lambda: None  # no-op, skip cleanup
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise

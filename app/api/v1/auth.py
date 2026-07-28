@@ -1,13 +1,14 @@
-"""认证 API —— 注册、登录。"""
+"""认证 API —— 注册、登录、刷新、登出。"""
 
 from fastapi import APIRouter, Depends
 
+from app.api.deps import get_current_user, security
 from app.common.response import success
-from app.core.security import create_access_token
+from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.auth import LoginRequest
+from app.schemas.auth import LoginRequest, RefreshOut, RefreshRequest, TokenOut
 from app.schemas.user import UserCreate, UserOut
-from app.services.user_service import UserService
+from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -18,7 +19,7 @@ async def register(
     user_repo: UserRepository = Depends(),
 ):
     """用户注册。"""
-    service = UserService(user_repo)
+    service = AuthService(user_repo)
     user = await service.register(data)
     return success(data=UserOut.model_validate(user).model_dump())
 
@@ -28,18 +29,44 @@ async def login(
     data: LoginRequest,
     user_repo: UserRepository = Depends(),
 ):
-    """用户登录。
-
-    验证用户名/密码 → 签发 JWT → 返回 Token + 用户信息。
-    """
-    service = UserService(user_repo)
-    user = await service.login(data)
-    access_token = create_access_token(user.id)
+    """用户登录——返回 access_token + refresh_token。"""
+    service = AuthService(user_repo)
+    result = await service.login(data)
     return success(
         data={
-            "access_token": access_token,
+            "access_token": result["access_token"],
+            "refresh_token": result["refresh_token"],
             "token_type": "Bearer",
             "expires_in": 7200,
-            "user": UserOut.model_validate(user).model_dump(),
+            "user": UserOut.model_validate(result["user"]).model_dump(),
         }
     )
+
+
+@router.post("/refresh")
+async def refresh(
+    data: RefreshRequest,
+    user_repo: UserRepository = Depends(),
+):
+    """用 refresh token 换取新的 access token。"""
+    service = AuthService(user_repo)
+    result = await service.refresh(data.refresh_token)
+    return success(
+        data={
+            "access_token": result["access_token"],
+            "token_type": "Bearer",
+            "expires_in": 7200,
+        }
+    )
+
+
+@router.post("/logout")
+async def logout(
+    current_user: User = Depends(get_current_user),
+    user_repo: UserRepository = Depends(),
+    credentials: type = Depends(security),
+):
+    """登出——撤销 refresh token。"""
+    service = AuthService(user_repo)
+    await service.logout(credentials.credentials)
+    return success(message="Logged out")
