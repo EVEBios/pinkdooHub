@@ -22,6 +22,13 @@ class UserRepository:
         """根据手机号查询用户。"""
         return await User.filter(phone=phone).first()
 
+    async def get_by_phone_exclude_id(self, phone: str, user_id: int) -> User | None:
+        """根据手机号查询用户，排除指定 ID。
+
+        更新个人信息时使用——不能因为"自己手机号没变"就报重复。
+        """
+        return await User.filter(phone=phone).exclude(id=user_id).first()
+
     async def create(self, **kwargs) -> User:
         """创建用户，返回包含 id 的完整 User 对象。"""
         return await User.create(**kwargs)

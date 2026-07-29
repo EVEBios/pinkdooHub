@@ -28,7 +28,7 @@ class UserCreate(BaseModel):
     nickname: str = Field(
         ..., min_length=NICKNAME_MIN_LENGTH, max_length=NICKNAME_MAX_LENGTH
     )
-    phone: str | None = Field(None, pattern=PHONE_PATTERN)
+    phone: str = Field(..., pattern=PHONE_PATTERN)
 
 
 class PasswordChange(BaseModel):
@@ -41,12 +41,13 @@ class PasswordChange(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    """修改个人信息请求。"""
+    """修改个人信息请求——所有字段可选，传什么改什么。"""
 
     nickname: str | None = Field(
         None, min_length=NICKNAME_MIN_LENGTH, max_length=NICKNAME_MAX_LENGTH
     )
     phone: str | None = Field(None, pattern=PHONE_PATTERN)
+    avatar: str | None = Field(None, min_length=1)
 
 
 class _EnumSerializerMixin:
@@ -66,7 +67,7 @@ class UserOut(_EnumSerializerMixin, BaseModel):
     id: int
     username: str
     nickname: str
-    phone: str | None
+    phone: str
     avatar: str | None
     role: UserRole
     status: UserStatus

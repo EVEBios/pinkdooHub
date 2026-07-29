@@ -41,7 +41,7 @@ users
 | username | VARCHAR | NOT NULL, UNIQUE | 登录账号 |
 | password | VARCHAR | NOT NULL | 加密密码 |
 | nickname | VARCHAR | - | 用户昵称 |
-| phone | VARCHAR | UNIQUE | 手机号码 |
+| phone | VARCHAR | NOT NULL, UNIQUE | 手机号码 |
 | avatar | VARCHAR | - | 头像 URL |
 | role | TINYINT | DEFAULT 1 | 1:普通用户 2:管理员 3:超级管理员 |
 | status | TINYINT | DEFAULT 1 | 1:正常 2:禁用 |

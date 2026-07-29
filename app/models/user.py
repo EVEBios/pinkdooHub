@@ -18,7 +18,7 @@ class User(BaseModel):
     username = fields.CharField(max_length=32, unique=True)
     password = fields.CharField(max_length=128)
     nickname = fields.CharField(max_length=32)
-    phone = fields.CharField(max_length=11, null=True)
+    phone = fields.CharField(max_length=11)
     avatar = fields.CharField(max_length=256, null=True)
     role = fields.SmallIntField(default=1)     # UserRole.USER
     status = fields.SmallIntField(default=1)   # UserStatus.NORMAL

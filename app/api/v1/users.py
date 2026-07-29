@@ -6,7 +6,7 @@ from app.api.deps import get_current_user
 from app.common.response import success
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.user import PasswordChange, UserOut
+from app.schemas.user import PasswordChange, UserOut, UserUpdate
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -16,6 +16,18 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def get_me(current_user: User = Depends(get_current_user)):
     """获取当前登录用户信息。"""
     return success(data=UserOut.model_validate(current_user).model_dump())
+
+
+@router.patch("/me")
+async def update_profile(
+    data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    user_repo: UserRepository = Depends(),
+):
+    """更新个人资料——只更新传了值的字段。"""
+    service = UserService(user_repo)
+    updated = await service.update_profile(current_user, data)
+    return success(data=UserOut.model_validate(updated).model_dump())
 
 
 @router.put("/me/password")

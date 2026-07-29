@@ -1,6 +1,58 @@
-"""用户模块测试 —— 个人信息 + 修改密码。"""
+"""用户模块测试 —— 个人信息 + 修改密码 + 更新资料。"""
 
 from httpx import AsyncClient
+
+
+class TestUpdateProfile:
+    """PATCH /users/me"""
+
+    async def test_update_profile_success(self, client: AsyncClient, auth_user: dict):
+        token = auth_user["token"]
+        resp = await client.patch(
+            "/api/v1/users/me",
+            json={"nickname": "Alice Updated", "phone": "13900139001"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["nickname"] == "Alice Updated"
+        assert body["data"]["phone"] == "13900139001"
+
+    async def test_update_phone_conflict(self, client: AsyncClient, auth_user: dict):
+        token = auth_user["token"]
+        # 先注册另一个用户占用目标手机号
+        await client.post(
+            "/api/v1/auth/register",
+            json={"username": "bob", "password": "12345678", "nickname": "Bob", "phone": "13900139002"},
+        )
+        resp = await client.patch(
+            "/api/v1/users/me",
+            json={"phone": "13900139002"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == 1007
+
+    async def test_update_phone_unchanged(self, client: AsyncClient, auth_user: dict):
+        """自己手机号不变，不报重复。"""
+        token = auth_user["token"]
+        resp = await client.patch(
+            "/api/v1/users/me",
+            json={"phone": "13800138000"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+
+    async def test_update_empty_body(self, client: AsyncClient, auth_user: dict):
+        token = auth_user["token"]
+        resp = await client.patch(
+            "/api/v1/users/me",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == 422
 
 
 class TestGetMe:
@@ -89,7 +141,7 @@ class TestChangePassword:
         """登录后 last_login_at 被设置。"""
         await client.post(
             "/api/v1/auth/register",
-            json={"username": "time", "password": "12345678", "nickname": "Time"},
+            json={"username": "time", "password": "12345678", "nickname": "Time", "phone": "13500000000"},
         )
 
         from app.repositories.user_repo import UserRepository
