@@ -25,6 +25,7 @@ with JWT, view their profile, and change their password.
 | POST | `/api/v1/auth/refresh` | No | Exchange refresh for new access token |
 | POST | `/api/v1/auth/logout` | Bearer | Revoke refresh token |
 | GET | `/api/v1/users/me` | Bearer | Get current user |
+| PATCH | `/api/v1/users/me` | Bearer | Update profile |
 | PUT | `/api/v1/users/me/password` | Bearer | Change password |
 
 **Models**
@@ -46,7 +47,7 @@ with JWT, view their profile, and change their password.
 | Schema | Purpose |
 |--------|---------|
 | `UserCreate` | Registration request |
-| `UserUpdate` | Profile update request |
+| `UserUpdate` | Profile update (nickname, phone, avatar) |
 | `PasswordChange` | Password change request |
 | `UserOut` | Full user detail response |
 | `UserListItem` | Lightweight list item |
@@ -137,7 +138,6 @@ with JWT, view their profile, and change their password.
 - No email verification
 - No OAuth / third-party login
 - Admin endpoints (user list, disable/enable) deferred to Phase 3
-- Profile update (PUT /users/me) deferred to Phase 3
 - Avatar upload deferred to Phase 3
 
 ### Dependencies Added

@@ -91,7 +91,7 @@ Authorization: Bearer <access_token>
 | username | 必填，3-32 字符，字母数字下划线 |
 | password | 必填，8-64 字符 |
 | nickname | 必填，1-32 字符 |
-| phone | 可选，11 位中国大陆手机号 |
+| phone | 必填，11 位中国大陆手机号 |
 | avatar | 可选，图片文件，最大 2MB，支持 jpg/png/webp |
 
 ---
@@ -145,7 +145,7 @@ POST /api/v1/auth/register
 | username | string | 是 | 登录账号，3-32 字符 |
 | password | string | 是 | 登录密码，8-64 字符 |
 | nickname | string | 是 | 用户昵称 |
-| phone | string | 否 | 手机号码，11 位中国大陆手机号 |
+| phone | string | 是 | 手机号码，11 位中国大陆手机号 |
 
 **请求示例**
 
@@ -409,10 +409,10 @@ Authorization: Bearer <access_token>
 ### 6.2 修改个人信息
 
 ```
-PUT /api/v1/users/me
+PATCH /api/v1/users/me
 ```
 
-修改当前用户的昵称和手机号。
+部分更新当前用户的资料。所有字段可选，传什么改什么，未传的保持原值。
 
 **Header**
 
@@ -426,15 +426,17 @@ Authorization: Bearer <access_token>
 |------|------|------|------|
 | nickname | string | 否 | 新昵称，1-32 字符 |
 | phone | string | 否 | 新手机号，11 位中国大陆手机号 |
+| avatar | string | 否 | 新头像 URL |
 
-> 至少传递一个字段。
+> 至少传递一个字段，空请求体返回 422。
 
 **请求示例**
 
 ```json
 {
     "nickname": "Alice Wang",
-    "phone": "13900139000"
+    "phone": "13900139000",
+    "avatar": "https://cdn.example.com/avatars/1.jpg"
 }
 ```
 
