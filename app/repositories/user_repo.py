@@ -29,6 +29,27 @@ class UserRepository:
         """
         return await User.filter(phone=phone).exclude(id=user_id).first()
 
+    async def list_filtered(
+        self,
+        offset: int,
+        limit: int,
+        status: int | None = None,
+        role: int | None = None,
+    ) -> tuple[list[User], int]:
+        """分页筛选查询用户——只认 offset/limit，不接触分页概念。
+
+        未来扩展游标分页、无限滚动时，Repository 层无需改动。
+        """
+        qs = User.all()
+        if status is not None:
+            qs = qs.filter(status=status)
+        if role is not None:
+            qs = qs.filter(role=role)
+
+        total = await qs.count()
+        items = await qs.offset(offset).limit(limit)
+        return items, total
+
     async def create(self, **kwargs) -> User:
         """创建用户，返回包含 id 的完整 User 对象。"""
         return await User.create(**kwargs)

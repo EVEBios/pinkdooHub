@@ -694,6 +694,15 @@ PUT /api/v1/admin/users/{id}/disable
 
 将指定用户状态设为禁用（`status = "disabled"`）。
 
+**权限**
+
+| 操作者 | 目标 | 结果 |
+|--------|------|------|
+| ADMIN | USER | ✅ 成功 |
+| ADMIN | 自己 | ❌ 422 "Cannot disable yourself" |
+| ADMIN | SUPER_ADMIN | ❌ 403 |
+| ANY | 已禁用用户 | ✅ 幂等，直接返回成功 |
+
 **Header**
 
 ```
@@ -726,6 +735,15 @@ Authorization: Bearer <access_token>
 {
     "code": 422,
     "message": "Cannot disable yourself"
+}
+```
+
+不能禁用超级管理员：
+
+```json
+{
+    "code": 403,
+    "message": "Cannot disable super admin"
 }
 ```
 
