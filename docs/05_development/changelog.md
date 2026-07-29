@@ -27,6 +27,8 @@ with JWT, view their profile, and change their password.
 | GET | `/api/v1/users/me` | Bearer | Get current user |
 | PATCH | `/api/v1/users/me` | Bearer | Update profile |
 | PUT | `/api/v1/users/me/password` | Bearer | Change password |
+| GET | `/api/v1/admin/users` | Bearer (ADMIN+) | List users |
+| GET | `/api/v1/admin/config` | Bearer (SUPER_ADMIN) | System config |
 
 **Models**
 
@@ -76,8 +78,9 @@ with JWT, view their profile, and change their password.
 | Redis | `app/core/redis.py` — Refresh token store (rt:{jti}) |
 | Logging | `app/core/logging.py` — DEBUG/INFO env-aware |
 | Database | `app/db/database.py` — register_tortoise (SQLite/MySQL) |
-| DI | `app/api/deps.py` — get_current_user via FastAPI Depends |
-| Tests | `tests/` — 18 tests covering all endpoints |
+| DI | `app/api/deps.py` — get_current_user / admin / super_admin Depends chain |
+| RBAC | `app/api/v1/admin.py` — role-gated demo endpoints |
+| Tests | `tests/` — 26 tests covering all endpoints |
 
 ### Changed
 
@@ -137,7 +140,7 @@ with JWT, view their profile, and change their password.
 - No rate limiting on login/register
 - No email verification
 - No OAuth / third-party login
-- Admin endpoints (user list, disable/enable) deferred to Phase 3
+- Admin disable/enable endpoints deferred to Phase 3
 - Avatar upload deferred to Phase 3
 
 ### Dependencies Added

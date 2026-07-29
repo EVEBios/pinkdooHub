@@ -76,7 +76,8 @@ pinkdooHub/
 │   │   │   ├── admin_products.py#  POST/PUT /products  online/offline/stock  images
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
 │   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  complete
-│   │   └── deps.py             # 公共依赖：get_current_user, get_admin_user, get_db
+│   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)
+│   │   └── deps.py             # 公共依赖：get_current_user / admin / super_admin
 │   │
 │   ├── models/                 # 数据模型层 —— Tortoise ORM Model 定义
 │   │   ├── __init__.py
