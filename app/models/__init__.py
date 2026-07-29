@@ -1,1 +1,2 @@
-from app.models.user import User  # noqa: F401 — 确保 Tortoise 能发现此模型
+from app.models.audit_log import AuditLog  # noqa: F401
+from app.models.user import User  # noqa: F401

@@ -7,8 +7,10 @@ from app.common.exceptions.user import UserNotFound
 from app.common.pagination import Page, PageParams
 from app.core.exceptions import BusinessException, PermissionException
 from app.models.user import User
+from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.user import UserListItem
+from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +49,11 @@ class AdminUserService:
             pages=pages,
         )
 
-    async def disable_user(self, admin: User, user_id: int) -> None:
+    async def disable_user(self, admin: User, user_id: int, ip_address: str) -> None:
         """禁用指定用户。
 
         校验：不能禁自己 → 管理员不能禁超级管理员 → 幂等处理
+        Phase 4: 校验 + 更新 + 审计日志用 in_transaction() 包裹。
         """
         target = await self.user_repo.get_by_id(user_id)
         if not target:
@@ -66,6 +69,13 @@ class AdminUserService:
             return  # 幂等：已经禁用，直接返回成功
 
         await self.user_repo.update(target, status=UserStatus.DISABLED)
+        await AuditLogService(AuditLogRepository()).log(
+            operator_id=admin.id,
+            action="DISABLE_USER",
+            target_type="user",
+            target_id=target.id,
+            ip_address=ip_address,
+        )
         logger.info("User disabled: admin_id=%d target_id=%d", admin.id, target.id)
 
     # ── helper ───────────────────────────────────

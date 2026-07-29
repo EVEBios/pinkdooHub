@@ -35,9 +35,11 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
+from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.auth import LoginRequest
 from app.schemas.user import UserCreate
+from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ class AuthService:
 
     # ── 注册 ────────────────────────────────────
 
-    async def register(self, data: UserCreate) -> User:
+    async def register(self, data: UserCreate, ip_address: str = "") -> User:
         """注册新用户。"""
         existing = await self.user_repo.get_by_username(data.username)
         if existing:
@@ -68,12 +70,19 @@ class AuthService:
             nickname=data.nickname,
             phone=data.phone,
         )
+        await AuditLogService(AuditLogRepository()).log(
+            operator_id=user.id,
+            action="REGISTER",
+            target_type="user",
+            target_id=user.id,
+            ip_address=ip_address,
+        )
         logger.info("User registered: user_id=%d username=%s", user.id, user.username)
         return user
 
     # ── 登录 ────────────────────────────────────
 
-    async def login(self, data: LoginRequest) -> dict:
+    async def login(self, data: LoginRequest, ip_address: str = "") -> dict:
         """登录：验证凭证 → 签发双 Token → 存储 refresh。
 
         Returns:
@@ -98,6 +107,13 @@ class AuthService:
         access_token = create_access_token(user.id, jti)
         refresh_token = create_refresh_token(user.id, jti)
         await save_refresh_token(jti, user.id)
+        await AuditLogService(AuditLogRepository()).log(
+            operator_id=user.id,
+            action="LOGIN",
+            target_type="user",
+            target_id=user.id,
+            ip_address=ip_address,
+        )
 
         logger.info("User logged in: user_id=%d username=%s", user.id, user.username)
         return {

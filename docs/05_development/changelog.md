@@ -82,7 +82,8 @@ with JWT, view their profile, and change their password.
 | DI | `app/api/deps.py` — get_current_user / admin / super_admin Depends chain |
 | Pagination | `app/common/pagination.py` — PageParams + Page[T] |
 | RBAC | `app/api/v1/admin_users.py` — paginated user list + disable |
-| Tests | `tests/` — 34 tests covering all endpoints |
+| Audit | `app/models/audit_log.py` — operator_id, action, target_type, ip |
+| Tests | `tests/` — 38 tests covering all endpoints |
 
 ### Changed
 

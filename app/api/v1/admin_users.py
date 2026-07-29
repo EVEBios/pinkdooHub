@@ -3,7 +3,7 @@
 Phase 3.4: 分页筛选 + 角色层级保护 + 幂等禁用。
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.deps import get_current_admin
 from app.common.pagination import PageParams
@@ -11,6 +11,7 @@ from app.common.response import success
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.services.admin_user_service import AdminUserService
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -37,10 +38,11 @@ async def list_users(
 @router.put("/users/{user_id}/disable")
 async def disable_user(
     user_id: int,
+    request: Request,
     admin: User = Depends(get_current_admin),
     user_repo: UserRepository = Depends(),
 ):
     """禁用指定用户。"""
     service = AdminUserService(user_repo)
-    await service.disable_user(admin, user_id)
+    await service.disable_user(admin, user_id, ip_address=get_client_ip(request))
     return success(message="User disabled")

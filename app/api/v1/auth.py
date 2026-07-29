@@ -1,6 +1,6 @@
 """认证 API —— 注册、登录、刷新、登出。"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import get_current_user, security
 from app.common.response import success
@@ -9,6 +9,7 @@ from app.repositories.user_repo import UserRepository
 from app.schemas.auth import LoginRequest, RefreshOut, RefreshRequest, TokenOut
 from app.schemas.user import UserCreate, UserOut
 from app.services.auth_service import AuthService
+from app.utils.request import get_client_ip
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -16,22 +17,24 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register", status_code=201)
 async def register(
     data: UserCreate,
+    request: Request,
     user_repo: UserRepository = Depends(),
 ):
     """用户注册。"""
     service = AuthService(user_repo)
-    user = await service.register(data)
+    user = await service.register(data, ip_address=get_client_ip(request))
     return success(data=UserOut.model_validate(user).model_dump())
 
 
 @router.post("/login")
 async def login(
     data: LoginRequest,
+    request: Request,
     user_repo: UserRepository = Depends(),
 ):
     """用户登录——返回 access_token + refresh_token。"""
     service = AuthService(user_repo)
-    result = await service.login(data)
+    result = await service.login(data, ip_address=get_client_ip(request))
     return success(
         data={
             "access_token": result["access_token"],
