@@ -53,6 +53,8 @@
 17. 用 `logging.getLogger(__name__)`，**禁止** `print()`
 18. 编写模块代码前，**必须先读**对应的 `docs/03_api/<module>_api.md`
 19. 修改代码后，检查是否需要同步更新文档（见下方联动表）
+20. 每次 commit 前，**必须**对照 `docs/06_ai/AI_CONTEXT.md` §6-7 执行文档影响检查并更新
+21. 完成独立功能模块后，**必须**更新 `docs/05_development/changelog.md`
 
 ## 文档更新联动
 
@@ -63,4 +65,17 @@
 修改业务规则         → docs/01_requirements/<module>_api.md
 修改目录结构         → architecture.md §2
 修改通用规范         → coding_standards.md
+完成功能模块         → changelog.md
 ```
+
+## 提交前检查清单
+
+每次 commit 前逐项确认：
+
+- [ ] 代码符合 `coding_standards.md`
+- [ ] 架构无反向依赖、无跨层调用
+- [ ] 相关文档已检查并更新
+- [ ] `changelog.md` 已更新（功能模块完成时）
+- [ ] 测试通过（`pytest tests/ -q`）
+- [ ] 版本号是否需要升级
+- [ ] 是否需要数据库迁移
