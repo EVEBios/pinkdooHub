@@ -73,7 +73,7 @@ pinkdooHub/
 │   │   │   ├── users.py        #   GET/PUT /users/me  /users/me/password  /users/me/avatar
 │   │   │   ├── admin_users.py  #   GET /admin/users  /admin/users/{id}  disable/enable
 │   │   │   ├── products.py     #   GET /products  /products/{id}
-│   │   │   ├── admin_products.py#  POST/PUT /products  online/offline/stock  images
+│   │   │   ├── admin_products.py#  POST/PUT /products  online/offline  options CRUD  images
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
 │   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  complete
 │   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)
@@ -82,7 +82,7 @@ pinkdooHub/
 │   ├── models/                 # 数据模型层 —— Tortoise ORM Model 定义
 │   │   ├── __init__.py
 │   │   ├── user.py             #   User
-│   │   ├── product.py          #   Product, ProductExperience, ProductKit, ProductImage
+│   │   ├── product.py          #   Product, ExperienceOption, ProductKit, ProductImage
 │   │   └── order.py            #   Order, OrderItem
 │   │
 │   ├── schemas/                # Pydantic Schema —— 请求/响应数据结构
@@ -95,7 +95,7 @@ pinkdooHub/
 │   │   ├── __init__.py
 │   │   ├── auth_service.py     #   注册、登录、Token 签发/刷新
 │   │   ├── user_service.py     #   个人资料、密码、头像
-│   │   ├── product_service.py  #   商品 CRUD、上下架、库存
+│   │   ├── product_service.py  #   商品 CRUD、上下架、Option 管理
 │   │   └── order_service.py    #   下单（扣库存+生成订单）、取消（恢复库存）
 │   │
 │   ├── repositories/           # 数据访问层 —— 封装数据库查询

@@ -22,9 +22,11 @@ users
   ├── orders ── order_items
   │
   └── products
-        ├── product_experiences
+        ├── experience_options
         ├── product_kits
         └── product_images
+
+audit_logs
 ```
 
 ---
@@ -53,50 +55,57 @@ users
 
 ### 3.2 products（商品表）
 
-所有商品的公共信息，采用统一商品表设计，方便后续扩展新的商品类型。
+所有商品的公共信息，采用统一商品表设计。价格由各子表管理（体验 → `experience_options.price`，套装 → `product_kits.price`），products 表仅存储公共字段。
+
+DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使用 `StrEnum`（`ProductType` / `ProductStatus`），禁止 Magic String。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| name | VARCHAR | NOT NULL | 商品名称 |
-| product_type | TINYINT | NOT NULL | 1:体验 2:套装，API 映射为 `"experience"` / `"kit"` |
+| name | VARCHAR(100) | NOT NULL | 商品名称，允许重名 |
+| product_type | VARCHAR | NOT NULL | `"experience"` / `"kit"`，创建后不可修改 |
 | description | TEXT | - | 商品描述 |
-| price | DECIMAL(10,2) | NOT NULL | 售价，单位：元 |
-| status | TINYINT | DEFAULT 0 | 0:草稿 1:上架 2:下架，API 映射为 `"draft"` / `"online"` / `"offline"` |
+| status | VARCHAR | DEFAULT `"draft"` | `"draft"` / `"online"` / `"offline"` |
+| is_deleted | BOOLEAN | DEFAULT FALSE | 逻辑删除标记 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
+
+> **价格分离原则：** 体验商品价格来自 `experience_options.price`，套装商品价格来自 `product_kits.price`。`products` 表不设 `price` 字段，避免语义混淆。
 
 ---
 
-### 3.3 product_experiences（体验商品表）
+### 3.3 experience_options（体验配置表）
 
-拼豆体验的专有信息，与 `products` 一对一关联。
+拼豆体验的可选配置，与 `products` **一对多**关联。每条 Option 代表一个独立可售配置（时长 + 人数 + 日期类型 → 价格）。
 
-采用一对一拆表设计，避免大量 NULL 字段。
+管理员可随时新增/修改/删除 Option。删除 Option 后若商品 `online` 且剩余 Option = 0，则自动转为 `draft`。Option 无独立状态字段，跟随 Product 的生命周期。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| product_id | BIGINT | FK → products.id, UNIQUE | 关联商品 |
-| duration | INT | NOT NULL | 体验时长（小时） |
-| capacity | INT | NOT NULL | 可体验人数 |
-| day_type | VARCHAR | NOT NULL | `"weekday"` 工作日 / `"weekend"` 周末 |
+| product_id | BIGINT | FK → products.id, NOT NULL | 关联商品 |
+| duration | VARCHAR | NOT NULL | `"1h"` / `"2h"` / `"full_day"` |
+| participants | INT | NOT NULL | 体验人数：1 / 2 |
+| day_type | VARCHAR | NOT NULL | `"weekday"` 工作日 / `"holiday"` 节假日 |
+| price | DECIMAL(10,2) | NOT NULL | 该配置的售价，0 < Price ≤ 99999 |
+| sort | INT | DEFAULT 0 | 展示排序（如 10/20/30，留间隔便于插入） |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
+
+**唯一约束：** `(product_id, duration, participants, day_type)` 联合唯一，禁止同一商品内出现重复配置。
 
 ---
 
 ### 3.4 product_kits（套装商品表）
 
-拼豆套装的专有信息，与 `products` 一对一关联。
-
-采用一对一拆表设计，方便未来扩展 SKU、成本价、供应商、库存预警等。
+拼豆套装的专有信息，与 `products` 一对一关联。套装价格直接存储在此表。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | product_id | BIGINT | FK → products.id, UNIQUE | 关联商品 |
-| stock | INT | NOT NULL | 当前库存 |
+| price | DECIMAL(10,2) | NOT NULL | 套装售价，0 < Price ≤ 99999 |
+| stock | INT | NOT NULL, DEFAULT 0 | 当前库存 |
 | sold_count | INT | DEFAULT 0 | 累计销量 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
@@ -138,19 +147,40 @@ users
 
 ### 3.7 order_items（订单明细表）
 
-采用订单快照设计：保存下单时的商品名称和价格快照，保证历史订单不受商品后续修改影响。
+采用订单快照设计：保存下单时的商品名称、价格及体验配置快照，保证历史订单不受商品后续修改影响。体验商品记录具体 Option 信息，套装商品这些字段为 NULL。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | order_id | BIGINT | FK → orders.id | 关联订单 |
 | product_id | BIGINT | FK → products.id | 关联原商品 |
+| experience_option_id | BIGINT | FK → experience_options.id, nullable | 关联体验配置（套装为 NULL） |
+| option_duration | VARCHAR | nullable | 快照：时长 |
+| option_participants | INT | nullable | 快照：人数 |
+| option_day_type | VARCHAR | nullable | 快照：日期类型 |
 | product_name | VARCHAR | NOT NULL | 下单时商品名称快照 |
 | product_price | DECIMAL(10,2) | NOT NULL | 下单时商品价格快照 |
 | quantity | INT | DEFAULT 1 | 数量 |
 | subtotal | DECIMAL(10,2) | NOT NULL | 小计金额 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
+
+---
+
+### 3.8 audit_logs（审计日志表）
+
+记录关键操作的审计日志，包括操作人、操作类型、目标对象及 IP 地址。日志为顺序写入（非 fire-and-forget）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 主键 |
+| operator_id | BIGINT | NOT NULL | 操作人 ID |
+| action | VARCHAR(50) | NOT NULL | 操作类型（如 `CREATE_PRODUCT`、`UPDATE_PRICE`） |
+| target_type | VARCHAR(50) | NOT NULL | 目标类型（`product` / `user`） |
+| target_id | BIGINT | NOT NULL | 目标 ID |
+| description | VARCHAR(256) | nullable | 附加描述（如价格变更前后值） |
+| ip_address | VARCHAR(45) | NOT NULL | 操作人 IP（支持 IPv6） |
+| created_at | DATETIME | - | 操作时间 |
 
 ---
 
@@ -161,9 +191,12 @@ users
 | users → orders | 一对多 | 一个用户可以有多个订单 |
 | orders → order_items | 一对多 | 一个订单包含多个商品明细 |
 | order_items → products | 多对一 | 每个明细关联一个商品 |
-| products → product_experiences | 一对一 | 体验商品的扩展信息 |
+| order_items → experience_options | 多对一 | 体验订单关联具体配置（套装为 NULL） |
+| products → experience_options | 一对多 | 一个体验商品包含多个可选配置 |
 | products → product_kits | 一对一 | 套装商品的扩展信息 |
 | products → product_images | 一对多 | 一个商品有多张图片 |
+
+**外键约束：** 所有 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。
 
 ---
 

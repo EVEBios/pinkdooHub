@@ -8,7 +8,11 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
-from app.common.constants.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE
+from app.common.constants.pagination import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    MIN_PAGE_SIZE,
+)
 
 T = TypeVar("T")
 

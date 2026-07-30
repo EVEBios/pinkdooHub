@@ -17,6 +17,7 @@
 | API 通用规范 | [api_design_conventions.md](../03_api/api_design_conventions.md) |
 | 用户 API | [user_api.md](../03_api/user_api.md) |
 | 商品 API | [product_api.md](../03_api/product_api.md) |
+| 商品业务规则 | [product_business_rules.md](../01_requirements/product_business_rules.md) |
 | 订单 API | [order_api.md](../03_api/order_api.md) |
 | 数据库设计 | [database_design.md](../02_database/database_design.md) |
 | ER 图 | [er_diagram.dbml](../02_database/er_diagram.dbml) |
@@ -46,12 +47,12 @@
 
 ## 3. 枚举速查
 
-| 数据库 (TINYINT) | API (string) | Python Enum |
-|-------------------|--------------|-------------|
+| 数据库 | API (string) | Python Enum |
+|--------|--------------|-------------|
 | `users.role` 1/2/3 | `"user"` / `"admin"` / `"super_admin"` | `UserRole` |
 | `users.status` 1/2 | `"normal"` / `"disabled"` | `UserStatus` |
-| `products.product_type` 1/2 | `"experience"` / `"kit"` | `ProductType` |
-| `products.status` 0/1/2 | `"draft"` / `"online"` / `"offline"` | `ProductStatus` |
+| `products.product_type` VARCHAR | `"experience"` / `"kit"` | `ProductType(StrEnum)` |
+| `products.status` VARCHAR | `"draft"` / `"online"` / `"offline"` | `ProductStatus(StrEnum)` |
 | `orders.status` 0/1/2/3 | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |
 
 ---
@@ -61,7 +62,7 @@
 | 模块 | 号段 | 已用 |
 |------|------|------|
 | 用户 | 1xxx | 1001-1007 |
-| 商品 | 2xxx | 2001-2005 |
+| 商品 | 2xxx | 2001-2008 |
 | 订单 | 3xxx | 3001-3006 |
 
 ---

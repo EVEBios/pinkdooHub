@@ -4,6 +4,80 @@
 
 ---
 
+## v0.3.0 — RBAC + Audit Logging + Product Module Design
+
+**Date:** 2026-07-30
+
+### Summary
+
+Added role-based access control (RBAC) with permission cascading, admin user
+management with paginated listing and disable, sequential audit logging for
+all sensitive operations, and completed Product module design (Phase 4.1).
+
+### Added
+
+- **RBAC Depends chain:** `get_current_user` → `get_current_admin` → `get_current_super_admin`
+- **Admin API (`/api/v1/admin/`):** paginated user list (filterable by status/role),
+  disable user endpoint (with role hierarchy protection)
+- **Audit logging:** `AuditLog` model tracking operator_id, action, target_type,
+  target_id, description, ip_address. Sequential (non-fire-and-forget) writes for
+  register, login, disable_user. Failed operations produce no audit log.
+- **Client IP detection:** `get_client_ip()` with X-Forwarded-For support for
+  proxy environments.
+- **Page[T] generic** for consistent paginated responses (items, total, page,
+  page_size, pages)
+- **Product Business Rules (`docs/01_requirements/product_business_rules.md`):**
+  complete domain model (Product 1→N ExperienceOption), aggregate rules,
+  lifecycle, constraints, and design decisions for Phase 4.1.
+- **ER diagram redesign:** `product_experiences` → `experience_options` (1:N),
+  price separation, `sort` field, `is_deleted`, `audit_logs` table,
+  `ON DELETE RESTRICT` FK constraints.
+
+### Changed
+
+- PATCH semantics for `/users/me` (partial update) instead of PUT
+- Phone field now required on `UserCreate` and User model
+
+### Database
+
+**New table:** `audit_logs`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT PK | |
+| operator_id | BIGINT FK | Who performed the action |
+| action | VARCHAR(50) | REGISTER, LOGIN, DISABLE_USER |
+| target_type | VARCHAR(50) | user |
+| target_id | BIGINT | Affected entity |
+| description | VARCHAR(256) | nullable |
+| ip_address | VARCHAR(45) | IPv4/IPv6 |
+| created_at | DATETIME | auto |
+
+### Important Decisions
+
+1. **Sequential audit logging.** Audit writes are awaited inline, not
+   fire-and-forget. If the audit log fails, the operation fails — no silent
+   audit gaps.
+
+2. **Guard before log.** Audit logs are only written after the business
+   operation succeeds. Failed disables produce no audit entry.
+
+3. **Depends chain for RBAC.** Each permission level wraps the previous one,
+   reusing `get_current_user` → `get_current_admin` → `get_current_super_admin`.
+   No repeated token parsing, clean extensibility.
+
+### Known Limitations
+
+- No refresh token rotation (Phase 4)
+- No rate limiting on login/register
+- Product module: design complete, implementation pending (Phase 4.1)
+- No email verification
+- No OAuth / third-party login
+- Admin enable user endpoint deferred
+- Avatar upload deferred
+
+---
+
 ## v0.2.0 — User Authentication System
 
 **Date:** 2026-07-25
