@@ -384,23 +384,45 @@ class Page(BaseModel, Generic[T]):
 from tortoise import fields
 from tortoise.models import Model
 
-class User(Model):
+class Product(Model):
     id = fields.BigIntField(pk=True)
-    username = fields.CharField(max_length=32, unique=True)
-    password = fields.CharField(max_length=128)
-    nickname = fields.CharField(max_length=32)
-    phone = fields.CharField(max_length=11, null=True)
-    avatar = fields.CharField(max_length=256, null=True)
-    role = fields.SmallIntField(default=1)      # UserRole.USER
-    status = fields.SmallIntField(default=1)     # UserStatus.NORMAL
+    name = fields.CharField(max_length=100)
+    product_type = fields.CharField(max_length=20)  # ProductType(StrEnum)
+    status = fields.CharField(max_length=20, default="draft")
+    is_deleted = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
-        table = "users"
+        table = "products"
+        indexes = [
+            ("status", "is_deleted"),               # 首页列表查询
+        ]
 ```
 
-### 6.2 约束
+### 6.2 Meta 规范
+
+**所有 Model 的 `Meta` 必须遵循统一风格：**
+
+```python
+class Meta:
+    table = "table_name"           # 明确指定表名
+    indexes = [
+        # 普通索引
+        ("single_field",),
+        # 复合索引（按查询模式设计，选择性高的在前）
+        ("field_a", "field_b"),
+    ]
+```
+
+| 规则 | 说明 |
+|------|------|
+| 索引集中在 `Meta.indexes` | **禁止** 字段级 `index=True`，所有索引必须在 `Meta` 中声明 |
+| 元组格式统一 | 单字段 `("field",)`（注意末尾逗号），多字段 `("a", "b")` |
+| 复合索引不冗余 | 如果 `(a, b)` 已存在，不另建 `(a)`（最左匹配已覆盖） |
+| **禁止 `ordering`** | 排序逻辑属于 Repository 层，不在 Model 中隐藏。Repository 中显式 `.order_by("-created_at")` |
+
+### 6.3 约束
 
 | ✅ 必须 | ❌ 禁止 |
 |---------|---------|
@@ -409,6 +431,7 @@ class User(Model):
 | 时间字段用 `auto_now_add` / `auto_now` | 手动设置 `created_at` |
 | 金额用 `Decimal(10,2)`（Tortoise: `fields.DecimalField(max_digits=10, decimal_places=2)`） | 金额用 `float` |
 | `null=True` 显式声明可选字段 | 用空字符串 `""` 代替 `null` |
+| **所有索引在 `Meta.indexes` 中声明** | **字段级 `index=True`** |
 
 ---
 
@@ -984,25 +1007,54 @@ orders = await Order.all() \
 
 ### 15.6 数据库索引
 
-以下字段必须添加数据库索引（在 Model 定义或迁移中添加）：
+**核心原则：根据查询场景设计索引，而不是根据字段设计索引。**
 
-| 字段 | 原因 |
-|------|------|
-| `users.username` | 登录查询（已有 UNIQUE） |
-| `orders.user_id` | 按用户查订单列表 |
-| `orders.status` | 按状态筛选 |
-| `orders.order_no` | 精确查找（已有 UNIQUE） |
-| `products.status` | 只查 online 商品 |
-| `products.product_type` | 按类型筛选 |
-| `product_images.product_id` | 按商品查图片 |
-| `order_items.order_id` | 按订单查明细 |
+先梳理 SQL 查询模式，再确定索引列。复合索引的列按过滤频率和选择性的降序排列（最左匹配原则）。
 
-Tortoise ORM 中通过 `index=True` 声明：
+#### 索引设计流程
+
+```
+1. 列出该表的核心 SQL 查询（WHERE / ORDER BY / LIMIT）
+2. 按查询频率排序，优先优化高频查询
+3. 将过滤条件按选择性降序排列作为索引列
+4. 如果索引前缀已覆盖其他查询，不重复建索引
+```
+
+#### 声明方式
+
+所有索引通过 `Meta.indexes` 声明（详见 §7 Model 开发规范）：
 
 ```python
-user_id = fields.BigIntField(index=True)
-status = fields.SmallIntField(default=0, index=True)
+class Product(Model):
+    # 字段...
+
+    class Meta:
+        table = "products"
+        indexes = [
+            ("status", "is_deleted"),          # idx_products_status_deleted
+        ]
 ```
+
+> **禁止字段级 `index=True`，禁止 `Meta.ordering`。** 所有索引集中在 `Meta.indexes`。排序逻辑在 Repository 中显式指定。
+
+#### 当前索引规划（详见 database_design.md §7）
+
+| 表 | 索引 | 类型 | 覆盖查询 |
+|----|------|------|----------|
+| `products` | `(status, is_deleted)` | 普通 | 首页列表（`WHERE status='online' AND is_deleted=false`） |
+| `users` | `(status, role)` | 普通 | 管理后台用户列表 |
+| `experience_options` | `(product_id, sort)` | 普通 | 详情页排序展示 |
+| `orders` | `(user_id, status, created_at)` | 普通 | 我的订单列表 |
+| `audit_logs` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
+
+#### 约束
+
+| ✅ 必须 | ❌ 禁止 |
+|---------|---------|
+| 先分析查询模式，再设计索引 | 每个字段随意加 `index=True` |
+| 复合索引用 `Meta.indexes` 声明 | 对低基数字段（如 boolean）单独建索引 |
+| 索引列按选择性降序排列 | 创建已被其他索引前缀覆盖的冗余索引 |
+| 索引设计同步更新 `database_design.md` | 只在 Model 里加索引，文档不同步 |
 
 ### 15.7 Redis 缓存
 

@@ -212,6 +212,19 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | 所有状态 | `TINYINT`，文档标注每个值的含义 |
 | 所有外键 | `xxx_id BIGINT` |
 
+### 时间字段策略
+
+| 字段 | DB 层 | ORM 层（Tortoise） | 说明 |
+|------|-------|-------------------|------|
+| `created_at` | `DATETIME`（无默认值） | `DatetimeField(auto_now_add=True)` | 首次 INSERT 时 ORM 自动填入当前时间，之后永不修改 |
+| `updated_at` | `DATETIME`（无默认值） | `DatetimeField(auto_now=True)` | 每次 `save()` 时 ORM 自动更新为当前时间 |
+
+> **数据库不设 `DEFAULT CURRENT_TIMESTAMP` 或 `ON UPDATE`。** 整个项目统一通过 ORM 操作数据库，时间戳由 Tortoise 的 `auto_now_add` / `auto_now` 管理，不依赖数据库层面的时间函数。这样做的原因：
+>
+> 1. **统一策略**——避免数据库和 ORM 之间的时间行为不一致
+> 2. **可测试性**——ORM 管理的时间在测试中更容易被 mock/freeze
+> 3. **代码可读**——看到 Model 定义中的 `auto_now_add=True` 就知道行为，无需查 DDL
+
 ### 命名规范
 
 | 对象 | 规范 | 示例 |
@@ -237,7 +250,140 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 
 ---
 
-## 7. 后续扩展计划
+## 7. 索引设计
+
+### 7.1 设计原则
+
+**根据查询场景设计索引，而不是根据字段设计索引。**
+
+| 原则 | 说明 |
+|------|------|
+| 查询驱动 | 先梳理 SQL 查询模式，再确定索引列 |
+| 最左匹配 | 复合索引按过滤频率和选择性的降序排列列 |
+| 避免冗余 | 如果 `(a, b)` 已存在，无需再建 `(a)` |
+| 空间权衡 | 低基数字段（如 boolean）可省略，除非是首列过滤条件 |
+
+### 7.2 查询模式 → 索引映射
+
+#### users
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE username = ?` | 极高（登录） | `UNIQUE(username)` ✅ 已有 |
+| 2 | `WHERE phone = ?` | 高（注册查重） | `UNIQUE(phone)` ✅ 已有 |
+| 3 | `WHERE status = ? AND role = ? ORDER BY created_at` | 中（管理后台） | `(status, role)` |
+
+```sql
+-- Migration SQL
+CREATE INDEX idx_users_status_role ON users (status, role);
+```
+
+#### products
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE status = 'online' AND is_deleted = false ORDER BY created_at` | **极高**（首页列表） | **`(status, is_deleted)`** |
+| 2 | `WHERE is_deleted = false [AND status = ?] [AND product_type = ?]` | 高（管理后台） | 被索引 #1 覆盖（最左匹配） |
+
+> **为什么 `status` 在前？** 因为 `status` 的选择性高于 `is_deleted`（`is_deleted` 绝大多数为 `false`）。索引 `(status, is_deleted)` 可以同时覆盖：
+> - `WHERE status = ?`（最左匹配）
+> - `WHERE status = ? AND is_deleted = ?`（完整匹配）
+> 
+> 如果反过来建 `(is_deleted, status)`，单独按 `status` 过滤时索引无法使用。
+
+```sql
+-- Migration SQL
+CREATE INDEX idx_products_status_deleted ON products (status, is_deleted);
+```
+
+#### experience_options
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE product_id = ? AND duration = ? AND participants = ? AND day_type = ?` | 中（唯一校验） | `UNIQUE(product_id, duration, participants, day_type)` ✅ 已有 |
+| 2 | `WHERE product_id = ? ORDER BY sort` | 高（详情页展示） | `(product_id, sort)` |
+
+```sql
+-- Migration SQL
+CREATE INDEX idx_option_product_sort ON experience_options (product_id, sort);
+```
+
+#### product_images
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE product_id = ? ORDER BY sort` | 中 | `(product_id, sort)` |
+| 2 | `WHERE product_id = ? AND is_cover = true LIMIT 1` | 中（封面查找） | `(product_id, is_cover)` |
+
+```sql
+-- Migration SQL
+CREATE INDEX idx_image_product_sort ON product_images (product_id, sort);
+CREATE INDEX idx_image_product_cover ON product_images (product_id, is_cover);
+```
+
+#### orders
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE user_id = ? [AND status = ?] ORDER BY created_at DESC` | 高（我的订单） | `(user_id, status, created_at)` |
+| 2 | `WHERE status = ? ORDER BY created_at DESC` | 中（管理后台） | `(status, created_at)` |
+| 3 | `WHERE order_no = ?` | 极高（查询） | `UNIQUE(order_no)` ✅ 已有 |
+
+```sql
+-- Migration SQL
+CREATE INDEX idx_orders_user_status_created ON orders (user_id, status, created_at);
+CREATE INDEX idx_orders_status_created ON orders (status, created_at);
+```
+
+#### order_items
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE order_id = ?` | 高（订单详情） | `(order_id)` |
+
+```sql
+-- Migration SQL
+CREATE INDEX idx_order_items_order ON order_items (order_id);
+```
+
+#### audit_logs
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE target_type = ? AND target_id = ? ORDER BY created_at DESC` | 中（实体审计追踪） | `(target_type, target_id, created_at)` |
+| 2 | `WHERE operator_id = ? ORDER BY created_at DESC` | 中（操作人行为审计） | `(operator_id, created_at)` |
+
+```sql
+-- Migration SQL
+CREATE INDEX idx_audit_target_created ON audit_logs (target_type, target_id, created_at);
+CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
+```
+
+### 7.3 索引汇总
+
+| 表 | 索引名 | 列 | 类型 | 覆盖查询 |
+|----|--------|-----|------|----------|
+| `users` | `idx_users_status_role` | `(status, role)` | 普通 | 管理后台用户列表 |
+| `products` | `idx_products_status_deleted` | `(status, is_deleted)` | 普通 | 客户列表、管理后台列表 |
+| `experience_options` | `idx_option_unique` | `(product_id, duration, participants, day_type)` | UNIQUE | 唯一性校验、按 product 查询 |
+| `experience_options` | `idx_option_product_sort` | `(product_id, sort)` | 普通 | 详情页排序展示 |
+| `product_images` | `idx_image_product_sort` | `(product_id, sort)` | 普通 | 图片排序展示 |
+| `product_images` | `idx_image_product_cover` | `(product_id, is_cover)` | 普通 | 封面图查找 |
+| `orders` | `idx_orders_user_status_created` | `(user_id, status, created_at)` | 普通 | 我的订单列表（含状态筛选） |
+| `orders` | `idx_orders_status_created` | `(status, created_at)` | 普通 | 管理后台订单管理 |
+| `order_items` | `idx_order_items_order` | `(order_id)` | 普通 | 订单详情（FK 查询） |
+| `audit_logs` | `idx_audit_target_created` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
+| `audit_logs` | `idx_audit_operator_created` | `(operator_id, created_at)` | 普通 | 操作人行为审计 |
+
+### 7.4 不需要索引的表
+
+| 表 | 原因 |
+|----|------|
+| `product_kits` | 仅通过 `product_id`（已有 UNIQUE PK）查询，无需额外索引 |
+
+---
+
+## 8. 后续扩展计划
 
 | 版本 | 新增内容 |
 |------|----------|
