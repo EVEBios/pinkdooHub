@@ -81,8 +81,13 @@ pinkdooHub/
 │   │
 │   ├── models/                 # 数据模型层 —— Tortoise ORM Model 定义
 │   │   ├── __init__.py
+│   │   ├── base.py             #   BaseModel（id, created_at, updated_at）
 │   │   ├── user.py             #   User
-│   │   ├── product.py          #   Product, ExperienceOption, ProductKit, ProductImage
+│   │   ├── product.py          #   Product
+│   │   ├── experience_option.py#   ExperienceOption
+│   │   ├── product_kit.py      #   ProductKit
+│   │   ├── product_image.py    #   ProductImage
+│   │   ├── audit_log.py        #   AuditLog
 │   │   └── order.py            #   Order, OrderItem
 │   │
 │   ├── schemas/                # Pydantic Schema —— 请求/响应数据结构
@@ -113,7 +118,7 @@ pinkdooHub/
 │   │   │   ├── __init__.py
 │   │   │   ├── user.py         #     UserRole, UserStatus
 │   │   │   ├── product.py      #     ProductType, ProductStatus
-│   │   │   └── order.py        #     OrderStatus
+│   │   │   └── order.py        #     OrderStatus (Phase 4.2)
 │   │   └── constants/          #   全局常量 —— 消除 Magic Number
 │   │       ├── __init__.py
 │   │       ├── pagination.py  #     MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE

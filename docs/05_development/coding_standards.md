@@ -378,60 +378,137 @@ class Page(BaseModel, Generic[T]):
 
 ## 7. Model 开发规范
 
-### 6.1 定义
+### 7.1 文件组织
+
+每个实体一个文件，放在 `app/models/`：
+
+```
+app/models/
+├── base.py                ← BaseModel（抽象基类）
+├── user.py                ← User
+├── product.py             ← Product
+├── experience_option.py   ← ExperienceOption
+├── product_kit.py         ← ProductKit
+├── product_image.py       ← ProductImage
+├── order.py               ← Order, OrderItem
+└── audit_log.py           ← AuditLog
+```
+
+### 7.2 BaseModel
+
+所有 Model 继承 `BaseModel`，自动获得 `id`、`created_at`、`updated_at`：
 
 ```python
+# app/models/base.py
 from tortoise import fields
 from tortoise.models import Model
 
-class Product(Model):
+class BaseModel(Model):
+    """抽象基类 —— 所有业务 Model 的公共字段。"""
     id = fields.BigIntField(pk=True)
-    name = fields.CharField(max_length=100)
-    product_type = fields.CharField(max_length=20)  # ProductType(StrEnum)
-    status = fields.CharField(max_length=20, default="draft")
-    is_deleted = fields.BooleanField(default=False)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
+        abstract = True
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `BigIntField(pk=True)` | 主键，自增 |
+| `created_at` | `DatetimeField(auto_now_add=True)` | 首次保存时 ORM 自动填入，之后不可变 |
+| `updated_at` | `DatetimeField(auto_now=True)` | 每次 `save()` 时 ORM 自动更新 |
+
+**`is_deleted` 不放在 BaseModel。** 只有需要逻辑删除的表（如 Product）才定义此字段。Audit、Order 等不需要删除的表示应包含此字段。
+
+### 7.3 完整示例
+
+```python
+# app/models/product.py
+from tortoise import fields
+from app.models.base import BaseModel
+
+class Product(BaseModel):
+    name = fields.CharField(max_length=100)
+    product_type = fields.CharField(max_length=20)   # ProductType(StrEnum)
+    description = fields.TextField(null=True)
+    status = fields.CharField(max_length=20, default="draft")
+    is_deleted = fields.BooleanField(default=False)
+
+    class Meta:
         table = "products"
         indexes = [
-            ("status", "is_deleted"),               # 首页列表查询
+            ("status", "is_deleted"),
         ]
 ```
 
-### 6.2 Meta 规范
-
-**所有 Model 的 `Meta` 必须遵循统一风格：**
+### 7.4 Meta 规范
 
 ```python
 class Meta:
-    table = "table_name"           # 明确指定表名
+    table = "table_name"         # 明确指定表名
     indexes = [
-        # 普通索引
+        # 普通索引（单字段）—— 注意元组末尾的逗号
         ("single_field",),
-        # 复合索引（按查询模式设计，选择性高的在前）
+        # 复合索引 —— 选择性高的列在前
         ("field_a", "field_b"),
     ]
 ```
 
 | 规则 | 说明 |
 |------|------|
-| 索引集中在 `Meta.indexes` | **禁止** 字段级 `index=True`，所有索引必须在 `Meta` 中声明 |
-| 元组格式统一 | 单字段 `("field",)`（注意末尾逗号），多字段 `("a", "b")` |
-| 复合索引不冗余 | 如果 `(a, b)` 已存在，不另建 `(a)`（最左匹配已覆盖） |
-| **禁止 `ordering`** | 排序逻辑属于 Repository 层，不在 Model 中隐藏。Repository 中显式 `.order_by("-created_at")` |
+| 索引集中在 `Meta.indexes` | **禁止** 字段级 `index=True` |
+| 元组格式统一 | 单字段 `("field",)`（保留末尾逗号），多字段 `("a", "b")` |
+| 复合索引不冗余 | `(a, b)` 已存在则不另建 `(a)`（最左匹配已覆盖） |
+| **禁止 `ordering`** | 排序属于 Repository 职责，Repository 中显式 `.order_by("-created_at")` |
 
-### 6.3 约束
+### 7.5 Model 职责边界
+
+| ✅ Model 做什么 | ❌ Model 不做什么 |
+|-----------------|-------------------|
+| 定义表结构（字段、类型、约束） | 写业务方法（`def online(self)`、`def update_price(self)`） |
+| 定义索引（`Meta.indexes`） | 写数据库查询 |
+| 定义 FK 关系（`ForeignKeyField`） | 抛出 `BusinessException` |
+| 标注字段含义（注释） | 处理 HTTP 请求 |
+
+> **Model 只描述"数据长什么样"，不描述"数据怎么用"。** 业务逻辑全部在 Service，查询策略全部在 Repository。
+
+### 7.6 枚举字段
+
+枚举字段 DB 存储使用 `SmallIntField` / `CharField`，代码中**必须**使用 `app/common/enums/` 中的 Enum 类型。
+
+| DB 类型 | Python Enum | 适用场景 |
+|---------|------------|----------|
+| `SmallIntField` | `IntEnum` | 用户角色、用户状态、订单状态 |
+| `CharField` | `StrEnum` | 商品类型、商品状态 |
+
+```python
+# app/common/enums/product.py
+from enum import StrEnum
+
+class ProductType(StrEnum):
+    EXPERIENCE = "experience"
+    KIT = "kit"
+
+class ProductStatus(StrEnum):
+    DRAFT = "draft"
+    ONLINE = "online"
+    OFFLINE = "offline"
+```
+
+**全项目统一 import：** Schema、Service、Repository、Model 全部使用 `app/common/enums/` 中的同一个 Enum，禁止各自重新定义。
+
+### 7.7 字段约束
 
 | ✅ 必须 | ❌ 禁止 |
 |---------|---------|
-| 枚举字段用 `SmallIntField` 存储，注释标注 Enum 名 | 枚举字段用 `CharField` 存储字符串 |
-| 主键统一 `BigIntField(pk=True)` | 使用 `IntField` 作为主键 |
-| 时间字段用 `auto_now_add` / `auto_now` | 手动设置 `created_at` |
-| 金额用 `Decimal(10,2)`（Tortoise: `fields.DecimalField(max_digits=10, decimal_places=2)`） | 金额用 `float` |
+| 继承 `BaseModel` | 直接继承 `tortoise.models.Model` |
+| 主键用 `BigIntField(pk=True)`（在 BaseModel 中） | 使用 `IntField` 或 `UUIDField` 作为主键 |
+| 时间字段用 `auto_now_add` / `auto_now` | 手动设置 `created_at` / `updated_at` |
+| 金额用 `DecimalField(max_digits=10, decimal_places=2)` | 金额用 `float` |
 | `null=True` 显式声明可选字段 | 用空字符串 `""` 代替 `null` |
-| **所有索引在 `Meta.indexes` 中声明** | **字段级 `index=True`** |
+| 枚举字段用 `SmallIntField` 或 `CharField`，注释标注 Enum 类 | Magic Number 或裸 `str` |
+| 所有索引在 `Meta.indexes` 中声明 | 字段级 `index=True` |
 
 ---
 
