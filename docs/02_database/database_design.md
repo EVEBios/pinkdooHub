@@ -84,11 +84,11 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | product_id | BIGINT | FK → products.id, NOT NULL | 关联商品 |
-| duration | INT | NOT NULL | 分钟数：60 / 120 / 480 |
+| duration | INT | NOT NULL | 分钟数：60 / 120 / 540 |
 | participants | INT | NOT NULL | 体验人数：1 / 2 |
 | day_type | VARCHAR | NOT NULL | `"weekday"` 工作日 / `"holiday"` 节假日 |
 | price | DECIMAL(10,2) | NOT NULL | 该配置的售价，0 < Price ≤ 99999 |
-| sort | INT | DEFAULT 0 | 展示排序（如 10/20/30，留间隔便于插入） |
+| is_deleted | BOOLEAN | DEFAULT FALSE | 逻辑删除。保留图片关联和历史订单引用 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
@@ -106,11 +106,12 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | product_id | BIGINT | FK → products.id, UNIQUE | 关联商品 |
 | price | DECIMAL(10,2) | NOT NULL | 套装售价，0 < Price ≤ 99999 |
 | stock | INT | NOT NULL, DEFAULT 0 | 当前库存 |
-| sold_count | INT | DEFAULT 0 | 累计销量 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
 ---
+
+> `sold_count` 不存储在 Product 模块。累计销量由订单模块统计。
 
 ### 3.5 product_images（商品图片表）
 
@@ -124,6 +125,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | image_url | VARCHAR | NOT NULL | 图片 URL |
 | is_cover | BOOLEAN | DEFAULT FALSE | 封面图，仅 `experience_option_id IS NULL` 时有效 |
 | sort | INT | DEFAULT 0 | 排序序号 |
+| is_deleted | BOOLEAN | DEFAULT FALSE | 逻辑删除。保留历史关联 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
@@ -169,7 +171,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | order_id | BIGINT | FK → orders.id | 关联订单 |
 | product_id | BIGINT | FK → products.id | 关联原商品 |
 | experience_option_id | BIGINT | FK → experience_options.id, nullable | 关联体验配置（套装为 NULL） |
-| option_duration | INT | nullable | 快照：分钟数（60 / 120 / 480） |
+| option_duration | INT | nullable | 快照：分钟数（60 / 120 / 540） |
 | option_participants | INT | nullable | 快照：人数 |
 | option_day_type | VARCHAR | nullable | 快照：日期类型 |
 | product_name | VARCHAR | NOT NULL | 下单时商品名称快照 |
@@ -315,11 +317,10 @@ CREATE INDEX idx_products_status_deleted ON products (status, is_deleted);
 | # | 查询 | 频率 | 索引 |
 |---|------|------|------|
 | 1 | `WHERE product_id = ? AND duration = ? AND participants = ? AND day_type = ?` | 中（唯一校验） | `UNIQUE(product_id, duration, participants, day_type)` ✅ 已有 |
-| 2 | `WHERE product_id = ? ORDER BY sort` | 高（详情页展示） | `(product_id, sort)` |
+| 2 | `WHERE product_id = ?` | 高（详情页展示） | 被 UNIQUE 索引覆盖（最左匹配 product_id） |
 
 ```sql
--- Migration SQL
-CREATE INDEX idx_option_product_sort ON experience_options (product_id, sort);
+-- 无需额外索引：UNIQUE(product_id, duration, participants, day_type) 已覆盖 product_id 查询
 ```
 
 #### product_images
@@ -380,7 +381,6 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | `users` | `idx_users_status_role` | `(status, role)` | 普通 | 管理后台用户列表 |
 | `products` | `idx_products_status_deleted` | `(status, is_deleted)` | 普通 | 客户列表、管理后台列表 |
 | `experience_options` | `idx_option_unique` | `(product_id, duration, participants, day_type)` | UNIQUE | 唯一性校验、按 product 查询 |
-| `experience_options` | `idx_option_product_sort` | `(product_id, sort)` | 普通 | 详情页排序展示 |
 | `product_images` | `idx_image_product_sort` | `(product_id, sort)` | 普通 | 图片排序展示 |
 | `product_images` | `idx_image_product_cover` | `(product_id, is_cover)` | 普通 | 封面图查找 |
 | `orders` | `idx_orders_user_status_created` | `(user_id, status, created_at)` | 普通 | 我的订单列表（含状态筛选） |

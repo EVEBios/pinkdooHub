@@ -289,7 +289,7 @@ Product（聚合根）
 | Online 可以没有 Option 吗？ | ❌ 不可以 | 用户必须能选择至少一种配置 |
 | 一个 Product 至少需要几个 Option 才能上线？ | ≥ 1 | 保证商品可售 |
 | Option 可以单独新增、修改、删除吗？ | ✅ 可以 | 便于后台维护 |
-| 删除最后一个 Option 后还能保持 Online 吗？ | ❌ 不可以 | 若最后一个 Option 被删除，商品必须自动转为 `draft` |
+| 删除最后一个 Option 后还能保持 Online 吗？ | ❌ 不可以 | Online 商品不允许删除 Option。须先下架。
 
 ### 8.2 Status × Option Completeness Matrix
 
@@ -301,14 +301,20 @@ Product（聚合根）
 
 ### 8.3 Lifecycle Rules（生命周期规则）
 
-**创建阶段：**
+**创建阶段（Create → Edit → Complete → Publish）：**
 
 ```
-1. POST /products       → Product (draft, 0 Options)
-2. POST /products/1/options  → Option A
-3. POST /products/1/options  → Option B
-4. PUT  /products/1/online   → 校验 Options ≥ 1 → Product (online)
+Step 1  POST /admin/products/experience  → Product (draft)  →  前端跳转编辑页
+Step 2  POST .../images                  → 上传 Product 公共图片
+Step 3  POST .../options                 → 新增 Option
+Step 4  POST .../images                  → 上传 Option 图片（body 带 option_id）
+Step 5  PUT  /admin/products/{id}        → 完善描述等信息
+Step 6  PATCH .../online                 → Validate → Product (online)
 ```
+
+**核心原则：Create 只创建主资源。** 创建接口仅负责 Product 主记录（`name` + `description`），不接收任何关联资源（图片、Option、价格）。关联资源通过独立接口逐步添加。
+
+**前端交互：** 创建 Draft 后前端应立即跳转到编辑页（`/admin/products/experience/{id}/edit`），而非返回列表。用户可以分多次、跨会话逐步完善商品，Draft 就是"尚未完成的工作区"。
 
 **维护阶段：**
 
@@ -316,7 +322,7 @@ Product（聚合根）
 |------|----------|----------|
 | 新增 Option | 无 | 无 |
 | 修改 Option | Option 存在 | 历史订单不受影响 |
-| 删除 Option | 无 | 若删除后剩余 Option = 0，且商品为 `online`，则自动转为 `draft` |
+| 删除 Option | Product 必须为 draft / offline | Online 商品不允许删除 Option。删除最后一条 Option 后商品保持原状态（draft/offline），重新上架时 Validator 拒绝 |
 
 **下线阶段：**
 

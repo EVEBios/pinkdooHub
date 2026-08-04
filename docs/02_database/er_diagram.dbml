@@ -36,22 +36,21 @@ Table products {
 Table experience_options {
   id bigint [pk, increment]
   product_id bigint [not null]
-  duration int [not null, note: '60 | 120 | 480 (minutes)']
+  duration int [not null, note: '60 | 120 | 540 (minutes)']
   participants int [not null, note: '1 | 2']
   day_type varchar [not null, note: 'weekday | holiday']
   price decimal(10,2) [not null]
-  sort int [default: 0, note: 'display order, e.g. 10/20/30, gap for future insert']
+  is_deleted boolean [default: false, note: 'logical delete; preserve FK references']
 
   // Data Consistency: (product_id + duration + participants + day_type) UNIQUE
-  // Aggregate Rule: online product must have >= 1 option
+  // Aggregate Rule: online product must have >= 1 option (is_deleted = false)
   // Lifecycle: no independent status; follows product lifecycle
 
   created_at datetime
   updated_at datetime
 
   indexes {
-    (product_id, duration, participants, day_type) [unique, name: 'idx_option_unique']
-    (product_id, sort) [name: 'idx_option_product_sort']
+    (product_id, duration, participants, day_type) [unique, name: 'idx_option_unique', note: 'unique among non-deleted']
   }
 }
 
@@ -60,7 +59,6 @@ Table product_kits {
   product_id bigint [not null, unique]
   price decimal(10,2) [not null, note: 'kit product price']
   stock int [not null, default: 0]
-  sold_count int [default: 0]
   created_at datetime
   updated_at datetime
 }
@@ -72,6 +70,7 @@ Table product_images {
   image_url varchar [not null]
   is_cover boolean [default: false, note: 'only meaningful when experience_option_id IS NULL']
   sort int [default: 0]
+  is_deleted boolean [default: false, note: 'logical delete']
   created_at datetime
   updated_at datetime
 
@@ -131,7 +130,7 @@ Table order_items {
 
   // Experience option snapshot (nullable — kit products don't use these)
   experience_option_id bigint [note: 'FK to experience_options, nullable for kit products']
-  option_duration int [note: 'snapshot: 60 | 120 | 480 (minutes)']
+  option_duration int [note: 'snapshot: 60 | 120 | 540 (minutes)']
   option_participants int [note: 'snapshot: 1 | 2']
   option_day_type varchar [note: 'snapshot: weekday | holiday']
 

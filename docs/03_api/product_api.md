@@ -21,6 +21,9 @@
 | Business-Action | 按业务行为划分接口，不按数据库字段划分 |
 | User/Admin 分离 | 用户接口 `/products`，管理员接口 `/admin/products` |
 | 类型独立创建 | 体验和套装创建流程不同，使用独立端点 |
+| **Create 只创建主资源** | 创建接口仅负责 Product 主记录。关联资源（图片、Option）通过独立接口完成。Kit 的 price/stock 属于聚合根核心字段，创建时一并接收 |
+| **原则统一，字段按需适配** | Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同，Create Request 不强行为"统一"而统一 |
+| **Create → Edit 流程** | 创建 Draft 后前端应立即进入编辑页，而非返回列表。用户感知为"创建商品"，技术实现为多步 API 调用 |
 
 ### Base URL
 
@@ -52,13 +55,14 @@ Authorization: Bearer <access_token>
 |------|------|------|
 | id | bigint | 商品 ID |
 | name | string | 商品名称，最大 100 字符 |
-| product_type | string 或 `{value, label}` | 列表用原始值 `"experience"`（路由判断），详情用 `{ "value": "experience", "label": "拼豆体验" }` |
+| product_type | `{value, label}` | `{ "value": "experience", "label": "拼豆体验" }`，前后端统一格式 |
 | description | string | 商品描述（仅详情返回） |
 | cover_image | string | 封面图 URL（从 images 派生） |
 | options | array | **体验商品返回**，Option 列表 |
 | kit | object | **套装商品返回**，套装扩展信息 |
 | images | array | 图片列表（仅详情返回） |
-| created_at | datetime | 创建时间（仅列表返回） |
+| created_at | datetime | 创建时间（仅 Admin Detail 返回） |
+| updated_at | datetime | 更新时间（仅 Admin Detail 返回） |
 
 ### 2.2 ExperienceOption
 
@@ -68,20 +72,22 @@ Authorization: Bearer <access_token>
 | duration | object | `{ "value": 60, "label": "1小时" }` |
 | participants | object | `{ "value": 2, "label": "2人" }` |
 | day_type | object | `{ "value": "weekday", "label": "工作日" }` |
-| price | number | 该配置价格，0 < Price ≤ 99999 |
-| sort | int | 展示排序 |
-| images | array | 该 Option 的专属图片列表。无图片时返回 `[]`，前端展示占位图 |
+| price | string | 该配置价格（`"299.00"`），0 < Price ≤ 99999 |
+| images | array | 该 Option 的专属图片列表。Online 商品每个 Option 至少 1 张图；无图仅出现在 draft/offline |
+
+> Option 通过 `is_deleted` 实现逻辑删除。正常查询自动过滤已删除 Option。
 
 > **枚举字段统一使用 `{value, label}` 格式**（见 [API Design Conventions §9.4](api_design_conventions.md#94-枚举值--valuelabel-模式)）。
-> Duration 的 DB 值为分钟数（60/120/480），Participants 为人数（1/2），Service 层负责转换为 label。
+> Duration 的 DB 值为分钟数（60=1小时 / 120=2小时 / 540=全天），Participants 为人数（1/2），Service 层负责转换为 label。
 
 ### 2.3 Kit
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| price | number | 套装售价 |
+| price | string | 套装售价（`"599.00"`） |
 | stock | int | 当前库存 |
-| sold_count | int | 累计销量 |
+
+> Kit 使用 `product_kits` 表，逻辑删除跟随 Product。无独立 `sold_count` 字段——累计销量由订单模块统计。
 
 ### 2.4 Image
 
@@ -89,32 +95,147 @@ Authorization: Bearer <access_token>
 |------|------|------|
 | id | bigint | 图片 ID |
 | image_url | string | 图片 URL |
-| is_cover | boolean | 是否封面图 |
+| is_cover | boolean | 是否封面图（仅 Product 公共图有效） |
 | sort | int | 排序序号 |
+| experience_option_id | bigint/null | NULL = Product 公共图；非 NULL = Option 专属图 |
+
+> ProductImage 通过 `is_deleted` 实现逻辑删除。
 
 ---
 
 ## 3. Error Codes
 
-| code | 说明 |
+### 3.1 格式
+
+```json
+{
+    "code": 40911,
+    "message": "Experience option already exists",
+    "data": {
+        "duration_minutes": 120,
+        "participants": 2,
+        "day_type": "holiday"
+    }
+}
+```
+
+| 字段 | 说明 |
 |------|------|
-| 0 | 成功 |
-| 401 | 未认证 |
-| 403 | 无权限 |
-| 404 | 资源不存在 |
-| 422 | 参数校验失败 |
-| 2001 | 商品不存在 |
-| 2003 | 非套装商品不支持此操作 |
-| 2004 | 操作不允许（状态不满足前置条件） |
-| 2006 | Option 不存在 |
-| 2007 | Option 配置重复 |
-| 2008 | 上线失败：体验商品至少需要一个 Option |
-| 4001 | 上线失败：商品名称不能为空 |
-| 4002 | 上线失败：商品描述不能为空 |
-| 4003 | 上线失败：请上传商品封面图 |
-| 4004 | 上线失败：请上传至少一张商品图片 |
-| 4005 | 上线失败：Option 价格必须大于 0 |
-| 4006 | 上线失败：Option 未上传图片 |
+| HTTP Status | 协议语义（404/409/422） |
+| `code` | 业务错误码，精确区分原因 |
+| `message` | 给人看 |
+| `data` | 可选，补充上下文 |
+
+### 3.2 产品错误码
+
+**资源不存在（404xx）—— HTTP 404**
+
+| code | 常量 | 说明 |
+|------|------|------|
+| 40401 | `PRODUCT_NOT_FOUND` | 商品不存在 |
+| 40402 | `OPTION_NOT_FOUND` | Option 不存在 |
+| 40403 | `PRODUCT_IMAGE_NOT_FOUND` | 图片不存在 |
+| 40404 | `PRODUCT_KIT_NOT_FOUND` | 套装配置不存在 |
+
+**类型错误（400xx）—— HTTP 400**
+
+| code | 常量 | 说明 |
+|------|------|------|
+| 40001 | `PRODUCT_TYPE_MISMATCH` | 商品类型与此操作不匹配 |
+
+```json
+{
+    "code": 40001,
+    "message": "Product type does not match this operation",
+    "data": { "expected": "kit", "actual": "experience" }
+}
+```
+
+**状态冲突（409xx）—— HTTP 409**
+
+| code | 常量 | 说明 |
+|------|------|------|
+| 40901 | `PRODUCT_ALREADY_ONLINE` | 商品已上架 |
+| 40902 | `PRODUCT_ALREADY_OFFLINE` | 商品已下架 |
+| 40903 | `PRODUCT_IS_DELETED` | 商品已删除 |
+| 40904 | `PRODUCT_MUST_BE_OFFLINE_BEFORE_DELETE` | online 商品需先下架才能删除 |
+| 40905 | `ONLINE_PRODUCT_CANNOT_BE_MODIFIED` | online 商品不可修改 |
+| 40911 | `OPTION_ALREADY_EXISTS` | Option 配置已存在 |
+| 40912 | `OPTION_ALREADY_DELETED` | Option 已删除 |
+
+**上架完整性（422xx）—— HTTP 422**
+
+| code | 常量 | 说明 |
+|------|------|------|
+| 42201 | `PRODUCT_NOT_READY_FOR_ONLINE` | 商品未满足上架条件 |
+
+```json
+{
+    "code": 42201,
+    "message": "Product is not ready to go online",
+    "data": {
+        "issues": [
+            "description is required",
+            "cover image is required",
+            "option 11 has no image"
+        ]
+    }
+}
+```
+
+> 所有上架检查项（名称、描述、封面、Option、图片）统一合并为 `42201`，通过 `data.issues` 数组返回具体缺项。不逐项造独立错误码。
+
+**字段业务校验（422xx）—— HTTP 422**
+
+| code | 常量 | 说明 |
+|------|------|------|
+| 42211 | `INVALID_PRICE` | 价格无效 |
+| 42212 | `INVALID_STOCK` | 库存无效 |
+| 42213 | `INVALID_DURATION` | 时长无效 |
+| 42214 | `INVALID_PARTICIPANTS` | 人数无效 |
+| 42215 | `INVALID_DAY_TYPE` | 日期类型无效 |
+| 42221 | `INVALID_IMAGE_FILE` | 图片文件无效 |
+| 40021 | `OPTION_IMAGE_CANNOT_BE_COVER` | Option 图片不能设为封面 |
+
+### 3.3 Error Code Mapping
+
+| API | 可能业务错误 |
+|-----|------------|
+| `GET /products` | 无（空列表正常返回） |
+| `GET /products/experience/{id}` | 40401 |
+| `GET /products/kit/{id}` | 40401 |
+| `POST /admin/products/experience` | Schema 校验 |
+| `POST /admin/products/kit` | 42211, 42212 |
+| `PATCH /admin/products/{id}` | 40401, 40903, 40905 |
+| `PATCH /admin/products/{id}/online` | 40401, 40901, 40903, 42201 |
+| `PATCH /admin/products/{id}/offline` | 40401, 40902, 40903 |
+| `DELETE /admin/products/{id}` | 40401, 40903, 40904 |
+| `POST /admin/products/experience/{id}/options` | 40401, 40001, 40903, 40905, 40911, 42213, 42214, 42215 |
+| `PATCH /admin/options/{id}` | 40402, 40912, 40905, 40911 |
+| `DELETE /admin/options/{id}` | 40402, 40912, 40905 |
+| `POST /admin/products/{id}/images` | 40401, 40903, 40905, 42221 |
+| `POST /admin/options/{id}/images` | 40402, 40912, 40905, 42221 |
+| `PATCH /admin/product-images/{id}` | 40403, 40905, 40021 |
+| `DELETE /admin/product-images/{id}` | 40403, 40905 |
+| `PATCH /admin/products/kit/{id}/price` | 40401, 40001, 40903, 40905, 42211 |
+| `PATCH /admin/products/kit/{id}/stock` | 40401, 40001, 40903, 40905, 42212 |
+| `GET /admin/products/{id}/audit-logs` | 40401 |
+
+### 3.4 规则补充
+
+**用户端类型不匹配统一返回 404：**
+
+```
+GET /products/experience/5  → Product 5 实际是 Kit → 404（不暴露内部类型信息）
+```
+
+**管理员端类型不匹配返回 40001：**
+
+```
+PATCH /admin/products/kit/5/price → Product 5 实际是 Experience → 40001
+```
+
+**online 写操作统一使用 40905：** `ONLINE_PRODUCT_CANNOT_BE_MODIFIED` 覆盖所有"线上商品不可修改"场景（修改信息、修改 Option、上传图片、改价、改库存），不逐场景造独立错误码。
 
 ---
 
@@ -146,7 +267,7 @@ Authorization: Bearer <access_token>
 | GET | /admin/products/kit/{id} | 套装商品详情（管理用） |
 | POST | /admin/products/experience | 创建体验商品 |
 | POST | /admin/products/kit | 创建套装商品 |
-| PUT | /admin/products/{id} | 编辑商品基本信息（name, description） |
+| PATCH | /admin/products/{id} | 编辑商品基本信息（name, description） |
 | DELETE | /admin/products/{id} | 逻辑删除 |
 
 **状态管理**
@@ -161,8 +282,17 @@ Authorization: Bearer <access_token>
 | Method | URI | 说明 |
 |--------|-----|------|
 | POST | /admin/products/experience/{id}/options | 新增 Option |
-| PUT | /admin/options/{option_id} | 修改 Option |
+| PATCH | /admin/options/{option_id} | 修改 Option |
 | DELETE | /admin/options/{option_id} | 删除 Option |
+
+**图片管理**
+
+| Method | URI | 说明 |
+|--------|-----|------|
+| POST | /admin/products/{id}/images | 上传 Product 公共图片 |
+| POST | /admin/options/{option_id}/images | 上传 Option 专属图片 |
+| PATCH | /admin/product-images/{image_id} | 修改图片排序/封面 |
+| DELETE | /admin/product-images/{image_id} | 删除图片 |
 
 **套装管理 —— 仅 Kit**
 
@@ -170,6 +300,12 @@ Authorization: Bearer <access_token>
 |--------|-----|------|
 | PATCH | /admin/products/kit/{id}/price | 修改价格 |
 | PATCH | /admin/products/kit/{id}/stock | 修改库存 |
+
+**审计**
+
+| Method | URI | 说明 |
+|--------|-----|------|
+| GET | /admin/products/{id}/audit-logs | 商品操作历史 |
 
 ### 4.3 Permission Matrix
 
@@ -188,19 +324,18 @@ Authorization: Bearer <access_token>
 
 ```
 draft ──→ online ──→ offline
-  ↑         │  ↑        │
-  │         │  └────────┘
-  │         │   (re-online)
-  │         │
-  └─ 删除最后 Option 时自动回退（体验商品）
+            ↑         │
+            └─────────┘
+             (re-online)
 ```
 
 | 流转 | 触发 | 校验 |
 |------|------|------|
-| draft → online | `PATCH .../online` | 体验商品 Option ≥ 1 |
+| draft → online | `PATCH .../online` | ProductValidator 完整校验 |
 | online → offline | `PATCH .../offline` | — |
 | offline → online | `PATCH .../online` | 保持原 Product ID |
-| online → draft | 自动 | 删除最后 Option 后触发 |
+
+> 无 `online → draft` 流转。删除逻辑独立（`is_deleted = true`），不属于 status 枚举。
 
 ### 5.2 Constraints
 
@@ -246,20 +381,16 @@ GET /api/v1/products
             {
                 "id": 1,
                 "name": "拼豆体验",
-                "product_type": "experience",
+                "product_type": { "value": "experience", "label": "拼豆体验" },
                 "cover_image": "https://cdn.example.com/products/1-cover.jpg",
-                "display_price": "299.00",
-                "price_label": "起",
-                "created_at": "2026-07-30T10:30:00Z"
+                "display_price": "299.00"
             },
             {
                 "id": 2,
                 "name": "拼豆套装",
-                "product_type": "kit",
+                "product_type": { "value": "kit", "label": "拼豆套装" },
                 "cover_image": "https://cdn.example.com/products/2-cover.jpg",
-                "display_price": "599.00",
-                "price_label": null,
-                "created_at": "2026-07-30T10:30:00Z"
+                "display_price": "599.00"
             }
         ],
         "total": 20,
@@ -272,10 +403,10 @@ GET /api/v1/products
 
 | 字段 | 说明 |
 |------|------|
-| `display_price` | 展示价格。体验商品为最低 Option 价格，套装商品为固定售价 |
-| `price_label` | 价格后缀。体验商品返回 `"起"`（表示最低价起），套装商品返回 `null` |
+| `display_price` | 展示价格。体验商品为最低 Option 价格，套装商品为固定售价。前端据 `product_type` 自行决定加"起"后缀 |
+| 不返回 | `price_label`、`created_at`（列表不需要） |
 
-> 前端根据 `product_type` 决定跳转目标：
+> 前端根据 `product_type.value` 决定跳转目标：
 > - `"experience"` → `/products/experience/{id}`
 > - `"kit"` → `/products/kit/{id}`
 
@@ -288,7 +419,8 @@ GET /api/v1/products/experience/{id}
 ```
 
 仅返回 `product_type = "experience"`、`status = "online"`、`is_deleted = false` 的商品。
-访问套装商品或不存在/未上架的商品，统一返回 `404`。
+
+**可能的业务错误：** `40401`（商品不存在或类型不匹配，统一返回 404）
 
 **Response Schema：** `ExperienceProductDetailResponse` — 不含 `price`、`stock`、`kit` 字段。
 
@@ -303,7 +435,19 @@ GET /api/v1/products/experience/{id}
         "name": "拼豆体验",
         "product_type": { "value": "experience", "label": "拼豆体验" },
         "description": "选择你的拼豆体验时长、人数和日期类型",
-        "cover_image": "https://cdn.example.com/products/1-cover.jpg",
+        "dimensions": {
+            "durations": [
+                { "value": 60, "label": "1小时" },
+                { "value": 120, "label": "2小时" },
+                { "value": 540, "label": "全天" }
+            ],
+            "participants": [
+                { "value": 1, "label": "1人" }
+            ],
+            "day_types": [
+                { "value": "weekday", "label": "工作日" }
+            ]
+        },
         "options": [
             {
                 "id": 11,
@@ -311,7 +455,6 @@ GET /api/v1/products/experience/{id}
                 "participants": { "value": 1, "label": "1人" },
                 "day_type": { "value": "weekday", "label": "工作日" },
                 "price": "299.00",
-                "sort": 10,
                 "images": [
                     { "id": 20, "image_url": "https://cdn.example.com/option-11-1.jpg", "sort": 0 }
                 ]
@@ -322,8 +465,9 @@ GET /api/v1/products/experience/{id}
                 "participants": { "value": 2, "label": "2人" },
                 "day_type": { "value": "holiday", "label": "节假日" },
                 "price": "699.00",
-                "sort": 30,
-                "images": []
+                "images": [
+                    { "id": 21, "image_url": "https://cdn.example.com/option-12-1.jpg", "sort": 0 }
+                ]
             }
         ],
         "images": [
@@ -333,7 +477,12 @@ GET /api/v1/products/experience/{id}
 }
 ```
 
-> 不返回 `status`、`is_deleted`、`created_at`、`updated_at`。用户详情页不需要这些字段。图片按 `sort ASC, id ASC` 排序。
+| 字段 | 说明 |
+|------|------|
+| `dimensions` | 由当前有效 Option 动态计算。前端用三个维度分别生成选择控件 |
+| `options` | 每个 Option 至少 1 张专属图片（Online 校验保证），无 `images: []` |
+
+> 不返回 `status`、`is_deleted`、`created_at`、`updated_at`。图片按 `sort ASC, id ASC` 排序。
 
 ---
 
@@ -344,7 +493,8 @@ GET /api/v1/products/kit/{id}
 ```
 
 仅返回 `product_type = "kit"`、`status = "online"`、`is_deleted = false` 的商品。
-访问体验商品或不存在/未上架的商品，统一返回 `404`。
+
+**可能的业务错误：** `40401`（商品不存在或类型不匹配，统一返回 404）
 
 **Response Schema：** `KitProductDetailResponse` — 不含 `options`、`status`、`is_deleted`、`sold_count`、时间字段。
 
@@ -404,6 +554,7 @@ GET /api/v1/admin/products
 | page_size | int | 否 | 20 | 每页数量，最大 100 |
 | product_type | string | 否 | — | `"experience"` / `"kit"` |
 | status | string | 否 | — | `"draft"` / `"online"` / `"offline"` |
+| include_deleted | boolean | 否 | false | `true` = 包含已删除商品 |
 | keyword | string | 否 | — | 搜索名称 |
 
 **成功响应**
@@ -492,7 +643,6 @@ GET /api/v1/admin/products/experience/{id}
                 "participants": { "value": 1, "label": "1人" },
                 "day_type": { "value": "weekday", "label": "工作日" },
                 "price": "299.00",
-                "sort": 10,
                 "images": [
                     { "id": 20, "image_url": "https://cdn.example.com/option-11-1.jpg", "sort": 0 },
                     { "id": 21, "image_url": "https://cdn.example.com/option-11-2.jpg", "sort": 10 }
@@ -504,7 +654,6 @@ GET /api/v1/admin/products/experience/{id}
                 "participants": { "value": 2, "label": "2人" },
                 "day_type": { "value": "holiday", "label": "节假日" },
                 "price": "699.00",
-                "sort": 30,
                 "images": []
             }
         ],
@@ -563,40 +712,80 @@ GET /api/v1/admin/products/kit/{id}
 POST /api/v1/admin/products/experience
 ```
 
-体验商品可初始创建 Option 列表，也可后续通过 Option 接口添加。
+创建体验商品草稿。接口路径已明确 `product_type = experience`，后端自动设置 `status = draft`。
+
+**可能的业务错误：** Schema 校验（name 非空/长度）。无其他业务错误——创建始终成功。
 
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| name | string | 是 | 商品名称，1-100 字符 |
-| description | string | 否 | 商品描述，最大 2000 字符 |
-| options | array | 否 | Option 列表 |
+| name | string | 是 | 商品名称。trim 后 1–100 字符。允许重名 |
+| description | string | 否 | 商品描述，最大 2000 字符。Draft 阶段可选 |
 
-`options` 中每项：
+**不接受（后端忽略或校验拒绝）：**
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| duration | int | 是 | 60 / 120 / 480 |
-| participants | int | 是 | 1 / 2 |
-| day_type | string | 是 | `"weekday"` / `"holiday"` |
-| price | number | 是 | 0 < Price ≤ 99999 |
-| sort | int | 否 | 排序 |
+| 字段 | 原因 |
+|------|------|
+| `product_type` | URL 已明确 `experience`，Body 不得重复表达 |
+| `status` | 创建统一为 `draft`，不允许绕过上架流程 |
+| `options` | Option 通过独立接口 `POST /admin/products/experience/{id}/options` 创建 |
+| `images` | 图片通过独立接口上传 |
+| `price` | Experience Product 本身无价格，价格属于 `ExperienceOption.price` |
+| `cover_image` | 封面属于 ProductImage，通过图片管理接口设置 |
 
-**请求示例**
+**后端自动生成：**
+
+| 字段 | 值 |
+|------|-----|
+| `product_type` | `"experience"` |
+| `status` | `"draft"` |
+| `is_deleted` | `false` |
+
+**请求示例（最小）**
+
+```json
+{
+    "name": "拼豆体验"
+}
+```
+
+**请求示例（含描述）**
 
 ```json
 {
     "name": "拼豆体验",
-    "description": "选择你的拼豆体验",
-    "options": [
-        { "duration": 60, "participants": 1, "day_type": "weekday", "price": 299, "sort": 10 },
-        { "duration": 120, "participants": 1, "day_type": "weekday", "price": 499, "sort": 20 }
-    ]
+    "description": "适合个人及双人参与的拼豆体验"
 }
 ```
 
-**成功响应** — HTTP 201，返回管理端体验详情（status = `"draft"`）。
+**成功响应** — HTTP 201
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 1,
+        "name": "拼豆体验",
+        "product_type": { "value": "experience", "label": "拼豆体验" },
+        "status": { "value": "draft", "label": "草稿" }
+    }
+}
+```
+
+> **Create Validation ≠ Online Validation。** 创建时仅校验 `name` 非空和长度；`description`、`images`、`options` 可在 Draft 阶段逐步完善。Online 时才执行完整校验（见 [§7.8 上架](#78-上架)）。
+
+**创建后工作流：**
+
+```
+POST /admin/products/experience  →  { id: 1 }
+  │
+  ├─ POST /admin/products/1/images                 （上传 Product 公共图片）
+  ├─ POST /admin/products/experience/1/options     （新增 Option → option_id: 15）
+  ├─ POST /admin/options/15/images                 （上传 Option 专属图片）
+  │
+  └─ PATCH /admin/products/1/online               （上架）
 
 ---
 
@@ -606,23 +795,67 @@ POST /api/v1/admin/products/experience
 POST /api/v1/admin/products/kit
 ```
 
+创建套装商品草稿。与 Experience 不同，Kit 的 `price` 和 `stock` 属于聚合根核心字段，创建时一并接收。
+
+**可能的业务错误：** `42211`（price ≤ 0）、`42212`（stock < 0）。 Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同——Kit 无 Option，price/stock 直接属于 Kit 自身。
+
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| name | string | 是 | 商品名称 |
-| description | string | 否 | 商品描述 |
-| price | number | 是 | 售价，0 < Price ≤ 99999 |
-| stock | int | 是 | 初始库存，>= 0 |
+| name | string | 是 | 商品名称。trim 后 1–100 字符。允许重名 |
+| description | string | 否 | 商品描述，最大 2000 字符。Draft 阶段可选 |
+| price | string | 是 | `"599.00"`，0 < Price ≤ 99999。Kit 核心字段 |
+| stock | int | 否 | 初始库存，默认 0，>= 0 |
+
+| Experience Create | Kit Create | 原因 |
+|-------------------|------------|------|
+| ❌ price | ✅ price 必填 | Kit 无 Option，price 是 Kit 聚合根核心字段 |
+| ❌ stock | ✅ stock 可选（默认 0） | 同上 |
+| ❌ images | ❌ images | 统一：图片独立上传 |
+| ❌ options | N/A | Experience 专有 |
+
+**后端自动生成：**
+
+| 字段 | 值 |
+|------|-----|
+| `product_type` | `"kit"` |
+| `status` | `"draft"` |
+| `is_deleted` | `false` |
+| `stock` | `0`（未传时） |
 
 **请求示例**
 
 ```json
 {
-    "name": "新手体验套装",
-    "description": "入门级拼豆套装",
-    "price": 599,
+    "name": "新手拼豆套装",
+    "description": "适合初学者使用",
+    "price": "599.00",
     "stock": 100
+}
+```
+
+**最小合法请求**
+
+```json
+{
+    "name": "新手拼豆套装",
+    "price": "599.00"
+}
+```
+
+**成功响应** — HTTP 201
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 2,
+        "name": "新手拼豆套装",
+        "product_type": { "value": "kit", "label": "拼豆套装" },
+        "status": { "value": "draft", "label": "草稿" }
+    }
 }
 ```
 
@@ -631,17 +864,45 @@ POST /api/v1/admin/products/kit
 ### 7.6 编辑商品基本信息
 
 ```
-PUT /api/v1/admin/products/{id}
+PATCH /api/v1/admin/products/{id}
 ```
 
-统一接口，同时适用于体验和套装。仅修改 `name` 和 `description`。不可修改 `product_type`、`price`、`stock`、`options`、`status`（这些有独立业务接口）。
+统一接口，同时适用于体验和套装。仅修改 `name` 和 `description`（至少传一个字段）。
+
+**可能的业务错误：** `40401`, `40903`, `40905`
 
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| name | string | 否 | 商品名称 |
-| description | string | 否 | 商品描述 |
+| name | string | 否 | 商品名称。trim 后 1–100 字符，允许重名 |
+| description | string | 否 | 商品描述，最大 2000 字符。传空字符串 `""` 表示清空 |
+
+**禁止修改：**
+
+| 字段 | 独立接口 |
+|------|----------|
+| `product_type` | 创建后不可变 |
+| `status` | `PATCH .../online` / `PATCH .../offline` |
+| `price` | `PATCH /admin/products/kit/{id}/price` |
+| `stock` | `PATCH /admin/products/kit/{id}/stock` |
+| `images` | 图片管理接口 |
+| `options` | Option CRUD 接口 |
+| `is_deleted` | `DELETE /admin/products/{id}` |
+
+**请求示例**
+
+```json
+{ "name": "新版拼豆体验" }
+```
+
+```json
+{ "description": "" }
+```
+
+```json
+{ "name": "新版拼豆体验", "description": "新的介绍" }
+```
 
 ---
 
@@ -651,7 +912,45 @@ PUT /api/v1/admin/products/{id}
 DELETE /api/v1/admin/products/{id}
 ```
 
-执行逻辑删除（`is_deleted = true`）。`online` 商品需先下架。
+**Request Body：无。** 执行逻辑删除（`is_deleted = true`），不做物理删除。
+
+**可能的业务错误：** `40401`, `40903`, `40904`
+
+**状态流转：**
+
+| 当前状态 | 操作 | 结果 |
+|----------|------|------|
+| `draft` | → deleted | ✅ |
+| `offline` | → deleted | ✅（先下架再删除） |
+| `online` | → deleted | ❌ 必须先下架 |
+| `is_deleted = true` | → deleted | ❌ 已删除 |
+
+**Service 执行流程：**
+
+```
+1. 查找 Product（不存在 → 40401）
+2. 检查 is_deleted（已删除 → 拒绝）
+3. 检查 status（online → 拒绝，40904 PRODUCT_MUST_BE_OFFLINE_BEFORE_DELETE）
+4. is_deleted = true → product.save()
+5. 写入 Audit Log（action = DELETE_PRODUCT）
+```
+
+**关联数据处理：** Product 逻辑删除后，其关联的 `ExperienceOption`、`ProductKit`、`ProductImage` 不删除不修改，保留用于历史订单和审计追溯。正常业务查询通过 `Product.is_deleted` 过滤。
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 1,
+        "is_deleted": true
+    }
+}
+```
+
+**Audit：** `action = DELETE_PRODUCT`。
 
 ---
 
@@ -661,58 +960,81 @@ DELETE /api/v1/admin/products/{id}
 PATCH /api/v1/admin/products/{id}/online
 ```
 
-Service 调用 `ProductValidator.validate_before_online()` 执行完整性校验。通过后才设置 `status = "online"`。
+**Request Body：无。** URL 已明确表达业务动作——管理员执行"上架商品"操作。
 
-**校验流程：**
+**可能的业务错误：** `40401`, `40901`, `40903`, `42201`
+
+**状态流转：**
+
+| 当前状态 | 操作 | 结果 |
+|----------|------|------|
+| `draft` | → online | ✅ 执行校验，通过后上架 |
+| `offline` | → online | ✅ 执行校验，通过后重新上架 |
+| `online` | → online | ❌ 商品已在线，无业务意义 |
+| `is_deleted = true` | → online | ❌ 已删除商品不可上架 |
+
+**Service 执行流程：**
 
 ```
-Service.online_product()
-  │
-  ▼
-ProductValidator.validate_before_online(product)
-  │
-  ├─ product_type = "experience" → _validate_experience()
-  └─ product_type = "kit"        → _validate_kit()
-  │
-  ▼
-全部通过 → status = "online"
-任一失败 → BusinessException
+1. 查找 Product（不存在 → 40401）
+2. 检查 is_deleted（已删除 → 拒绝）
+3. 检查当前 status（online → 拒绝，PRODUCT_ALREADY_ONLINE）
+4. ProductValidator.validate_before_online(product)
+   ├─ product_type = "experience" → _validate_experience()
+   └─ product_type = "kit"        → _validate_kit()
+5. 全部通过 → status = "online" → product.save()
+6. 写入 Audit Log（action = ONLINE_PRODUCT）
 ```
 
 **Experience 检查项：**
 
 | # | 检查项 | 不通过 code |
 |---|--------|------------|
-| ① | 商品名称不为空 | 4001 |
-| ② | 商品描述不为空 | 4002 |
-| ③ | 有封面图（is_cover = true） | 4003 |
-| ④ | 商品图片 ≥ 1 | 4004 |
-| ⑤ | Option ≥ 1 | 2008 |
-| ⑥ | 每个 Option price > 0 | 4005 |
-| ⑦ | 每个 Option 至少一张图片 | 4006 |
-| ⑧ | Option 配置无重复 | 2007（DB UNIQUE 兜底） |
+| ① | 商品名称不为空 | — |
+| ② | 商品描述不为空 | — |
+| ③ | 有封面图（`is_cover = true` 且 `experience_option_id IS NULL`） | — |
+| ④ | Product 公共图片 ≥ 1 | — |
+| ⑤ | Option ≥ 1 | — |
+| ⑥ | 每个 Option price > 0 | — |
+| ⑦ | 每个 Option 至少一张专属图片 | — |
+| ⑧ | Option 配置无重复 | 40911（DB UNIQUE 兜底） |
 
-**Kit 检查项（Phase 4.1 后续补充）：**
+> 以上检查项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，通过 `data.issues` 数组返回所有不通过的项。
 
-| # | 检查项 |
-|---|--------|
-| ① | 商品名称不为空 |
-| ② | 商品描述不为空 |
-| ③ | 有封面图 |
-| ④ | price > 0 |
-| ⑤ | stock ≥ 0 |
+**Kit 检查项：**
+
+| # | 检查项 | 不通过 code |
+|---|--------|------------|
+| ① | 商品名称不为空 | — |
+| ② | 商品描述不为空 | — |
+| ③ | 有封面图 | — |
+| ④ | price > 0 且 ≤ 99999 | — |
+| ⑤ | stock ≥ 0（stock = 0 允许上架，前端显示"暂时售罄"） | — |
+
+> Kit 上架检查项①②③④统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，与 Experience 一致。
 
 **成功响应**
 
 ```json
-{ "code": 0, "message": "Product is now online" }
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 1,
+        "status": { "value": "online", "label": "已上架" }
+    }
+}
 ```
+
+> 不返回完整 Product Detail。前端真正关心的是"上架成功了吗？现在状态是什么？"
 
 **失败响应**
 
 ```json
-{ "code": 4006, "message": "Option 120分钟/2人/节假日 未上传图片，无法上架" }
+{ "code": 42201, "message": "Product is not ready to go online", "data": { "issues": ["option 11 has no image"] } }
 ```
+
+**Audit：** 仅校验通过并成功更新 status 后写入（`action = ONLINE_PRODUCT`）。校验失败不写 Audit。
 
 ---
 
@@ -722,93 +1044,644 @@ ProductValidator.validate_before_online(product)
 PATCH /api/v1/admin/products/{id}/offline
 ```
 
+**Request Body：无。** URL 已明确表达业务动作——管理员执行"下架商品"操作。
+
+**可能的业务错误：** `40401`, `40902`, `40903`
+
+**状态流转：**
+
+| 当前状态 | 操作 | 结果 |
+|----------|------|------|
+| `online` | → offline | ✅ 下架 |
+| `draft` | → offline | ❌ 从未上架，无需下架 |
+| `offline` | → offline | ❌ 已下架，无业务意义 |
+| `is_deleted = true` | → offline | ❌ 已删除商品不可操作 |
+
+**与 /online 不同：** 下架不执行完整性校验。下架本质是"停止对外销售"，不需要检查图片、Option、价格。
+
+**Service 执行流程：**
+
+```
+1. 查找 Product（不存在 → 40401）
+2. 检查 is_deleted（已删除 → 拒绝）
+3. 检查当前 status 必须为 online（否则 → 拒绝）
+4. status = "offline" → product.save()
+5. 写入 Audit Log（action = OFFLINE_PRODUCT）
+```
+
 **成功响应**
 
 ```json
-{ "code": 0, "message": "Product is now offline" }
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 1,
+        "status": { "value": "offline", "label": "已下架" }
+    }
+}
 ```
+
+**Audit：** 成功后写入（`action = OFFLINE_PRODUCT`）。
 
 ---
 
 ### 7.10 新增 Option
 
 ```
-POST /api/v1/admin/products/experience/{id}/options
+POST /api/v1/admin/products/experience/{product_id}/options
 ```
 
-仅适用于 `product_type = "experience"`。URL 中明确标注 `experience`。
+为体验商品新增一条可售配置。图片通过独立接口上传（见 [§7.12 Option 图片上传](#712-option-图片上传)）。
+
+**可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `40911`, `42213`, `42214`, `42215`
 
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| duration | int | 是 | 60 / 120 / 480 |
-| participants | int | 是 | 1 / 2 |
+| duration_minutes | int | 是 | 分钟数，> 0。当前常用：60 / 120 / 540。**不限定枚举**，未来允许 180、240 等 |
+| participants | int | 是 | 人数，> 0。当前常用：1 / 2。未来允许 3、4 等 |
 | day_type | string | 是 | `"weekday"` / `"holiday"` |
-| price | number | 是 | 0 < Price ≤ 99999 |
-| sort | int | 否 | 排序 |
+| price | string | 是 | `"699.00"`，0 < Price ≤ 99999 |
+
+**Product 状态限制：**
+
+| 状态 | 允许 | 原因 |
+|------|------|------|
+| `draft` | ✅ | 商品编辑中 |
+| `offline` | ✅ | 已下架，可修改配置 |
+| `online` | ❌ | 线上商品不建议直接新增配置。应：下架 → 新增 → 重新上架 |
+| `is_deleted = true` | ❌ | 已删除 |
+
+**类型校验：** 仅接受 `product_type = "experience"`。传入 Kit ID 必须失败。
+
+**唯一性：** 同一 Product 下 `(duration_minutes, participants, day_type)` 不可重复。DB UNIQUE + Service 双重保护。
+
+**请求示例**
+
+```json
+{
+    "duration_minutes": 120,
+    "participants": 2,
+    "day_type": "holiday",
+    "price": "699.00"
+}
+```
+
+**成功响应** — HTTP 201
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 11,
+        "duration": { "value": 120, "label": "2小时" },
+        "participants": { "value": 2, "label": "2人" },
+        "day_type": { "value": "holiday", "label": "节假日" },
+        "price": "699.00",
+        "images": []
+    }
+}
+```
+
+> `images: []` 合理——刚创建完 Option 还没有图片。Draft / Offline 阶段允许；上架前再校验。
 
 **失败响应**
 
 ```json
-{ "code": 2007, "message": "Option already exists: weekday + 60min + 1person" }
+{ "code": 40911, "message": "Experience option already exists", "data": { "duration_minutes": 120, "participants": 2, "day_type": "holiday" } }
 ```
 
 ---
 
-### 7.11 修改 Option
+### 7.11 前端协作：Option + 图片一次保存
+
+**管理员感知：** 填写配置 + 上传图片 → 点击一个"保存"按钮。
+
+**技术实现：** 前端串行调用两个 API，后端各自独立：
 
 ```
-PUT /api/v1/admin/options/{option_id}
+管理员点击【保存配置】
+  │
+  ├─ ① POST /admin/products/experience/1/options
+  │     └─ 返回 { id: 15, ... }
+  │
+  └─ ② POST /admin/options/15/images
+        └─ 上传图片文件
+
+全部成功 → 提示"保存成功"
+图片失败 → 提示"配置已保存，图片上传失败，请重试"
 ```
 
-修改 Option 的价格或排序。历史订单不受影响。
+> **部分成功处理：** Option 创建成功后图片上传失败，Option 保留（`images: []`）。管理员重新编辑时补图片即可。这正是 Draft 机制的设计价值。
+
+---
+
+### 7.12 修改 Option
+
+```
+PATCH /api/v1/admin/options/{option_id}
+```
+
+修改 Option 的配置数据（不包含图片）。允许只修改部分字段。
+
+**可能的业务错误：** `40402`, `40912`, `40905`, `40911`
 
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| price | number | 否 | 新价格 |
-| sort | int | 否 | 新排序 |
+| duration_minutes | int | 否 | > 0 |
+| participants | int | 否 | > 0 |
+| day_type | string | 否 | `"weekday"` / `"holiday"` |
+| price | string | 否 | `"799.00"`，0 < Price ≤ 99999 |
+
+**Product 状态限制：**
+
+| 状态 | 允许 |
+|------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ 线上商品修改配置需先下架 |
+
+**唯一性：** 修改后仍需保证同一 Product 下 `(duration_minutes, participants, day_type)` 不与其他 Option 重复。
+
+**请求示例**
+
+```json
+{ "price": "799.00" }
+```
+
+```json
+{ "participants": 3 }
+```
+
+```json
+{
+    "duration_minutes": 180,
+    "participants": 3,
+    "day_type": "holiday",
+    "price": "899.00"
+}
+```
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 11,
+        "duration": { "value": 180, "label": "3小时" },
+        "participants": { "value": 3, "label": "3人" },
+        "day_type": { "value": "holiday", "label": "节假日" },
+        "price": "899.00"
+    }
+}
+```
+
+> 修改后历史订单不受影响（订单保留价格快照）。图片通过独立 Image API 管理。
 
 ---
 
-### 7.12 删除 Option
+### 7.13 删除 Option
 
 ```
 DELETE /api/v1/admin/options/{option_id}
 ```
 
-删除后若商品为 `online` 且剩余 Option = 0，自动转为 `draft`。
+**Request Body：无。** 执行逻辑删除（`is_deleted = true`），不做物理删除。保留图片关联和历史数据。
+
+**可能的业务错误：** `40402`, `40912`, `40905`
+
+**所属 Product 状态限制：**
+
+| Product 状态 | 允许 |
+|-------------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ 线上商品不可直接删除配置。应先下架 |
+| `is_deleted = true` | ❌ |
+
+**最后一条 Option：** Draft / Offline 阶段允许删除最后一条 Option（`options = 0`），这不影响商品合法性。但 `PATCH .../online` 会因"没有有效 Option"被 Validator 拒绝。
+
+**关联数据：** Option 逻辑删除后，其关联的 `ProductImage`（`experience_option_id` 指向该 Option）保留不动。正常查询自动过滤已删除 Option，图片也随之不返回。
+
+**Service 执行流程：**
+
+```
+1. 查找 Option（不存在 → 40402）
+2. 检查 Option.is_deleted（已删除 → 拒绝）
+3. 检查所属 Product.status（online → 拒绝）
+4. is_deleted = true → option.save()
+5. 写入 Audit Log（action = DELETE_OPTION，含配置快照）
+```
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 11,
+        "is_deleted": true
+    }
+}
+```
+
+**Audit：** 记录 `action = DELETE_OPTION`，metadata 保存 Option 配置快照：`{ "duration_minutes": 120, "participants": 2, "day_type": "holiday", "price": "699.00" }`。
 
 ---
 
-### 7.13 修改套装价格
+### 7.14 Product 公共图片上传
 
 ```
-PATCH /api/v1/admin/products/kit/{id}/price
+POST /api/v1/admin/products/{product_id}/images
+Content-Type: multipart/form-data
 ```
 
-仅适用于 `product_type = "kit"`。URL 中明确标注 `kit`。历史订单不受影响。
+上传 Product 公共图片（`experience_option_id = NULL`）。用于列表封面和详情默认展示。Option 图片走独立接口。
+
+**可能的业务错误：** `40401`, `40903`, `40905`, `42221`
 
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| price | number | 是 | 新价格，0 < Price ≤ 99999 |
+| file | file | 是 | 图片文件，最大 2MB，jpg/png/webp |
+| is_cover | boolean | 否 | 默认 false。设为 true 时自动将旧封面改为 false |
+| sort | int | 否 | 默认 0 |
+
+**封面互斥：** 若 `is_cover = true`，Service 必须在同一事务中将该 Product 下其他公共图片的 `is_cover` 改为 `false`，保证每 Product 只有一张封面。
+
+**Product 状态限制：**
+
+| 状态 | 允许 |
+|------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ 线上商品不可直接修改图片。应先下架 |
+| `is_deleted = true` | ❌ |
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 20,
+        "image_url": "https://cdn.example.com/products/1/20.jpg",
+        "is_cover": true,
+        "sort": 0
+    }
+}
+```
+
+**Audit：** `action = CREATE_PRODUCT_IMAGE`，metadata 记录 `{ "image_id": 20, "is_cover": true }`。
 
 ---
 
-### 7.14 修改套装库存
+### 7.15 Option 专属图片上传
 
 ```
-PATCH /api/v1/admin/products/kit/{id}/stock
+POST /api/v1/admin/options/{option_id}/images
+Content-Type: multipart/form-data
 ```
 
-仅适用于 `product_type = "kit"`。URL 中明确标注 `kit`。
+给 ExperienceOption 上传专属图片。与 Product 公共图不同：不参与 `is_cover` 规则，不设封面概念。Option 默认首图 = `sort ASC, id ASC` 第一张。
+
+**可能的业务错误：** `40402`, `40912`, `40905`, `42221`
 
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| stock | int | 是 | 新库存，>= 0 |
+| file | file | 是 | 图片文件，最大 2MB，jpg/png/webp |
+| sort | int | 否 | 默认 0 |
+
+> **不接收 `is_cover`。** Option 无封面概念。
+
+**后端自动写入：**
+
+| 字段 | 值 | 来源 |
+|------|-----|------|
+| `product_id` | Option 所属 Product | 从 Option → Product 自动获取 |
+| `experience_option_id` | `option.id` | URL 参数 |
+| `is_cover` | `false` | 固定 |
+
+**Product 状态限制：**
+
+| Product 状态 | 允许 |
+|-------------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ 先下架再调整 |
+| `is_deleted = true` | ❌ |
+| Option `is_deleted = true` | ❌ |
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 31,
+        "image_url": "https://cdn.example.com/options/11/31.jpg",
+        "sort": 0
+    }
+}
+```
+
+> 不返回 `is_cover`——Option 图片无此概念。
+
+**上架关联：** 每个有效 Option 至少 1 张专属图片。无图时 draft/offline 允许存在，但 `PATCH .../online` 时 Validator 会拒绝。
+
+**Audit：** `action = CREATE_OPTION_IMAGE`，metadata 记录 `{ "image_id": 31, "option_id": 11 }`。
+
+---
+
+### 7.17 修改图片（排序/封面）
+
+```
+PATCH /api/v1/admin/product-images/{image_id}
+```
+
+修改图片的排序或封面标记。支持部分更新。
+
+**可能的业务错误：** `40403`, `40905`, `40021`
+
+**请求参数**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| sort | int | 否 | >= 0。最终查询 `ORDER BY sort ASC, id ASC` |
+| is_cover | boolean | 否 | **仅接受 `true`**，不接受 `false`。仅 Product 公共图片有效 |
+
+**is_cover 规则：**
+
+| 图片类型 | 允许设置封面？ | 说明 |
+|----------|-------------|------|
+| Product 公共图（`experience_option_id = NULL`） | ✅ | 设置后自动取消旧封面 |
+| Option 图片（`experience_option_id != NULL`） | ❌ | Option 无封面概念，首图由排序决定 |
+
+**设置新封面时 Service 行为：**
+
+```
+PATCH { is_cover: true }
+  │
+  ├─ 同一 Product 下找到旧封面（is_cover = true）
+  ├─ in_transaction():
+  │    ├─ 旧封面 → is_cover = false
+  │    └─ 当前图片 → is_cover = true
+  └─ 提交。始终保证 ≤ 1 张封面
+```
+
+**Product 状态限制：**
+
+| Product 状态 | 允许 |
+|-------------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ |
+| `is_deleted = true` | ❌ |
+
+**请求示例**
+
+```json
+{ "sort": 20 }
+```
+
+```json
+{ "is_cover": true }
+```
+
+```json
+{ "is_cover": true, "sort": 0 }
+```
+
+**成功响应（Product 公共图）**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 20,
+        "image_url": "https://cdn.example.com/20.jpg",
+        "is_cover": true,
+        "sort": 0
+    }
+}
+```
+
+**成功响应（Option 图片）**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 31,
+        "image_url": "https://cdn.example.com/31.jpg",
+        "sort": 20
+    }
+}
+```
+
+> Option 图片不返回 `is_cover`。
+
+**Audit：** `action = UPDATE_PRODUCT_IMAGE`。若发生封面变更，另记录 `SET_PRODUCT_COVER` 含 `{ "old_cover_image_id": 10, "new_cover_image_id": 20 }`。
+
+---
+
+### 7.18 图片删除
+
+```
+DELETE /api/v1/admin/product-images/{image_id}
+```
+
+**Request Body：无。** 执行逻辑删除（`is_deleted = true`），文件存储延迟清理。
+
+**可能的业务错误：** `40403`, `40905`
+
+**Product 状态限制：**
+
+| Product 状态 | 允许 |
+|-------------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ 先下架再删除 |
+| `is_deleted = true` | ❌ |
+| Image 已删除 | ❌（统一返回 404） |
+
+**特殊场景：**
+
+| 场景 | 允许？ | 说明 |
+|------|--------|------|
+| 删除封面（`is_cover = true`） | ✅（draft/offline） | Product 暂时无封面，管理员上传新封面后重新上架 |
+| 删除 Option 最后一张图 | ✅（draft/offline） | Option `images = []`，重新上架时 Validator 拦截 |
+
+**Service 执行流程：**
+
+```
+1. 查找 Image（不存在 → 404）
+2. 检查 Image.is_deleted（已删除 → 404）
+3. 检查所属 Product.status（online → 拒绝）
+4. is_deleted = true → image.save()
+5. 写入 Audit Log（action = DELETE_PRODUCT_IMAGE，含图片快照）
+```
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 31,
+        "is_deleted": true
+    }
+}
+```
+
+**Audit：** `action = DELETE_PRODUCT_IMAGE`，metadata 保存 `{ "product_id": 1, "experience_option_id": 11, "image_url": "...", "is_cover": false, "sort": 10 }`。
+
+---
+
+---
+
+### 7.20 修改套装价格
+
+```
+PATCH /api/v1/admin/products/kit/{product_id}/price
+```
+
+修改 Kit 的当前售价。历史订单不受影响（订单保留价格快照）。
+
+**可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `42211`
+
+**请求参数**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| price | string | 是 | `"699.00"`，0 < Price ≤ 99999。后端转 Decimal 处理 |
+
+**类型校验：** 仅接受 `product_type = "kit"`。传入 Experience ID 必须失败。
+
+**状态限制：**
+
+| Product 状态 | 允许 |
+|-------------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ 先下架再改价 |
+
+**请求示例**
+
+```json
+{ "price": "699.00" }
+```
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 2,
+        "price": "699.00"
+    }
+}
+```
+
+**Audit：** `action = UPDATE_PRICE`，metadata 记录 `{ "before": { "price": "599.00" }, "after": { "price": "699.00" } }`。
+
+---
+
+### 7.21 修改套装库存
+
+```
+PATCH /api/v1/admin/products/kit/{product_id}/stock
+```
+
+直接设置 Kit 的当前库存。第一版采用"设置最终值"模式，后续 Phase 4.3 升级为库存流水/调整单模式。
+
+**可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `42212`
+
+**请求参数**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| stock | int | 是 | 新库存数量，>= 0 |
+
+**状态限制：**
+
+| Product 状态 | 允许 |
+|-------------|------|
+| `draft` | ✅ |
+| `offline` | ✅ |
+| `online` | ❌ 先下架再调整 |
+
+**请求示例**
+
+```json
+{ "stock": 80 }
+```
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 2,
+        "stock": 80
+    }
+}
+```
+
+**Audit：** `action = UPDATE_STOCK`，metadata 记录 `{ "before": { "stock": 100 }, "after": { "stock": 80 } }`。
+
+> **后续升级点：** Phase 4.3 Inventory 模块将演进为库存调整模型（记录变动量 + 原因），替代当前"直接设值"模式。
+
+---
+
+### 7.22 商品操作历史
+
+```
+GET /api/v1/admin/products/{product_id}/audit-logs
+```
+
+查询指定商品的历史操作记录。不嵌入 Product Detail，通过共享 `AuditService` 独立查询。
+
+**底层调用：**
+
+```python
+await audit_service.list_logs(
+    target_type="product",
+    target_id=product_id,
+    page=1,
+    page_size=20
+)
+```
+
+**查询参数**
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| page | int | 否 | 1 | 页码 |
+| page_size | int | 否 | 20 | 每页数量 |
+
+**可能的业务错误：** `40401`（商品不存在）
+
+> 此接口属于 Product 模块路由，但实际查询逻辑委托给 AuditService。所有模块（Product、Order、Inventory 等）统一使用同一 AuditService。
+
+---
