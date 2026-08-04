@@ -1,6 +1,35 @@
 # API Design Conventions
 
-本文档定义 pinkdooHub 项目的 API 设计规范，所有模块的接口文档必须遵循本规范。
+> **Document Version:** v2.0
+> **Status:** Active
+> **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
+>
+> 本文档定义 pinkdooHub 所有 API 的强制性设计规范。新增或修改接口时，必须对照本文档逐项检查。
+>
+> **业务模块 API 文档：** [User API](user_api.md) · [Product API](product_api.md) · [Order API](order_api.md)
+>
+> **快速检查清单见 [§18](#18-快速检查清单)。**
+
+---
+
+## 0. Data Flow（数据流向）
+
+核心原则：**数据库存原始值，Service 负责转换，Response 面向前端。**
+
+```
+Database                  Service                     Response
+────────                  ───────                     ────────
+duration_minutes = 60  →  转换  →  { "value": 60, "label": "1小时" }
+day_type = "weekday"   →  转换  →  { "value": "weekday", "label": "工作日" }
+status = "online"      →  转换  →  { "value": "online", "label": "已上架" }
+```
+
+| 层 | 职责 | 禁止 |
+|----|------|------|
+| Database | 保存原始值，便于计算和索引 | 保存展示文案（"1小时"） |
+| Service | 转换原始值 → `{value, label}` DTO | 把转换逻辑放在 API 层 |
+| Response | 返回 `{value, label}`，前端直接展示 | 返回数据库原始字段名（`duration_minutes`） |
+| Request | 前端提交 `value` | 提交 `label`（"1小时"） |
 
 ---
 
@@ -30,19 +59,27 @@
 ### 2.2 示例
 
 ```
+# 用户端（public）
 GET    /products                          # 商品列表
-POST   /products                          # 创建商品
-GET    /products/{id}                     # 商品详情
-PUT    /products/{id}                     # 更新商品
-DELETE /products/{id}                     # 删除商品
-GET    /products/{id}/images              # 商品图片列表
-POST   /products/{id}/images              # 上传商品图片
+GET    /products/experience/{id}          # 拼豆体验详情
+GET    /products/kit/{id}                 # 拼豆套装详情
 
 GET    /users/me                          # 当前用户信息
-PUT    /users/me/password                 # 当前用户修改密码
+PATCH  /users/me                          # 当前用户修改资料
+
+# 管理端（admin）
+GET    /admin/products                    # 管理端商品列表
+POST   /admin/products/experience         # 创建体验商品
+POST   /admin/products/kit                # 创建套装商品
+PUT    /admin/products/{id}               # 编辑商品基本信息
+DELETE /admin/products/{id}               # 逻辑删除
+PATCH  /admin/products/{id}/online        # 上架
+PATCH  /admin/products/{id}/offline       # 下架
+POST   /admin/products/{id}/options       # 新增 Option
+PUT    /admin/options/{option_id}         # 修改 Option
+DELETE /admin/options/{option_id}         # 删除 Option
 
 GET    /admin/users                       # 管理端用户列表
-GET    /admin/users/{id}                  # 管理端用户详情
 PUT    /admin/users/{id}/disable          # 管理端禁用用户
 ```
 
@@ -67,7 +104,7 @@ PUT    /admin/users/{id}/disable          # 管理端禁用用户
 | PATCH | 部分更新 | ❌ | `PATCH /products/{id}/status` |
 | DELETE | 删除资源 | ✅ | `DELETE /products/{id}` |
 
-> **本项目约定**：对业务资源的修改统一使用 `PUT`，仅对单一字段的状态切换使用 `PATCH`。
+> **本项目约定**：全量更新用 `PUT`，状态变更用 `PATCH`（如 online/offline），创建用 `POST`。
 
 ---
 
@@ -316,22 +353,48 @@ Authorization: Bearer <access_token>
 "is_active": true
 ```
 
-### 9.4 枚举值
+### 9.4 枚举值 — {value, label} 模式
 
-所有枚举字段遵循 **DB 存整数 + API 返回字符串** 的统一策略：
-
-- **数据库**：`TINYINT`，节省存储，便于索引
-- **API**：小写字符串，可读性强，前端无需查表
-- **Python**：使用 `Enum` 类，在序列化层统一转换
-
-具体映射关系见 [Enum Mapping（枚举映射）](#14-enum-mapping枚举映射)。
+任何需要展示给用户的枚举字段，统一使用 `{value, label}` 格式：
 
 ```json
-// API 响应中始终使用字符串
-"role": "admin",
-"status": "online",
-"product_type": "experience"
+{
+    "value": "weekday",
+    "label": "工作日"
+}
 ```
+
+**Response：**
+
+```json
+{
+    "status": { "value": "online", "label": "已上架" },
+    "options": [
+        {
+            "duration": { "value": 60, "label": "1小时" },
+            "participants": { "value": 2, "label": "2人" },
+            "day_type": { "value": "holiday", "label": "节假日" }
+        }
+    ]
+}
+```
+
+**Request（前端提交时只传 value）：**
+
+```json
+{ "duration": 60, "day_type": "weekday" }        // ✅
+{ "duration": "1小时", "day_type": "工作日" }      // ❌
+```
+
+**非展示枚举**（仅后端判断用，不需要 label）：
+
+```json
+{ "product_type": "experience" }   // 用于前端路由跳转
+```
+
+判断标准：**这个字段是给后端判断用的，还是给用户看的？** 给用户看的用 `{value, label}`，给后端判断的用原始值。
+
+具体映射关系见 [§14 Enum Registry](#14-enum-registry枚举注册表)。
 
 ### 9.6 NULL 处理
 
@@ -467,40 +530,61 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 
 ---
 
-## 14. Enum Mapping（枚举映射）
+## 14. Enum Registry（枚举注册表）
 
-项目中所有枚举字段在数据库、API、Python 代码之间遵循统一映射：
+项目中所有枚举字段的完整映射。新增模块时在此表追加。
 
-| 模块 | 内容 | 数据库 (TINYINT) | API (string) | Python Enum |
-|------|------|-------------------|--------------|-------------|
-| 用户 | 角色 | `1` / `2` / `3` | `"user"` / `"admin"` / `"super_admin"` | `UserRole` |
-| 用户 | 状态 | `1` / `2` | `"normal"` / `"disabled"` | `UserStatus` |
-| 商品 | 类型 | `1` / `2` | `"experience"` / `"kit"` | `ProductType` |
-| 商品 | 状态 | `0` / `1` / `2` | `"draft"` / `"online"` / `"offline"` | `ProductStatus` |
-| 订单 | 状态 | `0` / `1` / `2` / `3` | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |
+| 枚举类型 | DB 存储 | value | label |
+|----------|---------|-------|-------|
+| `Duration` | INT（分钟） | 60 | "1小时" |
+| | | 120 | "2小时" |
+| | | 480 | "全天" |
+| `Participants` | INT | 1 | "1人" |
+| | | 2 | "2人" |
+| `DayType` | VARCHAR | `"weekday"` | "工作日" |
+| | | `"holiday"` | "节假日" |
+| `ProductStatus` | VARCHAR | `"draft"` | "草稿" |
+| | | `"online"` | "已上架" |
+| | | `"offline"` | "已下架" |
+| `ProductType` | VARCHAR | `"experience"` | "拼豆体验" |
+| | | `"kit"` | "拼豆套装" |
+| `UserRole` | TINYINT | 1 → `"user"` | "普通用户" |
+| | | 2 → `"admin"` | "管理员" |
+| | | 3 → `"super_admin"` | "超级管理员" |
+| `UserStatus` | TINYINT | 1 → `"normal"` | "正常" |
+| | | 2 → `"disabled"` | "已禁用" |
+| `OrderStatus` | TINYINT | 0 → `"pending"` | "待支付" |
+| | | 1 → `"paid"` | "已支付" |
+| | | 2 → `"cancelled"` | "已取消" |
+| | | 3 → `"completed"` | "已完成" |
 
 ### 使用示例
 
 ```python
-# models.py
-class OrderStatus(int, Enum):
-    PENDING    = 0
-    PAID       = 1
-    CANCELLED  = 2
-    COMPLETED  = 3
+# Service 层：DB 值 → {value, label}
+class Duration(IntEnum):
+    ONE_HOUR = 60
+    TWO_HOURS = 120
+    FULL_DAY = 480
 
-# schemas.py
-class OrderOut(BaseModel):
-    status: OrderStatus  # FastAPI 自动序列化为 "pending" / "paid" / ...
+DURATION_LABELS = {
+    Duration.ONE_HOUR: "1小时",
+    Duration.TWO_HOURS: "2小时",
+    Duration.FULL_DAY: "全天",
+}
+
+def duration_to_dto(value: int) -> dict:
+    return {"value": value, "label": DURATION_LABELS.get(value, str(value))}
 ```
 
 ### 新增枚举检查清单
 
 添加新的枚举字段时：
 
-- [ ] 数据库使用 `TINYINT`，在 note 中标注所有值含义
-- [ ] API 使用小写字符串，在本文档的映射表中新增一行
-- [ ] Python 定义对应的 `Enum` 类
+- [ ] 在本文档 §14 注册表中新增一行
+- [ ] 数据库使用 `TINYINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
+- [ ] Python 定义对应的 `Enum` 类（`app/common/enums/`）
+- [ ] Service 层实现 `{value, label}` 转换
 - [ ] 更新 `er_diagram.dbml` 和 `database_design.md`
 
 ---

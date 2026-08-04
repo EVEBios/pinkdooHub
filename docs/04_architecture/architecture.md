@@ -73,7 +73,7 @@ pinkdooHub/
 │   │   │   ├── users.py        #   GET/PUT /users/me  /users/me/password  /users/me/avatar
 │   │   │   ├── admin_users.py  #   GET /admin/users  /admin/users/{id}  disable/enable
 │   │   │   ├── products.py     #   GET /products  /products/{id}
-│   │   │   ├── admin_products.py#  POST/PUT /products  online/offline  options CRUD  images
+│   │   │   ├── admin_products.py#  POST /admin/products/experience|kit, PUT/DELETE /admin/products/{id}, PATCH online/offline/price/stock
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
 │   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  complete
 │   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)

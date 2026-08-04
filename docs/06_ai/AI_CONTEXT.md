@@ -14,7 +14,7 @@
 | 代码怎么写 | [coding_standards.md](../05_development/coding_standards.md) |
 | 项目怎么分层 | [architecture.md](../04_architecture/architecture.md) |
 | 开发历史 | [changelog.md](../05_development/changelog.md) |
-| API 通用规范 | [api_design_conventions.md](../03_api/api_design_conventions.md) |
+| API 设计规范（全局） | [api_design_conventions.md](../03_api/api_design_conventions.md) |
 | 用户 API | [user_api.md](../03_api/user_api.md) |
 | 商品 API | [product_api.md](../03_api/product_api.md) |
 | 商品业务规则 | [product_business_rules.md](../01_requirements/product_business_rules.md) |
