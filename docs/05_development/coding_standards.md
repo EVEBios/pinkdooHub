@@ -325,9 +325,80 @@ async def create_order(self, user_id: int, data: OrderCreate) -> Order:
 
 ---
 
-## 6. Repository 开发规范
+## 6. Validator 开发规范（Phase 4 新增）
 
-### 5.1 方法粒度
+### 6.1 职责
+
+Validator 负责状态变迁前的完整性校验。Service 在修改关键状态（`draft → online` 等）前必须调用 Validator，校验通过才能执行状态变更。
+
+| ✅ Validator 做什么 | ❌ Validator 不做什么 |
+|---------------------|----------------------|
+| 判断数据是否满足上线条件 | 操作数据库 |
+| 按 `product_type` 分发不同规则 | 返回 `True/False`（失败直接抛异常） |
+| 抛出 `BusinessException` | 调用 Repository 或 Service |
+
+### 6.2 目录结构
+
+```
+app/validators/
+├── __init__.py
+├── product_validator.py    # ProductValidator
+└── (future) order_validator.py
+```
+
+### 6.3 示例
+
+```python
+# app/validators/product_validator.py
+from app.common.enums.product import ProductType
+from app.core.exceptions import BusinessException
+
+class ProductValidator:
+    """商品状态变迁校验器。"""
+
+    @staticmethod
+    async def validate_before_online(product: Product) -> None:
+        """上架前完整性校验。按 product_type 分发。"""
+        if product.product_type == ProductType.EXPERIENCE:
+            await ProductValidator._validate_experience(product)
+        elif product.product_type == ProductType.KIT:
+            await ProductValidator._validate_kit(product)
+
+    @staticmethod
+    async def _validate_experience(product: Product) -> None:
+        if not product.name:
+            raise BusinessException(code=4001, message="商品名称不能为空")
+        if not product.description:
+            raise BusinessException(code=4002, message="商品描述不能为空")
+        # 封面图、Option 数量、价格、Option 图片等...
+```
+
+### 6.4 Service 调用方式
+
+```python
+# app/services/product_service.py
+from app.validators.product_validator import ProductValidator
+
+async def online_product(self, product_id: int) -> None:
+    product = await self.product_repo.get_by_id(product_id)
+    await ProductValidator.validate_before_online(product)
+    product.status = ProductStatus.ONLINE
+    await product.save()
+```
+
+### 6.5 约束
+
+| ✅ 必须 | ❌ 禁止 |
+|---------|---------|
+| 校验失败抛 `BusinessException` | 返回 `bool` 让 Service 判断 |
+| 按类型分发规则（`if type == X`） | 所有类型混在一个方法里 |
+| 数据由 Service 在调用前获取 | Validator 自己查数据库 |
+
+---
+
+## 7. Repository 开发规范
+
+### 7.1 方法粒度
 
 ```python
 class UserRepository:
@@ -386,7 +457,7 @@ class Page(BaseModel, Generic[T]):
 
 ---
 
-## 7. Model 开发规范
+## 8. Model 开发规范
 
 ### 7.1 文件组织
 
@@ -522,7 +593,7 @@ class ProductStatus(StrEnum):
 
 ---
 
-## 8. Schema 开发规范
+## 9. Schema 开发规范
 
 ### 7.1 定义
 
@@ -562,7 +633,7 @@ class UserOut(BaseModel):
 
 ---
 
-## 9. Exception 规范
+## 10. Exception 规范
 
 ### 8.1 统一异常类
 
@@ -614,7 +685,7 @@ if order.status != OrderStatus.PENDING:
 
 ---
 
-## 10. Logging 规范
+## 11. Logging 规范
 
 ### 9.1 日志格式
 
@@ -682,7 +753,7 @@ logger.info("method=%s path=%s status=%d duration=%dms",
 
 ---
 
-## 11. Response 规范
+## 12. Response 规范
 
 ### 10.1 统一信封
 
@@ -734,7 +805,7 @@ async def register(data: UserCreate, service: UserService = Depends()):
 
 ---
 
-## 12. Git 规范
+## 13. Git 规范
 
 ### 11.1 Branch 命名
 
@@ -812,7 +883,7 @@ main
 
 ---
 
-## 13. Testing 规范
+## 14. Testing 规范
 
 ### 12.1 测试结构
 
@@ -865,7 +936,7 @@ async def test_register_success():
 
 ---
 
-## 14. Code Review Checklist
+## 15. Code Review Checklist
 
 每次 PR 逐项检查：
 
@@ -914,7 +985,7 @@ async def test_register_success():
 
 ---
 
-## 15. 依赖规则（Dependency Rules）
+## 16. 依赖规则（Dependency Rules）
 
 ### 14.1 分层依赖图
 
@@ -930,6 +1001,11 @@ async def test_register_success():
          constants,           │  ✅ 允许         redis,
          response)            ▼                 exceptions)
                          ┌──────────┐
+        common/  ←────── │Validator │ ──────→  core/exceptions
+        (enums)          └────┬─────┘
+                              │  ✅ 允许
+                              ▼
+                         ┌──────────┐
                          │Repository│
                          └────┬─────┘
                               │  ✅ 允许
@@ -944,6 +1020,9 @@ async def test_register_success():
    Model        → Repository    ❌
    Model        → Service       ❌
    Repository   → Service       ❌
+   Repository   → Validator     ❌
+   Validator    → Service       ❌
+   Validator    → Repository    ❌ (不查DB)
    Service      → API           ❌
    schemas/     → models/       ❌
    schemas/     → repositories/ ❌
@@ -999,7 +1078,7 @@ async def test_register_success():
 
 ---
 
-## 16. 性能规范（Performance Guidelines）
+## 17. 性能规范（Performance Guidelines）
 
 ### 15.1 N+1 查询问题
 

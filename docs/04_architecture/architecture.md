@@ -103,6 +103,10 @@ pinkdooHub/
 │   │   ├── product_service.py  #   商品 CRUD、上下架、Option 管理
 │   │   └── order_service.py    #   下单（扣库存+生成订单）、取消（恢复库存）
 │   │
+│   ├── validators/             # 业务校验层 —— 状态变迁前的完整性校验
+│   │   ├── __init__.py
+│   │   └── product_validator.py #  ProductValidator.validate_before_online()
+│   │
 │   ├── repositories/           # 数据访问层 —— 封装数据库查询
 │   │   ├── __init__.py
 │   │   ├── user_repo.py        #   User 查询/创建/更新
@@ -194,8 +198,16 @@ pinkdooHub/
 │  Service 层 (app/services/)              │
 │  · 业务逻辑编排                           │
 │  · 跨模型事务管理                         │
-│  · 权限校验 + 数据校验                    │
+│  · 权限校验 + 调用 Validator              │
 │  · 调用 Repository + 外部服务（Redis）    │
+└────────────────┬────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────┐
+│  Validator 层 (app/validators/)          │
+│  · 状态变迁前的完整性校验                 │
+│  · 按 product_type 分发不同规则          │
+│  · 不操作数据库，只做判断                  │
 └────────────────┬────────────────────────┘
                  │
                  ▼
@@ -305,7 +317,60 @@ OrderService → ProductRepository// 需要商品信息时查 Product 表
 > 这仍然是 OrderService 的职责，它通过 `UserRepository.get_by_id()` 获取用户，
 > 自己判断 `user.status`，而不是调用 `UserService.is_active()`。
 
-### 3.3 Repository 层（app/repositories/）
+### 3.3 Validator 层（app/validators/）— Phase 4 新增
+
+**职责**：状态变迁前的完整性校验。不操作数据库，只做判断。
+
+Service 在修改关键状态（如 `draft → online`）前，必须调用 Validator 执行前置检查。Validator 按 `product_type` 自动分发不同规则，未来新增商品类型只需增加新的校验函数。
+
+```python
+# app/validators/product_validator.py
+
+class ProductValidator:
+    """商品状态变迁校验器。"""
+
+    @staticmethod
+    async def validate_before_online(product: Product) -> None:
+        """上架前完整性校验。按 product_type 分发规则。"""
+        if product.product_type == ProductType.EXPERIENCE:
+            await ProductValidator._validate_experience(product)
+        elif product.product_type == ProductType.KIT:
+            await ProductValidator._validate_kit(product)
+        # 未来: elif product.product_type == ProductType.XXX: ...
+
+    @staticmethod
+    async def _validate_experience(product: Product) -> None:
+        if not product.name:
+            raise BusinessException(code=4001, message="商品名称不能为空")
+        if not product.description:
+            raise BusinessException(code=4002, message="商品描述不能为空")
+        # ③ 封面图 ④ 图片数量 ⑤ Option 数量 ⑥ 价格 ⑦ Option 图片 ⑧ 唯一性
+        ...
+
+    @staticmethod
+    async def _validate_kit(product: Product) -> None:
+        ...
+```
+
+**Service 调用方式：**
+
+```python
+# app/services/product_service.py
+
+async def online_product(self, product_id: int) -> None:
+    product = await self.product_repo.get_by_id(product_id)
+    await ProductValidator.validate_before_online(product)  # 校验失败抛异常
+    product.status = ProductStatus.ONLINE
+    await product.save()
+```
+
+**约束：**
+- 只做判断，**不操作数据库**（数据的获取由 Service 在调用前完成）
+- 只抛出 `BusinessException`，不返回 bool
+- 校验规则按 `product_type` 分发，新增类型时扩展对应函数
+- 与 Service 解耦——Service 决定"何时校验"，Validator 决定"如何校验"
+
+### 3.4 Repository 层（app/repositories/）
 
 **职责**：封装数据库查询，提供原子化的 CRUD 方法
 
@@ -329,7 +394,7 @@ class UserRepository:
 - 不跨 Model（不在这里 JOIN 其他表做业务逻辑）
 - 返回 Model 实例或 `None`
 
-### 3.4 Model 层（app/models/）
+### 3.5 Model 层（app/models/）
 
 **职责**：定义表结构、字段约束、模型关系
 
@@ -356,7 +421,7 @@ class User(Model):
 
 ---
 
-### 3.5 中间件层（app/middleware/）
+### 3.6 中间件层（app/middleware/）
 
 **定位**：中间件作用于 HTTP 请求/响应的切面，与业务逻辑层（Service）和核心组件（Core）是正交关系。
 
@@ -418,7 +483,7 @@ Response
 
 ---
 
-### 3.6 公共模块（app/common/）
+### 3.7 公共模块（app/common/）
 
 **定位**：存放被整个应用共享的类型定义、常量和工具模型。与 `core/`（底层基础设施）和 `utils/`（纯函数）是正交关系。
 
@@ -523,7 +588,7 @@ if not (USERNAME_MIN_LENGTH <= len(username) <= USERNAME_MAX_LENGTH):
 
 ---
 
-### 3.7 工具函数（app/utils/）
+### 3.8 工具函数（app/utils/）
 
 **定位**：纯函数、无副作用、无业务含义。任何看起来像"万能工具箱"的代码都不应该放在这里。
 

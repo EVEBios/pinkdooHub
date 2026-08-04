@@ -114,17 +114,31 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 
 ### 3.5 product_images（商品图片表）
 
-一个商品可有多张图片，采用一对多关系。封面图通过 `is_cover = TRUE` 标记，`products` 表不再单独存储封面字段，统一由此表管理。
+一个商品可有多张图片，采用一对多关系。通过 `experience_option_id` 区分 Product 公共图片和 Option 专属图片。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | product_id | BIGINT | FK → products.id | 关联商品 |
+| experience_option_id | BIGINT | FK → experience_options.id, nullable | NULL = Product 公共图；非 NULL = Option 专属图 |
 | image_url | VARCHAR | NOT NULL | 图片 URL |
-| is_cover | BOOLEAN | DEFAULT FALSE | 是否封面图，每商品最多一张 |
+| is_cover | BOOLEAN | DEFAULT FALSE | 封面图，仅 `experience_option_id IS NULL` 时有效 |
 | sort | INT | DEFAULT 0 | 排序序号 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
+
+**图片归属规则：**
+
+| experience_option_id | 归属 | 用途 |
+|----------------------|------|------|
+| NULL | Product 公共图片 | 列表封面、详情页默认展示、商品整体介绍 |
+| 非 NULL | Option 专属图片 | 用户选择具体 Option 后展示 |
+
+**约束：**
+- `is_cover = true` 仅在 `experience_option_id IS NULL` 时有效，每 Product 最多一张封面
+- Option 图片的 `is_cover` 必须为 `false`，默认首图为 `sort ASC, id ASC` 第一张
+- 删除 Option 时，其关联图片的 `experience_option_id` 设为 NULL（`ON DELETE SET NULL`），变为 Product 公共图片
+- Option 无图片时返回 `"images": []`，前端展示占位图
 
 ---
 

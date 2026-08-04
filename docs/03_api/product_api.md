@@ -70,6 +70,7 @@ Authorization: Bearer <access_token>
 | day_type | object | `{ "value": "weekday", "label": "工作日" }` |
 | price | number | 该配置价格，0 < Price ≤ 99999 |
 | sort | int | 展示排序 |
+| images | array | 该 Option 的专属图片列表。无图片时返回 `[]`，前端展示占位图 |
 
 > **枚举字段统一使用 `{value, label}` 格式**（见 [API Design Conventions §9.4](api_design_conventions.md#94-枚举值--valuelabel-模式)）。
 > Duration 的 DB 值为分钟数（60/120/480），Participants 为人数（1/2），Service 层负责转换为 label。
@@ -108,6 +109,12 @@ Authorization: Bearer <access_token>
 | 2006 | Option 不存在 |
 | 2007 | Option 配置重复 |
 | 2008 | 上线失败：体验商品至少需要一个 Option |
+| 4001 | 上线失败：商品名称不能为空 |
+| 4002 | 上线失败：商品描述不能为空 |
+| 4003 | 上线失败：请上传商品封面图 |
+| 4004 | 上线失败：请上传至少一张商品图片 |
+| 4005 | 上线失败：Option 价格必须大于 0 |
+| 4006 | 上线失败：Option 未上传图片 |
 
 ---
 
@@ -299,20 +306,24 @@ GET /api/v1/products/experience/{id}
         "cover_image": "https://cdn.example.com/products/1-cover.jpg",
         "options": [
             {
-                "id": 1,
+                "id": 11,
                 "duration": { "value": 60, "label": "1小时" },
                 "participants": { "value": 1, "label": "1人" },
                 "day_type": { "value": "weekday", "label": "工作日" },
-                "price": 299,
-                "sort": 10
+                "price": "299.00",
+                "sort": 10,
+                "images": [
+                    { "id": 20, "image_url": "https://cdn.example.com/option-11-1.jpg", "sort": 0 }
+                ]
             },
             {
-                "id": 2,
+                "id": 12,
                 "duration": { "value": 120, "label": "2小时" },
                 "participants": { "value": 2, "label": "2人" },
                 "day_type": { "value": "holiday", "label": "节假日" },
-                "price": 699,
-                "sort": 30
+                "price": "699.00",
+                "sort": 30,
+                "images": []
             }
         ],
         "images": [
@@ -476,20 +487,25 @@ GET /api/v1/admin/products/experience/{id}
         },
         "options": [
             {
-                "id": 1,
+                "id": 11,
                 "duration": { "value": 60, "label": "1小时" },
                 "participants": { "value": 1, "label": "1人" },
                 "day_type": { "value": "weekday", "label": "工作日" },
                 "price": "299.00",
-                "sort": 10
+                "sort": 10,
+                "images": [
+                    { "id": 20, "image_url": "https://cdn.example.com/option-11-1.jpg", "sort": 0 },
+                    { "id": 21, "image_url": "https://cdn.example.com/option-11-2.jpg", "sort": 10 }
+                ]
             },
             {
-                "id": 2,
+                "id": 12,
                 "duration": { "value": 120, "label": "2小时" },
                 "participants": { "value": 2, "label": "2人" },
                 "day_type": { "value": "holiday", "label": "节假日" },
                 "price": "699.00",
-                "sort": 30
+                "sort": 30,
+                "images": []
             }
         ],
         "created_at": "2026-08-04T18:30:00+08:00",
@@ -645,12 +661,46 @@ DELETE /api/v1/admin/products/{id}
 PATCH /api/v1/admin/products/{id}/online
 ```
 
-Service 按 `product_type` 执行不同校验：
+Service 调用 `ProductValidator.validate_before_online()` 执行完整性校验。通过后才设置 `status = "online"`。
 
-| 类型 | 校验 |
-|------|------|
-| experience | 有封面图 + Option ≥ 1 + Option 配置合法 + 价格合法 |
-| kit | 有封面图 + price > 0 + stock ≥ 0 |
+**校验流程：**
+
+```
+Service.online_product()
+  │
+  ▼
+ProductValidator.validate_before_online(product)
+  │
+  ├─ product_type = "experience" → _validate_experience()
+  └─ product_type = "kit"        → _validate_kit()
+  │
+  ▼
+全部通过 → status = "online"
+任一失败 → BusinessException
+```
+
+**Experience 检查项：**
+
+| # | 检查项 | 不通过 code |
+|---|--------|------------|
+| ① | 商品名称不为空 | 4001 |
+| ② | 商品描述不为空 | 4002 |
+| ③ | 有封面图（is_cover = true） | 4003 |
+| ④ | 商品图片 ≥ 1 | 4004 |
+| ⑤ | Option ≥ 1 | 2008 |
+| ⑥ | 每个 Option price > 0 | 4005 |
+| ⑦ | 每个 Option 至少一张图片 | 4006 |
+| ⑧ | Option 配置无重复 | 2007（DB UNIQUE 兜底） |
+
+**Kit 检查项（Phase 4.1 后续补充）：**
+
+| # | 检查项 |
+|---|--------|
+| ① | 商品名称不为空 |
+| ② | 商品描述不为空 |
+| ③ | 有封面图 |
+| ④ | price > 0 |
+| ⑤ | stock ≥ 0 |
 
 **成功响应**
 
@@ -661,7 +711,7 @@ Service 按 `product_type` 执行不同校验：
 **失败响应**
 
 ```json
-{ "code": 2008, "message": "Experience product requires at least one option before going online" }
+{ "code": 4006, "message": "Option 120分钟/2人/节假日 未上传图片，无法上架" }
 ```
 
 ---

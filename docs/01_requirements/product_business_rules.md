@@ -335,6 +335,67 @@ PUT /products/1/offline  → Product (offline)
 | FK 约束 | `ON DELETE RESTRICT`，数据库层兜底 |
 | 事务边界 | 上线、下线、Option 增删均在单次请求内完成，无需跨请求事务 |
 
+### 8.5 Online Validation（上架校验）
+
+`draft → online` 时，Service 不得直接设置 `status = "online"`，必须先通过 `ProductValidator.validate_before_online()` 执行完整性校验。全部通过后才能上架。
+
+**校验流程：**
+
+```
+管理员点击上架
+  │
+  ▼
+ProductValidator.validate_before_online(product)
+  │
+  ├─ product_type = "experience" → validate_experience()
+  ├─ product_type = "kit"        → validate_kit()
+  └─ (future)                     → validate_xxx()
+  │
+  ▼
+全部通过 → status = "online"
+任一失败 → 返回错误，阻止上架
+```
+
+**Experience 上架检查项：**
+
+| # | 检查项 | 规则 | 不通过时 |
+|---|--------|------|----------|
+| ① | 商品名称 | 不能为空 | 提示"商品名称不能为空" |
+| ② | 商品描述 | 不能为空 | 提示"商品描述不能为空" |
+| ③ | 封面图 | 必须有一张 `is_cover = true` 的图片 | 提示"请上传商品封面图" |
+| ④ | 商品图片 | image ≥ 1（封面也算） | 提示"请上传至少一张商品图片" |
+| ⑤ | Option 数量 | ≥ 1 | 提示"请至少配置一个体验选项" |
+| ⑥ | Option 价格 | 每个 Option 的 price > 0 | 提示"Option {配置} 价格必须大于 0" |
+| ⑦ | Option 图片 | 每个 Option 至少关联一张图片 | 提示"Option {120分钟/2人/节假日} 未上传图片，无法上架" |
+| ⑧ | Option 唯一性 | 无重复配置组合 | DB UNIQUE 兜底，Service 负责友好提示 |
+
+**图片两层结构：**
+
+```
+product_images
+├── experience_option_id = NULL   → Product 公共图片（列表封面、默认展示）
+└── experience_option_id = 11     → Option 11 专属图片（选中配置后展示）
+```
+
+| 规则 | 说明 |
+|------|------|
+| 封面归属 | 仅 Product 公共图片参与 `is_cover`，Option 图片 `is_cover` 恒为 false |
+| Option 默认图 | `sort ASC, id ASC` 第一张 |
+| Option 无图片 | 返回 `[]`，前端展示占位图；**不**回退到 Product 公共图片 |
+| 删除 Option | 关联图片 `experience_option_id` 设为 NULL，归入 Product 公共图片 |
+
+**Kit 上架检查项（Phase 4.1 后续补充）：**
+
+| # | 检查项 | 规则 |
+|---|--------|------|
+| ① | 商品名称 | 不能为空 |
+| ② | 商品描述 | 不能为空 |
+| ③ | 封面图 | 必须有一张 |
+| ④ | 价格 | price > 0 |
+| ⑤ | 库存 | stock ≥ 0 |
+
+**设计原则：** `draft` 状态允许不完整（逐步完善），`online` 状态必须完整（校验通过）。这是聚合完整性的最终体现。
+
 ---
 
 ## 9. Data Consistency Rules

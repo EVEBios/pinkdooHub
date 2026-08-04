@@ -68,8 +68,9 @@ Table product_kits {
 Table product_images {
   id bigint [pk, increment]
   product_id bigint [not null]
+  experience_option_id bigint [note: 'NULL = Product public image; non-NULL = Option-specific image']
   image_url varchar [not null]
-  is_cover boolean [default: false, note: 'cover image for listing']
+  is_cover boolean [default: false, note: 'only meaningful when experience_option_id IS NULL']
   sort int [default: 0]
   created_at datetime
   updated_at datetime
@@ -77,6 +78,7 @@ Table product_images {
   indexes {
     (product_id, sort) [name: 'idx_image_product_sort']
     (product_id, is_cover) [name: 'idx_image_product_cover']
+    (experience_option_id, sort) [name: 'idx_image_option_sort']
   }
 }
 
@@ -84,6 +86,7 @@ Table product_images {
 Ref: experience_options.product_id > products.id [delete: restrict]
 Ref: product_kits.product_id > products.id [delete: restrict]
 Ref: product_images.product_id > products.id [delete: restrict]
+Ref: product_images.experience_option_id > experience_options.id [delete: set null]
 
 // ── Audit Log ──────────────────────────────────
 
