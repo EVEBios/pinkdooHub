@@ -312,6 +312,16 @@ async def create_order(self, user_id: int, data: OrderCreate) -> Order:
 > ❌ OrderService → UserService
 > ✅ OrderService → UserRepository
 > ```
+>
+> **例外：Shared Service（共享服务）。** `AuditService` 属于基础设施级别的共享服务，任何业务 Service 均可调用：
+>
+> ```
+> ✅ ProductService  → AuditService.list_logs(target_type="product", target_id=1)
+> ✅ OrderService    → AuditService.list_logs(target_type="order",   target_id=10086)
+> ✅ InventoryService → AuditService.list_logs(target_type="inventory", target_id=3)
+> ```
+>
+> **判断标准：** 如果某个 Service 不"属于"任何业务模块，而是被所有模块平等使用，它就是 Shared Service。Shared Service 调用不违反"禁止跨 Service 调用"规则。
 
 ---
 

@@ -121,7 +121,12 @@ Authorization: Bearer <access_token>
 | GET | /products/experience/{id} | 拼豆体验详情 | ❌ |
 | GET | /products/kit/{id} | 拼豆套装详情 | ❌ |
 
-> **设计决策：** 详情接口按商品类型拆分，避免 Response Schema 中大量 `null` 和 Optional 字段。列表接口保持统一，因为展示字段高度一致。
+> **核心规律：**
+> - List（列表）→ 统一
+> - Detail（详情）→ 按类型拆分
+> - Create（创建）→ 按类型拆分
+> - 公共业务动作（上下架、删除）→ 统一
+> - 类型专属动作（Option、价格、库存）→ 按类型拆分，URL 中明确标注类型
 
 ### 4.2 Admin API
 
@@ -129,34 +134,35 @@ Authorization: Bearer <access_token>
 
 | Method | URI | 说明 |
 |--------|-----|------|
-| GET | /admin/products | 商品列表（全部状态） |
-| GET | /admin/products/{id} | 商品详情 |
+| GET | /admin/products | 商品列表（全部状态，摘要信息） |
+| GET | /admin/products/experience/{id} | 体验商品详情（管理用） |
+| GET | /admin/products/kit/{id} | 套装商品详情（管理用） |
 | POST | /admin/products/experience | 创建体验商品 |
 | POST | /admin/products/kit | 创建套装商品 |
-| PUT | /admin/products/{id} | 编辑商品基本信息 |
+| PUT | /admin/products/{id} | 编辑商品基本信息（name, description） |
 | DELETE | /admin/products/{id} | 逻辑删除 |
 
 **状态管理**
 
 | Method | URI | 说明 |
 |--------|-----|------|
-| PATCH | /admin/products/{id}/online | 上架 |
+| PATCH | /admin/products/{id}/online | 上架（Service 按 product_type 执行不同校验） |
 | PATCH | /admin/products/{id}/offline | 下架 |
 
-**体验配置（Option）**
+**体验配置（Option）—— 仅 Experience**
 
 | Method | URI | 说明 |
 |--------|-----|------|
-| POST | /admin/products/{id}/options | 新增 Option |
+| POST | /admin/products/experience/{id}/options | 新增 Option |
 | PUT | /admin/options/{option_id} | 修改 Option |
 | DELETE | /admin/options/{option_id} | 删除 Option |
 
-**套装管理**
+**套装管理 —— 仅 Kit**
 
 | Method | URI | 说明 |
 |--------|-----|------|
-| PATCH | /admin/products/{id}/price | 修改价格 |
-| PATCH | /admin/products/{id}/stock | 修改库存 |
+| PATCH | /admin/products/kit/{id}/price | 修改价格 |
+| PATCH | /admin/products/kit/{id}/stock | 修改库存 |
 
 ### 4.3 Permission Matrix
 
@@ -366,8 +372,176 @@ GET /api/v1/products/kit/{id}
 ## 7. Admin API
 
 > 以下接口需要 `ADMIN+`。所有 `/admin/` 前缀端点调用 `get_current_admin` 依赖。
+>
+> **管理员查看所有状态商品**（draft / online / offline），与用户端仅返回 online 不同。
+>
+> **管理员详情不返回 Audit Log。** 审计日志通过共享 `AuditService.list_logs(target_type="product", target_id=...)` 统一查询，不属于 Product 模块职责。
 
-### 7.1 创建体验商品
+### 7.1 商品列表（摘要）
+
+```
+GET /api/v1/admin/products
+```
+
+统一列表，返回全部状态（draft / online / offline）且未删除的商品。仅返回摘要信息——完整数据见详情接口。
+
+**查询参数**
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| page | int | 否 | 1 | 页码 |
+| page_size | int | 否 | 20 | 每页数量，最大 100 |
+| product_type | string | 否 | — | `"experience"` / `"kit"` |
+| status | string | 否 | — | `"draft"` / `"online"` / `"offline"` |
+| keyword | string | 否 | — | 搜索名称 |
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "items": [
+            {
+                "id": 1,
+                "name": "拼豆体验",
+                "product_type": { "value": "experience", "label": "拼豆体验" },
+                "status": { "value": "online", "label": "已上架" },
+                "cover_image": "https://cdn.example.com/products/1-cover.jpg",
+                "display_price": "299.00",
+                "updated_at": "2026-08-04T18:30:00+08:00"
+            },
+            {
+                "id": 2,
+                "name": "拼豆套装",
+                "product_type": { "value": "kit", "label": "拼豆套装" },
+                "status": { "value": "draft", "label": "草稿" },
+                "cover_image": null,
+                "display_price": null,
+                "updated_at": "2026-08-04T18:30:00+08:00"
+            }
+        ],
+        "total": 2,
+        "page": 1,
+        "page_size": 20,
+        "pages": 1
+    }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `display_price` | 体验商品为所有 Option 最低价（Draft 无 Option 时为 `null`）；套装商品为 `product_kits.price`。不得返回 `"0.00"` |
+| 不返回 | `description`、`images`、`options`、`stock`、`created_at`（详情接口获取） |
+
+---
+
+### 7.2 体验商品详情（管理）
+
+```
+GET /api/v1/admin/products/experience/{id}
+```
+
+仅返回 `product_type = "experience"` 的商品。draft / online / offline 均可查看。
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 1,
+        "name": "拼豆体验",
+        "product_type": { "value": "experience", "label": "拼豆体验" },
+        "description": "选择你的拼豆体验时长、人数和日期类型",
+        "status": { "value": "online", "label": "已上架" },
+        "images": [
+            { "id": 1, "image_url": "https://cdn.example.com/products/1-cover.jpg", "is_cover": true, "sort": 0 }
+        ],
+        "dimensions": {
+            "durations": [
+                { "value": 60, "label": "1小时" },
+                { "value": 120, "label": "2小时" }
+            ],
+            "participants": [
+                { "value": 1, "label": "1人" },
+                { "value": 2, "label": "2人" }
+            ],
+            "day_types": [
+                { "value": "weekday", "label": "工作日" },
+                { "value": "holiday", "label": "节假日" }
+            ]
+        },
+        "options": [
+            {
+                "id": 1,
+                "duration": { "value": 60, "label": "1小时" },
+                "participants": { "value": 1, "label": "1人" },
+                "day_type": { "value": "weekday", "label": "工作日" },
+                "price": "299.00",
+                "sort": 10
+            },
+            {
+                "id": 2,
+                "duration": { "value": 120, "label": "2小时" },
+                "participants": { "value": 2, "label": "2人" },
+                "day_type": { "value": "holiday", "label": "节假日" },
+                "price": "699.00",
+                "sort": 30
+            }
+        ],
+        "created_at": "2026-08-04T18:30:00+08:00",
+        "updated_at": "2026-08-04T18:30:00+08:00"
+    }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `dimensions` | 由 options 动态计算——当前已有哪些时长/人数/日期类型可选，方便管理端 UI 生成筛选 |
+| `options` | 完整列表，含所有 Option。`price` 使用字符串格式 |
+| 与用户详情不同 | 管理员可查看 draft/offline；返回 `status`、`created_at`、`updated_at` |
+
+---
+
+### 7.3 套装商品详情（管理）
+
+```
+GET /api/v1/admin/products/kit/{id}
+```
+
+仅返回 `product_type = "kit"` 的商品。
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 2,
+        "name": "拼豆套装",
+        "product_type": { "value": "kit", "label": "拼豆套装" },
+        "description": "适合新手入门的固定拼豆套装",
+        "status": { "value": "online", "label": "已上架" },
+        "images": [
+            { "id": 5, "image_url": "https://cdn.example.com/products/2-cover.jpg", "is_cover": true, "sort": 0 }
+        ],
+        "price": "599.00",
+        "stock": 20,
+        "created_at": "2026-08-04T18:30:00+08:00",
+        "updated_at": "2026-08-04T18:30:00+08:00"
+    }
+}
+```
+
+| 与用户详情不同 | 管理员可查看 draft/offline；返回 `status`、`created_at`、`updated_at`；无 `available`（管理员关心原始数据） |
+
+---
+
+### 7.4 创建体验商品
 
 ```
 POST /api/v1/admin/products/experience
@@ -387,7 +561,7 @@ POST /api/v1/admin/products/experience
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| duration | string | 是 | `"1h"` / `"2h"` / `"full_day"` |
+| duration | int | 是 | 60 / 120 / 480 |
 | participants | int | 是 | 1 / 2 |
 | day_type | string | 是 | `"weekday"` / `"holiday"` |
 | price | number | 是 | 0 < Price ≤ 99999 |
@@ -400,17 +574,17 @@ POST /api/v1/admin/products/experience
     "name": "拼豆体验",
     "description": "选择你的拼豆体验",
     "options": [
-        { "duration": "1h", "participants": 1, "day_type": "weekday", "price": 299, "sort": 10 },
-        { "duration": "2h", "participants": 1, "day_type": "weekday", "price": 499, "sort": 20 }
+        { "duration": 60, "participants": 1, "day_type": "weekday", "price": 299, "sort": 10 },
+        { "duration": 120, "participants": 1, "day_type": "weekday", "price": 499, "sort": 20 }
     ]
 }
 ```
 
-**成功响应** — HTTP 201，返回完整 Product 对象（status = `"draft"`）。
+**成功响应** — HTTP 201，返回管理端体验详情（status = `"draft"`）。
 
 ---
 
-### 7.2 创建套装商品
+### 7.5 创建套装商品
 
 ```
 POST /api/v1/admin/products/kit
@@ -438,13 +612,13 @@ POST /api/v1/admin/products/kit
 
 ---
 
-### 7.3 编辑商品基本信息
+### 7.6 编辑商品基本信息
 
 ```
 PUT /api/v1/admin/products/{id}
 ```
 
-修改商品名称和描述。不可修改 `product_type`。
+统一接口，同时适用于体验和套装。仅修改 `name` 和 `description`。不可修改 `product_type`、`price`、`stock`、`options`、`status`（这些有独立业务接口）。
 
 **请求参数**
 
@@ -455,7 +629,7 @@ PUT /api/v1/admin/products/{id}
 
 ---
 
-### 7.4 逻辑删除
+### 7.7 逻辑删除
 
 ```
 DELETE /api/v1/admin/products/{id}
@@ -465,13 +639,18 @@ DELETE /api/v1/admin/products/{id}
 
 ---
 
-### 7.5 上架
+### 7.8 上架
 
 ```
 PATCH /api/v1/admin/products/{id}/online
 ```
 
-体验商品校验 Option ≥ 1，不满足返回 2008。
+Service 按 `product_type` 执行不同校验：
+
+| 类型 | 校验 |
+|------|------|
+| experience | 有封面图 + Option ≥ 1 + Option 配置合法 + 价格合法 |
+| kit | 有封面图 + price > 0 + stock ≥ 0 |
 
 **成功响应**
 
@@ -487,7 +666,7 @@ PATCH /api/v1/admin/products/{id}/online
 
 ---
 
-### 7.6 下架
+### 7.9 下架
 
 ```
 PATCH /api/v1/admin/products/{id}/offline
@@ -501,17 +680,19 @@ PATCH /api/v1/admin/products/{id}/offline
 
 ---
 
-### 7.7 新增 Option
+### 7.10 新增 Option
 
 ```
-POST /api/v1/admin/products/{id}/options
+POST /api/v1/admin/products/experience/{id}/options
 ```
+
+仅适用于 `product_type = "experience"`。URL 中明确标注 `experience`。
 
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| duration | string | 是 | `"1h"` / `"2h"` / `"full_day"` |
+| duration | int | 是 | 60 / 120 / 480 |
 | participants | int | 是 | 1 / 2 |
 | day_type | string | 是 | `"weekday"` / `"holiday"` |
 | price | number | 是 | 0 < Price ≤ 99999 |
@@ -520,12 +701,12 @@ POST /api/v1/admin/products/{id}/options
 **失败响应**
 
 ```json
-{ "code": 2007, "message": "Option already exists: weekday + 1h + 1person" }
+{ "code": 2007, "message": "Option already exists: weekday + 60min + 1person" }
 ```
 
 ---
 
-### 7.8 修改 Option
+### 7.11 修改 Option
 
 ```
 PUT /api/v1/admin/options/{option_id}
@@ -542,7 +723,7 @@ PUT /api/v1/admin/options/{option_id}
 
 ---
 
-### 7.9 删除 Option
+### 7.12 删除 Option
 
 ```
 DELETE /api/v1/admin/options/{option_id}
@@ -552,13 +733,13 @@ DELETE /api/v1/admin/options/{option_id}
 
 ---
 
-### 7.10 修改套装价格
+### 7.13 修改套装价格
 
 ```
-PATCH /api/v1/admin/products/{id}/price
+PATCH /api/v1/admin/products/kit/{id}/price
 ```
 
-仅适用于 `product_type = "kit"`。历史订单不受影响。
+仅适用于 `product_type = "kit"`。URL 中明确标注 `kit`。历史订单不受影响。
 
 **请求参数**
 
@@ -568,13 +749,13 @@ PATCH /api/v1/admin/products/{id}/price
 
 ---
 
-### 7.11 修改套装库存
+### 7.14 修改套装库存
 
 ```
-PATCH /api/v1/admin/products/{id}/stock
+PATCH /api/v1/admin/products/kit/{id}/stock
 ```
 
-仅适用于 `product_type = "kit"`。
+仅适用于 `product_type = "kit"`。URL 中明确标注 `kit`。
 
 **请求参数**
 

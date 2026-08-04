@@ -84,7 +84,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | product_id | BIGINT | FK → products.id, NOT NULL | 关联商品 |
-| duration | VARCHAR | NOT NULL | `"1h"` / `"2h"` / `"full_day"` |
+| duration | INT | NOT NULL | 分钟数：60 / 120 / 480 |
 | participants | INT | NOT NULL | 体验人数：1 / 2 |
 | day_type | VARCHAR | NOT NULL | `"weekday"` 工作日 / `"holiday"` 节假日 |
 | price | DECIMAL(10,2) | NOT NULL | 该配置的售价，0 < Price ≤ 99999 |
@@ -155,7 +155,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | order_id | BIGINT | FK → orders.id | 关联订单 |
 | product_id | BIGINT | FK → products.id | 关联原商品 |
 | experience_option_id | BIGINT | FK → experience_options.id, nullable | 关联体验配置（套装为 NULL） |
-| option_duration | VARCHAR | nullable | 快照：时长 |
+| option_duration | INT | nullable | 快照：分钟数（60 / 120 / 480） |
 | option_participants | INT | nullable | 快照：人数 |
 | option_day_type | VARCHAR | nullable | 快照：日期类型 |
 | product_name | VARCHAR | NOT NULL | 下单时商品名称快照 |

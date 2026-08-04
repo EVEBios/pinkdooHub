@@ -38,10 +38,10 @@ Product（商品） 1 ──→ N ExperienceOption（体验配置）
 
 | product_id | duration | participants | day_type | price |
 |------------|----------|-------------|----------|-------|
-| 1 | 1h | 1 | weekday | 299 |
-| 1 | 1h | 2 | weekday | 399 |
-| 1 | 2h | 1 | weekday | 499 |
-| 1 | 2h | 2 | holiday | 699 |
+| 1 | 60 | 1 | weekday | 299 |
+| 1 | 60 | 2 | weekday | 399 |
+| 1 | 120 | 1 | weekday | 499 |
+| 1 | 120 | 2 | holiday | 699 |
 | … | … | … | … | … |
 
 **API 返回示例：**
@@ -53,8 +53,8 @@ GET /products/1
   "name": "拼豆体验",
   "description": "...",
   "options": [
-    { "duration": "1h", "participants": 1, "day_type": "weekday", "price": 299 },
-    { "duration": "1h", "participants": 2, "day_type": "weekday", "price": 399 }
+    { "duration": { "value": 60, "label": "1小时" }, "participants": { "value": 1, "label": "1人" }, "day_type": { "value": "weekday", "label": "工作日" }, "price": 299 },
+    { "duration": { "value": 60, "label": "1小时" }, "participants": { "value": 2, "label": "2人" }, "day_type": { "value": "weekday", "label": "工作日" }, "price": 399 }
   ]
 }
 ```
