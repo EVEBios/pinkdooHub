@@ -21,7 +21,7 @@
 - [ ] Schema 后缀正确（Create / Out / Update / LoginRequest / ListItem）
 - [ ] 所有函数标注返回类型（`-> None`, `-> User`, `-> dict`）
 - [ ] 无 Magic Number，使用 `common/constants/` 中的命名常量
-- [ ] 枚举字段 DB 用 SmallIntField，API 用 Enum 类型 + field_serializer
+- [ ] 枚举存储遵循模块权威设计：User 使用 SmallIntField + IntEnum；Product 使用 VARCHAR + 字符串 Enum
 
 ---
 
@@ -51,7 +51,7 @@
 - [ ] 查询字段有对应索引（username、user_id、status 等高频筛选字段）
 - [ ] nullable 字段显式声明，不滥用空字符串代替
 - [ ] 金额用 DecimalField(max_digits=10, decimal_places=2)，不用 float
-- [ ] 枚举字段用 SmallIntField 存储
+- [ ] 枚举字段的数据库类型、Python Enum 和 API 映射与 Enum Registry 及模块数据库设计一致
 
 ---
 

@@ -73,7 +73,7 @@ pinkdooHub/
 │   │   │   ├── users.py        #   GET/PUT /users/me  /users/me/password  /users/me/avatar
 │   │   │   ├── admin_users.py  #   GET /admin/users  /admin/users/{id}  disable/enable
 │   │   │   ├── products.py     #   GET /products  /products/{id}
-│   │   │   ├── admin_products.py#  POST /admin/products/experience|kit, PUT/DELETE /admin/products/{id}, PATCH online/offline/price/stock
+│   │   │   ├── admin_products.py#  POST /admin/products/experience|kit, PATCH/DELETE /admin/products/{id}, PATCH online/offline/price/stock
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
 │   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  complete
 │   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)
@@ -93,7 +93,8 @@ pinkdooHub/
 │   ├── schemas/                # Pydantic Schema —— 请求/响应数据结构
 │   │   ├── __init__.py
 │   │   ├── user.py             #   UserCreate, UserOut, UserUpdate, UserListItem, ...
-│   │   ├── product.py          #   ProductCreate, ProductUpdate, ProductOut, ...
+│   │   ├── product.py          #   Product 请求体与列表查询参数
+│   │   ├── product_response.py #   Product 原子、列表、详情与写操作 Out Schema
 │   │   └── order.py            #   OrderCreate, OrderOut, OrderItemOut, ...
 │   │
 │   ├── services/               # 业务逻辑层 —— 跨模型、带事务的业务编排
@@ -121,13 +122,14 @@ pinkdooHub/
 │   │   ├── enums/              #   Enum 定义（按模块拆分）
 │   │   │   ├── __init__.py
 │   │   │   ├── user.py         #     UserRole, UserStatus
-│   │   │   ├── product.py      #     ProductType, ProductStatus
+│   │   │   ├── product.py      #     ProductType, ProductStatus, DayType
 │   │   │   └── order.py        #     OrderStatus (Phase 4.2)
 │   │   └── constants/          #   全局常量 —— 消除 Magic Number
 │   │       ├── __init__.py
 │   │       ├── pagination.py  #     MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE
 │   │       ├── upload.py      #     UPLOAD_MAX_SIZE, ALLOWED_IMAGE_TYPES
 │   │       ├── validation.py  #     USERNAME_MIN_LEN, PASSWORD_MAX_LEN, ...
+│   │       ├── product.py     #     Product 字段长度、金额、库存与图片排序边界
 │   │       └── defaults.py    #     DEFAULT_AVATAR
 │   │
 │   ├── core/                   # 核心基础设施 —— 与领域和 HTTP 无关的底层能力
@@ -175,6 +177,10 @@ pinkdooHub/
 ├── .env.example                # 环境变量模板
 └── README.md
 ```
+
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 `app/common/enums/product.py`、`app/common/constants/product.py`、`app/schemas/product.py` 与 `app/schemas/product_response.py`；Product 的 Model、Repository、Validator、Service 和 API 文件仍需按实际文件树继续实现。
+
+Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
 ---
 
@@ -517,7 +523,7 @@ Pydantic Model / Enum       config / security / redis   字符串处理 / 格式
 
 ```python
 # app/common/enums/user.py
-from enum import IntEnum
+from enum import Enum, IntEnum
 
 class UserRole(IntEnum):
     USER = 1
@@ -529,14 +535,19 @@ class UserStatus(IntEnum):
     DISABLED = 2
 
 # app/common/enums/product.py
-class ProductType(IntEnum):
-    EXPERIENCE = 1
-    KIT = 2
+# 项目运行于 Python 3.10，使用 str, Enum 兼容写法；Python 3.11+ 才有 StrEnum。
+class ProductType(str, Enum):
+    EXPERIENCE = "experience"
+    KIT = "kit"
 
-class ProductStatus(IntEnum):
-    DRAFT = 0
-    ONLINE = 1
-    OFFLINE = 2
+class ProductStatus(str, Enum):
+    DRAFT = "draft"
+    ONLINE = "online"
+    OFFLINE = "offline"
+
+class DayType(str, Enum):
+    WEEKDAY = "weekday"
+    HOLIDAY = "holiday"
 
 # app/common/enums/order.py
 class OrderStatus(IntEnum):

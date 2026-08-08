@@ -4,6 +4,51 @@
 
 ---
 
+## Unreleased — Product Schema Foundation (Phase 4.1)
+
+**Date:** 2026-08-09
+
+### Summary
+
+Implemented the complete Product request, query, and response Schema layer as the first executable slice of Phase 4.1. This milestone freezes API data shapes and validation boundaries; it does **not** make Product endpoints available yet.
+
+### Added
+
+- `ProductType`, `ProductStatus`, and `DayType` as Python 3.10-compatible string Enums.
+- Product validation constants for names, descriptions, prices, open positive experience dimensions, stock, image order, and search keywords.
+- Strict JSON request Schemas for Product create/update, Experience Option CRUD input, image PATCH, Kit price/stock updates, and user/admin list queries.
+- Response Schemas for user/admin lists, Experience/Kit details, create/update/status/delete actions, Options, images, dimensions, and Kit price/stock results.
+- `LabeledValue[T]` for stable `{value, label}` response DTOs and `Page[T]` reuse for Product lists.
+- Product Schema contract tests covering normal paths, invalid values, PATCH missing-vs-null semantics, field isolation, pagination nesting, and ORM/internal field filtering.
+
+### Changed
+
+- Split Product Schemas by trust boundary: `app/schemas/product.py` owns requests/queries; `app/schemas/product_response.py` owns response allowlists.
+- Product monetary requests accept plain decimal strings and convert to `Decimal`; responses require `Decimal` internally and serialize fixed two-place strings.
+- Retired Product-specific `42211`–`42215`; static field and request-shape failures use global HTTP 422 validation. `42201` remains for database-dependent online readiness and `42221` for image file validation.
+- Admin list/detail contracts now always return `is_deleted`; user responses never expose it.
+- Experience duration and participants remain open positive integers rather than fixed Enums.
+
+### Important Decisions
+
+1. **Strict write boundary.** Unknown JSON fields are rejected; body integers reject booleans, floats, and numeric strings.
+2. **PATCH preserves intent.** Empty PATCH bodies are rejected, missing fields mean “unchanged,” and explicit null follows field-specific rules. Services must use `model_dump(exclude_unset=True)`.
+3. **User/Admin output separation.** Online user responses require complete sellable shapes, while admin Draft responses allow empty images, Options, and dimensions.
+4. **Response allowlists.** Out Schemas ignore undeclared internal attributes so relation IDs, deletion flags, type-specific fields, and sensitive data cannot leak across endpoints.
+
+### Database
+
+No database changes and no migration required.
+
+### Known Limitations
+
+- Product Model, Repository, Validator, Service, API routes, upload handling, and business exceptions remain pending.
+- Product API documentation remains Draft until those layers are implemented and endpoint integration tests pass.
+- FastAPI `RequestValidationError` still needs global envelope verification/handling during API integration; direct Schema tests do not prove the HTTP 422 response body contract.
+- Shared audit-log listing (`AuditLogService.list_logs` / `AuditLogOut`) is not part of Product Schema and remains pending.
+
+---
+
 ## v0.3.0 — RBAC + Audit Logging + Product Module Design
 
 **Date:** 2026-07-30

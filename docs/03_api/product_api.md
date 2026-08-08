@@ -1,15 +1,17 @@
 # Product API Design
 
-> **Document Version:** v0.1
+> **Document Version:** v0.2
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Status:** Draft
+> **Status:** Draft — Schema implemented; Model/Repository/Service/API pending
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
 > **全局规范：** 本文档遵循 [API Design Conventions](api_design_conventions.md)。Response 信封、分页、枚举 `{value, label}` 模式、错误码等通用规则见该文档，本文不再赘述。
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
+>
+> **Schema 实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`。Schema 已完成不代表端点已可调用；当前仍需继续实现 Model、Repository、Validator、Service 和 API。
 
 ---
 
@@ -56,13 +58,18 @@ Authorization: Bearer <access_token>
 | id | bigint | 商品 ID |
 | name | string | 商品名称，最大 100 字符 |
 | product_type | `{value, label}` | `{ "value": "experience", "label": "拼豆体验" }`，前后端统一格式 |
-| description | string | 商品描述（仅详情返回） |
-| cover_image | string | 封面图 URL（从 images 派生） |
+| description | string/null | 商品描述（仅详情返回；Admin Draft 可为 `null`） |
+| status | `{value, label}` | 仅管理端与状态变更响应返回 |
+| cover_image | string/null | 封面图 URL（从 images 派生；Admin Draft 可为 `null`） |
+| display_price | string/null | 列表展示价；用户列表必有值，Admin Draft 体验商品可为 `null` |
 | options | array | **体验商品返回**，Option 列表 |
-| kit | object | **套装商品返回**，套装扩展信息 |
 | images | array | 图片列表（仅详情返回） |
+| price | string | **套装详情返回**，固定两位小数 |
+| stock | int | **套装详情返回**，当前库存 |
+| available | boolean | **用户端套装详情返回**，必须等于 `stock > 0` |
 | created_at | datetime | 创建时间（仅 Admin Detail 返回） |
-| updated_at | datetime | 更新时间（仅 Admin Detail 返回） |
+| updated_at | datetime | 更新时间（Admin List / Detail 和基本信息修改响应返回） |
+| is_deleted | boolean | 仅管理列表和管理详情返回，用户端永不返回 |
 
 ### 2.2 ExperienceOption
 
@@ -78,7 +85,7 @@ Authorization: Bearer <access_token>
 > Option 通过 `is_deleted` 实现逻辑删除。正常查询自动过滤已删除 Option。
 
 > **枚举字段统一使用 `{value, label}` 格式**（见 [API Design Conventions §9.4](api_design_conventions.md#94-枚举值--valuelabel-模式)）。
-> Duration 的 DB 值为分钟数（60=1小时 / 120=2小时 / 540=全天），Participants 为人数（1/2），Service 层负责转换为 label。
+> Duration 和 Participants 是开放的正整数值，不是固定枚举。60 / 120 / 540 分钟与 1 / 2 人只是当前常用值；180 分钟、3 人等未来值无需新增 Enum。Service 层负责生成 label。
 
 ### 2.3 Kit
 
@@ -97,9 +104,51 @@ Authorization: Bearer <access_token>
 | image_url | string | 图片 URL |
 | is_cover | boolean | 是否封面图（仅 Product 公共图有效） |
 | sort | int | 排序序号 |
-| experience_option_id | bigint/null | NULL = Product 公共图；非 NULL = Option 专属图 |
 
 > ProductImage 通过 `is_deleted` 实现逻辑删除。
+> `experience_option_id` 是数据库内部关联字段：`NULL` 表示 Product 公共图，非 `NULL` 表示 Option 专属图；所有 Image Out Schema 都不返回该字段。
+
+### 2.5 Schema Map
+
+**请求与查询（`app/schemas/product.py`）**
+
+| 场景 | Schema |
+|------|--------|
+| 创建体验 / 套装商品 | `ExperienceProductCreate` / `KitProductCreate` |
+| 修改基本信息 | `ProductUpdate` |
+| 新增 / 修改 Option | `ExperienceOptionCreate` / `ExperienceOptionUpdate` |
+| 修改图片排序或封面 | `ProductImageUpdate` |
+| 修改套装价格 / 库存 | `KitPriceUpdate` / `KitStockUpdate` |
+| 用户 / 管理列表查询 | `ProductListQuery` / `AdminProductListQuery` |
+
+**响应（`app/schemas/product_response.py`）**
+
+| 场景 | Schema |
+|------|--------|
+| 用户 / 管理列表项 | `ProductListItemOut` / `AdminProductListItemOut` |
+| 用户体验 / 套装详情 | `ExperienceProductDetailOut` / `KitProductDetailOut` |
+| 管理体验 / 套装详情 | `AdminExperienceProductDetailOut` / `AdminKitProductDetailOut` |
+| 创建体验 / 套装商品 | `ExperienceProductCreateOut` / `KitProductCreateOut` |
+| 修改基本信息 | `ProductBasicInfoOut` |
+| 上架 / 下架 | `ProductOnlineOut` / `ProductOfflineOut` |
+| 逻辑删除 Product / Option / Image | `DeletedResourceOut` |
+| 新增 / 修改 Option | `ExperienceOptionOut` / `ExperienceOptionBaseOut` |
+| Product 公共图 / Option 图 | `ProductImageOut` / `OptionImageOut` |
+| 修改套装价格 / 库存 | `KitPriceOut` / `KitStockOut` |
+
+分页不重复定义模块专属外壳，统一使用 `Page[ProductListItemOut]` 或 `Page[AdminProductListItemOut]`。
+
+### 2.6 Schema Boundary Rules
+
+- 所有 JSON 写请求使用 `extra="forbid"`；未知字段、客户端试图提交的只读字段或拼写错误字段统一触发 HTTP 422，不静默忽略。
+- JSON Body 中的 `stock`、`duration_minutes`、`participants`、`sort` 只接受真正的整数；拒绝 boolean、float 和数字字符串。Query 中的分页参数继续遵循全局 `PageParams` 规则。
+- 请求金额必须是普通十进制字符串，例如 `"599"`、`"599.0"`、`"599.00"`；拒绝 JSON number、指数形式和超过两位小数的输入。Schema 内部转换为 `Decimal`，不使用 float，也不静默四舍五入。
+- 响应金额在进入 Out Schema 前必须已经是 `Decimal`，JSON 固定序列化为两位小数字符串。
+- PATCH 空对象统一拒绝。字段“未提交”与“显式提交 `null`”语义不同，Service 必须使用 `model_dump(exclude_unset=True)` 保留这个区别。
+- Product `name=null` 拒绝；`description=null`、空字符串或纯空白表示清空。Option 和 Image PATCH 中显式 `null` 均拒绝。
+- 用户端 Out Schema 是严格的已上架完整形状；管理端 Out Schema 允许 Draft 的空图片、空 Option 和空维度。Out Schema 只输出声明字段，防止内部关联、删除标记或类型专属字段跨接口泄漏。
+
+> **API 集成检查项：** 当前 Schema 测试直接验证 Pydantic 模型。接入 FastAPI 路由时必须补充端点集成测试，并确认 `RequestValidationError` 被转换为全局 `{code, message, data}` 信封；该横切处理不属于 Product Schema 本身。
 
 ---
 
@@ -185,17 +234,14 @@ Authorization: Bearer <access_token>
 
 > 所有上架检查项（名称、描述、封面、Option、图片）统一合并为 `42201`，通过 `data.issues` 数组返回具体缺项。不逐项造独立错误码。
 
-**字段业务校验（422xx）—— HTTP 422**
+**文件与动作业务校验**
 
 | code | 常量 | 说明 |
 |------|------|------|
-| 42211 | `INVALID_PRICE` | 价格无效 |
-| 42212 | `INVALID_STOCK` | 库存无效 |
-| 42213 | `INVALID_DURATION` | 时长无效 |
-| 42214 | `INVALID_PARTICIPANTS` | 人数无效 |
-| 42215 | `INVALID_DAY_TYPE` | 日期类型无效 |
 | 42221 | `INVALID_IMAGE_FILE` | 图片文件无效 |
 | 40021 | `OPTION_IMAGE_CANNOT_BE_COVER` | Option 图片不能设为封面 |
+
+> 价格、库存、时长、人数、日期类型和请求形状属于 Pydantic/FastAPI 静态校验，统一使用全局 HTTP 422 参数校验响应，不再分配 Product 专属的 42211–42215。`42201` 保留给需要查询关联数据后才能判断的上架完整性；`42221` 保留给文件内容、大小和 MIME 等上传校验。
 
 ### 3.3 Error Code Mapping
 
@@ -205,20 +251,20 @@ Authorization: Bearer <access_token>
 | `GET /products/experience/{id}` | 40401 |
 | `GET /products/kit/{id}` | 40401 |
 | `POST /admin/products/experience` | Schema 校验 |
-| `POST /admin/products/kit` | 42211, 42212 |
+| `POST /admin/products/kit` | Schema 校验 |
 | `PATCH /admin/products/{id}` | 40401, 40903, 40905 |
 | `PATCH /admin/products/{id}/online` | 40401, 40901, 40903, 42201 |
 | `PATCH /admin/products/{id}/offline` | 40401, 40902, 40903 |
 | `DELETE /admin/products/{id}` | 40401, 40903, 40904 |
-| `POST /admin/products/experience/{id}/options` | 40401, 40001, 40903, 40905, 40911, 42213, 42214, 42215 |
+| `POST /admin/products/experience/{id}/options` | 40401, 40001, 40903, 40905, 40911 |
 | `PATCH /admin/options/{id}` | 40402, 40912, 40905, 40911 |
 | `DELETE /admin/options/{id}` | 40402, 40912, 40905 |
 | `POST /admin/products/{id}/images` | 40401, 40903, 40905, 42221 |
 | `POST /admin/options/{id}/images` | 40402, 40912, 40905, 42221 |
 | `PATCH /admin/product-images/{id}` | 40403, 40905, 40021 |
 | `DELETE /admin/product-images/{id}` | 40403, 40905 |
-| `PATCH /admin/products/kit/{id}/price` | 40401, 40001, 40903, 40905, 42211 |
-| `PATCH /admin/products/kit/{id}/stock` | 40401, 40001, 40903, 40905, 42212 |
+| `PATCH /admin/products/kit/{id}/price` | 40401, 40001, 40903, 40905 |
+| `PATCH /admin/products/kit/{id}/stock` | 40401, 40001, 40903, 40905 |
 | `GET /admin/products/{id}/audit-logs` | 40401 |
 
 ### 3.4 规则补充
@@ -372,6 +418,8 @@ GET /api/v1/products
 
 **成功响应**
 
+**Response Schema：** `Page[ProductListItemOut]`
+
 ```json
 {
     "code": 0,
@@ -422,7 +470,7 @@ GET /api/v1/products/experience/{id}
 
 **可能的业务错误：** `40401`（商品不存在或类型不匹配，统一返回 404）
 
-**Response Schema：** `ExperienceProductDetailResponse` — 不含 `price`、`stock`、`kit` 字段。
+**Response Schema：** `ExperienceProductDetailOut` — 不含 `price`、`stock`、`status`、`is_deleted` 和时间字段。
 
 **成功响应**
 
@@ -496,7 +544,7 @@ GET /api/v1/products/kit/{id}
 
 **可能的业务错误：** `40401`（商品不存在或类型不匹配，统一返回 404）
 
-**Response Schema：** `KitProductDetailResponse` — 不含 `options`、`status`、`is_deleted`、`sold_count`、时间字段。
+**Response Schema：** `KitProductDetailOut` — 不含 `options`、`status`、`is_deleted`、`sold_count`、时间字段。
 
 **成功响应**
 
@@ -544,7 +592,7 @@ GET /api/v1/products/kit/{id}
 GET /api/v1/admin/products
 ```
 
-统一列表，返回全部状态（draft / online / offline）且未删除的商品。仅返回摘要信息——完整数据见详情接口。
+统一列表，默认返回全部状态（draft / online / offline）且未删除的商品；`include_deleted=true` 时同时返回逻辑删除记录。仅返回摘要信息——完整数据见详情接口。
 
 **查询参数**
 
@@ -554,10 +602,12 @@ GET /api/v1/admin/products
 | page_size | int | 否 | 20 | 每页数量，最大 100 |
 | product_type | string | 否 | — | `"experience"` / `"kit"` |
 | status | string | 否 | — | `"draft"` / `"online"` / `"offline"` |
-| include_deleted | boolean | 否 | false | `true` = 包含已删除商品 |
+| include_deleted | boolean | 否 | false | 仅接受 `true` / `false`；`true` = 包含已删除商品 |
 | keyword | string | 否 | — | 搜索名称 |
 
 **成功响应**
+
+**Response Schema：** `Page[AdminProductListItemOut]`
 
 ```json
 {
@@ -572,7 +622,8 @@ GET /api/v1/admin/products
                 "status": { "value": "online", "label": "已上架" },
                 "cover_image": "https://cdn.example.com/products/1-cover.jpg",
                 "display_price": "299.00",
-                "updated_at": "2026-08-04T18:30:00+08:00"
+                "updated_at": "2026-08-04T10:30:00Z",
+                "is_deleted": false
             },
             {
                 "id": 2,
@@ -581,7 +632,8 @@ GET /api/v1/admin/products
                 "status": { "value": "draft", "label": "草稿" },
                 "cover_image": null,
                 "display_price": null,
-                "updated_at": "2026-08-04T18:30:00+08:00"
+                "updated_at": "2026-08-04T10:30:00Z",
+                "is_deleted": false
             }
         ],
         "total": 2,
@@ -595,6 +647,7 @@ GET /api/v1/admin/products
 | 字段 | 说明 |
 |------|------|
 | `display_price` | 体验商品为所有 Option 最低价（Draft 无 Option 时为 `null`）；套装商品为 `product_kits.price`。不得返回 `"0.00"` |
+| `is_deleted` | 始终返回。默认查询为 `false`；`include_deleted=true` 时用于区分历史删除记录 |
 | 不返回 | `description`、`images`、`options`、`stock`、`created_at`（详情接口获取） |
 
 ---
@@ -605,9 +658,11 @@ GET /api/v1/admin/products
 GET /api/v1/admin/products/experience/{id}
 ```
 
-仅返回 `product_type = "experience"` 的商品。draft / online / offline 均可查看。
+仅返回 `product_type = "experience"` 的商品。draft / online / offline 和逻辑删除记录均可供管理员查看；响应始终显式返回 `is_deleted`。
 
 **成功响应**
+
+**Response Schema：** `AdminExperienceProductDetailOut`
 
 ```json
 {
@@ -657,8 +712,9 @@ GET /api/v1/admin/products/experience/{id}
                 "images": []
             }
         ],
-        "created_at": "2026-08-04T18:30:00+08:00",
-        "updated_at": "2026-08-04T18:30:00+08:00"
+        "created_at": "2026-08-04T10:30:00Z",
+        "updated_at": "2026-08-04T10:30:00Z",
+        "is_deleted": false
     }
 }
 ```
@@ -667,7 +723,7 @@ GET /api/v1/admin/products/experience/{id}
 |------|------|
 | `dimensions` | 由 options 动态计算——当前已有哪些时长/人数/日期类型可选，方便管理端 UI 生成筛选 |
 | `options` | 完整列表，含所有 Option。`price` 使用字符串格式 |
-| 与用户详情不同 | 管理员可查看 draft/offline；返回 `status`、`created_at`、`updated_at` |
+| 与用户详情不同 | 管理员可查看 draft/offline/已删除记录；返回 `status`、`created_at`、`updated_at`、`is_deleted` |
 
 ---
 
@@ -677,9 +733,11 @@ GET /api/v1/admin/products/experience/{id}
 GET /api/v1/admin/products/kit/{id}
 ```
 
-仅返回 `product_type = "kit"` 的商品。
+仅返回 `product_type = "kit"` 的商品。逻辑删除记录仍可供管理员查看；响应始终显式返回 `is_deleted`。
 
 **成功响应**
+
+**Response Schema：** `AdminKitProductDetailOut`
 
 ```json
 {
@@ -696,13 +754,14 @@ GET /api/v1/admin/products/kit/{id}
         ],
         "price": "599.00",
         "stock": 20,
-        "created_at": "2026-08-04T18:30:00+08:00",
-        "updated_at": "2026-08-04T18:30:00+08:00"
+        "created_at": "2026-08-04T10:30:00Z",
+        "updated_at": "2026-08-04T10:30:00Z",
+        "is_deleted": false
     }
 }
 ```
 
-| 与用户详情不同 | 管理员可查看 draft/offline；返回 `status`、`created_at`、`updated_at`；无 `available`（管理员关心原始数据） |
+| 与用户详情不同 | 管理员可查看 draft/offline/已删除记录；返回 `status`、`created_at`、`updated_at`、`is_deleted`；无 `available`（管理员关心原始数据） |
 
 ---
 
@@ -723,7 +782,7 @@ POST /api/v1/admin/products/experience
 | name | string | 是 | 商品名称。trim 后 1–100 字符。允许重名 |
 | description | string | 否 | 商品描述，最大 2000 字符。Draft 阶段可选 |
 
-**不接受（后端忽略或校验拒绝）：**
+**不接受（Schema 统一校验拒绝）：**
 
 | 字段 | 原因 |
 |------|------|
@@ -761,6 +820,8 @@ POST /api/v1/admin/products/experience
 
 **成功响应** — HTTP 201
 
+**Response Schema：** `ExperienceProductCreateOut`
+
 ```json
 {
     "code": 0,
@@ -797,7 +858,7 @@ POST /api/v1/admin/products/kit
 
 创建套装商品草稿。与 Experience 不同，Kit 的 `price` 和 `stock` 属于聚合根核心字段，创建时一并接收。
 
-**可能的业务错误：** `42211`（price ≤ 0）、`42212`（stock < 0）。 Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同——Kit 无 Option，price/stock 直接属于 Kit 自身。
+**可能的业务错误：** 无。`price` / `stock` 的类型与范围错误统一由 `KitProductCreate` 触发 HTTP 422 Schema 校验。Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同——Kit 无 Option，price/stock 直接属于 Kit 自身。
 
 **请求参数**
 
@@ -846,6 +907,8 @@ POST /api/v1/admin/products/kit
 
 **成功响应** — HTTP 201
 
+**Response Schema：** `KitProductCreateOut`
+
 ```json
 {
     "code": 0,
@@ -876,7 +939,14 @@ PATCH /api/v1/admin/products/{id}
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | name | string | 否 | 商品名称。trim 后 1–100 字符，允许重名 |
-| description | string | 否 | 商品描述，最大 2000 字符。传空字符串 `""` 表示清空 |
+| description | string/null | 否 | 商品描述，最大 2000 字符。`null`、空字符串或纯空白表示清空 |
+
+**PATCH 语义：**
+
+- `{}` 拒绝，必须至少提交一个允许修改的字段。
+- `name` 未提交表示不修改；显式 `name: null` 拒绝。
+- `description` 未提交表示不修改；显式 `null`、`""` 或纯空白表示清空为数据库 `NULL`。
+- 未知字段统一拒绝。Service 必须使用 `payload.model_dump(exclude_unset=True)`，不得把“未提交”误当成 `null`。
 
 **禁止修改：**
 
@@ -902,6 +972,23 @@ PATCH /api/v1/admin/products/{id}
 
 ```json
 { "name": "新版拼豆体验", "description": "新的介绍" }
+```
+
+**成功响应**
+
+**Response Schema：** `ProductBasicInfoOut`
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 1,
+        "name": "新版拼豆体验",
+        "description": "新的介绍",
+        "updated_at": "2026-08-04T10:30:00Z"
+    }
+}
 ```
 
 ---
@@ -938,6 +1025,8 @@ DELETE /api/v1/admin/products/{id}
 **关联数据处理：** Product 逻辑删除后，其关联的 `ExperienceOption`、`ProductKit`、`ProductImage` 不删除不修改，保留用于历史订单和审计追溯。正常业务查询通过 `Product.is_deleted` 过滤。
 
 **成功响应**
+
+**Response Schema：** `DeletedResourceOut`
 
 ```json
 {
@@ -1015,6 +1104,8 @@ PATCH /api/v1/admin/products/{id}/online
 
 **成功响应**
 
+**Response Schema：** `ProductOnlineOut`
+
 ```json
 {
     "code": 0,
@@ -1071,6 +1162,8 @@ PATCH /api/v1/admin/products/{id}/offline
 
 **成功响应**
 
+**Response Schema：** `ProductOfflineOut`
+
 ```json
 {
     "code": 0,
@@ -1092,9 +1185,9 @@ PATCH /api/v1/admin/products/{id}/offline
 POST /api/v1/admin/products/experience/{product_id}/options
 ```
 
-为体验商品新增一条可售配置。图片通过独立接口上传（见 [§7.12 Option 图片上传](#712-option-图片上传)）。
+为体验商品新增一条可售配置。图片通过独立接口上传（见 [§7.15 Option 专属图片上传](#715-option-专属图片上传)）。
 
-**可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `40911`, `42213`, `42214`, `42215`
+**可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `40911`。字段类型和范围错误统一为 HTTP 422 Schema 校验。
 
 **请求参数**
 
@@ -1130,6 +1223,8 @@ POST /api/v1/admin/products/experience/{product_id}/options
 ```
 
 **成功响应** — HTTP 201
+
+**Response Schema：** `ExperienceOptionOut`
 
 ```json
 {
@@ -1198,6 +1293,8 @@ PATCH /api/v1/admin/options/{option_id}
 | day_type | string | 否 | `"weekday"` / `"holiday"` |
 | price | string | 否 | `"799.00"`，0 < Price ≤ 99999 |
 
+所有字段都可以缺失，但至少提交一个；任意字段显式传 `null` 均拒绝。Service 必须使用 `payload.model_dump(exclude_unset=True)` 执行部分更新。
+
 **Product 状态限制：**
 
 | 状态 | 允许 |
@@ -1228,6 +1325,8 @@ PATCH /api/v1/admin/options/{option_id}
 ```
 
 **成功响应**
+
+**Response Schema：** `ExperienceOptionBaseOut`
 
 ```json
 {
@@ -1282,6 +1381,8 @@ DELETE /api/v1/admin/options/{option_id}
 
 **成功响应**
 
+**Response Schema：** `DeletedResourceOut`
+
 ```json
 {
     "code": 0,
@@ -1328,6 +1429,8 @@ Content-Type: multipart/form-data
 | `is_deleted = true` | ❌ |
 
 **成功响应**
+
+**Response Schema：** `ProductImageOut`
 
 ```json
 {
@@ -1386,6 +1489,8 @@ Content-Type: multipart/form-data
 
 **成功响应**
 
+**Response Schema：** `OptionImageOut`
+
 ```json
 {
     "code": 0,
@@ -1406,7 +1511,7 @@ Content-Type: multipart/form-data
 
 ---
 
-### 7.17 修改图片（排序/封面）
+### 7.16 修改图片（排序/封面）
 
 ```
 PATCH /api/v1/admin/product-images/{image_id}
@@ -1422,6 +1527,8 @@ PATCH /api/v1/admin/product-images/{image_id}
 |------|------|------|------|
 | sort | int | 否 | >= 0。最终查询 `ORDER BY sort ASC, id ASC` |
 | is_cover | boolean | 否 | **仅接受 `true`**，不接受 `false`。仅 Product 公共图片有效 |
+
+`{}`、显式 `null`、`is_cover=false` 和未知字段均由 `ProductImageUpdate` 拒绝。`sort` 只接受真正的非负整数。
 
 **is_cover 规则：**
 
@@ -1467,6 +1574,8 @@ PATCH { is_cover: true }
 
 **成功响应（Product 公共图）**
 
+**Response Schema：** `ProductImageOut`
+
 ```json
 {
     "code": 0,
@@ -1481,6 +1590,8 @@ PATCH { is_cover: true }
 ```
 
 **成功响应（Option 图片）**
+
+**Response Schema：** `OptionImageOut`
 
 ```json
 {
@@ -1500,7 +1611,7 @@ PATCH { is_cover: true }
 
 ---
 
-### 7.18 图片删除
+### 7.17 图片删除
 
 ```
 DELETE /api/v1/admin/product-images/{image_id}
@@ -1539,6 +1650,8 @@ DELETE /api/v1/admin/product-images/{image_id}
 
 **成功响应**
 
+**Response Schema：** `DeletedResourceOut`
+
 ```json
 {
     "code": 0,
@@ -1554,9 +1667,7 @@ DELETE /api/v1/admin/product-images/{image_id}
 
 ---
 
----
-
-### 7.20 修改套装价格
+### 7.18 修改套装价格
 
 ```
 PATCH /api/v1/admin/products/kit/{product_id}/price
@@ -1564,7 +1675,7 @@ PATCH /api/v1/admin/products/kit/{product_id}/price
 
 修改 Kit 的当前售价。历史订单不受影响（订单保留价格快照）。
 
-**可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `42211`
+**可能的业务错误：** `40401`, `40001`, `40903`, `40905`。金额格式与范围错误统一为 HTTP 422 Schema 校验。
 
 **请求参数**
 
@@ -1590,6 +1701,8 @@ PATCH /api/v1/admin/products/kit/{product_id}/price
 
 **成功响应**
 
+**Response Schema：** `KitPriceOut`
+
 ```json
 {
     "code": 0,
@@ -1605,7 +1718,7 @@ PATCH /api/v1/admin/products/kit/{product_id}/price
 
 ---
 
-### 7.21 修改套装库存
+### 7.19 修改套装库存
 
 ```
 PATCH /api/v1/admin/products/kit/{product_id}/stock
@@ -1613,7 +1726,7 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 
 直接设置 Kit 的当前库存。第一版采用"设置最终值"模式，后续 Phase 4.3 升级为库存流水/调整单模式。
 
-**可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `42212`
+**可能的业务错误：** `40401`, `40001`, `40903`, `40905`。库存类型与范围错误统一为 HTTP 422 Schema 校验。
 
 **请求参数**
 
@@ -1637,6 +1750,8 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 
 **成功响应**
 
+**Response Schema：** `KitStockOut`
+
 ```json
 {
     "code": 0,
@@ -1654,7 +1769,7 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 
 ---
 
-### 7.22 商品操作历史
+### 7.20 商品操作历史
 
 ```
 GET /api/v1/admin/products/{product_id}/audit-logs
@@ -1683,5 +1798,7 @@ await audit_service.list_logs(
 **可能的业务错误：** `40401`（商品不存在）
 
 > 此接口属于 Product 模块路由，但实际查询逻辑委托给 AuditService。所有模块（Product、Order、Inventory 等）统一使用同一 AuditService。
+>
+> **Schema 边界：** 审计分页响应属于共享 Audit 模块，不在 Product Schema 中重复定义。当前 `AuditLogService.list_logs()` 与共享 `AuditLogOut` 尚待实现，因此该端点仍是后续实现项。
 
 ---

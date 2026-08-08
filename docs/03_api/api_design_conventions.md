@@ -71,12 +71,12 @@ PATCH  /users/me                          # 当前用户修改资料
 GET    /admin/products                    # 管理端商品列表
 POST   /admin/products/experience         # 创建体验商品
 POST   /admin/products/kit                # 创建套装商品
-PUT    /admin/products/{id}               # 编辑商品基本信息
+PATCH  /admin/products/{id}               # 编辑商品基本信息
 DELETE /admin/products/{id}               # 逻辑删除
 PATCH  /admin/products/{id}/online        # 上架
 PATCH  /admin/products/{id}/offline       # 下架
-POST   /admin/products/{id}/options       # 新增 Option
-PUT    /admin/options/{option_id}         # 修改 Option
+POST   /admin/products/experience/{id}/options # 新增 Option
+PATCH  /admin/options/{option_id}         # 修改 Option
 DELETE /admin/options/{option_id}         # 删除 Option
 
 GET    /admin/users                       # 管理端用户列表
@@ -345,12 +345,9 @@ Authorization: Bearer <access_token>
 | code | 说明 |
 |------|------|
 | 42201 | 商品未满足上架条件（data.issues 数组返回缺项） |
-| 42211 | 价格无效 |
-| 42212 | 库存无效 |
-| 42213 | 时长无效 |
-| 42214 | 人数无效 |
-| 42215 | 日期类型无效 |
 | 42221 | 图片文件无效 |
+
+> Product 的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。仅需要数据库或关联资源后才能判断的上架完整性使用 `42201`；上传文件内容、MIME 和大小校验使用 `42221`。
 
 ### 8.5 订单模块错误码（3xxx）
 
@@ -375,11 +372,13 @@ Authorization: Bearer <access_token>
 
 ### 9.2 金额
 
-所有金额以"元"为单位，`Decimal(10,2)` 精度：
+所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。JSON 表示以模块 API 契约为准并在模块内保持一致；Product 模块的请求和响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
 
 ```json
-"total_amount": 199.00
+"price": "199.00"
 ```
+
+金额字符串不得使用指数形式，不得超过两位小数；服务端不得静默四舍五入。Order 文档仍处于后续 Phase 设计状态，其 number 表示需在实现前单独确认，不得反向改变已冻结的 Product 契约。
 
 ### 9.3 布尔值
 
@@ -422,13 +421,13 @@ Authorization: Bearer <access_token>
 { "duration": "1小时", "day_type": "工作日" }      // ❌
 ```
 
-**非展示枚举**（仅后端判断用，不需要 label）：
+**请求和查询中的枚举值**只提交原始 value，不提交 label：
 
 ```json
-{ "product_type": "experience" }   // 用于前端路由跳转
+{ "product_type": "experience" }
 ```
 
-判断标准：**这个字段是给后端判断用的，还是给用户看的？** 给用户看的用 `{value, label}`，给后端判断的用原始值。
+判断标准：响应中用于展示的枚举使用 `{value, label}`；请求、查询和仅供后端判断的值使用原始 value。Product 列表响应的 `product_type` 既用于前端路由也用于展示，因此仍使用 `{value, label}`。
 
 具体映射关系见 [§14 Enum Registry](#14-enum-registry枚举注册表)。
 
@@ -557,7 +556,7 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `username` (varchar) | `username` | → string |
 | `created_at` (datetime) | `created_at` | → ISO 8601 string |
 | `updated_at` (datetime) | `updated_at` | → ISO 8601 string |
-| `total_amount` (decimal) | `total_amount` | → number |
+| `total_amount` (decimal) | `total_amount` | → number/string（以模块契约为准） |
 | `is_cover` (boolean) | `is_cover` | → boolean |
 
 > - 所有 ID 类型在 API 中统一为 `int` / `bigint`
@@ -568,15 +567,19 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 
 ## 14. Enum Registry（枚举注册表）
 
-项目中所有枚举字段的完整映射。新增模块时在此表追加。
+项目中所有枚举字段的完整映射。新增模块时在此表追加。Duration 和 Participants 是开放正整数展示值，不属于 Enum。
+
+**开放展示值（非 Enum）**
+
+| 字段 | DB 存储 | 常用值 | 规则 |
+|------|---------|--------|------|
+| `duration_minutes` | INT | 60 → “1小时”、120 → “2小时”、540 → “全天” | 任意正整数；Service 根据分钟数生成 label |
+| `participants` | INT | 1 → “1人”、2 → “2人” | 任意正整数；Service 根据人数生成 label |
+
+**固定 Enum**
 
 | 枚举类型 | DB 存储 | value | label |
 |----------|---------|-------|-------|
-| `Duration` | INT（分钟） | 60 | "1小时" |
-| | | 120 | "2小时" |
-| | | 540 | "全天" |
-| `Participants` | INT | 1 | "1人" |
-| | | 2 | "2人" |
 | `DayType` | VARCHAR | `"weekday"` | "工作日" |
 | | | `"holiday"` | "节假日" |
 | `ProductStatus` | VARCHAR | `"draft"` | "草稿" |
@@ -597,20 +600,13 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 ### 使用示例
 
 ```python
-# Service 层：DB 值 → {value, label}
-class Duration(IntEnum):
-    ONE_HOUR = 60
-    TWO_HOURS = 120
-    FULL_DAY = 540
-
-DURATION_LABELS = {
-    Duration.ONE_HOUR: "1小时",
-    Duration.TWO_HOURS: "2小时",
-    Duration.FULL_DAY: "全天",
-}
-
 def duration_to_dto(value: int) -> dict:
-    return {"value": value, "label": DURATION_LABELS.get(value, str(value))}
+    hours, minutes = divmod(value, 60)
+    if minutes == 0:
+        label = f"{hours}小时"
+    else:
+        label = f"{value}分钟"
+    return {"value": value, "label": label}
 ```
 
 ### 新增枚举检查清单
@@ -738,4 +734,4 @@ def duration_to_dto(value: int) -> dict:
 - [ ] 至少提供成功 + 一种失败响应示例
 - [ ] 需要认证的接口标注 Header
 - [ ] 分页接口统一使用 `page` / `page_size`
-- [ ] 枚举字段 DB 用 TINYINT，API 用 string，已在 Enum Mapping 表中登记
+- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User 数值 Enum 使用 TINYINT）

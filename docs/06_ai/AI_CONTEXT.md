@@ -1,6 +1,6 @@
 # AI Context — pinkdooHub
 
-> 19 条强制规则已内置在项目根目录的 `CLAUDE.md` 中（每次会话自动加载）。
+> 强制开发规则已内置在项目根目录的 `AGENTS.md` 中（每次会话自动加载）。
 > 本文档是 AI 的"项目守则"——定义开发流程、文档维护规则和全局上下文。
 > 完成任何代码修改后，按本文档检查是否需要同步更新。
 > 遇到不确定的领域时，按索引去读对应文档，不要凭记忆猜测。
@@ -43,6 +43,15 @@
 | 测试 | pytest + pytest-asyncio + httpx | 9.1 / 1.4 / — |
 | 时区 | tzdata | —（Windows 必需） |
 
+### 2.1 当前 Phase 与实现边界
+
+- 当前基线为 **v0.3.0**，正在进行 **Phase 4.1 Product Module**。
+- Product 业务规则、数据库设计和 API 契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
+- 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
+- `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
+- Product 的 Model、Repository、Validator、Service 和 API 仍待实现。架构文档中的规划文件不能作为实现证据。
+- Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
+
 ---
 
 ## 3. 枚举速查
@@ -51,9 +60,12 @@
 |--------|--------------|-------------|
 | `users.role` 1/2/3 | `"user"` / `"admin"` / `"super_admin"` | `UserRole` |
 | `users.status` 1/2 | `"normal"` / `"disabled"` | `UserStatus` |
-| `products.product_type` VARCHAR | `"experience"` / `"kit"` | `ProductType(StrEnum)` |
-| `products.status` VARCHAR | `"draft"` / `"online"` / `"offline"` | `ProductStatus(StrEnum)` |
+| `products.product_type` VARCHAR | `"experience"` / `"kit"` | `ProductType(str, Enum)` |
+| `products.status` VARCHAR | `"draft"` / `"online"` / `"offline"` | `ProductStatus(str, Enum)` |
+| `experience_options.day_type` VARCHAR | `"weekday"` / `"holiday"` | `DayType(str, Enum)` |
 | `orders.status` 0/1/2/3 | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |
+
+> `duration_minutes` 和 `participants` 是开放正整数，不是 Enum。当前常用值不构成允许值白名单。
 
 ---
 
@@ -62,7 +74,7 @@
 | 模块 | 号段 | 已用 |
 |------|------|------|
 | 用户 | 1xxx | 1001-1007 |
-| 商品 | 40xxx / 409xx / 422xx | 40001 / 40401-40404 / 40901-40912 / 42201-42221 |
+| 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40404 / 40901-40905, 40911-40912 / 42201, 42221 |
 | 订单 | 3xxx | 3001-3006 |
 
 ---
@@ -72,7 +84,7 @@
 ```
 修改 Model           → er_diagram.dbml + database_design.md
 修改 API 端点        → docs/03_api/<module>_api.md
-修改 Enum            → api_design_conventions.md §14
+修改 Enum            → api_design_conventions.md §14 + 本文 §3
 修改业务规则         → docs/01_requirements/<module>.md
 修改目录结构         → architecture.md §2
 修改通用规范         → coding_standards.md
@@ -98,7 +110,7 @@ must update related documents before commit.
 | New/changed Enum | `api_design_conventions.md` §14 + `AI_CONTEXT.md` §3 |
 | New/changed project structure | `architecture.md` §2 |
 | New/changed dependency | `architecture.md` §1 + requirements.txt |
-| New/changed coding rule | `coding_standards.md` + `CLAUDE.md`（如影响优先级） |
+| New/changed coding rule | `coding_standards.md` + `AGENTS.md`（如影响优先级） |
 | Feature completion | `changelog.md` |
 | New error code | `api_design_conventions.md` §8 + `AI_CONTEXT.md` §4 |
 
@@ -113,7 +125,7 @@ Code Change
   ├─ Update docs               ← keep in same commit as code
   ├─ Update changelog          ← if completing a feature
   ├─ git diff --stat review    ← sanity check
-  └─ commit + push
+  └─ commit + push（仅用户明确要求时）
 ```
 
 ### Documentation Style
@@ -137,7 +149,7 @@ Code Change
 5. 更新相关文档     → 代码和文档同 commit
 6. 更新 changelog   → 功能模块完成时
 7. git diff review  → 最后确认变更范围
-8. commit + push
+8. commit + push      → 仅用户明确要求时
 ```
 
 **四件套原则：Code + Test + Documentation + Commit。缺一不可。**
