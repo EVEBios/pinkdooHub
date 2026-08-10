@@ -1,4 +1,6 @@
-# pinkdooHub 数据库设计 v1.0
+# pinkdooHub 数据库设计 v1.2
+
+> **Last Updated:** 2026-08-10
 
 ---
 
@@ -29,6 +31,18 @@ users
 audit_logs
 ```
 
+### 2.1 数据完整性约束边界
+
+Product 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成：
+
+| 层级 | 当前保证 |
+|------|----------|
+| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit 一对一唯一性、Option 全历史联合唯一性和命名索引 |
+| Schema / Model | 文本长度、正整数、金额范围与小数位、库存和图片排序非负、字符串 Enum 合法性 |
+| Service / Validator | Product 类型与扩展表匹配、图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转和上架完整性 |
+
+当前 Product Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，在首次 Product 迁移 Review 时统一决定，不能只改某一数据库。
+
 ---
 
 ## 3. 表详细说明
@@ -40,13 +54,13 @@ audit_logs
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| username | VARCHAR | NOT NULL, UNIQUE | 登录账号 |
-| password | VARCHAR | NOT NULL | 加密密码 |
-| nickname | VARCHAR | - | 用户昵称 |
-| phone | VARCHAR | NOT NULL, UNIQUE | 手机号码 |
-| avatar | VARCHAR | - | 头像 URL |
-| role | TINYINT | DEFAULT 1 | 1:普通用户 2:管理员 3:超级管理员 |
-| status | TINYINT | DEFAULT 1 | 1:正常 2:禁用 |
+| username | VARCHAR(32) | NOT NULL, UNIQUE | 登录账号 |
+| password | VARCHAR(128) | NOT NULL | 加密密码 |
+| nickname | VARCHAR(32) | NOT NULL | 用户昵称 |
+| phone | VARCHAR(11) | NOT NULL, UNIQUE | 手机号码；Service 预检查，数据库兜底并发唯一性 |
+| avatar | VARCHAR(256) | nullable | 头像 URL |
+| role | SMALLINT | NOT NULL | 1:普通用户 2:管理员 3:超级管理员；ORM 默认 1 |
+| status | SMALLINT | NOT NULL | 1:正常 2:禁用；ORM 默认 1 |
 | last_login_at | DATETIME | - | 最后登录时间 |
 | created_at | DATETIME | - | 注册时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
@@ -57,16 +71,16 @@ audit_logs
 
 所有商品的公共信息，采用统一商品表设计。价格由各子表管理（体验 → `experience_options.price`，套装 → `product_kits.price`），products 表仅存储公共字段。
 
-DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使用 `StrEnum`（`ProductType` / `ProductStatus`），禁止 Magic String。
+DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使用 Python 3.10 兼容的 `str, Enum`（`ProductType` / `ProductStatus`），禁止 Magic String。ORM 使用字符串枚举字段，数据库值仍为普通 VARCHAR。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | name | VARCHAR(100) | NOT NULL | 商品名称，允许重名 |
-| product_type | VARCHAR | NOT NULL | `"experience"` / `"kit"`，创建后不可修改 |
+| product_type | VARCHAR(20) | NOT NULL | `"experience"` / `"kit"`，创建后不可修改 |
 | description | TEXT | - | 商品描述 |
-| status | VARCHAR | DEFAULT `"draft"` | `"draft"` / `"online"` / `"offline"` |
-| is_deleted | BOOLEAN | DEFAULT FALSE | 逻辑删除标记 |
+| status | VARCHAR(20) | NOT NULL, DEFAULT `"draft"` | `"draft"` / `"online"` / `"offline"` |
+| is_deleted | BOOLEAN | NOT NULL, DEFAULT FALSE | 逻辑删除标记 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
@@ -78,21 +92,21 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 
 拼豆体验的可选配置，与 `products` **一对多**关联。每条 Option 代表一个独立可售配置（时长 + 人数 + 日期类型 → 价格）。
 
-管理员可随时新增/修改/删除 Option。删除 Option 后若商品 `online` 且剩余 Option = 0，则自动转为 `draft`。Option 无独立状态字段，跟随 Product 的生命周期。
+管理员可在 Product 为 `draft` / `offline` 时新增、修改或删除 Option；`online` Product 必须先下架。删除最后一个 Option 后 Product 保持原 `draft` / `offline` 状态，重新上架时由 Validator 拒绝空 Option 集合。Option 无独立状态字段，跟随 Product 的生命周期。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | product_id | BIGINT | FK → products.id, NOT NULL | 关联商品 |
-| duration | INT | NOT NULL | 分钟数：60 / 120 / 540 |
-| participants | INT | NOT NULL | 体验人数：1 / 2 |
-| day_type | VARCHAR | NOT NULL | `"weekday"` 工作日 / `"holiday"` 节假日 |
+| duration | INT | NOT NULL | 分钟数，必须 > 0；60 / 120 / 540 只是当前常用值 |
+| participants | INT | NOT NULL | 体验人数，必须 > 0；1 / 2 只是当前常用值 |
+| day_type | VARCHAR(20) | NOT NULL | `"weekday"` 工作日 / `"holiday"` 节假日 |
 | price | DECIMAL(10,2) | NOT NULL | 该配置的售价，0 < Price ≤ 99999 |
-| is_deleted | BOOLEAN | DEFAULT FALSE | 逻辑删除。保留图片关联和历史订单引用 |
+| is_deleted | BOOLEAN | NOT NULL, DEFAULT FALSE | 逻辑删除。保留图片关联和历史订单引用 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
-**唯一约束：** `(product_id, duration, participants, day_type)` 联合唯一，禁止同一商品内出现重复配置。
+**唯一约束：** `(product_id, duration, participants, day_type)` 在全历史范围内联合唯一，约束不包含 `is_deleted`。逻辑删除后再次创建相同组合时，Service 恢复原记录（保持 ID、更新价格、`is_deleted = false`），不插入第二条记录，也不物理删除可能已被订单或图片引用的 Option。
 
 ---
 
@@ -103,9 +117,9 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| product_id | BIGINT | FK → products.id, UNIQUE | 关联商品 |
+| product_id | BIGINT | FK → products.id, NOT NULL, UNIQUE | 关联商品 |
 | price | DECIMAL(10,2) | NOT NULL | 套装售价，0 < Price ≤ 99999 |
-| stock | INT | NOT NULL, DEFAULT 0 | 当前库存 |
+| stock | INT | NOT NULL, DEFAULT 0 | 当前库存；Phase 4.1 直接设置最终值，Phase 4.3 再引入库存流水与自动扣减/恢复 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
@@ -120,12 +134,12 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| product_id | BIGINT | FK → products.id | 关联商品 |
+| product_id | BIGINT | FK → products.id, NOT NULL | 关联商品 |
 | experience_option_id | BIGINT | FK → experience_options.id, nullable | NULL = Product 公共图；非 NULL = Option 专属图 |
-| image_url | VARCHAR | NOT NULL | 图片 URL |
-| is_cover | BOOLEAN | DEFAULT FALSE | 封面图，仅 `experience_option_id IS NULL` 时有效 |
-| sort | INT | DEFAULT 0 | 排序序号 |
-| is_deleted | BOOLEAN | DEFAULT FALSE | 逻辑删除。保留历史关联 |
+| image_url | VARCHAR(2048) | NOT NULL | 图片 URL |
+| is_cover | BOOLEAN | NOT NULL, DEFAULT FALSE | 封面图，仅 `experience_option_id IS NULL` 时有效 |
+| sort | INT | NOT NULL, DEFAULT 0 | 排序序号 |
+| is_deleted | BOOLEAN | NOT NULL, DEFAULT FALSE | 逻辑删除。保留历史关联 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
@@ -139,7 +153,8 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 **约束：**
 - `is_cover = true` 仅在 `experience_option_id IS NULL` 时有效，每 Product 最多一张封面
 - Option 图片的 `is_cover` 必须为 `false`，默认首图为 `sort ASC, id ASC` 第一张
-- 删除 Option 时，其关联图片的 `experience_option_id` 设为 NULL（`ON DELETE SET NULL`），变为 Product 公共图片
+- 逻辑删除 Option 时图片关联保持不动，随 Option 从正常查询隐藏；恢复 Option 时重新可见
+- 仅异常物理删除 Option 时，FK 的 `ON DELETE SET NULL` 才将关联图片变为 Product 公共图片
 - Option 无图片时返回 `"images": []`，前端展示占位图
 
 ---
@@ -171,9 +186,9 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | order_id | BIGINT | FK → orders.id | 关联订单 |
 | product_id | BIGINT | FK → products.id | 关联原商品 |
 | experience_option_id | BIGINT | FK → experience_options.id, nullable | 关联体验配置（套装为 NULL） |
-| option_duration | INT | nullable | 快照：分钟数（60 / 120 / 540） |
+| option_duration | INT | nullable | 快照：正整数分钟数 |
 | option_participants | INT | nullable | 快照：人数 |
-| option_day_type | VARCHAR | nullable | 快照：日期类型 |
+| option_day_type | VARCHAR(20) | nullable | 快照：日期类型 |
 | product_name | VARCHAR | NOT NULL | 下单时商品名称快照 |
 | product_price | DECIMAL(10,2) | NOT NULL | 下单时商品价格快照 |
 | quantity | INT | DEFAULT 1 | 数量 |
@@ -212,7 +227,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | products → product_kits | 一对一 | 套装商品的扩展信息 |
 | products → product_images | 一对多 | 一个商品有多张图片 |
 
-**外键约束：** 所有 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。
+**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。
 
 ---
 
@@ -225,7 +240,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | 所有主键 | `id BIGINT AUTO_INCREMENT` |
 | 所有时间 | `created_at` / `updated_at` |
 | 所有金额 | `DECIMAL(10,2)`，单位：元 |
-| 所有状态 | `TINYINT`，文档标注每个值的含义 |
+| 状态字段 | 按模块权威设计：User / Order 使用 `TINYINT`，Product 使用 `VARCHAR(20)` 字符串 Enum |
 | 所有外键 | `xxx_id BIGINT` |
 
 ### 时间字段策略
@@ -299,13 +314,15 @@ CREATE INDEX idx_users_status_role ON users (status, role);
 | # | 查询 | 频率 | 索引 |
 |---|------|------|------|
 | 1 | `WHERE status = 'online' AND is_deleted = false ORDER BY created_at` | **极高**（首页列表） | **`(status, is_deleted)`** |
-| 2 | `WHERE is_deleted = false [AND status = ?] [AND product_type = ?]` | 高（管理后台） | 被索引 #1 覆盖（最左匹配） |
+| 2 | `WHERE is_deleted = false [AND status = ?] [AND product_type = ?]` | 中（管理后台） | 传入 `status` 时可使用索引 #1；仅按 `is_deleted` 时不满足最左匹配 |
 
 > **为什么 `status` 在前？** 因为 `status` 的选择性高于 `is_deleted`（`is_deleted` 绝大多数为 `false`）。索引 `(status, is_deleted)` 可以同时覆盖：
 > - `WHERE status = ?`（最左匹配）
 > - `WHERE status = ? AND is_deleted = ?`（完整匹配）
-> 
+>
 > 如果反过来建 `(is_deleted, status)`，单独按 `status` 过滤时索引无法使用。
+
+> 该索引**不能**覆盖只按 `is_deleted` 的查询。当前不为低选择性的布尔字段单独建索引；待 Repository 冻结管理列表的排序与筛选组合后，再用真实查询计划评估是否增加 `(is_deleted, updated_at)` 等管理端索引。
 
 ```sql
 -- Migration SQL
@@ -316,7 +333,7 @@ CREATE INDEX idx_products_status_deleted ON products (status, is_deleted);
 
 | # | 查询 | 频率 | 索引 |
 |---|------|------|------|
-| 1 | `WHERE product_id = ? AND duration = ? AND participants = ? AND day_type = ?` | 中（唯一校验） | `UNIQUE(product_id, duration, participants, day_type)` ✅ 已有 |
+| 1 | `WHERE product_id = ? AND duration = ? AND participants = ? AND day_type = ?`（包含已删除记录） | 中（创建/恢复与唯一校验） | `UNIQUE(product_id, duration, participants, day_type)` ✅ 已有 |
 | 2 | `WHERE product_id = ?` | 高（详情页展示） | 被 UNIQUE 索引覆盖（最左匹配 product_id） |
 
 ```sql
@@ -329,11 +346,13 @@ CREATE INDEX idx_products_status_deleted ON products (status, is_deleted);
 |---|------|------|------|
 | 1 | `WHERE product_id = ? ORDER BY sort` | 中 | `(product_id, sort)` |
 | 2 | `WHERE product_id = ? AND is_cover = true LIMIT 1` | 中（封面查找） | `(product_id, is_cover)` |
+| 3 | `WHERE experience_option_id = ? ORDER BY sort, id` | 中（Option 图片展示） | `(experience_option_id, sort)` |
 
 ```sql
 -- Migration SQL
 CREATE INDEX idx_image_product_sort ON product_images (product_id, sort);
 CREATE INDEX idx_image_product_cover ON product_images (product_id, is_cover);
+CREATE INDEX idx_image_option_sort ON product_images (experience_option_id, sort);
 ```
 
 #### orders
@@ -380,9 +399,10 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 |----|--------|-----|------|----------|
 | `users` | `idx_users_status_role` | `(status, role)` | 普通 | 管理后台用户列表 |
 | `products` | `idx_products_status_deleted` | `(status, is_deleted)` | 普通 | 客户列表、管理后台列表 |
-| `experience_options` | `idx_option_unique` | `(product_id, duration, participants, day_type)` | UNIQUE | 唯一性校验、按 product 查询 |
+| `experience_options` | `idx_option_unique` | `(product_id, duration, participants, day_type)` | UNIQUE | 全历史唯一、创建/恢复校验、按 product 查询 |
 | `product_images` | `idx_image_product_sort` | `(product_id, sort)` | 普通 | 图片排序展示 |
 | `product_images` | `idx_image_product_cover` | `(product_id, is_cover)` | 普通 | 封面图查找 |
+| `product_images` | `idx_image_option_sort` | `(experience_option_id, sort)` | 普通 | Option 图片排序展示 |
 | `orders` | `idx_orders_user_status_created` | `(user_id, status, created_at)` | 普通 | 我的订单列表（含状态筛选） |
 | `orders` | `idx_orders_status_created` | `(status, created_at)` | 普通 | 管理后台订单管理 |
 | `order_items` | `idx_order_items_order` | `(order_id)` | 普通 | 订单详情（FK 查询） |
@@ -393,7 +413,7 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 
 | 表 | 原因 |
 |----|------|
-| `product_kits` | 仅通过 `product_id`（已有 UNIQUE PK）查询，无需额外索引 |
+| `product_kits` | 仅通过 `product_id`（已有 UNIQUE 约束及其索引）查询，无需额外索引 |
 
 ---
 

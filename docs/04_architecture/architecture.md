@@ -12,6 +12,7 @@
 | ORM | Tortoise ORM | 1.1.7 |
 | 数据校验 | Pydantic | 2.13 |
 | 数据库 | MySQL（生产）/ SQLite（开发） | - |
+| MySQL 异步驱动 | asyncmy | 0.2.11 |
 | 缓存 | Redis | - |
 | 迁移工具 | Aerich | 0.9.3 |
 | ASGI 服务器 | Uvicorn | 0.51 |
@@ -36,7 +37,7 @@
 |------|------|
 | 异步原生 | 全异步查询引擎，与 FastAPI 事件循环无缝配合 |
 | Django 风格 | API 设计与 Django ORM 接近，学习成本低 |
-| Aerich 迁移 | 内置迁移工具，开发体验与 Alembic 同级 |
+| Aerich 迁移 | Tortoise ORM 配套迁移工具，提供版本化升级与降级流程 |
 | 轻量 | 无需 SQLAlchemy 的重量级抽象 |
 
 **Redis**
@@ -55,6 +56,8 @@
 | 事务支持 | 订单创建（扣库存 + 生成订单）需要 ACID |
 | 生态 | 托管服务成熟，运维成本低 |
 | 开发便利 | 开发环境用 SQLite（免安装），生产切 MySQL 零代码改动 |
+
+生产环境由 Tortoise ORM 通过 `asyncmy` 连接 MySQL。该驱动是生产数据库路径的必需运行时依赖；SQLite 开发和测试环境仍使用 `aiosqlite`。
 
 ---
 
@@ -82,6 +85,8 @@ pinkdooHub/
 │   ├── models/                 # 数据模型层 —— Tortoise ORM Model 定义
 │   │   ├── __init__.py
 │   │   ├── base.py             #   BaseModel（id, created_at, updated_at）
+│   │   ├── fields.py           #   StrictDecimalField 等 ORM 字段扩展
+│   │   ├── validators.py       #   Model 字段级通用校验器
 │   │   ├── user.py             #   User
 │   │   ├── product.py          #   Product
 │   │   ├── experience_option.py#   ExperienceOption
@@ -149,7 +154,8 @@ pinkdooHub/
 │   │
 │   ├── db/                     # 数据库
 │   │   ├── __init__.py
-│   │   └── database.py         #   Tortoise ORM 初始化 + 连接配置
+│   │   ├── database.py         #   Tortoise ORM 初始化 + 连接配置
+│   │   └── indexes.py          #   稳定命名的跨数据库 UniqueIndex
 │   │
 │   └── utils/                  # 纯工具函数 —— 无状态、无副作用
 │       ├── __init__.py
@@ -178,7 +184,7 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 `app/common/enums/product.py`、`app/common/constants/product.py`、`app/schemas/product.py` 与 `app/schemas/product_response.py`；Product 的 Model、Repository、Validator、Service 和 API 文件仍需按实际文件树继续实现。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，以及 Product、ExperienceOption、ProductKit、ProductImage 的全部 Model；Repository、Validator、Service 和 API 仍需按实际文件树继续实现。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
@@ -410,7 +416,7 @@ from tortoise import fields
 from tortoise.models import Model
 
 class User(Model):
-    id = fields.BigIntField(pk=True)
+    id = fields.BigIntField(primary_key=True)
     username = fields.CharField(max_length=32, unique=True)
     password = fields.CharField(max_length=128)
     nickname = fields.CharField(max_length=32)
@@ -729,7 +735,7 @@ _ENV_FILE = str(Path(__file__).resolve().parent.parent.parent / ".env")
 class Settings(BaseSettings):
     # 应用
     app_name: str = "pinkdooHub"
-    app_version: str = "0.2.0"
+    app_version: str = "0.3.0"
     app_env: str = "development"
     app_debug: bool = True
 
@@ -783,12 +789,24 @@ def get_db_config():
         }
     return {
         "connections": {
-            "default": f"mysql://{settings.db_user}:{settings.db_password}"
-                       f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+            "default": {
+                "engine": "tortoise.backends.mysql",
+                "credentials": {
+                    "host": settings.db_host,
+                    "port": settings.db_port,
+                    "user": settings.db_user,
+                    "password": settings.db_password,
+                    "database": settings.db_name,
+                },
+            }
         },
         ...
     }
 ```
+
+MySQL 使用结构化 `credentials`，不手工拼接连接 URL；这样密码中的 `@`、`:`、`/`、`#` 等保留字符会作为原始凭据传给驱动，不会被误解析为 URL 结构。
+
+Schema 创建策略按环境隔离：`development` 可在应用启动时使用 `generate_schemas` 方便本地开发；`testing` 由测试 fixture 创建并销毁独立临时 Schema；`production` 禁止启动时隐式建表或改表，必须先执行经过 Review 的受控数据库迁移。
 
 ---
 

@@ -10,6 +10,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 - FastAPI 0.139.2 + Uvicorn 0.51.0
 - Tortoise ORM 1.1.7 + Aerich 0.9.3
+- asyncmy 0.2.11（MySQL 异步驱动）
 - Pydantic 2.13.4 + pydantic-settings 2.14.2
 - Redis 8.0.1
 - pytest 9.1.1 + pytest-asyncio + httpx
@@ -28,7 +29,10 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 当前实现状态：
 
-- Product 的详细设计已完成，但 `app/models/`、`schemas/`、`repositories/`、`validators/`、`services/` 和 `api/` 中的 Product 实现仍待完成。
+- Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py` 以及 Product、ExperienceOption、ProductKit、ProductImage Model 已实现并有契约测试。`repositories/`、`validators/`、`services/` 和 `api/` 中的 Product 实现仍待完成。
+- MySQL 8+ 权威首迁移已离线生成并通过静态契约测试，但尚未应用到任何数据库；SQLite 开发库仍是旧基线，不得直接 fake 为最新版本。
+- ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
+- Phase 4.1 的 Kit 库存采用直接设置最终值模式；库存流水、自动扣减/恢复和并发控制仍属于 Phase 4.3 Inventory。
 - 架构文档中出现的 Product、Order、Inventory 文件可能是规划结构，不代表代码已经存在；开始任务前必须检查实际文件树和测试。
 - Product API 文档当前仍标记为 Draft。实现时以 `product_business_rules.md` 和 `product_api.md` 为契约；遇到缺口或冲突先指出，不自行发明业务规则。
 
@@ -53,6 +57,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | 代码、类型、各层、性能、测试和 Git 规范 | [`docs/05_development/coding_standards.md`](docs/05_development/coding_standards.md) |
 | 已完成能力、重要决策和已知限制 | [`docs/05_development/changelog.md`](docs/05_development/changelog.md) |
 | 完成功能后的检查项目 | [`docs/07_process/code_review_checklist.md`](docs/07_process/code_review_checklist.md) |
+| 数据库迁移生成、Review、执行与既有库基线 | [`docs/07_process/database_migration_workflow.md`](docs/07_process/database_migration_workflow.md) |
 | 用户模块历史摘要 | [`docs/06_ai/User_Module_Summary.md`](docs/06_ai/User_Module_Summary.md) |
 
 ### 需求与业务规则

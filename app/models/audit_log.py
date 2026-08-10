@@ -1,6 +1,7 @@
 """AuditLog Model —— 操作审计日志。"""
 
 from tortoise import fields
+from tortoise.indexes import Index
 
 from app.models.base import BaseModel
 
@@ -20,3 +21,13 @@ class AuditLog(BaseModel):
 
     class Meta:
         table = "audit_logs"
+        indexes = [
+            Index(
+                fields=("target_type", "target_id", "created_at"),
+                name="idx_audit_target_created",
+            ),
+            Index(
+                fields=("operator_id", "created_at"),
+                name="idx_audit_operator_created",
+            ),
+        ]

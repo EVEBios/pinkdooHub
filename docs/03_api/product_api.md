@@ -1,9 +1,9 @@
 # Product API Design
 
-> **Document Version:** v0.2
+> **Document Version:** v0.3
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Status:** Draft — Schema implemented; Model/Repository/Service/API pending
+> **Status:** Draft — Schema and all Product Models implemented; Repository/Validator/Service/API pending
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **Schema 实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`。Schema 已完成不代表端点已可调用；当前仍需继续实现 Model、Repository、Validator、Service 和 API。
+> **当前实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`；Product 聚合根及三个子 Model 分别见 `app/models/product.py`、`app/models/experience_option.py`、`app/models/product_kit.py`、`app/models/product_image.py`。Schema 与全部 Product Model 已实现不代表端点可调用；当前仍需继续实现 Repository、Validator、Service 和 API。
 
 ---
 
@@ -82,7 +82,7 @@ Authorization: Bearer <access_token>
 | price | string | 该配置价格（`"299.00"`），0 < Price ≤ 99999 |
 | images | array | 该 Option 的专属图片列表。Online 商品每个 Option 至少 1 张图；无图仅出现在 draft/offline |
 
-> Option 通过 `is_deleted` 实现逻辑删除。正常查询自动过滤已删除 Option。
+> Option 通过 `is_deleted` 实现逻辑删除。正常查询自动过滤已删除 Option。同一 Product 的 `(duration, participants, day_type)` 在全历史范围内唯一；再次 POST 相同的已删除组合时恢复原 Option ID，而不是插入第二条记录。
 
 > **枚举字段统一使用 `{value, label}` 格式**（见 [API Design Conventions §9.4](api_design_conventions.md#94-枚举值--valuelabel-模式)）。
 > Duration 和 Participants 是开放的正整数值，不是固定枚举。60 / 120 / 540 分钟与 1 / 2 人只是当前常用值；180 分钟、3 人等未来值无需新增 Enum。Service 层负责生成 label。
@@ -209,7 +209,7 @@ Authorization: Bearer <access_token>
 | 40903 | `PRODUCT_IS_DELETED` | 商品已删除 |
 | 40904 | `PRODUCT_MUST_BE_OFFLINE_BEFORE_DELETE` | online 商品需先下架才能删除 |
 | 40905 | `ONLINE_PRODUCT_CANNOT_BE_MODIFIED` | online 商品不可修改 |
-| 40911 | `OPTION_ALREADY_EXISTS` | Option 配置已存在 |
+| 40911 | `OPTION_ALREADY_EXISTS` | 相同有效 Option 配置已存在，或 PATCH 目标组合已被其他记录占用 |
 | 40912 | `OPTION_ALREADY_DELETED` | Option 已删除 |
 
 **上架完整性（422xx）—— HTTP 422**
@@ -327,7 +327,7 @@ PATCH /admin/products/kit/5/price → Product 5 实际是 Experience → 40001
 
 | Method | URI | 说明 |
 |--------|-----|------|
-| POST | /admin/products/experience/{id}/options | 新增 Option |
+| POST | /admin/products/experience/{id}/options | 新增 Option；命中已删除相同组合时恢复原记录 |
 | PATCH | /admin/options/{option_id} | 修改 Option |
 | DELETE | /admin/options/{option_id} | 删除 Option |
 
@@ -390,7 +390,7 @@ draft ──→ online ──→ offline
 | product_type 不可修改 | 创建后不可变更 |
 | Draft 允许无 Option | 先创建商品，再逐步添加配置 |
 | Online 至少一个 Option | 上线校验 |
-| Option 唯一性 | 同一 Product 内 (duration, participants, day_type) 唯一 |
+| Option 唯一性 | 同一 Product 内 (duration, participants, day_type) 全历史唯一；POST 命中已删除组合时恢复原记录 |
 | 重新上架保持原 ID | 不创建新商品 |
 | 逻辑删除 | DELETE 执行逻辑删除；online 商品需先下架 |
 | 价格快照 | 订单创建时快照当前价格，后续变更不影响历史订单 |
@@ -1185,7 +1185,7 @@ PATCH /api/v1/admin/products/{id}/offline
 POST /api/v1/admin/products/experience/{product_id}/options
 ```
 
-为体验商品新增一条可售配置。图片通过独立接口上传（见 [§7.15 Option 专属图片上传](#715-option-专属图片上传)）。
+为体验商品新增一条可售配置；如果相同组合已逻辑删除，则恢复原记录。图片通过独立接口上传（见 [§7.15 Option 专属图片上传](#715-option-专属图片上传)）。
 
 **可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `40911`。字段类型和范围错误统一为 HTTP 422 Schema 校验。
 
@@ -1209,7 +1209,15 @@ POST /api/v1/admin/products/experience/{product_id}/options
 
 **类型校验：** 仅接受 `product_type = "experience"`。传入 Kit ID 必须失败。
 
-**唯一性：** 同一 Product 下 `(duration_minutes, participants, day_type)` 不可重复。DB UNIQUE + Service 双重保护。
+**唯一性与恢复：** 同一 Product 下 `(duration_minutes, participants, day_type)` 在全历史范围内唯一，DB UNIQUE + Service 双重保护。Service 查询时必须包含逻辑删除记录：
+
+| 查询结果 | 行为 | HTTP |
+|----------|------|------|
+| 不存在相同组合 | INSERT 新 Option | 201 |
+| 存在且 `is_deleted = false` | 拒绝，`40911 OPTION_ALREADY_EXISTS` | 409 |
+| 存在且 `is_deleted = true` | 恢复原记录：保持原 ID、更新价格、`is_deleted = false` | 200 |
+
+恢复不是新建数据库记录，不物理删除旧 Option，也不复制第二条历史版本。原 Option 图片关联继续保留；历史订单通过订单项快照保持原配置和价格。
 
 **请求示例**
 
@@ -1222,7 +1230,7 @@ POST /api/v1/admin/products/experience/{product_id}/options
 }
 ```
 
-**成功响应** — HTTP 201
+**新建成功响应** — HTTP 201
 
 **Response Schema：** `ExperienceOptionOut`
 
@@ -1241,7 +1249,30 @@ POST /api/v1/admin/products/experience/{product_id}/options
 }
 ```
 
-> `images: []` 合理——刚创建完 Option 还没有图片。Draft / Offline 阶段允许；上架前再校验。
+> `images: []` 合理——真正新建的 Option 还没有图片。Draft / Offline 阶段允许；上架前再校验。
+
+**恢复成功响应** — HTTP 200
+
+**Response Schema：** 同样使用 `ExperienceOptionOut`。返回原 Option ID 和仍有效的原图片关联，价格为本次 POST 提交的新值。
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "id": 11,
+        "duration": { "value": 120, "label": "2小时" },
+        "participants": { "value": 2, "label": "2人" },
+        "day_type": { "value": "holiday", "label": "节假日" },
+        "price": "799.00",
+        "images": [
+            { "id": 31, "image_url": "https://cdn.example.com/options/11/31.jpg", "sort": 0 }
+        ]
+    }
+}
+```
+
+**Audit：** 新建记录 `CREATE_OPTION`；恢复记录 `RESTORE_OPTION`，metadata 包含恢复前后的价格和原 Option ID。
 
 **失败响应**
 
@@ -1270,7 +1301,7 @@ POST /api/v1/admin/products/experience/{product_id}/options
 图片失败 → 提示"配置已保存，图片上传失败，请重试"
 ```
 
-> **部分成功处理：** Option 创建成功后图片上传失败，Option 保留（`images: []`）。管理员重新编辑时补图片即可。这正是 Draft 机制的设计价值。
+> **部分成功处理：** 新 Option 创建成功后图片上传失败，Option 保留（`images: []`）；恢复的 Option 继续保留原图片。管理员可以重新编辑并补充图片。这正是 Draft 机制的设计价值。
 
 ---
 
@@ -1303,7 +1334,7 @@ PATCH /api/v1/admin/options/{option_id}
 | `offline` | ✅ |
 | `online` | ❌ 线上商品修改配置需先下架 |
 
-**唯一性：** 修改后仍需保证同一 Product 下 `(duration_minutes, participants, day_type)` 不与其他 Option 重复。
+**唯一性：** 修改后仍需保证同一 Product 下 `(duration_minutes, participants, day_type)` 不与任何其他记录重复，包括逻辑删除记录。若目标组合由已删除 Option 占用，返回 `40911`；管理员应通过新增 Option 接口恢复该记录，避免混淆两个 Option ID 的历史关联。
 
 **请求示例**
 
@@ -1368,6 +1399,8 @@ DELETE /api/v1/admin/options/{option_id}
 **最后一条 Option：** Draft / Offline 阶段允许删除最后一条 Option（`options = 0`），这不影响商品合法性。但 `PATCH .../online` 会因"没有有效 Option"被 Validator 拒绝。
 
 **关联数据：** Option 逻辑删除后，其关联的 `ProductImage`（`experience_option_id` 指向该 Option）保留不动。正常查询自动过滤已删除 Option，图片也随之不返回。
+
+**后续恢复：** 管理员再次 POST 相同配置组合时，Service 恢复这条 Option 并保留原 ID、图片关联，详见 [§7.10 新增 Option](#710-新增-option)。系统不为同一组合保存多条 Option 版本；操作历史由 Audit Log 保存，交易历史由 Order Item 快照保存。
 
 **Service 执行流程：**
 

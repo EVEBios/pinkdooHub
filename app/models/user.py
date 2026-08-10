@@ -4,6 +4,7 @@
 """
 
 from tortoise import fields
+from tortoise.indexes import Index
 
 from app.models.base import BaseModel
 
@@ -18,7 +19,7 @@ class User(BaseModel):
     username = fields.CharField(max_length=32, unique=True)
     password = fields.CharField(max_length=128)
     nickname = fields.CharField(max_length=32)
-    phone = fields.CharField(max_length=11)
+    phone = fields.CharField(max_length=11, unique=True)
     avatar = fields.CharField(max_length=256, null=True)
     role = fields.SmallIntField(default=1)     # UserRole.USER
     status = fields.SmallIntField(default=1)   # UserStatus.NORMAL
@@ -26,3 +27,9 @@ class User(BaseModel):
 
     class Meta:
         table = "users"
+        indexes = [
+            Index(
+                fields=("status", "role"),
+                name="idx_users_status_role",
+            ),
+        ]

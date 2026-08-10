@@ -486,7 +486,7 @@ from tortoise.models import Model
 
 class BaseModel(Model):
     """抽象基类 —— 所有业务 Model 的公共字段。"""
-    id = fields.BigIntField(pk=True)
+    id = fields.BigIntField(primary_key=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -496,43 +496,80 @@ class BaseModel(Model):
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `id` | `BigIntField(pk=True)` | 主键，自增 |
+| `id` | `BigIntField(primary_key=True)` | 主键，自增 |
 | `created_at` | `DatetimeField(auto_now_add=True)` | 首次保存时 ORM 自动填入，之后不可变 |
 | `updated_at` | `DatetimeField(auto_now=True)` | 每次 `save()` 时 ORM 自动更新 |
 
-**`is_deleted` 不放在 BaseModel。** 只有需要逻辑删除的表（如 Product）才定义此字段。Audit、Order 等不需要删除的表示应包含此字段。
+**`is_deleted` 不放在 BaseModel。** 只有需要逻辑删除的表（如 Product、ExperienceOption、ProductImage）才定义此字段。Audit、Order 等不需要逻辑删除的表不应包含此字段。
 
 ### 7.3 完整示例
 
 ```python
 # app/models/product.py
 from tortoise import fields
+from tortoise.indexes import Index
+from tortoise.validators import MaxLengthValidator, MinLengthValidator
+
+from app.common.constants.product import (
+    PRODUCT_DESCRIPTION_MAX_LENGTH,
+    PRODUCT_ENUM_MAX_LENGTH,
+    PRODUCT_NAME_MAX_LENGTH,
+    PRODUCT_NAME_MIN_LENGTH,
+)
+from app.common.enums.product import ProductStatus, ProductType
 from app.models.base import BaseModel
 
+
 class Product(BaseModel):
-    name = fields.CharField(max_length=100)
-    product_type = fields.CharField(max_length=20)   # ProductType(StrEnum)
-    description = fields.TextField(null=True)
-    status = fields.CharField(max_length=20, default="draft")
-    is_deleted = fields.BooleanField(default=False)
+    name = fields.CharField(
+        max_length=PRODUCT_NAME_MAX_LENGTH,
+        validators=[MinLengthValidator(PRODUCT_NAME_MIN_LENGTH)],
+    )
+    product_type = fields.CharEnumField(
+        ProductType,
+        max_length=PRODUCT_ENUM_MAX_LENGTH,
+    )
+    description = fields.TextField(
+        null=True,
+        validators=[MaxLengthValidator(PRODUCT_DESCRIPTION_MAX_LENGTH)],
+    )
+    status = fields.CharEnumField(
+        ProductStatus,
+        max_length=PRODUCT_ENUM_MAX_LENGTH,
+        default=ProductStatus.DRAFT,
+        db_default=ProductStatus.DRAFT.value,
+    )
+    is_deleted = fields.BooleanField(default=False, db_default=False)
 
     class Meta:
         table = "products"
         indexes = [
-            ("status", "is_deleted"),
+            Index(
+                fields=("status", "is_deleted"),
+                name="idx_products_status_deleted",
+            ),
         ]
 ```
 
 ### 7.4 Meta 规范
 
 ```python
+from tortoise.indexes import Index
+
+from app.db.indexes import UniqueIndex
+
+
 class Meta:
     table = "table_name"         # 明确指定表名
     indexes = [
-        # 普通索引（单字段）—— 注意元组末尾的逗号
+        # 不要求固定物理名称时可用元组
         ("single_field",),
-        # 复合索引 —— 选择性高的列在前
+        # 复合索引按最左匹配顺序声明
         ("field_a", "field_b"),
+        # 数据库设计指定了稳定名称时使用 Index
+        Index(fields=("status", "is_deleted"), name="idx_status_deleted"),
+        # 稳定命名的联合唯一索引使用项目 UniqueIndex
+        UniqueIndex(fields=("a", "b"), name="idx_a_b_unique"),
     ]
 ```
 
@@ -540,6 +577,8 @@ class Meta:
 |------|------|
 | 索引集中在 `Meta.indexes` | **禁止** 字段级 `index=True` |
 | 元组格式统一 | 单字段 `("field",)`（保留末尾逗号），多字段 `("a", "b")` |
+| 文档指定索引名时显式声明 | 使用 `Index(fields=(...), name="idx_...")`，保证迁移和多数据库名称稳定 |
+| 文档指定联合唯一索引名时显式声明 | 使用 `app.db.indexes.UniqueIndex`；不要同时重复声明 `unique_together` |
 | 复合索引不冗余 | `(a, b)` 已存在则不另建 `(a)`（最左匹配已覆盖） |
 | **禁止 `ordering`** | 排序属于 Repository 职责，Repository 中显式 `.order_by("-created_at")` |
 
@@ -556,26 +595,28 @@ class Meta:
 
 ### 7.6 枚举字段
 
-枚举字段 DB 存储使用 `SmallIntField` / `CharField`，代码中**必须**使用 `app/common/enums/` 中的 Enum 类型。
+枚举字段按模块使用 `SmallIntField` / `CharEnumField`，代码中**必须**使用 `app/common/enums/` 中的 Enum 类型；`CharEnumField` 的物理数据库类型仍是 VARCHAR。
 
-| DB 类型 | Python Enum | 适用场景 |
-|---------|------------|----------|
+| ORM 字段 / DB 类型 | Python Enum | 适用场景 |
+|--------------------|-------------|----------|
 | `SmallIntField` | `IntEnum` | 用户角色、用户状态、订单状态 |
-| `CharField` | `StrEnum` | 商品类型、商品状态 |
+| `CharEnumField`（DB 为 VARCHAR） | Python 3.10 的 `str, Enum` | 商品类型、商品状态、日期类型 |
 
 ```python
 # app/common/enums/product.py
-from enum import StrEnum
+from enum import Enum
 
-class ProductType(StrEnum):
+class ProductType(str, Enum):
     EXPERIENCE = "experience"
     KIT = "kit"
 
-class ProductStatus(StrEnum):
+class ProductStatus(str, Enum):
     DRAFT = "draft"
     ONLINE = "online"
     OFFLINE = "offline"
 ```
+
+项目运行于 Python 3.10，不使用 Python 3.11 才加入标准库的 `StrEnum`。Model 通过 Tortoise `CharEnumField` 获得 Enum 类型安全，物理数据库仍使用 VARCHAR。
 
 **全项目统一 import：** Schema、Service、Repository、Model 全部使用 `app/common/enums/` 中的同一个 Enum，禁止各自重新定义。
 
@@ -584,12 +625,14 @@ class ProductStatus(StrEnum):
 | ✅ 必须 | ❌ 禁止 |
 |---------|---------|
 | 继承 `BaseModel` | 直接继承 `tortoise.models.Model` |
-| 主键用 `BigIntField(pk=True)`（在 BaseModel 中） | 使用 `IntField` 或 `UUIDField` 作为主键 |
+| 主键用 `BigIntField(primary_key=True)`（在 BaseModel 中） | 使用 `IntField` 或 `UUIDField` 作为主键 |
 | 时间字段用 `auto_now_add` / `auto_now` | 手动设置 `created_at` / `updated_at` |
-| 金额用 `DecimalField(max_digits=10, decimal_places=2)` | 金额用 `float` |
+| 金额用 `StrictDecimalField(max_digits=10, decimal_places=2)` | 金额用 `float` 或依赖原生字段静默舍入 |
 | `null=True` 显式声明可选字段 | 用空字符串 `""` 代替 `null` |
-| 枚举字段用 `SmallIntField` 或 `CharField`，注释标注 Enum 类 | Magic Number 或裸 `str` |
+| 枚举字段按模块使用 `SmallIntField` 或 `CharEnumField`，并复用 `common/enums/` | Magic Number、裸 `str` 或重复定义 Enum |
 | 所有索引在 `Meta.indexes` 中声明 | 字段级 `index=True` |
+
+Product 金额字段使用 `app.models.fields.StrictDecimalField`。Tortoise 原生 `DecimalField` 会先按 `decimal_places` 量化再执行 validators，`Decimal("1.001")` 可能被静默转换为两位小数；严格字段在量化前拒绝多余小数位。价格上下界仍通过 `MinValueValidator` / `MaxValueValidator` 声明，Schema 则继续负责拒绝非字符串金额等 HTTP 输入问题。
 
 ---
 
@@ -964,9 +1007,9 @@ async def test_register_success():
 ### 数据与事务
 
 - [ ] 跨表操作使用 `in_transaction()` 包裹
-- [ ] 金额用 `DecimalField(max_digits=10, decimal_places=2)`
+- [ ] 金额用 `StrictDecimalField(max_digits=10, decimal_places=2)`，并声明业务上下界校验器
 - [ ] ORM 查询不返回 `password` 字段
-- [ ] 枚举字段 DB 用 `SmallIntField`，API 用 Enum 类型
+- [ ] 枚举字段遵循模块设计：User / Order 使用 `SmallIntField + IntEnum`，Product 使用 `CharEnumField + str, Enum`
 
 ### 日志与测试
 
@@ -1102,14 +1145,14 @@ for order in orders:
 
 | 方法 | 适用场景 | SQL 策略 |
 |------|----------|----------|
-| `select_related("field")` | FK / 一对一（Product → ProductExperience） | JOIN，1 条 SQL |
+| `select_related("field")` | FK / 一对一（Product → ProductKit） | JOIN，1 条 SQL |
 | `prefetch_related("field")` | 反向 FK / 一对多（Product → ProductImages，Order → OrderItems） | 2 条 SQL，内存拼接 |
 
 ```python
-# 商品详情：关联体验扩展 + 图片列表
+# 商品详情：关联套装扩展、体验配置和图片列表
 product = await Product.filter(id=product_id) \
-    .select_related("experience") \          # FK / O2O → JOIN
-    .prefetch_related("images") \            # 反向 FK → 2 条 SQL
+    .select_related("kit") \                 # 反向 O2O → JOIN
+    .prefetch_related("experience_options", "images") \
     .first()
 
 # 订单详情：关联明细
@@ -1191,13 +1234,19 @@ orders = await Order.all() \
 所有索引通过 `Meta.indexes` 声明（详见 §7 Model 开发规范）：
 
 ```python
+from tortoise.indexes import Index
+
+
 class Product(Model):
     # 字段...
 
     class Meta:
         table = "products"
         indexes = [
-            ("status", "is_deleted"),          # idx_products_status_deleted
+            Index(
+                fields=("status", "is_deleted"),
+                name="idx_products_status_deleted",
+            ),
         ]
 ```
 
@@ -1209,7 +1258,10 @@ class Product(Model):
 |----|------|------|----------|
 | `products` | `(status, is_deleted)` | 普通 | 首页列表（`WHERE status='online' AND is_deleted=false`） |
 | `users` | `(status, role)` | 普通 | 管理后台用户列表 |
-| `experience_options` | `(product_id, sort)` | 普通 | 详情页排序展示 |
+| `experience_options` | `(product_id, duration, participants, day_type)` | UNIQUE | 全历史唯一、创建/恢复校验、按 Product 查询 |
+| `product_images` | `(product_id, sort)` | 普通 | Product 图片排序展示 |
+| `product_images` | `(product_id, is_cover)` | 普通 | Product 封面查询 |
+| `product_images` | `(experience_option_id, sort)` | 普通 | Option 图片排序展示 |
 | `orders` | `(user_id, status, created_at)` | 普通 | 我的订单列表 |
 | `audit_logs` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
 

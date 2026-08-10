@@ -1,9 +1,9 @@
 # Product Module Business Rules
 
-> **Document Version:** v1.4
+> **Document Version:** v1.6
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Last Updated:** 2026-07-30
+> **Last Updated:** 2026-08-10
 >
 > 本文档定义 Product 模块的业务规则。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
 >
@@ -61,7 +61,7 @@ GET /products/1
 
 前端根据 `options` 自动生成选择控件，用户选完后匹配对应价格。
 
-**未来扩展：** 新增 3 人配置只需 INSERT 一条 ExperienceOption，无需修改任何已有数据。
+**未来扩展：** 新增 3 人配置只需创建一条 ExperienceOption；如果相同组合曾被逻辑删除，则恢复原记录。无需重建其他组合。
 
 **当前阶段不考虑：** 多种体验主题、预约日期 / 时间段、包场模式。
 
@@ -90,12 +90,12 @@ GET /products/1
 |------|------|
 | 用户认知 | 用户认为「拼豆体验」是一个商品，不同时长/人数只是选项，不是不同商品 |
 | 商品列表 | 避免列表出现大量名称相同、仅配置不同的体验商品 |
-| 扩展成本 | 新增时长、人数等配置只需一条 ExperienceOption，无需重建全部组合 |
+| 扩展成本 | 新增时长、人数等配置只需创建或恢复一条 ExperienceOption，无需重建全部组合 |
 | 前端体验 | 用户在详情页选择配置即可获取对应价格，交互更自然 |
 
 ### 2.2 为什么库存不放在 Product 模块？
 
-库存扣减属于 Order 模块（下单时扣减）和 Payment 模块（支付成功后扣减），库存恢复属于 Order Cancel。Product 模块仅负责商品信息，不负责库存业务。详见 §10 Inventory Dependency。
+Phase 4.1 的 Product 模块在 `product_kits.stock` 中保存并展示套装的当前库存，管理员暂时通过“设置最终值”方式维护它。库存扣减、恢复、流水、并发控制等库存**业务流程**属于 Order / Payment / Inventory 模块，不在 Product Service 中提前实现。详见 §10 Inventory Dependency。
 
 ### 2.3 为什么 ExperienceOption 不加 status 字段？
 
@@ -166,7 +166,7 @@ draft ──→ online ──→ offline
 
 ### 4.3 Experience Pricing（via Options）
 
-体验商品的价格通过 ExperienceOption 管理。体验商品可以拥有**任意数量**的 ExperienceOption，由管理员根据业务需要灵活新增、修改或删除。每个 Option 都是一个独立可售配置，包含四个维度：
+体验商品的价格通过 ExperienceOption 管理。体验商品可以拥有**任意数量**的 ExperienceOption；管理员可在 Product 为 `draft` / `offline` 时新增、修改或删除，`online` 时须先下架。每个 Option 都是一个独立可售配置，包含四个维度：
 
 | 维度 | 说明 |
 |------|------|
@@ -175,11 +175,11 @@ draft ──→ online ──→ offline
 | 日期类型（Day Type） | Weekday / Holiday |
 | 价格 | 该组合的唯一价格 |
 
-商品上线后，前端展示全部 Option 供用户选择。管理员可随时新增不同时长或不同人数的配置（如新增 3 人、4 小时），只需 INSERT 一条 Option 记录，不影响已有数据。
+商品上线后，前端展示全部有效 Option 供用户选择。管理员需要先将 Product 保持在 `draft` / `offline`，再新增不同时长或不同人数的配置（如新增 3 人、4 小时）；新组合 INSERT 一条记录，已逻辑删除的相同组合则恢复原记录。
 
 ### 4.4 Kit Pricing
 
-套装商品为单一价格，直接存储在 Product 表。允许随时修改。支持创建多个套装，每个套装独立定价。
+套装商品为单一价格，存储在 `product_kits.price`。创建后允许修改，但仍遵守 Product 写操作的状态限制：`online` 时须先下架。系统支持创建多个套装 Product，每个 Product 对应一条 ProductKit 并独立定价。
 
 ### 4.5 Batch Price Update
 
@@ -250,12 +250,14 @@ Service 层**禁止**执行 `DELETE` 语句。删除操作一律通过状态字�
 
 ```
 ❌ DELETE FROM products WHERE id = 1
-✅ UPDATE products SET status = 'offline', is_deleted = 1 WHERE id = 1
+✅ UPDATE products SET is_deleted = 1 WHERE id = 1
 ```
+
+`online` Product 会在更新前被 Service 拒绝；`draft` / `offline` Product 逻辑删除时保持原 `status`，删除动作不隐式制造额外状态流转。
 
 ### 7.2 Database Layer（Foreign Key）
 
-关联表（ExperienceOption 等）的 Foreign Key 必须使用 `ON DELETE RESTRICT`：
+直接指向 Product 的关联表（ExperienceOption、ProductKit、ProductImage）的 Foreign Key 必须使用 `ON DELETE RESTRICT`。`ProductImage.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL` 作为 Option 异常物理删除时的兜底：
 
 **原因：** 防止有人绕过业务层直接在数据库执行物理删除，导致关联数据孤立。
 
@@ -320,8 +322,8 @@ Step 6  PATCH .../online                 → Validate → Product (online)
 
 | 操作 | 前置条件 | 后置处理 |
 |------|----------|----------|
-| 新增 Option | 无 | 无 |
-| 修改 Option | Option 存在 | 历史订单不受影响 |
+| 新增 / 恢复 Option | Product 必须为 draft / offline | 新组合 INSERT；已删除相同组合恢复原 ID |
+| 修改 Option | Option 存在且 Product 为 draft / offline | 历史订单不受影响 |
 | 删除 Option | Product 必须为 draft / offline | Online 商品不允许删除 Option。删除最后一条 Option 后商品保持原状态（draft/offline），重新上架时 Validator 拒绝 |
 
 **下线阶段：**
@@ -337,7 +339,7 @@ PUT /products/1/offline  → Product (offline)
 | 保证 | 实现方式 |
 |------|----------|
 | 上线前 Option ≥ 1 | Service 层校验，不满足抛异常 |
-| 删除最后 Option → 自动下线 | Service 层在 `delete_option()` 后检查，自动调用 `go_draft()` |
+| 删除最后 Option 后保持原状态 | 仅 `draft` / `offline` 允许删除 Option；重新上架时由 Validator 拒绝空 Option 集合 |
 | FK 约束 | `ON DELETE RESTRICT`，数据库层兜底 |
 | 事务边界 | 上线、下线、Option 增删均在单次请求内完成，无需跨请求事务 |
 
@@ -388,7 +390,8 @@ product_images
 | 封面归属 | 仅 Product 公共图片参与 `is_cover`，Option 图片 `is_cover` 恒为 false |
 | Option 默认图 | `sort ASC, id ASC` 第一张 |
 | Option 无图片 | 返回 `[]`，前端展示占位图；**不**回退到 Product 公共图片 |
-| 删除 Option | 关联图片 `experience_option_id` 设为 NULL，归入 Product 公共图片 |
+| 逻辑删除 Option | 关联图片保持不动，随已删除 Option 从正常查询中隐藏；恢复 Option 时重新可见 |
+| 异常物理删除 Option | FK 的 `ON DELETE SET NULL` 将关联图片归入 Product 公共图片，仅作数据库兜底 |
 
 **Kit 上架检查项（Phase 4.1 后续补充）：**
 
@@ -408,7 +411,7 @@ product_images
 
 ### 9.1 Experience Option Uniqueness
 
-同一体验商品内，每个 Option 的配置组合必须唯一。唯一键为：
+同一体验商品内，每个 Option 的配置组合在**全历史范围内**必须唯一。唯一键为：
 
 ```
 product_id + Duration + Participants + Day Type
@@ -420,6 +423,14 @@ product_id + Duration + Participants + Day Type
 | 商品 1：工作日 + 2h + 2 人 = 2 条 Option | ❌ 禁止 |
 
 **原因：** 同一配置出现两条记录时，系统无法确定应使用哪个价格。
+
+唯一约束不包含 `is_deleted`。每个配置组合在 `experience_options` 中最多只有一条记录：
+
+- 相同组合不存在：创建新 Option。
+- 相同组合存在且 `is_deleted = false`：拒绝为重复配置。
+- 相同组合存在且 `is_deleted = true`：恢复原记录，保持原 Option ID，更新本次提交的价格并设为 `is_deleted = false`。
+
+恢复时保留原有图片关联；不再需要的图片由图片删除接口单独逻辑删除。历史订单依赖订单项快照，审计历史依赖 Audit Log，因此无需为每次删除/恢复复制一条 Option 版本记录，也不得为了腾出唯一键而物理删除可能已被引用的旧 Option。
 
 ### 9.2 Price Snapshot
 
@@ -433,15 +444,19 @@ product_id + Duration + Participants + Day Type
 
 拼豆体验不涉及库存。
 
-拼豆套装支持库存管理。库存字段及扣减逻辑将在 **Inventory 模块（Phase 4.3）** 中实现：
+拼豆套装在 **Phase 4.1** 即使用 `product_kits.stock` 保存当前库存，支持管理端直接设置最终值，并在用户详情中派生 `available = stock > 0`。这一阶段不引入库存流水，也不在 Product Service 中实现订单驱动的扣减或恢复。
+
+完整库存业务将在 **Inventory 模块（Phase 4.3）** 中实现：
 
 | 库存操作 | 所属模块 | 触发时机 |
 |----------|----------|----------|
-| 库存扣减 | Order / Payment | 支付成功后 |
-| 库存恢复 | Order | 订单取消时 |
-| 库存不足拒绝 | Order | 下单时 |
+| 当前库存最终值设置 | Product（Phase 4.1） | 管理员维护套装时 |
+| 库存扣减 | Order / Payment + Inventory | 支付成功后 |
+| 库存恢复 | Order + Inventory | 订单取消时 |
+| 库存不足拒绝 | Order + Inventory | 下单 / 支付确认时 |
+| 库存流水与调整原因 | Inventory | Phase 4.3 |
 
-Product 模块**仅负责商品信息**（名称、描述、价格、Option），不负责库存业务逻辑。
+Product 模块只负责当前库存值的保存、展示和管理端直接设置，不负责扣减、恢复、流水及并发库存控制。
 
 ---
 
@@ -450,10 +465,11 @@ Product 模块**仅负责商品信息**（名称、描述、价格、Option）�
 | 实体 | 生命周期 | 所属 Phase |
 |------|----------|------------|
 | Product（体验/套装） | Draft → Online → Offline → 逻辑删除 | Phase 4.1 |
-| ExperienceOption | 创建 → 修改 → 删除（无独立状态，跟随 Product） | Phase 4.1 |
+| ExperienceOption | 创建 / 恢复 → 修改 → 逻辑删除（无独立状态，跟随 Product） | Phase 4.1 |
 | Kit Product | 与 Product 相同，共用 Product 生命周期 | Phase 4.1 |
 | Order | 待后续 Phase 4.2 设计 | Phase 4.2 |
-| Inventory | 待后续 Phase 4.3 设计 | Phase 4.3 |
+| Kit 当前库存值 | 创建 → 管理员直接设置 → 展示 | Phase 4.1 |
+| Inventory 流水与自动变更 | 待后续 Phase 4.3 设计 | Phase 4.3 |
 
 > **关于 ExperienceOption 的 status：** 当前不设独立状态。Option 仅作为 Product 的配置项存在，Product 的状态（draft/online/offline）已覆盖了"该配置是否对用户可见"的需求。如需独立控制某个 Option 的可见性，后续再扩展。
 
@@ -488,12 +504,13 @@ Product 模块**仅负责商品信息**（名称、描述、价格、Option）�
 |------|------|
 | 数据模型 | Product 1 → N ExperienceOption |
 | 每个 Option 必含维度 | 时长 + 人数 + 日期类型 + 价格 |
-| 唯一约束 | 同一 Product 内 (时长 + 人数 + 日期类型) 唯一 |
+| 唯一约束 | 同一 Product 内 (时长 + 人数 + 日期类型) 全历史唯一，不区分 `is_deleted` |
 | Draft 允许无 Option | 先创建商品，再逐步添加配置 |
 | Online 至少一个 Option | 无 Option 的体验商品禁止上线 |
-| Option 可新增 | INSERT 一条记录，不影响已有数据 |
+| Option 可新增 | 不存在相同组合时 INSERT；相同组合已逻辑删除时恢复原记录 |
 | Option 可修改 | 修改价格等字段，历史订单保持快照 |
-| Option 可删除 | 立即影响未来订单（该配置不再可选），历史订单保持快照 |
+| Option 可删除 | 仅 draft/offline；逻辑删除后立即影响未来订单，历史订单保持快照 |
+| Option 可恢复 | 再次创建相同已删除组合时恢复原 ID、更新价格并保留图片关联 |
 
 ### Audit Constraints
 
@@ -505,6 +522,7 @@ Product 模块**仅负责商品信息**（名称、描述、价格、Option）�
 | 编辑商品 | `UPDATE_PRODUCT` |
 | 修改价格（Product 或 Option） | `UPDATE_PRICE`（记录修改前、修改后） |
 | 新增 Option | `CREATE_OPTION` |
+| 恢复 Option | `RESTORE_OPTION` |
 | 修改 Option | `UPDATE_OPTION` |
 | 删除 Option | `DELETE_OPTION` |
 | 商品上架 | `ONLINE_PRODUCT` |
@@ -528,7 +546,7 @@ Product 模块**仅负责商品信息**（名称、描述、价格、Option）�
 | 多种体验主题 | Product | 待定 |
 | 预约日期 / 时间段 | Product | 待定 |
 | 包场模式 | Product | 待定 |
-| 库存管理 | Inventory | Phase 4.3 |
+| 库存流水、并发扣减与库存调整单 | Inventory | Phase 4.3 |
 | 商品评价 | Review | 待定 |
 | AI 商品推荐 | AI | v1.0 |
 
@@ -546,11 +564,11 @@ Product 模块**仅负责商品信息**（名称、描述、价格、Option）�
 | 商品价格 | `0 < Price ≤ 99999`，支持批量修改 |
 | 体验商品 | Product 1 → N ExperienceOption；每个 Option = 时长 + 人数 + 日期类型 + 价格；同 Product 内组合唯一；Draft 允许无 Option，Online 至少一个 |
 | 套装商品 | 单一价格，支持多款套装独立定价 |
-| Option 生命周期 | 可新增、修改、删除；删除后立即影响未来订单，历史订单保持快照 |
+| Option 生命周期 | 可新增、恢复、修改、逻辑删除；删除后立即影响未来订单，历史订单保持快照 |
 | 价格修改 | 仅影响未来订单，历史订单保留创建时价格快照 |
-| 库存 | Product 模块不负责库存；库存归 Inventory 模块（Phase 4.3） |
+| 库存 | Phase 4.1 保存/展示 Kit 当前库存并允许管理员直接设值；Phase 4.3 实现流水、自动扣减/恢复与并发控制 |
 | 用户可见性 | 普通用户仅可见 `online` 商品 |
 | 管理员权限 | 当前统一 ADMIN；后续敏感操作可提升至 SUPER_ADMIN |
 | 删除规则 | 逻辑删除，禁止物理删除；`online` 商品需先下架 |
-| 审计日志 | 商品 CRUD、Option CRUD、价格修改（含前后值）、上下架均记录 |
-| 后续扩展 | 新增配置 = 新增 Option，无需重建全部组合 |
+| 审计日志 | 商品 CRUD、Option 创建/恢复/修改/删除、价格修改（含前后值）、上下架均记录 |
+| 后续扩展 | 新组合 = 新增 Option；已删除组合 = 恢复原 Option；无需重建其他组合 |

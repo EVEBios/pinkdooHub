@@ -5,6 +5,7 @@ annotated-types==0.7.0
 anyio==4.14.2
 async-timeout==5.0.1
 asyncclick==8.3.0.3
+asyncmy==0.2.11
 backports.asyncio.runner==1.2.0
 bcrypt==3.2.2
 certifi==2026.7.22

@@ -4,13 +4,13 @@
 
 ---
 
-## Unreleased — Product Schema Foundation (Phase 4.1)
+## Unreleased — Product Schema and Model Foundation (Phase 4.1)
 
-**Date:** 2026-08-09
+**Date:** 2026-08-10
 
 ### Summary
 
-Implemented the complete Product request, query, and response Schema layer as the first executable slice of Phase 4.1. This milestone freezes API data shapes and validation boundaries; it does **not** make Product endpoints available yet.
+Implemented the complete Product request/query/response Schema layer plus the Product aggregate-root, ExperienceOption, ProductKit, and ProductImage Models as the first executable slices of Phase 4.1. This milestone freezes API data shapes and all four Product tables; it does **not** make Product endpoints available yet.
 
 ### Added
 
@@ -20,6 +20,17 @@ Implemented the complete Product request, query, and response Schema layer as th
 - Response Schemas for user/admin lists, Experience/Kit details, create/update/status/delete actions, Options, images, dimensions, and Kit price/stock results.
 - `LabeledValue[T]` for stable `{value, label}` response DTOs and `Page[T]` reuse for Product lists.
 - Product Schema contract tests covering normal paths, invalid values, PATCH missing-vs-null semantics, field isolation, pagination nesting, and ORM/internal field filtering.
+- Product aggregate-root Tortoise Model with string Enum fields, ORM validators, application and database defaults, a stable named status/deletion index, and real SQLite DDL tests.
+- ExperienceOption Tortoise Model with a RESTRICT Product FK, open positive dimensions, DayType string Enum, strict Decimal price validation, logical deletion default, and a stable named all-history unique index.
+- Reusable `UniqueIndex` and `StrictDecimalField` infrastructure for cross-database named uniqueness and pre-quantization Decimal precision validation.
+- ExperienceOption Model contract tests covering ORM round trips, reverse relations, invalid boundaries, unknown Enums, logical-delete uniqueness, cross-Product scope, FK deletion protection, and real SQLite DDL.
+- ProductKit Tortoise Model with a RESTRICT one-to-one Product relation, strict Decimal price, dual-layer stock default, non-negative stock validation, and parent-owned logical deletion.
+- ProductKit Model contract tests covering reverse one-to-one access, price/stock boundaries, per-Product uniqueness, multiple independent Kit products, FK deletion protection, and real SQLite DDL.
+- ProductImage Tortoise Model with Product RESTRICT and nullable ExperienceOption SET NULL relations, validated URL/sort fields, dual-layer defaults, logical deletion, and three stable named query indexes.
+- ProductImage Model contract tests covering public/Option image relations, URL/sort boundaries, logical-delete preservation, Option physical-delete fallback, Product deletion protection, and real SQLite DDL.
+- `asyncmy==0.2.11` as the required Tortoise ORM runtime driver for the production MySQL path.
+- Integrated Product Model contract tests covering unified ORM registration, the complete forward/reverse relation graph, migration reconstruction of custom fields/indexes, exact SQLite named-index inventory, and offline MySQL DDL generation.
+- Enterprise database migration runbook covering Aerich command boundaries, MySQL-authoritative SQL generation, review gates, existing-database baselines, backup/rollback requirements, and CHECK-constraint prerequisites.
 
 ### Changed
 
@@ -28,6 +39,14 @@ Implemented the complete Product request, query, and response Schema layer as th
 - Retired Product-specific `42211`–`42215`; static field and request-shape failures use global HTTP 422 validation. `42201` remains for database-dependent online readiness and `42221` for image file validation.
 - Admin list/detail contracts now always return `is_deleted`; user responses never expose it.
 - Experience duration and participants remain open positive integers rather than fixed Enums.
+- Normalized the pending Product Model contract across business rules, API, database design, DBML, and coding standards: online Option writes require prior offline status, Kit stock is a Phase 4.1 final-value field, and Product string Enums use the Python 3.10-compatible `str, Enum` form.
+- Replaced deprecated `BigIntField(pk=True)` with `BigIntField(primary_key=True)` in `BaseModel` and all documentation examples.
+- Corrected the stale Kit pricing sentence in the business rules: price lives in `product_kits.price`, and online Product writes require prior offline status, matching the database and API contracts.
+- Pinned pytest-asyncio's fixture loop scope to `function`, preserving per-test database isolation and preventing a future default change from silently altering test behavior.
+- Replaced the hand-built MySQL URL with structured Tortoise credentials so reserved characters in database passwords cannot be misparsed as URL syntax, and added configuration contract tests.
+- Corrected the Product relation-loading example to use the implemented `kit`, `experience_options`, and `images` reverse relation names; synchronized the documented/example application version with the v0.3.0 baseline.
+- Added the missing database-level unique constraint for `users.phone`, matching the existing registration/update conflict contract and closing the concurrent-write gap left by Service pre-checks alone.
+- Restored the documented User admin-list and AuditLog tracing indexes in their Models so the initial migration matches established query plans instead of silently omitting them.
 
 ### Important Decisions
 
@@ -35,17 +54,33 @@ Implemented the complete Product request, query, and response Schema layer as th
 2. **PATCH preserves intent.** Empty PATCH bodies are rejected, missing fields mean “unchanged,” and explicit null follows field-specific rules. Services must use `model_dump(exclude_unset=True)`.
 3. **User/Admin output separation.** Online user responses require complete sellable shapes, while admin Draft responses allow empty images, Options, and dimensions.
 4. **Response allowlists.** Out Schemas ignore undeclared internal attributes so relation IDs, deletion flags, type-specific fields, and sensitive data cannot leak across endpoints.
+5. **Option identity is stable.** The named unique index excludes `is_deleted`, so `(product_id, duration, participants, day_type)` remains unique across all rows. Reposting a logically deleted combination must restore the same Option ID and update its current price instead of creating or physically deleting historical rows.
+6. **Defaults exist at both boundaries.** Product `status` and `is_deleted` declare both ORM `default` and database `db_default`, so ORM and direct SQL inserts share the same defaults.
+7. **Money is validated before ORM quantization.** Product price fields use `StrictDecimalField` because native Tortoise Decimal conversion can round extra fractional digits before ordinary validators run.
+8. **Kit extension is one-to-one.** `ProductKit.product` uses `OneToOneField`, so the database allows at most one Kit row per Product and ORM reverse access is a single `product.kit` object rather than a collection.
+9. **Kit lifecycle belongs to Product.** ProductKit has no independent `is_deleted`; Product logical deletion controls visibility while the RESTRICT FK prevents accidental physical deletion of the parent.
+10. **Phase 4.1 stock is a final value.** `product_kits.stock` is stored and validated now, but inventory ledgers, automatic deduction/restoration, and concurrency control remain Phase 4.3 concerns.
+11. **Image ownership has two levels.** A null `experience_option_id` represents a Product public image; a non-null value represents an Option image while retaining the mandatory Product FK for direct Product queries.
+12. **Option physical deletion is a fallback path.** ProductImage uses SET NULL for its nullable Option FK so an abnormal physical Option deletion preserves the image; normal business operations still logically delete Options.
+13. **Cover consistency belongs to Service.** The three image indexes are non-unique query indexes. Service must enforce same-Product Option ownership, prevent Option covers, and switch the single Product cover inside a transaction.
+14. **Both database paths are executable contracts.** SQLite integration tests exercise real tables, while offline MySQL schema generation verifies production DDL without requiring or mutating a live MySQL instance.
+15. **Schema generation is environment-gated.** Application startup may auto-create tables only in local development. Tests own disposable schemas, while production must use reviewed migrations and cannot mutate schema as a startup side effect.
+16. **Integrity has explicit enforcement layers.** Structural constraints live in the database, value ranges are currently enforced by Schema/Model validation, and cross-row/cross-table invariants belong to Service/Validator. Database CHECK constraints remain a migration-review decision rather than an implicit claim.
+17. **Production migrations are MySQL-authoritative.** Aerich stores dialect-specific raw SQL, so MySQL generates and reviews deployable migrations; SQLite remains a development/test compatibility target and does not supply SQL for MySQL releases.
+18. **The initial migration fails on schema drift.** Reviewed MySQL DDL omits `IF NOT EXISTS`, runs outside a claimed transaction, and has an intentionally non-destructive empty downgrade instead of dropping every user and business table.
 
 ### Database
 
-No database changes and no migration required.
+All four Product Models now declare `products`, `experience_options`, `product_kits`, and `product_images`, including RESTRICT/SET NULL relations, Option uniqueness, Kit one-to-one uniqueness, dual defaults, and stable query indexes. Real SQLite DDL and offline MySQL DDL generation both pass their contracts. A MySQL 8+ initial migration has been generated and statically reviewed offline; it has not been applied to any database.
 
 ### Known Limitations
 
-- Product Model, Repository, Validator, Service, API routes, upload handling, and business exceptions remain pending.
+- Repository, Validator, Service, API routes, upload handling, and business exceptions remain pending.
 - Product API documentation remains Draft until those layers are implemented and endpoint integration tests pass.
 - FastAPI `RequestValidationError` still needs global envelope verification/handling during API integration; direct Schema tests do not prove the HTTP 422 response body contract.
 - Shared audit-log listing (`AuditLogService.list_logs` / `AuditLogOut`) is not part of Product Schema and remains pending.
+- The MySQL initial migration is currently uncommitted and unapplied. Production startup does not auto-create tables; deployment still requires a separately authorized migration execution against a reviewed target and backup plan.
+- Positive/range rules are not yet duplicated as physical database `CHECK` constraints; direct SQL can bypass Schema/Model validators and must remain a controlled operational path.
 
 ---
 

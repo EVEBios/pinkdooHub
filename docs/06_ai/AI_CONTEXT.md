@@ -22,6 +22,7 @@
 | 数据库设计 | [database_design.md](../02_database/database_design.md) |
 | ER 图 | [er_diagram.dbml](../02_database/er_diagram.dbml) |
 | Code Review 清单 | [code_review_checklist.md](../07_process/code_review_checklist.md) |
+| 数据库迁移流程 | [database_migration_workflow.md](../07_process/database_migration_workflow.md) |
 | 需求文档 | [../01_requirements/](../01_requirements/) |
 
 ---
@@ -37,6 +38,7 @@
 | 密码加密 | passlib[bcrypt] | 1.7.4 |
 | JWT | python-jose[cryptography] | 3.3.0 |
 | 数据库 | MySQL（生产）/ SQLite（开发） | — |
+| MySQL 异步驱动 | asyncmy | 0.2.11 |
 | 缓存 | Redis | — |
 | 迁移 | Aerich | 0.9.3 |
 | 服务器 | Uvicorn | 0.51 |
@@ -49,8 +51,10 @@
 - Product 业务规则、数据库设计和 API 契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product 的 Model、Repository、Validator、Service 和 API 仍待实现。架构文档中的规划文件不能作为实现证据。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model 已实现；Repository、Validator、Service 和 API 仍待实现。架构文档中的规划文件不能作为实现证据。
+- MySQL 8+ 权威首迁移已离线生成并通过契约测试，尚未执行；当前 SQLite 开发库存在旧 User Schema 漂移，不能使用 `--fake` 冒充最新。
 - Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
+- ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 
 ---
 

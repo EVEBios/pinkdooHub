@@ -1,12 +1,12 @@
 Table users {
   id bigint [pk, increment]
-  username varchar [not null, unique]
-  password varchar [not null]
-  nickname varchar
-  phone varchar [unique]
-  avatar varchar
-  role tinyint [default: 1, note: '1:user 2:admin 3:super_admin']
-  status tinyint [default: 1, note: '1:normal 2:disabled']
+  username varchar(32) [not null, unique]
+  password varchar(128) [not null]
+  nickname varchar(32) [not null]
+  phone varchar(11) [not null, unique]
+  avatar varchar(256)
+  role smallint [not null, note: 'ORM default 1; 1:user 2:admin 3:super_admin']
+  status smallint [not null, note: 'ORM default 1; 1:normal 2:disabled']
   last_login_at datetime
   created_at datetime
   updated_at datetime
@@ -20,11 +20,11 @@ Table users {
 
 Table products {
   id bigint [pk, increment]
-  name varchar [not null, note: 'max 100 chars, allow duplicate']
-  product_type varchar [not null, note: 'experience | kit, immutable after create. DB uses varchar; Python MUST use ProductType(StrEnum) — no magic strings']
+  name varchar(100) [not null, note: 'allow duplicate']
+  product_type varchar(20) [not null, note: 'experience | kit, immutable after create. Python 3.10 uses ProductType(str, Enum) — no magic strings']
   description text
-  status varchar [not null, default: 'draft', note: 'draft | online | offline. DB uses varchar; Python MUST use ProductStatus(StrEnum)']
-  is_deleted boolean [default: false, note: 'logical delete']
+  status varchar(20) [not null, default: 'draft', note: 'draft | online | offline. Python 3.10 uses ProductStatus(str, Enum)']
+  is_deleted boolean [not null, default: false, note: 'logical delete']
   created_at datetime
   updated_at datetime
 
@@ -36,11 +36,11 @@ Table products {
 Table experience_options {
   id bigint [pk, increment]
   product_id bigint [not null]
-  duration int [not null, note: '60 | 120 | 540 (minutes)']
-  participants int [not null, note: '1 | 2']
-  day_type varchar [not null, note: 'weekday | holiday']
+  duration int [not null, note: 'positive minutes; 60 | 120 | 540 are current common values']
+  participants int [not null, note: 'positive integer; 1 | 2 are current common values']
+  day_type varchar(20) [not null, note: 'weekday | holiday']
   price decimal(10,2) [not null]
-  is_deleted boolean [default: false, note: 'logical delete; preserve FK references']
+  is_deleted boolean [not null, default: false, note: 'logical delete; preserve FK references']
 
   // Data Consistency: (product_id + duration + participants + day_type) UNIQUE
   // Aggregate Rule: online product must have >= 1 option (is_deleted = false)
@@ -50,7 +50,7 @@ Table experience_options {
   updated_at datetime
 
   indexes {
-    (product_id, duration, participants, day_type) [unique, name: 'idx_option_unique', note: 'unique among non-deleted']
+    (product_id, duration, participants, day_type) [unique, name: 'idx_option_unique', note: 'unique across all rows; restore the same row after logical deletion']
   }
 }
 
@@ -58,7 +58,7 @@ Table product_kits {
   id bigint [pk, increment]
   product_id bigint [not null, unique]
   price decimal(10,2) [not null, note: 'kit product price']
-  stock int [not null, default: 0]
+  stock int [not null, default: 0, note: 'Phase 4.1 direct final-value setting; Phase 4.3 inventory ledger and automatic adjustments']
   created_at datetime
   updated_at datetime
 }
@@ -67,10 +67,10 @@ Table product_images {
   id bigint [pk, increment]
   product_id bigint [not null]
   experience_option_id bigint [note: 'NULL = Product public image; non-NULL = Option-specific image']
-  image_url varchar [not null]
-  is_cover boolean [default: false, note: 'only meaningful when experience_option_id IS NULL']
-  sort int [default: 0]
-  is_deleted boolean [default: false, note: 'logical delete']
+  image_url varchar(2048) [not null]
+  is_cover boolean [not null, default: false, note: 'only meaningful when experience_option_id IS NULL']
+  sort int [not null, default: 0]
+  is_deleted boolean [not null, default: false, note: 'logical delete']
   created_at datetime
   updated_at datetime
 
@@ -81,7 +81,7 @@ Table product_images {
   }
 }
 
-// FK: ON DELETE RESTRICT — prevent bypassing logical delete
+// Product child FKs use RESTRICT. The nullable Option-image FK uses SET NULL only as a physical-delete fallback.
 Ref: experience_options.product_id > products.id [delete: restrict]
 Ref: product_kits.product_id > products.id [delete: restrict]
 Ref: product_images.product_id > products.id [delete: restrict]
@@ -92,12 +92,13 @@ Ref: product_images.experience_option_id > experience_options.id [delete: set nu
 Table audit_logs {
   id bigint [pk, increment]
   operator_id bigint [not null, note: 'who performed the action']
-  action varchar [not null, note: 'CREATE_PRODUCT | UPDATE_PRICE | ONLINE_PRODUCT | ...']
-  target_type varchar [not null, note: 'product | user']
+  action varchar(50) [not null, note: 'CREATE_PRODUCT | UPDATE_PRICE | ONLINE_PRODUCT | ...']
+  target_type varchar(50) [not null, note: 'product | user']
   target_id bigint [not null]
-  description varchar [note: 'e.g. price changed: 299 → 399']
-  ip_address varchar [not null]
+  description varchar(256) [note: 'e.g. price changed: 299 → 399']
+  ip_address varchar(45) [not null]
   created_at datetime
+  updated_at datetime
 
   indexes {
     (target_type, target_id, created_at) [name: 'idx_audit_target_created']
@@ -130,9 +131,9 @@ Table order_items {
 
   // Experience option snapshot (nullable — kit products don't use these)
   experience_option_id bigint [note: 'FK to experience_options, nullable for kit products']
-  option_duration int [note: 'snapshot: 60 | 120 | 540 (minutes)']
-  option_participants int [note: 'snapshot: 1 | 2']
-  option_day_type varchar [note: 'snapshot: weekday | holiday']
+  option_duration int [note: 'snapshot: positive minutes']
+  option_participants int [note: 'snapshot: positive participants']
+  option_day_type varchar(20) [note: 'snapshot: weekday | holiday']
 
   product_name varchar [not null, note: 'snapshot: product name at order time']
   product_price decimal(10,2) [not null, note: 'snapshot: price at order time']

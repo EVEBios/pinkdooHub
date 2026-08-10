@@ -7,7 +7,9 @@
 """
 
 import logging
+from typing import Any
 
+from fastapi import FastAPI
 from tortoise.contrib.fastapi import register_tortoise
 
 from app.core.config import settings
@@ -15,7 +17,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _get_db_config() -> dict:
+def _get_db_config() -> dict[str, Any]:
     """根据配置生成 Tortoise ORM 连接参数。
 
     SQLite: 免安装，文件即数据库，适合开发和测试
@@ -34,13 +36,19 @@ def _get_db_config() -> dict:
             },
         }
 
-    # MySQL
-    db_url = (
-        f"mysql://{settings.db_user}:{settings.db_password}"
-        f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
-    )
     return {
-        "connections": {"default": db_url},
+        "connections": {
+            "default": {
+                "engine": "tortoise.backends.mysql",
+                "credentials": {
+                    "host": settings.db_host,
+                    "port": settings.db_port,
+                    "user": settings.db_user,
+                    "password": settings.db_password,
+                    "database": settings.db_name,
+                },
+            }
+        },
         "apps": {
             "models": {
                 "models": ["app.models", "aerich.models"],
@@ -50,17 +58,28 @@ def _get_db_config() -> dict:
     }
 
 
-def init_db(app) -> None:
+def _should_generate_schemas() -> bool:
+    """仅允许本地开发环境在启动时自动补齐表结构。"""
+
+    return settings.app_env == "development"
+
+
+# Aerich CLI 要求通过 import path 读取一个配置字典；命令进程启动时会按
+# 当前环境变量重新构造该对象，因此可离线生成 MySQL 方言迁移。
+TORTOISE_ORM: dict[str, Any] = _get_db_config()
+
+
+def init_db(app: FastAPI) -> None:
     """向 FastAPI 应用注册 Tortoise ORM。
 
-    自动在 startup 时建立连接并建表，在 shutdown 时关闭连接。
-    替代手动 lifespan 管理。
+    startup 时建立连接，shutdown 时关闭连接。仅 development 自动建表；
+    testing 由测试 fixture 管理临时 Schema，production 必须使用受控迁移。
     """
     config = _get_db_config()
     register_tortoise(
         app,
         config=config,
-        generate_schemas=True,
+        generate_schemas=_should_generate_schemas(),
         add_exception_handlers=True,
     )
     logger.info("Database registered: engine=%s", settings.db_engine)
