@@ -29,8 +29,8 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 当前实现状态：
 
-- Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py` 以及 Product、ExperienceOption、ProductKit、ProductImage Model 已实现并有契约测试。`repositories/`、`validators/`、`services/` 和 `api/` 中的 Product 实现仍待完成。
-- MySQL 8+ 权威首迁移已离线生成并通过静态契约测试，但尚未应用到任何数据库；SQLite 开发库仍是旧基线，不得直接 fake 为最新版本。
+- Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator、Service 和 API 仍待实现，当前端点不可调用。
+- MySQL 8+ 权威首迁移已离线生成、通过静态契约测试并提交，但尚未应用到任何 MySQL 数据库。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未 fake Aerich 版本。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 - Phase 4.1 的 Kit 库存采用直接设置最终值模式；库存流水、自动扣减/恢复和并发控制仍属于 Phase 4.3 Inventory。
 - 架构文档中出现的 Product、Order、Inventory 文件可能是规划结构，不代表代码已经存在；开始任务前必须检查实际文件树和测试。

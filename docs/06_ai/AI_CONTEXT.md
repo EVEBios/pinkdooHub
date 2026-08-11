@@ -51,8 +51,8 @@
 - Product 业务规则、数据库设计和 API 契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model 已实现；Repository、Validator、Service 和 API 仍待实现。架构文档中的规划文件不能作为实现证据。
-- MySQL 8+ 权威首迁移已离线生成并通过契约测试，尚未执行；当前 SQLite 开发库存在旧 User Schema 漂移，不能使用 `--fake` 冒充最新。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model，以及 `ProductRepository` 的分页、聚合预加载、原子 CRUD、逻辑删除范围和外部事务接入已实现；Validator、Service 和 API 仍待实现。架构文档中的规划文件不能作为实现证据。
+- MySQL 8+ 权威首迁移已离线生成、通过契约测试并提交，但尚未对 MySQL 执行。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
 - Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 

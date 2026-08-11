@@ -184,7 +184,7 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，以及 Product、ExperienceOption、ProductKit、ProductImage 的全部 Model；Repository、Validator、Service 和 API 仍需按实际文件树继续实现。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，Product、ExperienceOption、ProductKit、ProductImage 的全部 Model，以及封装 Product 聚合查询和原子 CRUD 的 `ProductRepository`；Validator、Service 和 API 仍需按实际文件树继续实现。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 

@@ -6,7 +6,7 @@
 
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.common.constants.pagination import (
     DEFAULT_PAGE_SIZE,
@@ -25,7 +25,11 @@ class PageParams(BaseModel):
 
 
 class Page(BaseModel, Generic[T]):
-    """分页响应。"""
+    """分页结果，可在 Repository 和 API 层分别承载 Model 与 Schema。"""
+
+    # Repository 按项目规范返回 Page[Model]，API 层则使用 Page[OutSchema]；
+    # 允许 ORM Model 作为泛型参数不会削弱 Out Schema 自身的字段校验。
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     items: list[T]
     total: int

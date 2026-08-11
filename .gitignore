@@ -51,6 +51,7 @@ coverage.xml
 # ==================== IDE 编辑器 ====================
 .vscode/
 .idea/
+.claude/settings.local.json
 *.swp
 *.swo
 *~
@@ -67,6 +68,7 @@ ehthumbs.db
 Desktop.ini
 
 # ==================== 其他 ====================
+backups/
 *.tmp
 *.bak
 *.orig

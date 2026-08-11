@@ -3,7 +3,7 @@
 > **Document Version:** v0.3
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Status:** Draft — Schema and all Product Models implemented; Repository/Validator/Service/API pending
+> **Status:** Draft — Schema, Models, and Repository implemented; Validator/Service/API pending
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`；Product 聚合根及三个子 Model 分别见 `app/models/product.py`、`app/models/experience_option.py`、`app/models/product_kit.py`、`app/models/product_image.py`。Schema 与全部 Product Model 已实现不代表端点可调用；当前仍需继续实现 Repository、Validator、Service 和 API。
+> **当前实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`；Product 聚合根及三个子 Model 分别见 `app/models/product.py`、`app/models/experience_option.py`、`app/models/product_kit.py`、`app/models/product_image.py`；数据访问见 `app/repositories/product_repo.py`。Schema、全部 Product Model 与 Repository 已实现不代表端点可调用；当前仍需继续实现 Validator、Service 和 API。
 
 ---
 

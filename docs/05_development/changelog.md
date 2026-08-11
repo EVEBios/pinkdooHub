@@ -4,6 +4,51 @@
 
 ---
 
+## Unreleased — Product Repository (Phase 4.1)
+
+**Date:** 2026-08-11
+
+### Summary
+
+Implemented and reviewed the Product aggregate Repository as the data-access boundary for the upcoming Validator and Service slices. Product endpoints remain unavailable until Validator, Service, and API integration are complete.
+
+### Added
+
+- `ProductRepository` with Product create/update, logical-delete-aware lookup, filtered pagination, and aggregate detail loading.
+- ExperienceOption lookup by ID and all-history configuration identity, plus transaction-aware create/update operations that support restoration orchestration without creating a second version row.
+- ProductKit and ProductImage lookup/create/update operations, including one-statement public-cover clearing scoped by Product, logical deletion, and optional current-image exclusion.
+- Use-case-specific relation loading: list summaries preload Kit, active Options, and active public images; details additionally preload active Option images; Option/Image ID lookups preload the parent records required by Service rules.
+- Repository contract tests for normal paths, deletion scope, stable ordering, pagination metadata, transaction rollback, parent relations, and constant-query-count protection against N+1 behavior.
+
+### Changed
+
+- `Page[T]` now permits ORM Model item types so Repository code can return `Page[Product]` while API code continues using response-Schema pages.
+- Consolidated the identical partial-update persistence mechanism behind a private bounded generic helper while retaining entity-specific public methods and return types.
+- Rebuilt the active SQLite development database from current Tortoise Models after creating a recoverable backup. No MySQL migration was applied to SQLite and no Aerich version was faked.
+
+### Important Decisions
+
+1. **Repository returns Models, not API DTOs.** Service owns derived fields such as `cover_image` and `display_price`; API owns Out-Schema serialization.
+2. **Transactions are Service-owned.** Repository writes accept an optional database client and join the caller's transaction without deciding transaction boundaries.
+3. **Loading follows the use case.** Lists do not fetch Option images, details do, and child-resource lookups join only the parent records needed by Service checks.
+4. **Logical deletion is explicit per query.** Ordinary lookups hide deleted rows, while the all-history Option identity query intentionally includes deleted records so Service can restore the stable Option ID.
+5. **Cover switching is batch persistence, not a Repository business rule.** Repository provides one scoped UPDATE; Service must decide whether a cover change is valid and execute the full switch atomically.
+6. **Reuse stays local until generalized behavior is proven.** Common update mechanics are private to the Product Repository module rather than imposed through a premature global BaseRepository.
+
+### Verification
+
+- 38 Product Repository tests pass, including bounded query-count and transaction rollback contracts.
+- The complete test suite passes with 421 tests.
+- Python compilation, dependency integrity, whitespace, forbidden dependency, and debug-output checks pass.
+
+### Known Limitations
+
+- Product Validator, Service, API routes, upload handling, and business exceptions remain pending.
+- Product API documentation remains Draft until endpoint integration tests pass.
+- The committed MySQL initial migration remains unapplied; deployment still requires explicit authorization, a reviewed target, and a backup/rollback plan.
+
+---
+
 ## Unreleased — Product Schema and Model Foundation (Phase 4.1)
 
 **Date:** 2026-08-10
@@ -75,11 +120,11 @@ All four Product Models now declare `products`, `experience_options`, `product_k
 
 ### Known Limitations
 
-- Repository, Validator, Service, API routes, upload handling, and business exceptions remain pending.
+- Validator, Service, API routes, upload handling, and business exceptions remain pending.
 - Product API documentation remains Draft until those layers are implemented and endpoint integration tests pass.
 - FastAPI `RequestValidationError` still needs global envelope verification/handling during API integration; direct Schema tests do not prove the HTTP 422 response body contract.
 - Shared audit-log listing (`AuditLogService.list_logs` / `AuditLogOut`) is not part of Product Schema and remains pending.
-- The MySQL initial migration is currently uncommitted and unapplied. Production startup does not auto-create tables; deployment still requires a separately authorized migration execution against a reviewed target and backup plan.
+- The MySQL initial migration is committed but unapplied. Production startup does not auto-create tables; deployment still requires a separately authorized migration execution against a reviewed target and backup plan.
 - Positive/range rules are not yet duplicated as physical database `CHECK` constraints; direct SQL can bypass Schema/Model validators and must remain a controlled operational path.
 
 ---
