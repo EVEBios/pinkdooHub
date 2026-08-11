@@ -6,7 +6,8 @@
 异常层级：
 
     AppException（基类）
-    ├── BusinessException        → 400  业务规则不满足
+    ├── BusinessException        → 400  一般业务规则不满足
+    │   └── UnprocessableEntityException → 422  业务数据无法处理
     ├── AuthenticationException  → 401  未登录 / Token 失效
     ├── PermissionException      → 403  已登录但权限不足
     └── NotFoundException        → 404  请求的资源不存在
@@ -44,6 +45,10 @@ class BusinessException(AppException):
         raise BusinessException(code=2002, message="Stock insufficient")
         raise BusinessException(code=3002, message="Order cannot be cancelled")
     """
+
+
+class UnprocessableEntityException(BusinessException):
+    """请求语法正确，但当前业务数据或聚合状态不满足处理条件 → HTTP 422。"""
 
 
 class AuthenticationException(AppException):

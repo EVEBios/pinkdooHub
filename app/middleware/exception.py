@@ -12,6 +12,7 @@ from app.core.exceptions import (
     BusinessException,
     NotFoundException,
     PermissionException,
+    UnprocessableEntityException,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,14 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_business(request: Request, exc: BusinessException) -> JSONResponse:
         logger.warning("HTTP 400: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
         return JSONResponse(status_code=400, content=error(exc.code, exc.message, exc.data))
+
+    @app.exception_handler(UnprocessableEntityException)
+    async def handle_unprocessable(
+        request: Request,
+        exc: UnprocessableEntityException,
+    ) -> JSONResponse:
+        logger.warning("HTTP 422: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        return JSONResponse(status_code=422, content=error(exc.code, exc.message, exc.data))
 
     @app.exception_handler(AuthenticationException)
     async def handle_auth(request: Request, exc: AuthenticationException) -> JSONResponse:

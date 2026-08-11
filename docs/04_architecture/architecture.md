@@ -184,7 +184,7 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，Product、ExperienceOption、ProductKit、ProductImage 的全部 Model，以及封装 Product 聚合查询和原子 CRUD 的 `ProductRepository`；Validator、Service 和 API 仍需按实际文件树继续实现。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，Product、ExperienceOption、ProductKit、ProductImage 的全部 Model，封装 Product 聚合查询和原子 CRUD 的 `ProductRepository`，以及完整的 Product Validator 阶段（异常契约、同步规则、纯度和真实聚合集成边界）；Service 和 API 仍需按实际文件树继续完成。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
@@ -210,27 +210,19 @@ Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输�
 │  Service 层 (app/services/)              │
 │  · 业务逻辑编排                           │
 │  · 跨模型事务管理                         │
-│  · 权限校验 + 调用 Validator              │
-│  · 调用 Repository + 外部服务（Redis）    │
-└────────────────┬────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────┐
-│  Validator 层 (app/validators/)          │
-│  · 状态变迁前的完整性校验                 │
-│  · 按 product_type 分发不同规则          │
-│  · 不操作数据库，只做判断                  │
-└────────────────┬────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────┐
-│  Repository 层 (app/repositories/)       │
-│  · 封装数据库查询                         │
-│  · 提供 CRUD 原子操作                     │
-│  · 不包含业务逻辑                         │
-└────────────────┬────────────────────────┘
-                 │
-                 ▼
+│  · 调用 Repository 获取已加载聚合          │
+│  · 调用同步纯 Validator + 外部服务         │
+└───────────┬─────────────────┬───────────┘
+            │                 │
+            ▼                 ▼
+┌─────────────────────┐  ┌────────────────┐
+│ Validator 层         │  │ Repository 层  │
+│ · 同步、纯计算        │  │ · 数据库查询    │
+│ · 只读取已加载聚合    │  │ · 原子 CRUD     │
+│ · 返回 None 或抛异常  │  │ · 无业务逻辑    │
+│ · 无下游依赖/I/O      │  └───────┬────────┘
+└─────────────────────┘          │
+                                 ▼
 ┌─────────────────────────────────────────┐
 │  Model 层 (app/models/)                  │
 │  · Tortoise ORM Model 定义               │
@@ -331,9 +323,9 @@ OrderService → ProductRepository// 需要商品信息时查 Product 表
 
 ### 3.3 Validator 层（app/validators/）— Phase 4 新增
 
-**职责**：状态变迁前的完整性校验。不操作数据库，只做判断。
+**职责**：状态变迁前的完整性校验。同步读取 Service 已准备好的聚合，只做纯计算判断。
 
-Service 在修改关键状态（如 `draft → online`）前，必须调用 Validator 执行前置检查。Validator 按 `product_type` 自动分发不同规则，未来新增商品类型只需增加新的校验函数。
+Service 在修改关键状态（如 `draft → online`）前，必须调用 Validator 执行前置检查。Validator 按 `product_type` 分发规则并一次性收集全部缺项。对外接口成功时返回 `None`，失败时抛命名业务异常；不返回 bool。
 
 ```python
 # app/validators/product_validator.py
@@ -341,28 +333,24 @@ Service 在修改关键状态（如 `draft → online`）前，必须调用 Vali
 class ProductValidator:
     """商品状态变迁校验器。"""
 
-    @staticmethod
-    async def validate_before_online(product: Product) -> None:
-        """上架前完整性校验。按 product_type 分发规则。"""
+    @classmethod
+    def validate_before_online(cls, product: Product) -> None:
+        """同步校验已预加载的 Product 聚合；失败时一次抛出全部缺项。"""
+        issues = cls._collect_common_issues(product)
         if product.product_type == ProductType.EXPERIENCE:
-            await ProductValidator._validate_experience(product)
+            issues.extend(cls._collect_experience_issues(product))
         elif product.product_type == ProductType.KIT:
-            await ProductValidator._validate_kit(product)
-        # 未来: elif product.product_type == ProductType.XXX: ...
+            issues.extend(cls._collect_kit_issues(product))
 
-    @staticmethod
-    async def _validate_experience(product: Product) -> None:
-        if not product.name:
-            raise BusinessException(code=4001, message="商品名称不能为空")
-        if not product.description:
-            raise BusinessException(code=4002, message="商品描述不能为空")
-        # ③ 封面图 ④ 图片数量 ⑤ Option 数量 ⑥ 价格 ⑦ Option 图片 ⑧ 唯一性
-        ...
+        if issues:
+            raise ProductNotReadyForOnline(issues)
 
-    @staticmethod
-    async def _validate_kit(product: Product) -> None:
+    @classmethod
+    def _collect_common_issues(cls, product: Product) -> list[str]:
         ...
 ```
+
+上例所示同步公开入口、公共 issues 收集模式、名称/描述/封面规则，以及 Experience/Kit 分支均已实现。专项测试证明 Validator 在 `get_product_detail()` 加载完成后不执行 SQL、不修改聚合、相同输入产生相同顺序的问题列表；未预加载关系和未知 ProductType 均 fail-closed 为内部编程错误，不转换为 `42201`。精确检查条件、issue 字符串及稳定顺序以 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验) 为准。
 
 **Service 调用方式：**
 
@@ -370,15 +358,21 @@ class ProductValidator:
 # app/services/product_service.py
 
 async def online_product(self, product_id: int) -> None:
-    product = await self.product_repo.get_by_id(product_id)
-    await ProductValidator.validate_before_online(product)  # 校验失败抛异常
-    product.status = ProductStatus.ONLINE
-    await product.save()
+    product = await self.product_repo.get_product_detail(
+        product_id,
+        include_deleted=True,
+    )
+    # Service 在这里处理不存在、逻辑删除和已经 Online 等资源/状态冲突。
+    ProductValidator.validate_before_online(product)  # 同步纯计算；不使用 await
+    # 校验通过后，Service 才在事务中通过 Repository 更新状态并写审计。
 ```
 
+`get_product_detail(product_id, include_deleted=True)` 必须预加载 `kit`、有效 ExperienceOption、有效 Product 公共图片及每个有效 Option 的有效专属图片；`include_deleted=True` 让 Service 能先区分“不存在”和“已经逻辑删除”。`get_product_by_id()` 只读取 Product 主表，不能作为 Validator 输入。Validator 不负责补查关系；若调用方忘记预加载并触发 `NoValuesFetched`，这是 Repository/Service 集成错误，应进入 500 兜底而不是转换为 `42201`。
+
 **约束：**
-- 只做判断，**不操作数据库**（数据的获取由 Service 在调用前完成）
-- 只抛出 `BusinessException`，不返回 bool
+- 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务
+- 只读取已预加载聚合，不修改 Product、Option、Image、ProductKit 或状态
+- 成功返回 `None`；失败抛命名业务异常并一次携带全部 issues，不返回 bool
 - 校验规则按 `product_type` 分发，新增类型时扩展对应函数
 - 与 Service 解耦——Service 决定"何时校验"，Validator 决定"如何校验"
 
@@ -814,17 +808,23 @@ Schema 创建策略按环境隔离：`development` 可在应用启动时使用 `
 
 ### 6.1 异常定义（app/core/exceptions.py）
 
-异常类定义在 `core/`（纯 Python，不依赖 HTTP）；全局异常处理器在 `middleware/exception.py`（依赖 Starlette，捕获异常并序列化为 JSON 响应）。
+异常类定义在 `core/`（纯 Python，不依赖 HTTP）；全局异常处理器在 `middleware/exception.py`（依赖 Starlette，捕获异常并序列化为 JSON 响应）。HTTP 状态由异常类型映射，不根据业务错误码的数字范围推断。
 
 ```python
 # app/core/exceptions.py  —— 只定义异常类
 
-class BusinessException(Exception):
-    """业务异常，携带 code 和 message"""
+class AppException(Exception):
+    """应用异常基类，携带 code、message 和可选 data。"""
     def __init__(self, code: int, message: str, data: dict = None):
         self.code = code
         self.message = message
         self.data = data
+
+class BusinessException(AppException):
+    """一般业务规则不满足，由中间件映射为 HTTP 400。"""
+
+class UnprocessableEntityException(BusinessException):
+    """请求语法正确，但当前业务数据或聚合状态不满足处理条件。"""
 ```
 
 ```python
@@ -832,7 +832,16 @@ class BusinessException(Exception):
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from app.core.exceptions import BusinessException
+from app.core.exceptions import BusinessException, UnprocessableEntityException
+
+async def unprocessable_entity_exception_handler(
+    request: Request,
+    exc: UnprocessableEntityException,
+):
+    return JSONResponse(
+        status_code=422,
+        content={"code": exc.code, "message": exc.message, "data": exc.data}
+    )
 
 async def business_exception_handler(request: Request, exc: BusinessException):
     return JSONResponse(
@@ -847,6 +856,8 @@ async def generic_exception_handler(request: Request, exc: Exception):
         content={"code": 500, "message": "Internal server error"}
     )
 ```
+
+`UnprocessableEntityException` 的专用 handler 必须保持 HTTP 422，普通 `BusinessException` 继续保持 HTTP 400。Product 的 `ProductNotReadyForOnline` 是前者的模块命名子类，固定 `42201`、message 和非空字符串数组 `data.issues`。异常类型、中间件映射及 Product Validator 阶段均已实现并完成纯度/真实聚合集成验证；Service 和 API 仍待完成。
 
 ### 6.2 日志配置（app/middleware/logging.py 中初始化）
 

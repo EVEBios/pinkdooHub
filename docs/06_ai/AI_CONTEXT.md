@@ -48,10 +48,10 @@
 ### 2.1 当前 Phase 与实现边界
 
 - 当前基线为 **v0.3.0**，正在进行 **Phase 4.1 Product Module**。
-- Product 业务规则、数据库设计和 API 契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
+- Product 业务规则、数据库设计、API 契约和 Validator 对外契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model，以及 `ProductRepository` 的分页、聚合预加载、原子 CRUD、逻辑删除范围和外部事务接入已实现；Validator、Service 和 API 仍待实现。架构文档中的规划文件不能作为实现证据。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model，以及 `ProductRepository` 的分页、聚合预加载、原子 CRUD、逻辑删除范围和外部事务接入已实现。Product Validator 阶段已完成：`UnprocessableEntityException`、`ProductNotReadyForOnline`、HTTP 422 映射、同步公共/Experience/Kit 规则、稳定 issues、未知类型 fail-closed，以及真实 Repository 聚合上的零 SQL/零修改边界均有专项测试。Service 和 API 运行时代码仍待完成；架构文档中的规划文件不能作为实现证据。
 - MySQL 8+ 权威首迁移已离线生成、通过契约测试并提交，但尚未对 MySQL 执行。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
 - Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
@@ -80,6 +80,12 @@
 | 用户 | 1xxx | 1001-1007 |
 | 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40404 / 40901-40905, 40911-40912 / 42201, 42221 |
 | 订单 | 3xxx | 3001-3006 |
+
+Product Validator 契约速查：
+
+- `42201` 固定映射 HTTP 422，message 精确为 `Product is not ready to go online`，`data.issues` 是非空英文字符串数组；精确 issue 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。
+- 异常层级 `ProductNotReadyForOnline → ProductException → UnprocessableEntityException → BusinessException` 已实现；HTTP 状态按异常类型映射，禁止按错误码号段推断，普通 `BusinessException` 仍为 HTTP 400。
+- `ProductValidator.validate_before_online(product) -> None` 是同步纯计算接口。Service 必须传入 `ProductRepository.get_product_detail(product_id, include_deleted=True)` 预加载的聚合；Validator 不执行 I/O、不修改对象，也不把未预加载关系造成的编程错误转换为 `42201`。
 
 ---
 

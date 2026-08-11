@@ -4,6 +4,48 @@
 
 ---
 
+## Unreleased — Product Validator (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented and reviewed the Product pre-online aggregate-integrity Validator as a synchronous, pure business component. It reports all readiness issues in stable order through the frozen HTTP 422 / `42201` contract. Product Service and API routes remain unavailable and are intentionally outside this milestone.
+
+### Added
+
+- `UnprocessableEntityException` as the general HTTP 422 business-exception type while preserving HTTP 400 for ordinary `BusinessException` instances.
+- `ProductException` and `ProductNotReadyForOnline`, fixing code `42201`, message `Product is not ready to go online`, and non-empty `data.issues` structure.
+- `ProductValidator.validate_before_online(product) -> None` as a synchronous entry point that reads a Service-preloaded Product aggregate and either returns `None` or raises the named exception.
+- Common online-readiness rules for non-blank Product name and description plus an active public cover.
+- Experience rules for at least one public image, at least one active Option, positive Option prices, and at least one active image per Option.
+- Kit rules for a required ProductKit extension, price in `(0, 99999]`, and non-negative stock, including support for online products with zero stock.
+- Contract tests for exception mapping, every common and type-specific boundary, multi-issue aggregation, stable issue ordering, fail-closed ProductType dispatch, real Repository-loaded aggregates, zero validation-time SQL, no aggregate mutation, and unprefetched-relation programming errors.
+
+### Important Decisions
+
+1. **Validator is a separate component serving Service.** Service owns lookup, resource/state conflicts, transactions, persistence, and audit; Validator owns only aggregate-integrity decisions.
+2. **Purity is expressed by a synchronous API.** Validator performs no database, Repository, Service, Redis, transaction, permission, audit, or state-mutation work.
+3. **Input must be a complete aggregate.** Service must call `ProductRepository.get_product_detail(product_id, include_deleted=True)` before validation. Missing prefetches remain visible programming errors instead of becoming `42201`.
+4. **All issues are returned together.** Stable English strings and ordering are part of the API contract; the Product business rules document is their authoritative list.
+5. **Type dispatch fails closed.** Unknown Product types raise an internal programming error rather than passing only common checks or being mislabeled as incomplete business data.
+6. **Option identity is not revalidated online.** The Option write flow and the all-history database unique index own configuration conflicts and their `40911` response.
+
+### Verification
+
+- Validator stage tests pass: 6 exception-contract, 11 common-rule, 10 Experience, 11 Kit, and 5 purity/integration tests.
+- Product-related tests pass with 366 tests; the complete suite passes with 464 tests.
+- Python compilation, dependency integrity, whitespace, forbidden dependency, debug-output, and unfinished-marker checks pass.
+
+### Known Limitations
+
+- Product Service, API routes, permissions, state-transition persistence, transactions, and Product audit-log writes remain pending.
+- Product API documentation remains Draft until endpoint integration tests pass.
+- Image file upload and MIME/size validation remain pending; `42221` is reserved for that later boundary.
+- The committed MySQL initial migration remains unapplied. This Validator milestone changes no schema and requires no migration.
+
+---
+
 ## Unreleased — Product Repository (Phase 4.1)
 
 **Date:** 2026-08-11

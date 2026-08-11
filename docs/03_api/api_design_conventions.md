@@ -233,7 +233,7 @@ Authorization: Bearer <access_token>
     "message": "Username already exists"
 }
 
-// 参数校验失败（422）
+// 参数或业务语义校验失败（422）
 {
     "code": 422,
     "message": "Validation failed",
@@ -266,10 +266,21 @@ Authorization: Bearer <access_token>
 | 404 | Not Found | 资源不存在 |
 | 409 | Conflict | 资源冲突（如用户名已存在） |
 | 413 | Payload Too Large | 上传文件超过大小限制 |
-| 422 | Unprocessable Entity | 参数校验失败 |
+| 422 | Unprocessable Entity | 参数校验失败，或请求语法正确但当前业务聚合不满足处理条件 |
 | 500 | Internal Server Error | 服务器内部错误 |
 
 > 业务状态以响应体中的 `code` 字段为准，HTTP 状态码用于表达请求层面的结果。
+
+业务异常通过异常类型映射 HTTP 状态，不根据业务错误码的数字范围推断：
+
+| 异常类型 | HTTP status | 语义 |
+|----------|-------------|------|
+| `BusinessException` | 400 | 一般业务规则不满足 |
+| `UnprocessableEntityException` | 422 | 请求语法正确，但当前业务数据或聚合状态不满足处理条件 |
+
+`UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
+
+> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator 阶段也已完成，并由异常契约、公共规则、类型专属规则、纯度和真实聚合集成测试覆盖。Product Service 和 API 仍待实现。
 
 ---
 
@@ -344,10 +355,10 @@ Authorization: Bearer <access_token>
 
 | code | 说明 |
 |------|------|
-| 42201 | 商品未满足上架条件（data.issues 数组返回缺项） |
+| 42201 | 商品未满足上架条件；message 固定为 `Product is not ready to go online`，`data.issues` 为非空字符串数组 |
 | 42221 | 图片文件无效 |
 
-> Product 的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。仅需要数据库或关联资源后才能判断的上架完整性使用 `42201`；上传文件内容、MIME 和大小校验使用 `42221`。
+> Product 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。上架时对已加载聚合快照执行的价格、库存与关联完整性校验使用 `42201`；其精确 message、issues 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。上传文件内容、MIME 和大小校验使用 `42221`。
 
 ### 8.5 订单模块错误码（3xxx）
 

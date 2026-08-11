@@ -338,14 +338,30 @@ PUT /products/1/offline  → Product (offline)
 
 | 保证 | 实现方式 |
 |------|----------|
-| 上线前 Option ≥ 1 | Service 层校验，不满足抛异常 |
+| 上线前 Option ≥ 1 | Service 传入已预加载聚合，由 Validator 校验；不满足时抛命名异常 |
 | 删除最后 Option 后保持原状态 | 仅 `draft` / `offline` 允许删除 Option；重新上架时由 Validator 拒绝空 Option 集合 |
 | FK 约束 | `ON DELETE RESTRICT`，数据库层兜底 |
 | 事务边界 | 上线、下线、Option 增删均在单次请求内完成，无需跨请求事务 |
 
 ### 8.5 Online Validation（上架校验）
 
-`draft → online` 时，Service 不得直接设置 `status = "online"`，必须先通过 `ProductValidator.validate_before_online()` 执行完整性校验。全部通过后才能上架。
+`draft → online` 或 `offline → online` 时，Service 不得直接设置 `status = "online"`，必须先通过 `ProductValidator.validate_before_online()` 执行完整性校验。全部通过后才能上架。
+
+`validate_before_online(product) -> None` 是**同步、纯计算**接口：成功时返回 `None`，失败时一次性收集全部缺项并抛出 `ProductNotReadyForOnline`，不返回 bool。Validator 不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务，不校验权限，不写审计日志，也不修改 Product 聚合中的任何对象。
+
+Service 必须使用 `ProductRepository.get_product_detail(product_id, include_deleted=True)` 加载聚合后再调用 Validator；这样才能先区分“不存在”和“已经逻辑删除”，基础查询 `get_product_by_id()` 不满足输入契约。已加载聚合包含：
+
+```text
+Product
+├── kit
+├── 有效 ExperienceOption（is_deleted = false）
+├── 有效 Product 公共图片（is_deleted = false 且 experience_option_id IS NULL）
+└── 每个有效 Option 的有效专属图片（is_deleted = false）
+```
+
+Validator 只读取这些已加载关系。调用方忘记预加载关系而触发 `NoValuesFetched` 等异常属于内部编程错误，必须原样暴露给统一异常处理，不得伪装成 `42201` 业务错误。Product 不存在、已经逻辑删除、已经 Online 等资源或状态冲突仍由 Service 在调用 Validator 前处理。
+
+> **实现状态：** Product Validator 阶段已完成。异常契约、公共规则、Experience/Kit 专属规则、稳定 issues 顺序、未知 ProductType fail-closed，以及真实 Repository 聚合上的零查询与零修改边界均已有自动化测试；Product Service、状态写入、事务、审计和 API 路由不属于本阶段，仍待后续实现。
 
 **校验流程：**
 
@@ -353,29 +369,51 @@ PUT /products/1/offline  → Product (offline)
 管理员点击上架
   │
   ▼
-ProductValidator.validate_before_online(product)
+ProductValidator.validate_before_online(product)  # 同步调用，不使用 await
   │
-  ├─ product_type = "experience" → validate_experience()
-  ├─ product_type = "kit"        → validate_kit()
-  └─ (future)                     → validate_xxx()
+  ├─ product_type = "experience" → _collect_experience_issues()
+  ├─ product_type = "kit"        → _collect_kit_issues()
+  └─ (future)                     → _collect_xxx_issues()
   │
   ▼
-全部通过 → status = "online"
-任一失败 → 返回错误，阻止上架
+全部通过 → 返回 None，Service 才可进入状态更新事务
+存在缺项 → 一次抛出全部 issues，阻止上架
 ```
+
+**失败契约：**
+
+- HTTP status：`422`
+- response `code`：`42201`
+- response `message`：精确为 `Product is not ready to go online`
+- response `data`：精确为 `{ "issues": [...] }`
+- `issues`：非空数组；每一项都是下表规定的非空英文字符串，并按下表顺序稳定返回
+
+该 HTTP 语义由通用 `UnprocessableEntityException` 表达；Product 命名异常 `ProductNotReadyForOnline` 继承它并固定上述业务错误码、消息与数据结构。异常中间件不得根据 `42201` 的数字范围推断 HTTP 状态。
+
+**公共检查项（所有 ProductType）：**
+
+| 顺序 | 不通过条件 | `issue` 精确值 |
+|------|------------|----------------|
+| 1 | `name` 为 `None`、空字符串或纯空白 | `product name is required` |
+| 2 | `description` 为 `None`、空字符串或纯空白 | `product description is required` |
+| 3 | 没有有效 Product 公共封面图 | `product cover image is required` |
+
+名称与描述使用 `value is None or not value.strip()` 判断。公共封面必须同时满足 `is_deleted = false`、`experience_option_id IS NULL` 和 `is_cover = true`；Option 专属图片不能作为公共封面回退。
 
 **Experience 上架检查项：**
 
-| # | 检查项 | 规则 | 不通过时 |
-|---|--------|------|----------|
-| ① | 商品名称 | 不能为空 | 提示"商品名称不能为空" |
-| ② | 商品描述 | 不能为空 | 提示"商品描述不能为空" |
-| ③ | 封面图 | 必须有一张 `is_cover = true` 的图片 | 提示"请上传商品封面图" |
-| ④ | 商品图片 | image ≥ 1（封面也算） | 提示"请上传至少一张商品图片" |
-| ⑤ | Option 数量 | ≥ 1 | 提示"请至少配置一个体验选项" |
-| ⑥ | Option 价格 | 每个 Option 的 price > 0 | 提示"Option {配置} 价格必须大于 0" |
-| ⑦ | Option 图片 | 每个 Option 至少关联一张图片 | 提示"Option {120分钟/2人/节假日} 未上传图片，无法上架" |
-| ⑧ | Option 唯一性 | 无重复配置组合 | DB UNIQUE 兜底，Service 负责友好提示 |
+公共检查项之后按以下顺序继续收集：
+
+| 顺序 | 不通过条件 | `issue` 精确值 |
+|------|------------|----------------|
+| 4 | 没有有效 Product 公共图片 | `at least one product image is required` |
+| 5 | 没有有效 ExperienceOption | `at least one experience option is required` |
+| 6 | 某个有效 Option 的 `price <= 0` | `option {id} price must be greater than 0` |
+| 7 | 某个有效 Option 没有有效专属图片 | `option {id} has no image` |
+
+有效 Option 按 Repository 已固定的 `duration ASC, participants ASC, day_type ASC, id ASC` 顺序检查；同一 Option 先追加价格 issue，再追加图片 issue。没有有效 Option 时只追加顺序 5，不产生任何 Option 级 issue。公共封面同时算作公共图片，因此完全没有公共图片时会依次返回 `product cover image is required` 和 `at least one product image is required`。
+
+Option 配置唯一性不属于本 Validator 的 `42201`：创建/修改 Option 时由 Service 返回 `40911`，数据库全历史唯一索引 `(product_id, duration, participants, day_type)` 负责最终兜底，Validator 不重复扫描组合。
 
 **图片两层结构：**
 
@@ -393,15 +431,17 @@ product_images
 | 逻辑删除 Option | 关联图片保持不动，随已删除 Option 从正常查询中隐藏；恢复 Option 时重新可见 |
 | 异常物理删除 Option | FK 的 `ON DELETE SET NULL` 将关联图片归入 Product 公共图片，仅作数据库兜底 |
 
-**Kit 上架检查项（Phase 4.1 后续补充）：**
+**Kit 上架检查项：**
 
-| # | 检查项 | 规则 |
-|---|--------|------|
-| ① | 商品名称 | 不能为空 |
-| ② | 商品描述 | 不能为空 |
-| ③ | 封面图 | 必须有一张 |
-| ④ | 价格 | price > 0 |
-| ⑤ | 库存 | stock ≥ 0 |
+公共检查项之后按以下顺序继续收集：
+
+| 顺序 | 不通过条件 | `issue` 精确值 |
+|------|------------|----------------|
+| 4 | 缺少 ProductKit 扩展记录 | `kit configuration is required` |
+| 5 | `price <= 0` 或 `price > 99999` | `kit price must be greater than 0 and no more than 99999` |
+| 6 | `stock < 0` | `kit stock must be non-negative` |
+
+如果 ProductKit 扩展记录缺失，只追加 `kit configuration is required`，不再追加价格或库存 issue；记录不存在与字段值非法不是同一问题。`stock = 0` 允许上架。Kit 的图片完整性目前只有公共封面规则，不额外要求第二项“至少一张公共图片”。
 
 **设计原则：** `draft` 状态允许不完整（逐步完善），`online` 状态必须完整（校验通过）。这是聚合完整性的最终体现。
 

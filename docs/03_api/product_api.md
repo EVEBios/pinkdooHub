@@ -3,7 +3,7 @@
 > **Document Version:** v0.3
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Status:** Draft — Schema, Models, and Repository implemented; Validator/Service/API pending
+> **Status:** Draft — Schema, Models, Repository, and all Validator rules implemented; Validator purity/integration closure, Service, and API pending
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`；Product 聚合根及三个子 Model 分别见 `app/models/product.py`、`app/models/experience_option.py`、`app/models/product_kit.py`、`app/models/product_image.py`；数据访问见 `app/repositories/product_repo.py`。Schema、全部 Product Model 与 Repository 已实现不代表端点可调用；当前仍需继续实现 Validator、Service 和 API。
+> **当前实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`；Product 聚合根及三个子 Model 分别见 `app/models/product.py`、`app/models/experience_option.py`、`app/models/product_kit.py`、`app/models/product_image.py`；数据访问见 `app/repositories/product_repo.py`。Product Validator 阶段已经完成：异常契约、HTTP 422 映射、同步公共/Experience/Kit 上架规则、稳定问题顺序、未知类型 fail-closed，以及真实 Repository 聚合上的零查询和零修改边界均有专项测试。完成 Validator 不代表端点可调用；Product Service 和 API 仍待实现。
 
 ---
 
@@ -224,15 +224,17 @@ Authorization: Bearer <access_token>
     "message": "Product is not ready to go online",
     "data": {
         "issues": [
-            "description is required",
-            "cover image is required",
+            "product description is required",
+            "product cover image is required",
             "option 11 has no image"
         ]
     }
 }
 ```
 
-> 所有上架检查项（名称、描述、封面、Option、图片）统一合并为 `42201`，通过 `data.issues` 数组返回具体缺项。不逐项造独立错误码。
+`42201` 的响应契约固定为：HTTP status 必须是 `422`；`message` 必须精确为 `Product is not ready to go online`；`data` 必须精确包含一个 `issues` 字段；`issues` 必须是非空数组且每项为非空英文字符串。Validator 一次收集全部缺项，不在第一项失败时停止，也不为各检查项拆分错误码。
+
+检查条件、精确 issue 字符串与稳定排序以 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验) 为唯一权威清单；API 必须原样输出，不得临时翻译或改写。通用异常语义由 `UnprocessableEntityException` 表达，Product 命名异常 `ProductNotReadyForOnline` 固定 `42201`、上述 message 和 `data.issues` 结构。异常中间件不得根据业务错误码号段推断 HTTP 状态。
 
 **文件与动作业务校验**
 
@@ -241,7 +243,7 @@ Authorization: Bearer <access_token>
 | 42221 | `INVALID_IMAGE_FILE` | 图片文件无效 |
 | 40021 | `OPTION_IMAGE_CANNOT_BE_COVER` | Option 图片不能设为封面 |
 
-> 价格、库存、时长、人数、日期类型和请求形状属于 Pydantic/FastAPI 静态校验，统一使用全局 HTTP 422 参数校验响应，不再分配 Product 专属的 42211–42215。`42201` 保留给需要查询关联数据后才能判断的上架完整性；`42221` 保留给文件内容、大小和 MIME 等上传校验。
+> 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，统一使用全局 HTTP 422 参数校验响应，不再分配 Product 专属的 42211–42215。上架时，Validator 对已加载聚合快照再次检查价格、库存及关联完整性；此时发现的缺项统一使用 `42201`。`42221` 保留给文件内容、大小和 MIME 等上传校验。
 
 ### 3.3 Error Code Mapping
 
@@ -1065,15 +1067,17 @@ PATCH /api/v1/admin/products/{id}/online
 **Service 执行流程：**
 
 ```
-1. 查找 Product（不存在 → 40401）
+1. 使用 ProductRepository.get_product_detail(product_id, include_deleted=True) 查找并预加载 Product 聚合（不存在 → 40401）
 2. 检查 is_deleted（已删除 → 拒绝）
 3. 检查当前 status（online → 拒绝，PRODUCT_ALREADY_ONLINE）
 4. ProductValidator.validate_before_online(product)
-   ├─ product_type = "experience" → _validate_experience()
-   └─ product_type = "kit"        → _validate_kit()
-5. 全部通过 → status = "online" → product.save()
+   ├─ product_type = "experience" → 收集公共规则 + Experience 规则
+   └─ product_type = "kit"        → 收集公共规则 + Kit 规则
+5. 全部通过 → 在事务中由 Repository 更新 status = "online"
 6. 写入 Audit Log（action = ONLINE_PRODUCT）
 ```
+
+步骤 1 必须预加载 `kit`、有效 Option、有效 Product 公共图片，以及每个有效 Option 的有效专属图片；不得把仅包含 Product 主表的 `get_product_by_id()` 结果传给 Validator。步骤 4 是同步纯计算调用，不使用 `await`。未预加载关系触发的 `NoValuesFetched` 等异常属于内部编程错误，不得转换为 `42201`。
 
 **Experience 检查项：**
 
@@ -1086,9 +1090,8 @@ PATCH /api/v1/admin/products/{id}/online
 | ⑤ | Option ≥ 1 | — |
 | ⑥ | 每个 Option price > 0 | — |
 | ⑦ | 每个 Option 至少一张专属图片 | — |
-| ⑧ | Option 配置无重复 | 40911（DB UNIQUE 兜底） |
 
-> 以上检查项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，通过 `data.issues` 数组返回所有不通过的项。
+> 以上检查项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，通过 `data.issues` 数组返回所有不通过的项。Option 配置唯一性在 Option 创建/修改流程中返回 `40911` 并由 DB UNIQUE 兜底，不属于上架 Validator。
 
 **Kit 检查项：**
 
@@ -1097,10 +1100,11 @@ PATCH /api/v1/admin/products/{id}/online
 | ① | 商品名称不为空 | — |
 | ② | 商品描述不为空 | — |
 | ③ | 有封面图 | — |
-| ④ | price > 0 且 ≤ 99999 | — |
-| ⑤ | stock ≥ 0（stock = 0 允许上架，前端显示"暂时售罄"） | — |
+| ④ | 存在 ProductKit 扩展记录 | — |
+| ⑤ | price > 0 且 ≤ 99999 | — |
+| ⑥ | stock ≥ 0（stock = 0 允许上架，前端显示"暂时售罄"） | — |
 
-> Kit 上架检查项①②③④统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，与 Experience 一致。
+> Kit 上架缺项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，与 Experience 一致。ProductKit 缺失时只返回 `kit configuration is required`，不再追加价格或库存 issue。Kit 目前不额外要求“至少一张公共图片”；公共封面检查已经保证至少存在一张公共图片。
 
 **成功响应**
 
@@ -1121,8 +1125,19 @@ PATCH /api/v1/admin/products/{id}/online
 
 **失败响应**
 
+**HTTP Status：** `422 Unprocessable Entity`
+
 ```json
-{ "code": 42201, "message": "Product is not ready to go online", "data": { "issues": ["option 11 has no image"] } }
+{
+    "code": 42201,
+    "message": "Product is not ready to go online",
+    "data": {
+        "issues": [
+            "product description is required",
+            "option 11 has no image"
+        ]
+    }
+}
 ```
 
 **Audit：** 仅校验通过并成功更新 status 后写入（`action = ONLINE_PRODUCT`）。校验失败不写 Audit。
