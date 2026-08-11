@@ -363,6 +363,37 @@ Validator 只读取这些已加载关系。调用方忘记预加载关系而触�
 
 > **实现状态：** Product Validator 阶段已完成。异常契约、公共规则、Experience/Kit 专属规则、稳定 issues 顺序、未知 ProductType fail-closed，以及真实 Repository 聚合上的零查询与零修改边界均已有自动化测试；Product Service、状态写入、事务、审计和 API 路由不属于本阶段，仍待后续实现。
 
+#### 8.5.1 Service 上架编排契约
+
+Product Service 的上架公开方法冻结为异步编排接口：
+
+```python
+async def online_product(
+    self,
+    product_id: int,
+    *,
+    operator_id: int,
+    ip_address: str,
+) -> Product:
+    ...
+```
+
+`operator_id` 和 `ip_address` 仅用于成功操作的审计上下文；ADMIN+ 身份认证由 API 权限依赖完成，Validator 不接收操作者信息。Service 返回已经更新为 `ProductStatus.ONLINE` 的 Product Model，API 负责通过 `ProductOnlineOut` 生成公开响应，不返回完整详情，也不由 Service 构造 `{code, message, data}` 信封。
+
+执行顺序必须固定为：
+
+1. `ProductRepository.get_product_detail(product_id, include_deleted=True)` 加载完整聚合；返回 `None` 时抛 `ProductNotFound`（`40401`, `Product not found`）。
+2. `is_deleted = true` 时抛 `ProductIsDeleted`（`40903`, `Product is deleted`）。删除状态优先于当前 ProductStatus 判断。
+3. `status = online` 时抛 `ProductAlreadyOnline`（`40901`, `Product is already online`）。
+4. 同步调用 `ProductValidator.validate_before_online(product)`；`42201`、未预加载关系和未知 ProductType 等异常原样传播，不捕获或改写。
+5. 校验通过后开启事务，通过 `ProductRepository.update_product(..., status=ProductStatus.ONLINE, using_db=connection)` 更新状态。
+6. 在同一事务连接上通过 `AuditLogService.log(..., action="ONLINE_PRODUCT", target_type="product", target_id=product.id, using_db=connection)` 写审计；状态更新或审计任一失败时，两者全部回滚。
+7. 事务提交后返回更新后的 Product；校验和所有前置冲突均发生在写事务前，不写状态、不写审计。
+
+为支持步骤 6，现有共享审计边界必须向后兼容地增加可选 `using_db: BaseDBAsyncClient | None = None`，由 `AuditLogService.log()` 透传给 `AuditLogRepository.create()` 和 `AuditLog.create(using_db=...)`。不提供时保持现有用户模块的顺序审计行为；Product 上架必须提供当前事务连接。Product Service 通过构造函数接收 `ProductRepository` 和 `AuditLogService`，不得在方法内部实例化 Repository，也不得直接操作 Product 或 AuditLog Model。
+
+本阶段不增加行锁、条件更新或跨请求幂等键；两个并发上架请求仍可能都通过事务前状态检查，属于后续并发策略需要处理的已知限制。单次请求内的状态与审计原子性是本阶段强制契约。
+
 **校验流程：**
 
 ```
@@ -373,7 +404,7 @@ ProductValidator.validate_before_online(product)  # 同步调用，不使用 awa
   │
   ├─ product_type = "experience" → _collect_experience_issues()
   ├─ product_type = "kit"        → _collect_kit_issues()
-  └─ (future)                     → _collect_xxx_issues()
+  └─ 未知 ProductType             → 抛内部编程错误，fail-closed
   │
   ▼
 全部通过 → 返回 None，Service 才可进入状态更新事务

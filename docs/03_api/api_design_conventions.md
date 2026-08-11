@@ -325,6 +325,8 @@ Authorization: Bearer <access_token>
 
 **资源不存在（404xx）—— HTTP 404**
 
+`NotFoundException` 必须支持由命名子类传入稳定业务 code，同时保持无参数时现有通用 `404` 行为向后兼容；例如 `ProductNotFound` 使用 `40401`，而不是退化为通用 code `404`。
+
 | code | 说明 |
 |------|------|
 | 40401 | 商品不存在 |
@@ -340,6 +342,10 @@ Authorization: Bearer <access_token>
 | 40021 | Option 图片不能设为封面 |
 
 **状态冲突（409xx）—— HTTP 409**
+
+状态冲突由 `ConflictException` 及其模块命名子类表达，全局异常中间件按异常类型映射 HTTP 409；禁止根据 `409xx` 错误码号段推断 HTTP 状态。Product Service 首个命名子类为 `ProductIsDeleted` 和 `ProductAlreadyOnline`。
+
+模块异常按 HTTP 语义类型直接继承，不要求建立覆盖全部状态码的模块基类。现有 `ProductException` 继承自 `UnprocessableEntityException`，实际只能表示 HTTP 422；进入 Product Service 异常实现时将移除该伪通用基类，让 `ProductNotReadyForOnline` 直接继承 `UnprocessableEntityException`、`ProductNotFound` 直接继承 `NotFoundException`，冲突异常直接继承 `ConflictException`。这不改变任何对外错误契约。
 
 | code | 说明 |
 |------|------|

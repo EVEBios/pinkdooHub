@@ -357,17 +357,25 @@ class ProductValidator:
 ```python
 # app/services/product_service.py
 
-async def online_product(self, product_id: int) -> None:
+async def online_product(
+    self,
+    product_id: int,
+    *,
+    operator_id: int,
+    ip_address: str,
+) -> Product:
     product = await self.product_repo.get_product_detail(
         product_id,
         include_deleted=True,
     )
     # Service 在这里处理不存在、逻辑删除和已经 Online 等资源/状态冲突。
     ProductValidator.validate_before_online(product)  # 同步纯计算；不使用 await
-    # 校验通过后，Service 才在事务中通过 Repository 更新状态并写审计。
+    # 校验通过后，Service 才在同一事务连接上更新状态并写审计。
 ```
 
 `get_product_detail(product_id, include_deleted=True)` 必须预加载 `kit`、有效 ExperienceOption、有效 Product 公共图片及每个有效 Option 的有效专属图片；`include_deleted=True` 让 Service 能先区分“不存在”和“已经逻辑删除”。`get_product_by_id()` 只读取 Product 主表，不能作为 Validator 输入。Validator 不负责补查关系；若调用方忘记预加载并触发 `NoValuesFetched`，这是 Repository/Service 集成错误，应进入 500 兜底而不是转换为 `42201`。
+
+Product 上架的状态更新与 `ONLINE_PRODUCT` 审计必须共享同一个 `BaseDBAsyncClient` 事务连接。为此，`AuditLogService.log()` 与 `AuditLogRepository.create()` 提供向后兼容的可选 `using_db` 参数：普通调用不传时保持既有顺序审计；需要原子性的 Product Service 显式透传当前连接。Product Service 通过构造函数注入 ProductRepository 与共享 AuditLogService，不直接实例化 Repository，不直接操作 ORM Model，也不把权限检查或 Out Schema 序列化放入 Service。
 
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务
@@ -857,7 +865,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 ```
 
-`UnprocessableEntityException` 的专用 handler 必须保持 HTTP 422，普通 `BusinessException` 继续保持 HTTP 400。Product 的 `ProductNotReadyForOnline` 是前者的模块命名子类，固定 `42201`、message 和非空字符串数组 `data.issues`。异常类型、中间件映射及 Product Validator 阶段均已实现并完成纯度/真实聚合集成验证；Service 和 API 仍待完成。
+`UnprocessableEntityException` 的专用 handler 必须保持 HTTP 422，普通 `BusinessException` 继续保持 HTTP 400。Product 的 `ProductNotReadyForOnline` 是前者的模块命名子类，固定 `42201`、message 和非空字符串数组 `data.issues`。模块命名异常直接继承对应 HTTP 语义类型；不保留跨 404/409/422 的伪通用 Product 基类。异常类型、中间件映射及 Product Validator 阶段均已实现并完成纯度/真实聚合集成验证；Service 和 API 仍待完成。
 
 ### 6.2 日志配置（app/middleware/logging.py 中初始化）
 

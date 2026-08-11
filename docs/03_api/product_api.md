@@ -1055,6 +1055,13 @@ PATCH /api/v1/admin/products/{id}/online
 
 **可能的业务错误：** `40401`, `40901`, `40903`, `42201`
 
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Product 不存在 | `ProductNotFound` | `40401` | `Product not found` | 404 |
+| Product 已逻辑删除 | `ProductIsDeleted` | `40903` | `Product is deleted` | 409 |
+| Product 已经 Online | `ProductAlreadyOnline` | `40901` | `Product is already online` | 409 |
+| 聚合不满足上架条件 | `ProductNotReadyForOnline` | `42201` | `Product is not ready to go online` | 422 |
+
 **状态流转：**
 
 | 当前状态 | 操作 | 结果 |
@@ -1073,11 +1080,14 @@ PATCH /api/v1/admin/products/{id}/online
 4. ProductValidator.validate_before_online(product)
    ├─ product_type = "experience" → 收集公共规则 + Experience 规则
    └─ product_type = "kit"        → 收集公共规则 + Kit 规则
-5. 全部通过 → 在事务中由 Repository 更新 status = "online"
-6. 写入 Audit Log（action = ONLINE_PRODUCT）
+5. 全部通过 → 开启事务，由 Repository 使用当前事务连接更新 status = "online"
+6. 使用同一事务连接写入 Audit Log（action = ONLINE_PRODUCT）
+7. 事务提交后返回已更新 Product，API 使用 ProductOnlineOut 序列化
 ```
 
-步骤 1 必须预加载 `kit`、有效 Option、有效 Product 公共图片，以及每个有效 Option 的有效专属图片；不得把仅包含 Product 主表的 `get_product_by_id()` 结果传给 Validator。步骤 4 是同步纯计算调用，不使用 `await`。未预加载关系触发的 `NoValuesFetched` 等异常属于内部编程错误，不得转换为 `42201`。
+步骤 1 必须预加载 `kit`、有效 Option、有效 Product 公共图片，以及每个有效 Option 的有效专属图片；不得把仅包含 Product 主表的 `get_product_by_id()` 结果传给 Validator。删除状态优先于 ProductStatus 判断。步骤 4 是同步纯计算调用，不使用 `await`。未预加载关系触发的 `NoValuesFetched`、未知 ProductType 等异常属于内部编程错误，不得转换为 `42201`。
+
+步骤 5 和 6 必须原子提交：`ProductRepository.update_product(..., using_db=connection)` 与 `AuditLogService.log(..., using_db=connection)` 使用同一个 `BaseDBAsyncClient`。任一步骤失败都回滚状态和审计。Validator 失败以及 `40401`、`40903`、`40901` 均发生在写事务前，不写状态、不写审计。Service 方法接收 `product_id`、`operator_id` 和 `ip_address`，返回更新后的 Product Model；权限依赖和 `ProductOnlineOut` 序列化分别属于 API 层。
 
 **Experience 检查项：**
 
@@ -1140,7 +1150,7 @@ PATCH /api/v1/admin/products/{id}/online
 }
 ```
 
-**Audit：** 仅校验通过并成功更新 status 后写入（`action = ONLINE_PRODUCT`）。校验失败不写 Audit。
+**Audit：** 仅校验通过后在状态更新的同一事务内写入（`action = ONLINE_PRODUCT`, `target_type = product`, `target_id = Product ID`）。校验失败、资源/状态冲突不写 Audit；状态更新或审计写入失败时整个事务回滚。
 
 ---
 
