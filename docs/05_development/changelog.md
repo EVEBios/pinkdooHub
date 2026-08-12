@@ -4,6 +4,42 @@
 
 ---
 
+## Unreleased — Product Update and Delete Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented Product basic-information PATCH orchestration and Product logical deletion with stable conflicts and atomic audit persistence. The HTTP endpoints remain unavailable until API integration.
+
+### Added
+
+- `OnlineProductCannotBeModified` (`40905`) and `ProductMustBeOfflineBeforeDelete` (`40904`) with fixed messages and HTTP 409 mapping.
+- `ProductService.update_product()` with non-empty `name` / `description` field allowlisting, PATCH missing/null preservation, ordered preconditions, and atomic `UPDATE_PRODUCT` audit persistence.
+- `ProductService.delete_product()` with Draft/Offline support, status-preserving logical deletion, and atomic `DELETE_PRODUCT` audit persistence.
+- Mock and real SQLite tests for missing/deleted/Online conflicts, deletion precedence, forbidden internal fields, Validator isolation, child-record preservation, shared transaction connections, failure short-circuiting, and audit-failure rollback.
+
+### Important Decisions
+
+1. API passes `ProductUpdate.model_dump(exclude_unset=True)` as a normalized field mapping; Service remains independent of Pydantic while preserving omitted fields versus explicit `description=None`.
+2. Service allowlists only `name` and `description`, so type, status, and deletion state remain owned by their dedicated use cases.
+3. Logical deletion changes only `Product.is_deleted`; status and Product child records remain untouched for traceability.
+4. Neither workflow loads the aggregate or invokes ProductValidator because no online-readiness transition occurs.
+
+### Verification
+
+- 39 focused update/delete, exception, and architecture tests pass.
+- 447 Product/audit transaction tests and the complete 549-test suite pass.
+- Real SQLite tests prove successful field/deletion persistence and audit-failure rollback.
+
+### Known Limitations
+
+- Product update/delete API routes and response mapping remain pending.
+- Option, Kit mutation, and image Service workflows remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — Product Creation Service (Phase 4.1)
 
 **Date:** 2026-08-12

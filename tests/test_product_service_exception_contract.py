@@ -115,6 +115,40 @@ def test_product_already_offline_contract() -> None:
     assert exc.data is None
 
 
+def test_product_must_be_offline_before_delete_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ProductMustBeOfflineBeforeDelete",
+    )
+    exc = exception_class()
+
+    conflict_class = _exception_class(
+        core_exceptions,
+        "ConflictException",
+    )
+    assert isinstance(exc, conflict_class)
+    assert exc.code == 40904
+    assert exc.message == "Product must be offline before deletion"
+    assert exc.data is None
+
+
+def test_online_product_cannot_be_modified_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "OnlineProductCannotBeModified",
+    )
+    exc = exception_class()
+
+    conflict_class = _exception_class(
+        core_exceptions,
+        "ConflictException",
+    )
+    assert isinstance(exc, conflict_class)
+    assert exc.code == 40905
+    assert exc.message == "Online product cannot be modified"
+    assert exc.data is None
+
+
 def test_product_exceptions_use_http_semantic_bases_directly() -> None:
     assert not hasattr(product_exceptions, "ProductException")
     product_not_ready = product_exceptions.ProductNotReadyForOnline(
@@ -141,6 +175,14 @@ def _create_exception_test_app() -> FastAPI:
         "/product-already-online": lambda: _exception_class(
             product_exceptions,
             "ProductAlreadyOnline",
+        )(),
+        "/product-must-be-offline-before-delete": lambda: _exception_class(
+            product_exceptions,
+            "ProductMustBeOfflineBeforeDelete",
+        )(),
+        "/online-product-cannot-be-modified": lambda: _exception_class(
+            product_exceptions,
+            "OnlineProductCannotBeModified",
         )(),
         "/ordinary-business-error": lambda: core_exceptions.BusinessException(
             code=40901,
@@ -197,6 +239,28 @@ async def test_product_conflicts_map_to_http_409() -> None:
     assert online_response.json() == {
         "code": 40901,
         "message": "Product is already online",
+        "data": None,
+    }
+
+
+async def test_update_and_delete_conflicts_map_to_http_409() -> None:
+    delete_response = await _get(
+        "/product-must-be-offline-before-delete",
+    )
+    update_response = await _get(
+        "/online-product-cannot-be-modified",
+    )
+
+    assert delete_response.status_code == 409
+    assert delete_response.json() == {
+        "code": 40904,
+        "message": "Product must be offline before deletion",
+        "data": None,
+    }
+    assert update_response.status_code == 409
+    assert update_response.json() == {
+        "code": 40905,
+        "message": "Online product cannot be modified",
         "data": None,
     }
 

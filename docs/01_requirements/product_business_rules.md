@@ -1,9 +1,9 @@
 # Product Module Business Rules
 
-> **Document Version:** v1.6
+> **Document Version:** v1.7
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Last Updated:** 2026-08-10
+> **Last Updated:** 2026-08-12
 >
 > 本文档定义 Product 模块的业务规则。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
 >
@@ -255,6 +255,10 @@ Service 层**禁止**执行 `DELETE` 语句。删除操作一律通过状态字�
 
 `online` Product 会在更新前被 Service 拒绝；`draft` / `offline` Product 逻辑删除时保持原 `status`，删除动作不隐式制造额外状态流转。
 
+Product 基础信息修改只接受 API Schema 使用 `exclude_unset=True` 得到的 `name` / `description` 显式字段。Service 通过字段白名单阻止调用方借通用更新方法修改 `product_type`、`status` 或 `is_deleted`；显式 `description=None` 表示清空，缺失字段保持原值。已删除 Product 抛 `ProductIsDeleted`（`40903`），Online Product 抛 `OnlineProductCannotBeModified`（`40905`, `Online product cannot be modified`）。成功更新与 `UPDATE_PRODUCT` 审计使用同一事务连接。
+
+逻辑删除先区分不存在和已删除，再拒绝 Online Product 并抛 `ProductMustBeOfflineBeforeDelete`（`40904`, `Product must be offline before deletion`）。成功时只设置 `is_deleted=true`，关联 Option、Kit、Image 不变，并与 `DELETE_PRODUCT` 审计在同一事务中提交。更新或审计任一步失败时全部回滚；修改和删除都不调用 ProductValidator。
+
 商品下架只允许 `online → offline`。Draft 与 Offline 都已处于“不对外销售”状态，执行下架统一抛 `ProductAlreadyOffline`（`40902`, `Product is already offline`），不为 Draft 另建错误码。Service 先区分不存在和逻辑删除，再检查 ProductStatus；成功时在同一事务连接上更新 `status=offline` 并写 `OFFLINE_PRODUCT` 审计。下架不调用 ProductValidator，状态更新或审计任一步失败时全部回滚。
 
 ### 7.3 Product 查询可见性
@@ -284,6 +288,23 @@ create_kit_product(name, description, price, stock, operator_id, ip_address) -> 
 - Product、ProductKit 或审计任一步失败时全部回滚；创建不调用 ProductValidator，Draft 可以暂时没有描述、图片或 Experience Option。
 
 > **实现状态：** Experience/Kit 创建 Service 已实现，并有固定类型、同一事务连接、零库存、无 Validator 调用、真实聚合持久化和审计失败全回滚测试。API 路由仍待实现。
+
+### 7.5 Product 基础信息修改与逻辑删除
+
+Product Service 公开方法为：
+
+```python
+update_product(product_id, *, updates, operator_id, ip_address) -> Product
+delete_product(product_id, *, operator_id, ip_address) -> Product
+```
+
+- `updates` 只允许非空的 `name` / `description` 显式字段映射，从而保留 PATCH 缺失字段与显式 `description=None` 的区别。
+- 两个方法都使用 `get_product_by_id(..., include_deleted=True)`，依次处理不存在、逻辑删除和 Online 状态冲突。
+- 修改支持 Draft/Offline；删除支持 Draft/Offline 且保持原 ProductStatus，不修改或删除关联聚合记录。
+- Repository 更新和对应审计共享事务连接；Service 返回更新后的 Product，由 API Out Schema 负责响应白名单。
+- 两条流程均不加载完整聚合、不调用 ProductValidator。
+
+> **实现状态：** 基础信息修改与逻辑删除 Service 已实现，并有字段白名单、PATCH 缺失/null、冲突优先级、状态保留、关联记录保留、共享事务及审计失败真实回滚测试。API 路由仍待实现。
 
 ### 7.2 Database Layer（Foreign Key）
 

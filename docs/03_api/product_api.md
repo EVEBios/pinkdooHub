@@ -1,9 +1,9 @@
 # Product API Design
 
-> **Document Version:** v0.3
+> **Document Version:** v0.4
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Status:** Draft — Schema, Models, Repository, and all Validator rules implemented; Validator purity/integration closure, Service, and API pending
+> **Status:** Draft — Schema, Models, Repository, Validator, and core Product Service slices implemented; API pending
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 的 `online_product()` 切片也已实现，包括 404/409 前置冲突、Validator 调用，以及状态更新与 `ONLINE_PRODUCT` 审计的同事务原子提交。其余 Product Service 用例和 API 路由仍待实现；本页端点当前不可调用。
+> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除及上架/下架状态流转，写入与审计具有同事务回滚测试。Option、Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
 
 ---
 
@@ -962,6 +962,12 @@ PATCH /api/v1/admin/products/{id}
 
 **可能的业务错误：** `40401`, `40903`, `40905`
 
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Product 不存在 | `ProductNotFound` | 40401 | `Product not found` | 404 |
+| Product 已逻辑删除 | `ProductIsDeleted` | 40903 | `Product is deleted` | 409 |
+| Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
+
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -975,6 +981,8 @@ PATCH /api/v1/admin/products/{id}
 - `name` 未提交表示不修改；显式 `name: null` 拒绝。
 - `description` 未提交表示不修改；显式 `null`、`""` 或纯空白表示清空为数据库 `NULL`。
 - 未知字段统一拒绝。Service 必须使用 `payload.model_dump(exclude_unset=True)`，不得把“未提交”误当成 `null`。
+
+API 将上述显式字段映射传给 `ProductService.update_product(..., updates=...)`。Service 再执行非空字段白名单校验，避免内部调用方绕过独立状态/删除接口；成功更新与 `UPDATE_PRODUCT` 审计共享同一事务连接，不调用 ProductValidator。
 
 **禁止修改：**
 
@@ -1019,6 +1027,8 @@ PATCH /api/v1/admin/products/{id}
 }
 ```
 
+> **实现状态：** 基础信息修改 Service 与命名异常已实现，并有字段白名单、显式 null、Draft/Offline 成功、冲突短路和审计失败回滚测试。API 路由与响应序列化仍待实现。
+
 ---
 
 ### 7.7 逻辑删除
@@ -1030,6 +1040,12 @@ DELETE /api/v1/admin/products/{id}
 **Request Body：无。** 执行逻辑删除（`is_deleted = true`），不做物理删除。
 
 **可能的业务错误：** `40401`, `40903`, `40904`
+
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Product 不存在 | `ProductNotFound` | 40401 | `Product not found` | 404 |
+| Product 已逻辑删除 | `ProductIsDeleted` | 40903 | `Product is deleted` | 409 |
+| Product 为 Online | `ProductMustBeOfflineBeforeDelete` | 40904 | `Product must be offline before deletion` | 409 |
 
 **状态流转：**
 
@@ -1046,8 +1062,8 @@ DELETE /api/v1/admin/products/{id}
 1. 查找 Product（不存在 → 40401）
 2. 检查 is_deleted（已删除 → 拒绝）
 3. 检查 status（online → 拒绝，40904 PRODUCT_MUST_BE_OFFLINE_BEFORE_DELETE）
-4. is_deleted = true → product.save()
-5. 写入 Audit Log（action = DELETE_PRODUCT）
+4. Repository 更新 is_deleted = true（保持原 status）
+5. 使用同一事务连接写入 Audit Log（action = DELETE_PRODUCT）
 ```
 
 **关联数据处理：** Product 逻辑删除后，其关联的 `ExperienceOption`、`ProductKit`、`ProductImage` 不删除不修改，保留用于历史订单和审计追溯。正常业务查询通过 `Product.is_deleted` 过滤。
@@ -1068,6 +1084,8 @@ DELETE /api/v1/admin/products/{id}
 ```
 
 **Audit：** `action = DELETE_PRODUCT`。
+
+> **实现状态：** Product 逻辑删除 Service 与命名异常已实现，并有 Draft/Offline 成功、状态/关联记录保留、冲突优先级和审计失败回滚测试。API 路由与响应序列化仍待实现。
 
 ---
 

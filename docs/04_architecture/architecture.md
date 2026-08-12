@@ -377,7 +377,7 @@ async def online_product(
 
 Product 上架的状态更新与 `ONLINE_PRODUCT` 审计必须共享同一个 `BaseDBAsyncClient` 事务连接。为此，`AuditLogService.log()` 与 `AuditLogRepository.create()` 提供向后兼容的可选 `using_db` 参数：普通调用不传时保持既有顺序审计；需要原子性的 Product Service 显式透传当前连接。Product Service 通过构造函数注入 ProductRepository 与共享 AuditLogService，不直接实例化 Repository，不直接操作 ORM Model，也不把权限检查或 Out Schema 序列化放入 Service。
 
-以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。下架、CRUD、Option、Kit、图片等其余 Service 用例和 API 层仍待完成。
+以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。Option、Kit 编辑、图片等其余 Service 用例和 API 层仍待完成。
 
 Product 下架 Service 也已实现，复用同一 Repository/审计事务边界，但只读取 Product 主表且不调用 Validator：不存在、逻辑删除和非 Online 状态在事务前失败；成功时 `status=offline` 与 `OFFLINE_PRODUCT` 审计原子提交。
 
@@ -388,6 +388,8 @@ Product 查询 Service 只编排 Repository 的用例查询并返回 Model/Page�
 Product 创建 Service 接收拆分后的领域字段而非请求 Schema，并返回 Product Model。Experience 的 Product+审计和 Kit 的 Product+ProductKit+审计分别共享一个调用方事务连接；Service 固定 ProductType，Model 默认固定 Draft/未删除，API 只负责输入 Schema 和 Create Out 序列化。创建 Draft 不调用 Validator。
 
 上述 Experience/Kit 创建 Service 已实现；真实 SQLite 测试固定 Kit 扩展记录与 Product 同事务创建，以及两种创建在审计失败时不留下 Product、ProductKit 或 AuditLog。
+
+Product 基础信息修改和逻辑删除 Service 只读取 Product 主表，不加载聚合、不调用 Validator。API 将 `ProductUpdate.model_dump(exclude_unset=True)` 结果作为显式字段映射传入，Service 通过 `name` / `description` 白名单保护用例边界；`description=None` 与字段缺失保持不同语义。修改和删除均先处理不存在、逻辑删除和 Online 冲突，再在一个事务连接上执行 Repository 更新与对应审计。逻辑删除仅设置 `is_deleted=true`，保持 ProductStatus 和所有关联记录不变。
 
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务

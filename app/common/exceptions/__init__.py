@@ -1,7 +1,9 @@
 from app.common.exceptions.product import (
+    OnlineProductCannotBeModified,
     ProductAlreadyOffline,
     ProductAlreadyOnline,
     ProductIsDeleted,
+    ProductMustBeOfflineBeforeDelete,
     ProductNotFound,
     ProductNotReadyForOnline,
 )
@@ -18,10 +20,12 @@ from app.common.exceptions.user import (
 __all__ = [
     "IncorrectPassword",
     "OldPasswordIncorrect",
+    "OnlineProductCannotBeModified",
     "PhoneAlreadyExists",
     "ProductAlreadyOffline",
     "ProductAlreadyOnline",
     "ProductIsDeleted",
+    "ProductMustBeOfflineBeforeDelete",
     "ProductNotFound",
     "ProductNotReadyForOnline",
     "TokenExpired",

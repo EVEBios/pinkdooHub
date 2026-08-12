@@ -35,6 +35,26 @@ class ProductAlreadyOffline(ConflictException):
         super().__init__(code=40902, message="Product is already offline")
 
 
+class ProductMustBeOfflineBeforeDelete(ConflictException):
+    """Online Product 必须先下架才能逻辑删除。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40904,
+            message="Product must be offline before deletion",
+        )
+
+
+class OnlineProductCannotBeModified(ConflictException):
+    """Online Product 不允许直接修改业务数据。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40905,
+            message="Online product cannot be modified",
+        )
+
+
 class ProductNotReadyForOnline(UnprocessableEntityException):
     """Product 聚合不满足上架完整性条件。"""
 

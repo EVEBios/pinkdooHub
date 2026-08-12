@@ -1,15 +1,18 @@
 """Product Service —— 编排 Product 业务操作。"""
 
 import logging
+from collections.abc import Mapping
 from decimal import Decimal
 
 from tortoise.transactions import in_transaction
 
 from app.common.enums.product import ProductStatus, ProductType
 from app.common.exceptions import (
+    OnlineProductCannotBeModified,
     ProductAlreadyOffline,
     ProductAlreadyOnline,
     ProductIsDeleted,
+    ProductMustBeOfflineBeforeDelete,
     ProductNotFound,
 )
 from app.common.pagination import Page
@@ -20,6 +23,8 @@ from app.validators.product_validator import ProductValidator
 
 
 logger = logging.getLogger(__name__)
+
+_BASIC_PRODUCT_UPDATE_FIELDS = frozenset({"name", "description"})
 
 
 class ProductService:
@@ -185,6 +190,100 @@ class ProductService:
         ):
             raise ProductNotFound()
         return product
+
+    async def update_product(
+        self,
+        product_id: int,
+        *,
+        updates: Mapping[str, object],
+        operator_id: int,
+        ip_address: str,
+    ) -> Product:
+        """原子修改非 Online Product 的显式基础信息字段并写入审计。"""
+
+        update_fields = dict(updates)
+        if (
+            not update_fields
+            or not update_fields.keys() <= _BASIC_PRODUCT_UPDATE_FIELDS
+        ):
+            raise ValueError(
+                "updates must contain only name or description",
+            )
+
+        product = await self.product_repository.get_product_by_id(
+            product_id,
+            include_deleted=True,
+        )
+        if product is None:
+            raise ProductNotFound()
+        if product.is_deleted:
+            raise ProductIsDeleted()
+        if product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+
+        async with in_transaction() as connection:
+            updated = await self.product_repository.update_product(
+                product,
+                using_db=connection,
+                **update_fields,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="UPDATE_PRODUCT",
+                target_type="product",
+                target_id=product.id,
+                ip_address=ip_address,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Product updated: operator_id=%d product_id=%d",
+            operator_id,
+            product.id,
+        )
+        return updated
+
+    async def delete_product(
+        self,
+        product_id: int,
+        *,
+        operator_id: int,
+        ip_address: str,
+    ) -> Product:
+        """原子逻辑删除 Draft/Offline Product 并写入审计。"""
+
+        product = await self.product_repository.get_product_by_id(
+            product_id,
+            include_deleted=True,
+        )
+        if product is None:
+            raise ProductNotFound()
+        if product.is_deleted:
+            raise ProductIsDeleted()
+        if product.status == ProductStatus.ONLINE:
+            raise ProductMustBeOfflineBeforeDelete()
+
+        async with in_transaction() as connection:
+            updated = await self.product_repository.update_product(
+                product,
+                is_deleted=True,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="DELETE_PRODUCT",
+                target_type="product",
+                target_id=product.id,
+                ip_address=ip_address,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Product deleted: operator_id=%d product_id=%d",
+            operator_id,
+            product.id,
+        )
+        return updated
 
     async def online_product(
         self,
