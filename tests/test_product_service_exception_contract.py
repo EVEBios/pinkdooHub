@@ -98,6 +98,23 @@ def test_product_already_online_contract() -> None:
     assert exc.data is None
 
 
+def test_product_already_offline_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ProductAlreadyOffline",
+    )
+    exc = exception_class()
+
+    conflict_class = _exception_class(
+        core_exceptions,
+        "ConflictException",
+    )
+    assert isinstance(exc, conflict_class)
+    assert exc.code == 40902
+    assert exc.message == "Product is already offline"
+    assert exc.data is None
+
+
 def test_product_exceptions_use_http_semantic_bases_directly() -> None:
     assert not hasattr(product_exceptions, "ProductException")
     product_not_ready = product_exceptions.ProductNotReadyForOnline(

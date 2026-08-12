@@ -4,6 +4,39 @@
 
 ---
 
+## Unreleased — Product Offline Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Completed the Product status-transition Service pair by implementing atomic Online-to-Offline orchestration. The Product HTTP endpoint remains unavailable until the API layer is implemented.
+
+### Added
+
+- `ProductAlreadyOffline` (`40902`) as the stable conflict for both Draft and Offline Products receiving an offline request.
+- `ProductService.offline_product(product_id, *, operator_id, ip_address) -> Product` using a lightweight Product lookup, ordered precondition checks, and atomic status plus `OFFLINE_PRODUCT` audit persistence.
+- Tests for missing/deleted/non-Online Products, deletion precedence, absence of Validator calls, exact load/update/audit order, shared transaction connections, update failure, successful real persistence, and audit-failure rollback.
+
+### Important Decisions
+
+1. Draft and Offline share `40902` because both are already non-selling states; no additional Draft-specific code is introduced.
+2. Offline uses `get_product_by_id(..., include_deleted=True)` because it needs no aggregate relations and never calls the online-readiness Validator.
+3. Resource and status conflicts occur before the transaction; the status update and audit remain atomic within one caller-owned transaction.
+
+### Verification
+
+- 34 focused Product status-transition, exception, and architecture tests pass.
+- The complete suite passes with 503 tests.
+- Real SQLite tests prove successful persistence and audit-failure rollback to Online.
+
+### Known Limitations
+
+- No Product API routes are registered yet.
+- Remaining Product query, creation, update/delete, Option, Kit, and image Service operations remain pending.
+
+---
+
 ## Unreleased — Product Online Service (Phase 4.1)
 
 **Date:** 2026-08-12

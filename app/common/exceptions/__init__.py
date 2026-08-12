@@ -1,4 +1,5 @@
 from app.common.exceptions.product import (
+    ProductAlreadyOffline,
     ProductAlreadyOnline,
     ProductIsDeleted,
     ProductNotFound,
@@ -18,6 +19,7 @@ __all__ = [
     "IncorrectPassword",
     "OldPasswordIncorrect",
     "PhoneAlreadyExists",
+    "ProductAlreadyOffline",
     "ProductAlreadyOnline",
     "ProductIsDeleted",
     "ProductNotFound",

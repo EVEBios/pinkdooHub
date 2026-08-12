@@ -1166,6 +1166,8 @@ PATCH /api/v1/admin/products/{id}/offline
 
 **可能的业务错误：** `40401`, `40902`, `40903`
 
+`draft` 和 `offline` 统一抛 `ProductAlreadyOffline`（`40902`, `Product is already offline`, HTTP 409）：两者都已不对外销售，不能重复执行下架。`is_deleted=true` 优先返回 `ProductIsDeleted`。
+
 **状态流转：**
 
 | 当前状态 | 操作 | 结果 |
@@ -1180,11 +1182,12 @@ PATCH /api/v1/admin/products/{id}/offline
 **Service 执行流程：**
 
 ```
-1. 查找 Product（不存在 → 40401）
+1. 使用 ProductRepository.get_product_by_id(product_id, include_deleted=True) 查找 Product（不存在 → 40401）
 2. 检查 is_deleted（已删除 → 拒绝）
-3. 检查当前 status 必须为 online（否则 → 拒绝）
-4. status = "offline" → product.save()
-5. 写入 Audit Log（action = OFFLINE_PRODUCT）
+3. 检查当前 status 必须为 online（draft / offline → 40902）
+4. 开启事务，由 Repository 使用当前事务连接更新 status = "offline"
+5. 使用同一事务连接写入 Audit Log（action = OFFLINE_PRODUCT）
+6. 提交后返回更新后的 Product，API 使用 ProductOfflineOut 序列化
 ```
 
 **成功响应**
@@ -1202,7 +1205,9 @@ PATCH /api/v1/admin/products/{id}/offline
 }
 ```
 
-**Audit：** 成功后写入（`action = OFFLINE_PRODUCT`）。
+**Audit：** 与状态更新在同一事务内写入（`action = OFFLINE_PRODUCT`, `target_type = product`）。资源/状态冲突不写 Audit；状态更新或审计失败时整体回滚。下架不调用 ProductValidator。
+
+> **实现状态：** `ProductService.offline_product()` 已实现，并有 Draft/Offline 冲突、删除优先、不调用 Validator、同事务连接和真实审计失败回滚测试。FastAPI 路由、ADMIN+ 依赖和 `ProductOfflineOut` 序列化仍待实现。
 
 ---
 

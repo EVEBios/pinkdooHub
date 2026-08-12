@@ -28,6 +28,13 @@ class ProductAlreadyOnline(ConflictException):
         super().__init__(code=40901, message="Product is already online")
 
 
+class ProductAlreadyOffline(ConflictException):
+    """Product 已经处于非销售状态，不能执行下架。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40902, message="Product is already offline")
+
+
 class ProductNotReadyForOnline(UnprocessableEntityException):
     """Product 聚合不满足上架完整性条件。"""
 
