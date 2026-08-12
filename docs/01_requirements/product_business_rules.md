@@ -1,6 +1,6 @@
 # Product Module Business Rules
 
-> **Document Version:** v2.1
+> **Document Version:** v2.2
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Last Updated:** 2026-08-12
@@ -359,17 +359,32 @@ Service 返回更新后的 `ProductKit`；后续 API Mapper 使用 `product_id` 
 
 > **实现状态：** Kit 价格与库存修改 Service 及 `40404 ProductKitNotFound` 已实现，并有资源/状态优先级、Draft/Offline、零库存、字段互不覆盖、快照审计、Validator 隔离和真实事务回滚测试。API 路由仍待实现。
 
-### 7.9 Database Layer（Foreign Key）
+### 7.9 ProductImage 生命周期事务
+
+图片业务由四个 Service 用例组成；Service 接收已经由未来 API/文件存储适配器生成的 `image_url`，不依赖 FastAPI `UploadFile`，也不负责文件内容、大小、MIME、路径或对象存储操作：
+
+- `create_product_image(product_id, *, image_url, is_cover, sort, operator_id, ip_address)` 先处理 Product 的 40401/40903/40905。公共图固定 `experience_option_id=NULL`；设为封面时，在同一事务中锁定 Product 行以串行化同一聚合的封面写入，再批量清除该 Product 其他有效公共封面、创建图片并写 `CREATE_PRODUCT_IMAGE`。
+- `create_option_image(option_id, *, image_url, sort, operator_id, ip_address)` 复用 Option 的 40402/40912/40905 优先级；已删除所属 Product 隐藏为 40402。归属从 Option 自动取得，`is_cover=false` 固定，并写 `CREATE_OPTION_IMAGE`。
+- `update_product_image(image_id, *, updates, operator_id, ip_address)` 只接收非空 `sort` / `is_cover=true` 显式映射。不存在、已删除、所属 Product 已删除或所属 Option 已删除统一抛 `ProductImageNotFound`（`40403`, `Product image not found`）；Online Product 抛 40905。Option 专属图设置封面抛 `OptionImageCannotBeCover`（`40021`, `Option image cannot be set as product cover`）。普通修改写 `UPDATE_PRODUCT_IMAGE` before/after 快照；真正发生封面切换时再按顺序写 `SET_PRODUCT_COVER`，记录旧/新封面 ID。
+- `delete_product_image(image_id, *, operator_id, ip_address)` 复用相同可修改图片检查，只设置 `is_deleted=true`，不物理删除文件和数据库记录；允许删除公共封面或 Option 最后一张图。删除与 `DELETE_PRODUCT_IMAGE` 审计同事务回滚，不调用 Validator。
+
+封面创建/切换先在事务内通过 `SELECT ... FOR UPDATE` 锁定 Product 行，防止同一 Product 的并发封面请求在清理后各自留下一个封面；图片创建、封面批量清理、图片修改/删除和对应一至两条审计均使用同一事务连接。当前 `AuditLog.description` 只有 256 字符，删除快照保存 `image_id`、`product_id`、`experience_option_id`、`is_cover` 和 `sort`，不复制最长可达 2048 字符的 `image_url`；完整 URL 继续保留在逻辑删除的 ProductImage 中，可由 `image_id` 追溯。
+
+文件内容校验和存储边界仍待 API 集成：未来适配器必须在调用 Service 前完成 jpg/png/webp、2MB 和安全文件名/路径检查并生成 URL；数据库事务无法回滚已上传文件，若 Service 失败，API/存储编排方必须执行删除补偿或记录待清理对象。`42221` 只属于该上传边界。
+
+> **实现状态：** ProductImage 创建、修改、封面切换和逻辑删除 Service，以及 40403/40021 命名异常已实现；资源/状态优先级、封面互斥、Option 归属、审计顺序、删除快照和真实事务回滚均有测试。文件存储适配器、上传校验和 API 路由仍待实现。
+
+### 7.10 Database Layer（Foreign Key）
 
 直接指向 Product 的关联表（ExperienceOption、ProductKit、ProductImage）的 Foreign Key 必须使用 `ON DELETE RESTRICT`。`ProductImage.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL` 作为 Option 异常物理删除时的兜底：
 
 **原因：** 防止有人绕过业务层直接在数据库执行物理删除，导致关联数据孤立。
 
-### 7.10 Preconditions
+### 7.11 Preconditions
 
 `online` 商品必须先下架才能删除。
 
-### 7.11 Post-delete Behavior
+### 7.12 Post-delete Behavior
 
 - 普通用户不可见
 - 管理员仍可查询历史记录

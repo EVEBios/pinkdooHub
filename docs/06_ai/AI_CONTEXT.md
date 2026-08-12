@@ -51,7 +51,7 @@
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository` 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 全生命周期、Kit 价格/库存修改及上架/下架状态流转；创建聚合、查询可见性、404/409 前置检查、PATCH 字段语义、Option 全历史唯一/恢复、Validator 边界和业务/审计原子性均有专项和真实测试。图片与 API 运行时代码仍待完成。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository` 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption/ProductImage 全生命周期、Kit 价格/库存修改及上架/下架状态流转；创建聚合、查询可见性、404/409 前置检查、PATCH 字段语义、Option 全历史唯一/恢复、封面互斥、Validator 边界和业务/审计原子性均有专项和真实测试。图片文件校验/存储适配器、API Mapper 与路由仍待完成。
 - MySQL 8+ 权威首迁移已离线生成、通过契约测试并提交，但尚未对 MySQL 执行。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
 - Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
@@ -95,6 +95,7 @@ Product Validator 契约速查：
 - ExperienceOption 修改已实现：接收非空显式 updates Mapping，先处理 40402/40912/40905，再合并最终组合并检查全历史唯一性；当前 ID 不冲突，其他有效/已删除记录及唯一索引竞争统一 40911。维度写 UPDATE_OPTION、价格写 UPDATE_PRICE，同时提交时顺序写两条；更新、审计、响应重载同事务并保留图片关系，不调用 Validator。API 路由仍待实现。
 - ExperienceOption 删除已实现：先处理 40402/40912/40905；Draft/Offline 可删除最后一项，只设置 Option.is_deleted，保持 Product 状态与图片记录/外键。DELETE_OPTION 的完整配置快照以 JSON 存入 description，更新与审计同事务回滚，不调用 Validator；API 路由仍待实现。
 - Kit 价格/库存修改已实现：共享 40401/40903/40001/40905/40404 前置顺序，Draft/Offline 分别只更新 ProductKit.price 或 stock；UPDATE_PRICE/UPDATE_STOCK 的 before/after 快照写入 description，字段更新和审计同事务回滚，不调用 Validator。库存仍是 Phase 4.1 最终值设置，不含流水或并发扣减；API 路由仍待实现。
+- ProductImage 生命周期已实现：公共图/Option 图创建、排序/封面修改和逻辑删除使用 40401/40402/40403、40903/40905/40912 与 40021 契约；封面批量清理、图片写入及一至两条审计同事务回滚。Service 接收已生成 image_url，不依赖 UploadFile/存储 SDK；2MB、jpg/png/webp、42221、外部文件补偿和延迟清理由待实现的 API/存储边界负责。
 
 ---
 

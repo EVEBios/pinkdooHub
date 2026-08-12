@@ -114,6 +114,42 @@ async def test_create_image_supports_public_and_option_ownership() -> None:
     assert option_image.is_deleted is False
 
 
+async def test_get_product_cover_returns_first_effective_public_cover() -> None:
+    """封面查询排除 Option 图、已删除图和指定当前图。"""
+
+    product = await _create_product("封面查询商品")
+    option = await _create_option(product)
+    first = await _create_image(
+        product,
+        image_url="https://example.com/first-cover.jpg",
+        is_cover=True,
+    )
+    second = await _create_image(
+        product,
+        image_url="https://example.com/second-cover.jpg",
+        is_cover=True,
+    )
+    await _create_image(
+        product,
+        experience_option=option,
+        image_url="https://example.com/option-cover.jpg",
+        is_cover=True,
+    )
+    await _create_image(
+        product,
+        image_url="https://example.com/deleted-cover-query.jpg",
+        is_cover=True,
+        is_deleted=True,
+    )
+    repository = ProductRepository()
+
+    assert await repository.get_product_cover(product.id) == first
+    assert await repository.get_product_cover(
+        product.id,
+        exclude_image_id=first.id,
+    ) == second
+
+
 async def test_update_image_changes_only_requested_fields() -> None:
     """图片部分更新保留归属和 URL，并支持排序与逻辑删除。"""
 

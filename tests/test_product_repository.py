@@ -1,5 +1,7 @@
 """ProductRepository 基础查询与分页契约测试。"""
 
+from tortoise.transactions import in_transaction
+
 from app.common.enums.product import ProductStatus, ProductType
 from app.common.pagination import Page
 from app.models.product import Product
@@ -55,6 +57,26 @@ async def test_get_product_by_id_excludes_deleted_unless_explicitly_included(
         await repository.get_product_by_id(deleted.id, include_deleted=True)
         == deleted
     )
+
+
+async def test_get_product_for_update_uses_caller_transaction() -> None:
+    """聚合锁查询在调用方事务中返回 Product 并处理不存在记录。"""
+
+    product = await _create_product("封面锁商品")
+    repository = ProductRepository()
+
+    async with in_transaction() as connection:
+        loaded = await repository.get_product_for_update(
+            product.id,
+            using_db=connection,
+        )
+        missing = await repository.get_product_for_update(
+            product.id + 1000,
+            using_db=connection,
+        )
+
+    assert loaded == product
+    assert missing is None
 
 
 async def test_list_products_filters_type_status_and_deleted_scope() -> None:

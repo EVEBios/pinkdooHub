@@ -4,6 +4,43 @@
 
 ---
 
+## Unreleased — ProductImage Lifecycle Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Completed ProductImage database lifecycle orchestration: public and Option image creation, atomic cover switching, partial metadata updates, and logical deletion. Multipart validation, external storage, and API routing remain separate pending integration work.
+
+### Added
+
+- `ProductImageNotFound` (`40403`) and `OptionImageCannotBeCover` (`40021`) with stable HTTP mappings.
+- Product and Option image creation Services with fixed ownership, Option non-cover enforcement, cover clearing, and Product-targeted audits.
+- Image sort/cover update and logical-delete Services with hidden deleted parents, ordered one/two-audit flows, and compact snapshots.
+- Repository Product-row lock and cover lookup on the caller transaction, with mock/real SQLite tests for cover invariants and rollback.
+
+### Important Decisions
+
+1. Service accepts a storage-generated image URL; FastAPI UploadFile, 2MB/type/content checks, external storage, and `42221` remain API/infrastructure responsibilities.
+2. If storage succeeds before a database Service failure, the future caller must delete the object or enqueue delayed cleanup because the database transaction cannot roll back external storage.
+3. Cover creation/switching locks the Product row so concurrent cover requests for one aggregate are serialized before bulk cover clearing.
+4. Deleted Image/Product/Option ownership is hidden behind `40403`; an Option image cover attempt uses the registered `40021` contract.
+5. Delete audit omits the potentially 2048-character URL to fit the existing 256-character AuditLog description. The logical-deleted ProductImage remains the authoritative URL record addressable by image ID.
+
+### Verification
+
+- 71 focused Image Service, Repository, exception, and architecture tests pass.
+- All 559 Product tests pass.
+- Full regression: 666 tests pass.
+- Real SQLite tests prove one effective public cover and rollback of cover creation, second cover audit, and deletion failures.
+
+### Known Limitations
+
+- Multipart routes, image validation, storage adapter, compensation/cleanup worker, and response mapping remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — ProductKit Mutation Service (Phase 4.1)
 
 **Date:** 2026-08-12

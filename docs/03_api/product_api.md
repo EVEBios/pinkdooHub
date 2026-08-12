@@ -1,6 +1,6 @@
 # Product API Design
 
-> **Document Version:** v0.8
+> **Document Version:** v0.9
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Status:** Draft — Schema, Models, Repository, Validator, and core Product Service slices implemented; API pending
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 全生命周期、Kit 价格/库存修改及上架/下架状态流转，写入与审计具有同事务回滚测试。图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
+> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption、ProductImage 全生命周期、Kit 价格/库存修改及上架/下架状态流转，写入与审计具有同事务回滚测试。图片文件校验/存储、API Mapper 和全部路由仍待实现；本页端点当前不可调用。
 
 ---
 
@@ -1555,6 +1555,8 @@ Content-Type: multipart/form-data
 
 **可能的业务错误：** `40401`, `40903`, `40905`, `42221`
 
+> **实现边界：** `ProductService.create_product_image()` 接收存储层生成的 `image_url` 并负责数据库业务事务；multipart 解析、文件内容/大小/MIME 校验、对象存储与 `42221` 映射属于待实现的 API/存储适配器。若文件已上传但 Service 失败，调用方必须删除已上传对象或记录延迟清理任务。
+
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -1563,7 +1565,7 @@ Content-Type: multipart/form-data
 | is_cover | boolean | 否 | 默认 false。设为 true 时自动将旧封面改为 false |
 | sort | int | 否 | 默认 0 |
 
-**封面互斥：** 若 `is_cover = true`，Service 必须在同一事务中将该 Product 下其他公共图片的 `is_cover` 改为 `false`，保证每 Product 只有一张封面。
+**封面互斥：** 若 `is_cover = true`，Service 必须在同一事务中锁定 Product 行，再将该 Product 下其他公共图片的 `is_cover` 改为 `false`，保证同一 Product 的并发封面请求串行执行且最终只有一张有效公共封面。
 
 **Product 状态限制：**
 
@@ -1591,7 +1593,9 @@ Content-Type: multipart/form-data
 }
 ```
 
-**Audit：** `action = CREATE_PRODUCT_IMAGE`，metadata 记录 `{ "image_id": 20, "is_cover": true }`。
+**Audit：** `action = CREATE_PRODUCT_IMAGE`，`target_type=product`、`target_id=Product ID`；当前无 metadata 列，紧凑 JSON `{ "image_id": 20, "is_cover": true }` 写入 `description`。设为封面时，清除旧封面、图片创建和审计共享事务。
+
+> **实现状态：** 公共图片创建、封面互斥与审计 Service 已实现，并有 Draft/Offline、404/409、非封面不清理、审计失败恢复旧封面测试。上传校验、存储适配器、路由与 `ProductImageOut` 映射仍待实现。
 
 ---
 
@@ -1605,6 +1609,8 @@ Content-Type: multipart/form-data
 给 ExperienceOption 上传专属图片。与 Product 公共图不同：不参与 `is_cover` 规则，不设封面概念。Option 默认首图 = `sort ASC, id ASC` 第一张。
 
 **可能的业务错误：** `40402`, `40912`, `40905`, `42221`
+
+> **实现边界：** 文件处理与失败补偿同 §7.14；Service 只接收生成后的 `image_url`，从已加载 Option 固定 Product 归属并强制 `is_cover=false`。
 
 **请求参数**
 
@@ -1653,7 +1659,9 @@ Content-Type: multipart/form-data
 
 **上架关联：** 每个有效 Option 至少 1 张专属图片。无图时 draft/offline 允许存在，但 `PATCH .../online` 时 Validator 会拒绝。
 
-**Audit：** `action = CREATE_OPTION_IMAGE`，metadata 记录 `{ "image_id": 31, "option_id": 11 }`。
+**Audit：** `action = CREATE_OPTION_IMAGE`，`target_type=product`、`target_id=所属 Product ID`；紧凑 JSON `{ "image_id": 31, "option_id": 11 }` 写入现有 `description`。图片创建与审计共享事务。
+
+> **实现状态：** Option 图片创建、固定归属/非封面和审计 Service 已实现，并有 40402/40912/40905 优先级与真实持久化测试。上传校验、存储适配器、路由与 `OptionImageOut` 映射仍待实现。
 
 ---
 
@@ -1666,6 +1674,12 @@ PATCH /api/v1/admin/product-images/{image_id}
 修改图片的排序或封面标记。支持部分更新。
 
 **可能的业务错误：** `40403`, `40905`, `40021`
+
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| 图片不存在/已删除，或所属 Product/Option 已删除 | `ProductImageNotFound` | 40403 | `Product image not found` | 404 |
+| 所属 Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
+| Option 专属图尝试设为封面 | `OptionImageCannotBeCover` | 40021 | `Option image cannot be set as product cover` | 400 |
 
 **请求参数**
 
@@ -1689,7 +1703,7 @@ PATCH /api/v1/admin/product-images/{image_id}
 PATCH { is_cover: true }
   │
   ├─ 同一 Product 下找到旧封面（is_cover = true）
-  ├─ in_transaction():
+  ├─ in_transaction() + 锁定 Product 行:
   │    ├─ 旧封面 → is_cover = false
   │    └─ 当前图片 → is_cover = true
   └─ 提交。始终保证 ≤ 1 张封面
@@ -1753,7 +1767,9 @@ PATCH { is_cover: true }
 
 > Option 图片不返回 `is_cover`。
 
-**Audit：** `action = UPDATE_PRODUCT_IMAGE`。若发生封面变更，另记录 `SET_PRODUCT_COVER` 含 `{ "old_cover_image_id": 10, "new_cover_image_id": 20 }`。
+**Audit：** 始终先记录 `UPDATE_PRODUCT_IMAGE`，description 含 `image_id` 及提交字段的 before/after。若非封面图片真正切换为封面，再顺序记录 `SET_PRODUCT_COVER`，含 `{ "old_cover_image_id": 10, "new_cover_image_id": 20 }`；没有旧封面时旧 ID 为 `null`。旧封面查询、批量清除、当前图片更新和一至两条审计共享事务，任一步失败整体回滚。
+
+> **实现状态：** 图片排序/封面修改 Service 与 40403/40021 已实现，并有字段白名单、资源隐藏、Option 封面拒绝、单/双审计、唯一有效公共封面和第二条审计失败全回滚测试。路由与按图片归属选择 Out Schema 的 Mapper 仍待实现。
 
 ---
 
@@ -1766,6 +1782,11 @@ DELETE /api/v1/admin/product-images/{image_id}
 **Request Body：无。** 执行逻辑删除（`is_deleted = true`），文件存储延迟清理。
 
 **可能的业务错误：** `40403`, `40905`
+
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| 图片不存在/已删除，或所属 Product/Option 已删除 | `ProductImageNotFound` | 40403 | `Product image not found` | 404 |
+| 所属 Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
 
 **Product 状态限制：**
 
@@ -1790,8 +1811,8 @@ DELETE /api/v1/admin/product-images/{image_id}
 1. 查找 Image（不存在 → 404）
 2. 检查 Image.is_deleted（已删除 → 404）
 3. 检查所属 Product.status（online → 拒绝）
-4. is_deleted = true → image.save()
-5. 写入 Audit Log（action = DELETE_PRODUCT_IMAGE，含图片快照）
+4. Repository 设置 is_deleted = true
+5. 使用同一事务连接写入 Audit Log（action = DELETE_PRODUCT_IMAGE，含图片快照）
 ```
 
 **成功响应**
@@ -1809,7 +1830,9 @@ DELETE /api/v1/admin/product-images/{image_id}
 }
 ```
 
-**Audit：** `action = DELETE_PRODUCT_IMAGE`，metadata 保存 `{ "product_id": 1, "experience_option_id": 11, "image_url": "...", "is_cover": false, "sort": 10 }`。
+**Audit：** `action = DELETE_PRODUCT_IMAGE`，`target_type=product`、`target_id=Product ID`。当前 `description` 上限为 256，而合法 `image_url` 最长 2048，因此紧凑快照保存 `{ "image_id": 31, "product_id": 1, "experience_option_id": 11, "is_cover": false, "sort": 10 }`，完整 URL 仍保留在逻辑删除的 ProductImage 记录中并可按 image_id 追溯。更新与审计共享事务；文件对象按后续存储清理机制处理。
+
+> **实现状态：** 图片逻辑删除 Service 已实现，并有资源隐藏、Online 拒绝、封面/Option 最后一图允许删除、长度安全快照和审计失败回滚测试。文件延迟清理、路由与 `DeletedResourceOut` 映射仍待实现。
 
 ---
 

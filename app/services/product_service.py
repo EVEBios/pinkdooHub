@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import cast
 
+from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
@@ -15,10 +16,12 @@ from app.common.exceptions import (
     ExperienceOptionAlreadyDeleted,
     ExperienceOptionAlreadyExists,
     ExperienceOptionNotFound,
+    OptionImageCannotBeCover,
     OnlineProductCannotBeModified,
     ProductAlreadyOffline,
     ProductAlreadyOnline,
     ProductIsDeleted,
+    ProductImageNotFound,
     ProductKitNotFound,
     ProductMustBeOfflineBeforeDelete,
     ProductNotFound,
@@ -27,6 +30,7 @@ from app.common.exceptions import (
 from app.common.pagination import Page
 from app.models.experience_option import ExperienceOption
 from app.models.product import Product
+from app.models.product_image import ProductImage
 from app.models.product_kit import ProductKit
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -735,6 +739,298 @@ class ProductService:
         if kit is None:
             raise ProductKitNotFound()
         return kit
+
+    async def create_product_image(
+        self,
+        product_id: int,
+        *,
+        image_url: str,
+        is_cover: bool,
+        sort: int,
+        operator_id: int,
+        ip_address: str,
+    ) -> ProductImage:
+        """原子创建非 Online Product 的公共图片并维护封面互斥。"""
+
+        product = await self.product_repository.get_product_by_id(
+            product_id,
+            include_deleted=True,
+        )
+        if product is None:
+            raise ProductNotFound()
+        if product.is_deleted:
+            raise ProductIsDeleted()
+        if product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+
+        async with in_transaction() as connection:
+            if is_cover:
+                product = await self._lock_mutable_product(
+                    product.id,
+                    using_db=connection,
+                )
+                await self.product_repository.clear_product_covers(
+                    product.id,
+                    using_db=connection,
+                )
+            image = await self.product_repository.create_image(
+                product=product,
+                image_url=image_url,
+                is_cover=is_cover,
+                sort=sort,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="CREATE_PRODUCT_IMAGE",
+                target_type="product",
+                target_id=product.id,
+                ip_address=ip_address,
+                description=json.dumps(
+                    {"image_id": image.id, "is_cover": is_cover},
+                    separators=(",", ":"),
+                ),
+                using_db=connection,
+            )
+
+        logger.info(
+            "Product image created: operator_id=%d product_id=%d image_id=%d",
+            operator_id,
+            product.id,
+            image.id,
+        )
+        return image
+
+    async def create_option_image(
+        self,
+        option_id: int,
+        *,
+        image_url: str,
+        sort: int,
+        operator_id: int,
+        ip_address: str,
+    ) -> ProductImage:
+        """原子创建有效 ExperienceOption 的专属图片。"""
+
+        option = await self.product_repository.get_option_by_id(
+            option_id,
+            include_deleted=True,
+        )
+        if option is None:
+            raise ExperienceOptionNotFound()
+        if option.is_deleted:
+            raise ExperienceOptionAlreadyDeleted()
+        if option.product.is_deleted:
+            raise ExperienceOptionNotFound()
+        if option.product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+
+        async with in_transaction() as connection:
+            image = await self.product_repository.create_image(
+                product=option.product,
+                experience_option=option,
+                image_url=image_url,
+                is_cover=False,
+                sort=sort,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="CREATE_OPTION_IMAGE",
+                target_type="product",
+                target_id=option.product_id,
+                ip_address=ip_address,
+                description=json.dumps(
+                    {"image_id": image.id, "option_id": option.id},
+                    separators=(",", ":"),
+                ),
+                using_db=connection,
+            )
+
+        logger.info(
+            "Option image created: operator_id=%d product_id=%d "
+            "option_id=%d image_id=%d",
+            operator_id,
+            option.product_id,
+            option.id,
+            image.id,
+        )
+        return image
+
+    async def update_product_image(
+        self,
+        image_id: int,
+        *,
+        updates: Mapping[str, object],
+        operator_id: int,
+        ip_address: str,
+    ) -> ProductImage:
+        """原子修改图片排序或将公共图片设为 Product 封面。"""
+
+        update_fields = dict(updates)
+        if not update_fields or not update_fields.keys() <= {"sort", "is_cover"}:
+            raise ValueError("updates must contain only sort or is_cover")
+        if "is_cover" in update_fields and update_fields["is_cover"] is not True:
+            raise ValueError("is_cover only accepts true")
+
+        image = await self._get_mutable_image(image_id)
+        wants_cover = "is_cover" in update_fields
+        if wants_cover and image.experience_option_id is not None:
+            raise OptionImageCannotBeCover()
+
+        before = {
+            field: getattr(image, field)
+            for field in update_fields
+        }
+        after = dict(update_fields)
+        cover_changed = wants_cover and not image.is_cover
+
+        async with in_transaction() as connection:
+            old_cover = None
+            if wants_cover:
+                await self._lock_mutable_product(
+                    image.product_id,
+                    using_db=connection,
+                )
+                old_cover = await self.product_repository.get_product_cover(
+                    image.product_id,
+                    exclude_image_id=image.id,
+                    using_db=connection,
+                )
+                await self.product_repository.clear_product_covers(
+                    image.product_id,
+                    exclude_image_id=image.id,
+                    using_db=connection,
+                )
+            updated = await self.product_repository.update_image(
+                image,
+                using_db=connection,
+                **update_fields,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="UPDATE_PRODUCT_IMAGE",
+                target_type="product",
+                target_id=image.product_id,
+                ip_address=ip_address,
+                description=json.dumps(
+                    {
+                        "image_id": image.id,
+                        "before": before,
+                        "after": after,
+                    },
+                    separators=(",", ":"),
+                ),
+                using_db=connection,
+            )
+            if cover_changed:
+                await self.audit_log_service.log(
+                    operator_id=operator_id,
+                    action="SET_PRODUCT_COVER",
+                    target_type="product",
+                    target_id=image.product_id,
+                    ip_address=ip_address,
+                    description=json.dumps(
+                        {
+                            "old_cover_image_id": (
+                                old_cover.id if old_cover is not None else None
+                            ),
+                            "new_cover_image_id": image.id,
+                        },
+                        separators=(",", ":"),
+                    ),
+                    using_db=connection,
+                )
+
+        logger.info(
+            "Product image updated: operator_id=%d product_id=%d image_id=%d",
+            operator_id,
+            image.product_id,
+            image.id,
+        )
+        return updated
+
+    async def delete_product_image(
+        self,
+        image_id: int,
+        *,
+        operator_id: int,
+        ip_address: str,
+    ) -> ProductImage:
+        """原子逻辑删除非 Online Product 的有效图片。"""
+
+        image = await self._get_mutable_image(image_id)
+        audit_description = json.dumps(
+            {
+                "image_id": image.id,
+                "product_id": image.product_id,
+                "experience_option_id": image.experience_option_id,
+                "is_cover": image.is_cover,
+                "sort": image.sort,
+            },
+            separators=(",", ":"),
+        )
+        async with in_transaction() as connection:
+            deleted = await self.product_repository.update_image(
+                image,
+                is_deleted=True,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="DELETE_PRODUCT_IMAGE",
+                target_type="product",
+                target_id=image.product_id,
+                ip_address=ip_address,
+                description=audit_description,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Product image deleted: operator_id=%d product_id=%d image_id=%d",
+            operator_id,
+            image.product_id,
+            image.id,
+        )
+        return deleted
+
+    async def _get_mutable_image(self, image_id: int) -> ProductImage:
+        """加载可编辑图片，并隐藏已删除图片和已删除所属资源。"""
+
+        image = await self.product_repository.get_image_by_id(
+            image_id,
+            include_deleted=True,
+        )
+        if image is None or image.is_deleted or image.product.is_deleted:
+            raise ProductImageNotFound()
+        if (
+            image.experience_option_id is not None
+            and image.experience_option.is_deleted
+        ):
+            raise ProductImageNotFound()
+        if image.product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+        return image
+
+    async def _lock_mutable_product(
+        self,
+        product_id: int,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> Product:
+        """锁定并复核 Product，串行化同一聚合的封面切换。"""
+
+        product = await self.product_repository.get_product_for_update(
+            product_id,
+            using_db=using_db,
+        )
+        if product is None:
+            raise ProductNotFound()
+        if product.is_deleted:
+            raise ProductIsDeleted()
+        if product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+        return product
 
     async def online_product(
         self,

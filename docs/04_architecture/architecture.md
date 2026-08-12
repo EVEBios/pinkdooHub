@@ -377,7 +377,7 @@ async def online_product(
 
 Product 上架的状态更新与 `ONLINE_PRODUCT` 审计必须共享同一个 `BaseDBAsyncClient` 事务连接。为此，`AuditLogService.log()` 与 `AuditLogRepository.create()` 提供向后兼容的可选 `using_db` 参数：普通调用不传时保持既有顺序审计；需要原子性的 Product Service 显式透传当前连接。Product Service 通过构造函数注入 ProductRepository 与共享 AuditLogService，不直接实例化 Repository，不直接操作 ORM Model，也不把权限检查或 Out Schema 序列化放入 Service。
 
-以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。图片等其余 Service 用例和 API 层仍待完成。
+以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。文件存储、API Mapper 与路由仍待完成。
 
 Product 下架 Service 也已实现，复用同一 Repository/审计事务边界，但只读取 Product 主表且不调用 Validator：不存在、逻辑删除和非 Online 状态在事务前失败；成功时 `status=offline` 与 `OFFLINE_PRODUCT` 审计原子提交。
 
@@ -398,6 +398,10 @@ ExperienceOption 修改 Service 接收不依赖 Schema 的显式字段 Mapping�
 ExperienceOption 删除 Service 复用按 ID 加载的 Option→Product 关系做前置状态检查，不统计当前有效 Option 数量。事务内只通过 Repository 设置 Option 删除标记并写 `DELETE_OPTION` 快照审计；Product 状态、Option 图片记录和图片外键保持不变。允许删除 Draft/Offline 的最后一项，将零 Option 状态留给未来上架 Validator 判断。
 
 Kit 价格与库存修改 Service 共享 Product 主表前置检查和 ProductKit 扩展加载方法，按不存在、删除、类型、Online、扩展缺失的顺序稳定失败；缺少一对一扩展使用已登记的 `40404 ProductKitNotFound`，不伪造聚合数据。价格和库存分别使用独立公开用例，只将单一字段交给 Repository 更新，并与 `UPDATE_PRICE` / `UPDATE_STOCK` 快照审计共享事务连接。Service 返回 ProductKit 领域对象，API Mapper 负责将 `product_id` 映射为响应资源 ID。该流程不调用 Validator，也不引入 Phase 4.3 的库存流水或并发扣减语义。
+
+ProductImage Service 的输入边界是已生成的 `image_url` 和领域字段，不导入 FastAPI `UploadFile` 或存储 SDK。公共图创建、Option 图创建、排序/封面修改和逻辑删除均通过 ProductRepository 持久化，并与 Product-targeted 审计共享事务。封面创建/切换先在同一连接上通过 `SELECT ... FOR UPDATE` 锁定 Product 行，串行化同聚合的并发封面写入，再读取旧封面、批量清除有效公共封面、写当前图片并顺序写审计；第二条审计失败也回滚所有状态。已删除图片、所属 Product 或所属 Option 对图片 ID 操作统一隐藏为 40403。
+
+文件上传是 API/基础设施边界：适配器负责最大 2MB、jpg/png/webp、内容/MIME 和安全路径校验，成功存储后把 URL 交给 Service。数据库事务不能回滚外部对象；Service 失败时调用方执行删除补偿或登记延迟清理。当前仓库尚无该适配器，因此图片数据库 Service 已完成但 multipart 端点仍不可调用。
 
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务

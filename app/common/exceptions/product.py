@@ -121,6 +121,23 @@ class ProductKitNotFound(NotFoundException):
         super().__init__(code=40404, message="Product kit not found")
 
 
+class ProductImageNotFound(NotFoundException):
+    """指定 ProductImage 不存在或不可见。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40403, message="Product image not found")
+
+
+class OptionImageCannotBeCover(BusinessException):
+    """ExperienceOption 专属图片不能设为 Product 封面。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40021,
+            message="Option image cannot be set as product cover",
+        )
+
+
 class ProductNotReadyForOnline(UnprocessableEntityException):
     """Product 聚合不满足上架完整性条件。"""
 

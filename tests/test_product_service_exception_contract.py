@@ -227,6 +227,33 @@ def test_product_kit_not_found_contract() -> None:
     assert exc.data is None
 
 
+def test_product_image_not_found_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ProductImageNotFound",
+    )
+    exc = exception_class()
+
+    assert isinstance(exc, core_exceptions.NotFoundException)
+    assert exc.code == 40403
+    assert exc.message == "Product image not found"
+    assert exc.data is None
+
+
+def test_option_image_cannot_be_cover_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "OptionImageCannotBeCover",
+    )
+    exc = exception_class()
+
+    assert isinstance(exc, core_exceptions.BusinessException)
+    assert type(exc).__bases__ == (core_exceptions.BusinessException,)
+    assert exc.code == 40021
+    assert exc.message == "Option image cannot be set as product cover"
+    assert exc.data is None
+
+
 def test_product_exceptions_use_http_semantic_bases_directly() -> None:
     assert not hasattr(product_exceptions, "ProductException")
     product_not_ready = product_exceptions.ProductNotReadyForOnline(
@@ -288,6 +315,14 @@ def _create_exception_test_app() -> FastAPI:
         "/product-kit-not-found": lambda: _exception_class(
             product_exceptions,
             "ProductKitNotFound",
+        )(),
+        "/product-image-not-found": lambda: _exception_class(
+            product_exceptions,
+            "ProductImageNotFound",
+        )(),
+        "/option-image-cannot-be-cover": lambda: _exception_class(
+            product_exceptions,
+            "OptionImageCannotBeCover",
         )(),
         "/ordinary-business-error": lambda: core_exceptions.BusinessException(
             code=40901,
@@ -417,6 +452,24 @@ async def test_product_kit_not_found_maps_to_http_404() -> None:
     assert response.json() == {
         "code": 40404,
         "message": "Product kit not found",
+        "data": None,
+    }
+
+
+async def test_product_image_errors_map_to_http_contracts() -> None:
+    missing_response = await _get("/product-image-not-found")
+    cover_response = await _get("/option-image-cannot-be-cover")
+
+    assert missing_response.status_code == 404
+    assert missing_response.json() == {
+        "code": 40403,
+        "message": "Product image not found",
+        "data": None,
+    }
+    assert cover_response.status_code == 400
+    assert cover_response.json() == {
+        "code": 40021,
+        "message": "Option image cannot be set as product cover",
         "data": None,
     }
 

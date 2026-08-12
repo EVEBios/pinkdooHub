@@ -33,6 +33,13 @@ def test_kit_mutations_are_async_orchestration() -> None:
     assert inspect.iscoroutinefunction(ProductService.update_kit_stock)
 
 
+def test_image_mutations_are_async_orchestration() -> None:
+    assert inspect.iscoroutinefunction(ProductService.create_product_image)
+    assert inspect.iscoroutinefunction(ProductService.create_option_image)
+    assert inspect.iscoroutinefunction(ProductService.update_product_image)
+    assert inspect.iscoroutinefunction(ProductService.delete_product_image)
+
+
 def test_product_service_has_no_transport_schema_or_redis_dependency() -> None:
     source_path = Path(inspect.getsourcefile(ProductService) or "")
     tree = ast.parse(source_path.read_text(encoding="utf-8"))

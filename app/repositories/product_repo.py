@@ -88,6 +88,21 @@ class ProductRepository:
             query = query.filter(is_deleted=False)
         return await query.first()
 
+    async def get_product_for_update(
+        self,
+        product_id: int,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> Product | None:
+        """在调用方事务中锁定 Product 行，用于串行化聚合级写入。"""
+
+        return await (
+            Product.filter(id=product_id)
+            .using_db(using_db)
+            .select_for_update()
+            .first()
+        )
+
     async def get_product_detail(
         self,
         product_id: int,
@@ -351,6 +366,27 @@ class ProductRepository:
             sort=sort,
             using_db=using_db,
         )
+
+    async def get_product_cover(
+        self,
+        product_id: int,
+        *,
+        exclude_image_id: int | None = None,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> ProductImage | None:
+        """查询 Product 当前有效公共封面，供封面切换审计使用。"""
+
+        query = ProductImage.filter(
+            product_id=product_id,
+            experience_option_id=None,
+            is_deleted=False,
+            is_cover=True,
+        ).order_by("id")
+        if exclude_image_id is not None:
+            query = query.exclude(id=exclude_image_id)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
 
     async def update_image(
         self,
