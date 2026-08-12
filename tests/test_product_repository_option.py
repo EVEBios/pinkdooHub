@@ -109,6 +109,54 @@ async def test_get_option_by_combination_reads_history_and_scopes_product(
     )
 
 
+async def test_get_option_detail_preloads_product_and_active_images() -> None:
+    """Option 详情为写响应预加载所属 Product 与有效图片。"""
+
+    product = await _create_product("Option 详情体验")
+    option = await _create_option(product)
+    active = await ProductImage.create(
+        product=product,
+        experience_option=option,
+        image_url="https://example.com/active.jpg",
+        sort=20,
+    )
+    first = await ProductImage.create(
+        product=product,
+        experience_option=option,
+        image_url="https://example.com/first.jpg",
+        sort=10,
+    )
+    await ProductImage.create(
+        product=product,
+        experience_option=option,
+        image_url="https://example.com/deleted.jpg",
+        is_deleted=True,
+    )
+
+    loaded = await ProductRepository().get_option_detail(option.id)
+
+    assert loaded is not None
+    assert loaded.product.id == product.id
+    assert [image.id for image in loaded.images] == [first.id, active.id]
+
+
+async def test_get_option_detail_uses_supplied_transaction_connection() -> None:
+    """Option 响应聚合查询可加入 Service 当前事务。"""
+
+    product = await _create_product("Option 事务详情")
+    option = await _create_option(product)
+
+    async with in_transaction() as connection:
+        loaded = await ProductRepository().get_option_detail(
+            option.id,
+            using_db=connection,
+        )
+
+    assert loaded is not None
+    assert loaded.id == option.id
+    assert loaded.product.id == product.id
+
+
 async def test_create_option_persists_and_returns_complete_model() -> None:
     """创建方法保存完整配置并返回带主键的 ExperienceOption。"""
 

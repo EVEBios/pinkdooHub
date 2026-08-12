@@ -4,6 +4,43 @@
 
 ---
 
+## Unreleased — ExperienceOption Create and Restore Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented atomic ExperienceOption creation and historical-record restoration while preserving the all-history combination identity contract. The HTTP endpoint remains unavailable until API integration.
+
+### Added
+
+- `ProductTypeMismatch` (`40001`) and `ExperienceOptionAlreadyExists` (`40911`) with frozen response data.
+- `ProductService.create_experience_option()` with Product preconditions, all-history combination lookup, INSERT/restore branching, and shared transaction audit persistence.
+- `ExperienceOptionCreationResult(option, restored)` so the API can select HTTP 201 for creation and HTTP 200 for restoration without introducing transport concerns into Service.
+- Repository Option detail loading with parent Product and sorted active images, including caller-owned transaction support.
+- Mock and real SQLite tests for Draft/Offline creation, Product conflicts, active duplicates, concurrent unique-index translation, original ID/image preservation, price snapshot auditing, Validator isolation, and audit-failure rollback.
+
+### Important Decisions
+
+1. A deleted matching combination is restored in place with its original Option ID and image foreign keys; only current price and `is_deleted` change.
+2. The Service lookup gives an early `40911`, while the database all-history unique index remains the concurrency authority. A race-time `IntegrityError` is translated to the same business conflict.
+3. Creation/restoration, audit, and response aggregate reload use one transaction connection. `CREATE_OPTION` and `RESTORE_OPTION` target the Product so the existing product-history endpoint can return them.
+4. AuditLog has no metadata column; restoration stores compact JSON with Option ID and before/after price strings in the existing `description` field. No migration is introduced.
+
+### Verification
+
+- 47 focused Option create/restore, exception, Repository, and architecture tests pass.
+- 484 Product/Option/audit tests and the complete 572-test suite pass.
+- Real SQLite tests prove new-record persistence, restoration identity/image preservation, and rollback of both paths when audit fails.
+
+### Known Limitations
+
+- The ExperienceOption create/restore API route and response mapping remain pending.
+- Option update/delete, Kit mutation, and image Service workflows remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — Product Update and Delete Service (Phase 4.1)
 
 **Date:** 2026-08-12

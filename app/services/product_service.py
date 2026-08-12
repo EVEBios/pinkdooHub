@@ -1,21 +1,27 @@
 """Product Service —— 编排 Product 业务操作。"""
 
+import json
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
 from decimal import Decimal
 
+from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
-from app.common.enums.product import ProductStatus, ProductType
+from app.common.enums.product import DayType, ProductStatus, ProductType
 from app.common.exceptions import (
+    ExperienceOptionAlreadyExists,
     OnlineProductCannotBeModified,
     ProductAlreadyOffline,
     ProductAlreadyOnline,
     ProductIsDeleted,
     ProductMustBeOfflineBeforeDelete,
     ProductNotFound,
+    ProductTypeMismatch,
 )
 from app.common.pagination import Page
+from app.models.experience_option import ExperienceOption
 from app.models.product import Product
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -25,6 +31,14 @@ from app.validators.product_validator import ProductValidator
 logger = logging.getLogger(__name__)
 
 _BASIC_PRODUCT_UPDATE_FIELDS = frozenset({"name", "description"})
+
+
+@dataclass(frozen=True, slots=True)
+class ExperienceOptionCreationResult:
+    """Option POST 的领域结果，供 API 区分新建与恢复状态码。"""
+
+    option: ExperienceOption
+    restored: bool
 
 
 class ProductService:
@@ -284,6 +298,115 @@ class ProductService:
             product.id,
         )
         return updated
+
+    async def create_experience_option(
+        self,
+        product_id: int,
+        *,
+        duration_minutes: int,
+        participants: int,
+        day_type: DayType,
+        price: Decimal,
+        operator_id: int,
+        ip_address: str,
+    ) -> ExperienceOptionCreationResult:
+        """原子创建新 Option，或恢复相同的已删除历史记录。"""
+
+        product = await self.product_repository.get_product_by_id(
+            product_id,
+            include_deleted=True,
+        )
+        if product is None:
+            raise ProductNotFound()
+        if product.is_deleted:
+            raise ProductIsDeleted()
+        if product.product_type != ProductType.EXPERIENCE:
+            raise ProductTypeMismatch(
+                expected=ProductType.EXPERIENCE,
+                actual=product.product_type,
+            )
+        if product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+
+        existing = await self.product_repository.get_option_by_combination(
+            product_id=product.id,
+            duration=duration_minutes,
+            participants=participants,
+            day_type=day_type,
+        )
+        if existing is not None and not existing.is_deleted:
+            raise ExperienceOptionAlreadyExists(
+                duration_minutes=duration_minutes,
+                participants=participants,
+                day_type=day_type,
+            )
+
+        restored = existing is not None
+        async with in_transaction() as connection:
+            if existing is None:
+                try:
+                    option = await self.product_repository.create_option(
+                        product=product,
+                        duration=duration_minutes,
+                        participants=participants,
+                        day_type=day_type,
+                        price=price,
+                        using_db=connection,
+                    )
+                except IntegrityError as exc:
+                    raise ExperienceOptionAlreadyExists(
+                        duration_minutes=duration_minutes,
+                        participants=participants,
+                        day_type=day_type,
+                    ) from exc
+                action = "CREATE_OPTION"
+                audit_description = None
+            else:
+                previous_price = existing.price
+                option = await self.product_repository.update_option(
+                    existing,
+                    price=price,
+                    is_deleted=False,
+                    using_db=connection,
+                )
+                action = "RESTORE_OPTION"
+                audit_description = json.dumps(
+                    {
+                        "option_id": option.id,
+                        "before": {"price": f"{previous_price:.2f}"},
+                        "after": {"price": f"{price:.2f}"},
+                    },
+                    separators=(",", ":"),
+                )
+
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action=action,
+                target_type="product",
+                target_id=product.id,
+                ip_address=ip_address,
+                description=audit_description,
+                using_db=connection,
+            )
+
+            loaded_option = await self.product_repository.get_option_detail(
+                option.id,
+                using_db=connection,
+            )
+            if loaded_option is None:
+                raise RuntimeError("Persisted experience option not found")
+
+        logger.info(
+            "Experience Option %s: operator_id=%d product_id=%d option_id=%d",
+            "restored" if restored else "created",
+            operator_id,
+            product.id,
+            option.id,
+        )
+        return ExperienceOptionCreationResult(
+            option=loaded_option,
+            restored=restored,
+        )
 
     async def online_product(
         self,

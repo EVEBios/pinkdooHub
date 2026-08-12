@@ -1,6 +1,6 @@
 # Product API Design
 
-> **Document Version:** v0.4
+> **Document Version:** v0.5
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Status:** Draft — Schema, Models, Repository, Validator, and core Product Service slices implemented; API pending
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除及上架/下架状态流转，写入与审计具有同事务回滚测试。Option、Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
+> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复及上架/下架状态流转，写入与审计具有同事务回滚测试。Option 修改/删除、Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
 
 ---
 
@@ -1265,6 +1265,14 @@ POST /api/v1/admin/products/experience/{product_id}/options
 
 **可能的业务错误：** `40401`, `40001`, `40903`, `40905`, `40911`。字段类型和范围错误统一为 HTTP 422 Schema 校验。
 
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Product 不存在 | `ProductNotFound` | 40401 | `Product not found` | 404 |
+| Product 已删除 | `ProductIsDeleted` | 40903 | `Product is deleted` | 409 |
+| Product 不是 Experience | `ProductTypeMismatch` | 40001 | `Product type does not match this operation` | 400 |
+| Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
+| 有效组合已存在或并发 INSERT 冲突 | `ExperienceOptionAlreadyExists` | 40911 | `Experience option already exists` | 409 |
+
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -1294,6 +1302,10 @@ POST /api/v1/admin/products/experience/{product_id}/options
 | 存在且 `is_deleted = true` | 恢复原记录：保持原 ID、更新价格、`is_deleted = false` | 200 |
 
 恢复不是新建数据库记录，不物理删除旧 Option，也不复制第二条历史版本。原 Option 图片关联继续保留；历史订单通过订单项快照保持原配置和价格。
+
+**Service 返回契约：** `ExperienceOptionCreationResult(option, restored)` 是不依赖 HTTP 的领域结果。`restored=false` 时 API 返回 201，`restored=true` 时返回 200。Service 在写入和审计之后、事务提交前通过 Repository 重载 Option 与有效专属图片，API 不需要补查数据库即可构造 `ExperienceOptionOut`。
+
+Product 检查、全历史组合查询和状态冲突发生在写事务前。新建/恢复、对应审计与响应聚合重载共享一个事务连接；任一步失败整体回滚。Service 将唯一索引竞争导致的 `IntegrityError` 转换为稳定 `40911`，且不调用 ProductValidator。
 
 **请求示例**
 
@@ -1348,7 +1360,9 @@ POST /api/v1/admin/products/experience/{product_id}/options
 }
 ```
 
-**Audit：** 新建记录 `CREATE_OPTION`；恢复记录 `RESTORE_OPTION`，metadata 包含恢复前后的价格和原 Option ID。
+**Audit：** 新建记录 `CREATE_OPTION`；恢复记录 `RESTORE_OPTION`。当前 AuditLog 没有 metadata 列，恢复快照以紧凑 JSON 写入 `description`，包含 `option_id`、`before.price`、`after.price`，价格固定为两位小数字符串。
+
+> **实现状态：** `ProductService.create_experience_option()`、`ProductTypeMismatch` 和 `ExperienceOptionAlreadyExists` 已实现，并有新建/恢复、状态与类型冲突、并发唯一约束翻译、图片保留、共享事务和真实审计失败回滚测试。FastAPI 路由、ADMIN+ 依赖与 `ExperienceOptionOut` 映射仍待实现。
 
 **失败响应**
 

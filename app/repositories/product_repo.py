@@ -198,6 +198,30 @@ class ProductRepository:
             query = query.filter(is_deleted=False)
         return await query.first()
 
+    async def get_option_detail(
+        self,
+        option_id: int,
+        *,
+        include_deleted: bool = False,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> ExperienceOption | None:
+        """查询 Option、所属 Product 与有效专属图片。"""
+
+        image_query = ProductImage.filter(is_deleted=False).order_by(
+            "sort",
+            "id",
+        )
+        query = (
+            ExperienceOption.filter(id=option_id)
+            .select_related("product")
+            .prefetch_related(Prefetch("images", image_query))
+        )
+        if not include_deleted:
+            query = query.filter(is_deleted=False)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
+
     async def get_option_by_combination(
         self,
         *,

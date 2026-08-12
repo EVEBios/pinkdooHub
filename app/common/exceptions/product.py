@@ -1,6 +1,8 @@
 """Product 模块业务异常。"""
 
+from app.common.enums.product import DayType, ProductType
 from app.core.exceptions import (
+    BusinessException,
     ConflictException,
     NotFoundException,
     UnprocessableEntityException,
@@ -52,6 +54,46 @@ class OnlineProductCannotBeModified(ConflictException):
         super().__init__(
             code=40905,
             message="Online product cannot be modified",
+        )
+
+
+class ProductTypeMismatch(BusinessException):
+    """Product 类型不适用于当前管理操作。"""
+
+    def __init__(
+        self,
+        *,
+        expected: ProductType,
+        actual: ProductType,
+    ) -> None:
+        super().__init__(
+            code=40001,
+            message="Product type does not match this operation",
+            data={
+                "expected": expected.value,
+                "actual": actual.value,
+            },
+        )
+
+
+class ExperienceOptionAlreadyExists(ConflictException):
+    """同一 Product 下的 ExperienceOption 组合已经存在。"""
+
+    def __init__(
+        self,
+        *,
+        duration_minutes: int,
+        participants: int,
+        day_type: DayType,
+    ) -> None:
+        super().__init__(
+            code=40911,
+            message="Experience option already exists",
+            data={
+                "duration_minutes": duration_minutes,
+                "participants": participants,
+                "day_type": day_type.value,
+            },
         )
 
 

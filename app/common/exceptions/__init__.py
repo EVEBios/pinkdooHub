@@ -1,4 +1,5 @@
 from app.common.exceptions.product import (
+    ExperienceOptionAlreadyExists,
     OnlineProductCannotBeModified,
     ProductAlreadyOffline,
     ProductAlreadyOnline,
@@ -6,6 +7,7 @@ from app.common.exceptions.product import (
     ProductMustBeOfflineBeforeDelete,
     ProductNotFound,
     ProductNotReadyForOnline,
+    ProductTypeMismatch,
 )
 from app.common.exceptions.user import (
     IncorrectPassword,
@@ -18,6 +20,7 @@ from app.common.exceptions.user import (
 )
 
 __all__ = [
+    "ExperienceOptionAlreadyExists",
     "IncorrectPassword",
     "OldPasswordIncorrect",
     "OnlineProductCannotBeModified",
@@ -28,6 +31,7 @@ __all__ = [
     "ProductMustBeOfflineBeforeDelete",
     "ProductNotFound",
     "ProductNotReadyForOnline",
+    "ProductTypeMismatch",
     "TokenExpired",
     "UserDisabled",
     "UsernameAlreadyExists",

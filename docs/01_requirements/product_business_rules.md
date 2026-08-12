@@ -1,6 +1,6 @@
 # Product Module Business Rules
 
-> **Document Version:** v1.7
+> **Document Version:** v1.8
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Last Updated:** 2026-08-12
@@ -305,6 +305,23 @@ delete_product(product_id, *, operator_id, ip_address) -> Product
 - 两条流程均不加载完整聚合、不调用 ProductValidator。
 
 > **实现状态：** 基础信息修改与逻辑删除 Service 已实现，并有字段白名单、PATCH 缺失/null、冲突优先级、状态保留、关联记录保留、共享事务及审计失败真实回滚测试。API 路由仍待实现。
+
+### 7.6 ExperienceOption 新增与恢复事务
+
+`create_experience_option(product_id, *, duration_minutes, participants, day_type, price, operator_id, ip_address)` 先使用 Product 主表查询依次处理不存在、逻辑删除、非 Experience 类型和 Online 状态，再按全历史组合查询 Option：
+
+- 无历史组合：事务内 INSERT Option、写 `CREATE_OPTION` 审计，并返回 `restored=false`。
+- 有效组合已存在：抛 `ExperienceOptionAlreadyExists`（`40911`, `Experience option already exists`），data 固定包含三个组合维度。
+- 相同组合已逻辑删除：事务内恢复原记录，只更新当前价格与 `is_deleted=false`，保留原 ID 和图片外键；写 `RESTORE_OPTION` 审计，并返回 `restored=true`。
+- 非 Experience Product 抛 `ProductTypeMismatch`（`40001`），data 固定包含 expected/actual；Online 状态复用 `OnlineProductCannotBeModified`（`40905`）。
+- Service 查询和数据库全历史唯一索引双重保护。若不存在检查后发生并发 INSERT 冲突，Service 将 ORM `IntegrityError` 转换为同一 `40911`，不泄漏持久化异常。
+- Option 写入、审计与响应所需的 Option/有效图片重载共享同一事务连接；审计失败时新建或恢复均回滚。该流程不调用上架 Validator。
+
+Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，不依赖 HTTP：后续 API 根据 `restored=false` 返回 201，根据 `restored=true` 返回 200，并使用已预加载有效图片的 Option 生成 `ExperienceOptionOut`。
+
+恢复审计通过现有 `AuditLog.description` 保存紧凑 JSON：`option_id` 以及 `before.price` / `after.price` 两位小数字符串。本阶段不新增 metadata 列，不需要数据库迁移。
+
+> **实现状态：** ExperienceOption 新增/恢复 Service 已实现，并有 Product 前置冲突、唯一冲突、并发唯一约束翻译、Draft/Offline、恢复 ID/图片、审计快照与真实回滚测试。API 路由仍待实现。
 
 ### 7.2 Database Layer（Foreign Key）
 

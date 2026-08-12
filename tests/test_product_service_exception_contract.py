@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient, Response
 
 import app.common.exceptions.product as product_exceptions
 import app.core.exceptions as core_exceptions
+from app.common.enums.product import DayType, ProductType
 from app.middleware.exception import register_exception_handlers
 
 
@@ -149,6 +150,44 @@ def test_online_product_cannot_be_modified_contract() -> None:
     assert exc.data is None
 
 
+def test_product_type_mismatch_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ProductTypeMismatch",
+    )
+    exc = exception_class(
+        expected=ProductType.EXPERIENCE,
+        actual=ProductType.KIT,
+    )
+
+    assert isinstance(exc, core_exceptions.BusinessException)
+    assert type(exc).__bases__ == (core_exceptions.BusinessException,)
+    assert exc.code == 40001
+    assert exc.message == "Product type does not match this operation"
+    assert exc.data == {"expected": "experience", "actual": "kit"}
+
+
+def test_experience_option_already_exists_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ExperienceOptionAlreadyExists",
+    )
+    exc = exception_class(
+        duration_minutes=120,
+        participants=2,
+        day_type=DayType.HOLIDAY,
+    )
+
+    assert isinstance(exc, core_exceptions.ConflictException)
+    assert exc.code == 40911
+    assert exc.message == "Experience option already exists"
+    assert exc.data == {
+        "duration_minutes": 120,
+        "participants": 2,
+        "day_type": "holiday",
+    }
+
+
 def test_product_exceptions_use_http_semantic_bases_directly() -> None:
     assert not hasattr(product_exceptions, "ProductException")
     product_not_ready = product_exceptions.ProductNotReadyForOnline(
@@ -184,6 +223,21 @@ def _create_exception_test_app() -> FastAPI:
             product_exceptions,
             "OnlineProductCannotBeModified",
         )(),
+        "/product-type-mismatch": lambda: _exception_class(
+            product_exceptions,
+            "ProductTypeMismatch",
+        )(
+            expected=ProductType.EXPERIENCE,
+            actual=ProductType.KIT,
+        ),
+        "/experience-option-already-exists": lambda: _exception_class(
+            product_exceptions,
+            "ExperienceOptionAlreadyExists",
+        )(
+            duration_minutes=120,
+            participants=2,
+            day_type=DayType.HOLIDAY,
+        ),
         "/ordinary-business-error": lambda: core_exceptions.BusinessException(
             code=40901,
             message="Ordinary business error",
@@ -262,6 +316,28 @@ async def test_update_and_delete_conflicts_map_to_http_409() -> None:
         "code": 40905,
         "message": "Online product cannot be modified",
         "data": None,
+    }
+
+
+async def test_option_create_business_errors_map_to_http_contracts() -> None:
+    type_response = await _get("/product-type-mismatch")
+    conflict_response = await _get("/experience-option-already-exists")
+
+    assert type_response.status_code == 400
+    assert type_response.json() == {
+        "code": 40001,
+        "message": "Product type does not match this operation",
+        "data": {"expected": "experience", "actual": "kit"},
+    }
+    assert conflict_response.status_code == 409
+    assert conflict_response.json() == {
+        "code": 40911,
+        "message": "Experience option already exists",
+        "data": {
+            "duration_minutes": 120,
+            "participants": 2,
+            "day_type": "holiday",
+        },
     }
 
 
