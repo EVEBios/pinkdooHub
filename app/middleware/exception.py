@@ -10,6 +10,7 @@ from app.core.exceptions import (
     AppException,
     AuthenticationException,
     BusinessException,
+    ConflictException,
     NotFoundException,
     PermissionException,
     UnprocessableEntityException,
@@ -37,6 +38,14 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         logger.warning("HTTP 422: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
         return JSONResponse(status_code=422, content=error(exc.code, exc.message, exc.data))
+
+    @app.exception_handler(ConflictException)
+    async def handle_conflict(
+        request: Request,
+        exc: ConflictException,
+    ) -> JSONResponse:
+        logger.warning("HTTP 409: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        return JSONResponse(status_code=409, content=error(exc.code, exc.message, exc.data))
 
     @app.exception_handler(AuthenticationException)
     async def handle_auth(request: Request, exc: AuthenticationException) -> JSONResponse:

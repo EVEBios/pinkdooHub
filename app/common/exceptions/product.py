@@ -1,13 +1,34 @@
 """Product 模块业务异常。"""
 
-from app.core.exceptions import UnprocessableEntityException
+from app.core.exceptions import (
+    ConflictException,
+    NotFoundException,
+    UnprocessableEntityException,
+)
 
 
-class ProductException(UnprocessableEntityException):
-    """Product 模块不可处理实体异常基类。"""
+class ProductNotFound(NotFoundException):
+    """指定 Product 不存在。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40401, message="Product not found")
 
 
-class ProductNotReadyForOnline(ProductException):
+class ProductIsDeleted(ConflictException):
+    """Product 已逻辑删除，不能继续执行状态操作。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40903, message="Product is deleted")
+
+
+class ProductAlreadyOnline(ConflictException):
+    """Product 已经处于 Online 状态。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40901, message="Product is already online")
+
+
+class ProductNotReadyForOnline(UnprocessableEntityException):
     """Product 聚合不满足上架完整性条件。"""
 
     def __init__(self, issues: list[str]) -> None:

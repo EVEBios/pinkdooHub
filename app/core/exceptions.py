@@ -7,6 +7,7 @@
 
     AppException（基类）
     ├── BusinessException        → 400  一般业务规则不满足
+    │   ├── ConflictException    → 409  资源当前状态与操作冲突
     │   └── UnprocessableEntityException → 422  业务数据无法处理
     ├── AuthenticationException  → 401  未登录 / Token 失效
     ├── PermissionException      → 403  已登录但权限不足
@@ -45,6 +46,10 @@ class BusinessException(AppException):
         raise BusinessException(code=2002, message="Stock insufficient")
         raise BusinessException(code=3002, message="Order cannot be cancelled")
     """
+
+
+class ConflictException(BusinessException):
+    """资源当前状态与请求操作冲突 → HTTP 409。"""
 
 
 class UnprocessableEntityException(BusinessException):
@@ -93,5 +98,11 @@ class NotFoundException(AppException):
         raise NotFoundException(message="Order not found")
     """
 
-    def __init__(self, message: str = "Resource not found", data: dict | None = None) -> None:
-        super().__init__(code=404, message=message, data=data)
+    def __init__(
+        self,
+        message: str = "Resource not found",
+        data: dict | None = None,
+        *,
+        code: int = 404,
+    ) -> None:
+        super().__init__(code=code, message=message, data=data)
