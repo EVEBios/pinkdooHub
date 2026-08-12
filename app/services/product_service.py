@@ -4,13 +4,14 @@ import logging
 
 from tortoise.transactions import in_transaction
 
-from app.common.enums.product import ProductStatus
+from app.common.enums.product import ProductStatus, ProductType
 from app.common.exceptions import (
     ProductAlreadyOffline,
     ProductAlreadyOnline,
     ProductIsDeleted,
     ProductNotFound,
 )
+from app.common.pagination import Page
 from app.models.product import Product
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -30,6 +31,85 @@ class ProductService:
     ) -> None:
         self.product_repository = product_repository
         self.audit_log_service = audit_log_service
+
+    async def list_admin_products(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        product_type: ProductType | None = None,
+        status: ProductStatus | None = None,
+        keyword: str | None = None,
+        include_deleted: bool = False,
+    ) -> Page[Product]:
+        """查询管理端 Product 列表，保留显式删除范围和筛选条件。"""
+
+        return await self.product_repository.list_products(
+            page=page,
+            page_size=page_size,
+            product_type=product_type,
+            status=status,
+            keyword=keyword,
+            include_deleted=include_deleted,
+            search_description=False,
+        )
+
+    async def list_online_products(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        product_type: ProductType | None = None,
+        keyword: str | None = None,
+    ) -> Page[Product]:
+        """查询用户可见的 Online、未删除 Product 列表。"""
+
+        return await self.product_repository.list_products(
+            page=page,
+            page_size=page_size,
+            product_type=product_type,
+            status=ProductStatus.ONLINE,
+            keyword=keyword,
+            include_deleted=False,
+            search_description=True,
+        )
+
+    async def get_admin_product_detail(
+        self,
+        product_id: int,
+        *,
+        product_type: ProductType,
+    ) -> Product:
+        """查询管理端指定类型详情，包含逻辑删除记录。"""
+
+        product = await self.product_repository.get_product_detail(
+            product_id,
+            include_deleted=True,
+        )
+        if product is None or product.product_type != product_type:
+            raise ProductNotFound()
+        return product
+
+    async def get_online_product_detail(
+        self,
+        product_id: int,
+        *,
+        product_type: ProductType,
+    ) -> Product:
+        """查询用户可见的指定类型 Online Product 详情。"""
+
+        product = await self.product_repository.get_product_detail(
+            product_id,
+            include_deleted=False,
+        )
+        if (
+            product is None
+            or product.is_deleted
+            or product.status != ProductStatus.ONLINE
+            or product.product_type != product_type
+        ):
+            raise ProductNotFound()
+        return product
 
     async def online_product(
         self,

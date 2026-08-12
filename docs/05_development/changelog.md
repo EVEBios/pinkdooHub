@@ -4,6 +4,40 @@
 
 ---
 
+## Unreleased — Product Query Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented the Product query orchestration boundary for admin and public consumers while deliberately leaving presentation mapping to the future API layer.
+
+### Added
+
+- Admin Product list orchestration with pagination, type/status/keyword filters, and explicit logical-deletion scope.
+- Public Product list orchestration that forces Online and non-deleted visibility and searches both name and description.
+- Admin typed-detail lookup that includes deleted aggregates while hiding type mismatches as `40401`.
+- Public typed-detail lookup that hides missing, deleted, non-Online, and type-mismatched resources behind the same `40401` contract.
+- Mock contract tests and real SQLite tests for visibility, description search, type isolation, pagination delegation, and relation preloading.
+
+### Important Decisions
+
+1. Query Service returns `Product` or `Page[Product]`; it does not depend on API response Schemas.
+2. `cover_image`, `display_price`, dimensions, availability, and value labels belong to an API Mapper built from preloaded aggregates.
+3. Query operations do not open transactions, write audit logs, or invoke ProductValidator.
+
+### Verification
+
+- 35 focused Product query/status/architecture tests pass.
+- The complete suite passes with 515 tests.
+
+### Known Limitations
+
+- Product API routes and presentation mapping are still unavailable.
+- Product creation, update/delete, Option, Kit mutation, and image Service workflows remain pending.
+
+---
+
 ## Unreleased — Product Offline Service (Phase 4.1)
 
 **Date:** 2026-08-12

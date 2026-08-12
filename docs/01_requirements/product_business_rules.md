@@ -257,6 +257,17 @@ Service 层**禁止**执行 `DELETE` 语句。删除操作一律通过状态字�
 
 商品下架只允许 `online → offline`。Draft 与 Offline 都已处于“不对外销售”状态，执行下架统一抛 `ProductAlreadyOffline`（`40902`, `Product is already offline`），不为 Draft 另建错误码。Service 先区分不存在和逻辑删除，再检查 ProductStatus；成功时在同一事务连接上更新 `status=offline` 并写 `OFFLINE_PRODUCT` 审计。下架不调用 ProductValidator，状态更新或审计任一步失败时全部回滚。
 
+### 7.3 Product 查询可见性
+
+Product 查询 Service 返回 ORM Product 聚合或 `Page[Product]`，不依赖 API Out Schema，也不生成 `LabeledValue`、`cover_image`、`display_price`、`dimensions`、`available` 等展示字段；这些字段由后续 API Mapper 从已加载聚合计算并交给 Out Schema 白名单序列化。
+
+- 管理端列表可查看全部状态，默认隐藏已删除记录；`include_deleted=true` 时包含已删除记录。管理端详情显式包含已删除记录，但请求的 ProductType 与实际类型不匹配时统一抛 `ProductNotFound`。
+- 用户端列表固定 `status=online`、`include_deleted=false`，keyword 同时搜索名称和描述。调用方不能覆盖这两个可见性条件。
+- 用户端详情只有 Product 存在、未删除、Online 且类型匹配时返回；不存在、未上线、已删除和类型不匹配全部抛 `ProductNotFound(40401)`，避免泄漏未发布资源。
+- 查询不写审计、不调用 Validator、不开启事务。
+
+> **实现状态：** 管理端/用户端列表与详情查询 Service 已实现，并有 Repository 参数编排、可见性、类型隐藏和真实预加载聚合测试。API Mapper 与路由仍待实现。
+
 ### 7.2 Database Layer（Foreign Key）
 
 直接指向 Product 的关联表（ExperienceOption、ProductKit、ProductImage）的 Foreign Key 必须使用 `ON DELETE RESTRICT`。`ProductImage.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL` 作为 Option 异常物理删除时的兜底：

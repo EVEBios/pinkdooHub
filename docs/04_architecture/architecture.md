@@ -381,6 +381,10 @@ Product 上架的状态更新与 `ONLINE_PRODUCT` 审计必须共享同一个 `B
 
 Product 下架 Service 也已实现，复用同一 Repository/审计事务边界，但只读取 Product 主表且不调用 Validator：不存在、逻辑删除和非 Online 状态在事务前失败；成功时 `status=offline` 与 `OFFLINE_PRODUCT` 审计原子提交。
 
+Product 查询 Service 只编排 Repository 的用例查询并返回 Model/Page，不承担 API DTO 映射。管理端和用户端使用独立方法固定可见性；`cover_image`、`display_price`、dimensions、available 和所有 label 由 API 层 Mapper 从 Repository 已预加载的聚合构造，随后交给 Out Schema 验证。这样 Service 不反向依赖 `app/schemas/product_response.py`，Repository 也不包含展示逻辑。
+
+上述查询 Service 已实现。真实集成测试固定用户列表 Online/未删除范围、描述搜索，以及管理端已删除聚合和用户端 Online 详情预加载；查询方法不写审计、不调用 Validator、不开启事务。
+
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务
 - 只读取已预加载聚合，不修改 Product、Option、Image、ProductKit 或状态

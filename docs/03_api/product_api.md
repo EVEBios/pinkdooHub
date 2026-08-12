@@ -409,6 +409,10 @@ GET /api/v1/products
 
 统一商品列表，仅返回 `status = "online"` 且 `is_deleted = false` 的商品。列表展示字段高度一致，不按类型拆分。
 
+> **Service 边界：** `list_online_products()` 固定向 Repository 传入 `status=online`、`include_deleted=false`、`search_description=true` 并返回 `Page[Product]`。`cover_image`、`display_price` 和 Enum label 由 API Mapper 从预加载聚合计算，不在 Repository 或查询 Service 中生成。
+
+> **实现状态：** 用户列表查询 Service 已实现；API Mapper、Out Schema 调用和路由仍待实现。
+
 **查询参数**
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
@@ -471,6 +475,10 @@ GET /api/v1/products/experience/{id}
 仅返回 `product_type = "experience"`、`status = "online"`、`is_deleted = false` 的商品。
 
 **可能的业务错误：** `40401`（商品不存在或类型不匹配，统一返回 404）
+
+未上线或已删除商品也统一返回 `40401`。`get_online_product_detail(id, product_type=experience)` 返回已预加载 Product 聚合，API Mapper 负责 dimensions、Option/图片 DTO 和 label。
+
+> **实现状态：** 用户详情查询 Service 已实现，Experience/Kit 共用显式 `product_type` 隔离；API Mapper 与路由仍待实现。
 
 **Response Schema：** `ExperienceProductDetailOut` — 不含 `price`、`stock`、`status`、`is_deleted` 和时间字段。
 
@@ -546,6 +554,8 @@ GET /api/v1/products/kit/{id}
 
 **可能的业务错误：** `40401`（商品不存在或类型不匹配，统一返回 404）
 
+未上线或已删除商品也统一返回 `40401`。Service 不计算 `available`；API Mapper 根据已加载 `product.kit.stock > 0` 生成。
+
 **Response Schema：** `KitProductDetailOut` — 不含 `options`、`status`、`is_deleted`、`sold_count`、时间字段。
 
 **成功响应**
@@ -595,6 +605,10 @@ GET /api/v1/admin/products
 ```
 
 统一列表，默认返回全部状态（draft / online / offline）且未删除的商品；`include_deleted=true` 时同时返回逻辑删除记录。仅返回摘要信息——完整数据见详情接口。
+
+> **Service 边界：** `list_admin_products()` 原样编排分页和筛选条件，keyword 只搜索名称，并返回 `Page[Product]`。列表展示派生字段由 API Mapper 负责。
+
+> **实现状态：** 管理列表查询 Service 已实现；API Mapper 与路由仍待实现。
 
 **查询参数**
 
@@ -661,6 +675,10 @@ GET /api/v1/admin/products/experience/{id}
 ```
 
 仅返回 `product_type = "experience"` 的商品。draft / online / offline 和逻辑删除记录均可供管理员查看；响应始终显式返回 `is_deleted`。
+
+管理端详情 Service 使用 `get_product_detail(id, include_deleted=true)`；不存在或实际 ProductType 不匹配均返回 `40401`，不另造类型错误。Kit 管理详情遵循相同规则。
+
+> **实现状态：** 管理详情查询 Service 已实现，包含逻辑删除聚合；API Mapper 与路由仍待实现。
 
 **成功响应**
 
