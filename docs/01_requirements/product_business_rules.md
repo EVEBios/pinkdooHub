@@ -1,6 +1,6 @@
 # Product Module Business Rules
 
-> **Document Version:** v2.0
+> **Document Version:** v2.1
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Last Updated:** 2026-08-12
@@ -346,17 +346,30 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 
 > **实现状态：** ExperienceOption 逻辑删除 Service 已实现，并有资源/状态优先级、Draft/Offline、最后一项删除、Product 状态保留、图片外键保留、快照审计及真实回滚测试。API 路由仍待实现。
 
-### 7.8 Database Layer（Foreign Key）
+### 7.8 ProductKit 价格与库存修改事务
+
+`update_kit_price(product_id, *, price, operator_id, ip_address)` 和 `update_kit_stock(product_id, *, stock, operator_id, ip_address)` 共享 Kit 聚合前置检查：
+
+- 使用 `get_product_by_id(..., include_deleted=True)`，依次处理 `ProductNotFound(40401)`、`ProductIsDeleted(40903)`、非 Kit 的 `ProductTypeMismatch(40001)` 和 `OnlineProductCannotBeModified(40905)`；只有 Draft/Offline Kit 可继续修改。
+- Product 确为可修改 Kit 后，再使用 `get_kit_by_product_id()` 加载一对一扩展；扩展记录缺失抛已登记的 `ProductKitNotFound`（`40404`, `Product kit not found`），不得伪造默认价格或库存。
+- 价格接口只修改 `ProductKit.price` 并写 `UPDATE_PRICE`；库存接口采用 Phase 4.1 的最终值设置模式，只修改 `ProductKit.stock` 并写 `UPDATE_STOCK`。价格快照使用两位小数字符串，库存快照使用整数，均以紧凑 JSON 写入现有 `AuditLog.description`。
+- Kit 更新和对应审计共享同一事务连接，更新失败不审计，审计失败回滚字段修改。两个流程都不加载完整 Product 聚合、不调用 ProductValidator，也不提前实现库存流水、扣减、恢复或并发库存控制。
+
+Service 返回更新后的 `ProductKit`；后续 API Mapper 使用 `product_id` 作为 `KitPriceOut` / `KitStockOut` 的 `id`，不会把 ProductKit 内部主键暴露为 Product ID。
+
+> **实现状态：** Kit 价格与库存修改 Service 及 `40404 ProductKitNotFound` 已实现，并有资源/状态优先级、Draft/Offline、零库存、字段互不覆盖、快照审计、Validator 隔离和真实事务回滚测试。API 路由仍待实现。
+
+### 7.9 Database Layer（Foreign Key）
 
 直接指向 Product 的关联表（ExperienceOption、ProductKit、ProductImage）的 Foreign Key 必须使用 `ON DELETE RESTRICT`。`ProductImage.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL` 作为 Option 异常物理删除时的兜底：
 
 **原因：** 防止有人绕过业务层直接在数据库执行物理删除，导致关联数据孤立。
 
-### 7.9 Preconditions
+### 7.10 Preconditions
 
 `online` 商品必须先下架才能删除。
 
-### 7.10 Post-delete Behavior
+### 7.11 Post-delete Behavior
 
 - 普通用户不可见
 - 管理员仍可查询历史记录

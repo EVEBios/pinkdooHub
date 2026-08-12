@@ -19,6 +19,7 @@ from app.common.exceptions import (
     ProductAlreadyOffline,
     ProductAlreadyOnline,
     ProductIsDeleted,
+    ProductKitNotFound,
     ProductMustBeOfflineBeforeDelete,
     ProductNotFound,
     ProductTypeMismatch,
@@ -26,6 +27,7 @@ from app.common.exceptions import (
 from app.common.pagination import Page
 from app.models.experience_option import ExperienceOption
 from app.models.product import Product
+from app.models.product_kit import ProductKit
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
 from app.validators.product_validator import ProductValidator
@@ -627,6 +629,112 @@ class ProductService:
             option.id,
         )
         return deleted
+
+    async def update_kit_price(
+        self,
+        product_id: int,
+        *,
+        price: Decimal,
+        operator_id: int,
+        ip_address: str,
+    ) -> ProductKit:
+        """原子修改非 Online Kit Product 的当前售价。"""
+
+        kit = await self._get_mutable_kit(product_id)
+        audit_description = json.dumps(
+            {
+                "before": {"price": f"{kit.price:.2f}"},
+                "after": {"price": f"{price:.2f}"},
+            },
+            separators=(",", ":"),
+        )
+        async with in_transaction() as connection:
+            updated = await self.product_repository.update_kit(
+                kit,
+                price=price,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="UPDATE_PRICE",
+                target_type="product",
+                target_id=product_id,
+                ip_address=ip_address,
+                description=audit_description,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Kit price updated: operator_id=%d product_id=%d",
+            operator_id,
+            product_id,
+        )
+        return updated
+
+    async def update_kit_stock(
+        self,
+        product_id: int,
+        *,
+        stock: int,
+        operator_id: int,
+        ip_address: str,
+    ) -> ProductKit:
+        """原子设置非 Online Kit Product 的当前库存最终值。"""
+
+        kit = await self._get_mutable_kit(product_id)
+        audit_description = json.dumps(
+            {
+                "before": {"stock": kit.stock},
+                "after": {"stock": stock},
+            },
+            separators=(",", ":"),
+        )
+        async with in_transaction() as connection:
+            updated = await self.product_repository.update_kit(
+                kit,
+                stock=stock,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="UPDATE_STOCK",
+                target_type="product",
+                target_id=product_id,
+                ip_address=ip_address,
+                description=audit_description,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Kit stock updated: operator_id=%d product_id=%d",
+            operator_id,
+            product_id,
+        )
+        return updated
+
+    async def _get_mutable_kit(self, product_id: int) -> ProductKit:
+        """加载可编辑 Kit，并按稳定顺序检查 Product 聚合状态。"""
+
+        product = await self.product_repository.get_product_by_id(
+            product_id,
+            include_deleted=True,
+        )
+        if product is None:
+            raise ProductNotFound()
+        if product.is_deleted:
+            raise ProductIsDeleted()
+        if product.product_type != ProductType.KIT:
+            raise ProductTypeMismatch(
+                expected=ProductType.KIT,
+                actual=product.product_type,
+            )
+        if product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+
+        kit = await self.product_repository.get_kit_by_product_id(product.id)
+        if kit is None:
+            raise ProductKitNotFound()
+        return kit
 
     async def online_product(
         self,

@@ -214,6 +214,19 @@ def test_experience_option_already_deleted_contract() -> None:
     assert exc.data is None
 
 
+def test_product_kit_not_found_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ProductKitNotFound",
+    )
+    exc = exception_class()
+
+    assert isinstance(exc, core_exceptions.NotFoundException)
+    assert exc.code == 40404
+    assert exc.message == "Product kit not found"
+    assert exc.data is None
+
+
 def test_product_exceptions_use_http_semantic_bases_directly() -> None:
     assert not hasattr(product_exceptions, "ProductException")
     product_not_ready = product_exceptions.ProductNotReadyForOnline(
@@ -271,6 +284,10 @@ def _create_exception_test_app() -> FastAPI:
         "/experience-option-already-deleted": lambda: _exception_class(
             product_exceptions,
             "ExperienceOptionAlreadyDeleted",
+        )(),
+        "/product-kit-not-found": lambda: _exception_class(
+            product_exceptions,
+            "ProductKitNotFound",
         )(),
         "/ordinary-business-error": lambda: core_exceptions.BusinessException(
             code=40901,
@@ -389,6 +406,17 @@ async def test_option_resource_errors_map_to_http_contracts() -> None:
     assert deleted_response.json() == {
         "code": 40912,
         "message": "Experience option is already deleted",
+        "data": None,
+    }
+
+
+async def test_product_kit_not_found_maps_to_http_404() -> None:
+    response = await _get("/product-kit-not-found")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "code": 40404,
+        "message": "Product kit not found",
         "data": None,
     }
 

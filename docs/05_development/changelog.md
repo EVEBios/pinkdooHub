@@ -4,6 +4,43 @@
 
 ---
 
+## Unreleased — ProductKit Mutation Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented atomic Kit price changes and direct final-stock settings, completing the ProductKit mutation Service boundary. The HTTP endpoints remain unavailable until API integration.
+
+### Added
+
+- `ProductService.update_kit_price()` and `update_kit_stock()` with shared ordered Product/Kit aggregate checks.
+- Named `ProductKitNotFound` using the existing `40404` API allocation when a valid Kit Product lacks its required extension record.
+- Compact `UPDATE_PRICE` and `UPDATE_STOCK` before/after snapshots in the existing AuditLog description field.
+- Mock and real SQLite tests for error precedence, Draft/Offline writes, zero stock, field preservation, Validator isolation, write failure short-circuiting, and audit-failure rollback.
+
+### Important Decisions
+
+1. Checks run in the stable order missing Product, deleted Product, type mismatch, Online state, and missing ProductKit extension.
+2. Price and stock remain separate use cases and each changes exactly one ProductKit field.
+3. Phase 4.1 stock mutation sets the final value; stock movements, reasons, automatic deduction/restoration, and concurrency control remain Phase 4.3 Inventory work.
+4. ProductKit mutation and its Product-targeted audit share one transaction. Service returns ProductKit; the future API Mapper uses `product_id` as the response ID.
+
+### Verification
+
+- 51 focused Kit mutation, exception, and architecture tests pass.
+- All 530 Product tests pass.
+- Full regression: 637 tests pass.
+- Real SQLite tests prove field preservation and audit-failure rollback for both mutations.
+
+### Known Limitations
+
+- Kit price/stock API routes and response mappings remain pending.
+- Product image Service workflows remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — ExperienceOption Delete Service (Phase 4.1)
 
 **Date:** 2026-08-12

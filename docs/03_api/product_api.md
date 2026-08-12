@@ -1,6 +1,6 @@
 # Product API Design
 
-> **Document Version:** v0.7
+> **Document Version:** v0.8
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Status:** Draft — Schema, Models, Repository, Validator, and core Product Service slices implemented; API pending
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复/修改/删除及上架/下架状态流转，写入与审计具有同事务回滚测试。Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
+> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 全生命周期、Kit 价格/库存修改及上架/下架状态流转，写入与审计具有同事务回滚测试。图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
 
 ---
 
@@ -265,8 +265,8 @@ Authorization: Bearer <access_token>
 | `POST /admin/options/{id}/images` | 40402, 40912, 40905, 42221 |
 | `PATCH /admin/product-images/{id}` | 40403, 40905, 40021 |
 | `DELETE /admin/product-images/{id}` | 40403, 40905 |
-| `PATCH /admin/products/kit/{id}/price` | 40401, 40001, 40903, 40905 |
-| `PATCH /admin/products/kit/{id}/stock` | 40401, 40001, 40903, 40905 |
+| `PATCH /admin/products/kit/{id}/price` | 40401, 40404, 40001, 40903, 40905 |
+| `PATCH /admin/products/kit/{id}/stock` | 40401, 40404, 40001, 40903, 40905 |
 | `GET /admin/products/{id}/audit-logs` | 40401 |
 
 ### 3.4 规则补充
@@ -1821,7 +1821,15 @@ PATCH /api/v1/admin/products/kit/{product_id}/price
 
 修改 Kit 的当前售价。历史订单不受影响（订单保留价格快照）。
 
-**可能的业务错误：** `40401`, `40001`, `40903`, `40905`。金额格式与范围错误统一为 HTTP 422 Schema 校验。
+**可能的业务错误：** `40401`, `40404`, `40001`, `40903`, `40905`。金额格式与范围错误统一为 HTTP 422 Schema 校验。
+
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Product 不存在 | `ProductNotFound` | 40401 | `Product not found` | 404 |
+| Product 已逻辑删除 | `ProductIsDeleted` | 40903 | `Product is deleted` | 409 |
+| Product 不是 Kit | `ProductTypeMismatch` | 40001 | `Product type does not match this operation` | 400 |
+| Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
+| Kit 扩展记录缺失 | `ProductKitNotFound` | 40404 | `Product kit not found` | 404 |
 
 **请求参数**
 
@@ -1860,7 +1868,9 @@ PATCH /api/v1/admin/products/kit/{product_id}/price
 }
 ```
 
-**Audit：** `action = UPDATE_PRICE`，metadata 记录 `{ "before": { "price": "599.00" }, "after": { "price": "699.00" } }`。
+**Audit：** `action = UPDATE_PRICE`，`target_type=product`、`target_id=Product ID`。当前 AuditLog 没有 metadata 列，before/after 两位小数价格快照以紧凑 JSON 写入 `description`。ProductKit 更新和审计共享事务；任一步失败整体回滚。Service 返回 ProductKit，API Mapper 使用 `product_id` 构造响应 `id`。
+
+> **实现状态：** `ProductService.update_kit_price()` 与 `40404 ProductKitNotFound` 已实现，并有冲突优先级、Draft/Offline、字段保留、审计快照和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与 `KitPriceOut` 映射仍待实现。
 
 ---
 
@@ -1872,7 +1882,15 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 
 直接设置 Kit 的当前库存。第一版采用"设置最终值"模式，后续 Phase 4.3 升级为库存流水/调整单模式。
 
-**可能的业务错误：** `40401`, `40001`, `40903`, `40905`。库存类型与范围错误统一为 HTTP 422 Schema 校验。
+**可能的业务错误：** `40401`, `40404`, `40001`, `40903`, `40905`。库存类型与范围错误统一为 HTTP 422 Schema 校验。
+
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Product 不存在 | `ProductNotFound` | 40401 | `Product not found` | 404 |
+| Product 已逻辑删除 | `ProductIsDeleted` | 40903 | `Product is deleted` | 409 |
+| Product 不是 Kit | `ProductTypeMismatch` | 40001 | `Product type does not match this operation` | 400 |
+| Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
+| Kit 扩展记录缺失 | `ProductKitNotFound` | 40404 | `Product kit not found` | 404 |
 
 **请求参数**
 
@@ -1909,7 +1927,9 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 }
 ```
 
-**Audit：** `action = UPDATE_STOCK`，metadata 记录 `{ "before": { "stock": 100 }, "after": { "stock": 80 } }`。
+**Audit：** `action = UPDATE_STOCK`，`target_type=product`、`target_id=Product ID`。before/after 整数库存快照以紧凑 JSON 写入现有 `AuditLog.description`。ProductKit 更新和审计共享事务；任一步失败整体回滚。Service 返回 ProductKit，API Mapper 使用 `product_id` 构造响应 `id`。
+
+> **实现状态：** `ProductService.update_kit_stock()` 已实现，并有冲突优先级、Draft/Offline、零库存、字段保留、审计快照和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与 `KitStockOut` 映射仍待实现。
 
 > **后续升级点：** Phase 4.3 Inventory 模块将演进为库存调整模型（记录变动量 + 原因），替代当前"直接设值"模式。
 

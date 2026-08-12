@@ -114,6 +114,13 @@ class ExperienceOptionAlreadyDeleted(ConflictException):
         )
 
 
+class ProductKitNotFound(NotFoundException):
+    """Kit Product 缺少必需的一对一扩展记录。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40404, message="Product kit not found")
+
+
 class ProductNotReadyForOnline(UnprocessableEntityException):
     """Product 聚合不满足上架完整性条件。"""
 
