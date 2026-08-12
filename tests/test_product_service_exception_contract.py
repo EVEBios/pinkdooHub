@@ -188,6 +188,32 @@ def test_experience_option_already_exists_contract() -> None:
     }
 
 
+def test_experience_option_not_found_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ExperienceOptionNotFound",
+    )
+    exc = exception_class()
+
+    assert isinstance(exc, core_exceptions.NotFoundException)
+    assert exc.code == 40402
+    assert exc.message == "Experience option not found"
+    assert exc.data is None
+
+
+def test_experience_option_already_deleted_contract() -> None:
+    exception_class = _exception_class(
+        product_exceptions,
+        "ExperienceOptionAlreadyDeleted",
+    )
+    exc = exception_class()
+
+    assert isinstance(exc, core_exceptions.ConflictException)
+    assert exc.code == 40912
+    assert exc.message == "Experience option is already deleted"
+    assert exc.data is None
+
+
 def test_product_exceptions_use_http_semantic_bases_directly() -> None:
     assert not hasattr(product_exceptions, "ProductException")
     product_not_ready = product_exceptions.ProductNotReadyForOnline(
@@ -238,6 +264,14 @@ def _create_exception_test_app() -> FastAPI:
             participants=2,
             day_type=DayType.HOLIDAY,
         ),
+        "/experience-option-not-found": lambda: _exception_class(
+            product_exceptions,
+            "ExperienceOptionNotFound",
+        )(),
+        "/experience-option-already-deleted": lambda: _exception_class(
+            product_exceptions,
+            "ExperienceOptionAlreadyDeleted",
+        )(),
         "/ordinary-business-error": lambda: core_exceptions.BusinessException(
             code=40901,
             message="Ordinary business error",
@@ -338,6 +372,24 @@ async def test_option_create_business_errors_map_to_http_contracts() -> None:
             "participants": 2,
             "day_type": "holiday",
         },
+    }
+
+
+async def test_option_resource_errors_map_to_http_contracts() -> None:
+    missing_response = await _get("/experience-option-not-found")
+    deleted_response = await _get("/experience-option-already-deleted")
+
+    assert missing_response.status_code == 404
+    assert missing_response.json() == {
+        "code": 40402,
+        "message": "Experience option not found",
+        "data": None,
+    }
+    assert deleted_response.status_code == 409
+    assert deleted_response.json() == {
+        "code": 40912,
+        "message": "Experience option is already deleted",
+        "data": None,
     }
 
 

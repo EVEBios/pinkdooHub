@@ -97,6 +97,23 @@ class ExperienceOptionAlreadyExists(ConflictException):
         )
 
 
+class ExperienceOptionNotFound(NotFoundException):
+    """指定 ExperienceOption 不存在。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40402, message="Experience option not found")
+
+
+class ExperienceOptionAlreadyDeleted(ConflictException):
+    """ExperienceOption 已逻辑删除。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40912,
+            message="Experience option is already deleted",
+        )
+
+
 class ProductNotReadyForOnline(UnprocessableEntityException):
     """Product 聚合不满足上架完整性条件。"""
 

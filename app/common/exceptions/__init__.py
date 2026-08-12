@@ -1,5 +1,7 @@
 from app.common.exceptions.product import (
+    ExperienceOptionAlreadyDeleted,
     ExperienceOptionAlreadyExists,
+    ExperienceOptionNotFound,
     OnlineProductCannotBeModified,
     ProductAlreadyOffline,
     ProductAlreadyOnline,
@@ -20,7 +22,9 @@ from app.common.exceptions.user import (
 )
 
 __all__ = [
+    "ExperienceOptionAlreadyDeleted",
     "ExperienceOptionAlreadyExists",
+    "ExperienceOptionNotFound",
     "IncorrectPassword",
     "OldPasswordIncorrect",
     "OnlineProductCannotBeModified",

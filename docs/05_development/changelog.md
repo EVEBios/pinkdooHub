@@ -4,6 +4,42 @@
 
 ---
 
+## Unreleased — ExperienceOption Update Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented partial ExperienceOption mutation with merged all-history uniqueness checks and atomic configuration/price auditing. The HTTP endpoint remains unavailable until API integration.
+
+### Added
+
+- `ExperienceOptionNotFound` (`40402`) and `ExperienceOptionAlreadyDeleted` (`40912`) with fixed HTTP contracts.
+- `ProductService.update_experience_option()` with non-empty field allowlisting, API-to-Model duration mapping, Product state protection, merged final-combination validation, and race-time unique conflict translation.
+- Separate `UPDATE_OPTION` dimension snapshots and `UPDATE_PRICE` price snapshots; one PATCH can atomically write both actions in deterministic order.
+- Mock and real SQLite tests for omitted-field preservation, current-ID exclusion, active/deleted history collisions, deleted Product hiding, Online protection, image preservation, Validator isolation, and rollback on first/second audit or response reload failure.
+
+### Important Decisions
+
+1. Service receives `model_dump(exclude_unset=True)` output rather than a Pydantic Schema and rejects empty or internal-field mappings before any lookup.
+2. Uniqueness is evaluated against the merged final dimensions. The current Option row is allowed; any other historical row is a `40911`, including deleted rows.
+3. Configuration and price use their authoritative separate audit actions. Both audit rows target the Product so the existing product-history endpoint can return them.
+4. Update, all audits, and response aggregate reload use the same transaction connection. Option images are neither modified nor included by the future `ExperienceOptionBaseOut` response.
+
+### Verification
+
+- 58 focused Option update, exception, Repository, and architecture tests pass.
+- 512 Product/Option/audit tests and the complete 600-test suite pass.
+- Real SQLite tests prove field persistence, image preservation, deterministic dual audits, and complete rollback when either audit or response reload fails.
+
+### Known Limitations
+
+- The ExperienceOption update API route and response mapping remain pending.
+- Option delete, Kit mutation, and image Service workflows remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — ExperienceOption Create and Restore Service (Phase 4.1)
 
 **Date:** 2026-08-12

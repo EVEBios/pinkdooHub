@@ -20,6 +20,10 @@ def test_create_experience_option_is_async_orchestration() -> None:
     assert inspect.iscoroutinefunction(ProductService.create_experience_option)
 
 
+def test_update_experience_option_is_async_orchestration() -> None:
+    assert inspect.iscoroutinefunction(ProductService.update_experience_option)
+
+
 def test_product_service_has_no_transport_schema_or_redis_dependency() -> None:
     source_path = Path(inspect.getsourcefile(ProductService) or "")
     tree = ast.parse(source_path.read_text(encoding="utf-8"))

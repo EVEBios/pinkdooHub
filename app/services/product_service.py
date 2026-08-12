@@ -5,13 +5,16 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
 from app.common.enums.product import DayType, ProductStatus, ProductType
 from app.common.exceptions import (
+    ExperienceOptionAlreadyDeleted,
     ExperienceOptionAlreadyExists,
+    ExperienceOptionNotFound,
     OnlineProductCannotBeModified,
     ProductAlreadyOffline,
     ProductAlreadyOnline,
@@ -31,6 +34,12 @@ from app.validators.product_validator import ProductValidator
 logger = logging.getLogger(__name__)
 
 _BASIC_PRODUCT_UPDATE_FIELDS = frozenset({"name", "description"})
+_OPTION_UPDATE_FIELDS = frozenset(
+    {"duration_minutes", "participants", "day_type", "price"},
+)
+_OPTION_DIMENSION_UPDATE_FIELDS = frozenset(
+    {"duration_minutes", "participants", "day_type"},
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -407,6 +416,160 @@ class ProductService:
             option=loaded_option,
             restored=restored,
         )
+
+    async def update_experience_option(
+        self,
+        option_id: int,
+        *,
+        updates: Mapping[str, object],
+        operator_id: int,
+        ip_address: str,
+    ) -> ExperienceOption:
+        """原子部分更新非 Online Product 的有效 ExperienceOption。"""
+
+        update_fields = dict(updates)
+        if (
+            not update_fields
+            or not update_fields.keys() <= _OPTION_UPDATE_FIELDS
+        ):
+            raise ValueError(
+                "updates must contain only option fields",
+            )
+
+        option = await self.product_repository.get_option_by_id(
+            option_id,
+            include_deleted=True,
+        )
+        if option is None:
+            raise ExperienceOptionNotFound()
+        if option.is_deleted:
+            raise ExperienceOptionAlreadyDeleted()
+        if option.product.is_deleted:
+            raise ExperienceOptionNotFound()
+        if option.product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+
+        final_duration = cast(
+            int,
+            update_fields["duration_minutes"]
+            if "duration_minutes" in update_fields
+            else option.duration,
+        )
+        final_participants = cast(
+            int,
+            update_fields["participants"]
+            if "participants" in update_fields
+            else option.participants,
+        )
+        final_day_type = cast(
+            DayType,
+            update_fields["day_type"]
+            if "day_type" in update_fields
+            else option.day_type,
+        )
+        collision = await self.product_repository.get_option_by_combination(
+            product_id=option.product_id,
+            duration=final_duration,
+            participants=final_participants,
+            day_type=final_day_type,
+        )
+        if collision is not None and collision.id != option.id:
+            raise ExperienceOptionAlreadyExists(
+                duration_minutes=final_duration,
+                participants=final_participants,
+                day_type=final_day_type,
+            )
+
+        before_dimensions = {
+            "duration_minutes": option.duration,
+            "participants": option.participants,
+            "day_type": option.day_type.value,
+        }
+        after_dimensions = {
+            "duration_minutes": final_duration,
+            "participants": final_participants,
+            "day_type": final_day_type.value,
+        }
+        previous_price = option.price
+        final_price = cast(
+            Decimal,
+            update_fields["price"]
+            if "price" in update_fields
+            else previous_price,
+        )
+        repository_fields = {
+            (
+                "duration"
+                if field_name == "duration_minutes"
+                else field_name
+            ): value
+            for field_name, value in update_fields.items()
+        }
+
+        async with in_transaction() as connection:
+            try:
+                updated = await self.product_repository.update_option(
+                    option,
+                    using_db=connection,
+                    **repository_fields,
+                )
+            except IntegrityError as exc:
+                raise ExperienceOptionAlreadyExists(
+                    duration_minutes=final_duration,
+                    participants=final_participants,
+                    day_type=final_day_type,
+                ) from exc
+
+            if update_fields.keys() & _OPTION_DIMENSION_UPDATE_FIELDS:
+                await self.audit_log_service.log(
+                    operator_id=operator_id,
+                    action="UPDATE_OPTION",
+                    target_type="product",
+                    target_id=option.product_id,
+                    ip_address=ip_address,
+                    description=json.dumps(
+                        {
+                            "option_id": option.id,
+                            "before": before_dimensions,
+                            "after": after_dimensions,
+                        },
+                        separators=(",", ":"),
+                    ),
+                    using_db=connection,
+                )
+            if "price" in update_fields:
+                await self.audit_log_service.log(
+                    operator_id=operator_id,
+                    action="UPDATE_PRICE",
+                    target_type="product",
+                    target_id=option.product_id,
+                    ip_address=ip_address,
+                    description=json.dumps(
+                        {
+                            "option_id": option.id,
+                            "before": {"price": f"{previous_price:.2f}"},
+                            "after": {"price": f"{final_price:.2f}"},
+                        },
+                        separators=(",", ":"),
+                    ),
+                    using_db=connection,
+                )
+
+            loaded_option = await self.product_repository.get_option_detail(
+                updated.id,
+                using_db=connection,
+            )
+            if loaded_option is None:
+                raise RuntimeError("Updated experience option not found")
+
+        logger.info(
+            "Experience Option updated: operator_id=%d product_id=%d "
+            "option_id=%d",
+            operator_id,
+            option.product_id,
+            option.id,
+        )
+        return loaded_option
 
     async def online_product(
         self,

@@ -1,6 +1,6 @@
 # Product Module Business Rules
 
-> **Document Version:** v1.8
+> **Document Version:** v1.9
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Last Updated:** 2026-08-12
@@ -323,6 +323,18 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 
 > **实现状态：** ExperienceOption 新增/恢复 Service 已实现，并有 Product 前置冲突、唯一冲突、并发唯一约束翻译、Draft/Offline、恢复 ID/图片、审计快照与真实回滚测试。API 路由仍待实现。
 
+### 7.7 ExperienceOption 部分修改事务
+
+`update_experience_option(option_id, *, updates, operator_id, ip_address)` 接收 API 通过 `model_dump(exclude_unset=True)` 得到的非空显式字段映射，只允许 `duration_minutes`、`participants`、`day_type`、`price`。Service 将 `duration_minutes` 映射到 Model 的 `duration`，其余缺失字段保持原值。
+
+- 使用 `get_option_by_id(..., include_deleted=True)` 同时加载所属 Product；Option 不存在抛 `ExperienceOptionNotFound`（`40402`, `Experience option not found`），已逻辑删除抛 `ExperienceOptionAlreadyDeleted`（`40912`, `Experience option is already deleted`）。已删除 Product 下的 Option 对修改调用隐藏为 `40402`；Online Product 复用 `40905`。
+- Service 用旧值与本次字段合并最终 `(duration, participants, day_type)`，再执行全历史组合查询。查询命中当前 Option ID 不算冲突，命中任何其他有效或已删除记录均抛 `40911`。
+- 数据库唯一索引仍是并发兜底；事务内更新发生 `IntegrityError` 时转换为相同 `40911`。
+- 只修改维度时写 `UPDATE_OPTION`；只修改价格时写 `UPDATE_PRICE`；同一次 PATCH 同时修改两类字段时按 `UPDATE_OPTION`、`UPDATE_PRICE` 顺序写两条审计。两种 description 都是紧凑 JSON，包含 `option_id` 和对应 before/after 快照。
+- Option 更新、全部审计及响应 Option 重载共享一个事务；第二条审计或响应重载失败也会回滚字段变更和此前已写审计。更新不调用 ProductValidator，图片关系不由此接口修改。
+
+> **实现状态：** ExperienceOption 修改 Service 已实现，并有 PATCH 白名单、缺失字段合并、资源/状态优先级、有效/已删除组合冲突、并发冲突翻译、单/双审计、图片保留及真实全事务回滚测试。API 路由仍待实现。
+
 ### 7.2 Database Layer（Foreign Key）
 
 直接指向 Product 的关联表（ExperienceOption、ProductKit、ProductImage）的 Foreign Key 必须使用 `ON DELETE RESTRICT`。`ProductImage.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL` 作为 Option 异常物理删除时的兜底：
@@ -623,7 +635,7 @@ Product 模块只负责当前库存值的保存、展示和管理端直接设置
 | 规则 | 说明 |
 |------|------|
 | Draft 商品允许编辑 | ✅ |
-| Online 商品允许编辑 | ✅ |
+| Online 商品允许编辑 | ❌；须先下架 |
 | Offline 商品允许编辑 | ✅ |
 | Online 商品必须先下架才能删除 | 下架 → 删除 |
 | 重新上架保持原 Product ID | 不创建新商品 |

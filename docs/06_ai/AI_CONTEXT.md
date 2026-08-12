@@ -51,7 +51,7 @@
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository` 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复及上架/下架状态流转；创建聚合、查询可见性、404/409 前置检查、PATCH 字段语义、Option 全历史唯一/恢复、Validator 边界和业务/审计原子性均有专项和真实测试。Option 修改/删除、Kit 编辑、图片与 API 运行时代码仍待完成。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository` 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复/修改及上架/下架状态流转；创建聚合、查询可见性、404/409 前置检查、PATCH 字段语义、Option 全历史唯一/恢复、Validator 边界和业务/审计原子性均有专项和真实测试。Option 删除、Kit 编辑、图片与 API 运行时代码仍待完成。
 - MySQL 8+ 权威首迁移已离线生成、通过契约测试并提交，但尚未对 MySQL 执行。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
 - Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
@@ -92,6 +92,7 @@ Product Validator 契约速查：
 - Product 创建契约与运行时代码已实现：Experience 创建原子写 Product+CREATE_PRODUCT 审计；Kit 创建原子写 Product+ProductKit+审计。Service 接收拆分领域字段、固定 ProductType、返回 Draft Product，不依赖请求/响应 Schema，也不调用 Validator；API 路由仍待实现。
 - Product 基础信息修改与逻辑删除已实现：两者只读取 Product 主表并先处理 40401/40903；Online 修改抛 `40905 OnlineProductCannotBeModified`，Online 删除抛 `40904 ProductMustBeOfflineBeforeDelete`。修改只接受非空 `name` / `description` 显式字段映射并保留缺失/null 语义；删除只设置 `is_deleted=true` 且保持 status/关联记录。更新与对应审计同事务回滚，均不调用 Validator；API 路由仍待实现。
 - ExperienceOption 新增/恢复已实现：先处理 Product 40401/40903/40001/40905，再按全历史组合执行 INSERT、40911 或恢复原 ID。新建/恢复、CREATE_OPTION/RESTORE_OPTION 审计和响应图片重载共享事务；唯一索引竞争转换为 40911，恢复审计前后价格以 JSON 存入现有 description。Service 返回 `ExperienceOptionCreationResult(option, restored)` 供 API 选择 201/200，不依赖 HTTP Schema；API 路由仍待实现。
+- ExperienceOption 修改已实现：接收非空显式 updates Mapping，先处理 40402/40912/40905，再合并最终组合并检查全历史唯一性；当前 ID 不冲突，其他有效/已删除记录及唯一索引竞争统一 40911。维度写 UPDATE_OPTION、价格写 UPDATE_PRICE，同时提交时顺序写两条；更新、审计、响应重载同事务并保留图片关系，不调用 Validator。API 路由仍待实现。
 
 ---
 

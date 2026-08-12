@@ -377,7 +377,7 @@ async def online_product(
 
 Product 上架的状态更新与 `ONLINE_PRODUCT` 审计必须共享同一个 `BaseDBAsyncClient` 事务连接。为此，`AuditLogService.log()` 与 `AuditLogRepository.create()` 提供向后兼容的可选 `using_db` 参数：普通调用不传时保持既有顺序审计；需要原子性的 Product Service 显式透传当前连接。Product Service 通过构造函数注入 ProductRepository 与共享 AuditLogService，不直接实例化 Repository，不直接操作 ORM Model，也不把权限检查或 Out Schema 序列化放入 Service。
 
-以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。Option 修改/删除、Kit 编辑、图片等其余 Service 用例和 API 层仍待完成。
+以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。Option 删除、Kit 编辑、图片等其余 Service 用例和 API 层仍待完成。
 
 Product 下架 Service 也已实现，复用同一 Repository/审计事务边界，但只读取 Product 主表且不调用 Validator：不存在、逻辑删除和非 Online 状态在事务前失败；成功时 `status=offline` 与 `OFFLINE_PRODUCT` 审计原子提交。
 
@@ -392,6 +392,8 @@ Product 创建 Service 接收拆分后的领域字段而非请求 Schema，并�
 Product 基础信息修改和逻辑删除 Service 只读取 Product 主表，不加载聚合、不调用 Validator。API 将 `ProductUpdate.model_dump(exclude_unset=True)` 结果作为显式字段映射传入，Service 通过 `name` / `description` 白名单保护用例边界；`description=None` 与字段缺失保持不同语义。修改和删除均先处理不存在、逻辑删除和 Online 冲突，再在一个事务连接上执行 Repository 更新与对应审计。逻辑删除仅设置 `is_deleted=true`，保持 ProductStatus 和所有关联记录不变。
 
 ExperienceOption 新增/恢复 Service 先读取 Product 主表和全历史组合，再在单个事务中选择 INSERT 或恢复原记录、写对应审计，并通过 `get_option_detail(..., using_db=connection)` 重载响应所需的有效图片。Service 返回只包含 ORM Option 与 `restored` 标志的领域结果，让 API 决定 201/200，不让 HTTP 状态进入业务层。数据库唯一索引仍是并发兜底；Repository 抛出的唯一 `IntegrityError` 在 Service 边界转换为 `40911`。恢复保留原 Option ID/图片关联，只更新价格和删除标记。
+
+ExperienceOption 修改 Service 接收不依赖 Schema 的显式字段 Mapping，在业务层将请求字段名转换为 Repository 字段名，并用当前 Option 合并最终组合后查询全历史唯一性。配置维度和价格使用独立审计 action；同一 PATCH 可在一项事务中顺序写两条审计。更新、审计和响应聚合重载都使用同一连接，因此后置读取或任一审计失败会回滚整个用例。Service 不修改图片，也不调用 Validator。
 
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务

@@ -1,6 +1,6 @@
 # Product API Design
 
-> **Document Version:** v0.5
+> **Document Version:** v0.6
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Status:** Draft — Schema, Models, Repository, Validator, and core Product Service slices implemented; API pending
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复及上架/下架状态流转，写入与审计具有同事务回滚测试。Option 修改/删除、Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
+> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复/修改及上架/下架状态流转，写入与审计具有同事务回滚测试。Option 删除、Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
 
 ---
 
@@ -1405,6 +1405,13 @@ PATCH /api/v1/admin/options/{option_id}
 
 **可能的业务错误：** `40402`, `40912`, `40905`, `40911`
 
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Option 不存在或所属 Product 已删除 | `ExperienceOptionNotFound` | 40402 | `Experience option not found` | 404 |
+| Option 已逻辑删除 | `ExperienceOptionAlreadyDeleted` | 40912 | `Experience option is already deleted` | 409 |
+| 所属 Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
+| 最终组合被其他历史 Option 占用或并发唯一冲突 | `ExperienceOptionAlreadyExists` | 40911 | `Experience option already exists` | 409 |
+
 **请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -1416,6 +1423,8 @@ PATCH /api/v1/admin/options/{option_id}
 
 所有字段都可以缺失，但至少提交一个；任意字段显式传 `null` 均拒绝。Service 必须使用 `payload.model_dump(exclude_unset=True)` 执行部分更新。
 
+API 将显式字段映射传给 `update_experience_option(..., updates=...)`。Service 再执行非空字段白名单校验，并将 API 字段 `duration_minutes` 映射为 Model/Repository 字段 `duration`；`product_id`、`is_deleted` 和其他内部字段不能借此接口修改。
+
 **Product 状态限制：**
 
 | 状态 | 允许 |
@@ -1425,6 +1434,8 @@ PATCH /api/v1/admin/options/{option_id}
 | `online` | ❌ 线上商品修改配置需先下架 |
 
 **唯一性：** 修改后仍需保证同一 Product 下 `(duration_minutes, participants, day_type)` 不与任何其他记录重复，包括逻辑删除记录。若目标组合由已删除 Option 占用，返回 `40911`；管理员应通过新增 Option 接口恢复该记录，避免混淆两个 Option ID 的历史关联。
+
+Service 使用当前 Option 和本次 PATCH 合并最终组合后再查全历史；查询命中当前 Option ID 不构成冲突。写入时数据库唯一索引发生竞争性 `IntegrityError` 也转换为同一 `40911`。
 
 **请求示例**
 
@@ -1464,6 +1475,10 @@ PATCH /api/v1/admin/options/{option_id}
 ```
 
 > 修改后历史订单不受影响（订单保留价格快照）。图片通过独立 Image API 管理。
+
+**Audit：** 维度发生 PATCH 时写 `UPDATE_OPTION`，description 保存 `option_id` 与三个维度的 before/after；价格字段发生 PATCH 时写 `UPDATE_PRICE`，description 保存 `option_id` 与价格 before/after。若同一请求同时提交维度和价格，按上述顺序写两条审计。Option 更新、审计和响应重载共享事务连接，任一步失败整体回滚。响应使用 `ExperienceOptionBaseOut`，不会输出重载 Option 上的图片关系。
+
+> **实现状态：** `ProductService.update_experience_option()`、`ExperienceOptionNotFound` 和 `ExperienceOptionAlreadyDeleted` 已实现，并有 PATCH 合并、资源/状态冲突、全历史唯一性、单/双审计、图片保留和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与响应映射仍待实现。
 
 ---
 
