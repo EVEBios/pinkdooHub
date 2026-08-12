@@ -4,6 +4,43 @@
 
 ---
 
+## Unreleased — Product Online Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented the first Product Service slice: precondition checks, Validator orchestration, and atomic online-status plus audit persistence. Product API routes remain unavailable; this milestone exposes no new HTTP endpoint.
+
+### Added
+
+- General `ConflictException` and HTTP 409 middleware mapping without error-code-range inference.
+- Named `ProductNotFound`, `ProductIsDeleted`, and `ProductAlreadyOnline` exceptions with frozen 404/409 contracts.
+- Caller-owned transaction support in `AuditLogRepository.create()` and `AuditLogService.log()` through optional `using_db` propagation.
+- `ProductService.online_product(product_id, *, operator_id, ip_address) -> Product` with complete aggregate loading, ordered resource/state checks, synchronous Validator invocation, atomic status update, and `ONLINE_PRODUCT` audit.
+- Service tests for exact orchestration order, Draft and Offline transitions, Experience and Kit aggregates, failure short-circuiting, shared transaction connections, update failure, audit failure rollback, and architecture boundaries.
+
+### Important Decisions
+
+1. Product named exceptions directly inherit the matching HTTP-semantic base; the former 422-only `ProductException` pseudo-base was removed.
+2. Service returns the updated ORM Product. API remains responsible for ADMIN+ authorization and `ProductOnlineOut` serialization.
+3. Validation and resource/state conflicts occur before the write transaction. Status persistence and audit persistence share one transaction connection and roll back together.
+4. This slice does not add row locking, conditional status updates, or cross-request idempotency; concurrent online requests remain a documented future concurrency concern.
+
+### Verification
+
+- 72 Product online/exception/Validator/audit/architecture tests pass.
+- The complete suite passes with 493 tests.
+- Real SQLite tests prove both successful Experience/Kit persistence and audit-failure status rollback.
+
+### Known Limitations
+
+- No Product API route is registered yet, so the documented online endpoint remains unavailable.
+- Remaining Product Service operations—query, create/update/delete, offline, Options, Kit edits, and images—remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — Product Validator (Phase 4.1)
 
 **Date:** 2026-08-12

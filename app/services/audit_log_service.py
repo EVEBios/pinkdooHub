@@ -1,7 +1,6 @@
 """AuditLog Service —— 操作审计日志。
 
-写入方式：顺序 await，同一请求内完成。
-事务包裹在 Phase 4 统一加入。
+写入方式：顺序 await，同一请求内完成；可加入调用方管理的事务。
 """
 
 import logging
@@ -30,7 +29,7 @@ class AuditLogService:
         *,
         using_db: BaseDBAsyncClient | None = None,
     ) -> None:
-        """写入一条审计日志。"""
+        """写入一条审计日志，并可加入调用方提供的事务连接。"""
         await self.audit_repo.create(
             operator_id=operator_id,
             action=action,

@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询见 `app/schemas/product.py`，响应见 `app/schemas/product_response.py`；Product 聚合根及三个子 Model 分别见 `app/models/product.py`、`app/models/experience_option.py`、`app/models/product_kit.py`、`app/models/product_image.py`；数据访问见 `app/repositories/product_repo.py`。Product Validator 阶段已经完成：异常契约、HTTP 422 映射、同步公共/Experience/Kit 上架规则、稳定问题顺序、未知类型 fail-closed，以及真实 Repository 聚合上的零查询和零修改边界均有专项测试。完成 Validator 不代表端点可调用；Product Service 和 API 仍待实现。
+> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 的 `online_product()` 切片也已实现，包括 404/409 前置冲突、Validator 调用，以及状态更新与 `ONLINE_PRODUCT` 审计的同事务原子提交。其余 Product Service 用例和 API 路由仍待实现；本页端点当前不可调用。
 
 ---
 
@@ -1151,6 +1151,8 @@ PATCH /api/v1/admin/products/{id}/online
 ```
 
 **Audit：** 仅校验通过后在状态更新的同一事务内写入（`action = ONLINE_PRODUCT`, `target_type = product`, `target_id = Product ID`）。校验失败、资源/状态冲突不写 Audit；状态更新或审计写入失败时整个事务回滚。
+
+> **实现状态：** `ProductService.online_product()` 及共享 AuditLog `using_db` 事务透传已实现，并有 Mock 编排测试与真实 SQLite 事务回滚测试。FastAPI 路由、ADMIN+ 依赖接入和 `ProductOnlineOut` 响应序列化仍待实现。
 
 ---
 
