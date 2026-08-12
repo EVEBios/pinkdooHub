@@ -1,5 +1,7 @@
 """AuditLog Repository。"""
 
+from tortoise.backends.base.client import BaseDBAsyncClient
+
 from app.models.audit_log import AuditLog
 
 
@@ -14,6 +16,8 @@ class AuditLogRepository:
         target_id: int,
         ip_address: str,
         description: str | None = None,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
     ) -> AuditLog:
         return await AuditLog.create(
             operator_id=operator_id,
@@ -22,4 +26,5 @@ class AuditLogRepository:
             target_id=target_id,
             ip_address=ip_address,
             description=description,
+            using_db=using_db,
         )
