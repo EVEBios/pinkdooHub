@@ -571,6 +571,63 @@ class ProductService:
         )
         return loaded_option
 
+    async def delete_experience_option(
+        self,
+        option_id: int,
+        *,
+        operator_id: int,
+        ip_address: str,
+    ) -> ExperienceOption:
+        """原子逻辑删除非 Online Product 的有效 ExperienceOption。"""
+
+        option = await self.product_repository.get_option_by_id(
+            option_id,
+            include_deleted=True,
+        )
+        if option is None:
+            raise ExperienceOptionNotFound()
+        if option.is_deleted:
+            raise ExperienceOptionAlreadyDeleted()
+        if option.product.is_deleted:
+            raise ExperienceOptionNotFound()
+        if option.product.status == ProductStatus.ONLINE:
+            raise OnlineProductCannotBeModified()
+
+        audit_description = json.dumps(
+            {
+                "option_id": option.id,
+                "duration_minutes": option.duration,
+                "participants": option.participants,
+                "day_type": option.day_type.value,
+                "price": f"{option.price:.2f}",
+            },
+            separators=(",", ":"),
+        )
+        async with in_transaction() as connection:
+            deleted = await self.product_repository.update_option(
+                option,
+                is_deleted=True,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="DELETE_OPTION",
+                target_type="product",
+                target_id=option.product_id,
+                ip_address=ip_address,
+                description=audit_description,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Experience Option deleted: operator_id=%d product_id=%d "
+            "option_id=%d",
+            operator_id,
+            option.product_id,
+            option.id,
+        )
+        return deleted
+
     async def online_product(
         self,
         product_id: int,

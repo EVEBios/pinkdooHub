@@ -1,6 +1,6 @@
 # Product API Design
 
-> **Document Version:** v0.6
+> **Document Version:** v0.7
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Status:** Draft — Schema, Models, Repository, Validator, and core Product Service slices implemented; API pending
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复/修改及上架/下架状态流转，写入与审计具有同事务回滚测试。Option 删除、Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
+> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 新增/恢复/修改/删除及上架/下架状态流转，写入与审计具有同事务回滚测试。Kit 编辑、图片 Service 和全部 API 路由仍待实现；本页端点当前不可调用。
 
 ---
 
@@ -1492,6 +1492,12 @@ DELETE /api/v1/admin/options/{option_id}
 
 **可能的业务错误：** `40402`, `40912`, `40905`
 
+| 条件 | 命名异常 | code | message | HTTP |
+|------|----------|------|---------|------|
+| Option 不存在或所属 Product 已删除 | `ExperienceOptionNotFound` | 40402 | `Experience option not found` | 404 |
+| Option 已逻辑删除 | `ExperienceOptionAlreadyDeleted` | 40912 | `Experience option is already deleted` | 409 |
+| 所属 Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
+
 **所属 Product 状态限制：**
 
 | Product 状态 | 允许 |
@@ -1513,8 +1519,8 @@ DELETE /api/v1/admin/options/{option_id}
 1. 查找 Option（不存在 → 40402）
 2. 检查 Option.is_deleted（已删除 → 拒绝）
 3. 检查所属 Product.status（online → 拒绝）
-4. is_deleted = true → option.save()
-5. 写入 Audit Log（action = DELETE_OPTION，含配置快照）
+4. Repository 更新 is_deleted = true（不修改 Product 或图片）
+5. 使用同一事务连接写入 Audit Log（action = DELETE_OPTION，含配置快照）
 ```
 
 **成功响应**
@@ -1532,7 +1538,9 @@ DELETE /api/v1/admin/options/{option_id}
 }
 ```
 
-**Audit：** 记录 `action = DELETE_OPTION`，metadata 保存 Option 配置快照：`{ "duration_minutes": 120, "participants": 2, "day_type": "holiday", "price": "699.00" }`。
+**Audit：** 记录 `action = DELETE_OPTION`，`target_type=product`、`target_id=所属 Product ID`。当前 AuditLog 没有 metadata 列，删除前快照以紧凑 JSON 写入 `description`：`{ "option_id": 11, "duration_minutes": 120, "participants": 2, "day_type": "holiday", "price": "699.00" }`。Option 更新和审计共享事务；任一步失败整体回滚。删除不加载完整聚合、不调用 ProductValidator。
+
+> **实现状态：** `ProductService.delete_experience_option()` 已实现，并有 40402/40912/40905 优先级、Draft/Offline、最后一项删除、Product 状态与图片保留、审计快照和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与 `DeletedResourceOut` 映射仍待实现。
 
 ---
 

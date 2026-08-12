@@ -4,6 +4,42 @@
 
 ---
 
+## Unreleased — ExperienceOption Delete Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Completed the ExperienceOption lifecycle Service by implementing status-safe logical deletion with atomic snapshot auditing. The HTTP endpoint remains unavailable until API integration.
+
+### Added
+
+- `ProductService.delete_experience_option()` with ordered missing/deleted/Product-state checks and Draft/Offline logical deletion.
+- Compact `DELETE_OPTION` snapshots containing Option identity, dimensions, day type, and two-decimal price in the existing AuditLog description field.
+- Mock and real SQLite tests for conflict precedence, deleting the final active Option, Product status preservation, image record/foreign-key preservation, Validator isolation, write failure short-circuiting, and audit-failure rollback.
+
+### Important Decisions
+
+1. A deleted parent Product hides its Option behind `40402`; an already-deleted Option retains `40912` precedence over Product Online status.
+2. Deletion changes only `ExperienceOption.is_deleted`. Product status and ProductImage records are not modified, and no physical delete occurs.
+3. Draft/Offline may reach zero active Options. The delete workflow does not count siblings or invoke ProductValidator; a later online request owns aggregate completeness enforcement.
+4. Option mutation and `DELETE_OPTION` audit share one transaction and target the Product for unified product-history lookup.
+
+### Verification
+
+- 39 focused Option delete, exception, and architecture tests pass.
+- All 506 Product tests pass.
+- Full regression: 613 tests pass.
+- Real SQLite tests prove final-Option deletion, unchanged Product/image state, and audit-failure rollback.
+
+### Known Limitations
+
+- The ExperienceOption delete API route and response mapping remain pending.
+- Kit mutation and image Service workflows remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — ExperienceOption Update Service (Phase 4.1)
 
 **Date:** 2026-08-12

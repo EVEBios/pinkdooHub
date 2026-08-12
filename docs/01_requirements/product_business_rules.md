@@ -1,6 +1,6 @@
 # Product Module Business Rules
 
-> **Document Version:** v1.9
+> **Document Version:** v2.0
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Last Updated:** 2026-08-12
@@ -261,7 +261,7 @@ Product 基础信息修改只接受 API Schema 使用 `exclude_unset=True` 得�
 
 商品下架只允许 `online → offline`。Draft 与 Offline 都已处于“不对外销售”状态，执行下架统一抛 `ProductAlreadyOffline`（`40902`, `Product is already offline`），不为 Draft 另建错误码。Service 先区分不存在和逻辑删除，再检查 ProductStatus；成功时在同一事务连接上更新 `status=offline` 并写 `OFFLINE_PRODUCT` 审计。下架不调用 ProductValidator，状态更新或审计任一步失败时全部回滚。
 
-### 7.3 Product 查询可见性
+### 7.2 Product 查询可见性
 
 Product 查询 Service 返回 ORM Product 聚合或 `Page[Product]`，不依赖 API Out Schema，也不生成 `LabeledValue`、`cover_image`、`display_price`、`dimensions`、`available` 等展示字段；这些字段由后续 API Mapper 从已加载聚合计算并交给 Out Schema 白名单序列化。
 
@@ -272,7 +272,7 @@ Product 查询 Service 返回 ORM Product 聚合或 `Page[Product]`，不依赖 
 
 > **实现状态：** 管理端/用户端列表与详情查询 Service 已实现，并有 Repository 参数编排、可见性、类型隐藏和真实预加载聚合测试。API Mapper 与路由仍待实现。
 
-### 7.4 Product 创建事务
+### 7.3 Product 创建事务
 
 Product 创建 Service 接收已经过请求 Schema 校验和规范化的领域字段，不直接依赖 Pydantic Schema：
 
@@ -289,7 +289,7 @@ create_kit_product(name, description, price, stock, operator_id, ip_address) -> 
 
 > **实现状态：** Experience/Kit 创建 Service 已实现，并有固定类型、同一事务连接、零库存、无 Validator 调用、真实聚合持久化和审计失败全回滚测试。API 路由仍待实现。
 
-### 7.5 Product 基础信息修改与逻辑删除
+### 7.4 Product 基础信息修改与逻辑删除
 
 Product Service 公开方法为：
 
@@ -306,7 +306,7 @@ delete_product(product_id, *, operator_id, ip_address) -> Product
 
 > **实现状态：** 基础信息修改与逻辑删除 Service 已实现，并有字段白名单、PATCH 缺失/null、冲突优先级、状态保留、关联记录保留、共享事务及审计失败真实回滚测试。API 路由仍待实现。
 
-### 7.6 ExperienceOption 新增与恢复事务
+### 7.5 ExperienceOption 新增与恢复事务
 
 `create_experience_option(product_id, *, duration_minutes, participants, day_type, price, operator_id, ip_address)` 先使用 Product 主表查询依次处理不存在、逻辑删除、非 Experience 类型和 Online 状态，再按全历史组合查询 Option：
 
@@ -323,7 +323,7 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 
 > **实现状态：** ExperienceOption 新增/恢复 Service 已实现，并有 Product 前置冲突、唯一冲突、并发唯一约束翻译、Draft/Offline、恢复 ID/图片、审计快照与真实回滚测试。API 路由仍待实现。
 
-### 7.7 ExperienceOption 部分修改事务
+### 7.6 ExperienceOption 部分修改事务
 
 `update_experience_option(option_id, *, updates, operator_id, ip_address)` 接收 API 通过 `model_dump(exclude_unset=True)` 得到的非空显式字段映射，只允许 `duration_minutes`、`participants`、`day_type`、`price`。Service 将 `duration_minutes` 映射到 Model 的 `duration`，其余缺失字段保持原值。
 
@@ -335,17 +335,28 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 
 > **实现状态：** ExperienceOption 修改 Service 已实现，并有 PATCH 白名单、缺失字段合并、资源/状态优先级、有效/已删除组合冲突、并发冲突翻译、单/双审计、图片保留及真实全事务回滚测试。API 路由仍待实现。
 
-### 7.2 Database Layer（Foreign Key）
+### 7.7 ExperienceOption 逻辑删除事务
+
+`delete_experience_option(option_id, *, operator_id, ip_address)` 使用 `get_option_by_id(..., include_deleted=True)` 加载 Option 与所属 Product，依次处理不存在、Option 已删除、所属 Product 已删除和 Online 状态：
+
+- Option 不存在或所属 Product 已删除统一抛 `ExperienceOptionNotFound(40402)`；Option 已删除优先抛 `ExperienceOptionAlreadyDeleted(40912)`；Online Product 复用 `OnlineProductCannotBeModified(40905)`。
+- Draft/Offline 允许删除，包括删除最后一个有效 Option。成功时只设置 `ExperienceOption.is_deleted=true`，不修改 ProductStatus，不更新或删除任何 ProductImage。
+- 删除前快照以紧凑 JSON 写入 `AuditLog.description`，包含 `option_id`、`duration_minutes`、`participants`、`day_type` 和两位小数 `price`；action 为 `DELETE_OPTION`，审计目标为所属 Product。
+- Option 更新与审计共享同一事务连接；更新失败不审计，审计失败回滚删除标记。该流程不查询有效 Option 数量，也不调用 ProductValidator；后续重新上架时由 Validator 对零 Option 聚合统一返回 `42201`。
+
+> **实现状态：** ExperienceOption 逻辑删除 Service 已实现，并有资源/状态优先级、Draft/Offline、最后一项删除、Product 状态保留、图片外键保留、快照审计及真实回滚测试。API 路由仍待实现。
+
+### 7.8 Database Layer（Foreign Key）
 
 直接指向 Product 的关联表（ExperienceOption、ProductKit、ProductImage）的 Foreign Key 必须使用 `ON DELETE RESTRICT`。`ProductImage.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL` 作为 Option 异常物理删除时的兜底：
 
 **原因：** 防止有人绕过业务层直接在数据库执行物理删除，导致关联数据孤立。
 
-### 7.3 Preconditions
+### 7.9 Preconditions
 
 `online` 商品必须先下架才能删除。
 
-### 7.4 Post-delete Behavior
+### 7.10 Post-delete Behavior
 
 - 普通用户不可见
 - 管理员仍可查询历史记录
