@@ -51,7 +51,7 @@
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository` 和 Product Validator 均已实现。Product Service 已实现管理端/用户端查询及 `online_product()` / `offline_product()` 状态流转：查询可见性、404/409 前置检查、仅上架调用 Validator、状态更新与对应审计同事务提交均有专项和真实测试。其余写用例与 API 运行时代码仍待完成；架构文档中的规划文件不能作为实现证据。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository` 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询及上架/下架状态流转；创建聚合、查询可见性、404/409 前置检查、Validator 边界和业务/审计原子性均有专项和真实测试。其余写用例与 API 运行时代码仍待完成。
 - MySQL 8+ 权威首迁移已离线生成、通过契约测试并提交，但尚未对 MySQL 执行。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
 - Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
@@ -89,6 +89,7 @@ Product Validator 契约速查：
 - Product Service 上架契约与运行时代码已实现：`online_product(product_id, *, operator_id, ip_address) -> Product` 依次处理 `40401 ProductNotFound`、`40903 ProductIsDeleted`、`40901 ProductAlreadyOnline`，再同步调用 Validator。校验通过后，状态更新与 `ONLINE_PRODUCT` 审计通过同一事务连接原子提交；Service 返回 Model，API 将使用 `ProductOnlineOut` 序列化，但路由仍待实现。
 - Product 下架契约与运行时代码已实现：仅允许 Online → Offline；Draft/Offline 统一返回 `40902 ProductAlreadyOffline`，逻辑删除优先返回 `40903`。成功状态更新和 `OFFLINE_PRODUCT` 审计同事务提交，下架不调用 Validator；API 路由仍待实现。
 - Product 查询契约与运行时代码已实现：管理端/用户端采用独立 Service 方法，返回 Product 聚合或 `Page[Product]`；用户端固定 Online 且未删除，不存在/未上线/删除/类型不匹配统一 40401。cover/display price/dimensions/available/labels 属于待实现的 API Mapper，不进入 Repository 或 Service。
+- Product 创建契约与运行时代码已实现：Experience 创建原子写 Product+CREATE_PRODUCT 审计；Kit 创建原子写 Product+ProductKit+审计。Service 接收拆分领域字段、固定 ProductType、返回 Draft Product，不依赖请求/响应 Schema，也不调用 Validator；API 路由仍待实现。
 
 ---
 

@@ -385,6 +385,10 @@ Product 查询 Service 只编排 Repository 的用例查询并返回 Model/Page�
 
 上述查询 Service 已实现。真实集成测试固定用户列表 Online/未删除范围、描述搜索，以及管理端已删除聚合和用户端 Online 详情预加载；查询方法不写审计、不调用 Validator、不开启事务。
 
+Product 创建 Service 接收拆分后的领域字段而非请求 Schema，并返回 Product Model。Experience 的 Product+审计和 Kit 的 Product+ProductKit+审计分别共享一个调用方事务连接；Service 固定 ProductType，Model 默认固定 Draft/未删除，API 只负责输入 Schema 和 Create Out 序列化。创建 Draft 不调用 Validator。
+
+上述 Experience/Kit 创建 Service 已实现；真实 SQLite 测试固定 Kit 扩展记录与 Product 同事务创建，以及两种创建在审计失败时不留下 Product、ProductKit 或 AuditLog。
+
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务
 - 只读取已预加载聚合，不修改 Product、Option、Image、ProductKit 或状态

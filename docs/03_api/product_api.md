@@ -857,6 +857,10 @@ POST /api/v1/admin/products/experience
 
 > **Create Validation ≠ Online Validation。** 创建时仅校验 `name` 非空和长度；`description`、`images`、`options` 可在 Draft 阶段逐步完善。Online 时才执行完整校验（见 [§7.8 上架](#78-上架)）。
 
+**Service 事务：** `create_experience_product()` 在同一事务连接内创建固定为 Experience/Draft/未删除的 Product，并写 `CREATE_PRODUCT` 审计；任一步失败全部回滚。Service 返回 Product，API 使用 `ExperienceProductCreateOut` 序列化。创建不调用 Validator。
+
+> **实现状态：** Experience 创建 Service 已实现并有真实事务回滚测试；API 路由和响应序列化仍待实现。
+
 **创建后工作流：**
 
 ```
@@ -941,6 +945,10 @@ POST /api/v1/admin/products/kit
     }
 }
 ```
+
+**Service 事务：** `create_kit_product()` 在同一事务连接内依次创建固定为 Kit/Draft/未删除的 Product、必需的 ProductKit 扩展记录和 `CREATE_PRODUCT` 审计；任一步失败三者全部回滚。Service 返回 Product，API 使用 `KitProductCreateOut` 序列化。`stock` 未提交时由 Schema/常量提供 0。
+
+> **实现状态：** Kit 聚合创建 Service 已实现并有 Product/ProductKit/审计真实原子性测试；API 路由和响应序列化仍待实现。
 
 ---
 

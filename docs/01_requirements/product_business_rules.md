@@ -268,6 +268,23 @@ Product 查询 Service 返回 ORM Product 聚合或 `Page[Product]`，不依赖 
 
 > **实现状态：** 管理端/用户端列表与详情查询 Service 已实现，并有 Repository 参数编排、可见性、类型隐藏和真实预加载聚合测试。API Mapper 与路由仍待实现。
 
+### 7.4 Product 创建事务
+
+Product 创建 Service 接收已经过请求 Schema 校验和规范化的领域字段，不直接依赖 Pydantic Schema：
+
+```python
+create_experience_product(name, description, operator_id, ip_address) -> Product
+create_kit_product(name, description, price, stock, operator_id, ip_address) -> Product
+```
+
+- Experience 创建在同一事务连接内创建 Draft Product 并写 `CREATE_PRODUCT` 审计。
+- Kit 创建在同一事务连接内依次创建 Draft Product、必需的 ProductKit 扩展记录，并写 `CREATE_PRODUCT` 审计。
+- `product_type`、`status=draft`、`is_deleted=false` 由 Service/Model 固定，调用方不能传入覆盖值。
+- Service 返回 Product；创建响应只需要 Product 身份字段，API 使用对应 Create Out Schema 序列化。
+- Product、ProductKit 或审计任一步失败时全部回滚；创建不调用 ProductValidator，Draft 可以暂时没有描述、图片或 Experience Option。
+
+> **实现状态：** Experience/Kit 创建 Service 已实现，并有固定类型、同一事务连接、零库存、无 Validator 调用、真实聚合持久化和审计失败全回滚测试。API 路由仍待实现。
+
 ### 7.2 Database Layer（Foreign Key）
 
 直接指向 Product 的关联表（ExperienceOption、ProductKit、ProductImage）的 Foreign Key 必须使用 `ON DELETE RESTRICT`。`ProductImage.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL` 作为 Option 异常物理删除时的兜底：

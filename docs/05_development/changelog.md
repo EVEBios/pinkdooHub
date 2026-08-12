@@ -4,6 +4,38 @@
 
 ---
 
+## Unreleased — Product Creation Service (Phase 4.1)
+
+**Date:** 2026-08-12
+
+### Summary
+
+Implemented atomic Experience and Kit Draft creation workflows with mandatory Product audit logging. Product HTTP creation endpoints remain unavailable until API integration.
+
+### Added
+
+- `create_experience_product()` with fixed Experience type and atomic Product plus `CREATE_PRODUCT` audit persistence.
+- `create_kit_product()` with fixed Kit type and atomic Product, ProductKit, and audit persistence.
+- Mock orchestration tests and real SQLite tests for shared transaction connections, fixed types/defaults, zero-stock Kit creation, failure short-circuiting, and full rollback on audit failure.
+
+### Important Decisions
+
+1. Service accepts normalized domain fields rather than Pydantic request objects and returns the created Product Model.
+2. ProductType is selected by the Service method; Draft and non-deleted defaults remain Model-owned and cannot be overridden by callers.
+3. Draft creation does not invoke ProductValidator and permits incomplete descriptions, images, and Experience Options.
+
+### Verification
+
+- 44 focused Product creation/query/status/architecture tests pass.
+- The complete suite passes with 524 tests.
+
+### Known Limitations
+
+- Product creation API routes and response mapping remain pending.
+- Product update/delete, Option, Kit mutation, and image Service workflows remain pending.
+
+---
+
 ## Unreleased — Product Query Service (Phase 4.1)
 
 **Date:** 2026-08-12

@@ -1,6 +1,7 @@
 """Product Service —— 编排 Product 业务操作。"""
 
 import logging
+from decimal import Decimal
 
 from tortoise.transactions import in_transaction
 
@@ -31,6 +32,80 @@ class ProductService:
     ) -> None:
         self.product_repository = product_repository
         self.audit_log_service = audit_log_service
+
+    async def create_experience_product(
+        self,
+        *,
+        name: str,
+        description: str | None,
+        operator_id: int,
+        ip_address: str,
+    ) -> Product:
+        """原子创建 Experience Draft Product 并写入审计。"""
+
+        async with in_transaction() as connection:
+            product = await self.product_repository.create_product(
+                name=name,
+                description=description,
+                product_type=ProductType.EXPERIENCE,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="CREATE_PRODUCT",
+                target_type="product",
+                target_id=product.id,
+                ip_address=ip_address,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Experience Product created: operator_id=%d product_id=%d",
+            operator_id,
+            product.id,
+        )
+        return product
+
+    async def create_kit_product(
+        self,
+        *,
+        name: str,
+        description: str | None,
+        price: Decimal,
+        stock: int,
+        operator_id: int,
+        ip_address: str,
+    ) -> Product:
+        """原子创建 Kit Draft 聚合并写入审计。"""
+
+        async with in_transaction() as connection:
+            product = await self.product_repository.create_product(
+                name=name,
+                description=description,
+                product_type=ProductType.KIT,
+                using_db=connection,
+            )
+            await self.product_repository.create_kit(
+                product=product,
+                price=price,
+                stock=stock,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="CREATE_PRODUCT",
+                target_type="product",
+                target_id=product.id,
+                ip_address=ip_address,
+                using_db=connection,
+            )
+
+        logger.info(
+            "Kit Product created: operator_id=%d product_id=%d",
+            operator_id,
+            product.id,
+        )
+        return product
 
     async def list_admin_products(
         self,
