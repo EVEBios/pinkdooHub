@@ -1,6 +1,36 @@
 # API Design Conventions
 
-本文档定义 pinkdooHub 项目的 API 设计规范，所有模块的接口文档必须遵循本规范。
+> **Document Version:** v2.0
+> **Status:** Active
+> **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
+>
+> 本文档定义 pinkdooHub 所有 API 的强制性设计规范。新增或修改接口时，必须对照本文档逐项检查。
+>
+> **业务模块 API 文档：** [User API](user_api.md) · [Product API](product_api.md) · [Order API](order_api.md)
+>
+> **快速检查清单见 [§18](#18-快速检查清单)。**
+
+---
+
+## 0. Data Flow（数据流向）
+
+核心原则：**数据库存原始值，API Mapper 负责展示转换，Response 面向前端。**
+
+```
+Database                  API Mapper                  Response
+────────                  ──────────                  ────────
+duration_minutes = 60  →  转换  →  { "value": 60, "label": "1小时" }
+day_type = "weekday"   →  转换  →  { "value": "weekday", "label": "工作日" }
+status = "online"      →  转换  →  { "value": "online", "label": "已上架" }
+```
+
+| 层 | 职责 | 禁止 |
+|----|------|------|
+| Database | 保存原始值，便于计算和索引 | 保存展示文案（"1小时"） |
+| Service | 返回领域值或已加载聚合 | 依赖 API Out Schema 或生成展示文案 |
+| API Mapper | 转换原始值 → `{value, label}` DTO | 查询数据库或把内部字段透传给响应 |
+| Response | 返回 `{value, label}`，前端直接展示 | 返回数据库原始字段名（`duration_minutes`） |
+| Request | 前端提交 `value` | 提交 `label`（"1小时"） |
 
 ---
 
@@ -30,19 +60,27 @@
 ### 2.2 示例
 
 ```
+# 用户端（public）
 GET    /products                          # 商品列表
-POST   /products                          # 创建商品
-GET    /products/{id}                     # 商品详情
-PUT    /products/{id}                     # 更新商品
-DELETE /products/{id}                     # 删除商品
-GET    /products/{id}/images              # 商品图片列表
-POST   /products/{id}/images              # 上传商品图片
+GET    /products/experience/{id}          # 拼豆体验详情
+GET    /products/kit/{id}                 # 拼豆套装详情
 
 GET    /users/me                          # 当前用户信息
-PUT    /users/me/password                 # 当前用户修改密码
+PATCH  /users/me                          # 当前用户修改资料
+
+# 管理端（admin）
+GET    /admin/products                    # 管理端商品列表
+POST   /admin/products/experience         # 创建体验商品
+POST   /admin/products/kit                # 创建套装商品
+PATCH  /admin/products/{id}               # 编辑商品基本信息
+DELETE /admin/products/{id}               # 逻辑删除
+PATCH  /admin/products/{id}/online        # 上架
+PATCH  /admin/products/{id}/offline       # 下架
+POST   /admin/products/experience/{id}/options # 新增 Option
+PATCH  /admin/options/{option_id}         # 修改 Option
+DELETE /admin/options/{option_id}         # 删除 Option
 
 GET    /admin/users                       # 管理端用户列表
-GET    /admin/users/{id}                  # 管理端用户详情
 PUT    /admin/users/{id}/disable          # 管理端禁用用户
 ```
 
@@ -67,7 +105,7 @@ PUT    /admin/users/{id}/disable          # 管理端禁用用户
 | PATCH | 部分更新 | ❌ | `PATCH /products/{id}/status` |
 | DELETE | 删除资源 | ✅ | `DELETE /products/{id}` |
 
-> **本项目约定**：对业务资源的修改统一使用 `PUT`，仅对单一字段的状态切换使用 `PATCH`。
+> **本项目约定**：全量更新用 `PUT`，状态变更用 `PATCH`（如 online/offline），创建用 `POST`。
 
 ---
 
@@ -155,6 +193,8 @@ Authorization: Bearer <access_token>
 | message | string | 是 | 可读的状态描述 |
 | data | any | 否 | 返回数据，无数据时为 `null` |
 
+实现层使用 `success()` 构造运行时成功信封，异常中间件构造错误信封；OpenAPI 必须分别通过泛型 `SuccessResponse[T]` 和 `ErrorResponse` 精确声明响应结构，不能保留无约束的 `object`。如果 API Mapper 已经完成严格 Out Schema 校验并把 `Decimal` 等领域值序列化为契约字符串，路由应通过 `responses` 声明 OpenAPI 模型并保持 `response_model=None`，避免 FastAPI 对已序列化数据进行第二次、语义不同的校验。
+
 ### 6.2 成功响应
 
 ```json
@@ -196,16 +236,23 @@ Authorization: Bearer <access_token>
     "message": "Username already exists"
 }
 
-// 参数校验失败（422）
+// 参数或业务语义校验失败（422）
 {
     "code": 422,
     "message": "Validation failed",
     "data": {
-        "username": "Username must be 3-32 characters",
-        "password": "Password must be at least 6 characters"
+        "errors": [
+            {
+                "location": ["body", "username"],
+                "message": "String should have at least 3 characters",
+                "type": "string_too_short"
+            }
+        ]
     }
 }
 ```
+
+FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为上述信封。每项只包含 `location`、`message` 和 `type`，不得回显原始输入值，避免密码、Token 或其他敏感内容进入响应与日志。业务聚合状态的 HTTP 422（例如 Product `42201`）继续使用对应命名异常规定的数据结构，不套用 `data.errors`。
 
 ### 6.4 字段排除规则
 
@@ -229,10 +276,21 @@ Authorization: Bearer <access_token>
 | 404 | Not Found | 资源不存在 |
 | 409 | Conflict | 资源冲突（如用户名已存在） |
 | 413 | Payload Too Large | 上传文件超过大小限制 |
-| 422 | Unprocessable Entity | 参数校验失败 |
+| 422 | Unprocessable Entity | 参数校验失败，或请求语法正确但当前业务聚合不满足处理条件 |
 | 500 | Internal Server Error | 服务器内部错误 |
 
 > 业务状态以响应体中的 `code` 字段为准，HTTP 状态码用于表达请求层面的结果。
+
+业务异常通过异常类型映射 HTTP 状态，不根据业务错误码的数字范围推断：
+
+| 异常类型 | HTTP status | 语义 |
+|----------|-------------|------|
+| `BusinessException` | 400 | 一般业务规则不满足 |
+| `UnprocessableEntityException` | 422 | 请求语法正确，但当前业务数据或聚合状态不满足处理条件 |
+
+`UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
+
+> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 22 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。
 
 ---
 
@@ -244,9 +302,10 @@ Authorization: Bearer <access_token>
 |------|------|
 | 0 | 成功 |
 | 1xxx | 用户模块业务错误 |
-| 2xxx | 商品模块业务错误 |
 | 3xxx | 订单模块业务错误 |
-| 4xxx | HTTP 语义错误（与状态码一致） |
+| 40xxx | 商品模块 — 资源不存在 / 类型错误 |
+| 409xx | 商品模块 — 状态冲突 |
+| 422xx | 商品模块 — 业务校验 |
 | 5xxx | 服务器错误 |
 
 ### 8.2 全局错误码
@@ -270,13 +329,52 @@ Authorization: Bearer <access_token>
 | 1004 | 旧密码不正确 |
 | 1005 | 用户已被禁用 |
 | 1006 | Token 已过期 |
+| 1007 | 手机号已被注册 |
 
-### 8.4 商品模块错误码（2xxx）
+### 8.4 商品模块错误码（40xxx / 409xx / 422xx）
+
+**资源不存在（404xx）—— HTTP 404**
+
+`NotFoundException` 必须支持由命名子类传入稳定业务 code，同时保持无参数时现有通用 `404` 行为向后兼容；例如 `ProductNotFound` 使用 `40401`，而不是退化为通用 code `404`。
 
 | code | 说明 |
 |------|------|
-| 2001 | 商品不存在 |
-| 2002 | 库存不足 |
+| 40401 | 商品不存在 |
+| 40402 | Option 不存在 |
+| 40403 | 图片不存在 |
+| 40404 | 套装配置不存在 |
+
+**类型错误（400xx）—— HTTP 400**
+
+| code | 说明 |
+|------|------|
+| 40001 | 商品类型与此操作不匹配 |
+| 40021 | Option 图片不能设为封面 |
+
+**状态冲突（409xx）—— HTTP 409**
+
+状态冲突由 `ConflictException` 及其模块命名子类表达，全局异常中间件按异常类型映射 HTTP 409；禁止根据 `409xx` 错误码号段推断 HTTP 状态。Product Service 首个命名子类为 `ProductIsDeleted` 和 `ProductAlreadyOnline`。
+
+模块异常按 HTTP 语义类型直接继承，不要求建立覆盖全部状态码的模块基类。现有 `ProductException` 继承自 `UnprocessableEntityException`，实际只能表示 HTTP 422；进入 Product Service 异常实现时将移除该伪通用基类，让 `ProductNotReadyForOnline` 直接继承 `UnprocessableEntityException`、`ProductNotFound` 直接继承 `NotFoundException`，冲突异常直接继承 `ConflictException`。这不改变任何对外错误契约。
+
+| code | 说明 |
+|------|------|
+| 40901 | 商品已上架 |
+| 40902 | 商品已下架 |
+| 40903 | 商品已删除 |
+| 40904 | online 商品需先下架才能删除 |
+| 40905 | online 商品不可修改 |
+| 40911 | Option 配置已存在 |
+| 40912 | Option 已删除 |
+
+**业务校验（422xx）—— HTTP 422**
+
+| code | 说明 |
+|------|------|
+| 42201 | 商品未满足上架条件；message 固定为 `Product is not ready to go online`，`data.issues` 为非空字符串数组 |
+| 42221 | 图片文件无效；message 固定为 `Invalid image file`，`data.reason` 提供稳定失败原因 |
+
+> Product 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。上架时对已加载聚合快照执行的价格、库存与关联完整性校验使用 `42201`；其精确 message、issues 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。上传文件内容、MIME 和大小校验使用 `42221`。
 
 ### 8.5 订单模块错误码（3xxx）
 
@@ -301,11 +399,13 @@ Authorization: Bearer <access_token>
 
 ### 9.2 金额
 
-所有金额以"元"为单位，`Decimal(10,2)` 精度：
+所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。JSON 表示以模块 API 契约为准并在模块内保持一致；Product 模块的请求和响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
 
 ```json
-"total_amount": 199.00
+"price": "199.00"
 ```
+
+金额字符串不得使用指数形式，不得超过两位小数；服务端不得静默四舍五入。Order 文档仍处于后续 Phase 设计状态，其 number 表示需在实现前单独确认，不得反向改变已冻结的 Product 契约。
 
 ### 9.3 布尔值
 
@@ -315,22 +415,48 @@ Authorization: Bearer <access_token>
 "is_active": true
 ```
 
-### 9.4 枚举值
+### 9.4 枚举值 — {value, label} 模式
 
-所有枚举字段遵循 **DB 存整数 + API 返回字符串** 的统一策略：
-
-- **数据库**：`TINYINT`，节省存储，便于索引
-- **API**：小写字符串，可读性强，前端无需查表
-- **Python**：使用 `Enum` 类，在序列化层统一转换
-
-具体映射关系见 [Enum Mapping（枚举映射）](#14-enum-mapping枚举映射)。
+任何需要展示给用户的枚举字段，统一使用 `{value, label}` 格式：
 
 ```json
-// API 响应中始终使用字符串
-"role": "admin",
-"status": "online",
-"product_type": "experience"
+{
+    "value": "weekday",
+    "label": "工作日"
+}
 ```
+
+**Response：**
+
+```json
+{
+    "status": { "value": "online", "label": "已上架" },
+    "options": [
+        {
+            "duration": { "value": 60, "label": "1小时" },
+            "participants": { "value": 2, "label": "2人" },
+            "day_type": { "value": "holiday", "label": "节假日" }
+        }
+    ]
+}
+```
+
+**Request（前端提交时只传 value）：**
+
+```json
+{ "duration": 60, "day_type": "weekday" }        // ✅
+{ "duration": "1小时", "day_type": "工作日" }      // ❌
+```
+
+**请求和查询中的枚举值**只提交原始 value，不提交 label：
+
+```json
+{ "product_type": "experience" }
+```
+
+判断标准：响应中用于展示的枚举使用 `{value, label}`；请求、查询和仅供后端判断的值使用原始 value。Product 列表响应的 `product_type` 既用于前端路由也用于展示，因此仍使用 `{value, label}`。
+
+具体映射关系见 [§14 Enum Registry](#14-enum-registry枚举注册表)。
 
 ### 9.6 NULL 处理
 
@@ -396,8 +522,8 @@ Authorization: Bearer <access_token>
 |----------|------|
 | 必填字符串 | 非空，去除首尾空格 |
 | 可选字符串 | 允许 `null` 或空字符串，统一存为 `null` |
-| 手机号 | 11 位数字 |
-| 密码 | 6-64 字符 |
+| 手机号 | 11 位中国大陆手机号（1[3-9] 开头） |
+| 密码 | 8-64 字符 |
 
 ### 11.2 校验失败响应
 
@@ -457,7 +583,7 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `username` (varchar) | `username` | → string |
 | `created_at` (datetime) | `created_at` | → ISO 8601 string |
 | `updated_at` (datetime) | `updated_at` | → ISO 8601 string |
-| `total_amount` (decimal) | `total_amount` | → number |
+| `total_amount` (decimal) | `total_amount` | → number/string（以模块契约为准） |
 | `is_cover` (boolean) | `is_cover` | → boolean |
 
 > - 所有 ID 类型在 API 中统一为 `int` / `bigint`
@@ -466,40 +592,58 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 
 ---
 
-## 14. Enum Mapping（枚举映射）
+## 14. Enum Registry（枚举注册表）
 
-项目中所有枚举字段在数据库、API、Python 代码之间遵循统一映射：
+项目中所有枚举字段的完整映射。新增模块时在此表追加。Duration 和 Participants 是开放正整数展示值，不属于 Enum。
 
-| 模块 | 内容 | 数据库 (TINYINT) | API (string) | Python Enum |
-|------|------|-------------------|--------------|-------------|
-| 用户 | 角色 | `1` / `2` | `"user"` / `"admin"` | `UserRole` |
-| 用户 | 状态 | `0` / `1` | `"disabled"` / `"normal"` | `UserStatus` |
-| 商品 | 类型 | `1` / `2` | `"experience"` / `"kit"` | `ProductType` |
-| 商品 | 状态 | `0` / `1` / `2` | `"draft"` / `"online"` / `"offline"` | `ProductStatus` |
-| 订单 | 状态 | `0` / `1` / `2` / `3` | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |
+**开放展示值（非 Enum）**
+
+| 字段 | DB 存储 | 常用值 | 规则 |
+|------|---------|--------|------|
+| `duration_minutes` | INT | 60 → “1小时”、120 → “2小时”、540 → “全天” | 任意正整数；API Mapper 根据分钟数生成 label |
+| `participants` | INT | 1 → “1人”、2 → “2人” | 任意正整数；API Mapper 根据人数生成 label |
+
+**固定 Enum**
+
+| 枚举类型 | DB 存储 | value | label |
+|----------|---------|-------|-------|
+| `DayType` | VARCHAR | `"weekday"` | "工作日" |
+| | | `"holiday"` | "节假日" |
+| `ProductStatus` | VARCHAR | `"draft"` | "草稿" |
+| | | `"online"` | "已上架" |
+| | | `"offline"` | "已下架" |
+| `ProductType` | VARCHAR | `"experience"` | "拼豆体验" |
+| | | `"kit"` | "拼豆套装" |
+| `UserRole` | TINYINT | 1 → `"user"` | "普通用户" |
+| | | 2 → `"admin"` | "管理员" |
+| | | 3 → `"super_admin"` | "超级管理员" |
+| `UserStatus` | TINYINT | 1 → `"normal"` | "正常" |
+| | | 2 → `"disabled"` | "已禁用" |
+| `OrderStatus` | TINYINT | 0 → `"pending"` | "待支付" |
+| | | 1 → `"paid"` | "已支付" |
+| | | 2 → `"cancelled"` | "已取消" |
+| | | 3 → `"completed"` | "已完成" |
 
 ### 使用示例
 
 ```python
-# models.py
-class OrderStatus(int, Enum):
-    PENDING    = 0
-    PAID       = 1
-    CANCELLED  = 2
-    COMPLETED  = 3
-
-# schemas.py
-class OrderOut(BaseModel):
-    status: OrderStatus  # FastAPI 自动序列化为 "pending" / "paid" / ...
+def duration_to_dto(value: int) -> dict:
+    hours, minutes = divmod(value, 60)
+    if minutes == 0:
+        label = f"{hours}小时"
+    else:
+        label = f"{value}分钟"
+    return {"value": value, "label": label}
 ```
 
 ### 新增枚举检查清单
 
 添加新的枚举字段时：
 
-- [ ] 数据库使用 `TINYINT`，在 note 中标注所有值含义
-- [ ] API 使用小写字符串，在本文档的映射表中新增一行
-- [ ] Python 定义对应的 `Enum` 类
+- [ ] 在本文档 §14 注册表中新增一行
+- [ ] 数据库使用 `TINYINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
+- [ ] Python 定义对应的 `Enum` 类（`app/common/enums/`）
+- [ ] API Mapper 实现 `{value, label}` 转换
 - [ ] 更新 `er_diagram.dbml` 和 `database_design.md`
 
 ---
@@ -617,4 +761,4 @@ class OrderOut(BaseModel):
 - [ ] 至少提供成功 + 一种失败响应示例
 - [ ] 需要认证的接口标注 Header
 - [ ] 分页接口统一使用 `page` / `page_size`
-- [ ] 枚举字段 DB 用 TINYINT，API 用 string，已在 Enum Mapping 表中登记
+- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User 数值 Enum 使用 TINYINT）

@@ -35,15 +35,25 @@ FastAPI 通过 @asynccontextmanager 实现：
 """
 
 import logging
+import os as _os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.static import DeferredDirectoryStaticFiles
+from app.api.v1.admin import router as admin_router
+from app.api.v1.admin_products import router as admin_products_router
+from app.api.v1.admin_users import router as admin_users_router
+from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
+from app.api.v1.products import router as products_router
+from app.api.v1.users import router as users_router
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.core.redis import close_redis, init_redis
+from app.db.database import init_db
 from app.middleware.exception import register_exception_handlers
 from app.schemas.common import RootResponse
 
@@ -92,14 +102,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[2/4] Config loaded  env=%s  debug=%s", settings.app_env, settings.app_debug)
 
     # ── Step 3: Init Infrastructure ────────────────────
-    # Phase 2+ 将在此初始化：
-    #   await init_db()          # Tortoise ORM 连接 MySQL/SQLite
-    #   await init_redis()       # Redis 连接池
-    #   await init_scheduler()   # 后台定时任务 (APScheduler / Celery)
-    #
-    # 注意：这些是 async 操作，因为它们需要网络 I/O。
-    # lifespan 是 async context manager，所以可以直接 await。
-    logger.info("[3/4] Infrastructure — nothing to init (Phase 1)")
+    await init_redis()
+    logger.info("[3/4] Infrastructure initialized")
 
     # ── Step 4: All Systems Ready ──────────────────────
     # 路由已在 app.include_router() 时注册。
@@ -132,11 +136,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("[1/3] Stopped accepting new requests")
 
     # ── Step 2: Cleanup Resources ──────────────────────
-    # Phase 2+ 将在此释放资源：
-    #   await close_db()        # 关闭数据库连接池
-    #   await close_redis()     # 关闭 Redis 连接
-    #   await stop_scheduler()  # 停止后台任务
-    logger.info("[2/3] Cleanup — nothing to release (Phase 1)")
+    await close_redis()
+    logger.info("[2/3] Resources released")
 
     # ── Step 3: Final Flush ─────────────────────────────
     logger.info("[3/3] Shutting down logger")
@@ -163,8 +164,29 @@ app = FastAPI(
     lifespan=lifespan,  # ← 核心：把生命周期函数注入 FastAPI
 )
 
+# 本地开发存储的公开访问入口；目录在首次上传时创建。
+if settings.product_image_base_url.startswith("/"):
+    app.mount(
+        settings.product_image_base_url,
+        DeferredDirectoryStaticFiles(
+            directory=settings.product_image_upload_dir,
+            check_dir=False,
+        ),
+        name="product-images",
+    )
+
+# ── 数据库 ──────────────────────────────────────
+# 测试环境由 conftest 管理数据库，跳过此注册
+if _os.getenv("TESTING") != "1":
+    init_db(app)
+
 # ── 路由注册 ────────────────────────────────────
-# Phase 2+ 将按模块拆分：auth、users、products、orders...
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(users_router, prefix="/api/v1")
+app.include_router(admin_users_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
+app.include_router(products_router, prefix="/api/v1")
+app.include_router(admin_products_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────

@@ -1,0 +1,19 @@
+"""全局校验常量。
+
+消除 Magic Number——用 USERNAME_MIN_LENGTH 而不是裸的 3。
+"""
+
+# 用户名
+USERNAME_MIN_LENGTH = 3
+USERNAME_MAX_LENGTH = 32
+
+# 密码
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_MAX_LENGTH = 64
+
+# 昵称
+NICKNAME_MIN_LENGTH = 1
+NICKNAME_MAX_LENGTH = 32
+
+# 手机号（中国大陆）
+PHONE_PATTERN = r"^1[3-9]\d{9}$"

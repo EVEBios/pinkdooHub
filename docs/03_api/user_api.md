@@ -80,6 +80,7 @@ Authorization: Bearer <access_token>
 | 1004 | 旧密码不正确 |
 | 1005 | 用户已被禁用 |
 | 1006 | Token 已过期 |
+| 1007 | 手机号已被注册 |
 
 ---
 
@@ -88,9 +89,9 @@ Authorization: Bearer <access_token>
 | 字段 | 规则 |
 |------|------|
 | username | 必填，3-32 字符，字母数字下划线 |
-| password | 必填，6-64 字符 |
+| password | 必填，8-64 字符 |
 | nickname | 必填，1-32 字符 |
-| phone | 可选，11 位数字 |
+| phone | 必填，11 位中国大陆手机号 |
 | avatar | 可选，图片文件，最大 2MB，支持 jpg/png/webp |
 
 ---
@@ -142,9 +143,9 @@ POST /api/v1/auth/register
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | username | string | 是 | 登录账号，3-32 字符 |
-| password | string | 是 | 登录密码，6-64 字符 |
+| password | string | 是 | 登录密码，8-64 字符 |
 | nickname | string | 是 | 用户昵称 |
-| phone | string | 否 | 手机号码，11 位数字 |
+| phone | string | 是 | 手机号码，11 位中国大陆手机号 |
 
 **请求示例**
 
@@ -300,12 +301,20 @@ POST /api/v1/auth/login
 POST /api/v1/auth/refresh
 ```
 
-使用 refresh_token 获取新的 access_token。
+使用 refresh_token 获取新的 access_token。仅返回 access token，不轮换 refresh。
 
-**Header**
+**请求参数**
 
-```
-Authorization: Bearer <refresh_token>
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| refresh_token | string | 是 | 登录时获取的 refresh token |
+
+**请求示例**
+
+```json
+{
+    "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+}
 ```
 
 **成功响应**
@@ -316,10 +325,33 @@ Authorization: Bearer <refresh_token>
     "message": "success",
     "data": {
         "access_token": "eyJhbGciOiJIUzI1NiIs...",
-        "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
         "token_type": "Bearer",
         "expires_in": 7200
     }
+}
+```
+
+### 5.4 登出
+
+```
+POST /api/v1/auth/logout
+```
+
+撤销当前 session 的 refresh token。
+
+**Header**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "Logged out",
+    "data": null
 }
 ```
 
@@ -377,10 +409,10 @@ Authorization: Bearer <access_token>
 ### 6.2 修改个人信息
 
 ```
-PUT /api/v1/users/me
+PATCH /api/v1/users/me
 ```
 
-修改当前用户的昵称和手机号。
+部分更新当前用户的资料。所有字段可选，传什么改什么，未传的保持原值。
 
 **Header**
 
@@ -393,16 +425,18 @@ Authorization: Bearer <access_token>
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | nickname | string | 否 | 新昵称，1-32 字符 |
-| phone | string | 否 | 新手机号，11 位数字 |
+| phone | string | 否 | 新手机号，11 位中国大陆手机号 |
+| avatar | string | 否 | 新头像 URL |
 
-> 至少传递一个字段。
+> 至少传递一个字段，空请求体返回 422。
 
 **请求示例**
 
 ```json
 {
     "nickname": "Alice Wang",
-    "phone": "13900139000"
+    "phone": "13900139000",
+    "avatar": "https://cdn.example.com/avatars/1.jpg"
 }
 ```
 
@@ -461,7 +495,7 @@ Authorization: Bearer <access_token>
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | old_password | string | 是 | 旧密码 |
-| new_password | string | 是 | 新密码，6-64 字符 |
+| new_password | string | 是 | 新密码，8-64 字符 |
 
 **请求示例**
 
@@ -660,6 +694,15 @@ PUT /api/v1/admin/users/{id}/disable
 
 将指定用户状态设为禁用（`status = "disabled"`）。
 
+**权限**
+
+| 操作者 | 目标 | 结果 |
+|--------|------|------|
+| ADMIN | USER | ✅ 成功 |
+| ADMIN | 自己 | ❌ 422 "Cannot disable yourself" |
+| ADMIN | SUPER_ADMIN | ❌ 403 |
+| ANY | 已禁用用户 | ✅ 幂等，直接返回成功 |
+
 **Header**
 
 ```
@@ -692,6 +735,15 @@ Authorization: Bearer <access_token>
 {
     "code": 422,
     "message": "Cannot disable yourself"
+}
+```
+
+不能禁用超级管理员：
+
+```json
+{
+    "code": 403,
+    "message": "Cannot disable super admin"
 }
 ```
 

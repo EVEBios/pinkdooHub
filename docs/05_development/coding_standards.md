@@ -23,7 +23,7 @@
 | 层 | 文件命名 | 类命名 |
 |----|----------|--------|
 | Model | `user.py` | `User` |
-| Schema | `user.py` | `UserCreate`、`UserOut`、`UserUpdate` |
+| Schema | `user.py` | `UserCreate`、`UserOut`、`UserUpdate`、`UserListItem` |
 | Repository | `user_repo.py` | `UserRepository` |
 | Service | `user_service.py` | `UserService` |
 | API 路由 | `users.py`、`admin_users.py` | —（函数式） |
@@ -36,7 +36,7 @@
 | 响应输出 | `Out` | `UserOut`、`ProductOut`、`OrderOut` |
 | 更新请求 | `Update` | `UserUpdate`、`ProductUpdate` |
 | 列表项（轻量） | `ListItem` | `ProductListItem`、`OrderListItem` |
-| 登录请求 | `Login` | `UserLogin` |
+| 登录请求 | `LoginRequest` | `LoginRequest`（`schemas/auth.py`） |
 | Token 响应 | `TokenOut` | `TokenOut` |
 
 ### 1.4 正确与错误示例
@@ -223,18 +223,20 @@ common/                         core/
 
 ```python
 from fastapi import APIRouter, Depends
+from app.common.response import success
 from app.schemas.user import UserCreate, UserOut
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-@router.post("", response_model=UserOut, status_code=201)
+@router.post("", status_code=201)
 async def create_user(
     data: UserCreate,
     service: UserService = Depends()
 ):
     """创建用户"""
-    return await service.create(data)
+    user = await service.create(data)
+    return success(data=UserOut.model_validate(user).model_dump())
 ```
 
 ### 3.3 约束
@@ -242,7 +244,8 @@ async def create_user(
 | ✅ 必须 | ❌ 禁止 |
 |---------|---------|
 | 请求体用 Pydantic Schema 校验 | 在 API 层写数据库查询 |
-| `response_model` 明确声明 | 裸 `dict` 作为返回值 |
+| 返回 `success(data=... )` | 手写 `{"code":0,...}` 或裸 dict |
+| `UserOut.model_validate()` 过滤敏感字段 | 直接返回 ORM Model |
 | 通过 `Depends()` 注入 Service | API 函数中写业务逻辑 |
 | 每个端点有 docstring | 无文档的端点 |
 
@@ -309,12 +312,93 @@ async def create_order(self, user_id: int, data: OrderCreate) -> Order:
 > ❌ OrderService → UserService
 > ✅ OrderService → UserRepository
 > ```
+>
+> **例外：Shared Service（共享服务）。** `AuditService` 属于基础设施级别的共享服务，任何业务 Service 均可调用：
+>
+> ```
+> ✅ ProductService  → AuditService.list_logs(target_type="product", target_id=1)
+> ✅ OrderService    → AuditService.list_logs(target_type="order",   target_id=10086)
+> ✅ InventoryService → AuditService.list_logs(target_type="inventory", target_id=3)
+> ```
+>
+> **判断标准：** 如果某个 Service 不"属于"任何业务模块，而是被所有模块平等使用，它就是 Shared Service。Shared Service 调用不违反"禁止跨 Service 调用"规则。
 
 ---
 
-## 6. Repository 开发规范
+## 6. Validator 开发规范（Phase 4 新增）
 
-### 5.1 方法粒度
+### 6.1 职责
+
+Validator 负责状态变迁前的完整性校验。Service 在修改关键状态（`draft → online` 等）前必须调用 Validator，校验通过才能执行状态变更。
+
+| ✅ Validator 做什么 | ❌ Validator 不做什么 |
+|---------------------|----------------------|
+| 判断数据是否满足上线条件 | 操作数据库 |
+| 按 `product_type` 分发不同规则 | 返回 `True/False`（失败直接抛异常） |
+| 抛出 `BusinessException` | 调用 Repository 或 Service |
+
+### 6.2 目录结构
+
+```
+app/validators/
+├── __init__.py
+├── product_validator.py    # ProductValidator
+└── (future) order_validator.py
+```
+
+### 6.3 示例
+
+```python
+# app/validators/product_validator.py
+from app.common.enums.product import ProductType
+from app.core.exceptions import BusinessException
+
+class ProductValidator:
+    """商品状态变迁校验器。"""
+
+    @staticmethod
+    async def validate_before_online(product: Product) -> None:
+        """上架前完整性校验。按 product_type 分发。"""
+        if product.product_type == ProductType.EXPERIENCE:
+            await ProductValidator._validate_experience(product)
+        elif product.product_type == ProductType.KIT:
+            await ProductValidator._validate_kit(product)
+
+    @staticmethod
+    async def _validate_experience(product: Product) -> None:
+        if not product.name:
+            raise BusinessException(code=4001, message="商品名称不能为空")
+        if not product.description:
+            raise BusinessException(code=4002, message="商品描述不能为空")
+        # 封面图、Option 数量、价格、Option 图片等...
+```
+
+### 6.4 Service 调用方式
+
+```python
+# app/services/product_service.py
+from app.validators.product_validator import ProductValidator
+
+async def online_product(self, product_id: int) -> None:
+    product = await self.product_repo.get_by_id(product_id)
+    await ProductValidator.validate_before_online(product)
+    product.status = ProductStatus.ONLINE
+    await product.save()
+```
+
+### 6.5 约束
+
+| ✅ 必须 | ❌ 禁止 |
+|---------|---------|
+| 校验失败抛 `BusinessException` | 返回 `bool` 让 Service 判断 |
+| 按类型分发规则（`if type == X`） | 所有类型混在一个方法里 |
+| 数据由 Service 在调用前获取 | Validator 自己查数据库 |
+
+---
+
+## 7. Repository 开发规范
+
+### 7.1 方法粒度
 
 ```python
 class UserRepository:
@@ -373,43 +457,186 @@ class Page(BaseModel, Generic[T]):
 
 ---
 
-## 7. Model 开发规范
+## 8. Model 开发规范
 
-### 6.1 定义
+### 7.1 文件组织
+
+每个实体一个文件，放在 `app/models/`：
+
+```
+app/models/
+├── base.py                ← BaseModel（抽象基类）
+├── user.py                ← User
+├── product.py             ← Product
+├── experience_option.py   ← ExperienceOption
+├── product_kit.py         ← ProductKit
+├── product_image.py       ← ProductImage
+├── order.py               ← Order, OrderItem
+└── audit_log.py           ← AuditLog
+```
+
+### 7.2 BaseModel
+
+所有 Model 继承 `BaseModel`，自动获得 `id`、`created_at`、`updated_at`：
 
 ```python
+# app/models/base.py
 from tortoise import fields
 from tortoise.models import Model
 
-class User(Model):
-    id = fields.BigIntField(pk=True)
-    username = fields.CharField(max_length=32, unique=True)
-    password = fields.CharField(max_length=128)
-    nickname = fields.CharField(max_length=32)
-    phone = fields.CharField(max_length=11, null=True)
-    avatar = fields.CharField(max_length=256, null=True)
-    role = fields.SmallIntField(default=1)      # UserRole.USER
-    status = fields.SmallIntField(default=1)     # UserStatus.NORMAL
+class BaseModel(Model):
+    """抽象基类 —— 所有业务 Model 的公共字段。"""
+    id = fields.BigIntField(primary_key=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
-        table = "users"
+        abstract = True
 ```
 
-### 6.2 约束
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `BigIntField(primary_key=True)` | 主键，自增 |
+| `created_at` | `DatetimeField(auto_now_add=True)` | 首次保存时 ORM 自动填入，之后不可变 |
+| `updated_at` | `DatetimeField(auto_now=True)` | 每次 `save()` 时 ORM 自动更新 |
+
+**`is_deleted` 不放在 BaseModel。** 只有需要逻辑删除的表（如 Product、ExperienceOption、ProductImage）才定义此字段。Audit、Order 等不需要逻辑删除的表不应包含此字段。
+
+### 7.3 完整示例
+
+```python
+# app/models/product.py
+from tortoise import fields
+from tortoise.indexes import Index
+from tortoise.validators import MaxLengthValidator, MinLengthValidator
+
+from app.common.constants.product import (
+    PRODUCT_DESCRIPTION_MAX_LENGTH,
+    PRODUCT_ENUM_MAX_LENGTH,
+    PRODUCT_NAME_MAX_LENGTH,
+    PRODUCT_NAME_MIN_LENGTH,
+)
+from app.common.enums.product import ProductStatus, ProductType
+from app.models.base import BaseModel
+
+
+class Product(BaseModel):
+    name = fields.CharField(
+        max_length=PRODUCT_NAME_MAX_LENGTH,
+        validators=[MinLengthValidator(PRODUCT_NAME_MIN_LENGTH)],
+    )
+    product_type = fields.CharEnumField(
+        ProductType,
+        max_length=PRODUCT_ENUM_MAX_LENGTH,
+    )
+    description = fields.TextField(
+        null=True,
+        validators=[MaxLengthValidator(PRODUCT_DESCRIPTION_MAX_LENGTH)],
+    )
+    status = fields.CharEnumField(
+        ProductStatus,
+        max_length=PRODUCT_ENUM_MAX_LENGTH,
+        default=ProductStatus.DRAFT,
+        db_default=ProductStatus.DRAFT.value,
+    )
+    is_deleted = fields.BooleanField(default=False, db_default=False)
+
+    class Meta:
+        table = "products"
+        indexes = [
+            Index(
+                fields=("status", "is_deleted"),
+                name="idx_products_status_deleted",
+            ),
+        ]
+```
+
+### 7.4 Meta 规范
+
+```python
+from tortoise.indexes import Index
+
+from app.db.indexes import UniqueIndex
+
+
+class Meta:
+    table = "table_name"         # 明确指定表名
+    indexes = [
+        # 不要求固定物理名称时可用元组
+        ("single_field",),
+        # 复合索引按最左匹配顺序声明
+        ("field_a", "field_b"),
+        # 数据库设计指定了稳定名称时使用 Index
+        Index(fields=("status", "is_deleted"), name="idx_status_deleted"),
+        # 稳定命名的联合唯一索引使用项目 UniqueIndex
+        UniqueIndex(fields=("a", "b"), name="idx_a_b_unique"),
+    ]
+```
+
+| 规则 | 说明 |
+|------|------|
+| 索引集中在 `Meta.indexes` | **禁止** 字段级 `index=True` |
+| 元组格式统一 | 单字段 `("field",)`（保留末尾逗号），多字段 `("a", "b")` |
+| 文档指定索引名时显式声明 | 使用 `Index(fields=(...), name="idx_...")`，保证迁移和多数据库名称稳定 |
+| 文档指定联合唯一索引名时显式声明 | 使用 `app.db.indexes.UniqueIndex`；不要同时重复声明 `unique_together` |
+| 复合索引不冗余 | `(a, b)` 已存在则不另建 `(a)`（最左匹配已覆盖） |
+| **禁止 `ordering`** | 排序属于 Repository 职责，Repository 中显式 `.order_by("-created_at")` |
+
+### 7.5 Model 职责边界
+
+| ✅ Model 做什么 | ❌ Model 不做什么 |
+|-----------------|-------------------|
+| 定义表结构（字段、类型、约束） | 写业务方法（`def online(self)`、`def update_price(self)`） |
+| 定义索引（`Meta.indexes`） | 写数据库查询 |
+| 定义 FK 关系（`ForeignKeyField`） | 抛出 `BusinessException` |
+| 标注字段含义（注释） | 处理 HTTP 请求 |
+
+> **Model 只描述"数据长什么样"，不描述"数据怎么用"。** 业务逻辑全部在 Service，查询策略全部在 Repository。
+
+### 7.6 枚举字段
+
+枚举字段按模块使用 `SmallIntField` / `CharEnumField`，代码中**必须**使用 `app/common/enums/` 中的 Enum 类型；`CharEnumField` 的物理数据库类型仍是 VARCHAR。
+
+| ORM 字段 / DB 类型 | Python Enum | 适用场景 |
+|--------------------|-------------|----------|
+| `SmallIntField` | `IntEnum` | 用户角色、用户状态、订单状态 |
+| `CharEnumField`（DB 为 VARCHAR） | Python 3.10 的 `str, Enum` | 商品类型、商品状态、日期类型 |
+
+```python
+# app/common/enums/product.py
+from enum import Enum
+
+class ProductType(str, Enum):
+    EXPERIENCE = "experience"
+    KIT = "kit"
+
+class ProductStatus(str, Enum):
+    DRAFT = "draft"
+    ONLINE = "online"
+    OFFLINE = "offline"
+```
+
+项目运行于 Python 3.10，不使用 Python 3.11 才加入标准库的 `StrEnum`。Model 通过 Tortoise `CharEnumField` 获得 Enum 类型安全，物理数据库仍使用 VARCHAR。
+
+**全项目统一 import：** Schema、Service、Repository、Model 全部使用 `app/common/enums/` 中的同一个 Enum，禁止各自重新定义。
+
+### 7.7 字段约束
 
 | ✅ 必须 | ❌ 禁止 |
 |---------|---------|
-| 枚举字段用 `SmallIntField` 存储，注释标注 Enum 名 | 枚举字段用 `CharField` 存储字符串 |
-| 主键统一 `BigIntField(pk=True)` | 使用 `IntField` 作为主键 |
-| 时间字段用 `auto_now_add` / `auto_now` | 手动设置 `created_at` |
-| 金额用 `Decimal(10,2)`（Tortoise: `fields.DecimalField(max_digits=10, decimal_places=2)`） | 金额用 `float` |
+| 继承 `BaseModel` | 直接继承 `tortoise.models.Model` |
+| 主键用 `BigIntField(primary_key=True)`（在 BaseModel 中） | 使用 `IntField` 或 `UUIDField` 作为主键 |
+| 时间字段用 `auto_now_add` / `auto_now` | 手动设置 `created_at` / `updated_at` |
+| 金额用 `StrictDecimalField(max_digits=10, decimal_places=2)` | 金额用 `float` 或依赖原生字段静默舍入 |
 | `null=True` 显式声明可选字段 | 用空字符串 `""` 代替 `null` |
+| 枚举字段按模块使用 `SmallIntField` 或 `CharEnumField`，并复用 `common/enums/` | Magic Number、裸 `str` 或重复定义 Enum |
+| 所有索引在 `Meta.indexes` 中声明 | 字段级 `index=True` |
+
+Product 金额字段使用 `app.models.fields.StrictDecimalField`。Tortoise 原生 `DecimalField` 会先按 `decimal_places` 量化再执行 validators，`Decimal("1.001")` 可能被静默转换为两位小数；严格字段在量化前拒绝多余小数位。价格上下界仍通过 `MinValueValidator` / `MaxValueValidator` 声明，Schema 则继续负责拒绝非字符串金额等 HTTP 输入问题。
 
 ---
 
-## 8. Schema 开发规范
+## 9. Schema 开发规范
 
 ### 7.1 定义
 
@@ -420,7 +647,7 @@ from app.common.enums.user import UserRole, UserStatus
 
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
-    password: str = Field(..., min_length=6, max_length=64)
+    password: str = Field(..., min_length=8, max_length=64)
     nickname: str = Field(..., min_length=1, max_length=32)
     phone: str | None = Field(None, pattern=r"^\d{11}$")
 
@@ -449,7 +676,7 @@ class UserOut(BaseModel):
 
 ---
 
-## 9. Exception 规范
+## 10. Exception 规范
 
 ### 8.1 统一异常类
 
@@ -484,7 +711,7 @@ if order.status != OrderStatus.PENDING:
 
 | 模块 | 号段 | 已用 |
 |------|------|------|
-| 用户 | 1xxx | 1001-1006 |
+| 用户 | 1xxx | 1001-1007 |
 | 商品 | 2xxx | 2001-2005 |
 | 订单 | 3xxx | 3001-3006 |
 
@@ -501,7 +728,7 @@ if order.status != OrderStatus.PENDING:
 
 ---
 
-## 10. Logging 规范
+## 11. Logging 规范
 
 ### 9.1 日志格式
 
@@ -569,7 +796,7 @@ logger.info("method=%s path=%s status=%d duration=%dms",
 
 ---
 
-## 11. Response 规范
+## 12. Response 规范
 
 ### 10.1 统一信封
 
@@ -621,7 +848,7 @@ async def register(data: UserCreate, service: UserService = Depends()):
 
 ---
 
-## 12. Git 规范
+## 13. Git 规范
 
 ### 11.1 Branch 命名
 
@@ -699,7 +926,7 @@ main
 
 ---
 
-## 13. Testing 规范
+## 14. Testing 规范
 
 ### 12.1 测试结构
 
@@ -752,7 +979,7 @@ async def test_register_success():
 
 ---
 
-## 14. Code Review Checklist
+## 15. Code Review Checklist
 
 每次 PR 逐项检查：
 
@@ -780,9 +1007,9 @@ async def test_register_success():
 ### 数据与事务
 
 - [ ] 跨表操作使用 `in_transaction()` 包裹
-- [ ] 金额用 `DecimalField(max_digits=10, decimal_places=2)`
+- [ ] 金额用 `StrictDecimalField(max_digits=10, decimal_places=2)`，并声明业务上下界校验器
 - [ ] ORM 查询不返回 `password` 字段
-- [ ] 枚举字段 DB 用 `SmallIntField`，API 用 Enum 类型
+- [ ] 枚举字段遵循模块设计：User / Order 使用 `SmallIntField + IntEnum`，Product 使用 `CharEnumField + str, Enum`
 
 ### 日志与测试
 
@@ -801,7 +1028,7 @@ async def test_register_success():
 
 ---
 
-## 15. 依赖规则（Dependency Rules）
+## 16. 依赖规则（Dependency Rules）
 
 ### 14.1 分层依赖图
 
@@ -817,6 +1044,11 @@ async def test_register_success():
          constants,           │  ✅ 允许         redis,
          response)            ▼                 exceptions)
                          ┌──────────┐
+        common/  ←────── │Validator │ ──────→  core/exceptions
+        (enums)          └────┬─────┘
+                              │  ✅ 允许
+                              ▼
+                         ┌──────────┐
                          │Repository│
                          └────┬─────┘
                               │  ✅ 允许
@@ -831,6 +1063,9 @@ async def test_register_success():
    Model        → Repository    ❌
    Model        → Service       ❌
    Repository   → Service       ❌
+   Repository   → Validator     ❌
+   Validator    → Service       ❌
+   Validator    → Repository    ❌ (不查DB)
    Service      → API           ❌
    schemas/     → models/       ❌
    schemas/     → repositories/ ❌
@@ -886,7 +1121,7 @@ async def test_register_success():
 
 ---
 
-## 16. 性能规范（Performance Guidelines）
+## 17. 性能规范（Performance Guidelines）
 
 ### 15.1 N+1 查询问题
 
@@ -910,14 +1145,14 @@ for order in orders:
 
 | 方法 | 适用场景 | SQL 策略 |
 |------|----------|----------|
-| `select_related("field")` | FK / 一对一（Product → ProductExperience） | JOIN，1 条 SQL |
+| `select_related("field")` | FK / 一对一（Product → ProductKit） | JOIN，1 条 SQL |
 | `prefetch_related("field")` | 反向 FK / 一对多（Product → ProductImages，Order → OrderItems） | 2 条 SQL，内存拼接 |
 
 ```python
-# 商品详情：关联体验扩展 + 图片列表
+# 商品详情：关联套装扩展、体验配置和图片列表
 product = await Product.filter(id=product_id) \
-    .select_related("experience") \          # FK / O2O → JOIN
-    .prefetch_related("images") \            # 反向 FK → 2 条 SQL
+    .select_related("kit") \                 # 反向 O2O → JOIN
+    .prefetch_related("experience_options", "images") \
     .first()
 
 # 订单详情：关联明细
@@ -981,25 +1216,63 @@ orders = await Order.all() \
 
 ### 15.6 数据库索引
 
-以下字段必须添加数据库索引（在 Model 定义或迁移中添加）：
+**核心原则：根据查询场景设计索引，而不是根据字段设计索引。**
 
-| 字段 | 原因 |
-|------|------|
-| `users.username` | 登录查询（已有 UNIQUE） |
-| `orders.user_id` | 按用户查订单列表 |
-| `orders.status` | 按状态筛选 |
-| `orders.order_no` | 精确查找（已有 UNIQUE） |
-| `products.status` | 只查 online 商品 |
-| `products.product_type` | 按类型筛选 |
-| `product_images.product_id` | 按商品查图片 |
-| `order_items.order_id` | 按订单查明细 |
+先梳理 SQL 查询模式，再确定索引列。复合索引的列按过滤频率和选择性的降序排列（最左匹配原则）。
 
-Tortoise ORM 中通过 `index=True` 声明：
+#### 索引设计流程
+
+```
+1. 列出该表的核心 SQL 查询（WHERE / ORDER BY / LIMIT）
+2. 按查询频率排序，优先优化高频查询
+3. 将过滤条件按选择性降序排列作为索引列
+4. 如果索引前缀已覆盖其他查询，不重复建索引
+```
+
+#### 声明方式
+
+所有索引通过 `Meta.indexes` 声明（详见 §7 Model 开发规范）：
 
 ```python
-user_id = fields.BigIntField(index=True)
-status = fields.SmallIntField(default=0, index=True)
+from tortoise.indexes import Index
+
+
+class Product(Model):
+    # 字段...
+
+    class Meta:
+        table = "products"
+        indexes = [
+            Index(
+                fields=("status", "is_deleted"),
+                name="idx_products_status_deleted",
+            ),
+        ]
 ```
+
+> **禁止字段级 `index=True`，禁止 `Meta.ordering`。** 所有索引集中在 `Meta.indexes`。排序逻辑在 Repository 中显式指定。
+
+#### 当前索引规划（详见 database_design.md §7）
+
+| 表 | 索引 | 类型 | 覆盖查询 |
+|----|------|------|----------|
+| `products` | `(status, is_deleted)` | 普通 | 首页列表（`WHERE status='online' AND is_deleted=false`） |
+| `users` | `(status, role)` | 普通 | 管理后台用户列表 |
+| `experience_options` | `(product_id, duration, participants, day_type)` | UNIQUE | 全历史唯一、创建/恢复校验、按 Product 查询 |
+| `product_images` | `(product_id, sort)` | 普通 | Product 图片排序展示 |
+| `product_images` | `(product_id, is_cover)` | 普通 | Product 封面查询 |
+| `product_images` | `(experience_option_id, sort)` | 普通 | Option 图片排序展示 |
+| `orders` | `(user_id, status, created_at)` | 普通 | 我的订单列表 |
+| `audit_logs` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
+
+#### 约束
+
+| ✅ 必须 | ❌ 禁止 |
+|---------|---------|
+| 先分析查询模式，再设计索引 | 每个字段随意加 `index=True` |
+| 复合索引用 `Meta.indexes` 声明 | 对低基数字段（如 boolean）单独建索引 |
+| 索引列按选择性降序排列 | 创建已被其他索引前缀覆盖的冗余索引 |
+| 索引设计同步更新 `database_design.md` | 只在 Model 里加索引，文档不同步 |
 
 ### 15.7 Redis 缓存
 

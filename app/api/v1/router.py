@@ -16,7 +16,12 @@ from fastapi import APIRouter
 
 from app.common.response import success
 from app.core.config import settings
-from app.core.exceptions import BusinessException
+from app.core.exceptions import (
+    AuthenticationException,
+    BusinessException,
+    NotFoundException,
+    PermissionException,
+)
 
 router = APIRouter()
 
@@ -59,3 +64,30 @@ async def error_demo():
     HTTP 400 + {"code": 1001, "message": "This is a demo error", "data": null}
     """
     raise BusinessException(code=1001, message="This is a demo error")
+
+
+# ── 模式 4：认证失败 → 401 ────────────────────
+
+
+@router.get("/auth-required")
+async def auth_required():
+    """演示 401 —— 未登录或 Token 失效。"""
+    raise AuthenticationException(message="Authentication required")
+
+
+# ── 模式 5：权限不足 → 403 ────────────────────
+
+
+@router.get("/admin-only")
+async def admin_only():
+    """演示 403 —— 已登录但权限不足。"""
+    raise PermissionException(message="Admin access required")
+
+
+# ── 模式 6：资源不存在 → 404 ────────────────────
+
+
+@router.get("/not-found")
+async def not_found():
+    """演示 404 —— 请求的资源不存在。"""
+    raise NotFoundException(message="Resource not found")

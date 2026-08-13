@@ -23,12 +23,17 @@ env/
 
 # ==================== 数据库 ====================
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
 
 # ==================== 日志 ====================
 *.log
 logs/
+uploads/
 
 # ==================== 测试 & 覆盖率 ====================
 htmlcov/
@@ -47,6 +52,7 @@ coverage.xml
 # ==================== IDE 编辑器 ====================
 .vscode/
 .idea/
+.claude/settings.local.json
 *.swp
 *.swo
 *~
@@ -63,6 +69,7 @@ ehthumbs.db
 Desktop.ini
 
 # ==================== 其他 ====================
+backups/
 *.tmp
 *.bak
 *.orig

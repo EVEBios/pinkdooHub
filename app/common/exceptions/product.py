@@ -1,0 +1,169 @@
+"""Product 模块业务异常。"""
+
+from app.common.enums.product import DayType, ProductType
+from app.core.exceptions import (
+    BusinessException,
+    ConflictException,
+    NotFoundException,
+    UnprocessableEntityException,
+)
+
+
+class ProductNotFound(NotFoundException):
+    """指定 Product 不存在。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40401, message="Product not found")
+
+
+class ProductIsDeleted(ConflictException):
+    """Product 已逻辑删除，不能继续执行状态操作。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40903, message="Product is deleted")
+
+
+class ProductAlreadyOnline(ConflictException):
+    """Product 已经处于 Online 状态。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40901, message="Product is already online")
+
+
+class ProductAlreadyOffline(ConflictException):
+    """Product 已经处于非销售状态，不能执行下架。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40902, message="Product is already offline")
+
+
+class ProductMustBeOfflineBeforeDelete(ConflictException):
+    """Online Product 必须先下架才能逻辑删除。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40904,
+            message="Product must be offline before deletion",
+        )
+
+
+class OnlineProductCannotBeModified(ConflictException):
+    """Online Product 不允许直接修改业务数据。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40905,
+            message="Online product cannot be modified",
+        )
+
+
+class ProductTypeMismatch(BusinessException):
+    """Product 类型不适用于当前管理操作。"""
+
+    def __init__(
+        self,
+        *,
+        expected: ProductType,
+        actual: ProductType,
+    ) -> None:
+        super().__init__(
+            code=40001,
+            message="Product type does not match this operation",
+            data={
+                "expected": expected.value,
+                "actual": actual.value,
+            },
+        )
+
+
+class ExperienceOptionAlreadyExists(ConflictException):
+    """同一 Product 下的 ExperienceOption 组合已经存在。"""
+
+    def __init__(
+        self,
+        *,
+        duration_minutes: int,
+        participants: int,
+        day_type: DayType,
+    ) -> None:
+        super().__init__(
+            code=40911,
+            message="Experience option already exists",
+            data={
+                "duration_minutes": duration_minutes,
+                "participants": participants,
+                "day_type": day_type.value,
+            },
+        )
+
+
+class ExperienceOptionNotFound(NotFoundException):
+    """指定 ExperienceOption 不存在。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40402, message="Experience option not found")
+
+
+class ExperienceOptionAlreadyDeleted(ConflictException):
+    """ExperienceOption 已逻辑删除。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40912,
+            message="Experience option is already deleted",
+        )
+
+
+class ProductKitNotFound(NotFoundException):
+    """Kit Product 缺少必需的一对一扩展记录。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40404, message="Product kit not found")
+
+
+class ProductImageNotFound(NotFoundException):
+    """指定 ProductImage 不存在或不可见。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40403, message="Product image not found")
+
+
+class OptionImageCannotBeCover(BusinessException):
+    """ExperienceOption 专属图片不能设为 Product 封面。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40021,
+            message="Option image cannot be set as product cover",
+        )
+
+
+class InvalidImageFile(UnprocessableEntityException):
+    """Product 上传图片不符合文件边界约束。"""
+
+    def __init__(self, *, reason: str) -> None:
+        if not reason:
+            raise ValueError("reason must be a non-empty string")
+
+        super().__init__(
+            code=42221,
+            message="Invalid image file",
+            data={"reason": reason},
+        )
+
+
+class ProductNotReadyForOnline(UnprocessableEntityException):
+    """Product 聚合不满足上架完整性条件。"""
+
+    def __init__(self, issues: list[str]) -> None:
+        if not issues or any(
+            not isinstance(issue, str) or not issue
+            for issue in issues
+        ):
+            raise ValueError("issues must contain non-empty strings")
+
+        super().__init__(
+            code=42201,
+            message="Product is not ready to go online",
+            data={"issues": list(issues)},
+        )
