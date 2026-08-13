@@ -17,7 +17,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 ## 当前 Phase 与范围
 
-当前代码版本候选为 **v0.4.0（尚未发布）**；**Phase 4.1：Product Module 已完成实现与最终 Review**，下一业务阶段尚未开始。
+当前代码版本候选为 **v0.5.0（尚未发布）**；**Phase 4.1：Product Module** 与 **Phase 4.2：Order Module** 均已完成实现与最终 Review。
 
 已完成：
 
@@ -29,8 +29,9 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 当前实现状态：
 
+- Phase 4.2 Order v1.0 已完成契约冻结、4.2.2–4.2.11 实现与 4.2.12 最终 Review：领域语言、Schema、Model/离线迁移、Repository、标准库 OD+ULID 生成器、查询/Experience 创建/三个状态变迁 Service、API Mapper、组合根，以及用户 4 个/管理 5 个 FastAPI 端点均已实现并有契约测试。创建用例批量校验 Product/Option，在单事务内写 Order、快照 Items、`CREATE_ORDER` 审计并重载聚合；编号冲突通过全新事务最多重试 3 次。状态用例在事务内执行 `SELECT ... FOR UPDATE`、锁后重检并原子提交状态/审计/重载。Mapper 对用户/管理列表、详情和状态响应执行显式字段投影与严格 Out Schema 校验，真实聚合测试固定零 SQL、零修改。路由统一通过认证或 ADMIN+ 依赖、`get_order_service()` 组合根、Mapper 和 `success()` 工作；缺失 Bearer 凭据已统一为 401 错误信封，既有无效 Token `1006` 仍按 User 契约返回 HTTP 400。完整真实 HTTP 矩阵覆盖创建防伪与边界、Product/Option/Kit 拒绝、权限和资源隐藏、组合筛选、全部非法状态前置条件、审计顺序、事务故障回滚及订单号冲突重试；三个无请求体状态 PATCH 会主动拒绝任意 body。最终安全复核同时将共享审计 IP 输入收紧为合法 IPv4/IPv6 字面量，非法、超长或带 scope 的代理头回退到直连地址。MySQL 8+ Order 增量迁移已离线生成、通过最终静态 Review 但尚未应用。
 - Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator、Service 和 API Mapper 均已完成，跨表写入和审计有真实事务回滚测试，Mapper 有零 SQL、零修改和字段隔离测试。22 个 Product FastAPI 端点已接入，包括 20 个用户/管理 JSON 查询与 mutation（含共享 AuditLog 分页操作历史），以及 Product 公共图/Option 专属图两个 ADMIN+ multipart 上传端点。上传链路已实现 2 MiB、jpg/png/webp、内容/MIME 一致、安全 UUID 路径、原子写入、Service 失败的幂等文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试；逻辑删除图片的本地文件由显式截止时间、命名空间校验、有效引用保护和失败重试语义的独立批处理清理。
-- MySQL 8+ 权威首迁移已离线生成、通过静态契约测试并提交，但尚未应用到任何 MySQL 数据库。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未 fake Aerich 版本。
+- MySQL 8+ 权威首迁移和 Order 增量迁移均已离线生成并通过静态契约测试，但尚未应用到任何 MySQL 数据库。SQLite 开发库曾在可恢复备份后从 Phase 4.1 Tortoise Models 重建；本次 Order Model 未重建开发库，未应用 MySQL 迁移，也未 fake Aerich 版本。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 - Phase 4.1 的 Kit 库存采用直接设置最终值模式；库存流水、自动扣减/恢复和并发控制仍属于 Phase 4.3 Inventory。
 - 架构文档中出现的 Product、Order、Inventory 文件可能是规划结构，不代表代码已经存在；开始任务前必须检查实际文件树和测试。
@@ -38,7 +39,6 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 后续阶段：
 
-- Phase 4.2：Order。
 - Phase 4.3：Inventory；库存流水/调整模型属于该阶段。
 - 未经当前任务明确要求，不提前实现后续 Phase，不把未来设计误报为已完成能力。
 

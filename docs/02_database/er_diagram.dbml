@@ -106,48 +106,55 @@ Table audit_logs {
   }
 }
 
-// ── Order (placeholder, Phase 4.2) ──────────────
+// ── Order (v1.0 frozen contract, Phase 4.2 Models implemented) ──
 
 Table orders {
   id bigint [pk, increment]
-  order_no varchar [not null, unique, note: 'order number']
+  order_no varchar(28) [not null, unique, note: 'OD + 26-char uppercase Crockford Base32 ULID']
   user_id bigint [not null]
   total_amount decimal(10,2) [not null]
-  status tinyint [not null, default: 0, note: '0:pending 1:paid 2:cancelled 3:completed']
-  remark varchar
+  status smallint [not null, default: 0, note: 'OrderStatus(IntEnum): 0:pending 1:paid 2:cancelled 3:completed']
+  remark varchar(500)
   created_at datetime
   updated_at datetime
 
   indexes {
-    (user_id, status, created_at) [name: 'idx_orders_user_status_created']
-    (status, created_at) [name: 'idx_orders_status_created']
+    (user_id, created_at, id) [name: 'idx_orders_user_created_id']
+    (user_id, status, created_at, id) [name: 'idx_orders_user_status_created_id']
+    (status, created_at, id) [name: 'idx_orders_status_created_id']
+    (created_at, id) [name: 'idx_orders_created_id']
   }
 }
+
+// Lifecycle: pending -> cancelled | paid; paid -> completed.
+// Phase 4.2 payment entry is ADMIN+ manual confirmation until Payment integration.
+// Phase 4.2 does not accept Kit items and never checks/modifies ProductKit.stock.
 
 Table order_items {
   id bigint [pk, increment]
   order_id bigint [not null]
   product_id bigint [not null]
 
-  // Experience option snapshot (nullable — kit products don't use these)
-  experience_option_id bigint [note: 'FK to experience_options, nullable for kit products']
-  option_duration int [note: 'snapshot: positive minutes']
+  // Nullable for future Kit items. Phase 4.2 only writes Experience items, so API values are non-null.
+  experience_option_id bigint [note: 'FK to experience_options; nullable for future kit products']
+  option_duration_minutes int [note: 'snapshot: positive minutes']
   option_participants int [note: 'snapshot: positive participants']
   option_day_type varchar(20) [note: 'snapshot: weekday | holiday']
 
-  product_name varchar [not null, note: 'snapshot: product name at order time']
+  product_name varchar(100) [not null, note: 'snapshot: product name at order time']
   product_price decimal(10,2) [not null, note: 'snapshot: price at order time']
-  quantity int [not null, default: 1]
+  quantity int [not null, note: 'Phase 4.2 application range: 1..99']
   subtotal decimal(10,2) [not null]
   created_at datetime
   updated_at datetime
 
   indexes {
-    (order_id) [name: 'idx_order_items_order']
+    (order_id, id) [name: 'idx_order_items_order_id']
   }
 }
 
-Ref: orders.user_id > users.id
-Ref: order_items.order_id > orders.id
-Ref: order_items.product_id > products.id
-Ref: order_items.experience_option_id > experience_options.id
+// Historical order references are protected from physical deletion.
+Ref: orders.user_id > users.id [delete: restrict]
+Ref: order_items.order_id > orders.id [delete: restrict]
+Ref: order_items.product_id > products.id [delete: restrict]
+Ref: order_items.experience_option_id > experience_options.id [delete: restrict]

@@ -2,7 +2,7 @@
 
 pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、Tortoise ORM、Pydantic 和 Redis 构建。开发环境使用 SQLite，生产数据库设计面向 MySQL 8+。
 
-当前代码版本候选为 **v0.4.0（尚未发布）**。Phase 4.1 Product Module 已完成实现与最终 Review；Phase 4.2 Order 尚未开始。
+当前代码版本候选为 **v0.5.0（尚未发布）**。Phase 4.1 Product Module 与 Phase 4.2 Order Module 均已完成实现和最终 Review；下一业务阶段为 Phase 4.3 Inventory。
 
 ## 当前能力
 
@@ -12,9 +12,11 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - Product、ExperienceOption、ProductKit 和 ProductImage 的完整业务、持久化与 API 链路。
 - 22 个 Product API 操作，包括公开查询、ADMIN+ 管理、图片上传和审计历史。
 - Product 图片大小、格式、MIME 和安全路径校验，以及上传失败补偿和延迟物理清理。
+- Order v1.0 的 Experience 下单、不可变 Product/Option/价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
+- Order 状态与审计原子事务、订单号冲突重试、分页组合筛选、用户资源隐藏和完整 HTTP 错误/边界矩阵。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
 
-当前完整测试套件包含 **794 项测试**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
+当前完整测试套件包含 **1178 项测试**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
 
 ## 技术栈
 
@@ -110,7 +112,7 @@ python -m pip check
 git diff --check
 ```
 
-Product 或持久化相关改动还应运行对应专项测试，并对照 [Code Review Checklist](docs/07_process/code_review_checklist.md) 检查架构、安全、事务、性能、测试和文档联动。
+Product、Order 或持久化相关改动还应运行对应专项测试，并对照 [Code Review Checklist](docs/07_process/code_review_checklist.md) 检查架构、安全、事务、性能、测试和文档联动。
 
 ## 架构边界
 
@@ -155,7 +157,7 @@ python -m app.tasks.product_image_cleanup \
 
 ## 数据库迁移
 
-MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ 首迁移已离线生成并通过静态契约测试，但尚未应用到任何 MySQL 数据库。
+MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ 首迁移和 Order 增量迁移均已离线生成并通过静态契约测试，但尚未应用到任何 MySQL 数据库。
 
 生产环境禁止通过应用启动自动建表。执行 `aerich upgrade` 前必须：
 
@@ -173,6 +175,8 @@ MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化�
 |---|---|
 | Product 权威业务规则 | [Product Business Rules](docs/01_requirements/product_business_rules.md) |
 | Product API v1.0 | [Product API](docs/03_api/product_api.md) |
+| Order 业务规则 | [Order Module](docs/01_requirements/order_module.md) |
+| Order API v1.0 | [Order API](docs/03_api/order_api.md) |
 | 通用 API 约定 | [API Design Conventions](docs/03_api/api_design_conventions.md) |
 | 数据库设计 | [Database Design](docs/02_database/database_design.md) |
 | 分层与目录 | [Architecture](docs/04_architecture/architecture.md) |
@@ -207,8 +211,8 @@ docs(readme): document local development workflow
 
 ## 当前限制与下一阶段
 
-- v0.4.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
-- MySQL 首迁移尚未应用；部署必须遵循迁移流程。
+- v0.5.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
+- MySQL 首迁移与 Order 增量迁移均尚未应用；部署必须遵循迁移流程。
 - refresh token 尚未轮换；登录/注册尚未限流。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
-- Phase 4.2 将实现 Order；Phase 4.3 才引入库存流水、自动扣减/恢复和并发库存控制。
+- Phase 4.3 将引入库存流水、自动扣减/恢复和并发库存控制；当前 Order 明确拒绝 Kit 下单。

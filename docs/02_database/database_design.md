@@ -1,6 +1,6 @@
-# pinkdooHub 数据库设计 v1.2
+# pinkdooHub 数据库设计 v1.4
 
-> **Last Updated:** 2026-08-10
+> **Last Updated:** 2026-08-13
 
 ---
 
@@ -33,15 +33,15 @@ audit_logs
 
 ### 2.1 数据完整性约束边界
 
-Product 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成：
+Product 与当前冻结的 Order 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成：
 
 | 层级 | 当前保证 |
 |------|----------|
-| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit 一对一唯一性、Option 全历史联合唯一性和命名索引 |
-| Schema / Model | 文本长度、正整数、金额范围与小数位、库存和图片排序非负、字符串 Enum 合法性 |
-| Service / Validator | Product 类型与扩展表匹配、图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转和上架完整性 |
+| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit 一对一唯一性、Option 全历史联合唯一性、Order 编号唯一性和命名索引 |
+| Schema / Model | 文本长度、正整数、金额范围与小数位、库存和图片排序非负、Enum 合法性、Order Item 数量/项数/重复组合边界 |
+| Service / Validator | Product 类型与扩展表匹配、图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转和上架完整性；Order 聚合可售性、快照金额与状态机 |
 
-当前 Product Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，在首次 Product 迁移 Review 时统一决定，不能只改某一数据库。
+当前 Product 与 Order Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，必须作为独立设计变更统一评估，不能只改某一数据库。
 
 ---
 
@@ -159,42 +159,48 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 
 ---
 
-### 3.6 orders（订单表）
+### 3.6 orders（订单表，Phase 4.2 已实现 Model）
 
-订单主表，记录下单用户、金额和状态。不直接保存商品信息，商品明细拆分到 `order_items`。
+订单主表，记录下单用户、金额和状态。不直接保存商品信息，商品明细拆分到 `order_items`。Phase 4.2 只开放 Experience 下单；表结构保留未来 Kit Item 所需的 nullable Option 字段，但当前应用不写入 Kit 订单。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| order_no | VARCHAR | NOT NULL, UNIQUE | 订单编号 |
-| user_id | BIGINT | FK → users.id | 下单用户 |
+| order_no | VARCHAR(28) | NOT NULL, UNIQUE | `OD` + 26 位大写 Crockford Base32 ULID；全局唯一 |
+| user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | 下单用户 |
 | total_amount | DECIMAL(10,2) | NOT NULL | 订单总金额，单位：元 |
-| status | TINYINT | DEFAULT 0 | 0:待支付 1:已支付 2:已取消 3:已完成 |
-| remark | VARCHAR | - | 订单备注 |
+| status | SMALLINT | NOT NULL, DEFAULT 0 | 0:待支付 1:已支付 2:已取消 3:已完成；代码使用 `SmallIntField` + `OrderStatus(IntEnum)` |
+| remark | VARCHAR(500) | nullable | 用户备注；审计日志不得复制该字段 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
+**订单编号规则：** 使用 UTC 毫秒时间与密码学安全随机源生成 ULID，无需 Redis、第三方依赖或额外日序列表。`UNIQUE(order_no)` 是并发唯一性的最终兜底；冲突时整笔创建事务回滚并重新生成，最多尝试 3 次。编号仅可近似按时间排序，列表仍以 `created_at DESC, id DESC` 为权威顺序。旧草案的“YYYYMMDD + 当日六位序号”不再属于 Phase 4.2 契约。
+
 ---
 
-### 3.7 order_items（订单明细表）
+### 3.7 order_items（订单明细表，Phase 4.2 已实现 Model）
 
 采用订单快照设计：保存下单时的商品名称、价格及体验配置快照，保证历史订单不受商品后续修改影响。体验商品记录具体 Option 信息，套装商品这些字段为 NULL。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| order_id | BIGINT | FK → orders.id | 关联订单 |
-| product_id | BIGINT | FK → products.id | 关联原商品 |
-| experience_option_id | BIGINT | FK → experience_options.id, nullable | 关联体验配置（套装为 NULL） |
-| option_duration | INT | nullable | 快照：正整数分钟数 |
+| order_id | BIGINT | FK → orders.id, NOT NULL, ON DELETE RESTRICT | 关联订单 |
+| product_id | BIGINT | FK → products.id, NOT NULL, ON DELETE RESTRICT | 关联原商品 |
+| experience_option_id | BIGINT | FK → experience_options.id, nullable, ON DELETE RESTRICT | 关联体验配置（未来 Kit 为 NULL；Phase 4.2 响应非 NULL） |
+| option_duration_minutes | INT | nullable | 快照：正整数分钟数 |
 | option_participants | INT | nullable | 快照：人数 |
 | option_day_type | VARCHAR(20) | nullable | 快照：日期类型 |
-| product_name | VARCHAR | NOT NULL | 下单时商品名称快照 |
+| product_name | VARCHAR(100) | NOT NULL | 下单时商品名称快照 |
 | product_price | DECIMAL(10,2) | NOT NULL | 下单时商品价格快照 |
-| quantity | INT | DEFAULT 1 | 数量 |
+| quantity | INT | NOT NULL | 数量；Phase 4.2 Schema 范围 1 至 99 |
 | subtotal | DECIMAL(10,2) | NOT NULL | 小计金额 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
+
+Phase 4.2 每单 1 至 10 个 Item，且同一订单内 `(product_id, experience_option_id)` 由请求 Schema 保证不重复。当前不增加数据库唯一约束：数据库的 nullable 语义会使未来 Kit Item 的组合约束不直观，而一次订单创建只有单一受控写入口；Schema 已覆盖重复组合，Model 契约测试已覆盖 nullable Option 扩展位，后续 Service 测试仍须证明写入口不会绕过该规则。
+
+**历史保护：** Order、OrderItem 不提供删除接口。用户、Product 与 Option 的物理删除均由 `RESTRICT` 阻止；Product 与 Option 的正常业务删除继续使用逻辑删除。历史展示始终读取 OrderItem 快照，不依赖当前 Product/Option 内容。
 
 ---
 
@@ -206,8 +212,8 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | operator_id | BIGINT | NOT NULL | 操作人 ID |
-| action | VARCHAR(50) | NOT NULL | 操作类型（如 `CREATE_PRODUCT`、`UPDATE_PRICE`） |
-| target_type | VARCHAR(50) | NOT NULL | 目标类型（`product` / `user`） |
+| action | VARCHAR(50) | NOT NULL | 操作类型（如 `CREATE_PRODUCT`、`CREATE_ORDER`、`MARK_ORDER_PAID`） |
+| target_type | VARCHAR(50) | NOT NULL | 目标类型（`product` / `user` / `order`） |
 | target_id | BIGINT | NOT NULL | 目标 ID |
 | description | VARCHAR(256) | nullable | 附加描述（如价格变更前后值） |
 | ip_address | VARCHAR(45) | NOT NULL | 操作人 IP（支持 IPv6） |
@@ -227,7 +233,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | products → product_kits | 一对一 | 套装商品的扩展信息 |
 | products → product_images | 一对多 | 一个商品有多张图片 |
 
-**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。
+**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。订单历史链 `orders.user_id`、`order_items.order_id/product_id/experience_option_id` 全部使用 `ON DELETE RESTRICT`；不因用户或商品生命周期破坏历史订单。
 
 ---
 
@@ -240,7 +246,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | 所有主键 | `id BIGINT AUTO_INCREMENT` |
 | 所有时间 | `created_at` / `updated_at` |
 | 所有金额 | `DECIMAL(10,2)`，单位：元 |
-| 状态字段 | 按模块权威设计：User / Order 使用 `TINYINT`，Product 使用 `VARCHAR(20)` 字符串 Enum |
+| 状态字段 | 按模块权威设计：User / Order 使用 `SMALLINT`，Product 使用 `VARCHAR(20)` 字符串 Enum |
 | 所有外键 | `xxx_id BIGINT` |
 
 ### 时间字段策略
@@ -359,25 +365,31 @@ CREATE INDEX idx_image_option_sort ON product_images (experience_option_id, sort
 
 | # | 查询 | 频率 | 索引 |
 |---|------|------|------|
-| 1 | `WHERE user_id = ? [AND status = ?] ORDER BY created_at DESC` | 高（我的订单） | `(user_id, status, created_at)` |
-| 2 | `WHERE status = ? ORDER BY created_at DESC` | 中（管理后台） | `(status, created_at)` |
-| 3 | `WHERE order_no = ?` | 极高（查询） | `UNIQUE(order_no)` ✅ 已有 |
+| 1 | `WHERE user_id = ? ORDER BY created_at DESC, id DESC` | 高（我的全部订单） | `(user_id, created_at, id)` |
+| 2 | `WHERE user_id = ? AND status = ? ORDER BY created_at DESC, id DESC` | 高（我的订单状态筛选） | `(user_id, status, created_at, id)` |
+| 3 | `WHERE status = ? ORDER BY created_at DESC, id DESC` | 中（管理端状态筛选） | `(status, created_at, id)` |
+| 4 | `ORDER BY created_at DESC, id DESC` / 创建时间范围 | 中（管理端全部订单） | `(created_at, id)` |
+| 5 | `WHERE order_no = ?` | 极高（精确查询） | `UNIQUE(order_no)` ✅ 已有 |
 
 ```sql
 -- Migration SQL
-CREATE INDEX idx_orders_user_status_created ON orders (user_id, status, created_at);
-CREATE INDEX idx_orders_status_created ON orders (status, created_at);
+CREATE INDEX idx_orders_user_created_id ON orders (user_id, created_at, id);
+CREATE INDEX idx_orders_user_status_created_id ON orders (user_id, status, created_at, id);
+CREATE INDEX idx_orders_status_created_id ON orders (status, created_at, id);
+CREATE INDEX idx_orders_created_id ON orders (created_at, id);
 ```
+
+`user_id` 和时间范围同时筛选时可使用 `idx_orders_user_created_id`；精确 `order_no` 使用唯一索引。是否为低频的复杂组合再增加索引，留待 Repository 固化 SQL 后用 MySQL `EXPLAIN` 评估，当前不为所有筛选排列建立组合索引。
 
 #### order_items
 
 | # | 查询 | 频率 | 索引 |
 |---|------|------|------|
-| 1 | `WHERE order_id = ?` | 高（订单详情） | `(order_id)` |
+| 1 | `WHERE order_id = ? ORDER BY id` | 高（订单详情） | `(order_id, id)` |
 
 ```sql
 -- Migration SQL
-CREATE INDEX idx_order_items_order ON order_items (order_id);
+CREATE INDEX idx_order_items_order_id ON order_items (order_id, id);
 ```
 
 #### audit_logs
@@ -403,9 +415,11 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | `product_images` | `idx_image_product_sort` | `(product_id, sort)` | 普通 | 图片排序展示 |
 | `product_images` | `idx_image_product_cover` | `(product_id, is_cover)` | 普通 | 封面图查找 |
 | `product_images` | `idx_image_option_sort` | `(experience_option_id, sort)` | 普通 | Option 图片排序展示 |
-| `orders` | `idx_orders_user_status_created` | `(user_id, status, created_at)` | 普通 | 我的订单列表（含状态筛选） |
-| `orders` | `idx_orders_status_created` | `(status, created_at)` | 普通 | 管理后台订单管理 |
-| `order_items` | `idx_order_items_order` | `(order_id)` | 普通 | 订单详情（FK 查询） |
+| `orders` | `idx_orders_user_created_id` | `(user_id, created_at, id)` | 普通 | 我的全部订单、按用户筛选 |
+| `orders` | `idx_orders_user_status_created_id` | `(user_id, status, created_at, id)` | 普通 | 我的订单状态筛选 |
+| `orders` | `idx_orders_status_created_id` | `(status, created_at, id)` | 普通 | 管理端状态筛选 |
+| `orders` | `idx_orders_created_id` | `(created_at, id)` | 普通 | 管理端全部订单与时间范围 |
+| `order_items` | `idx_order_items_order_id` | `(order_id, id)` | 普通 | 订单详情稳定顺序 |
 | `audit_logs` | `idx_audit_target_created` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
 | `audit_logs` | `idx_audit_operator_created` | `(operator_id, created_at)` | 普通 | 操作人行为审计 |
 

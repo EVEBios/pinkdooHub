@@ -1,6 +1,6 @@
 # API Design Conventions
 
-> **Document Version:** v2.0
+> **Document Version:** v2.1
 > **Status:** Active
 > **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
 >
@@ -118,6 +118,8 @@ JWT Bearer Token
 ```
 Authorization: Bearer <access_token>
 ```
+
+认证依赖统一使用 `HTTPBearer(auto_error=False)`，由共享异常中间件输出项目错误信封：缺失 Bearer 凭据返回 HTTP 401 / code `401` / `Authentication required`，不得暴露 FastAPI 默认 `{"detail": ...}`。当前无效或过期 Token 仍沿用 User 模块既有 `TokenExpired` 契约（code `1006`、HTTP 400）；若后续迁移为 401，必须作为公共认证契约变更同步所有 API 文档和测试。
 
 ### 4.2 Token 机制
 
@@ -302,7 +304,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 |------|------|
 | 0 | 成功 |
 | 1xxx | 用户模块业务错误 |
-| 3xxx | 订单模块业务错误 |
+| 4041x / 4092x / 4223x | 订单模块 — 资源不存在 / 状态与阶段冲突 / 聚合不可用 |
 | 40xxx | 商品模块 — 资源不存在 / 类型错误 |
 | 409xx | 商品模块 — 状态冲突 |
 | 422xx | 商品模块 — 业务校验 |
@@ -376,12 +378,21 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 
 > Product 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。上架时对已加载聚合快照执行的价格、库存与关联完整性校验使用 `42201`；其精确 message、issues 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。上传文件内容、MIME 和大小校验使用 `42221`。
 
-### 8.5 订单模块错误码（3xxx）
+### 8.5 订单模块错误码（4041x / 4092x / 4223x）
 
-| code | 说明 |
-|------|------|
-| 3001 | 订单不存在 |
-| 3002 | 订单状态不允许此操作 |
+Order 与 Product 一样使用 HTTP 语义化的稳定业务 code；异常必须按语义直接继承 `NotFoundException`、`ConflictException` 或 `UnprocessableEntityException`。HTTP 状态由异常类型映射，不按 code 数字段推断。
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40411 | 404 | `OrderNotFound` | 订单不存在；用户访问他人订单也统一使用该错误，避免资源枚举 |
+| 40921 | 409 | `OrderStatusConflict` | 当前订单状态不允许指定状态变迁 |
+| 40922 | 409 | `KitOrderingRequiresInventory` | Kit 下单等待 Phase 4.3 Inventory，整单不写入 |
+| 42231 | 422 | `OrderProductUnavailable` | Product 不存在、已删除、未上架或不是可售 Experience |
+| 42232 | 422 | `OrderOptionUnavailable` | ExperienceOption 不存在、已删除或不属于指定 Product |
+
+`items` 为空/超限、重复 Product/Option 组合、数量范围、备注长度和未知字段属于请求形状校验，使用全局参数错误 code `422`，不再保留旧草案的 `3006`。旧 `3001`—`3006` 从未实现，已由 Order v1.0 冻结契约替换。
+
+> **实现状态：** Order 的 `IntEnum`、API value/label Registry、固定边界常量和五个命名异常已经实现，并由构造、继承关系、数据载荷及 404/409/422 中间件映射测试覆盖。Schema 及后续应用层仍待 Phase 4.2 后续批次实现。
 
 ---
 
@@ -399,10 +410,11 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 
 ### 9.2 金额
 
-所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。JSON 表示以模块 API 契约为准并在模块内保持一致；Product 模块的请求和响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
+所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。Product 与 Order 的请求/响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
 
 ```json
-"price": "199.00"
+"price": "199.00",
+"total_amount": "497.00"
 ```
 
 金额字符串不得使用指数形式，不得超过两位小数；服务端不得静默四舍五入。Order 文档仍处于后续 Phase 设计状态，其 number 表示需在实现前单独确认，不得反向改变已冻结的 Product 契约。
@@ -583,7 +595,7 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `username` (varchar) | `username` | → string |
 | `created_at` (datetime) | `created_at` | → ISO 8601 string |
 | `updated_at` (datetime) | `updated_at` | → ISO 8601 string |
-| `total_amount` (decimal) | `total_amount` | → number/string（以模块契约为准） |
+| `total_amount` (decimal) | `total_amount` | → 两位小数 string |
 | `is_cover` (boolean) | `is_cover` | → boolean |
 
 > - 所有 ID 类型在 API 中统一为 `int` / `bigint`
@@ -614,15 +626,17 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | | | `"offline"` | "已下架" |
 | `ProductType` | VARCHAR | `"experience"` | "拼豆体验" |
 | | | `"kit"` | "拼豆套装" |
-| `UserRole` | TINYINT | 1 → `"user"` | "普通用户" |
+| `UserRole` | SMALLINT | 1 → `"user"` | "普通用户" |
 | | | 2 → `"admin"` | "管理员" |
 | | | 3 → `"super_admin"` | "超级管理员" |
-| `UserStatus` | TINYINT | 1 → `"normal"` | "正常" |
+| `UserStatus` | SMALLINT | 1 → `"normal"` | "正常" |
 | | | 2 → `"disabled"` | "已禁用" |
-| `OrderStatus` | TINYINT | 0 → `"pending"` | "待支付" |
+| `OrderStatus` | SMALLINT | 0 → `"pending"` | "待支付" |
 | | | 1 → `"paid"` | "已支付" |
 | | | 2 → `"cancelled"` | "已取消" |
 | | | 3 → `"completed"` | "已完成" |
+
+> Order API 与 Product API 一致，通过 Mapper 输出 `{value, label}`；请求筛选仍只接收 Enum value。Phase 4.2 的唯一状态流为 `pending → cancelled`、`pending → paid`、`paid → completed`。
 
 ### 使用示例
 
@@ -641,7 +655,7 @@ def duration_to_dto(value: int) -> dict:
 添加新的枚举字段时：
 
 - [ ] 在本文档 §14 注册表中新增一行
-- [ ] 数据库使用 `TINYINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
+- [ ] 数据库使用项目 ORM 映射的 `SMALLINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
 - [ ] Python 定义对应的 `Enum` 类（`app/common/enums/`）
 - [ ] API Mapper 实现 `{value, label}` 转换
 - [ ] 更新 `er_diagram.dbml` 和 `database_design.md`
@@ -761,4 +775,4 @@ def duration_to_dto(value: int) -> dict:
 - [ ] 至少提供成功 + 一种失败响应示例
 - [ ] 需要认证的接口标注 Header
 - [ ] 分页接口统一使用 `page` / `page_size`
-- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User 数值 Enum 使用 TINYINT）
+- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User / Order 数值 Enum 使用 SMALLINT）

@@ -4,6 +4,429 @@
 
 ---
 
+## v0.5.0 (Unreleased) — Order Module Final Review (Phase 4.2.12)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the final architecture, security, transaction, query-performance, migration, test, and documentation review for Order v1.0. Phase 4.2 is code-complete and release-ready as the unreleased v0.5.0 candidate; Phase 4.3 Inventory is the next business stage.
+
+### Reviewed and Changed
+
+- Reviewed all nine HTTP operations against the frozen Order requirements/API contracts and verified API → Service → Repository → Model dependency direction, authenticated identity ownership, unified envelopes, and explicit user/admin response projection.
+- Reviewed creation and state-change transaction boundaries, post-lock state validation, sequential audit writes, rollback injection, order-number collision attribution/retry, stable pagination ordering, batch Product/Option loading, database item counts, and preloaded detail relations.
+- Reviewed `1_20260813130455_add_order_tables.py` as a MySQL 8+ additive migration: it creates only `orders` and `order_items`, preserves four historical `RESTRICT` foreign keys and five query indexes, declares the non-transactional DDL boundary, and contains no upgrade-side destructive SQL.
+- Added a cross-module amount-capacity invariant proving the maximum legal request (`10 × 99 × 99999.00`) remains below `DECIMAL(10,2)` Order capacity. This documents why no additional total-overflow business error is necessary while the existing Product price and Order item bounds remain unchanged.
+- Hardened shared audit IP extraction: only valid, length-safe IPv4/IPv6 literals are persisted; malformed, overlong, or IPv6 scope-bearing `X-Forwarded-For` values fall back to the direct peer, and an invalid/missing peer becomes `unknown`. A real Order HTTP test proves hostile proxy text cannot turn an otherwise valid audited mutation into a 500 or partial write.
+- Advanced the unreleased application candidate from v0.4.0 to v0.5.0 in code defaults, example environment, version contracts, README, project instructions, architecture context, and Order requirement/API status. Advanced the database design document to v1.4 for the Order table addition.
+
+### Important Decisions
+
+1. **Release candidate, not a release:** v0.5.0 identifies the completed local code candidate. No Git tag, GitHub Release, commit, push, MySQL migration execution, Aerich fake, or development-database rebuild is implied.
+2. **Aggregate constraints are reviewed together:** individual price, item-count, and quantity limits form a safe maximum total. A regression invariant now alerts future maintainers if any one bound changes enough to exceed storage capacity.
+3. **Proxy input remains a trust boundary:** syntax and storage safety are enforced in the application, while deployment must still configure the ingress proxy to overwrite untrusted forwarding headers.
+4. **Inventory remains out of scope:** Order continues to reject every Kit item before writes and never reads, deducts, or restores `ProductKit.stock`; those concurrency semantics belong to Phase 4.3.
+5. **Migration execution is separately authorized:** the reviewed Order migration remains offline and unapplied. Production rollout still requires target-schema audit, backup/snapshot, staging verification, explicit authorization, and a tested rollback plan.
+
+### Verification
+
+- All 392 Order-related tests pass, including contracts, Models, migration DDL, Repository, Service, Mapper, routes, real JWT/SQLite HTTP flows, transaction rollback, and amount-capacity invariants.
+- Six focused request-IP tests pass, plus the real Order audit integration regression.
+- The complete project suite passes with 1178 tests.
+- `compileall`, dependency integrity (`pip check`), and whitespace/error-marker review (`git diff --check`) pass.
+- Ruff was not run because it is not installed in the project environment or declared in `requirements.txt`.
+
+### Release Notes
+
+- No dependency was added.
+- The MySQL initial migration and Order incremental migration remain unapplied; the local development database was not rebuilt or mutated.
+- `docs/02_database/er_diagram.png` remains an untracked user-owned artifact and was not modified.
+
+---
+
+## Unreleased — Order HTTP Error and Boundary Matrix (Phase 4.2.11)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the full real-JWT/SQLite HTTP error and boundary matrix for all nine Order endpoints. The matrix now verifies authoritative Experience snapshots and Decimal totals, request-shape anti-forgery, Product/Option/Kit rejection, visibility and ADMIN+ permissions, pagination and combined filters, every illegal state precondition, ordered audit history, transactional failure rollback, and order-number collision retry behavior.
+
+### Added
+
+- Real HTTP creation coverage for multiple distinct Options, exact Decimal arithmetic, immutable historical snapshots, 1/99 quantity bounds, 500-character remarks, empty-remark normalization, duplicate/empty/oversized item collections, strict scalar types, and all server-owned field forgery attempts.
+- Product and Option availability cases for missing, draft/offline/deleted, missing/deleted/mismatched Option, plus explicit Kit rejection with unchanged `ProductKit.stock` and no partial Order/audit writes.
+- Full authentication and ADMIN+ route matrices, uniform missing-order/resource-hiding 404 behavior, user/admin list visibility, pagination, exact lookup, status/user/time combined filters, UTC/range validation, and reverse-chronological audit pagination.
+- All nine illegal status-operation preconditions across cancel, mark-paid, and complete, with stable `40921` payloads and proof that neither status nor audit changes.
+- HTTP-level fault injection after audit writes and at post-write reloads, proving atomic rollback of Order/Items/status/audit, plus collision retry success and third-collision exhaustion without partial artifacts.
+- A shared transport dependency that rejects any non-empty request body on cancel/paid/complete while preserving body-free OpenAPI operations.
+
+### Important Decisions
+
+1. **Negative-space contracts are enforced:** omitting `requestBody` from OpenAPI is documentation, not runtime validation. The three fixed state-use-case PATCH routes now explicitly reject `{}`, `null`, or any other non-empty body with the unified HTTP 422 envelope before mutation.
+2. **HTTP tests exercise real boundaries:** business-error and rollback cases use real JWT authentication, SQLite, repositories, services, mappers, and exception middleware. Dependency overrides are limited to deterministic generators and deliberate failure injection.
+3. **Server authority is tested end to end:** authenticated identity, order status, Product/Option snapshots, unit prices, subtotals, and totals cannot be supplied by clients and remain frozen after source catalog changes.
+4. **Failure responses disclose no internals:** injected runtime and database-integrity failures are logged server-side, return only the shared generic 500 envelope, and leave no partial aggregate or audit state.
+
+### Verification
+
+- 79 new focused HTTP matrix test instances pass across creation boundaries, query/permission/state behavior, and transaction/collision failure injection.
+- Existing route architecture and mocked adaptation tests continue to pass with strict no-body enforcement and unchanged OpenAPI request-body declarations.
+- 104 focused Order HTTP/route/architecture tests pass together; all 390 Order-related tests pass.
+- The complete project suite passes with 1170 tests.
+
+### Release Notes
+
+- No dependency, database schema, migration, or application-version change was made in this step.
+- The existing offline MySQL Order migration remains unapplied; no development database was rebuilt.
+- Phase 4.2.12 final checklist, migration review, and version decision remain pending before declaring the Order module release-ready.
+
+---
+
+## Unreleased — Order FastAPI Routes (Phase 4.2.10)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Exposed the implemented Order domain through four authenticated user endpoints and five ADMIN+ endpoints. Added the Order composition root, strict request-to-domain adaptation, Mapper serialization, unified success/error envelopes, exact OpenAPI contracts, and core real JWT/SQLite HTTP lifecycle coverage. The exhaustive Phase 4.2.11 HTTP error/boundary matrix and Phase 4.2.12 final review remain pending.
+
+### Added
+
+- `get_order_service()` composition root wiring OrderRepository, ProductRepository, and the shared AuditLogService/AuditLogRepository.
+- User routes for Experience creation, paginated own-order listing, owner-scoped detail, and Pending cancellation.
+- ADMIN+ routes for filtered listing, unrestricted detail, manual payment confirmation, completion, and paginated Order audit history.
+- Explicit OrderCreate-item to `OrderItemInput` adaptation so Service remains independent of transport Schemas.
+- Authenticated identity as the sole source of `user_id`/`operator_id`, plus shared client-IP extraction for every audited HTTP mutation.
+- Precise `SuccessResponse[T]` and shared `ErrorResponse` declarations, HTTP 201 creation, HTTP 200 queries/mutations, PATCH operations without request bodies, and one-time router registration tests.
+- Real JWT/SQLite flows covering creation, Decimal snapshot response, user list, resource hiding, ADMIN+ access, paid/completed transitions, owner cancellation, ordered audits, source IPs, and audit privacy.
+- Unified missing-Bearer handling through `AuthenticationException` by setting HTTPBearer `auto_error=False`; all routes using the existing authentication dependency now return the project error envelope for missing credentials.
+
+### Important Decisions
+
+1. **Composition root:** concrete repositories and shared infrastructure are assembled only in `app/api/deps.py`. Route modules import Service/Mapper/Schemas but never business repositories or Order/Product persistence models.
+2. **Identity is server-owned:** create and owner-scoped routes use `current_user.id`; admin mutations use `current_admin.id`. Extra `user_id`, price, amount, or snapshot fields are rejected by strict request Schemas before Service execution.
+3. **Authentication versus authorization:** missing credentials return HTTP 401 with the unified envelope, while an authenticated normal user accessing ADMIN+ routes returns HTTP 403. The pre-existing invalid/expired Token exception remains code `1006`/HTTP 400 pending a separate User-contract migration, so Order OpenAPI documents both 400 and 401.
+4. **Single serialization pass:** routes call the dedicated Mapper and `model_dump(mode="json")`, then pass the validated data to `success()` with `response_model=None`; OpenAPI uses explicit generic response declarations without runtime Decimal revalidation.
+5. **No body for state PATCH:** cancel, paid, and complete select fixed Service use cases entirely through the path and authenticated identity; clients cannot submit an arbitrary target state.
+
+### Verification
+
+- 25 focused Order route/architecture/integration test instances were added and pass after the unified-auth additions.
+- 84 combined Order/User/Product route regressions pass after changing the shared HTTPBearer behavior.
+- All 311 Order-related contracts pass together.
+- Python compilation and dependency integrity checks pass; the complete suite passes with 1091 tests.
+
+### Release Notes
+
+- The nine documented Order endpoints are now registered and callable.
+- No new dependency, database schema change, migration, or application-version change was made.
+- The existing offline MySQL Order migration remains unapplied; no development database was rebuilt.
+- Phase 4.2.11 must still expand the complete HTTP business-error/input-boundary matrix. Phase 4.2.12 must perform final checklist/migration/version review before declaring the Order module release-ready.
+
+---
+
+## Unreleased — Order API Mapper (Phase 4.2.9)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the synchronous Order API mapping boundary for user/admin lists, user/admin details, OrderItem snapshots, and lightweight status-transition responses. The Mapper performs explicit field projection and strict Out Schema validation without querying or mutating ORM aggregates. Dependency wiring and HTTP routes remain outside this slice.
+
+### Added
+
+- Authoritative OrderStatus and DayType `{value, label}` mapping using the existing common registries.
+- Explicit OrderItem snapshot mapping with Decimal price/subtotal preservation and no live Product/Option reads.
+- Separate user/admin list and detail projections; user responses never read User relations, while admin responses add only `user_id` and `user_nickname`.
+- User/admin Page mapping that preserves total, page, page size, and pages while consuming Repository `item_count` annotations.
+- Lightweight status-response mapping from a relation-free Order returned by the status transaction reload.
+- Aggregate-integrity checks that reject an OrderItem attached to a different Order before serialization.
+- Architecture, atomic conversion, projection, strict validation, real Repository zero-SQL, and non-mutation tests.
+
+### Important Decisions
+
+1. **Explicit projection:** each endpoint class has a dedicated mapper and Out Schema. Fields are assembled from a whitelist rather than passing ORM models directly to Pydantic, making user/admin isolation visible in code.
+2. **Zero-SQL mapping:** lists consume the Repository's `item_count` annotation, details consume preloaded Items/User, and status responses consume a lightweight Order. Mapper functions contain no async code, Repository/Service imports, or ORM query calls.
+3. **Snapshot-only items:** historical Item output uses the stored name, Option dimensions, day type, unit price, quantity, and subtotal. It never follows Product or ExperienceOption relationships that may have changed since purchase.
+4. **Schema owns wire formatting:** Mapper preserves domain `Decimal` and Enum values; strict response Schemas validate arithmetic and serialize amounts as two-decimal strings. This avoids duplicating formatting rules in two layers.
+5. **Non-mutating composition:** Mapper builds new dictionaries and Schema objects. Real aggregate snapshots prove the source Order, User, Items, relationship lists, and annotated fields are unchanged.
+
+### Verification
+
+- 23 focused Order Mapper tests pass.
+- All 286 Order-related contracts pass together.
+- The complete suite passes with 1066 tests after the Mapper and documentation updates.
+
+### Release Notes
+
+- No new dependency, database schema change, migration, endpoint, or application-version change is required.
+- The existing offline Order migration remains unapplied; no development database was rebuilt.
+- Order HTTP APIs remain unavailable until dependency composition and user/admin routes are implemented.
+
+---
+
+## Unreleased — Order Status Transition Service (Phase 4.2.8)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the three frozen Order state-transition use cases: owner cancellation, ADMIN+ manual payment confirmation, and ADMIN+ completion. Each use case locks the visible Order inside its transaction, validates the latest state, and atomically persists the status, audit, and lightweight response reload. Mapping, dependency wiring, and HTTP routes remain outside this slice.
+
+### Added
+
+- `OrderService.cancel_order()` for owner-scoped `pending → cancelled` with SQL-level visibility hiding.
+- `OrderService.mark_order_paid()` for the temporary ADMIN+ `pending → paid` operational entry point.
+- `OrderService.complete_order()` for ADMIN+ `paid → completed`.
+- Stable `cancel`, `mark_paid`, and `complete` operation constants for `OrderStatusConflict` payloads.
+- A private transition template that performs transaction-bound row locking, post-lock state validation, status persistence, sequential audit, and response reload without exposing a generic public status mutator.
+- Unit and real SQLite tests for all success paths, status conflicts, missing/hidden resources, audit summaries, repeated-transition serial results, and audit/reload rollback.
+- A static Repository contract proving `get_order_for_update()` retains `select_for_update()` for MySQL pessimistic locking semantics.
+
+### Important Decisions
+
+1. **Lock then decide:** state validity is checked only after `SELECT ... FOR UPDATE` returns the latest visible row. A pre-transaction read cannot authorize a mutation because another transaction may change the state before the write.
+2. **Visibility in the lock query:** owner cancellation applies `(order_id, user_id)` before locking. Missing and foreign Orders therefore produce the same `40411 OrderNotFound`, without loading and revealing another user's row.
+3. **No generic transition API:** callers select one of three named use cases and cannot supply an arbitrary target status. The private template receives only constants fixed by those public methods.
+4. **Atomic status event:** status update, compact `before_status`/`after_status` audit, and response reload share one connection. Audit or reload failure restores the original status and leaves no audit row.
+5. **SQLite verification boundary:** real SQLite tests prove equivalent serial outcomes and rollback behavior; a static `select_for_update()` contract preserves the intended MySQL row-lock implementation because SQLite itself cannot demonstrate MySQL row-level locking.
+6. State transitions do not read or restore ProductKit stock. Inventory effects remain Phase 4.3 work.
+
+### Verification
+
+- 18 new status-transition test instances were added; the focused status-Service and architecture command passes with 20 tests including existing architecture guards.
+- All 262 Order-related contracts pass together.
+- The complete suite passes with 1043 tests after the status-Service and documentation updates.
+
+### Release Notes
+
+- No new dependency, database schema change, migration, endpoint, or application-version change is required.
+- The existing offline Order migration remains unapplied; no development database was rebuilt.
+- Order HTTP APIs remain unavailable until Mapper, dependency composition, and routes are implemented.
+
+---
+
+## Unreleased — Order Creation Service (Phase 4.2.7)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the Experience-only Order creation orchestration layer. The Service now validates Product/Option aggregates in batches, creates database-authoritative Decimal snapshots, and atomically persists the Order aggregate plus its non-sensitive audit record. Status transitions, mapping, dependency wiring, and HTTP routes remain outside this slice.
+
+### Added
+
+- `OrderItemInput` as a Service-domain input containing only Product ID, ExperienceOption ID, and quantity; no client-controlled snapshot fields enter the use case.
+- Batch Product/Option resolution with stable request-order errors, Kit-before-Option behavior, and unified unavailable semantics for missing, deleted, offline, or mismatched aggregates.
+- Database-authoritative Product name, Option configuration, price, subtotal, and total snapshots using `Decimal` arithmetic.
+- One transaction for Order creation, one-shot Item bulk insertion, sequential `CREATE_ORDER` audit, and complete aggregate reload on the same connection.
+- `OrderRepository.order_number_exists()` for post-rollback collision attribution and whole-transaction retry with a fresh order number, capped at three attempts.
+- Unit and real SQLite tests for validation priority, batch access, snapshot immutability, audit privacy, complete rollback, collision success, retry exhaustion, and non-collision `IntegrityError` preservation.
+
+### Important Decisions
+
+1. **Database source of truth:** clients cannot submit names, configuration, prices, subtotals, totals, status, user ID, or order number. Every persisted and returned snapshot is reconstructed from the current valid Product/Option rows.
+2. **Stable error priority:** bulk loading reduces query count without changing observable validation order. Items are checked in request order; each Item checks the known Kit boundary before Product availability and Option validity/ownership.
+3. **Atomic aggregate:** Order, Items, audit, and response reload use one transaction connection. Even an exception after the audit INSERT rolls back every write, and validation failures occur before a transaction or audit begins.
+4. **Fresh-transaction retry:** an `IntegrityError` leaves a transaction unusable. Collision attribution therefore occurs only after leaving the transaction context; a confirmed order-number collision opens a new transaction, while unrelated integrity errors retain their original cause.
+5. Phase 4.2 creation performs no ProductKit stock read or write. Kit remains an explicit `40922` boundary until the Inventory concurrency model is designed in Phase 4.3.
+
+### Verification
+
+- 16 focused creation-Service unit and real SQLite integration tests pass.
+- All 245 Order-related contracts pass together.
+- The complete suite passes with 1025 tests after the creation-Service and documentation updates.
+
+### Release Notes
+
+- No new dependency, database schema change, migration, endpoint, or application-version change is required by this slice.
+- The existing offline Order migration remains unapplied; no development database was rebuilt.
+- Order HTTP APIs remain unavailable until Mapper, dependency composition, and routes are implemented. State-transition Services also remain unimplemented.
+
+---
+
+## Unreleased — Order Query Service (Phase 4.2.6)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the read-only Order business orchestration layer: user/admin lists, user/admin details, and administrator Order audit-history queries. This slice adds visibility and error semantics without introducing creation, status transitions, response mapping, dependency wiring, or routes.
+
+### Added
+
+- `OrderService.list_user_orders()` / `get_user_order_detail()` with SQL-scoped user visibility and uniform `OrderNotFound` behavior for missing and foreign resources.
+- `OrderService.list_admin_orders()` / `get_admin_order_detail()` forwarding the frozen paging, exact order-number, user, status, and UTC time-range contract.
+- `OrderService.list_order_audit_logs()` with a lightweight Order existence check before delegation to the shared `AuditLogService` and `target_type="order"` pagination.
+- `OrderRepository.get_order_by_id()` as a relation-free existence lookup with optional caller connection.
+- A common `OrderStatusValue` API type plus complete `ORDER_STATUS_BY_VALUE` reverse registry for explicit API-string-to-database-Enum translation.
+- Mock orchestration, architecture, real SQLite visibility, aggregation, relation-preloading, audit isolation, orphan-audit, and named-exception tests.
+
+### Important Decisions
+
+1. **Resource-enumeration protection:** user detail always queries by `(order_id, user_id)`. Both a missing ID and another user's ID produce Repository `None` and the same `40411 OrderNotFound`; Service never loads a foreign Order and exposes a different ownership error.
+2. **Boundary translation:** Query Schema and Service accept stable API values (`pending`, `paid`, `cancelled`, `completed`), while Repository accepts `OrderStatus`. The explicit reverse registry is the only translation boundary, preventing HTTP strings from leaking into persistence code and IntEnum integers from leaking into the API.
+3. **Existence before history:** an Order audit query first proves the Order row exists. A stale or orphan `audit_logs` row cannot make a nonexistent Order appear queryable.
+4. Query Service performs no direct ORM operation, opens no transaction for pure reads, does not call ProductService, and delegates audit access only through the documented shared-service exception.
+
+### Verification
+
+- 59 focused Enum/Query Schema/Service/Repository tests pass after boundary translation.
+- All 212 `test_order_*.py` contracts pass together.
+- The complete suite passes with 1009 tests after the query-Service and documentation updates.
+
+### Release Notes
+
+- No database schema, migration, dependency, endpoint, or application-version change is required.
+- The Order API remains unavailable until Mapper and routes are implemented.
+- Order creation transaction, order-number collision retry, state-transition/audit transactions, Mapper, and routes remain unimplemented.
+
+---
+
+## Unreleased — Order Repository and Number Generator (Phase 4.2.5)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the Order data-access boundary and dependency-free order-number generator. This slice provides the transaction-aware primitives required by the later query, creation, and state-transition Services without introducing business exceptions, service orchestration, mapping, or HTTP routes.
+
+### Added
+
+- Standard-library `OD` + 26-character Crockford Base32 ULID generation using UTC Unix milliseconds and `secrets.token_bytes()`; no Redis, database sequence, third-party ULID package, or mutable generator state.
+- `OrderRepository` creation, one-shot OrderItem `bulk_create()`, ID/number detail loading, optional SQL-level user visibility, transaction-bound `SELECT ... FOR UPDATE`, status persistence, and user/admin pagination.
+- Database `COUNT(items)` list summaries, stable `created_at DESC, id DESC` pagination, exact admin order-number/user/status filters, inclusive `created_from`, exclusive `created_to`, and admin User preloading.
+- Product/ExperienceOption set loaders in `ProductRepository`; each executes one query, includes logically deleted rows for Service-level availability decisions, and accepts the caller's transaction connection.
+- Architecture, source-selection, real SQLite transaction, rollback, query-count, visibility, filtering, paging, snapshot, and order-number tests.
+
+### Important Decisions
+
+1. Repository methods do not raise Order business exceptions or decide ownership, availability, Kit policy, snapshot arithmetic, retry policy, or state transitions. User visibility is expressed as an optional SQL predicate so the query Service can hide missing and foreign resources uniformly.
+2. List queries aggregate Item row count and do not preload Item collections. Detail queries preload stable Item order and the User relation in constant query count; the later Mapper must perform zero SQL.
+3. `update_status()` persists only a status already approved by Service. Every state-transition Service must lock and recheck the row in the same transaction before calling it.
+4. The generator provides approximate time ordering only. `created_at DESC, id DESC` remains authoritative; the database unique constraint and later Service transaction retry remain the collision boundary.
+
+### Verification
+
+- 28 focused generator, Repository, Product batch-loader, architecture, transaction, and performance tests pass, including uncommitted aggregate reload on the caller's transaction connection.
+- All 195 `test_order_*.py` domain, Schema, Model, migration, generator, and Repository tests pass together; including the three Product batch-loader contracts, the combined slice has 198 passing tests.
+- The complete suite passes with 992 tests after the Repository and documentation updates.
+
+### Release Notes
+
+- No database schema, migration, dependency, endpoint, or application-version change is required.
+- The existing Order MySQL migration remains offline and unapplied. No development database was rebuilt or modified outside disposable test schemas.
+- Order query Service, creation transaction, status/audit Service, Mapper, and routes remain unimplemented.
+
+---
+
+## Unreleased — Order Models and MySQL Migration (Phase 4.2.4)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the Order persistence contract: registered `Order` / `OrderItem` Tortoise Models, verified their real SQLite schema and behavior, and generated a reviewed MySQL 8+ incremental migration without connecting to or changing any database.
+
+### Added
+
+- `Order` with unique `OD` + ULID order number, User `RESTRICT` relation, exact Decimal total, `SmallIntField` status with ORM/database default `0`, nullable remark, and four named stable-pagination indexes.
+- `OrderItem` with Order/Product/ExperienceOption `RESTRICT` relations, nullable future-Kit Option fields, immutable product/configuration/price snapshots, strict quantities and amounts, and the named `(order_id, id)` index.
+- Real temporary-SQLite contracts for Model metadata, default values, Decimal/Enum round trips, reverse relations, field boundaries, unique order numbers, physical-delete protection, exact index columns, nullable extension fields, and DDL foreign keys.
+- Offline MySQL migration `1_20260813130455_add_order_tables.py` plus static contracts for its exact table scope, field types, defaults, four foreign keys, five indexes, non-transactional MySQL DDL semantics, safe child-before-parent downgrade order, and Aerich model state.
+
+### Important Decisions
+
+1. Order status uses the project's actual Tortoise/MySQL integer-enum mapping, `SmallIntField` / `SMALLINT`, rather than the stale `TINYINT` wording in the frozen draft. Database design and DBML were corrected together.
+2. Cross-field Option completeness, duplicate Item combinations, Product availability, snapshot arithmetic, Kit rejection, and state transitions remain Schema/Service responsibilities; Models contain no business workflow or database queries.
+3. Nullable Option fields remain in the physical table for Phase 4.3 Kit compatibility, while Phase 4.2 Service must reject every Kit Item.
+4. Aerich's generated MySQL migration was reviewed to remove `IF NOT EXISTS`, declare `RUN_IN_TRANSACTION = False`, and drop `order_items` before `orders` on an explicitly authorized downgrade.
+
+### Verification
+
+- 22 focused Order Model tests pass.
+- 29 combined Order Model, Order migration, and initial MySQL migration tests pass.
+- The complete suite passes with 964 tests after the persistence and documentation updates.
+
+### Release Notes
+
+- The incremental migration was generated with `AERICH_MYSQL_VERSION=8.0` and `aerich --app models migrate --offline`; no `upgrade`, `downgrade`, `--fake`, development-database rebuild, or live database connection was performed.
+- Applying the migration later requires a separately authorized target, schema audit, backup, and execution plan. Its downgrade deletes all Order data and must never be treated as routine rollback.
+- No dependency, endpoint, or application-version change is required. Order Repository, Service, Mapper, routes, and order-number generator remain unimplemented.
+
+---
+
+## Unreleased — Order Schema Contracts (Phase 4.2.3)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented strict Order creation, list-query, and user/admin response Schema contracts without introducing database Models, business Services, Mappers, or routes.
+
+### Added
+
+- `OrderItemCreate` and `OrderCreate` with strict IDs/quantity, 1–10 Items, duplicate Product/Option rejection, remark normalization, unknown-field rejection, and server-owned field isolation.
+- `OrderListQuery` and `AdminOrderListQuery` with API-string status values, exact order-number filtering, safe query-ID parsing, UTC-aware date ranges, and strict range ordering.
+- `OrderItemOut`, user/admin list and detail outputs, and lightweight status output with explicit field whitelists.
+- Decimal-only response amounts serialized as fixed two-place strings, Product-price upper bounds, status/day-type value-label consistency, Item subtotal validation, and Order total validation.
+- User/admin isolation contracts: user responses omit all user data; admin responses add only `user_id` and `user_nickname`; detail responses do not repeat the list-derived `item_count`.
+
+### Important Decisions
+
+1. Query status accepts only API values (`pending`, `paid`, `cancelled`, `completed`) and never database IntEnum integers.
+2. Query datetimes and response datetimes must be explicitly UTC; naive and non-UTC-offset values are rejected.
+3. Out Schema accepts internal monetary values only as `Decimal`; strings and floats are rejected before fixed two-place serialization.
+4. The response layer validates snapshot arithmetic but does not query or mutate any ORM object.
+
+### Verification
+
+- 116 focused Order Schema tests pass; all 144 Order domain and Schema tests pass together.
+- The complete suite passes with 938 tests after all implementation and documentation updates.
+
+### Release Notes
+
+- No database migration, dependency, endpoint, or application-version change is required.
+- Order Model, Repository, Service, Mapper, routes, and migration remain unimplemented.
+
+---
+
+## Unreleased — Order Domain Contracts (Phase 4.2.2)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the first Order code slice after the v1.0 contract freeze: database status Enum, fixed business boundaries, API display registries, audit constants, and HTTP-semantic named exceptions. No database, Schema, Service, or route behavior is introduced by this slice.
+
+### Added
+
+- `OrderStatus(IntEnum)` with stable database values 0–3.
+- Explicit OrderStatus API value and Chinese label registries, preventing IntEnum database integers from leaking into API status output.
+- Frozen constants for Item count, quantity, remark length, ULID order-number shape and retry limit, Phase 4.3 Kit boundary, and four audit actions.
+- `OrderNotFound`, `OrderStatusConflict`, `KitOrderingRequiresInventory`, `OrderProductUnavailable`, and `OrderOptionUnavailable`, exported through the common exception package.
+- Enum/constant and exception contracts covering inheritance, payloads, invalid construction, JSON behavior, and global HTTP 404/409/422 mappings.
+
+### Important Decisions
+
+1. OrderStatus remains an `IntEnum` for the database; API values are obtained only through an explicit registry.
+2. Named exceptions validate their structured payload at construction so invalid IDs or status types cannot produce unstable public error data.
+3. Request-shape errors remain the responsibility of the next Schema stage and are not duplicated as business exceptions.
+
+### Verification
+
+- 27 focused Order domain contract tests pass.
+- The complete suite passes with 821 tests after all implementation and documentation updates.
+
+### Release Notes
+
+- No database migration, dependency, endpoint, or application-version change is required.
+- Order Schema, Model, Repository, Service, Mapper, routes, and migration remain unimplemented.
+
+---
+
 ## v0.4.0 — Product Module Implementation (Unreleased)
 
 **Date:** 2026-08-13

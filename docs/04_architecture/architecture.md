@@ -54,7 +54,7 @@
 
 | 理由 | 说明 |
 |------|------|
-| 事务支持 | 订单创建（扣库存 + 生成订单）需要 ACID |
+| 事务支持 | Order、OrderItem、状态变迁与 AuditLog 需要 ACID；Phase 4.3 再把库存事务接入订单 |
 | 生态 | 托管服务成熟，运维成本低 |
 | 开发便利 | 开发环境用 SQLite（免安装），生产切 MySQL 零代码改动 |
 
@@ -84,7 +84,7 @@ pinkdooHub/
 │   │   │   ├── products.py     #   GET /products  /products/{id}
 │   │   │   ├── admin_products.py#  POST /admin/products/experience|kit, PATCH/DELETE /admin/products/{id}, PATCH online/offline/price/stock
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
-│   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  complete
+│   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  paid/complete/audit-logs
 │   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)
 │   │   ├── deps.py             # 公共依赖与 Product 组合根
 │   │   ├── uploads.py          # 文件存储 → Service → 失败补偿
@@ -108,14 +108,15 @@ pinkdooHub/
 │   │   ├── user.py             #   UserCreate, UserOut, UserUpdate, UserListItem, ...
 │   │   ├── product.py          #   Product 请求体与列表查询参数
 │   │   ├── product_response.py #   Product 原子、列表、详情与写操作 Out Schema
-│   │   └── order.py            #   OrderCreate, OrderOut, OrderItemOut, ...
+│   │   ├── order.py            #   Order 请求体与列表查询参数（Phase 4.2）
+│   │   └── order_response.py   #   Order 用户端/管理端响应白名单（Phase 4.2）
 │   │
 │   ├── services/               # 业务逻辑层 —— 跨模型、带事务的业务编排
 │   │   ├── __init__.py
 │   │   ├── auth_service.py     #   注册、登录、Token 签发/刷新
 │   │   ├── user_service.py     #   个人资料、密码、头像
 │   │   ├── product_service.py  #   商品 CRUD、上下架、Option 管理
-│   │   └── order_service.py    #   下单（扣库存+生成订单）、取消（恢复库存）
+│   │   └── order_service.py    #   Experience 下单、查询与状态机；Phase 4.2 不操作库存
 │   │
 │   ├── validators/             # 业务校验层 —— 状态变迁前的完整性校验
 │   │   ├── __init__.py
@@ -144,13 +145,15 @@ pinkdooHub/
 │   │   │   ├── user.py         #     UserRole, UserStatus
 │   │   │   ├── product.py      #     ProductType, ProductStatus, DayType
 │   │   │   └── order.py        #     OrderStatus (Phase 4.2)
-│   │   └── constants/          #   全局常量 —— 消除 Magic Number
+│   │   ├── constants/          #   全局常量 —— 消除 Magic Number
 │   │       ├── __init__.py
 │   │       ├── pagination.py  #     MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE
 │   │       ├── upload.py      #     UPLOAD_MAX_SIZE, ALLOWED_IMAGE_TYPES
 │   │       ├── validation.py  #     USERNAME_MIN_LEN, PASSWORD_MAX_LEN, ...
 │   │       ├── product.py     #     Product 字段长度、金额、库存与图片排序边界
+│   │       ├── order.py       #     Order Item/备注/编号/状态展示边界（Phase 4.2）
 │   │       └── defaults.py    #     DEFAULT_AVATAR
+│   │   └── order_number.py    #   标准库 OD + Crockford Base32 ULID 生成器
 │   │
 │   ├── core/                   # 核心基础设施 —— 与领域和 HTTP 无关的底层能力
 │   │   ├── __init__.py
@@ -199,7 +202,7 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，Product、ExperienceOption、ProductKit、ProductImage 的全部 Model，`ProductRepository`、Product Validator、Service、API Mapper、20 个 JSON 路由、两个 multipart 图片上传路由、Product 图片本地存储适配器与可重试延迟清理任务。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 已实现 Product 全部 Model、Repository、Validator、Service、API Mapper、22 个端点、图片存储和清理任务。Phase 4.2 Order v1.0 的契约、领域语言、严格 Schema、Model/离线迁移、编号生成器、Repository、创建/状态/查询 Service、API Mapper、`get_order_service()` 组合根、4 个用户端与 5 个 ADMIN+ 端点、完整 HTTP 边界矩阵和最终 Review 均已完成。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
@@ -304,29 +307,22 @@ async def login(data: LoginRequest, user_repo: UserRepository = Depends()):
 **职责**：编排业务逻辑、管理事务边界、协调多个 Repository
 
 ```python
-# app/services/order_service.py
-from app.repositories.order_repo import OrderRepository
-from app.repositories.product_repo import ProductRepository
-from app.core.exceptions import BusinessException
-
+# Phase 4.2 Order 调用形状（已实现）
 class OrderService:
-    def __init__(self, order_repo: OrderRepository = Depends(),
-                       product_repo: ProductRepository = Depends()):
-        self.order_repo = order_repo
-        self.product_repo = product_repo
-
-    async def create_order(self, user_id: int, data: OrderCreate) -> Order:
-        # 1. 校验商品存在且上架
-        for item in data.items:
-            product = await self.product_repo.get_online(item.product_id)
-            if not product:
-                raise BusinessException(code=3003, ...)
-        # 2. 在事务中：扣库存 → 生成订单 → 写入明细
-        async with in_transaction():
-            for item in data.items:
-                await self.product_repo.deduct_stock(item.product_id, item.quantity)
-            order = await self.order_repo.create(user_id, data)
-        return order
+    async def create_order(
+        self,
+        *,
+        user_id: int,
+        items: list[OrderItemInput],
+        remark: str | None,
+        ip_address: str,
+    ) -> Order:
+        # 1. ProductRepository 一次批量加载 Product + ExperienceOption 聚合
+        # 2. 拒绝 Kit，验证 Product Online/未删除与 Option 有效/归属
+        # 3. 用 Decimal 构造名称、Option 配置、价格和金额快照
+        # 4. 单事务：Order → bulk OrderItem → CREATE_ORDER Audit → 响应重载
+        # Phase 4.2 不检查、不扣减也不恢复 ProductKit.stock
+        ...
 ```
 
 **约束**：
@@ -415,6 +411,20 @@ Product API Mapper 已实现上述列表、详情、mutation 与分页映射。�
 Product 普通 JSON 路由拆分为 `app/api/v1/products.py`（公开列表和 Experience/Kit 详情）与 `app/api/v1/admin_products.py`（ADMIN+ 查询及 mutation）。`app/api/deps.py:get_product_service()` 是 API 组合根，负责组装 ProductRepository、共享 AuditLogService 和 ProductService；路由不直接导入 Product Model/Repository，只执行 Request/Query Schema 校验、权限依赖、Service 调用、Mapper 序列化和 `success()`。Product/Kit 创建固定 HTTP 201；ExperienceOption 新建为 201、恢复历史 Option 为 200。该 JSON 路由阶段当时未注册的两个 multipart 图片创建端点和 Product 操作历史端点均已由后续阶段接入。
 
 Product 操作历史保持共享审计边界：`AuditLogRepository.list_logs()` 只按 `target_type/target_id` 执行倒序稳定分页，`AuditLogService.list_logs()` 提供 Product/Order/Inventory 均可复用的查询用例；`ProductService.list_product_audit_logs()` 仅负责用 `include_deleted=true` 确认 Product 记录仍存在，再委托共享服务。API 使用共享 `app/schemas/audit.py:AuditLogOut` 与 Audit Mapper 构造字段白名单和 `Page[T]`，不把审计字段复制到 Product Schema，也不把 Audit Log 嵌入 Product Detail。
+
+Order v1.0 架构边界、实现与最终 Review 均已完成。Order Model 只声明表结构；`OrderRepository` 负责纯数据访问和 SQL 可见性限定。查询用例包括用户列表/详情、管理列表/详情及管理端审计历史：用户详情把 `user_id` 直接传入 Repository 查询，因此不存在与他人订单都只得到 `None` 并抛同一 `OrderNotFound`；API status 字符串通过 `ORDER_STATUS_BY_VALUE` 显式翻译为数据库 `OrderStatus`；订单审计先确认 Order 存在再委托共享 `AuditLogService`。
+
+创建用例接收不含客户端快照的 `OrderItemInput`，先各用一次集合查询批量加载 Product 与 ExperienceOption，再按请求 Item 顺序执行 Kit 边界、Product 可售性和 Option 有效性/归属判断。全部通过后，Service 以数据库 Product 名称、Option 配置和 `Decimal` 价格构造不可变快照及总额；Order、批量 Items、紧凑非敏感 `CREATE_ORDER` 审计和详情重载共享同一事务连接。任一步异常整体回滚。订单号 UNIQUE 冲突必须先退出失败事务，再确认冲突编号已持久化，并用新编号开启全新事务，最多 3 次；其他 `IntegrityError` 不重试。
+
+状态变迁只通过 `cancel_order()`、`mark_order_paid()` 和 `complete_order()` 三个公开用例暴露，不提供接受任意目标状态的公共方法。每次用例开启事务后调用 `get_order_for_update()`：用户取消在 SQL 锁查询中附带 `user_id`，不存在与他人订单均映射为 `OrderNotFound`；管理用例按 ID 锁定。Service 只对锁后最新状态执行 `pending → cancelled`、`pending → paid` 或 `paid → completed`，冲突时抛出包含稳定 operation/current/required 的 `OrderStatusConflict`，不写状态与审计。成功时状态更新、紧凑 before/after 审计和轻量响应重载共享事务连接，任一步失败整体回滚。OrderService 可以依赖 OrderRepository、ProductRepository 与共享 AuditLogService，但不得调用 ProductService 或直接操作 Model。
+
+Phase 4.2 的 Inventory 边界是强约束：OrderService 和 OrderRepository 不读取或修改 `ProductKit.stock`，取消也不恢复库存。Phase 4.3 必须先冻结库存预占/扣减/恢复与并发模型，再通过明确接口把 Kit 下单接入 Order 事务；不得在 Phase 4.2 以“只检查库存”替代完整库存语义。
+
+订单号组件已在 `app/common/order_number.py` 实现，使用标准库生成 `OD` + 26 位 Crockford Base32 ULID，不新增第三方依赖。它使用 UTC Unix 毫秒和 `secrets.token_bytes()` 密码学安全随机源，不依赖 Redis、数据库序列表或进程全局状态；`orders.order_no` UNIQUE 是最终兜底。创建 Service 已实现最多 3 次的唯一冲突重试：每次冲突事务完整回滚，归因后用新编号开启全新事务；非编号约束错误及第三次编号冲突保留数据库根因。列表排序始终为 `created_at DESC, id DESC`，不依赖订单号。
+
+Order API Mapper 已实现并与 Product Mapper 保持同一边界：从 Repository 已预加载或注解的 Order 聚合生成用户端/管理端独立 Out Schema，金额由严格 Schema 固定序列化为两位小数字符串，OrderStatus 与 DayType 转为 `{value, label}`。列表仅消费数据库聚合的 `item_count` 注解，详情只消费已预加载并验证归属的 Items，状态响应可从无关系的轻量 Order 映射；执行期间零 SQL、零修改。用户端 Mapper 不读取或暴露 user 关系；管理端只增加已预加载的 `user_id` 与 `user_nickname`，不会输出用户名、手机号或凭据。订单审计继续使用共享 Audit Schema/Mapper 独立分页查询，不嵌入详情。
+
+Order HTTP 组合根已在 `app/api/deps.py:get_order_service()` 实现，集中组装 OrderRepository、ProductRepository 与共享 `AuditLogService(AuditLogRepository)`。`orders.py` 和 `admin_orders.py` 不导入 Order/Product Repository 或业务 Model，不捕获业务异常；它们只把严格 Request/Query Schema 与认证身份转换为 Service 参数，再通过 Order/Audit Mapper 和 `success()` 输出统一信封。用户 ID 和管理操作者 ID 均来自认证依赖，客户端无法通过 body/query 伪造；写用例统一由 `get_client_ip()` 提供审计 IP。该工具只接受可规范化且不带 scope identifier 的 IPv4/IPv6 字面量，非法或超长 `X-Forwarded-For` 回退到直连地址；部署层仍必须确保只有受信任的反向代理能够覆盖转发头。`HTTPBearer(auto_error=False)` 让缺失凭据进入共享 `AuthenticationException` 中间件并返回统一 401 信封，ADMIN+ 权限不足仍为 403。
 
 Product Router 的运行时输出仍由 Mapper 完成一次严格 Out Schema 校验与序列化，再交给 `success()` 构造统一信封；OpenAPI 则通过 `SuccessResponse[T]` / `ErrorResponse` 和路由 `responses` 精确声明成功与错误结构。这里显式保持 `response_model=None`，避免 FastAPI 对 Mapper 已序列化的两位小数金额字符串进行第二次 Decimal 输入校验。该选择只分离运行时校验与文档声明，不放宽任何输出白名单。
 
@@ -703,7 +713,7 @@ def mask_email(email: str) -> str:
 
 ## 4. 请求流程
 
-以"创建订单"为例，展示一次完整调用链：
+以 Phase 4.2 已实现的“创建 Experience 订单”为例，展示当前完整调用链：
 
 ```
  POST /api/v1/orders
@@ -731,17 +741,17 @@ def mask_email(email: str) -> str:
                    ▼
 ┌─[4]───────────────────────────────────────────────────┐
 │  Service: order_service.py → create_order()           │
-│  · 遍历 items，调 product_repo 校验商品 + 库存         │
-│  · 商品不存在/下架 → raise BusinessException(3003)     │
-│  · 库存不足 → raise BusinessException(3004)            │
-│  · 开启事务：扣库存 → 写 orders → 写 order_items       │
+│  · 批量加载 Product + ExperienceOption                 │
+│  · 拒绝 Kit；验证 Online/未删除/Option 有效与归属       │
+│  · Decimal 计算价格快照、小计与总额                     │
+│  · 单事务写 Order + bulk Items + Audit + 响应重载       │
 └──────────────────┬────────────────────────────────────┘
                    ▼
 ┌─[5]───────────────────────────────────────────────────┐
-│  Repository: product_repo.deduct_stock()               │
-│             order_repo.create()                        │
-│  · Tortoise ORM 生成 SQL: UPDATE ... SET stock = ...  │
-│  · Tortoise ORM 生成 SQL: INSERT INTO orders ...      │
+│  Repository: product_repo 批量只读聚合                  │
+│              order_repo 原子创建/批量明细/响应重载      │
+│  AuditLogService.log(..., using_db=connection)         │
+│  · Phase 4.2 不查询或修改 ProductKit.stock             │
 └──────────────────┬────────────────────────────────────┘
                    ▼
 ┌─[6]───────────────────────────────────────────────────┐
@@ -751,7 +761,8 @@ def mask_email(email: str) -> str:
                    ▼
 ┌─[7]───────────────────────────────────────────────────┐
 │  响应：Service 返回 Order 对象                         │
-│  → Pydantic 序列化为 OrderOut schema                   │
+│  → Order Mapper 严格校验用户端 OrderDetailOut          │
+│  → 金额两位小数字符串，用户端不暴露 user 字段           │
 │  → FastAPI 封装为统一信封 { code, message, data }      │
 │  → HTTP 201                                           │
 └───────────────────────────────────────────────────────┘

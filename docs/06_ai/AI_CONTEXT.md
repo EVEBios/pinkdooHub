@@ -47,13 +47,13 @@
 
 ### 2.1 当前 Phase 与实现边界
 
-- 当前代码版本候选为 **v0.4.0（尚未发布）**；**Phase 4.1 Product Module 已完成实现与最终 Review**，Phase 4.2 Order 尚未开始。
+- 当前代码版本候选为 **v0.5.0（尚未发布）**；**Phase 4.1 Product Module** 与 **Phase 4.2 Order Module** 均已完成实现和最终 Review。Order v1.0 已达到代码层 release-ready：领域语言、Schema、Model/离线迁移、Repository/编号生成器、查询/Experience 创建/状态 Service、API Mapper、组合根、九个 FastAPI 端点、完整真实 HTTP 错误/边界矩阵及最终架构/安全/迁移/文档审查均已完成；三个状态 PATCH 会主动拒绝任意请求体，共享审计 IP 入口也会拒绝非法、超长或带 scope 的代理地址并安全回退。下一业务阶段为 Phase 4.3 Inventory。
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约均已完成；Product API 文档已通过 Phase 4.1 最终 Review，并收口为 v1.0 Implemented。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
 - Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository`、Product Validator、Service、API Mapper 与 22 个 FastAPI 端点均已实现。其中 20 个 JSON 端点负责公开/管理查询、Product/Option/Kit mutation、图片元数据 PATCH/DELETE 和 Product 操作历史；两个 ADMIN+ multipart 端点负责 Product 公共图和 Option 专属图创建。上传已接入严格表单、文件校验/本地存储、Service 失败幂等补偿、开发环境静态 URL 和真实 SQLite HTTP 一致性测试。Product 操作历史通过共享 AuditLog Repository/Service、Out Schema 和 Mapper 分页查询，支持逻辑删除后的追溯。逻辑删除图片的本地文件由带显式截止时间的可重试批处理清理。
-- MySQL 8+ 权威首迁移已离线生成、通过契约测试并提交，但尚未对 MySQL 执行。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
-- Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
+- MySQL 8+ 权威首迁移及 Order 增量迁移已离线生成并通过契约测试，但尚未对 MySQL 执行。SQLite 开发库曾在可恢复备份后从 Phase 4.1 Models 重建；本次只使用临时 SQLite 验证 Order Models，未重建开发库、未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
+- Order v1.0 / Phase 4.2 仅开放 Experience 下单；Kit 下单在 Phase 4.3 Inventory 前整单拒绝，当前不做库存检查、扣减或恢复。Kit 库存仍使用 Phase 4.1 的直接设置最终值模式。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 
 ---
@@ -79,7 +79,24 @@
 |------|------|------|
 | 用户 | 1xxx | 1001-1007 |
 | 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40404 / 40901-40905, 40911-40912 / 42201, 42221 |
-| 订单 | 3xxx | 3001-3006 |
+| 订单 | 4041x / 4092x / 4223x | 40411 / 40921-40922 / 42231-42232（命名异常与 HTTP 映射已实现） |
+
+Order v1.0 契约速查：
+
+- `app/common/enums/order.py` 使用 `OrderStatus(IntEnum)` 保存 0/1/2/3；`app/common/constants/order.py` 显式注册 API value/label，禁止把 IntEnum 整数直接输出为 API status。
+- 已实现 Item 1–10、quantity 1–99、remark 500、订单号长度/正则/重试次数、Phase 4.3 边界和四个审计 action 常量；五个命名异常通过 `app/common/exceptions/__init__.py` 导出。
+- `app/schemas/order.py` 固定创建请求、重复 Product/Option 拒绝、用户/管理分页筛选和 UTC 时间范围；`app/schemas/order_response.py` 固定金额 Decimal→两位字符串、status/day_type 配对、快照金额一致性以及用户/管理字段隔离。详情不返回列表派生 `item_count`。
+- `app/models/order.py` 已实现 `Order` / `OrderItem`、`SmallIntField` 状态、订单号唯一约束、Decimal 快照、四条 `RESTRICT` 历史外键和五组稳定查询索引；MySQL 8+ 增量迁移已离线生成并静态 Review，尚未应用。
+- `app/common/order_number.py` 只用标准库生成 OD+ULID；`app/repositories/order_repo.py` 已实现 Order/Item 事务写入、详情、用户可见限定、行锁、状态持久化和用户/管理分页，列表使用数据库 `COUNT(items)` 生成 `item_count`。ProductRepository 已提供包含逻辑删除记录的 Product/Option 集合读取，供创建 Service 一次批量校验。
+- `app/services/order_service.py` 已实现 Experience 创建、三个独立状态变迁及五个只读用例。创建先批量读取 Product/Option，按请求顺序执行 Kit、Product、Option 错误优先级，以数据库值计算 Decimal 快照；Order、Items、`CREATE_ORDER` 审计与详情重载原子提交，订单号冲突退出失败事务后用全新事务最多重试 3 次。状态变迁在事务内锁定可见 Order，锁后重检，只允许 `pending → cancelled`、`pending → paid`、`paid → completed`；状态、before/after 审计和重载原子提交。用户查询与取消使用 `(order_id, user_id)` 可见限定统一隐藏不存在/他人资源；管理端审计先确认 Order 存在再委托共享 AuditLogService。`OrderStatusValue` 定义在 common Enum 模块，Service 使用完整 `ORDER_STATUS_BY_VALUE` Registry 将 API 字符串翻译为数据库 IntEnum。
+- `app/api/mappers/order.py` 已实现 OrderStatus/DayType、OrderItem 快照、用户/管理列表与分页、用户/管理详情和轻量状态响应。Mapper 只消费 Repository 已注解或预加载的数据，用户端不读取 User 关系，管理端只输出 `user_id/user_nickname`；严格 Schema 负责 Decimal 两位小数与聚合金额一致性。真实 SQLite 聚合测试固定零 SQL、零 ORM 对象/关系列表修改。
+- `app/api/deps.py:get_order_service()` 组装 OrderRepository、ProductRepository 和共享 AuditLogService；`app/api/v1/orders.py` 已注册创建、我的列表、我的详情和取消，`app/api/v1/admin_orders.py` 已注册管理列表/详情、确认支付、完成和审计历史。九个端点均使用精确 `SuccessResponse[T]` / `ErrorResponse` OpenAPI、统一 `success()` 与全局异常中间件；真实 JWT + SQLite 测试已贯通核心生命周期。缺失 Token 为统一 401，现有无效 Token `1006` 仍为 User 契约的 HTTP 400。
+- 创建请求必须提供 `product_id + experience_option_id + quantity`；只接受当前有效、已上架的 Experience 聚合，同一 Product/Option 组合不得重复。
+- 金额由当前 Option 价格用 `Decimal` 计算，API 固定输出两位小数字符串；OrderItem 保存名称、Option 配置和价格快照。
+- 订单号使用 `OD` + 26 位大写 Crockford Base32 ULID（总长 28），数据库 UNIQUE 兜底；列表权威排序为 `created_at DESC, id DESC`。
+- 状态流仅为 `pending → cancelled`、`pending → paid`、`paid → completed`；ADMIN+ `/paid` 是支付集成前临时人工入口。
+- 创建、取消、确认支付和完成分别写 `CREATE_ORDER`、`CANCEL_ORDER`、`MARK_ORDER_PAID`、`COMPLETE_ORDER`，与业务写入同事务；`target_type=order`。
+- 用户访问不存在或他人订单统一返回 `40411 OrderNotFound`；用户端不返回 user 字段，管理端仅增加 `user_id` 与 `user_nickname`。
 
 Product Validator 契约速查：
 

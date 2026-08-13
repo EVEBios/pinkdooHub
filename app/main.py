@@ -44,11 +44,13 @@ from fastapi import FastAPI
 
 from app.api.static import DeferredDirectoryStaticFiles
 from app.api.v1.admin import router as admin_router
+from app.api.v1.admin_orders import router as admin_orders_router
 from app.api.v1.admin_products import router as admin_products_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
 from app.api.v1.products import router as products_router
+from app.api.v1.orders import router as orders_router
 from app.api.v1.users import router as users_router
 from app.core.config import settings
 from app.core.logging import setup_logging
@@ -187,6 +189,8 @@ app.include_router(admin_users_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(products_router, prefix="/api/v1")
 app.include_router(admin_products_router, prefix="/api/v1")
+app.include_router(orders_router, prefix="/api/v1")
+app.include_router(admin_orders_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────

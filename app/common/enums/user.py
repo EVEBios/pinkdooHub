@@ -1,6 +1,6 @@
 """用户模块枚举。
 
-DB 存储 TINYINT，API 返回小写字符串。
+DB 通过 Tortoise ``SmallIntField`` 存储为 SMALLINT，API 返回小写字符串。
 映射关系见 docs/03_api/api_design_conventions.md §14。
 """
 

@@ -8,22 +8,41 @@ Depends 链式组合：
 每一层只做一件事，外层层依赖内层，FastAPI 自动递归解析。
 """
 
-from fastapi import Depends
+from fastapi import Depends, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.common.enums.user import UserRole
 from app.core.config import settings
-from app.core.exceptions import PermissionException
+from app.core.exceptions import AuthenticationException, PermissionException
 from app.core.security import decode_token
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
+from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 from app.storage.image import LocalImageStorage
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+
+
+async def reject_request_body(request: Request) -> None:
+    """拒绝契约明确不接收 request body 的 mutation 请求。"""
+
+    if await request.body():
+        raise RequestValidationError(
+            [
+                {
+                    "type": "extra_forbidden",
+                    "loc": ("body",),
+                    "msg": "Request body is not allowed",
+                    "input": None,
+                }
+            ]
+        )
 
 
 def get_product_image_storage() -> LocalImageStorage:
@@ -47,11 +66,27 @@ def get_product_service(
     )
 
 
+def get_order_service(
+    order_repository: OrderRepository = Depends(),
+    product_repository: ProductRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> OrderService:
+    """组装 OrderService 及其数据访问与共享审计依赖。"""
+
+    return OrderService(
+        order_repository,
+        product_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(),
 ) -> User:
     """从 Authorization Header 解析 JWT，返回当前登录用户。"""
+    if credentials is None:
+        raise AuthenticationException(message="Authentication required")
     payload = decode_token(credentials.credentials, "access")
     user = await user_repo.get_by_id(int(payload["sub"]))
     if not user:
