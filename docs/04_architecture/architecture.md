@@ -187,10 +187,12 @@ pinkdooHub/
 │
 ├── tests/                      # 测试目录
 │   ├── conftest.py             #   pytest fixtures（测试 DB、测试 Client）
-│   ├── test_auth.py
-│   ├── test_users.py
-│   ├── test_products.py
-│   └── test_orders.py
+│   ├── support/                #   跨文件复用的测试数据工厂
+│   ├── common/                 #   配置、版本、请求工具、基础迁移
+│   ├── users/                  #   认证、用户与 RBAC
+│   ├── audit/                  #   共享审计链路
+│   ├── product/                #   按 api/schema/model/repository/service 等层分组
+│   └── order/                  #   按 api/schema/model/repository/service 等层分组
 │
 ├── migrations/                 # Aerich 数据库迁移文件
 │   └── models/

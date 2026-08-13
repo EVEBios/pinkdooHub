@@ -5,7 +5,7 @@ from pathlib import Path
 from app.core.config import Settings
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_VERSION = "0.5.0"
 
 

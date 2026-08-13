@@ -114,6 +114,16 @@ git diff --check
 
 Product、Order 或持久化相关改动还应运行对应专项测试，并对照 [Code Review Checklist](docs/07_process/code_review_checklist.md) 检查架构、安全、事务、性能、测试和文档联动。
 
+测试已按领域和应用层归类，可以缩小反馈范围：
+
+```bash
+python -m pytest tests/order/ -q
+python -m pytest tests/product/services/ -q
+python -m pytest tests/product/repositories/ -q
+```
+
+完整目录说明和更多专项命令见 [测试目录导航](tests/README.md)。
+
 ## 架构边界
 
 核心调用链：

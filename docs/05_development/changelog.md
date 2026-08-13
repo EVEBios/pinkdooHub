@@ -4,6 +4,28 @@
 
 ---
 
+## Unreleased — Test Suite Domain and Layer Layout
+
+**Date:** 2026-08-13
+
+### Summary
+
+Reorganized the previously flat 98-file test suite by business domain and application layer without changing test names or behavior. The root now contains only global fixtures, shared data factories, and a navigation document; Product and Order tests can be run independently or narrowed to API, Schema, Model, Repository, Service, Mapper, Validator, or storage boundaries.
+
+### Important Decisions
+
+1. Tests are grouped by domain first because this matches production ownership and makes Phase-focused verification discoverable.
+2. Product and Order are grouped by their principal tested layer instead of a rigid unit/integration split; many existing contracts deliberately combine boundary assertions with real SQLite behavior.
+3. Global fixtures remain in `tests/conftest.py`, and reusable response factories remain in `tests/support/`, so no duplicate fixture trees or nested override rules were introduced.
+4. Pytest configuration remains unchanged: recursive discovery under `tests/` collects the same suite, while paths such as `tests/order/` and `tests/product/services/` provide focused runs.
+
+### Verification
+
+- Pytest collection finds the unchanged total of 1178 tests after all moves.
+- The repository-root lookup in the relocated version contract was updated to remain location-correct.
+
+---
+
 ## v0.5.0 (Unreleased) — Order Module Final Review (Phase 4.2.12)
 
 **Date:** 2026-08-13
