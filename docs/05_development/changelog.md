@@ -4,6 +4,248 @@
 
 ---
 
+## v0.4.0 — Product Module Implementation (Unreleased)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the Product module implementation and its final architecture, OpenAPI, documentation, and release-readiness review. The Product API contract is now v1.0 Implemented. This section is the v0.4.0 release-candidate summary; the following Unreleased Phase 4.1 sections retain the detailed implementation history.
+
+### Changed
+
+- Added precise generic OpenAPI success and error envelopes for all 22 Product operations while preserving the Mapper as the single runtime serialization boundary.
+- Verified that all 19 admin Product operations require Bearer authentication, all 3 public Product operations remain anonymous, and every application operation ID is unique.
+- Removed the obsolete Phase 3 demo `GET /api/v1/admin/users` registration; the formal admin-users router remains the only owner of that path.
+- Synchronized Product business rules, API conventions, architecture, AI context, and project instructions with the implemented Phase 4.1 state.
+
+### Important Decisions
+
+1. Product routes declare precise OpenAPI models through `responses` with `response_model=None`; this avoids revalidating Mapper-produced decimal strings while retaining strict one-pass Out Schema validation.
+2. The Product API document advances from Draft v0.9 to Implemented v1.0. This is a contract-document version, not an application release or Git tag.
+3. The code/default configuration advances from v0.3.0 to the unreleased v0.4.0 candidate because this release adds the complete Product feature set rather than a backward-compatible bug fix. No Git tag or release is created by this change.
+
+### Verification
+
+- 51 focused Product API route, OpenAPI, and real SQLite HTTP tests pass.
+- The complete suite passes with 794 tests, including two application-version consistency contracts.
+- Python compilation, dependency integrity, OpenAPI warning/operation/security checks, whitespace, debug-output, and unfinished-marker checks pass.
+
+### Release Notes
+
+- No new database migration is introduced by this review. The existing MySQL 8+ initial migration remains unapplied and still requires an explicitly authorized deployment procedure.
+- No cleanup command was run against the development database or upload directory.
+
+---
+
+## Unreleased — Product Image Delayed Cleanup (Phase 4.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented a retryable operational batch that removes local files only after ProductImage logical deletion is durably committed, without coupling irreversible file I/O to the DELETE request transaction.
+
+### Added
+
+- Repository ID-cursor scan for deleted images at or before an explicit cutoff.
+- `ProductImageCleanupService` with managed-URL validation, active-reference protection, idempotent deletion, per-item failure isolation, and batch statistics.
+- `python -m app.tasks.product_image_cleanup --before <timezone-aware ISO 8601>` operational command with bounded batches and failure exit status.
+- Real SQLite and temporary-filesystem tests for cutoff selection, cursor pagination, managed/external URLs, active URL references, missing objects, failures, and unsafe parameters.
+
+### Important Decisions
+
+1. Cleanup does not run inside ProductService, FastAPI BackgroundTasks, application startup, or the logical-delete transaction.
+2. Existing `is_deleted`, `updated_at`, and `image_url` fields are the durable retry source; ProductImage and AuditLog records remain intact, so no cleanup-status table or migration is needed.
+3. The cutoff is mandatory and timezone-aware. Retention policy remains an explicit deployment choice rather than an application magic number; the command defaults to preview and requires `--apply` for deletion.
+4. A failed object remains discoverable on the next run. A missing object is treated as idempotent success, while unmanaged/external URLs are never passed to local storage deletion.
+
+### Verification
+
+- 39 focused storage, Repository, cleanup Service, task orchestration, architecture, real SQLite, filesystem, batch-query, and preview-safety tests pass.
+
+### Operational Note
+
+- The command is implemented but was not executed against the workspace development database or upload directory. Production scheduling remains a deployment responsibility.
+- No database migration, dependency, API endpoint, or application version change is required.
+
+---
+
+## Unreleased — Product Audit History API (Phase 4.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the shared AuditLog read path and exposed Product operation history as an ADMIN+ paginated endpoint without embedding audit data in Product detail or duplicating its Schema in the Product module.
+
+### Added
+
+- Shared `AuditLogRepository.list_logs()` and `AuditLogService.list_logs()` target-scoped pagination.
+- Shared `AuditLogOut`, strict pagination query Schema, and Audit API Mapper field whitelist.
+- `GET /api/v1/admin/products/{product_id}/audit-logs`, including logically deleted Product records.
+- Repository, Service, Mapper, permission, validation, route-contract, and real SQLite HTTP tests.
+
+### Important Decisions
+
+1. ProductService checks Product existence with `include_deleted=true`, then delegates the actual query to the shared AuditLogService.
+2. Logs are ordered by `created_at DESC, id DESC` so pagination remains deterministic when timestamps collide.
+3. The public audit shape omits `updated_at`; audit entries are immutable event records for this read contract.
+4. Audit logs remain an independent paginated resource and are not loaded into Product list or detail queries.
+
+### Verification
+
+- 54 focused Audit/Product route, Service, Mapper, architecture, permission, validation, and real SQLite tests pass.
+
+### Known Limitations
+
+- ProductImage delayed physical cleanup was completed by the later stage above.
+- No database migration, dependency, or application version change is required.
+
+---
+
+## Unreleased — Product Multipart Image Routes (Phase 4.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Connected Product and ExperienceOption image uploads to ADMIN+ multipart FastAPI routes, the completed local storage adapter, ProductService, API mappers, and development static-file serving.
+
+### Added
+
+- HTTP 201 `POST /api/v1/admin/products/{product_id}/images` and `POST /api/v1/admin/options/{option_id}/images`.
+- Strict multipart Pydantic forms: public images accept only file/is_cover/sort; Option images accept only file/sort and reject `is_cover`.
+- API upload orchestration that runs synchronous storage off the event loop, closes spooled upload files, and compensates a stored file when ProductService fails without masking the original exception.
+- Deferred-directory local static serving for generated `/uploads/products/{uuid}.{ext}` URLs.
+- Real SQLite multipart tests covering file persistence, Product/Option ownership, audit ordering, safe filenames, response mapping, and static retrieval.
+
+### Important Decisions
+
+1. ProductService remains unaware of UploadFile and storage. The API boundary passes only the generated image URL.
+2. Multipart validation errors use the existing unified request-validation envelope; invalid content/MIME/size uses named `42221 InvalidImageFile`.
+3. Compensation failures are logged with the opaque storage key and do not replace the original Service exception.
+4. Local static serving is a development adapter. A non-path external base URL is not mounted and can be supplied by a future object-storage deployment adapter.
+
+### Verification
+
+- 57 focused multipart route, real SQLite, storage, security, and architecture tests pass.
+
+### Known Limitations
+
+- ProductImage delayed physical cleanup was completed by the later stage above.
+- Product audit-history listing was completed by the later stage above.
+- No database migration or application version change is required. Runtime dependency `python-multipart==0.0.32` was added.
+
+---
+
+## Unreleased — Product Image Storage Adapter (Phase 4.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the Product image validation and local-storage boundary without coupling ProductService to FastAPI or file I/O. Multipart routes remain a separate next step.
+
+### Added
+
+- `LocalImageStorage` with a 2 MiB bounded read, jpg/png/webp signature detection, declared-MIME consistency checks, server-generated UUID keys, non-overwriting atomic publication, URL generation, and idempotent compensation deletion.
+- Named `42221 InvalidImageFile` with a stable `data.reason` contract.
+- Environment-configurable local upload directory/base URL, plus repository ignore rules for runtime uploads.
+- Unit, security, architecture, and global exception-mapping tests.
+
+### Important Decisions
+
+1. Client filenames never enter the storage key or filesystem path; only adapter-generated lowercase UUID keys and allowlisted extensions are accepted.
+2. Validation happens before the destination directory or final object is created. Temporary files are cleaned on any publication failure, and an existing target is never overwritten.
+3. The adapter returns both a public URL for ProductService and an opaque key for route-level compensation. It does not import FastAPI, Models, Repositories, or Services.
+4. Multipart parsing, calling ProductService, compensating a stored file when Service fails, static-file serving, and delayed cleanup after logical deletion remain in the next API integration step.
+
+### Verification
+
+- 23 focused storage, security, architecture, exception-contract, and HTTP exception-mapping tests pass.
+
+### Known Limitations
+
+- Resolved by the later Product Multipart Image Routes stage above: both image-create endpoints are now registered and callable.
+- No database schema, migration, dependency, or application version change is required.
+
+---
+
+## Unreleased — Product JSON FastAPI Routes (Phase 4.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Connected the completed Product Service and API Mapper layers to 19 callable FastAPI endpoints for public/admin queries and ordinary JSON mutations. Multipart image creation and audit-history listing were separate follow-up stages at that point and are now complete above.
+
+### Added
+
+- Public Product list plus Experience/Kit detail routes.
+- ADMIN+ Product list/detail, create/update/delete, online/offline, Option lifecycle, Kit price/stock, and ProductImage metadata/delete routes.
+- `get_product_service()` API composition dependency for ProductRepository + shared AuditLogService + ProductService.
+- Global `RequestValidationError` conversion to the project response envelope without echoing original input values.
+- Route contract, architecture, permission, validation, status-code, response isolation, and real SQLite HTTP lifecycle tests.
+
+### Important Decisions
+
+1. Routes depend on ProductService, never Product Model/Repository; they only validate transport input, invoke Service, map the result, and call `success()`.
+2. Product creates return HTTP 201. ExperienceOption creates return 201 for a new record and 200 when restoring its historical ID.
+3. Query parameter models use FastAPI `Query()` so `extra="forbid"` rejects unknown query parameters at the HTTP boundary.
+4. PATCH routes pass `model_dump(exclude_unset=True)` to preserve missing versus explicit null semantics.
+5. ProductImage JSON PATCH/DELETE were included in this stage because they required no file content; the later Product Multipart Image Routes stage above registered both image POST routes.
+6. Request validation errors expose only location, message, and type. Raw request values are not included in the response or warning log.
+
+### Verification
+
+- 31 focused Product API route, architecture, and real SQLite integration tests pass.
+- All 629 Product tests pass.
+- Real HTTP flows cover Experience/Kit creation, queries, state transitions, mutations, response IDs, availability, and persisted ordered audits.
+
+### Known Limitations
+
+- Product/Option multipart creation, validation/storage, Service-failure compensation, delayed cleanup, and Product audit-history listing were completed by the later stages above.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
+## Unreleased — Product API Mapper (Phase 4.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the Product API response adaptation boundary. Product Service ORM/Page results can now be converted synchronously and without SQL into strict user/admin Out Schemas. FastAPI routes and image file storage remain separate pending work.
+
+### Added
+
+- `app/api/mappers/product.py` mappings for user/admin pages, Experience/Kit details, Product/Option/Image/Kit mutation responses, image ownership, dimensions, availability, covers, prices, and value labels.
+- Authoritative Product type/status/day-type label registries and open duration/participant label rules in Product constants.
+- Architecture tests prohibiting async/await, ORM query/mutation calls, and Service/Repository/FastAPI/Redis dependencies.
+- Unit and real SQLite tests for response whitelists, user/admin isolation, aggregate completeness, ID semantics, stable dimensions, zero SQL, and zero ORM mutation.
+
+### Important Decisions
+
+1. Mapper functions construct explicit whitelisted dictionaries and immediately validate them with the corresponding Product Out Schema; prices remain `Decimal` until Schema serialization fixes them to two decimal places.
+2. User mappers fail fast for non-Online/deleted/incomplete aggregates instead of fabricating empty covers, zero prices, or missing Kit extensions. Admin mappers permit documented Draft emptiness.
+3. Mapper consumes Repository-established relation ordering and never reloads or expands the data scope. Unprefetched relationships remain programming errors.
+4. Kit price/stock mutation response IDs use `ProductKit.product_id`, never the ProductKit table primary key.
+5. Existing Service return values and Repository preloads already satisfy response mapping, so no Service/Repository compatibility changes were needed.
+
+### Verification
+
+- 32 focused Mapper unit and architecture tests pass.
+- 3 real SQLite Mapper integration tests pass with SQL execution disabled after Repository loading.
+- All 597 Product tests pass.
+
+### Known Limitations
+
+- Ordinary Product JSON FastAPI routes, ADMIN+ dependencies, and `success()` integration are complete. Multipart parsing, image validation/storage, and external-file compensation remain pending.
+- No database schema, migration, dependency, or version change is required.
+
+---
+
 ## Unreleased — ProductImage Lifecycle Service (Phase 4.1)
 
 **Date:** 2026-08-12
@@ -36,7 +278,7 @@ Completed ProductImage database lifecycle orchestration: public and Option image
 
 ### Known Limitations
 
-- Multipart routes, image validation, storage adapter, compensation/cleanup worker, and response mapping remain pending.
+- Multipart routes, image validation, storage adapter, compensation/delayed cleanup, and response mapping were completed by the later stages above.
 - No database schema, migration, dependency, or version change is required.
 
 ---

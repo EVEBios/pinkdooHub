@@ -138,6 +138,20 @@ class OptionImageCannotBeCover(BusinessException):
         )
 
 
+class InvalidImageFile(UnprocessableEntityException):
+    """Product 上传图片不符合文件边界约束。"""
+
+    def __init__(self, *, reason: str) -> None:
+        if not reason:
+            raise ValueError("reason must be a non-empty string")
+
+        super().__init__(
+            code=42221,
+            message="Invalid image file",
+            data={"reason": reason},
+        )
+
+
 class ProductNotReadyForOnline(UnprocessableEntityException):
     """Product 聚合不满足上架完整性条件。"""
 

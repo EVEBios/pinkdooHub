@@ -1,9 +1,9 @@
 # Product API Design
 
-> **Document Version:** v0.9
+> **Document Version:** v1.0
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Status:** Draft — Schema, Models, Repository, Validator, and core Product Service slices implemented; API pending
+> **Status:** Implemented — Phase 4.1 Product API complete
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 请求/查询、响应、四个 Product Model、Repository 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption、ProductImage 全生命周期、Kit 价格/库存修改及上架/下架状态流转，写入与审计具有同事务回滚测试。图片文件校验/存储、API Mapper 和全部路由仍待实现；本页端点当前不可调用。
+> **当前实现：** Product 请求/响应 Schema、四个 Model、Repository、Validator、Service、API Mapper 和 22 个 FastAPI 端点已实现。其中 20 个 JSON 查询/mutation（含 Product 操作历史）以及 Product 公共图与 Option 专属图两个 multipart 上传均可调用，具备 ADMIN+ 权限、统一分页/响应、严格表单字段、文件校验/本地存储、Service 失败文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试。OpenAPI 已精确声明各成功信封的数据类型、通用错误信封和鉴权边界；逻辑删除图片后的本地文件可通过独立、可重试的运维批处理安全清理。
 
 ---
 
@@ -85,7 +85,7 @@ Authorization: Bearer <access_token>
 > Option 通过 `is_deleted` 实现逻辑删除。正常查询自动过滤已删除 Option。同一 Product 的 `(duration, participants, day_type)` 在全历史范围内唯一；再次 POST 相同的已删除组合时恢复原 Option ID，而不是插入第二条记录。
 
 > **枚举字段统一使用 `{value, label}` 格式**（见 [API Design Conventions §9.4](api_design_conventions.md#94-枚举值--valuelabel-模式)）。
-> Duration 和 Participants 是开放的正整数值，不是固定枚举。60 / 120 / 540 分钟与 1 / 2 人只是当前常用值；180 分钟、3 人等未来值无需新增 Enum。Service 层负责生成 label。
+> Duration 和 Participants 是开放的正整数值，不是固定枚举。60 / 120 / 540 分钟与 1 / 2 人只是当前常用值；180 分钟、3 人等未来值无需新增 Enum。API Mapper 负责生成 label。
 
 ### 2.3 Kit
 
@@ -148,7 +148,7 @@ Authorization: Bearer <access_token>
 - Product `name=null` 拒绝；`description=null`、空字符串或纯空白表示清空。Option 和 Image PATCH 中显式 `null` 均拒绝。
 - 用户端 Out Schema 是严格的已上架完整形状；管理端 Out Schema 允许 Draft 的空图片、空 Option 和空维度。Out Schema 只输出声明字段，防止内部关联、删除标记或类型专属字段跨接口泄漏。
 
-> **API 集成检查项：** 当前 Schema 测试直接验证 Pydantic 模型。接入 FastAPI 路由时必须补充端点集成测试，并确认 `RequestValidationError` 被转换为全局 `{code, message, data}` 信封；该横切处理不属于 Product Schema 本身。
+> **API 集成状态：** 全部 22 个路由已完成端点或契约测试。`RequestValidationError` 统一转换为 `{ "code": 422, "message": "Validation failed", "data": { "errors": [...] } }`，每项错误只包含 `location`、`message` 和 `type`，不回显原始输入值。OpenAPI 使用 `SuccessResponse[T]` 与 `ErrorResponse` 精确描述信封；Product Mapper 仍是运行时输出白名单和金额字符串序列化的唯一边界。
 
 ---
 
@@ -240,7 +240,7 @@ Authorization: Bearer <access_token>
 
 | code | 常量 | 说明 |
 |------|------|------|
-| 42221 | `INVALID_IMAGE_FILE` | 图片文件无效 |
+| 42221 | `INVALID_IMAGE_FILE` | 图片文件无效；message 固定为 `Invalid image file`，`data.reason` 是 `unsupported_media_type` / `empty_file` / `file_too_large` / `invalid_image_content` / `content_type_mismatch` |
 | 40021 | `OPTION_IMAGE_CANNOT_BE_COVER` | Option 图片不能设为封面 |
 
 > 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，统一使用全局 HTTP 422 参数校验响应，不再分配 Product 专属的 42211–42215。上架时，Validator 对已加载聚合快照再次检查价格、库存及关联完整性；此时发现的缺项统一使用 `42201`。`42221` 保留给文件内容、大小和 MIME 等上传校验。
@@ -411,7 +411,7 @@ GET /api/v1/products
 
 > **Service 边界：** `list_online_products()` 固定向 Repository 传入 `status=online`、`include_deleted=false`、`search_description=true` 并返回 `Page[Product]`。`cover_image`、`display_price` 和 Enum label 由 API Mapper 从预加载聚合计算，不在 Repository 或查询 Service 中生成。
 
-> **实现状态：** 用户列表查询 Service 已实现；API Mapper、Out Schema 调用和路由仍待实现。
+> **实现状态：** 用户列表查询 Service、API Mapper 与 FastAPI 路由已实现，端点当前可调用。
 
 **查询参数**
 
@@ -478,7 +478,7 @@ GET /api/v1/products/experience/{id}
 
 未上线或已删除商品也统一返回 `40401`。`get_online_product_detail(id, product_type=experience)` 返回已预加载 Product 聚合，API Mapper 负责 dimensions、Option/图片 DTO 和 label。
 
-> **实现状态：** 用户详情查询 Service 已实现，Experience/Kit 共用显式 `product_type` 隔离；API Mapper 与路由仍待实现。
+> **实现状态：** 用户详情查询 Service、Experience/Kit 独立 API Mapper 与 FastAPI 路由已实现，端点当前可调用。
 
 **Response Schema：** `ExperienceProductDetailOut` — 不含 `price`、`stock`、`status`、`is_deleted` 和时间字段。
 
@@ -608,7 +608,7 @@ GET /api/v1/admin/products
 
 > **Service 边界：** `list_admin_products()` 原样编排分页和筛选条件，keyword 只搜索名称，并返回 `Page[Product]`。列表展示派生字段由 API Mapper 负责。
 
-> **实现状态：** 管理列表查询 Service 已实现；API Mapper 与路由仍待实现。
+> **实现状态：** 管理列表查询 Service、API Mapper、ADMIN+ 权限与 FastAPI 路由已实现，端点当前可调用。
 
 **查询参数**
 
@@ -678,7 +678,7 @@ GET /api/v1/admin/products/experience/{id}
 
 管理端详情 Service 使用 `get_product_detail(id, include_deleted=true)`；不存在或实际 ProductType 不匹配均返回 `40401`，不另造类型错误。Kit 管理详情遵循相同规则。
 
-> **实现状态：** 管理详情查询 Service 已实现，包含逻辑删除聚合；API Mapper 与路由仍待实现。
+> **实现状态：** 管理详情查询 Service、Experience/Kit 独立 API Mapper、ADMIN+ 权限与 FastAPI 路由已实现，包含逻辑删除聚合，端点当前可调用。
 
 **成功响应**
 
@@ -859,7 +859,7 @@ POST /api/v1/admin/products/experience
 
 **Service 事务：** `create_experience_product()` 在同一事务连接内创建固定为 Experience/Draft/未删除的 Product，并写 `CREATE_PRODUCT` 审计；任一步失败全部回滚。Service 返回 Product，API 使用 `ExperienceProductCreateOut` 序列化。创建不调用 Validator。
 
-> **实现状态：** Experience 创建 Service 已实现并有真实事务回滚测试；API 路由和响应序列化仍待实现。
+> **实现状态：** Experience 创建 Service、Mapper、ADMIN+ 权限与 HTTP 201 路由已实现，端点当前可调用，并有真实事务回滚和 HTTP 集成测试。
 
 **创建后工作流：**
 
@@ -948,7 +948,7 @@ POST /api/v1/admin/products/kit
 
 **Service 事务：** `create_kit_product()` 在同一事务连接内依次创建固定为 Kit/Draft/未删除的 Product、必需的 ProductKit 扩展记录和 `CREATE_PRODUCT` 审计；任一步失败三者全部回滚。Service 返回 Product，API 使用 `KitProductCreateOut` 序列化。`stock` 未提交时由 Schema/常量提供 0。
 
-> **实现状态：** Kit 聚合创建 Service 已实现并有 Product/ProductKit/审计真实原子性测试；API 路由和响应序列化仍待实现。
+> **实现状态：** Kit 聚合创建 Service、Mapper、ADMIN+ 权限与 HTTP 201 路由已实现，端点当前可调用，并有 Product/ProductKit/审计真实原子性和 HTTP 集成测试。
 
 ---
 
@@ -1027,7 +1027,7 @@ API 将上述显式字段映射传给 `ProductService.update_product(..., update
 }
 ```
 
-> **实现状态：** 基础信息修改 Service 与命名异常已实现，并有字段白名单、显式 null、Draft/Offline 成功、冲突短路和审计失败回滚测试。API 路由与响应序列化仍待实现。
+> **实现状态：** 基础信息修改 Service、Mapper、ADMIN+ 权限与 PATCH 路由已实现，并有字段白名单、显式 null、Draft/Offline 成功、冲突短路、审计失败回滚和 HTTP 集成测试。端点当前可调用。
 
 ---
 
@@ -1085,7 +1085,7 @@ DELETE /api/v1/admin/products/{id}
 
 **Audit：** `action = DELETE_PRODUCT`。
 
-> **实现状态：** Product 逻辑删除 Service 与命名异常已实现，并有 Draft/Offline 成功、状态/关联记录保留、冲突优先级和审计失败回滚测试。API 路由与响应序列化仍待实现。
+> **实现状态：** Product 逻辑删除 Service、Mapper、ADMIN+ 权限与 DELETE 路由已实现，并有 Draft/Offline 成功、状态/关联记录保留、冲突优先级、审计失败回滚和 HTTP 集成测试。端点当前可调用。
 
 ---
 
@@ -1196,7 +1196,7 @@ PATCH /api/v1/admin/products/{id}/online
 
 **Audit：** 仅校验通过后在状态更新的同一事务内写入（`action = ONLINE_PRODUCT`, `target_type = product`, `target_id = Product ID`）。校验失败、资源/状态冲突不写 Audit；状态更新或审计写入失败时整个事务回滚。
 
-> **实现状态：** `ProductService.online_product()` 及共享 AuditLog `using_db` 事务透传已实现，并有 Mock 编排测试与真实 SQLite 事务回滚测试。FastAPI 路由、ADMIN+ 依赖接入和 `ProductOnlineOut` 响应序列化仍待实现。
+> **实现状态：** `ProductService.online_product()`、共享 AuditLog 事务透传、ADMIN+ 路由和 `ProductOnlineOut` 序列化均已实现，端点当前可调用；有 Mock 编排、真实 SQLite 回滚及 HTTP 422/成功流程测试。
 
 ---
 
@@ -1251,7 +1251,7 @@ PATCH /api/v1/admin/products/{id}/offline
 
 **Audit：** 与状态更新在同一事务内写入（`action = OFFLINE_PRODUCT`, `target_type = product`）。资源/状态冲突不写 Audit；状态更新或审计失败时整体回滚。下架不调用 ProductValidator。
 
-> **实现状态：** `ProductService.offline_product()` 已实现，并有 Draft/Offline 冲突、删除优先、不调用 Validator、同事务连接和真实审计失败回滚测试。FastAPI 路由、ADMIN+ 依赖和 `ProductOfflineOut` 序列化仍待实现。
+> **实现状态：** `ProductService.offline_product()`、ADMIN+ 路由和 `ProductOfflineOut` 序列化均已实现，端点当前可调用；有 Draft/Offline 冲突、删除优先、不调用 Validator、同事务连接、真实审计失败回滚及 HTTP 集成测试。
 
 ---
 
@@ -1362,7 +1362,7 @@ Product 检查、全历史组合查询和状态冲突发生在写事务前。新
 
 **Audit：** 新建记录 `CREATE_OPTION`；恢复记录 `RESTORE_OPTION`。当前 AuditLog 没有 metadata 列，恢复快照以紧凑 JSON 写入 `description`，包含 `option_id`、`before.price`、`after.price`，价格固定为两位小数字符串。
 
-> **实现状态：** `ProductService.create_experience_option()`、`ProductTypeMismatch` 和 `ExperienceOptionAlreadyExists` 已实现，并有新建/恢复、状态与类型冲突、并发唯一约束翻译、图片保留、共享事务和真实审计失败回滚测试。FastAPI 路由、ADMIN+ 依赖与 `ExperienceOptionOut` 映射仍待实现。
+> **实现状态：** `ProductService.create_experience_option()`、相关异常、Mapper、ADMIN+ 路由均已实现；新建返回 HTTP 201，恢复返回 HTTP 200。端点当前可调用，并有新建/恢复、状态与类型冲突、并发唯一约束翻译、图片保留、事务回滚和 HTTP 测试。
 
 **失败响应**
 
@@ -1478,7 +1478,7 @@ Service 使用当前 Option 和本次 PATCH 合并最终组合后再查全历史
 
 **Audit：** 维度发生 PATCH 时写 `UPDATE_OPTION`，description 保存 `option_id` 与三个维度的 before/after；价格字段发生 PATCH 时写 `UPDATE_PRICE`，description 保存 `option_id` 与价格 before/after。若同一请求同时提交维度和价格，按上述顺序写两条审计。Option 更新、审计和响应重载共享事务连接，任一步失败整体回滚。响应使用 `ExperienceOptionBaseOut`，不会输出重载 Option 上的图片关系。
 
-> **实现状态：** `ProductService.update_experience_option()`、`ExperienceOptionNotFound` 和 `ExperienceOptionAlreadyDeleted` 已实现，并有 PATCH 合并、资源/状态冲突、全历史唯一性、单/双审计、图片保留和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与响应映射仍待实现。
+> **实现状态：** Option 修改 Service、异常、Mapper、ADMIN+ PATCH 路由均已实现，端点当前可调用；有 PATCH 合并、资源/状态冲突、全历史唯一性、单/双审计、图片保留、真实回滚和 HTTP 测试。
 
 ---
 
@@ -1540,7 +1540,7 @@ DELETE /api/v1/admin/options/{option_id}
 
 **Audit：** 记录 `action = DELETE_OPTION`，`target_type=product`、`target_id=所属 Product ID`。当前 AuditLog 没有 metadata 列，删除前快照以紧凑 JSON 写入 `description`：`{ "option_id": 11, "duration_minutes": 120, "participants": 2, "day_type": "holiday", "price": "699.00" }`。Option 更新和审计共享事务；任一步失败整体回滚。删除不加载完整聚合、不调用 ProductValidator。
 
-> **实现状态：** `ProductService.delete_experience_option()` 已实现，并有 40402/40912/40905 优先级、Draft/Offline、最后一项删除、Product 状态与图片保留、审计快照和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与 `DeletedResourceOut` 映射仍待实现。
+> **实现状态：** Option 删除 Service、Mapper、ADMIN+ DELETE 路由均已实现，端点当前可调用；有错误优先级、Draft/Offline、最后一项删除、关联保留、审计快照、真实回滚和 HTTP 测试。
 
 ---
 
@@ -1555,7 +1555,7 @@ Content-Type: multipart/form-data
 
 **可能的业务错误：** `40401`, `40903`, `40905`, `42221`
 
-> **实现边界：** `ProductService.create_product_image()` 接收存储层生成的 `image_url` 并负责数据库业务事务；multipart 解析、文件内容/大小/MIME 校验、对象存储与 `42221` 映射属于待实现的 API/存储适配器。若文件已上传但 Service 失败，调用方必须删除已上传对象或记录延迟清理任务。
+> **实现边界：** `ProductService.create_product_image()` 接收存储层生成的 `image_url` 并负责数据库业务事务；API 负责 multipart 严格表单校验、文件存储调用和失败补偿。文件内容/大小/MIME 校验、安全 UUID 文件名、原子本地存储、URL 生成与 `42221` 映射已接入。若文件已存储但 Service 失败，调用方使用 storage key 幂等删除文件，再让原异常由全局中间件响应。
 
 **请求参数**
 
@@ -1595,7 +1595,7 @@ Content-Type: multipart/form-data
 
 **Audit：** `action = CREATE_PRODUCT_IMAGE`，`target_type=product`、`target_id=Product ID`；当前无 metadata 列，紧凑 JSON `{ "image_id": 20, "is_cover": true }` 写入 `description`。设为封面时，清除旧封面、图片创建和审计共享事务。
 
-> **实现状态：** 公共图片创建、封面互斥与审计 Service 已实现，并有 Draft/Offline、404/409、非封面不清理、审计失败恢复旧封面测试。上传校验、存储适配器、路由与 `ProductImageOut` 映射仍待实现。
+> **实现状态：** 公共图片创建、封面互斥、审计 Service、`ProductImageOut` Mapper、文件校验/本地存储、ADMIN+ multipart 路由和 Service 失败文件补偿均已实现。端点当前可调用，成功固定返回 HTTP 201。
 
 ---
 
@@ -1661,7 +1661,7 @@ Content-Type: multipart/form-data
 
 **Audit：** `action = CREATE_OPTION_IMAGE`，`target_type=product`、`target_id=所属 Product ID`；紧凑 JSON `{ "image_id": 31, "option_id": 11 }` 写入现有 `description`。图片创建与审计共享事务。
 
-> **实现状态：** Option 图片创建、固定归属/非封面和审计 Service 已实现，并有 40402/40912/40905 优先级与真实持久化测试。上传校验、存储适配器、路由与 `OptionImageOut` 映射仍待实现。
+> **实现状态：** Option 图片创建、固定归属/非封面、审计 Service、`OptionImageOut` Mapper、文件校验/本地存储、ADMIN+ multipart 路由和 Service 失败文件补偿均已实现。端点当前可调用，成功固定返回 HTTP 201；未知表单字段（包括 `is_cover`）返回统一参数 422。
 
 ---
 
@@ -1769,7 +1769,7 @@ PATCH { is_cover: true }
 
 **Audit：** 始终先记录 `UPDATE_PRODUCT_IMAGE`，description 含 `image_id` 及提交字段的 before/after。若非封面图片真正切换为封面，再顺序记录 `SET_PRODUCT_COVER`，含 `{ "old_cover_image_id": 10, "new_cover_image_id": 20 }`；没有旧封面时旧 ID 为 `null`。旧封面查询、批量清除、当前图片更新和一至两条审计共享事务，任一步失败整体回滚。
 
-> **实现状态：** 图片排序/封面修改 Service 与 40403/40021 已实现，并有字段白名单、资源隐藏、Option 封面拒绝、单/双审计、唯一有效公共封面和第二条审计失败全回滚测试。路由与按图片归属选择 Out Schema 的 Mapper 仍待实现。
+> **实现状态：** 图片排序/封面修改 Service、异常、按归属 Mapper、ADMIN+ JSON PATCH 路由均已实现，端点当前可调用；有字段白名单、资源隐藏、Option 封面拒绝、单/双审计、封面不变量、全回滚和 HTTP 测试。图片文件上传仍不属于此端点。
 
 ---
 
@@ -1779,7 +1779,7 @@ PATCH { is_cover: true }
 DELETE /api/v1/admin/product-images/{image_id}
 ```
 
-**Request Body：无。** 执行逻辑删除（`is_deleted = true`），文件存储延迟清理。
+**Request Body：无。** 执行逻辑删除（`is_deleted = true`）；物理文件不在请求事务中删除，交给独立可重试批处理。
 
 **可能的业务错误：** `40403`, `40905`
 
@@ -1830,9 +1830,9 @@ DELETE /api/v1/admin/product-images/{image_id}
 }
 ```
 
-**Audit：** `action = DELETE_PRODUCT_IMAGE`，`target_type=product`、`target_id=Product ID`。当前 `description` 上限为 256，而合法 `image_url` 最长 2048，因此紧凑快照保存 `{ "image_id": 31, "product_id": 1, "experience_option_id": 11, "is_cover": false, "sort": 10 }`，完整 URL 仍保留在逻辑删除的 ProductImage 记录中并可按 image_id 追溯。更新与审计共享事务；文件对象按后续存储清理机制处理。
+**Audit：** `action = DELETE_PRODUCT_IMAGE`，`target_type=product`、`target_id=Product ID`。当前 `description` 上限为 256，而合法 `image_url` 最长 2048，因此紧凑快照保存 `{ "image_id": 31, "product_id": 1, "experience_option_id": 11, "is_cover": false, "sort": 10 }`，完整 URL 仍保留在逻辑删除的 ProductImage 记录中并可按 image_id 追溯。更新与审计共享事务；物理文件由事务提交后的独立清理机制处理。
 
-> **实现状态：** 图片逻辑删除 Service 已实现，并有资源隐藏、Online 拒绝、封面/Option 最后一图允许删除、长度安全快照和审计失败回滚测试。文件延迟清理、路由与 `DeletedResourceOut` 映射仍待实现。
+> **实现状态：** 图片逻辑删除 Service、Mapper 与 ADMIN+ DELETE 路由已实现，端点当前可调用；有资源隐藏、Online 拒绝、封面/Option 最后一图允许删除、长度安全快照、审计失败回滚和 HTTP 测试。物理文件清理由 `python -m app.tasks.product_image_cleanup --before <带时区 ISO 8601>` 独立批处理：默认只预览候选，显式增加 `--apply` 才删除；按删除更新时间截止值和 ID 游标分页，只处理当前存储命名空间中的 UUID 文件，并保护仍被有效记录引用的 URL。外部 URL 跳过，文件不存在视为幂等成功，单项失败留待下次运行重试。该运维命令不改变本 HTTP 接口响应。
 
 ---
 
@@ -1893,7 +1893,7 @@ PATCH /api/v1/admin/products/kit/{product_id}/price
 
 **Audit：** `action = UPDATE_PRICE`，`target_type=product`、`target_id=Product ID`。当前 AuditLog 没有 metadata 列，before/after 两位小数价格快照以紧凑 JSON 写入 `description`。ProductKit 更新和审计共享事务；任一步失败整体回滚。Service 返回 ProductKit，API Mapper 使用 `product_id` 构造响应 `id`。
 
-> **实现状态：** `ProductService.update_kit_price()` 与 `40404 ProductKitNotFound` 已实现，并有冲突优先级、Draft/Offline、字段保留、审计快照和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与 `KitPriceOut` 映射仍待实现。
+> **实现状态：** Kit 价格修改 Service、异常、Mapper 与 ADMIN+ PATCH 路由已实现，端点当前可调用；有冲突优先级、Draft/Offline、字段保留、审计快照、真实回滚和 HTTP 测试。
 
 ---
 
@@ -1952,7 +1952,7 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 
 **Audit：** `action = UPDATE_STOCK`，`target_type=product`、`target_id=Product ID`。before/after 整数库存快照以紧凑 JSON 写入现有 `AuditLog.description`。ProductKit 更新和审计共享事务；任一步失败整体回滚。Service 返回 ProductKit，API Mapper 使用 `product_id` 构造响应 `id`。
 
-> **实现状态：** `ProductService.update_kit_stock()` 已实现，并有冲突优先级、Draft/Offline、零库存、字段保留、审计快照和真实回滚测试。FastAPI 路由、ADMIN+ 依赖与 `KitStockOut` 映射仍待实现。
+> **实现状态：** Kit 库存修改 Service、Mapper 与 ADMIN+ PATCH 路由已实现，端点当前可调用；有冲突优先级、Draft/Offline、零库存、字段保留、审计快照、真实回滚和 HTTP 测试。
 
 > **后续升级点：** Phase 4.3 Inventory 模块将演进为库存调整模型（记录变动量 + 原因），替代当前"直接设值"模式。
 
@@ -1988,6 +1988,37 @@ await audit_service.list_logs(
 
 > 此接口属于 Product 模块路由，但实际查询逻辑委托给 AuditService。所有模块（Product、Order、Inventory 等）统一使用同一 AuditService。
 >
-> **Schema 边界：** 审计分页响应属于共享 Audit 模块，不在 Product Schema 中重复定义。当前 `AuditLogService.list_logs()` 与共享 `AuditLogOut` 尚待实现，因此该端点仍是后续实现项。
+> Product 的逻辑删除不会阻断历史追溯：只要 Product 记录仍存在，此接口就会返回它的审计历史。真正不存在的 Product ID 返回 `40401`。
+
+**成功响应**
+
+```json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "items": [
+            {
+                "id": 103,
+                "operator_id": 7,
+                "action": "DELETE_PRODUCT",
+                "target_type": "product",
+                "target_id": 1,
+                "description": null,
+                "ip_address": "127.0.0.1",
+                "created_at": "2026-08-13T09:00:00Z"
+            }
+        ],
+        "total": 3,
+        "page": 1,
+        "page_size": 20,
+        "pages": 1
+    }
+}
+```
+
+> **Schema 边界：** 审计分页响应属于共享 Audit 模块，使用 `app/schemas/audit.py:AuditLogOut`，不在 Product Schema 中重复定义。Repository 按 `created_at DESC, id DESC` 稳定排序；`AuditLogService.list_logs()` 承担跨模块通用查询，ProductService 只增加 Product（包含逻辑删除记录）的存在性校验。
+>
+> **实现状态：** 共享 Repository/Service 分页查询、Audit Mapper/Out Schema、ProductService 委托、ADMIN+ 路由均已实现；有目标隔离、稳定倒序、分页、删除后追溯、404、权限和真实 SQLite HTTP 测试。
 
 ---

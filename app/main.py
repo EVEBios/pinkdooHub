@@ -42,10 +42,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.static import DeferredDirectoryStaticFiles
 from app.api.v1.admin import router as admin_router
+from app.api.v1.admin_products import router as admin_products_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
+from app.api.v1.products import router as products_router
 from app.api.v1.users import router as users_router
 from app.core.config import settings
 from app.core.logging import setup_logging
@@ -161,6 +164,17 @@ app = FastAPI(
     lifespan=lifespan,  # ← 核心：把生命周期函数注入 FastAPI
 )
 
+# 本地开发存储的公开访问入口；目录在首次上传时创建。
+if settings.product_image_base_url.startswith("/"):
+    app.mount(
+        settings.product_image_base_url,
+        DeferredDirectoryStaticFiles(
+            directory=settings.product_image_upload_dir,
+            check_dir=False,
+        ),
+        name="product-images",
+    )
+
 # ── 数据库 ──────────────────────────────────────
 # 测试环境由 conftest 管理数据库，跳过此注册
 if _os.getenv("TESTING") != "1":
@@ -171,6 +185,8 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(admin_users_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(products_router, prefix="/api/v1")
+app.include_router(admin_products_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────

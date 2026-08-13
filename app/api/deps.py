@@ -12,12 +12,39 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.common.enums.user import UserRole
+from app.core.config import settings
 from app.core.exceptions import PermissionException
 from app.core.security import decode_token
 from app.models.user import User
+from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
+from app.services.audit_log_service import AuditLogService
+from app.services.product_service import ProductService
+from app.storage.image import LocalImageStorage
 
 security = HTTPBearer()
+
+
+def get_product_image_storage() -> LocalImageStorage:
+    """组装 Product 本地图片存储适配器。"""
+
+    return LocalImageStorage(
+        root=settings.product_image_upload_dir,
+        base_url=settings.product_image_base_url,
+    )
+
+
+def get_product_service(
+    product_repository: ProductRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> ProductService:
+    """组装 ProductService 及其 Repository/共享审计依赖。"""
+
+    return ProductService(
+        product_repository,
+        AuditLogService(audit_log_repository),
+    )
 
 
 async def get_current_user(

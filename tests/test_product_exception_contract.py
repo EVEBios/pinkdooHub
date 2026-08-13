@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
-from app.common.exceptions import ProductNotReadyForOnline
+from app.common.exceptions import InvalidImageFile, ProductNotReadyForOnline
 from app.core.exceptions import BusinessException, UnprocessableEntityException
 from app.middleware.exception import register_exception_handlers
 
@@ -20,6 +20,10 @@ def _create_exception_test_app() -> FastAPI:
     @test_app.get("/product-not-ready")
     async def raise_product_not_ready() -> None:
         raise ProductNotReadyForOnline(issues=PRODUCT_NOT_READY_ISSUES)
+
+    @test_app.get("/invalid-image")
+    async def raise_invalid_image() -> None:
+        raise InvalidImageFile(reason="file_too_large")
 
     @test_app.get("/ordinary-business-error")
     async def raise_ordinary_business_error() -> None:
@@ -54,6 +58,15 @@ def test_product_not_ready_exception_contract() -> None:
     assert exc.data == {"issues": ["product description is required"]}
 
 
+def test_invalid_image_file_contract() -> None:
+    exc = InvalidImageFile(reason="file_too_large")
+
+    assert isinstance(exc, UnprocessableEntityException)
+    assert exc.code == 42221
+    assert exc.message == "Invalid image file"
+    assert exc.data == {"reason": "file_too_large"}
+
+
 @pytest.mark.parametrize("issues", [[], [""]])
 def test_product_not_ready_rejects_invalid_issues(
     issues: list[str],
@@ -84,6 +97,17 @@ async def test_product_not_ready_maps_to_http_422() -> None:
         "code": 42201,
         "message": "Product is not ready to go online",
         "data": {"issues": ["product description is required"]},
+    }
+
+
+async def test_invalid_image_file_maps_to_http_422() -> None:
+    response = await _get("/invalid-image")
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": 42221,
+        "message": "Invalid image file",
+        "data": {"reason": "file_too_large"},
     }
 
 

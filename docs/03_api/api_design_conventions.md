@@ -14,11 +14,11 @@
 
 ## 0. Data Flow（数据流向）
 
-核心原则：**数据库存原始值，Service 负责转换，Response 面向前端。**
+核心原则：**数据库存原始值，API Mapper 负责展示转换，Response 面向前端。**
 
 ```
-Database                  Service                     Response
-────────                  ───────                     ────────
+Database                  API Mapper                  Response
+────────                  ──────────                  ────────
 duration_minutes = 60  →  转换  →  { "value": 60, "label": "1小时" }
 day_type = "weekday"   →  转换  →  { "value": "weekday", "label": "工作日" }
 status = "online"      →  转换  →  { "value": "online", "label": "已上架" }
@@ -27,7 +27,8 @@ status = "online"      →  转换  →  { "value": "online", "label": "已上�
 | 层 | 职责 | 禁止 |
 |----|------|------|
 | Database | 保存原始值，便于计算和索引 | 保存展示文案（"1小时"） |
-| Service | 转换原始值 → `{value, label}` DTO | 把转换逻辑放在 API 层 |
+| Service | 返回领域值或已加载聚合 | 依赖 API Out Schema 或生成展示文案 |
+| API Mapper | 转换原始值 → `{value, label}` DTO | 查询数据库或把内部字段透传给响应 |
 | Response | 返回 `{value, label}`，前端直接展示 | 返回数据库原始字段名（`duration_minutes`） |
 | Request | 前端提交 `value` | 提交 `label`（"1小时"） |
 
@@ -192,6 +193,8 @@ Authorization: Bearer <access_token>
 | message | string | 是 | 可读的状态描述 |
 | data | any | 否 | 返回数据，无数据时为 `null` |
 
+实现层使用 `success()` 构造运行时成功信封，异常中间件构造错误信封；OpenAPI 必须分别通过泛型 `SuccessResponse[T]` 和 `ErrorResponse` 精确声明响应结构，不能保留无约束的 `object`。如果 API Mapper 已经完成严格 Out Schema 校验并把 `Decimal` 等领域值序列化为契约字符串，路由应通过 `responses` 声明 OpenAPI 模型并保持 `response_model=None`，避免 FastAPI 对已序列化数据进行第二次、语义不同的校验。
+
 ### 6.2 成功响应
 
 ```json
@@ -238,11 +241,18 @@ Authorization: Bearer <access_token>
     "code": 422,
     "message": "Validation failed",
     "data": {
-        "username": "Username must be 3-32 characters",
-        "password": "Password must be at least 6 characters"
+        "errors": [
+            {
+                "location": ["body", "username"],
+                "message": "String should have at least 3 characters",
+                "type": "string_too_short"
+            }
+        ]
     }
 }
 ```
+
+FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为上述信封。每项只包含 `location`、`message` 和 `type`，不得回显原始输入值，避免密码、Token 或其他敏感内容进入响应与日志。业务聚合状态的 HTTP 422（例如 Product `42201`）继续使用对应命名异常规定的数据结构，不套用 `data.errors`。
 
 ### 6.4 字段排除规则
 
@@ -280,7 +290,7 @@ Authorization: Bearer <access_token>
 
 `UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
 
-> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator 阶段也已完成，并由异常契约、公共规则、类型专属规则、纯度和真实聚合集成测试覆盖。Product Service 和 API 仍待实现。
+> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 22 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。
 
 ---
 
@@ -362,7 +372,7 @@ Authorization: Bearer <access_token>
 | code | 说明 |
 |------|------|
 | 42201 | 商品未满足上架条件；message 固定为 `Product is not ready to go online`，`data.issues` 为非空字符串数组 |
-| 42221 | 图片文件无效 |
+| 42221 | 图片文件无效；message 固定为 `Invalid image file`，`data.reason` 提供稳定失败原因 |
 
 > Product 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。上架时对已加载聚合快照执行的价格、库存与关联完整性校验使用 `42201`；其精确 message、issues 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。上传文件内容、MIME 和大小校验使用 `42221`。
 
@@ -590,8 +600,8 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 
 | 字段 | DB 存储 | 常用值 | 规则 |
 |------|---------|--------|------|
-| `duration_minutes` | INT | 60 → “1小时”、120 → “2小时”、540 → “全天” | 任意正整数；Service 根据分钟数生成 label |
-| `participants` | INT | 1 → “1人”、2 → “2人” | 任意正整数；Service 根据人数生成 label |
+| `duration_minutes` | INT | 60 → “1小时”、120 → “2小时”、540 → “全天” | 任意正整数；API Mapper 根据分钟数生成 label |
+| `participants` | INT | 1 → “1人”、2 → “2人” | 任意正整数；API Mapper 根据人数生成 label |
 
 **固定 Enum**
 
@@ -633,7 +643,7 @@ def duration_to_dto(value: int) -> dict:
 - [ ] 在本文档 §14 注册表中新增一行
 - [ ] 数据库使用 `TINYINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
 - [ ] Python 定义对应的 `Enum` 类（`app/common/enums/`）
-- [ ] Service 层实现 `{value, label}` 转换
+- [ ] API Mapper 实现 `{value, label}` 转换
 - [ ] 更新 `er_diagram.dbml` 和 `database_design.md`
 
 ---

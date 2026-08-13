@@ -1,5 +1,6 @@
 """Product Repository —— 封装 Product 聚合的数据访问。"""
 
+from datetime import datetime
 from decimal import Decimal
 from typing import TypeVar
 
@@ -345,6 +346,37 @@ class ProductRepository:
         if not include_deleted:
             query = query.filter(is_deleted=False)
         return await query.first()
+
+    async def list_deleted_images_for_cleanup(
+        self,
+        *,
+        before: datetime,
+        after_id: int,
+        limit: int,
+    ) -> list[ProductImage]:
+        """按 ID 扫描达到清理时间的逻辑删除图片。"""
+
+        return await (
+            ProductImage.filter(
+                is_deleted=True,
+                updated_at__lte=before,
+                id__gt=after_id,
+            )
+            .only("id", "image_url", "updated_at")
+            .order_by("id")
+            .limit(limit)
+        )
+
+    async def get_active_image_urls(self, image_urls: set[str]) -> set[str]:
+        """批量返回仍被有效 ProductImage 引用的 URL。"""
+
+        if not image_urls:
+            return set()
+        values = await ProductImage.filter(
+            image_url__in=image_urls,
+            is_deleted=False,
+        ).distinct().values_list("image_url", flat=True)
+        return set(values)
 
     async def create_image(
         self,

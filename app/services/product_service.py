@@ -28,6 +28,7 @@ from app.common.exceptions import (
     ProductTypeMismatch,
 )
 from app.common.pagination import Page
+from app.models.audit_log import AuditLog
 from app.models.experience_option import ExperienceOption
 from app.models.product import Product
 from app.models.product_image import ProductImage
@@ -181,6 +182,28 @@ class ProductService:
             keyword=keyword,
             include_deleted=False,
             search_description=True,
+        )
+
+    async def list_product_audit_logs(
+        self,
+        product_id: int,
+        *,
+        page: int,
+        page_size: int,
+    ) -> Page[AuditLog]:
+        """确认 Product（含逻辑删除记录）存在后委托共享审计查询。"""
+
+        product = await self.product_repository.get_product_by_id(
+            product_id,
+            include_deleted=True,
+        )
+        if product is None:
+            raise ProductNotFound()
+        return await self.audit_log_service.list_logs(
+            target_type="product",
+            target_id=product_id,
+            page=page,
+            page_size=page_size,
         )
 
     async def get_admin_product_detail(

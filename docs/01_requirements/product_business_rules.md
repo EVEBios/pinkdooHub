@@ -263,14 +263,14 @@ Product 基础信息修改只接受 API Schema 使用 `exclude_unset=True` 得�
 
 ### 7.2 Product 查询可见性
 
-Product 查询 Service 返回 ORM Product 聚合或 `Page[Product]`，不依赖 API Out Schema，也不生成 `LabeledValue`、`cover_image`、`display_price`、`dimensions`、`available` 等展示字段；这些字段由后续 API Mapper 从已加载聚合计算并交给 Out Schema 白名单序列化。
+Product 查询 Service 返回 ORM Product 聚合或 `Page[Product]`，不依赖 API Out Schema，也不生成 `LabeledValue`、`cover_image`、`display_price`、`dimensions`、`available` 等展示字段；这些字段由 API Mapper 从已加载聚合计算并交给 Out Schema 白名单序列化。
 
 - 管理端列表可查看全部状态，默认隐藏已删除记录；`include_deleted=true` 时包含已删除记录。管理端详情显式包含已删除记录，但请求的 ProductType 与实际类型不匹配时统一抛 `ProductNotFound`。
 - 用户端列表固定 `status=online`、`include_deleted=false`，keyword 同时搜索名称和描述。调用方不能覆盖这两个可见性条件。
 - 用户端详情只有 Product 存在、未删除、Online 且类型匹配时返回；不存在、未上线、已删除和类型不匹配全部抛 `ProductNotFound(40401)`，避免泄漏未发布资源。
 - 查询不写审计、不调用 Validator、不开启事务。
 
-> **实现状态：** 管理端/用户端列表与详情查询 Service 已实现，并有 Repository 参数编排、可见性、类型隐藏和真实预加载聚合测试。API Mapper 与路由仍待实现。
+> **实现状态：** 管理端/用户端列表与详情查询 Service、API Mapper 和路由均已实现，并有 Repository 参数编排、可见性、类型隐藏、零 SQL Mapper、权限和真实预加载聚合 HTTP 测试。
 
 ### 7.3 Product 创建事务
 
@@ -287,7 +287,7 @@ create_kit_product(name, description, price, stock, operator_id, ip_address) -> 
 - Service 返回 Product；创建响应只需要 Product 身份字段，API 使用对应 Create Out Schema 序列化。
 - Product、ProductKit 或审计任一步失败时全部回滚；创建不调用 ProductValidator，Draft 可以暂时没有描述、图片或 Experience Option。
 
-> **实现状态：** Experience/Kit 创建 Service 已实现，并有固定类型、同一事务连接、零库存、无 Validator 调用、真实聚合持久化和审计失败全回滚测试。API 路由仍待实现。
+> **实现状态：** Experience/Kit 创建 Service、Mapper 与 ADMIN+ HTTP 201 路由均已实现，并有固定类型、同一事务连接、零库存、无 Validator 调用、真实聚合持久化、权限和审计失败全回滚测试。
 
 ### 7.4 Product 基础信息修改与逻辑删除
 
@@ -304,7 +304,7 @@ delete_product(product_id, *, operator_id, ip_address) -> Product
 - Repository 更新和对应审计共享事务连接；Service 返回更新后的 Product，由 API Out Schema 负责响应白名单。
 - 两条流程均不加载完整聚合、不调用 ProductValidator。
 
-> **实现状态：** 基础信息修改与逻辑删除 Service 已实现，并有字段白名单、PATCH 缺失/null、冲突优先级、状态保留、关联记录保留、共享事务及审计失败真实回滚测试。API 路由仍待实现。
+> **实现状态：** 基础信息修改与逻辑删除 Service、Mapper 与 ADMIN+ 路由均已实现，并有字段白名单、PATCH 缺失/null、冲突优先级、状态保留、关联记录保留、权限、共享事务及审计失败真实回滚测试。
 
 ### 7.5 ExperienceOption 新增与恢复事务
 
@@ -317,11 +317,11 @@ delete_product(product_id, *, operator_id, ip_address) -> Product
 - Service 查询和数据库全历史唯一索引双重保护。若不存在检查后发生并发 INSERT 冲突，Service 将 ORM `IntegrityError` 转换为同一 `40911`，不泄漏持久化异常。
 - Option 写入、审计与响应所需的 Option/有效图片重载共享同一事务连接；审计失败时新建或恢复均回滚。该流程不调用上架 Validator。
 
-Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，不依赖 HTTP：后续 API 根据 `restored=false` 返回 201，根据 `restored=true` 返回 200，并使用已预加载有效图片的 Option 生成 `ExperienceOptionOut`。
+Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，不依赖 HTTP：API 根据 `restored=false` 返回 201，根据 `restored=true` 返回 200，并使用已预加载有效图片的 Option 生成 `ExperienceOptionOut`。
 
 恢复审计通过现有 `AuditLog.description` 保存紧凑 JSON：`option_id` 以及 `before.price` / `after.price` 两位小数字符串。本阶段不新增 metadata 列，不需要数据库迁移。
 
-> **实现状态：** ExperienceOption 新增/恢复 Service 已实现，并有 Product 前置冲突、唯一冲突、并发唯一约束翻译、Draft/Offline、恢复 ID/图片、审计快照与真实回滚测试。API 路由仍待实现。
+> **实现状态：** ExperienceOption 新增/恢复 Service、Mapper 与 ADMIN+ 路由均已实现，并有 Product 前置冲突、唯一冲突、并发唯一约束翻译、Draft/Offline、恢复 ID/图片、权限、审计快照与真实回滚测试。
 
 ### 7.6 ExperienceOption 部分修改事务
 
@@ -333,7 +333,7 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 - 只修改维度时写 `UPDATE_OPTION`；只修改价格时写 `UPDATE_PRICE`；同一次 PATCH 同时修改两类字段时按 `UPDATE_OPTION`、`UPDATE_PRICE` 顺序写两条审计。两种 description 都是紧凑 JSON，包含 `option_id` 和对应 before/after 快照。
 - Option 更新、全部审计及响应 Option 重载共享一个事务；第二条审计或响应重载失败也会回滚字段变更和此前已写审计。更新不调用 ProductValidator，图片关系不由此接口修改。
 
-> **实现状态：** ExperienceOption 修改 Service 已实现，并有 PATCH 白名单、缺失字段合并、资源/状态优先级、有效/已删除组合冲突、并发冲突翻译、单/双审计、图片保留及真实全事务回滚测试。API 路由仍待实现。
+> **实现状态：** ExperienceOption 修改 Service、Mapper 与 ADMIN+ 路由均已实现，并有 PATCH 白名单、缺失字段合并、资源/状态优先级、有效/已删除组合冲突、并发冲突翻译、单/双审计、权限、图片保留及真实全事务回滚测试。
 
 ### 7.7 ExperienceOption 逻辑删除事务
 
@@ -344,7 +344,7 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 - 删除前快照以紧凑 JSON 写入 `AuditLog.description`，包含 `option_id`、`duration_minutes`、`participants`、`day_type` 和两位小数 `price`；action 为 `DELETE_OPTION`，审计目标为所属 Product。
 - Option 更新与审计共享同一事务连接；更新失败不审计，审计失败回滚删除标记。该流程不查询有效 Option 数量，也不调用 ProductValidator；后续重新上架时由 Validator 对零 Option 聚合统一返回 `42201`。
 
-> **实现状态：** ExperienceOption 逻辑删除 Service 已实现，并有资源/状态优先级、Draft/Offline、最后一项删除、Product 状态保留、图片外键保留、快照审计及真实回滚测试。API 路由仍待实现。
+> **实现状态：** ExperienceOption 逻辑删除 Service、Mapper 与 ADMIN+ 路由均已实现，并有资源/状态优先级、Draft/Offline、最后一项删除、Product 状态保留、权限、图片外键保留、快照审计及真实回滚测试。
 
 ### 7.8 ProductKit 价格与库存修改事务
 
@@ -355,9 +355,9 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 - 价格接口只修改 `ProductKit.price` 并写 `UPDATE_PRICE`；库存接口采用 Phase 4.1 的最终值设置模式，只修改 `ProductKit.stock` 并写 `UPDATE_STOCK`。价格快照使用两位小数字符串，库存快照使用整数，均以紧凑 JSON 写入现有 `AuditLog.description`。
 - Kit 更新和对应审计共享同一事务连接，更新失败不审计，审计失败回滚字段修改。两个流程都不加载完整 Product 聚合、不调用 ProductValidator，也不提前实现库存流水、扣减、恢复或并发库存控制。
 
-Service 返回更新后的 `ProductKit`；后续 API Mapper 使用 `product_id` 作为 `KitPriceOut` / `KitStockOut` 的 `id`，不会把 ProductKit 内部主键暴露为 Product ID。
+Service 返回更新后的 `ProductKit`；API Mapper 使用 `product_id` 作为 `KitPriceOut` / `KitStockOut` 的 `id`，不会把 ProductKit 内部主键暴露为 Product ID。
 
-> **实现状态：** Kit 价格与库存修改 Service 及 `40404 ProductKitNotFound` 已实现，并有资源/状态优先级、Draft/Offline、零库存、字段互不覆盖、快照审计、Validator 隔离和真实事务回滚测试。API 路由仍待实现。
+> **实现状态：** Kit 价格与库存修改 Service、Mapper、ADMIN+ 路由及 `40404 ProductKitNotFound` 均已实现，并有资源/状态优先级、Draft/Offline、零库存、字段互不覆盖、权限、快照审计、Validator 隔离和真实事务回滚测试。
 
 ### 7.9 ProductImage 生命周期事务
 
@@ -370,9 +370,18 @@ Service 返回更新后的 `ProductKit`；后续 API Mapper 使用 `product_id` 
 
 封面创建/切换先在事务内通过 `SELECT ... FOR UPDATE` 锁定 Product 行，防止同一 Product 的并发封面请求在清理后各自留下一个封面；图片创建、封面批量清理、图片修改/删除和对应一至两条审计均使用同一事务连接。当前 `AuditLog.description` 只有 256 字符，删除快照保存 `image_id`、`product_id`、`experience_option_id`、`is_cover` 和 `sort`，不复制最长可达 2048 字符的 `image_url`；完整 URL 继续保留在逻辑删除的 ProductImage 中，可由 `image_id` 追溯。
 
-文件内容校验和存储边界仍待 API 集成：未来适配器必须在调用 Service 前完成 jpg/png/webp、2MB 和安全文件名/路径检查并生成 URL；数据库事务无法回滚已上传文件，若 Service 失败，API/存储编排方必须执行删除补偿或记录待清理对象。`42221` 只属于该上传边界。
+文件内容校验和存储由 API/基础设施边界负责：在调用 Service 前完成 jpg/png/webp、2 MiB 和安全 UUID 文件名/路径检查并生成 URL。数据库事务无法回滚已上传文件；若 Service 失败，API 上传编排使用 storage key 执行幂等删除补偿，补偿自身失败时记录存储键以便清理，且不掩盖原 Service 异常。`42221` 只属于该上传边界。
 
-> **实现状态：** ProductImage 创建、修改、封面切换和逻辑删除 Service，以及 40403/40021 命名异常已实现；资源/状态优先级、封面互斥、Option 归属、审计顺序、删除快照和真实事务回滚均有测试。文件存储适配器、上传校验和 API 路由仍待实现。
+逻辑删除后的物理文件清理由独立、可重试的批处理执行，不进入 DELETE 请求和数据库事务：`ProductImage.is_deleted=true`、`updated_at` 与保留的 `image_url` 共同构成持久化候选来源。清理命令必须显式接收带时区的截止时间，只扫描 `updated_at <= before` 的删除记录；只允许删除当前存储适配器能解析出的 UUID key，外部 URL 或异常 URL 一律跳过。每批一次性查询仍被有效 ProductImage 引用的 URL 并在内存中保护，避免逐候选查询；文件删除幂等，单项失败记录 image_id/storage key、继续处理本批其他项，并通过非零进程退出码让外部调度器重试。数据库记录和审计日志始终保留。
+
+批处理不会由 Web 进程启动时自动执行，也不在 DELETE 响应后创建内存后台任务。命令默认是只记录候选的预览模式；运维方先按保留期选择截止时间核对结果，再使用完全相同的参数显式增加 `--apply` 执行删除：
+
+```bash
+python -m app.tasks.product_image_cleanup --before 2026-08-01T00:00:00+08:00 --batch-size 100
+python -m app.tasks.product_image_cleanup --before 2026-08-01T00:00:00+08:00 --batch-size 100 --apply
+```
+
+> **实现状态：** ProductImage 创建、修改、封面切换和逻辑删除 Service，40403/40021/42221 命名异常，文件校验/本地存储，两个 ADMIN+ multipart API 路由、Service 失败的路由级删除补偿，以及逻辑删除后的可重试批处理清理均已实现；真实 HTTP/SQLite/临时文件测试固定文件归属、审计一致性与清理安全边界。
 
 ### 7.10 Database Layer（Foreign Key）
 
@@ -480,7 +489,7 @@ Product
 
 Validator 只读取这些已加载关系。调用方忘记预加载关系而触发 `NoValuesFetched` 等异常属于内部编程错误，必须原样暴露给统一异常处理，不得伪装成 `42201` 业务错误。Product 不存在、已经逻辑删除、已经 Online 等资源或状态冲突仍由 Service 在调用 Validator 前处理。
 
-> **实现状态：** Product Validator 阶段已完成。异常契约、公共规则、Experience/Kit 专属规则、稳定 issues 顺序、未知 ProductType fail-closed，以及真实 Repository 聚合上的零查询与零修改边界均已有自动化测试；Product Service、状态写入、事务、审计和 API 路由不属于本阶段，仍待后续实现。
+> **实现状态：** Product Validator 阶段已完成。异常契约、公共规则、Experience/Kit 专属规则、稳定 issues 顺序、未知 ProductType fail-closed，以及真实 Repository 聚合上的零查询与零修改边界均已有自动化测试；后续 Product Service、状态写入、事务、审计和 API 路由也已在 Phase 4.1 完成。
 
 #### 8.5.1 Service 上架编排契约
 
@@ -513,7 +522,7 @@ async def online_product(
 
 本阶段不增加行锁、条件更新或跨请求幂等键；两个并发上架请求仍可能都通过事务前状态检查，属于后续并发策略需要处理的已知限制。单次请求内的状态与审计原子性是本阶段强制契约。
 
-> **实现状态：** 上述 Service 上架编排已实现。专项测试覆盖 Draft/Offline、Experience/Kit、404/409/422 前置失败、精确调用顺序、同一事务连接、状态更新失败不审计，以及审计失败时真实数据库状态回滚。API 权限依赖、路由和 `ProductOnlineOut` 序列化仍待后续实现。
+> **实现状态：** 上述 Service 上架编排、ADMIN+ 权限依赖、路由和 `ProductOnlineOut` 序列化均已实现。专项测试覆盖 Draft/Offline、Experience/Kit、404/409/422 前置失败、精确调用顺序、同一事务连接、权限、状态更新失败不审计，以及审计失败时真实数据库状态回滚。
 
 **校验流程：**
 

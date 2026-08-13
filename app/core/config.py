@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # 应用
     # ═══════════════════════════════════════════════
     app_name: str = "pinkdooHub"
-    app_version: str = "0.3.0"
+    app_version: str = "0.4.0"
     app_env: str = "development"
     app_debug: bool = True
 
@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # Redis
     # ═══════════════════════════════════════════════
     redis_url: str = "redis://localhost:6379/0"
+
+    # ═══════════════════════
+    # 本地图片存储
+    # ═══════════════════════
+    product_image_upload_dir: str = "./uploads/products"
+    product_image_base_url: str = "/uploads/products"
 
     # ═══════════════════════════════════════════════
     # JWT

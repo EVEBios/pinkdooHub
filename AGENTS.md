@@ -17,7 +17,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 ## 当前 Phase 与范围
 
-当前基线为 **v0.3.0**，正在进入 **Phase 4.1：Product Module 实现阶段**。
+当前代码版本候选为 **v0.4.0（尚未发布）**；**Phase 4.1：Product Module 已完成实现与最终 Review**，下一业务阶段尚未开始。
 
 已完成：
 
@@ -29,12 +29,12 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 当前实现状态：
 
-- Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator 阶段已完成。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption 全生命周期、Kit 价格/库存修改、ProductImage 全生命周期及上架/下架状态流转；跨表写入和审计均有真实事务回滚测试。图片文件校验/存储适配器、API Mapper 与路由仍待实现，当前端点不可调用。
+- Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator、Service 和 API Mapper 均已完成，跨表写入和审计有真实事务回滚测试，Mapper 有零 SQL、零修改和字段隔离测试。22 个 Product FastAPI 端点已接入，包括 20 个用户/管理 JSON 查询与 mutation（含共享 AuditLog 分页操作历史），以及 Product 公共图/Option 专属图两个 ADMIN+ multipart 上传端点。上传链路已实现 2 MiB、jpg/png/webp、内容/MIME 一致、安全 UUID 路径、原子写入、Service 失败的幂等文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试；逻辑删除图片的本地文件由显式截止时间、命名空间校验、有效引用保护和失败重试语义的独立批处理清理。
 - MySQL 8+ 权威首迁移已离线生成、通过静态契约测试并提交，但尚未应用到任何 MySQL 数据库。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未 fake Aerich 版本。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 - Phase 4.1 的 Kit 库存采用直接设置最终值模式；库存流水、自动扣减/恢复和并发控制仍属于 Phase 4.3 Inventory。
 - 架构文档中出现的 Product、Order、Inventory 文件可能是规划结构，不代表代码已经存在；开始任务前必须检查实际文件树和测试。
-- Product API 文档当前仍标记为 Draft。实现时以 `product_business_rules.md` 和 `product_api.md` 为契约；遇到缺口或冲突先指出，不自行发明业务规则。
+- Product API 文档已完成 Phase 4.1 Review，并标记为 v1.0 Implemented。后续维护仍以 `product_business_rules.md` 和 `product_api.md` 为契约；遇到缺口或冲突先指出，不自行发明业务规则。
 
 后续阶段：
 

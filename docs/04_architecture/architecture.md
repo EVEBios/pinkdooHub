@@ -19,6 +19,7 @@
 | 配置管理 | pydantic-settings | 2.14 |
 | 密码加密 | passlib[bcrypt] | 1.7.4 |
 | 时区数据 | tzdata | —（Windows 必需） |
+| multipart 解析 | python-multipart | 0.0.32 |
 
 ### 1.2 选型理由
 
@@ -70,6 +71,11 @@ pinkdooHub/
 │   ├── main.py                 # FastAPI 应用入口，路由挂载，生命周期管理
 │   ├── api/                    # API 层 —— 路由定义 + 参数校验
 │   │   ├── __init__.py
+│   │   ├── mappers/            # ORM 聚合 → 显式字典 → Out Schema
+│   │   │   ├── __init__.py
+│   │   │   └── product.py      # Product 列表、详情与 mutation 响应映射
+│   │   ├── forms/              # multipart/form-data Pydantic 请求模型
+│   │   │   └── product.py      # Product/Option 图片上传表单
 │   │   ├── v1/                 # v1 版本路由
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py         #   POST /auth/register  /auth/login  /auth/refresh
@@ -80,7 +86,9 @@ pinkdooHub/
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
 │   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  complete
 │   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)
-│   │   └── deps.py             # 公共依赖：get_current_user / admin / super_admin
+│   │   ├── deps.py             # 公共依赖与 Product 组合根
+│   │   ├── uploads.py          # 文件存储 → Service → 失败补偿
+│   │   └── static.py           # 本地上传目录的延迟静态挂载
 │   │
 │   ├── models/                 # 数据模型层 —— Tortoise ORM Model 定义
 │   │   ├── __init__.py
@@ -112,6 +120,13 @@ pinkdooHub/
 │   ├── validators/             # 业务校验层 —— 状态变迁前的完整性校验
 │   │   ├── __init__.py
 │   │   └── product_validator.py #  ProductValidator.validate_before_online()
+│   │
+│   ├── storage/                # 外部对象存储适配边界
+│   │   ├── __init__.py
+│   │   └── image.py        #   Product 图片校验、本地原子存储与补偿删除
+│   │
+│   ├── tasks/                  # 外部调度器可重复执行的运维任务入口
+│   │   └── product_image_cleanup.py # ProductImage 延迟文件清理命令
 │   │
 │   ├── repositories/           # 数据访问层 —— 封装数据库查询
 │   │   ├── __init__.py
@@ -184,7 +199,7 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，Product、ExperienceOption、ProductKit、ProductImage 的全部 Model，封装 Product 聚合查询和原子 CRUD 的 `ProductRepository`，以及完整的 Product Validator 阶段（异常契约、同步规则、纯度和真实聚合集成边界）；Service 和 API 仍需按实际文件树继续完成。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，Product、ExperienceOption、ProductKit、ProductImage 的全部 Model，`ProductRepository`、Product Validator、Service、API Mapper、20 个 JSON 路由、两个 multipart 图片上传路由、Product 图片本地存储适配器与可重试延迟清理任务。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
@@ -202,7 +217,8 @@ Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输�
 │  API 层 (app/api/)                       │
 │  · 路由注册 + 参数校验 (Pydantic)         │
 │  · 依赖注入 (认证、权限)                  │
-│  · 调用 Service，返回 Response            │
+│  · 调用 Service 与同步 Mapper              │
+│  · Out Schema 校验后返回 Response          │
 └────────────────┬────────────────────────┘
                  │
                  ▼
@@ -238,6 +254,17 @@ Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输�
 ### 3.1 API 层（app/api/）
 
 **职责**：接收请求 → 校验参数 → 调用 Service → 返回响应
+
+`app/api/mappers/` 属于 API 层的响应适配边界。Mapper 同步读取 Service 返回的、由 Repository 完成预加载的 ORM 聚合，计算 `cover_image`、`display_price`、dimensions、available 和展示 label，以显式字段白名单字典构造对应 Out Schema。标准链路为：
+
+```text
+ProductService 返回 ORM/Page
+  → API Mapper 只读已加载关系并构造显式字典
+  → Product Out Schema 校验与序列化
+  → Router 调用 success()
+```
+
+Mapper 不查询或修改数据库，不调用 Service、Repository、Redis，不依赖 FastAPI Request、权限或 HTTP 状态，也不返回 ORM Model。未预加载关系或不完整 Online 聚合属于内部编程错误，应快速失败，禁止在 Mapper 内补查或伪造默认值。用户端和管理端必须使用独立映射函数，防止状态、删除标记、内部外键和类型专属字段跨接口泄漏。
 
 ```python
 # app/api/v1/auth.py
@@ -377,11 +404,19 @@ async def online_product(
 
 Product 上架的状态更新与 `ONLINE_PRODUCT` 审计必须共享同一个 `BaseDBAsyncClient` 事务连接。为此，`AuditLogService.log()` 与 `AuditLogRepository.create()` 提供向后兼容的可选 `using_db` 参数：普通调用不传时保持既有顺序审计；需要原子性的 Product Service 显式透传当前连接。Product Service 通过构造函数注入 ProductRepository 与共享 AuditLogService，不直接实例化 Repository，不直接操作 ORM Model，也不把权限检查或 Out Schema 序列化放入 Service。
 
-以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。文件存储、API Mapper 与路由仍待完成。
+以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。API Mapper、20 个 JSON 路由、文件存储适配器和两个 multipart 上传路由均已完成。
 
 Product 下架 Service 也已实现，复用同一 Repository/审计事务边界，但只读取 Product 主表且不调用 Validator：不存在、逻辑删除和非 Online 状态在事务前失败；成功时 `status=offline` 与 `OFFLINE_PRODUCT` 审计原子提交。
 
 Product 查询 Service 只编排 Repository 的用例查询并返回 Model/Page，不承担 API DTO 映射。管理端和用户端使用独立方法固定可见性；`cover_image`、`display_price`、dimensions、available 和所有 label 由 API 层 Mapper 从 Repository 已预加载的聚合构造，随后交给 Out Schema 验证。这样 Service 不反向依赖 `app/schemas/product_response.py`，Repository 也不包含展示逻辑。
+
+Product API Mapper 已实现上述列表、详情、mutation 与分页映射。架构测试固定其无 async/await、无 ORM 查询/写入调用且不依赖 Service/Repository/FastAPI/Redis；真实 SQLite 测试固定 Repository 查询完成后 Mapper SQL 数量为零、聚合对象与关系列表不被修改。现有 Repository 预加载与 Service 返回对象已满足响应序列化需求，无需为 Mapper 调整 Service 或 Repository。
+
+Product 普通 JSON 路由拆分为 `app/api/v1/products.py`（公开列表和 Experience/Kit 详情）与 `app/api/v1/admin_products.py`（ADMIN+ 查询及 mutation）。`app/api/deps.py:get_product_service()` 是 API 组合根，负责组装 ProductRepository、共享 AuditLogService 和 ProductService；路由不直接导入 Product Model/Repository，只执行 Request/Query Schema 校验、权限依赖、Service 调用、Mapper 序列化和 `success()`。Product/Kit 创建固定 HTTP 201；ExperienceOption 新建为 201、恢复历史 Option 为 200。该 JSON 路由阶段当时未注册的两个 multipart 图片创建端点和 Product 操作历史端点均已由后续阶段接入。
+
+Product 操作历史保持共享审计边界：`AuditLogRepository.list_logs()` 只按 `target_type/target_id` 执行倒序稳定分页，`AuditLogService.list_logs()` 提供 Product/Order/Inventory 均可复用的查询用例；`ProductService.list_product_audit_logs()` 仅负责用 `include_deleted=true` 确认 Product 记录仍存在，再委托共享服务。API 使用共享 `app/schemas/audit.py:AuditLogOut` 与 Audit Mapper 构造字段白名单和 `Page[T]`，不把审计字段复制到 Product Schema，也不把 Audit Log 嵌入 Product Detail。
+
+Product Router 的运行时输出仍由 Mapper 完成一次严格 Out Schema 校验与序列化，再交给 `success()` 构造统一信封；OpenAPI 则通过 `SuccessResponse[T]` / `ErrorResponse` 和路由 `responses` 精确声明成功与错误结构。这里显式保持 `response_model=None`，避免 FastAPI 对 Mapper 已序列化的两位小数金额字符串进行第二次 Decimal 输入校验。该选择只分离运行时校验与文档声明，不放宽任何输出白名单。
 
 上述查询 Service 已实现。真实集成测试固定用户列表 Online/未删除范围、描述搜索，以及管理端已删除聚合和用户端 Online 详情预加载；查询方法不写审计、不调用 Validator、不开启事务。
 
@@ -401,7 +436,9 @@ Kit 价格与库存修改 Service 共享 Product 主表前置检查和 ProductKi
 
 ProductImage Service 的输入边界是已生成的 `image_url` 和领域字段，不导入 FastAPI `UploadFile` 或存储 SDK。公共图创建、Option 图创建、排序/封面修改和逻辑删除均通过 ProductRepository 持久化，并与 Product-targeted 审计共享事务。封面创建/切换先在同一连接上通过 `SELECT ... FOR UPDATE` 锁定 Product 行，串行化同聚合的并发封面写入，再读取旧封面、批量清除有效公共封面、写当前图片并顺序写审计；第二条审计失败也回滚所有状态。已删除图片、所属 Product 或所属 Option 对图片 ID 操作统一隐藏为 40403。
 
-文件上传是 API/基础设施边界：适配器负责最大 2MB、jpg/png/webp、内容/MIME 和安全路径校验，成功存储后把 URL 交给 Service。数据库事务不能回滚外部对象；Service 失败时调用方执行删除补偿或登记延迟清理。当前仓库尚无该适配器，因此图片数据库 Service 已完成但 multipart 端点仍不可调用。
+文件上传是 API/基础设施边界。`app/api/forms/product.py` 以 `extra=forbid` 限定两种 multipart 请求形状；`app/storage/image.py` 不依赖 FastAPI、Model、Repository 或 Service，限量读取最大 2 MiB，校验 jpg/png/webp 文件签名与声明 MIME，使用服务端 UUID 和不覆盖的原子发布，返回 URL 及 storage key。`app/api/uploads.py` 在线程池调用同步文件存储，再调用 ProductService；Service 失败时幂等删除已存储文件，补偿异常只记录 storage key，不掩盖原业务异常。`app/api/static.py` 将本地 URL 挂载为开发环境可访问静态文件，首次上传前目录不存在时返回 404。
+
+ProductImage 物理文件清理位于独立运维任务边界，而不是 DELETE HTTP 请求、ProductService 数据库事务或 FastAPI 进程内后台任务。`ProductImageCleanupService` 通过 ProductRepository 按 `is_deleted=true`、显式截止时间与 ID 游标分批读取候选，并以单条批量查询取得仍被有效记录引用的 URL，避免 N+1；`LocalImageStorage.key_from_url()` 只接受当前配置命名空间中的 UUID key。清理前在内存中排除有效共享引用，再在线程中执行幂等删除；外部 URL、异常 URL和有效共享引用不会被删除，单项 I/O 失败记录上下文并继续。`app/tasks/product_image_cleanup.py` 只负责数据库生命周期、批次循环、统计与退出码，默认预览并逐项记录候选，只有 `--apply` 才执行删除；可由 cron、容器定时任务或其他外部调度器重复调用。逻辑删除记录与 AuditLog 不因文件清理而修改，因此不需要新增清理状态表或数据库迁移。
 
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务
@@ -891,7 +928,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 ```
 
-`UnprocessableEntityException` 的专用 handler 必须保持 HTTP 422，普通 `BusinessException` 继续保持 HTTP 400。Product 的 `ProductNotReadyForOnline` 是前者的模块命名子类，固定 `42201`、message 和非空字符串数组 `data.issues`。模块命名异常直接继承对应 HTTP 语义类型；不保留跨 404/409/422 的伪通用 Product 基类。异常类型、中间件映射及 Product Validator 阶段均已实现并完成纯度/真实聚合集成验证；Service 和 API 仍待完成。
+`UnprocessableEntityException` 的专用 handler 必须保持 HTTP 422，普通 `BusinessException` 继续保持 HTTP 400。Product 的 `ProductNotReadyForOnline` 是前者的模块命名子类，固定 `42201`、message 和非空字符串数组 `data.issues`。FastAPI `RequestValidationError` 由独立全局 handler 转换为 `{code: 422, message: "Validation failed", data: {errors: [...]}}`；错误摘要只保留 location/message/type，不回显原始输入值。模块命名异常直接继承对应 HTTP 语义类型；不保留跨 404/409/422 的伪通用 Product 基类。
 
 ### 6.2 日志配置（app/middleware/logging.py 中初始化）
 

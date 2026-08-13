@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.common.response import error
@@ -25,6 +26,31 @@ def register_exception_handlers(app: FastAPI) -> None:
     直接为已知异常类型注册独立 handler，避免 Starlette 的
     ExceptionMiddleware 在 dispatch 时重新抛出异常。
     """
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        """将 FastAPI 参数错误转换为统一信封，不回显原始输入值。"""
+
+        errors = [
+            {
+                "location": [str(part) for part in item["loc"]],
+                "message": item["msg"],
+                "type": item["type"],
+            }
+            for item in exc.errors()
+        ]
+        logger.warning(
+            "HTTP 422: validation failed path=%s error_count=%d",
+            request.url.path,
+            len(errors),
+        )
+        return JSONResponse(
+            status_code=422,
+            content=error(422, "Validation failed", {"errors": errors}),
+        )
 
     @app.exception_handler(BusinessException)
     async def handle_business(request: Request, exc: BusinessException) -> JSONResponse:

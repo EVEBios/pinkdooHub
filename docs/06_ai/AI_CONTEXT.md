@@ -47,11 +47,11 @@
 
 ### 2.1 当前 Phase 与实现边界
 
-- 当前基线为 **v0.3.0**，正在进行 **Phase 4.1 Product Module**。
-- Product 业务规则、数据库设计、API 契约和 Validator 对外契约已完成；Product API 文档仍保持 Draft，因为端点尚未实现。
+- 当前代码版本候选为 **v0.4.0（尚未发布）**；**Phase 4.1 Product Module 已完成实现与最终 Review**，Phase 4.2 Order 尚未开始。
+- Product 业务规则、数据库设计、API 契约和 Validator 对外契约均已完成；Product API 文档已通过 Phase 4.1 最终 Review，并收口为 v1.0 Implemented。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository` 和 Product Validator 均已实现。Product Service 已实现 Experience/Kit 创建、管理端/用户端查询、基础信息修改、逻辑删除、ExperienceOption/ProductImage 全生命周期、Kit 价格/库存修改及上架/下架状态流转；创建聚合、查询可见性、404/409 前置检查、PATCH 字段语义、Option 全历史唯一/恢复、封面互斥、Validator 边界和业务/审计原子性均有专项和真实测试。图片文件校验/存储适配器、API Mapper 与路由仍待完成。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository`、Product Validator、Service、API Mapper 与 22 个 FastAPI 端点均已实现。其中 20 个 JSON 端点负责公开/管理查询、Product/Option/Kit mutation、图片元数据 PATCH/DELETE 和 Product 操作历史；两个 ADMIN+ multipart 端点负责 Product 公共图和 Option 专属图创建。上传已接入严格表单、文件校验/本地存储、Service 失败幂等补偿、开发环境静态 URL 和真实 SQLite HTTP 一致性测试。Product 操作历史通过共享 AuditLog Repository/Service、Out Schema 和 Mapper 分页查询，支持逻辑删除后的追溯。逻辑删除图片的本地文件由带显式截止时间的可重试批处理清理。
 - MySQL 8+ 权威首迁移已离线生成、通过契约测试并提交，但尚未对 MySQL 执行。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
 - Phase 4.2 Order 与 Phase 4.3 Inventory 不在当前实现范围；Kit 库存暂时使用直接设置最终值模式。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
@@ -86,16 +86,16 @@ Product Validator 契约速查：
 - `42201` 固定映射 HTTP 422，message 精确为 `Product is not ready to go online`，`data.issues` 是非空英文字符串数组；精确 issue 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。
 - `ProductNotReadyForOnline` 当前通过 `UnprocessableEntityException` 映射 HTTP 422；进入 Service 异常实现时将移除只能表示 422 的伪通用 `ProductException`，让 Product 的 404/409/422 命名异常分别直接继承 `NotFoundException`、`ConflictException`、`UnprocessableEntityException`。HTTP 状态按异常类型映射，禁止按错误码号段推断，普通 `BusinessException` 仍为 HTTP 400。
 - `ProductValidator.validate_before_online(product) -> None` 是同步纯计算接口。Service 必须传入 `ProductRepository.get_product_detail(product_id, include_deleted=True)` 预加载的聚合；Validator 不执行 I/O、不修改对象，也不把未预加载关系造成的编程错误转换为 `42201`。
-- Product Service 上架契约与运行时代码已实现：`online_product(product_id, *, operator_id, ip_address) -> Product` 依次处理 `40401 ProductNotFound`、`40903 ProductIsDeleted`、`40901 ProductAlreadyOnline`，再同步调用 Validator。校验通过后，状态更新与 `ONLINE_PRODUCT` 审计通过同一事务连接原子提交；Service 返回 Model，API 将使用 `ProductOnlineOut` 序列化，但路由仍待实现。
-- Product 下架契约与运行时代码已实现：仅允许 Online → Offline；Draft/Offline 统一返回 `40902 ProductAlreadyOffline`，逻辑删除优先返回 `40903`。成功状态更新和 `OFFLINE_PRODUCT` 审计同事务提交，下架不调用 Validator；API 路由仍待实现。
-- Product 查询契约与运行时代码已实现：管理端/用户端采用独立 Service 方法，返回 Product 聚合或 `Page[Product]`；用户端固定 Online 且未删除，不存在/未上线/删除/类型不匹配统一 40401。cover/display price/dimensions/available/labels 属于待实现的 API Mapper，不进入 Repository 或 Service。
-- Product 创建契约与运行时代码已实现：Experience 创建原子写 Product+CREATE_PRODUCT 审计；Kit 创建原子写 Product+ProductKit+审计。Service 接收拆分领域字段、固定 ProductType、返回 Draft Product，不依赖请求/响应 Schema，也不调用 Validator；API 路由仍待实现。
-- Product 基础信息修改与逻辑删除已实现：两者只读取 Product 主表并先处理 40401/40903；Online 修改抛 `40905 OnlineProductCannotBeModified`，Online 删除抛 `40904 ProductMustBeOfflineBeforeDelete`。修改只接受非空 `name` / `description` 显式字段映射并保留缺失/null 语义；删除只设置 `is_deleted=true` 且保持 status/关联记录。更新与对应审计同事务回滚，均不调用 Validator；API 路由仍待实现。
-- ExperienceOption 新增/恢复已实现：先处理 Product 40401/40903/40001/40905，再按全历史组合执行 INSERT、40911 或恢复原 ID。新建/恢复、CREATE_OPTION/RESTORE_OPTION 审计和响应图片重载共享事务；唯一索引竞争转换为 40911，恢复审计前后价格以 JSON 存入现有 description。Service 返回 `ExperienceOptionCreationResult(option, restored)` 供 API 选择 201/200，不依赖 HTTP Schema；API 路由仍待实现。
-- ExperienceOption 修改已实现：接收非空显式 updates Mapping，先处理 40402/40912/40905，再合并最终组合并检查全历史唯一性；当前 ID 不冲突，其他有效/已删除记录及唯一索引竞争统一 40911。维度写 UPDATE_OPTION、价格写 UPDATE_PRICE，同时提交时顺序写两条；更新、审计、响应重载同事务并保留图片关系，不调用 Validator。API 路由仍待实现。
-- ExperienceOption 删除已实现：先处理 40402/40912/40905；Draft/Offline 可删除最后一项，只设置 Option.is_deleted，保持 Product 状态与图片记录/外键。DELETE_OPTION 的完整配置快照以 JSON 存入 description，更新与审计同事务回滚，不调用 Validator；API 路由仍待实现。
-- Kit 价格/库存修改已实现：共享 40401/40903/40001/40905/40404 前置顺序，Draft/Offline 分别只更新 ProductKit.price 或 stock；UPDATE_PRICE/UPDATE_STOCK 的 before/after 快照写入 description，字段更新和审计同事务回滚，不调用 Validator。库存仍是 Phase 4.1 最终值设置，不含流水或并发扣减；API 路由仍待实现。
-- ProductImage 生命周期已实现：公共图/Option 图创建、排序/封面修改和逻辑删除使用 40401/40402/40403、40903/40905/40912 与 40021 契约；封面批量清理、图片写入及一至两条审计同事务回滚。Service 接收已生成 image_url，不依赖 UploadFile/存储 SDK；2MB、jpg/png/webp、42221、外部文件补偿和延迟清理由待实现的 API/存储边界负责。
+- Product 上架 Service 与 ADMIN+ JSON 路由已实现：`online_product(product_id, *, operator_id, ip_address) -> Product` 依次处理 `40401 ProductNotFound`、`40903 ProductIsDeleted`、`40901 ProductAlreadyOnline`，再同步调用 Validator。校验通过后状态与审计原子提交，Router 经 `ProductOnlineOut` 返回统一信封。
+- Product 下架 Service 与 ADMIN+ JSON 路由已实现：仅允许 Online → Offline；Draft/Offline 统一返回 `40902 ProductAlreadyOffline`，逻辑删除优先返回 `40903`。成功状态与审计同事务提交，下架不调用 Validator，Router 经 `ProductOfflineOut` 返回统一信封。
+- Product 查询、响应映射与 FastAPI 路由已实现：管理端/用户端采用独立 Service、Mapper 和路由；Mapper 从已预加载关系派生展示字段，执行期间零 SQL且不修改 ORM。用户端固定 Online 且未删除；管理端使用 ADMIN+ 权限并支持显式 include_deleted。查询端点当前可调用。
+- Product 创建 Service 与 ADMIN+ HTTP 201 路由已实现：Experience 原子写 Product+审计；Kit 原子写 Product+ProductKit+审计。Service 保持领域边界，Router 负责 Request Schema、Mapper 和统一响应。
+- Product 基础信息修改与逻辑删除 Service/ADMIN+ 路由均已实现；PATCH 使用 `model_dump(exclude_unset=True)` 保留缺失/null 语义，DELETE 只设置 Product 删除标记并保持 status/关联记录，Router 经专用 Mapper 返回统一信封。
+- ExperienceOption 新增/恢复 Service 与 ADMIN+ 路由已实现：Service 返回 `ExperienceOptionCreationResult(option, restored)`，Router 新建返回 201、恢复返回 200；全历史唯一、原图片关系和事务审计契约保持不变。
+- ExperienceOption 修改 Service 与 ADMIN+ JSON PATCH 路由已实现；Router 保留显式字段语义并返回不含图片的 `ExperienceOptionBaseOut`，全历史唯一与顺序审计契约不变。
+- ExperienceOption 删除 Service 与 ADMIN+ JSON DELETE 路由已实现；只设置 Option.is_deleted，保持 Product 状态与图片记录/外键，并经 `DeletedResourceOut` 返回。
+- Kit 价格/库存修改 Service 与 ADMIN+ JSON PATCH 路由已实现；响应 ID 使用 ProductKit.product_id。库存仍是 Phase 4.1 最终值设置，不含流水或并发扣减。
+- ProductImage 生命周期已实现：公共图/Option 图创建、排序/封面修改和逻辑删除使用 40401/40402/40403、40903/40905/40912、40021 与 42221 契约；封面批量清理、图片写入及一至两条审计同事务回滚。Service 只接收 image_url。API multipart 边界使用 `python-multipart==0.0.32`，严格表单模型拒绝未知字段；`LocalImageStorage` 完成 2 MiB、jpg/png/webp 签名/MIME、UUID 路径与原子写入；上传编排在 Service 失败时以 storage key 幂等删除文件。逻辑删除后的物理清理使用 `app.tasks.product_image_cleanup` 运维命令，显式截止时间、ID 游标分页、存储命名空间校验、有效引用保护、幂等缺失处理和失败退出码均有真实测试；不会由 Web 进程自动执行。
 
 ---
 

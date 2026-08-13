@@ -7,6 +7,8 @@ import logging
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 
+from app.common.pagination import Page
+from app.models.audit_log import AuditLog
 from app.repositories.audit_log_repo import AuditLogRepository
 
 logger = logging.getLogger(__name__)
@@ -42,4 +44,21 @@ class AuditLogService:
         logger.info(
             "Audit: operator=%d action=%s target=%s/%d",
             operator_id, action, target_type, target_id,
+        )
+
+    async def list_logs(
+        self,
+        *,
+        target_type: str,
+        target_id: int,
+        page: int,
+        page_size: int,
+    ) -> Page[AuditLog]:
+        """分页查询指定目标的审计日志。"""
+
+        return await self.audit_repo.list_logs(
+            target_type=target_type,
+            target_id=target_id,
+            page=page,
+            page_size=page_size,
         )
