@@ -8,7 +8,6 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from app.common.enums.order import OrderStatus
 from app.common.exceptions import (
-    KitOrderingRequiresInventory,
     OrderNotFound,
     OrderOptionUnavailable,
     OrderProductUnavailable,
@@ -39,10 +38,6 @@ def _create_exception_test_app() -> FastAPI:
             current_status=OrderStatus.PENDING,
             required_status=OrderStatus.PAID,
         )
-
-    @test_app.get("/kit-requires-inventory")
-    async def raise_kit_requires_inventory() -> None:
-        raise KitOrderingRequiresInventory(product_id=8)
 
     @test_app.get("/product-unavailable")
     async def raise_product_unavailable() -> None:
@@ -97,15 +92,6 @@ def test_order_status_conflict_contract() -> None:
     }
 
 
-def test_kit_ordering_requires_inventory_contract() -> None:
-    exc = KitOrderingRequiresInventory(product_id=8)
-
-    assert isinstance(exc, ConflictException)
-    assert exc.code == 40922
-    assert exc.message == "Kit ordering requires inventory support"
-    assert exc.data == {"product_id": 8, "required_phase": "4.3"}
-
-
 def test_order_product_unavailable_contract() -> None:
     exc = OrderProductUnavailable(product_id=8)
 
@@ -125,6 +111,15 @@ def test_order_option_unavailable_contract() -> None:
     assert exc.code == 42232
     assert exc.message == "Order experience option is unavailable"
     assert exc.data == {"product_id": 8, "experience_option_id": 13}
+
+    missing = OrderOptionUnavailable(
+        product_id=8,
+        experience_option_id=None,
+    )
+    assert missing.data == {
+        "product_id": 8,
+        "experience_option_id": None,
+    }
 
 
 @pytest.mark.parametrize(
@@ -150,15 +145,6 @@ def test_order_option_unavailable_contract() -> None:
                     "current_status": "pending",
                     "required_status": "paid",
                 },
-            },
-        ),
-        (
-            "/kit-requires-inventory",
-            409,
-            {
-                "code": 40922,
-                "message": "Kit ordering requires inventory support",
-                "data": {"product_id": 8, "required_phase": "4.3"},
             },
         ),
         (
@@ -195,8 +181,6 @@ async def test_order_exceptions_map_to_frozen_http_contract(
 @pytest.mark.parametrize(
     "factory",
     [
-        lambda: KitOrderingRequiresInventory(product_id=0),
-        lambda: KitOrderingRequiresInventory(product_id=True),
         lambda: OrderProductUnavailable(product_id=-1),
         lambda: OrderOptionUnavailable(product_id=0, experience_option_id=1),
         lambda: OrderOptionUnavailable(product_id=1, experience_option_id=0),

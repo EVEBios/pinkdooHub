@@ -11,7 +11,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** Product 请求/响应 Schema、四个 Model、Repository、Validator、Service、API Mapper 和 22 个 FastAPI 端点已实现。其中 20 个 JSON 查询/mutation（含 Product 操作历史）以及 Product 公共图与 Option 专属图两个 multipart 上传均可调用，具备 ADMIN+ 权限、统一分页/响应、严格表单字段、文件校验/本地存储、Service 失败文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试。OpenAPI 已精确声明各成功信封的数据类型、通用错误信封和鉴权边界；逻辑删除图片后的本地文件可通过独立、可重试的运维批处理安全清理。
+> **当前实现：** Product 请求/响应 Schema、四个 Model、Repository、Validator、Service、API Mapper 和 21 个 FastAPI 端点已实现。其中 19 个 JSON 查询/mutation（含 Product 操作历史）以及 Product 公共图与 Option 专属图两个 multipart 上传均可调用，具备 ADMIN+ 权限、统一分页/响应、严格表单字段、文件校验/本地存储、Service 失败文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试。Phase 4.3.10 已移除 Product 直接设置库存端点和 Kit 创建 `stock` 输入；库存管理改由 Inventory API 负责。OpenAPI 已精确声明各成功信封的数据类型、通用错误信封和鉴权边界；逻辑删除图片后的本地文件可通过独立、可重试的运维批处理安全清理。
 
 ---
 
@@ -23,7 +23,7 @@
 | Business-Action | 按业务行为划分接口，不按数据库字段划分 |
 | User/Admin 分离 | 用户接口 `/products`，管理员接口 `/admin/products` |
 | 类型独立创建 | 体验和套装创建流程不同，使用独立端点 |
-| **Create 只创建主资源** | 创建接口仅负责 Product 主记录。关联资源（图片、Option）通过独立接口完成。Kit 的 price/stock 属于聚合根核心字段，创建时一并接收 |
+| **Create 只创建主资源** | 创建接口负责 Product 主记录及必要类型扩展。图片、Option 通过独立接口完成；Kit 创建只接收 price，库存固定为 0 并由 Inventory adjustment 入库 |
 | **原则统一，字段按需适配** | Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同，Create Request 不强行为"统一"而统一 |
 | **Create → Edit 流程** | 创建 Draft 后前端应立即进入编辑页，而非返回列表。用户感知为"创建商品"，技术实现为多步 API 调用 |
 
@@ -118,7 +118,7 @@ Authorization: Bearer <access_token>
 | 修改基本信息 | `ProductUpdate` |
 | 新增 / 修改 Option | `ExperienceOptionCreate` / `ExperienceOptionUpdate` |
 | 修改图片排序或封面 | `ProductImageUpdate` |
-| 修改套装价格 / 库存 | `KitPriceUpdate` / `KitStockUpdate` |
+| 修改套装价格 | `KitPriceUpdate`；库存调整使用 Inventory Schema |
 | 用户 / 管理列表查询 | `ProductListQuery` / `AdminProductListQuery` |
 
 **响应（`app/schemas/product_response.py`）**
@@ -134,21 +134,21 @@ Authorization: Bearer <access_token>
 | 逻辑删除 Product / Option / Image | `DeletedResourceOut` |
 | 新增 / 修改 Option | `ExperienceOptionOut` / `ExperienceOptionBaseOut` |
 | Product 公共图 / Option 图 | `ProductImageOut` / `OptionImageOut` |
-| 修改套装价格 / 库存 | `KitPriceOut` / `KitStockOut` |
+| 修改套装价格 | `KitPriceOut`；库存调整使用 Inventory Out Schema |
 
 分页不重复定义模块专属外壳，统一使用 `Page[ProductListItemOut]` 或 `Page[AdminProductListItemOut]`。
 
 ### 2.6 Schema Boundary Rules
 
 - 所有 JSON 写请求使用 `extra="forbid"`；未知字段、客户端试图提交的只读字段或拼写错误字段统一触发 HTTP 422，不静默忽略。
-- JSON Body 中的 `stock`、`duration_minutes`、`participants`、`sort` 只接受真正的整数；拒绝 boolean、float 和数字字符串。Query 中的分页参数继续遵循全局 `PageParams` 规则。
+- JSON Body 中的 `duration_minutes`、`participants`、`sort` 只接受真正的整数；拒绝 boolean、float 和数字字符串。Product 请求不再接受 `stock`；Inventory adjustment 的变化量规则由 Inventory Schema 负责。Query 中的分页参数继续遵循全局 `PageParams` 规则。
 - 请求金额必须是普通十进制字符串，例如 `"599"`、`"599.0"`、`"599.00"`；拒绝 JSON number、指数形式和超过两位小数的输入。Schema 内部转换为 `Decimal`，不使用 float，也不静默四舍五入。
 - 响应金额在进入 Out Schema 前必须已经是 `Decimal`，JSON 固定序列化为两位小数字符串。
 - PATCH 空对象统一拒绝。字段“未提交”与“显式提交 `null`”语义不同，Service 必须使用 `model_dump(exclude_unset=True)` 保留这个区别。
 - Product `name=null` 拒绝；`description=null`、空字符串或纯空白表示清空。Option 和 Image PATCH 中显式 `null` 均拒绝。
 - 用户端 Out Schema 是严格的已上架完整形状；管理端 Out Schema 允许 Draft 的空图片、空 Option 和空维度。Out Schema 只输出声明字段，防止内部关联、删除标记或类型专属字段跨接口泄漏。
 
-> **API 集成状态：** 全部 22 个路由已完成端点或契约测试。`RequestValidationError` 统一转换为 `{ "code": 422, "message": "Validation failed", "data": { "errors": [...] } }`，每项错误只包含 `location`、`message` 和 `type`，不回显原始输入值。OpenAPI 使用 `SuccessResponse[T]` 与 `ErrorResponse` 精确描述信封；Product Mapper 仍是运行时输出白名单和金额字符串序列化的唯一边界。
+> **API 集成状态：** 全部 21 个路由已完成端点或契约测试。`RequestValidationError` 统一转换为 `{ "code": 422, "message": "Validation failed", "data": { "errors": [...] } }`，每项错误只包含 `location`、`message` 和 `type`，不回显原始输入值。OpenAPI 使用 `SuccessResponse[T]` 与 `ErrorResponse` 精确描述信封；Product Mapper 仍是运行时输出白名单和金额字符串序列化的唯一边界。
 
 ---
 
@@ -266,7 +266,6 @@ Authorization: Bearer <access_token>
 | `PATCH /admin/product-images/{id}` | 40403, 40905, 40021 |
 | `DELETE /admin/product-images/{id}` | 40403, 40905 |
 | `PATCH /admin/products/kit/{id}/price` | 40401, 40404, 40001, 40903, 40905 |
-| `PATCH /admin/products/kit/{id}/stock` | 40401, 40404, 40001, 40903, 40905 |
 | `GET /admin/products/{id}/audit-logs` | 40401 |
 
 ### 3.4 规则补充
@@ -347,7 +346,8 @@ PATCH /admin/products/kit/5/price → Product 5 实际是 Experience → 40001
 | Method | URI | 说明 |
 |--------|-----|------|
 | PATCH | /admin/products/kit/{id}/price | 修改价格 |
-| PATCH | /admin/products/kit/{id}/stock | 修改库存 |
+
+库存调整属于 Inventory API：`POST /admin/products/kit/{id}/inventory-adjustments`。
 
 **审计**
 
@@ -880,9 +880,9 @@ POST /admin/products/experience  →  { id: 1 }
 POST /api/v1/admin/products/kit
 ```
 
-创建套装商品草稿。与 Experience 不同，Kit 的 `price` 和 `stock` 属于聚合根核心字段，创建时一并接收。
+创建套装商品草稿。与 Experience 不同，Kit 创建时接收聚合价格；库存固定以 0 建立隐式基线，首次入库通过 Inventory adjustment 完成。
 
-**可能的业务错误：** 无。`price` / `stock` 的类型与范围错误统一由 `KitProductCreate` 触发 HTTP 422 Schema 校验。Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同——Kit 无 Option，price/stock 直接属于 Kit 自身。
+**可能的业务错误：** 无。`price` 的类型与范围错误、以及客户端继续提交旧 `stock` 字段，统一由 `KitProductCreate` 触发 HTTP 422 Schema 校验。Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同——Kit 无 Option，price 属于 Kit 扩展，stock 由 Inventory 管理。
 
 **请求参数**
 
@@ -891,12 +891,11 @@ POST /api/v1/admin/products/kit
 | name | string | 是 | 商品名称。trim 后 1–100 字符。允许重名 |
 | description | string | 否 | 商品描述，最大 2000 字符。Draft 阶段可选 |
 | price | string | 是 | `"599.00"`，0 < Price ≤ 99999。Kit 核心字段 |
-| stock | int | 否 | 初始库存，默认 0，>= 0 |
 
 | Experience Create | Kit Create | 原因 |
 |-------------------|------------|------|
 | ❌ price | ✅ price 必填 | Kit 无 Option，price 是 Kit 聚合根核心字段 |
-| ❌ stock | ✅ stock 可选（默认 0） | 同上 |
+| ❌ stock | ❌ stock | 新 Kit 固定为 0，库存输入属于 Inventory adjustment |
 | ❌ images | ❌ images | 统一：图片独立上传 |
 | ❌ options | N/A | Experience 专有 |
 
@@ -907,7 +906,7 @@ POST /api/v1/admin/products/kit
 | `product_type` | `"kit"` |
 | `status` | `"draft"` |
 | `is_deleted` | `false` |
-| `stock` | `0`（未传时） |
+| `stock` | `0`（服务端固定，不接受客户端输入） |
 
 **请求示例**
 
@@ -915,8 +914,7 @@ POST /api/v1/admin/products/kit
 {
     "name": "新手拼豆套装",
     "description": "适合初学者使用",
-    "price": "599.00",
-    "stock": 100
+    "price": "599.00"
 }
 ```
 
@@ -946,7 +944,7 @@ POST /api/v1/admin/products/kit
 }
 ```
 
-**Service 事务：** `create_kit_product()` 在同一事务连接内依次创建固定为 Kit/Draft/未删除的 Product、必需的 ProductKit 扩展记录和 `CREATE_PRODUCT` 审计；任一步失败三者全部回滚。Service 返回 Product，API 使用 `KitProductCreateOut` 序列化。`stock` 未提交时由 Schema/常量提供 0。
+**Service 事务：** `create_kit_product()` 在同一事务连接内依次创建固定为 Kit/Draft/未删除的 Product、零库存 ProductKit 扩展记录和 `CREATE_PRODUCT` 审计；任一步失败三者全部回滚。Service 返回 Product，API 使用 `KitProductCreateOut` 序列化。Schema 与 Service 均不接收 `stock`，Repository 默认值固定为 0。
 
 > **实现状态：** Kit 聚合创建 Service、Mapper、ADMIN+ 权限与 HTTP 201 路由已实现，端点当前可调用，并有 Product/ProductKit/审计真实原子性和 HTTP 集成测试。
 
@@ -991,7 +989,7 @@ API 将上述显式字段映射传给 `ProductService.update_product(..., update
 | `product_type` | 创建后不可变 |
 | `status` | `PATCH .../online` / `PATCH .../offline` |
 | `price` | `PATCH /admin/products/kit/{id}/price` |
-| `stock` | `PATCH /admin/products/kit/{id}/stock` |
+| `stock` | `POST /admin/products/kit/{id}/inventory-adjustments`（Inventory API） |
 | `images` | 图片管理接口 |
 | `options` | Option CRUD 接口 |
 | `is_deleted` | `DELETE /admin/products/{id}` |
@@ -1897,64 +1895,21 @@ PATCH /api/v1/admin/products/kit/{product_id}/price
 
 ---
 
-### 7.19 修改套装库存
+### 7.19 旧套装库存端点（已移除）
 
 ```
 PATCH /api/v1/admin/products/kit/{product_id}/stock
 ```
 
-直接设置 Kit 的当前库存。第一版采用"设置最终值"模式，后续 Phase 4.3 升级为库存流水/调整单模式。
+Phase 4.3.10 已按冻结决定移除该端点，并删除 `KitStockUpdate`、`KitStockOut`、Product stock Mapper 与 `ProductService.update_kit_stock()`。请求该旧路径现在返回 HTTP 404，不提供最终值设置兼容包装。
 
-**可能的业务错误：** `40401`, `40404`, `40001`, `40903`, `40905`。库存类型与范围错误统一为 HTTP 422 Schema 校验。
+替代端点为：
 
-| 条件 | 命名异常 | code | message | HTTP |
-|------|----------|------|---------|------|
-| Product 不存在 | `ProductNotFound` | 40401 | `Product not found` | 404 |
-| Product 已逻辑删除 | `ProductIsDeleted` | 40903 | `Product is deleted` | 409 |
-| Product 不是 Kit | `ProductTypeMismatch` | 40001 | `Product type does not match this operation` | 400 |
-| Product 为 Online | `OnlineProductCannotBeModified` | 40905 | `Online product cannot be modified` | 409 |
-| Kit 扩展记录缺失 | `ProductKitNotFound` | 40404 | `Product kit not found` | 404 |
-
-**请求参数**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| stock | int | 是 | 新库存数量，>= 0 |
-
-**状态限制：**
-
-| Product 状态 | 允许 |
-|-------------|------|
-| `draft` | ✅ |
-| `offline` | ✅ |
-| `online` | ❌ 先下架再调整 |
-
-**请求示例**
-
-```json
-{ "stock": 80 }
+```text
+POST /api/v1/admin/products/kit/{product_id}/inventory-adjustments
 ```
 
-**成功响应**
-
-**Response Schema：** `KitStockOut`
-
-```json
-{
-    "code": 0,
-    "message": "success",
-    "data": {
-        "id": 2,
-        "stock": 80
-    }
-}
-```
-
-**Audit：** `action = UPDATE_STOCK`，`target_type=product`、`target_id=Product ID`。before/after 整数库存快照以紧凑 JSON 写入现有 `AuditLog.description`。ProductKit 更新和审计共享事务；任一步失败整体回滚。Service 返回 ProductKit，API Mapper 使用 `product_id` 构造响应 `id`。
-
-> **实现状态：** Kit 库存修改 Service、Mapper 与 ADMIN+ PATCH 路由已实现，端点当前可调用；有冲突优先级、Draft/Offline、零库存、字段保留、审计快照、真实回滚和 HTTP 测试。
-
-> **后续升级点：** Phase 4.3 Inventory 模块将演进为库存调整模型（记录变动量 + 原因），替代当前"直接设值"模式。
+新接口要求变化量、原因与 `Idempotency-Key`，允许调整未删除的 Draft、Online、Offline Kit，并原子写当前余额、不可变流水和 `ADJUST_INVENTORY` Audit。完整契约见 [Inventory API](inventory_api.md)。
 
 ---
 

@@ -19,6 +19,8 @@
 | 商品 API | [product_api.md](../03_api/product_api.md) |
 | 商品业务规则 | [product_business_rules.md](../01_requirements/product_business_rules.md) |
 | 订单 API | [order_api.md](../03_api/order_api.md) |
+| 库存业务规则 | [inventory_module.md](../01_requirements/inventory_module.md) |
+| 库存 API 草案 | [inventory_api.md](../03_api/inventory_api.md) |
 | 数据库设计 | [database_design.md](../02_database/database_design.md) |
 | ER 图 | [er_diagram.dbml](../02_database/er_diagram.dbml) |
 | Code Review 清单 | [code_review_checklist.md](../07_process/code_review_checklist.md) |
@@ -47,13 +49,14 @@
 
 ### 2.1 当前 Phase 与实现边界
 
-- 当前代码版本候选为 **v0.5.0（尚未发布）**；**Phase 4.1 Product Module** 与 **Phase 4.2 Order Module** 均已完成实现和最终 Review。Order v1.0 已达到代码层 release-ready：领域语言、Schema、Model/离线迁移、Repository/编号生成器、查询/Experience 创建/状态 Service、API Mapper、组合根、九个 FastAPI 端点、完整真实 HTTP 错误/边界矩阵及最终架构/安全/迁移/文档审查均已完成；三个状态 PATCH 会主动拒绝任意请求体，共享审计 IP 入口也会拒绝非法、超长或带 scope 的代理地址并安全回退。下一业务阶段为 Phase 4.3 Inventory。
+- 当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1 Product Module**、**Phase 4.2 Order Module** 与 **Phase 4.3 Inventory Module** 均已完成实现和最终 Review。Order v1.0 基线保持 release-ready，Phase 4.3.7–4.3.8 已在原 POST/cancel 上增加纯 Kit/混合创建扣减及 Pending 取消恢复。九个 Order 端点、查询、Mapper 和资源隐藏边界保持不变；Phase 4.3.11 真实 MySQL 库存竞争与 Phase 4.3.12 最终 Review 均已通过。
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约均已完成；Product API 文档已通过 Phase 4.1 最终 Review，并收口为 v1.0 Implemented。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository`、Product Validator、Service、API Mapper 与 22 个 FastAPI 端点均已实现。其中 20 个 JSON 端点负责公开/管理查询、Product/Option/Kit mutation、图片元数据 PATCH/DELETE 和 Product 操作历史；两个 ADMIN+ multipart 端点负责 Product 公共图和 Option 专属图创建。上传已接入严格表单、文件校验/本地存储、Service 失败幂等补偿、开发环境静态 URL 和真实 SQLite HTTP 一致性测试。Product 操作历史通过共享 AuditLog Repository/Service、Out Schema 和 Mapper 分页查询，支持逻辑删除后的追溯。逻辑删除图片的本地文件由带显式截止时间的可重试批处理清理。
-- MySQL 8+ 权威首迁移及 Order 增量迁移已离线生成并通过契约测试，但尚未对 MySQL 执行。SQLite 开发库曾在可恢复备份后从 Phase 4.1 Models 重建；本次只使用临时 SQLite 验证 Order Models，未重建开发库、未应用 MySQL 迁移，也未使用 `--fake`，其 Aerich 版本记录保持为空。
-- Order v1.0 / Phase 4.2 仅开放 Experience 下单；Kit 下单在 Phase 4.3 Inventory 前整单拒绝，当前不做库存检查、扣减或恢复。Kit 库存仍使用 Phase 4.1 的直接设置最终值模式。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository`、Product Validator、Service、API Mapper 与 21 个 FastAPI 端点均已实现。其中 19 个 JSON 端点负责公开/管理查询、Product/Option/Kit mutation、图片元数据 PATCH/DELETE 和 Product 操作历史；两个 ADMIN+ multipart 端点负责 Product 公共图和 Option 专属图创建。旧 stock 写端点已在 Phase 4.3.10 移除。上传已接入严格表单、文件校验/本地存储、Service 失败幂等补偿、开发环境静态 URL 和真实 SQLite HTTP 一致性测试。Product 操作历史通过共享 AuditLog Repository/Service、Out Schema 和 Mapper 分页查询，支持逻辑删除后的追溯。逻辑删除图片的本地文件由带显式截止时间的可重试批处理清理。
+- MySQL 8+ 权威首迁移、Order 增量迁移及 Inventory 增量迁移已离线生成并通过契约测试；完整链已在一次性 MySQL 8.0.46 实例真实执行并在验证后销毁，未应用任何持久、共享或生产数据库，也未使用 `--fake`。SQLite 开发库未被本次演练修改。
+- Phase 4.3.1–4.3.12 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 增量迁移、Repository、管理员调整、Kit/混合订单创建扣减、Pending 取消恢复、查询 Service/Mapper、三个 ADMIN+ API、发布门槛和最终 Review 均已完成。Order 创建和取消分别拥有 deduction/restore 的稳定集合锁、批量余额/流水、Order/Audit/重载外层事务；状态机与 restore UNIQUE 共同防止重复恢复。指定 Kit 查询验证资源聚合，全局查询把 Product ID 仅作为筛选；Mapper 对预加载展示字段显式投影并保持零 SQL/零修改。调整 API 首次返回 201、幂等重放返回 200。真实 MySQL 回填、Repository smoke、竞争/1205/EXPLAIN、MySQL HTTP smoke 与完整 HTTP 矩阵均已通过；旧直接设置库存端点和 Kit 创建 stock 输入已移除。Product Kit 详情响应的库存上限已与 Inventory `999999` 契约一致，数据库文档的旧 Kit 规划描述已清理。
+- 2026-08-14 的 MySQL smoke 曾发现 Order 阻断：`OrderStatus` 直接写普通 `SmallIntField` 会被 asyncmy 编码成 `OrderStatus.*` 字符串并报 1366。现已将 Model Pending 默认值、Repository 状态更新和状态筛选统一转换为原生整数，并在全新 MySQL 8.0.46 上通过默认创建、Pending/Paid 筛选及状态更新回归；物理 Schema 和 API 语义未变化，无需迁移。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 
 ---
@@ -68,6 +71,8 @@
 | `products.status` VARCHAR | `"draft"` / `"online"` / `"offline"` | `ProductStatus(str, Enum)` |
 | `experience_options.day_type` VARCHAR | `"weekday"` / `"holiday"` | `DayType(str, Enum)` |
 | `orders.status` 0/1/2/3 | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |
+| `inventory_transactions.transaction_type` VARCHAR(40)（Model/迁移已实现；一次性 MySQL 演练通过，未应用持久环境） | `"opening_balance"` / `"admin_adjustment"` / `"order_deduction"` / `"order_cancellation_restore"` | `InventoryTransactionType(str, Enum)` |
+| `inventory_transactions.source_type` VARCHAR(30)（Model/迁移已实现；一次性 MySQL 演练通过，未应用持久环境） | `"migration"` / `"admin"` / `"order"` | `InventorySourceType(str, Enum)` |
 
 > `duration_minutes` 和 `participants` 是开放正整数，不是 Enum。当前常用值不构成允许值白名单。
 
@@ -79,7 +84,70 @@
 |------|------|------|
 | 用户 | 1xxx | 1001-1007 |
 | 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40404 / 40901-40905, 40911-40912 / 42201, 42221 |
-| 订单 | 4041x / 4092x / 4223x | 40411 / 40921-40922 / 42231-42232（命名异常与 HTTP 映射已实现） |
+| 订单 | 4041x / 4092x / 4223x | 40411 / 40921 / 42231-42232（命名异常与 HTTP 映射已实现；40922 已移除） |
+| 库存 | 4093x | 40931-40933（命名异常、HTTP 映射与三个 ADMIN+ Inventory API 均已实现） |
+
+Inventory Phase 4.3.1 契约速查：
+
+- `product_kits.stock` 继续作为唯一权威可售余额；每次变化写不可变流水，余额/流水必须同事务。
+- 新建 Pending Kit/混合订单立即扣减；Pending 取消幂等恢复；支付和完成不再改变库存。
+- 支持纯 Experience、纯 Kit 和混合订单；多 Kit 按 Product ID 升序加行锁，Order 创建/取消 Service 拥有外层事务并协调 Inventory Repository。
+- 管理员调整为 ADMIN+ 的 `change + reason + Idempotency-Key`，允许未删除 Online Kit；余额范围 `0..999999`，reason trim 后 `1..256`。
+- 旧 `PATCH .../stock` 与 Kit 创建 `stock` 输入已在 Phase 4.3.10 移除；当前库存写入统一经过 Inventory 流水语义。
+- 流水类型冻结为 `opening_balance`、`admin_adjustment`、`order_deduction`、`order_cancellation_restore`；现有正库存生成期初流水，零库存不生成零变化流水。
+- 用户库存不足不披露精确 available；自动事件和管理员重试均由 UNIQUE 幂等身份保护。
+- MySQL 8+ 真实并发验证是 v0.6.0 发布硬门槛；Phase 4.3.11 已在隔离实例通过，但未执行持久环境迁移或版本发布。
+
+Inventory Phase 4.3.2 实现速查：
+
+- `app/common/enums/inventory.py` 定义四种流水类型和三种 source 类型，均为稳定字符串 Enum；常量集中在 `app/common/constants/inventory.py`。
+- `InsufficientStock(40931)` 不包含 available；`InventoryBalanceExceeded(40932)` 只接受确实越界的调整上下文；`InventoryTransactionConflict(40933)` 不输出 data。三者均继承 `ConflictException` 并由全局中间件映射 HTTP 409。
+- `app/schemas/inventory.py` 实现 `InventoryIdempotencyKey`、`InventoryAdjustmentCreate`、`InventoryProductTransactionQuery` 与 `InventoryTransactionQuery`。写整数 strict；HTTP Query ID 接受十进制字符串；时间只接受 UTC；`source_id` 要求 `source_type=order`。
+- `app/schemas/inventory_response.py` 实现余额、流水列表/详情和调整响应白名单，拒绝内部幂等键与隐私字段，并校验 before/change/after、流水方向和 source/operator 元数据一致性。
+
+Inventory Phase 4.3.3 实现速查：
+
+- `app/models/inventory_transaction.py` 关联 `products.id` 与可空 `users.id`，两者 `RESTRICT`；通用可空 `source_id` 不建多态 FK。`source_type`、稳定 `reason` 与内部 256 字符幂等身份均非空。
+- 幂等键使用 `uidx_inventory_idempotency_key` 命名 UNIQUE；另有 Product、source、transaction type 与全局 `created_at DESC, id DESC` 分页查询索引。数据库设计与 DBML 已同步，MySQL 迁移留在 4.3.4。
+- Model 校验变化量非零及库存闭区间，但 before/change/after 等式与类型/source 组合仍由未来 Service 保证；当前不新增跨方言 `CHECK`。流水继承 BaseModel 的 `updated_at` 技术字段，但没有业务更新/删除入口且 API 不输出。
+
+Inventory Phase 4.3.4 迁移速查：
+
+- `migrations/models/2_20260814104655_add_inventory_transactions.py` 使用 `AERICH_MYSQL_VERSION=8.0` 离线生成，人工移除 `IF NOT EXISTS` 并声明 `RUN_IN_TRANSACTION=False`；已在一次性 MySQL 8.0.46 完成真实升级/降级/带数据再升级，未 fake，未应用持久环境。
+- 升级先建表，再按 Product ID 升序为 `stock > 0` 写 `opening_balance`；使用 UTC 微秒时间、稳定原因和 `inventory:opening:product:{product_id}`，不修改余额、不为零库存写流水、不静默忽略冲突。
+- MySQL DDL 隐式提交使建表与回填非原子；执行必须停写、扫描 `0..999999`、备份、预演并核验。downgrade 删除全部流水但不重算余额，是需单独授权的数据破坏操作。
+
+Inventory Phase 4.3.5 Repository 速查：
+
+- `get_kit_for_update()` 与 `get_kits_for_update()` 必须使用调用方连接和 `select_for_update()`；集合锁去重后通过单条 SQL 按 `product_id` 排序，不循环查询。
+- `update_stock()` 只保存 Service 给定最终余额；`create_transaction()` 服务单条管理调整，`bulk_create_transactions()` 服务多 Kit 自动事件。Repository 不计算 after、不判断不足、不捕获幂等唯一冲突。
+- 幂等读取和详情重载支持同一未提交连接；分页支持 Product/type/source/UTC 时间范围，稳定倒序，并预加载 operator、一次批量补齐 Order 编号。含 Order source 的分页固定最多三条 SELECT，不随流水数增长。
+
+Inventory Phase 4.3.6 管理调整 Service 速查：
+
+- `InventoryService.adjust_stock()` 依赖 `InventoryRepository`、`ProductRepository` 和共享 `AuditLogService`；它拥有管理员调整事务，不调用 ProductService，也不直接操作 Model。
+- 用例先锁 ProductKit，锁后区分 Product 不存在/删除/非 Kit/扩展缺失并计算闭区间余额；余额、`admin_adjustment` 流水、`ADJUST_INVENTORY` Audit 和详情重载共享连接，任一步失败全部回滚。
+- 内部身份为 `inventory:admin:adjust:{client_key}`。同 Product/change/规范化 reason/operator 返回首次已提交的原始流水与 after；任一维不同返回 40933；失败回滚不占 key。并发 UNIQUE 在退出失败事务后解析。
+- 只重试 MySQL 1205/1213，整个用例每次使用全新事务、最多 3 次；其他 OperationalError/IntegrityError 保留原始根因。日志不输出原因或幂等键。
+- `InventoryAdjustmentResult.is_replay` 已由 Inventory Router 用于区分首次 201/重放 200；Inventory 流水/分页/调整 Mapper 不依赖该 Service DTO。Order 创建扣减已由 4.3.7 直接协调 Repository 接入，不调用该 Service。
+
+Inventory Phase 4.3.7–4.3.8 Order 库存生命周期速查：
+
+- `OrderItemCreate.experience_option_id` 现为可省略/null；Service 对 Experience 要求有效 Option，对 Kit 要求 null。`OrderItemOut` 只接受完整 Option 快照或四项全 null Kit 快照，既有 POST 路由已可创建纯 Kit/混合订单。
+- ProductRepository 批量读取 Product、非空 Option ID 和 Kit 候选价格；事务内先创建 Pending Order，再由 InventoryRepository 一次按 Product ID 升序锁定全部 Kit，并用同一连接重读 Product 状态。
+- 锁后按请求顺序检查 Kit 扩展和余额；多 Kit 余额用一次 `bulk_update`、流水用一次 `bulk_create`。流水固定为 `order_deduction` / Order source / 下单用户 operator / `Order stock deduction`，key 为 `inventory:order:{order_id}:deduct:product:{product_id}`。
+- Order、库存、流水、Items、`CREATE_ORDER` Audit 和详情重载原子提交；库存不足、审计或重载失败全部回滚。`40931` 不包含 available。纯 Experience 创建零 Inventory Repository 调用。
+- 订单号 UNIQUE 冲突在任何库存锁/写之前发生并沿用新编号事务重试；MySQL 1205/1213 对完整写事务以同一候选快照/编号和全新事务最多尝试 3 次。`IntegrityError` 必须先于其父类 OperationalError 处理。
+- 取消先锁 owner 可见 Order 并重检 Pending，再读取最小 Item 快照、稳定锁定 Kit、批量检查 `inventory:order:{order_id}:restore:product:{product_id}`，批量恢复余额/`order_cancellation_restore` 流水后提交 Cancelled/Audit/重载。
+- 重复取消由状态机返回 `40921`；Pending 与已存在 restore 身份矛盾返回 `40933`，恢复越界返回 `40932`。MySQL 1205/1213 对完整取消事务最多尝试 3 次；支付和完成零库存调用。
+- 阶段门禁 `40922 KitOrderingRequiresInventory` 已从常量、异常、导出、测试和当前文档注册表移除。真实 MySQL 竞争已由 4.3.11 验证。
+
+Inventory Phase 4.3.9–4.3.11 查询、API 与发布门槛速查：
+
+- 指定 Kit 查询先验证 Product/Kit 聚合身份；全局 Product ID 只筛选。Mapper 显式投影严格 Out Schema，只消费预加载 operator 与批量 Order 编号，零 SQL、零修改且不泄漏幂等键或用户隐私。
+- `get_inventory_service()` 与三个 ADMIN+ 路由已注册；调整要求严格 body/`Idempotency-Key`，首次 201、重放 200，两个 GET 输出统一 Page。旧 Product stock 路由和创建 stock 输入已移除。
+- Phase 4.3.11 在隔离 MySQL 8.0.46、真实 Aerich 0→1→2 上通过 9 项门槛：同/异 key、最后一件、反向多 Kit、同单取消、调整/下单真实等待、真实 1205 全事务重试、三类 EXPLAIN 和 MySQL HTTP 并发重放/查询。
+- 完整 HTTP 矩阵另有 41 项，覆盖三端点 401/1006/403、资源/业务异常、严格 422、分页/筛选/Order source/UTC 与隐私。测试 fixture 强制回环、非 3306 和专用 Schema 前缀；实例销毁且未修改持久数据库。
 
 Order v1.0 契约速查：
 
@@ -88,10 +156,10 @@ Order v1.0 契约速查：
 - `app/schemas/order.py` 固定创建请求、重复 Product/Option 拒绝、用户/管理分页筛选和 UTC 时间范围；`app/schemas/order_response.py` 固定金额 Decimal→两位字符串、status/day_type 配对、快照金额一致性以及用户/管理字段隔离。详情不返回列表派生 `item_count`。
 - `app/models/order.py` 已实现 `Order` / `OrderItem`、`SmallIntField` 状态、订单号唯一约束、Decimal 快照、四条 `RESTRICT` 历史外键和五组稳定查询索引；MySQL 8+ 增量迁移已离线生成并静态 Review，尚未应用。
 - `app/common/order_number.py` 只用标准库生成 OD+ULID；`app/repositories/order_repo.py` 已实现 Order/Item 事务写入、详情、用户可见限定、行锁、状态持久化和用户/管理分页，列表使用数据库 `COUNT(items)` 生成 `item_count`。ProductRepository 已提供包含逻辑删除记录的 Product/Option 集合读取，供创建 Service 一次批量校验。
-- `app/services/order_service.py` 已实现 Experience 创建、三个独立状态变迁及五个只读用例。创建先批量读取 Product/Option，按请求顺序执行 Kit、Product、Option 错误优先级，以数据库值计算 Decimal 快照；Order、Items、`CREATE_ORDER` 审计与详情重载原子提交，订单号冲突退出失败事务后用全新事务最多重试 3 次。状态变迁在事务内锁定可见 Order，锁后重检，只允许 `pending → cancelled`、`pending → paid`、`paid → completed`；状态、before/after 审计和重载原子提交。用户查询与取消使用 `(order_id, user_id)` 可见限定统一隐藏不存在/他人资源；管理端审计先确认 Order 存在再委托共享 AuditLogService。`OrderStatusValue` 定义在 common Enum 模块，Service 使用完整 `ORDER_STATUS_BY_VALUE` Registry 将 API 字符串翻译为数据库 IntEnum。
+- `app/services/order_service.py` 已实现 Experience/Kit/混合创建、三个独立状态变迁及五个只读用例。创建批量读取 Product/Option/Kit 候选快照；事务内先写 Pending Order，再稳定锁定并扣减 Kit，批量写余额/流水/Items，最后写 `CREATE_ORDER` Audit 和重载聚合。取消使用独立库存感知事务，在 Order 锁后读取最小 Item 快照、稳定锁定并恢复 Kit，再提交 Cancelled/Audit/重载；支付和完成仍是纯状态事务。创建和取消的 MySQL 1205/1213 都重试完整用例最多 3 次。用户查询与取消使用 `(order_id, user_id)` 可见限定统一隐藏不存在/他人资源；管理端审计先确认 Order 存在再委托共享 AuditLogService。`OrderStatusValue` 定义在 common Enum 模块，Service 使用完整 `ORDER_STATUS_BY_VALUE` Registry 将 API 字符串翻译为数据库 IntEnum。
 - `app/api/mappers/order.py` 已实现 OrderStatus/DayType、OrderItem 快照、用户/管理列表与分页、用户/管理详情和轻量状态响应。Mapper 只消费 Repository 已注解或预加载的数据，用户端不读取 User 关系，管理端只输出 `user_id/user_nickname`；严格 Schema 负责 Decimal 两位小数与聚合金额一致性。真实 SQLite 聚合测试固定零 SQL、零 ORM 对象/关系列表修改。
 - `app/api/deps.py:get_order_service()` 组装 OrderRepository、ProductRepository 和共享 AuditLogService；`app/api/v1/orders.py` 已注册创建、我的列表、我的详情和取消，`app/api/v1/admin_orders.py` 已注册管理列表/详情、确认支付、完成和审计历史。九个端点均使用精确 `SuccessResponse[T]` / `ErrorResponse` OpenAPI、统一 `success()` 与全局异常中间件；真实 JWT + SQLite 测试已贯通核心生命周期。缺失 Token 为统一 401，现有无效 Token `1006` 仍为 User 契约的 HTTP 400。
-- 创建请求必须提供 `product_id + experience_option_id + quantity`；只接受当前有效、已上架的 Experience 聚合，同一 Product/Option 组合不得重复。
+- 创建 Item 必须提供 `product_id + quantity`；Experience 还必须提供有效且属于该 Product 的 `experience_option_id`，Kit 则必须省略或提交 `null`。同一 Product/Option 组合不得重复。
 - 金额由当前 Option 价格用 `Decimal` 计算，API 固定输出两位小数字符串；OrderItem 保存名称、Option 配置和价格快照。
 - 订单号使用 `OD` + 26 位大写 Crockford Base32 ULID（总长 28），数据库 UNIQUE 兜底；列表权威排序为 `created_at DESC, id DESC`。
 - 状态流仅为 `pending → cancelled`、`pending → paid`、`paid → completed`；ADMIN+ `/paid` 是支付集成前临时人工入口。

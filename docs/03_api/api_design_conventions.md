@@ -292,7 +292,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 
 `UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
 
-> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 22 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。
+> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 21 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。Product 原库存直设端点已在 Phase 4.3.10 移除，库存写入统一由 Inventory API 承担。
 
 ---
 
@@ -305,6 +305,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 0 | 成功 |
 | 1xxx | 用户模块业务错误 |
 | 4041x / 4092x / 4223x | 订单模块 — 资源不存在 / 状态与阶段冲突 / 聚合不可用 |
+| 4093x | 库存模块 — 余额与幂等冲突 |
 | 40xxx | 商品模块 — 资源不存在 / 类型错误 |
 | 409xx | 商品模块 — 状态冲突 |
 | 422xx | 商品模块 — 业务校验 |
@@ -386,13 +387,24 @@ Order 与 Product 一样使用 HTTP 语义化的稳定业务 code；异常必须
 |------|------|----------|------|
 | 40411 | 404 | `OrderNotFound` | 订单不存在；用户访问他人订单也统一使用该错误，避免资源枚举 |
 | 40921 | 409 | `OrderStatusConflict` | 当前订单状态不允许指定状态变迁 |
-| 40922 | 409 | `KitOrderingRequiresInventory` | Kit 下单等待 Phase 4.3 Inventory，整单不写入 |
-| 42231 | 422 | `OrderProductUnavailable` | Product 不存在、已删除、未上架或不是可售 Experience |
-| 42232 | 422 | `OrderOptionUnavailable` | ExperienceOption 不存在、已删除或不属于指定 Product |
+| 42231 | 422 | `OrderProductUnavailable` | Product 不存在、已删除、未上架，或所需 Kit 扩展不可用 |
+| 42232 | 422 | `OrderOptionUnavailable` | Experience Option 缺失/无效/归属错误，或 Kit 错误携带 Option |
 
 `items` 为空/超限、重复 Product/Option 组合、数量范围、备注长度和未知字段属于请求形状校验，使用全局参数错误 code `422`，不再保留旧草案的 `3006`。旧 `3001`—`3006` 从未实现，已由 Order v1.0 冻结契约替换。
 
-> **实现状态：** Order 的 `IntEnum`、API value/label Registry、固定边界常量和五个命名异常已经实现，并由构造、继承关系、数据载荷及 404/409/422 中间件映射测试覆盖。Schema 及后续应用层仍待 Phase 4.2 后续批次实现。
+> **实现状态：** Order 的 `IntEnum`、API value/label Registry、Schema/应用层及 Phase 4.2 最终 Review 均已完成。Phase 4.3.7–4.3.8 已接入 Kit/混合创建扣减与 Pending 取消恢复；当前会使用 `40931` 库存不足、`40932` 恢复越界和 `40933` restore 幂等矛盾，阶段门禁 `40922` 已移除。
+
+### 8.6 库存模块错误码（4093x）
+
+Phase 4.3.1 已冻结、Phase 4.3.2 已实现以下命名异常；`40931` 已接入 Order 创建，`40932`/`40933` 已由管理员调整 Service 使用，但 Inventory 管理路由尚未注册：
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40931 | 409 | `InsufficientStock` | 下单库存不足；用户数据不披露精确可用量 |
+| 40932 | 409 | `InventoryBalanceExceeded` | 调整后余额超出 `0..999999` |
+| 40933 | 409 | `InventoryTransactionConflict` | 幂等键已绑定到不同请求 |
+
+Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40001`、`40903`。请求体、`Idempotency-Key`、分页和筛选形状错误使用全局 HTTP 422 / code `422`。HTTP 状态仍由异常类型映射，不按 `4093x` 数字判断。
 
 ---
 

@@ -9,6 +9,7 @@ from app.common.enums.order import OrderStatus
 from app.common.exceptions import OrderNotFound
 from app.common.pagination import Page
 from app.models.order import Order
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -19,6 +20,7 @@ def _service(repository: OrderRepository) -> OrderService:
     return OrderService(
         repository,
         AsyncMock(spec=ProductRepository),
+        AsyncMock(spec=InventoryRepository),
         AsyncMock(spec=AuditLogService),
     )
 

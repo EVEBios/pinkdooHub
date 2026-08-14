@@ -40,7 +40,7 @@ async def _create_order(
         order_no=f"OD01ARZ3NDEKTSV4RRFFQ69G5F{number:02d}",
         user=user,
         total_amount=Decimal(item_count * 100),
-        status=status,
+        status=status.value,
     )
     if created_at is not None:
         await Order.filter(id=order.id).update(created_at=created_at)
@@ -135,6 +135,26 @@ async def test_get_order_by_id_is_lightweight_and_accepts_transaction() -> None:
         list(loaded.items)
 
 
+async def test_get_order_items_returns_only_stable_cancellation_snapshot() -> None:
+    """取消用查询在调用方事务中按 ID 返回最小不可变字段集合。"""
+
+    user = await _create_user(1)
+    order = await _create_order(user, 1, item_count=2)
+
+    async with in_transaction() as connection:
+        items = await OrderRepository().get_order_items(
+            order.id,
+            using_db=connection,
+        )
+
+    assert [item.product_id for item in items] == sorted(
+        item.product_id for item in items
+    )
+    assert [item.quantity for item in items] == [1, 1]
+    assert all(item.experience_option_id is None for item in items)
+    assert all(type(item).__name__ == "OrderCancellationItemData" for item in items)
+
+
 async def test_detail_query_count_is_constant(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -184,8 +204,10 @@ async def test_get_order_for_update_limits_user_and_uses_transaction() -> None:
     assert hidden is None
 
 
-async def test_user_list_filters_status_and_returns_item_counts() -> None:
-    """用户列表只返回自己的订单，可按状态筛选且按明细行计数。"""
+async def test_user_list_filters_status_as_integer_and_returns_item_counts(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """状态筛选必须以原生 int 查询，并按明细行计数。"""
 
     user = await _create_user(1)
     other = await _create_user(2)
@@ -193,6 +215,19 @@ async def test_user_list_filters_status_and_returns_item_counts() -> None:
     paid = await _create_order(user, 2, status=OrderStatus.PAID, item_count=3)
     await _create_order(other, 3, status=OrderStatus.PAID, item_count=4)
     repository = OrderRepository()
+    connection = connections.get("default")
+    original_execute_query: Callable[..., Awaitable[Any]] = connection.execute_query
+    filter_values: list[Any] = []
+
+    async def capture_query(
+        query: str,
+        values: list[Any] | None = None,
+    ) -> Any:
+        if query.lstrip().upper().startswith("SELECT") and "STATUS" in query.upper():
+            filter_values.extend(values or [])
+        return await original_execute_query(query, values)
+
+    monkeypatch.setattr(connection, "execute_query", capture_query)
 
     result = await repository.list_user_orders(
         user_id=user.id,
@@ -205,6 +240,11 @@ async def test_user_list_filters_status_and_returns_item_counts() -> None:
     assert result.items[0].item_count == 3
     assert result.total == 1
     assert pending.id not in [order.id for order in result.items]
+    assert all(not isinstance(value, OrderStatus) for value in filter_values)
+    assert any(
+        type(value) is int and value == OrderStatus.PAID.value
+        for value in filter_values
+    )
     with pytest.raises(NoValuesFetched):
         list(result.items[0].items)
 

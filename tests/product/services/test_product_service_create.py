@@ -74,7 +74,6 @@ async def test_kit_create_uses_one_transaction_for_all_writes() -> None:
         name="新手套装",
         description="包含材料",
         price=Decimal("99.00"),
-        stock=0,
         operator_id=8,
         ip_address="2001:db8::1",
     )
@@ -86,7 +85,6 @@ async def test_kit_create_uses_one_transaction_for_all_writes() -> None:
     repository.create_kit.assert_awaited_once_with(
         product=product,
         price=Decimal("99.00"),
-        stock=0,
         using_db=connection,
     )
     audit_service.log.assert_awaited_once_with(
@@ -131,7 +129,6 @@ async def test_kit_extension_failure_does_not_write_audit() -> None:
             name="套装",
             description=None,
             price=Decimal("99.00"),
-            stock=0,
             operator_id=7,
             ip_address="127.0.0.1",
         )
@@ -164,7 +161,6 @@ async def test_create_flows_do_not_call_validator(
         name="零库存套装草稿",
         description=None,
         price=Decimal("99.00"),
-        stock=0,
         operator_id=7,
         ip_address="127.0.0.1",
     )
@@ -206,7 +202,6 @@ async def test_real_kit_create_persists_complete_draft_aggregate() -> None:
         name="真实套装草稿",
         description="包含材料",
         price=Decimal("199.00"),
-        stock=0,
         operator_id=32,
         ip_address="127.0.0.1",
     )
@@ -250,7 +245,6 @@ async def test_real_audit_failure_rolls_back_entire_create(
                 name="应回滚套装",
                 description=None,
                 price=Decimal("99.00"),
-                stock=0,
                 operator_id=31,
                 ip_address="127.0.0.1",
             )

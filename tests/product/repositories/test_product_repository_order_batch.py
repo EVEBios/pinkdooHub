@@ -12,6 +12,7 @@ from tortoise.transactions import in_transaction
 from app.common.enums.product import DayType, ProductType
 from app.models.experience_option import ExperienceOption
 from app.models.product import Product
+from app.models.product_kit import ProductKit
 from app.repositories.product_repo import ProductRepository
 
 
@@ -48,6 +49,15 @@ async def test_batch_loaders_return_requested_rows_in_stable_order(
         product_deleted=True,
         option_deleted=True,
     )
+    kit_product = await Product.create(
+        name="批量订单 Kit",
+        product_type=ProductType.KIT,
+    )
+    kit = await ProductKit.create(
+        product=kit_product,
+        price=Decimal("88.00"),
+        stock=3,
+    )
     repository = ProductRepository()
     connection = connections.get("default")
     original_execute_query: Callable[..., Awaitable[Any]] = connection.execute_query
@@ -66,6 +76,9 @@ async def test_batch_loaders_return_requested_rows_in_stable_order(
     options = await repository.get_options_by_ids(
         {deleted_option.id, active_option.id, 99999}
     )
+    kits = await repository.get_kits_by_product_ids(
+        {kit_product.id, active_product.id, 99999}
+    )
 
     assert [product.id for product in products] == [
         active_product.id,
@@ -77,7 +90,8 @@ async def test_batch_loaders_return_requested_rows_in_stable_order(
     ]
     assert products[1].is_deleted is True
     assert options[1].is_deleted is True
-    assert len(select_queries) == 2
+    assert kits == [kit]
+    assert len(select_queries) == 3
 
 
 async def test_empty_batch_loaders_execute_no_sql(monkeypatch: MonkeyPatch) -> None:
@@ -97,6 +111,7 @@ async def test_empty_batch_loaders_execute_no_sql(monkeypatch: MonkeyPatch) -> N
 
     assert await repository.get_products_by_ids(set()) == []
     assert await repository.get_options_by_ids(set()) == []
+    assert await repository.get_kits_by_product_ids(set()) == []
     assert calls == 0
 
 
@@ -115,6 +130,11 @@ async def test_batch_loaders_accept_caller_transaction_connection() -> None:
             {option.id},
             using_db=connection,
         )
+        kits = await repository.get_kits_by_product_ids(
+            {product.id},
+            using_db=connection,
+        )
 
     assert products == [product]
     assert options == [option]
+    assert kits == []

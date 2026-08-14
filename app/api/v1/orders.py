@@ -45,7 +45,7 @@ async def create_order(
     current_user: CurrentUser,
     service: OrderServiceDependency,
 ) -> dict:
-    """创建当前用户的 Experience 订单。"""
+    """创建当前用户的 Experience、Kit 或混合订单。"""
 
     order = await service.create_order(
         user_id=current_user.id,

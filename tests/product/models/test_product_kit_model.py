@@ -12,6 +12,7 @@ from app.common.constants.product import (
     PRODUCT_PRICE_DECIMAL_PLACES,
     PRODUCT_PRICE_MAX,
 )
+from app.common.constants.inventory import INVENTORY_STOCK_MAX
 from app.common.enums.product import ProductType
 from app.models.fields import StrictDecimalField
 from app.models.product import Product
@@ -76,6 +77,11 @@ async def test_product_kit_values_defaults_and_reverse_relation_round_trip() -> 
         ("price", Decimal("1.001"), "Decimal places should be less or equal to 2"),
         ("price", Decimal("NaN"), "Decimal value must be finite"),
         ("stock", -1, "greater or equal to 0"),
+        (
+            "stock",
+            INVENTORY_STOCK_MAX + 1,
+            "less or equal to 999999",
+        ),
     ],
 )
 async def test_product_kit_rejects_invalid_numeric_boundaries(
@@ -97,8 +103,8 @@ async def test_product_kit_rejects_invalid_numeric_boundaries(
         await ProductKit.create(**payload)
 
 
-async def test_product_kit_accepts_price_boundaries_and_positive_stock() -> None:
-    """价格闭区间边界与非负库存都应正常保存。"""
+async def test_product_kit_accepts_price_and_stock_boundaries() -> None:
+    """价格闭区间边界与库存闭区间都应正常保存。"""
 
     minimum_product = await _create_kit_product("最低价套装")
     maximum_product = await _create_kit_product("最高价套装")
@@ -109,13 +115,13 @@ async def test_product_kit_accepts_price_boundaries_and_positive_stock() -> None
     maximum = await ProductKit.create(
         product=maximum_product,
         price=PRODUCT_PRICE_MAX,
-        stock=100,
+        stock=INVENTORY_STOCK_MAX,
     )
 
     assert minimum.price == Decimal("0.01")
     assert minimum.stock == 0
     assert maximum.price == PRODUCT_PRICE_MAX
-    assert maximum.stock == 100
+    assert maximum.stock == INVENTORY_STOCK_MAX
 
 
 async def test_one_product_cannot_have_multiple_product_kits() -> None:

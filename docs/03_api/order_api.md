@@ -1,10 +1,10 @@
 # Order API
 
-> **Document Version:** v1.0
+> **Document Version:** v1.2
 >
-> **Status:** v1.0 Implemented and Final Reviewed（Phase 4.2 complete）
+> **Status:** Kit/Mixed Inventory Lifecycle Implemented（Phase 4.2 complete + Phase 4.3.8 complete）
 >
-> **Last Updated:** 2026-08-13
+> **Last Updated:** 2026-08-14
 >
 > 本文遵循 [API Design Conventions](api_design_conventions.md)，业务规则以 [Order Module](../01_requirements/order_module.md) 为准。
 
@@ -12,7 +12,7 @@
 
 ## 1. 概述与范围
 
-Phase 4.2 提供 Experience 订单创建、用户/管理员查询、取消、人工确认支付、完成和审计历史。Kit 下单在 Phase 4.3 Inventory 接入前明确关闭；本 API 不执行库存检查、扣减或恢复。
+Order API 提供 Experience、Kit 与混合订单创建，以及用户/管理员查询、取消、人工确认支付、完成和审计历史。Phase 4.3.7–4.3.8 已接入创建 Pending 时的 Kit 库存扣减及 owner cancel 时的幂等恢复；支付与完成不改变库存。
 
 Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token。
 
@@ -40,8 +40,8 @@ Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token�
 
 | 字段 | 类型 | 必填 | 规则 |
 |------|------|------|------|
-| `product_id` | integer | 是 | 正整数；必须引用当前可售 Experience Product |
-| `experience_option_id` | integer | 是 | 正整数；必须为该 Product 的当前有效 Option |
+| `product_id` | integer | 是 | 正整数；必须引用当前可售 Experience 或 Kit Product |
+| `experience_option_id` | integer / null | 条件必填 | Experience 必须为当前有效 Option；Kit 必须省略或为 null |
 | `quantity` | integer | 是 | 1 至 99 |
 
 客户端不得提交名称、配置、价格、小计或库存字段。同一订单中 `(product_id, experience_option_id)` 不得重复；不自动合并重复行。
@@ -52,16 +52,16 @@ Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token�
 |------|------|------|
 | `id` | integer | OrderItem ID |
 | `product_id` | integer | 原 Product ID |
-| `experience_option_id` | integer | 原 ExperienceOption ID |
+| `experience_option_id` | integer / null | Experience 的原 Option ID；Kit 为 null |
 | `product_name` | string | Product 名称快照 |
-| `option_duration_minutes` | integer | 时长快照，正整数分钟数 |
-| `option_participants` | integer | 人数快照，正整数 |
-| `option_day_type` | object | 日期类型快照 `{value, label}` |
+| `option_duration_minutes` | integer / null | Experience 时长快照；Kit 为 null |
+| `option_participants` | integer / null | Experience 人数快照；Kit 为 null |
+| `option_day_type` | object / null | Experience 日期类型 `{value, label}`；Kit 为 null |
 | `product_price` | string | 单价快照，两位小数 |
 | `quantity` | integer | 数量 |
 | `subtotal` | string | 小计，两位小数 |
 
-Phase 4.2 仅允许 Experience Item，因此 `experience_option_id` 与三项 Option 快照在 API 响应中均为非 null。数据库保留 nullable 设计只用于未来 Kit 接入，不削弱当前响应契约。
+`experience_option_id` 与三项 Option 快照必须同时完整或同时为 null：前者表示 Experience，后者表示 Kit；不接受部分 Option 快照。
 
 ### 2.4 用户端与管理端对象
 
@@ -105,7 +105,7 @@ Phase 4.2 仅允许 Experience Item，因此 `experience_option_id` 与三项 Op
 
 | Schema | 方向 | 用途 |
 |--------|------|------|
-| `OrderItemCreate` | Request | 单个 Experience Item |
+| `OrderItemCreate` | Request | 单个 Experience 或 Kit Item |
 | `OrderCreate` | Request | `items` + `remark`，负责非空、上限和重复组合校验 |
 | `OrderListQuery` | Query | 用户端分页与状态筛选 |
 | `AdminOrderListQuery` | Query | 管理端分页、状态、订单号、用户和时间范围筛选 |
@@ -128,9 +128,11 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 |----------|------|------|---------|------|
 | `OrderNotFound` | `40411` | 404 | `Order not found` | `null` |
 | `OrderStatusConflict` | `40921` | 409 | `Order status does not allow this operation` | `operation`, `current_status`, `required_status` |
-| `KitOrderingRequiresInventory` | `40922` | 409 | `Kit ordering requires inventory support` | `product_id`, `required_phase: "4.3"` |
 | `OrderProductUnavailable` | `42231` | 422 | `Order product is unavailable` | `product_id` |
-| `OrderOptionUnavailable` | `42232` | 422 | `Order experience option is unavailable` | `product_id`, `experience_option_id` |
+| `OrderOptionUnavailable` | `42232` | 422 | `Order experience option is unavailable` | `product_id`, `experience_option_id`（Experience 缺失时为 null） |
+| `InsufficientStock` | `40931` | 409 | `Insufficient stock` | `product_id`, `requested_quantity`；不返回 available |
+| `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 取消恢复越界时包含 Product、before/change 与上下限 |
+| `InventoryTransactionConflict` | `40933` | 409 | `Inventory idempotency key conflicts with another request` | `null` |
 
 请求形状错误使用全局 HTTP 422 / code `422` 参数校验信封，包括：`items` 为空或超过 10 项、ID 非正整数、数量不在 1 至 99、重复 `(product_id, experience_option_id)`、备注超过 500 字符、未知字段、分页/时间格式错误。`OrderItemsRequired` 属于 Schema 约束，不额外发明业务错误码。
 
@@ -138,7 +140,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 
 `OrderStatusConflict.data.operation` 对三条状态用例分别固定为 `cancel`、`mark_paid`、`complete`；它是稳定的业务操作标识，不等同于大写审计 action。
 
-> **实现状态：** Order 领域语言、严格 Schema、Model/离线迁移、标准库 OD+ULID 生成器、Repository、查询/Experience 创建/三个状态变迁 Service、API Mapper、`get_order_service()` 组合根、用户端 4 个与管理端 5 个路由均已实现。4.2.11 的真实 JWT + SQLite HTTP 矩阵覆盖创建防伪、精确金额和不可变快照、Product/Option/Kit 拒绝、请求边界、权限与资源隐藏、分页组合筛选、全部非法状态前置条件、审计顺序、事务故障回滚及订单号冲突重试。4.2.12 已完成架构、安全、数据库、性能、迁移、OpenAPI、文档和版本最终 Review；三个状态 PATCH 主动拒绝任意非空请求体，同时保持 OpenAPI 不声明 `requestBody`。缺失 Bearer 凭据返回统一 HTTP 401 信封；既有无效或过期 Token 的 `1006` 仍按 User 模块现行契约返回 HTTP 400。Order v1.0 已达到代码层 release-ready；MySQL 迁移执行仍需独立环境审计、备份和明确授权。
+> **实现状态：** Phase 4.2 Order v1.0 全链及最终 Review 保持完成；Phase 4.3.7–4.3.8 已把既有创建/取消端点升级为完整 Kit 库存生命周期。创建和取消分别写 deduction/restore 流水，均使用稳定集合锁、同事务余额/Order/Audit/重载及 MySQL 1205/1213 有限重试；取消额外使用 Order 状态机和 restore UNIQUE 双层幂等保护。`40922` 阶段门禁已移除，Phase 4.3.11 真实 MySQL 最后一件、反向多 Kit、同单取消和管理调整竞争均已通过。
 
 错误示例：
 
@@ -154,24 +156,13 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 }
 ```
 
-```json
-{
-    "code": 40922,
-    "message": "Kit ordering requires inventory support",
-    "data": {
-        "product_id": 8,
-        "required_phase": "4.3"
-    }
-}
-```
-
 ---
 
 ## 4. 端点列表
 
 | Method | URI | 描述 | 认证 | 角色 |
 |--------|-----|------|------|------|
-| POST | `/orders` | 创建 Experience 订单 | 是 | 已认证用户 |
+| POST | `/orders` | 创建 Experience、Kit 或混合订单并扣减 Kit | 是 | 已认证用户 |
 | GET | `/orders` | 我的订单 | 是 | 已认证用户 |
 | GET | `/orders/{order_id}` | 我的订单详情 | 是 | 订单所属用户 |
 | PATCH | `/orders/{order_id}/cancel` | 取消 Pending 订单 | 是 | 订单所属用户 |
@@ -191,7 +182,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 
 `POST /api/v1/orders`
 
-仅创建 Experience 订单。系统批量加载 Product/Option，读取当前价格并保存快照；Order、Items、`CREATE_ORDER` 审计和响应重载共享一个事务。任何 Kit Item 会使整单在写入前失败。
+创建 Experience、Kit 或混合订单。系统批量加载 Product/Option/Kit 并读取数据库价格；事务内先创建 Pending Order，再稳定锁定、重检并扣减所有 Kit。余额、`order_deduction` 流水、Items、`CREATE_ORDER` 审计和响应重载共享一个事务。
 
 请求字段：
 
@@ -211,8 +202,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
             "quantity": 1
         },
         {
-            "product_id": 1,
-            "experience_option_id": 11,
+            "product_id": 5,
             "quantity": 2
         }
     ],
@@ -247,12 +237,12 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
             },
             {
                 "id": 1002,
-                "product_id": 1,
-                "experience_option_id": 11,
-                "product_name": "拼豆体验",
-                "option_duration_minutes": 120,
-                "option_participants": 2,
-                "option_day_type": { "value": "holiday", "label": "节假日" },
+                "product_id": 5,
+                "experience_option_id": null,
+                "product_name": "拼豆材料包",
+                "option_duration_minutes": null,
+                "option_participants": null,
+                "option_day_type": null,
                 "product_price": "199.00",
                 "quantity": 2,
                 "subtotal": "398.00"
@@ -264,7 +254,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 }
 ```
 
-创建响应不返回 `user_id`。可能的业务错误：`40922`、`42231`、`42232`；请求形状错误返回全局参数 422。
+创建响应不返回 `user_id`。可能的业务错误：`40931`、`42231`、`42232`；请求形状错误返回全局参数 422。
 
 ### 5.2 我的订单
 
@@ -314,7 +304,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 
 `PATCH /api/v1/orders/{order_id}/cancel`
 
-仅允许订单所属用户执行 `pending → cancelled`。取消不恢复库存，因为 Phase 4.2 不允许 Kit 下单且不拥有 Inventory 职责。状态与 `CANCEL_ORDER` 审计同事务。
+仅允许订单所属用户执行 `pending → cancelled`。事务先锁定 owner 可见 Order 并重检 Pending，再读取最小 Item 快照、按 Product ID 升序锁定全部 Kit、批量确认 restore 幂等身份尚未提交，随后恢复余额并写 `order_cancellation_restore` 流水，最后更新状态、写 `CANCEL_ORDER` 审计并重载响应。纯 Experience 订单跳过 Inventory；重复取消返回 `40921` 且不重复恢复。任何库存、流水、状态、审计或重载失败都会让整个事务回滚。
 
 ```json
 {
@@ -442,11 +432,11 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 | 用例 | 前置状态 | 后置状态 | Audit action | 原子范围 |
 |------|----------|----------|--------------|----------|
 | 创建 | - | `pending` | `CREATE_ORDER` | Order + Items + Audit + 响应重载；编号冲突整事务最多尝试 3 次 |
-| 用户取消 | `pending` | `cancelled` | `CANCEL_ORDER` | 锁定 Order + 状态更新 + Audit + 响应重载 |
+| 用户取消 | `pending` | `cancelled` | `CANCEL_ORDER` | 锁定 Order + Item 快照 + 稳定 Kit 锁 + restore 幂等检查 + 批量余额/流水 + 状态 + Audit + 响应重载；1205/1213 完整用例最多尝试 3 次 |
 | ADMIN+ 确认支付 | `pending` | `paid` | `MARK_ORDER_PAID` | 锁定 Order + 状态更新 + Audit + 响应重载 |
 | ADMIN+ 完成 | `paid` | `completed` | `COMPLETE_ORDER` | 锁定 Order + 状态更新 + Audit + 响应重载 |
 
-所有事务内 Repository 方法必须接收并使用 `using_db`。状态变迁在事务内使用 `SELECT ... FOR UPDATE` 锁定订单并重新校验状态，并发请求只有一个可以成功。审计或后置重载失败时整体回滚。失败的前置检查不写审计。Phase 4.2 的任何事务都不修改 ProductKit.stock。
+所有事务内 Repository 方法必须接收并使用 `using_db`。状态变迁在事务内使用 `SELECT ... FOR UPDATE` 锁定订单并重新校验状态，并发请求只有一个可以成功。取消恢复与状态/Audit 使用同一连接，任一失败整体回滚；支付和完成仍不修改 ProductKit.stock。失败的前置检查不写审计。
 
 ---
 
@@ -466,4 +456,10 @@ OD01K2M7Y0J7A3N5Q8T4V6W9X2BC
 
 ## 9. 后续能力
 
-下列能力不属于本契约：Kit 下单和库存联动、在线支付、超时取消、退款、已支付取消、统计报表、订单删除。接入这些能力时必须先更新 Order 需求、API、数据库设计、ER DBML 和相关架构说明，再开始实现。
+下列能力不属于本契约：在线支付、超时自动取消、退款、已支付取消、统计报表、订单删除。接入这些能力时必须先更新 Order 需求、API、数据库设计、ER DBML 和相关架构说明，再开始实现。
+
+### 9.1 Phase 4.3.1 已冻结的 Order API 演进
+
+Phase 4.3.7 已在原 `POST /api/v1/orders` 实现 Experience/Kit/混合创建和 Pending 扣减；Phase 4.3.8 已在原 cancel 端点实现 Kit/混合订单幂等恢复。Kit Item 可省略 `experience_option_id` 或显式提交 `null`；支付与完成不触碰库存。
+
+库存不足使用 `40931 InsufficientStock`，普通用户只收到 `product_id` 和 `requested_quantity`。仅用于阶段门禁的 `40922 KitOrderingRequiresInventory` 已从代码和当前错误注册表移除。具体事务、幂等和并发规则见 [Inventory Module](../01_requirements/inventory_module.md) 与 [Inventory API](inventory_api.md)。

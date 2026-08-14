@@ -11,15 +11,22 @@ from app.api.deps import get_current_admin, get_product_image_storage
 from app.main import app
 from app.models.audit_log import AuditLog
 from app.models.product_image import ProductImage
+from app.models.user import User
 from app.repositories.product_repo import ProductRepository
 from app.storage.image import LocalImageStorage
 
 
 @pytest.fixture
-def admin_api() -> None:
+async def admin_api() -> None:
     """仅替换认证边界；Product Service/Repository/事务均使用真实实现。"""
 
-    app.dependency_overrides[get_current_admin] = lambda: SimpleNamespace(id=71)
+    admin = await User.create(
+        username="product-api-admin",
+        password="hashed-password",
+        nickname="商品管理员",
+        phone="13800340001",
+    )
+    app.dependency_overrides[get_current_admin] = lambda: admin
     yield
     app.dependency_overrides.clear()
 
@@ -218,20 +225,21 @@ async def test_kit_http_lifecycle_preserves_product_id_and_availability(
         f"/api/v1/admin/products/kit/{product_id}/price",
         json={"price": "699.00"},
     )
-    stock_response = await client.patch(
-        f"/api/v1/admin/products/kit/{product_id}/stock",
-        json={"stock": 3},
+    stock_response = await client.post(
+        f"/api/v1/admin/products/kit/{product_id}/inventory-adjustments",
+        headers={"Idempotency-Key": "product-kit-lifecycle-stock"},
+        json={"change": 3, "reason": "HTTP lifecycle opening stock"},
     )
     assert price_response.status_code == 200
     assert price_response.json()["data"] == {
         "id": product_id,
         "price": "699.00",
     }
-    assert stock_response.status_code == 200
-    assert stock_response.json()["data"] == {
-        "id": product_id,
-        "stock": 3,
-    }
+    assert stock_response.status_code == 201
+    stock_data = stock_response.json()["data"]
+    assert stock_data["product_id"] == product_id
+    assert stock_data["stock"] == 3
+    assert stock_data["transaction"]["transaction_type"] == "admin_adjustment"
 
     repository = ProductRepository()
     product = await repository.get_product_by_id(product_id)

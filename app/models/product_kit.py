@@ -3,6 +3,7 @@
 from tortoise import fields
 from tortoise.validators import MaxValueValidator, MinValueValidator
 
+from app.common.constants.inventory import INVENTORY_STOCK_MAX
 from app.common.constants.product import (
     MIN_STOCK,
     PRODUCT_PRICE_DECIMAL_PLACES,
@@ -32,7 +33,10 @@ class ProductKit(BaseModel):
     stock = fields.IntField(
         default=MIN_STOCK,
         db_default=MIN_STOCK,
-        validators=[MinValueValidator(MIN_STOCK)],
+        validators=[
+            MinValueValidator(MIN_STOCK),
+            MaxValueValidator(INVENTORY_STOCK_MAX),
+        ],
     )
 
     class Meta:

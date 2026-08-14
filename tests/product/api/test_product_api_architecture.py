@@ -86,7 +86,6 @@ def test_expected_product_routes_are_registered_once() -> None:
         ("POST", "/api/v1/admin/products/{product_id}/images"),
         ("POST", "/api/v1/admin/options/{option_id}/images"),
         ("PATCH", "/api/v1/admin/products/kit/{product_id}/price"),
-        ("PATCH", "/api/v1/admin/products/kit/{product_id}/stock"),
     }
     registered = [
         (method, f"/api/v1{route.path}")
@@ -122,11 +121,13 @@ def test_openapi_has_exact_product_operations_and_admin_security() -> None:
             or path.startswith("/api/v1/admin/product-images")
         ):
             continue
+        if "inventory-" in path:
+            continue
         for method, operation in path_item.items():
             if method in {"get", "post", "patch", "delete"}:
                 product_operations.append((method, path, operation))
 
-    assert len(product_operations) == 22
+    assert len(product_operations) == 21
     operation_ids = [item[2]["operationId"] for item in product_operations]
     assert len(operation_ids) == len(set(operation_ids))
 

@@ -1,6 +1,6 @@
-# pinkdooHub 数据库设计 v1.4
+# pinkdooHub 数据库设计 v1.6
 
-> **Last Updated:** 2026-08-13
+> **Last Updated:** 2026-08-14
 
 ---
 
@@ -22,26 +22,27 @@
 ```
 users
   ├── orders ── order_items
-  │
+  ├── operated inventory_transactions
   └── products
         ├── experience_options
         ├── product_kits
-        └── product_images
+        ├── product_images
+        └── inventory_transactions
 
 audit_logs
 ```
 
 ### 2.1 数据完整性约束边界
 
-Product 与当前冻结的 Order 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成：
+Product、Order 与当前冻结的 Inventory 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成：
 
 | 层级 | 当前保证 |
 |------|----------|
-| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit 一对一唯一性、Option 全历史联合唯一性、Order 编号唯一性和命名索引 |
-| Schema / Model | 文本长度、正整数、金额范围与小数位、库存和图片排序非负、Enum 合法性、Order Item 数量/项数/重复组合边界 |
-| Service / Validator | Product 类型与扩展表匹配、图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转和上架完整性；Order 聚合可售性、快照金额与状态机 |
+| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit 一对一唯一性、Option 全历史联合唯一性、Order 编号唯一性、Inventory 幂等键唯一性和命名索引 |
+| Schema / Model | 文本长度、正整数、金额范围与小数位、库存 `0..999999`、流水单字段数量边界、非零变化量、Enum 合法性、Order Item 数量/项数/重复组合边界 |
+| Service / Validator | Product 类型与扩展表匹配、图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转和上架完整性；Order 聚合可售性、快照金额与状态机；Inventory before/change/after 等式、类型/来源组合、锁后余额判断和余额/流水同事务 |
 
-当前 Product 与 Order Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，必须作为独立设计变更统一评估，不能只改某一数据库。
+当前 Product、Order 与 Inventory Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围、流水算术等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，必须作为独立设计变更统一评估，不能只改某一数据库。
 
 ---
 
@@ -119,7 +120,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | product_id | BIGINT | FK → products.id, NOT NULL, UNIQUE | 关联商品 |
 | price | DECIMAL(10,2) | NOT NULL | 套装售价，0 < Price ≤ 99999 |
-| stock | INT | NOT NULL, DEFAULT 0 | 当前库存；Phase 4.1 直接设置最终值，Phase 4.3 再引入库存流水与自动扣减/恢复 |
+| stock | INT | NOT NULL, DEFAULT 0 | 唯一权威当前库存，应用范围 `0..999999`；Phase 4.3 接入后每次变化必须同时写流水 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
@@ -161,7 +162,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 
 ### 3.6 orders（订单表，Phase 4.2 已实现 Model）
 
-订单主表，记录下单用户、金额和状态。不直接保存商品信息，商品明细拆分到 `order_items`。Phase 4.2 只开放 Experience 下单；表结构保留未来 Kit Item 所需的 nullable Option 字段，但当前应用不写入 Kit 订单。
+订单主表，记录下单用户、金额和状态。不直接保存商品信息，商品明细拆分到 `order_items`。Phase 4.3 已在既有聚合上开放纯 Experience、纯 Kit 与混合订单；Kit Item 使用已经预留的 nullable Option 字段，并在创建 Pending Order 时原子扣减库存。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -169,7 +170,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | order_no | VARCHAR(28) | NOT NULL, UNIQUE | `OD` + 26 位大写 Crockford Base32 ULID；全局唯一 |
 | user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | 下单用户 |
 | total_amount | DECIMAL(10,2) | NOT NULL | 订单总金额，单位：元 |
-| status | SMALLINT | NOT NULL, DEFAULT 0 | 0:待支付 1:已支付 2:已取消 3:已完成；代码使用 `SmallIntField` + `OrderStatus(IntEnum)` |
+| status | SMALLINT | NOT NULL, DEFAULT 0 | 0:待支付 1:已支付 2:已取消 3:已完成；代码使用 `SmallIntField` + `OrderStatus(IntEnum)`，写入/筛选边界转换为原生整数 |
 | remark | VARCHAR(500) | nullable | 用户备注；审计日志不得复制该字段 |
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
@@ -187,7 +188,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | order_id | BIGINT | FK → orders.id, NOT NULL, ON DELETE RESTRICT | 关联订单 |
 | product_id | BIGINT | FK → products.id, NOT NULL, ON DELETE RESTRICT | 关联原商品 |
-| experience_option_id | BIGINT | FK → experience_options.id, nullable, ON DELETE RESTRICT | 关联体验配置（未来 Kit 为 NULL；Phase 4.2 响应非 NULL） |
+| experience_option_id | BIGINT | FK → experience_options.id, nullable, ON DELETE RESTRICT | Experience Item 关联具体配置；Kit Item 为 NULL |
 | option_duration_minutes | INT | nullable | 快照：正整数分钟数 |
 | option_participants | INT | nullable | 快照：人数 |
 | option_day_type | VARCHAR(20) | nullable | 快照：日期类型 |
@@ -198,13 +199,41 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | created_at | DATETIME | - | 创建时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
 
-Phase 4.2 每单 1 至 10 个 Item，且同一订单内 `(product_id, experience_option_id)` 由请求 Schema 保证不重复。当前不增加数据库唯一约束：数据库的 nullable 语义会使未来 Kit Item 的组合约束不直观，而一次订单创建只有单一受控写入口；Schema 已覆盖重复组合，Model 契约测试已覆盖 nullable Option 扩展位，后续 Service 测试仍须证明写入口不会绕过该规则。
+每单 1 至 10 个 Item，且同一订单内 `(product_id, experience_option_id)` 由请求 Schema 保证不重复；因此同一 Kit Product 最多一行。当前不增加数据库唯一约束：数据库的 nullable 语义会使 Kit Item 的组合约束不直观，而一次订单创建只有单一受控写入口；Schema 与 Service 测试已经覆盖重复组合、Experience 必填 Option 和 Kit 必须无 Option 的规则。
 
 **历史保护：** Order、OrderItem 不提供删除接口。用户、Product 与 Option 的物理删除均由 `RESTRICT` 阻止；Product 与 Option 的正常业务删除继续使用逻辑删除。历史展示始终读取 OrderItem 快照，不依赖当前 Product/Option 内容。
 
 ---
 
-### 3.8 audit_logs（审计日志表）
+### 3.8 inventory_transactions（库存流水表，Phase 4.3.4 已生成离线迁移）
+
+记录每一次已提交的库存变化。`product_kits.stock` 仍是当前余额，流水用于追溯，不能通过实时汇总流水替代余额读取。表继承 `BaseModel`，因此包含技术字段 `updated_at`；业务上不提供更新或删除路径，API 也不输出该字段。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 流水 ID |
+| product_id | BIGINT | FK → products.id, NOT NULL, ON DELETE RESTRICT | Kit 的对外 Product ID；余额写入仍锁定 `product_kits` 行 |
+| transaction_type | VARCHAR(40) | NOT NULL | `opening_balance` / `admin_adjustment` / `order_deduction` / `order_cancellation_restore` |
+| change_quantity | INT | NOT NULL | 真实非零变化量，应用范围 `-999999..999999` |
+| before_quantity | INT | NOT NULL | 变化前余额，应用范围 `0..999999` |
+| after_quantity | INT | NOT NULL | 变化后余额，应用范围 `0..999999`，且必须等于 `before_quantity + change_quantity` |
+| source_type | VARCHAR(30) | NOT NULL | `migration` / `admin` / `order`；当前每种流水都有明确来源 |
+| source_id | BIGINT | nullable | 当前仅 Order 来源保存 Order ID；为避免多态外键不建立 FK |
+| operator_id | BIGINT | FK → users.id, nullable, ON DELETE RESTRICT | 触发事件的用户；期初迁移及未来无用户系统事件允许为空 |
+| reason | VARCHAR(256) | NOT NULL | 管理调整保存规范化原因，迁移/订单事件保存服务端稳定原因 |
+| idempotency_key | VARCHAR(256) | NOT NULL, UNIQUE | 服务端完整业务身份；客户端调整 key 本身仍限制为 128 个可打印 ASCII 字符 |
+| created_at | DATETIME | - | 流水创建时间、权威分页时间 |
+| updated_at | DATETIME | - | BaseModel 技术字段；不可作为业务变更时间 |
+
+**不可变边界：** 数据库负责非空、外键、幂等唯一性和字段容量；Model 负责单字段范围与非零变化量；Service 根据类型/source 契约计算并验证 before/change/after，在持有 ProductKit 行锁的同一事务内更新余额和插入流水。当前不增加跨 MySQL/SQLite 的 `CHECK`，直接 SQL 仍属于受 Review 的受控路径。
+
+**来源设计：** `source_id` 故意不关联 Order 外键，避免把通用来源列伪装为只属于订单。查询层只允许 `source_id` 与 `source_type=order` 组合，并在 Repository/Mapper 阶段按需加载安全订单号。
+
+**增量迁移：** `2_20260814104655_add_inventory_transactions.py` 使用 MySQL 8+ 方言离线生成，尚未执行。升级在建表后为每条 `stock > 0` 的 ProductKit 写一条 `opening_balance`，零库存不写；不修改余额，不静默忽略幂等冲突。DDL 隐式提交导致建表和数据回填不具备整体原子性，因此执行前必须停写、扫描库存范围并备份，执行后必须核对正库存 Kit 与期初流水的一一对应。downgrade 只删除流水表，不重算余额，属于数据破坏操作。
+
+---
+
+### 3.9 audit_logs（审计日志表）
 
 记录关键操作的审计日志，包括操作人、操作类型、目标对象及 IP 地址。日志为顺序写入（非 fire-and-forget）。
 
@@ -232,8 +261,10 @@ Phase 4.2 每单 1 至 10 个 Item，且同一订单内 `(product_id, experience
 | products → experience_options | 一对多 | 一个体验商品包含多个可选配置 |
 | products → product_kits | 一对一 | 套装商品的扩展信息 |
 | products → product_images | 一对多 | 一个商品有多张图片 |
+| products → inventory_transactions | 一对多 | 一个 Kit Product 可以有多条不可变库存流水 |
+| users → inventory_transactions | 一对多（可空） | 用户可作为流水触发者；迁移/系统事件允许无用户 |
 
-**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。订单历史链 `orders.user_id`、`order_items.order_id/product_id/experience_option_id` 全部使用 `ON DELETE RESTRICT`；不因用户或商品生命周期破坏历史订单。
+**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。订单历史链 `orders.user_id`、`order_items.order_id/product_id/experience_option_id` 全部使用 `ON DELETE RESTRICT`；Inventory 的 `product_id` 与可空 `operator_id` 同样使用 `RESTRICT` 保存追溯链。`inventory_transactions.source_id` 是通用来源标识，不建立多态外键。
 
 ---
 
@@ -246,7 +277,7 @@ Phase 4.2 每单 1 至 10 个 Item，且同一订单内 `(product_id, experience
 | 所有主键 | `id BIGINT AUTO_INCREMENT` |
 | 所有时间 | `created_at` / `updated_at` |
 | 所有金额 | `DECIMAL(10,2)`，单位：元 |
-| 状态字段 | 按模块权威设计：User / Order 使用 `SMALLINT`，Product 使用 `VARCHAR(20)` 字符串 Enum |
+| 状态/类型字段 | 按模块权威设计：User / Order 使用 `SMALLINT`，Product 使用 `VARCHAR(20)` 字符串 Enum，Inventory 使用容量明确的 VARCHAR 字符串 Enum |
 | 所有外键 | `xxx_id BIGINT` |
 
 ### 时间字段策略
@@ -392,6 +423,26 @@ CREATE INDEX idx_orders_created_id ON orders (created_at, id);
 CREATE INDEX idx_order_items_order_id ON order_items (order_id, id);
 ```
 
+#### inventory_transactions
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE idempotency_key = ?` | 极高（写入前幂等判断与并发兜底） | `UNIQUE(idempotency_key)` |
+| 2 | `WHERE product_id = ? ORDER BY created_at DESC, id DESC` | 高（单 Kit 流水） | `(product_id, created_at, id)` |
+| 3 | `WHERE source_type = ? AND source_id = ? ORDER BY created_at DESC, id DESC` | 中（Order 来源追溯） | `(source_type, source_id, created_at, id)` |
+| 4 | `WHERE transaction_type = ? ORDER BY created_at DESC, id DESC` | 中（类型筛选） | `(transaction_type, created_at, id)` |
+| 5 | `ORDER BY created_at DESC, id DESC` / 创建时间范围 | 中（全局流水） | `(created_at, id)` |
+
+```sql
+CREATE UNIQUE INDEX uidx_inventory_idempotency_key ON inventory_transactions (idempotency_key);
+CREATE INDEX idx_inventory_product_created_id ON inventory_transactions (product_id, created_at, id);
+CREATE INDEX idx_inventory_source_created_id ON inventory_transactions (source_type, source_id, created_at, id);
+CREATE INDEX idx_inventory_type_created_id ON inventory_transactions (transaction_type, created_at, id);
+CREATE INDEX idx_inventory_created_id ON inventory_transactions (created_at, id);
+```
+
+只按 `source_type` 筛选时可利用索引首列过滤，但由于 `source_id` 位于排序列之前，可能仍需要排序；当前优先优化按具体 Order source 的追溯。是否增加第二组 source-only 索引留待 4.3.5 Repository 固化 SQL 后，用 MySQL `EXPLAIN` 和真实数据量决定，避免预先制造冗余索引。
+
 #### audit_logs
 
 | # | 查询 | 频率 | 索引 |
@@ -420,6 +471,11 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | `orders` | `idx_orders_status_created_id` | `(status, created_at, id)` | 普通 | 管理端状态筛选 |
 | `orders` | `idx_orders_created_id` | `(created_at, id)` | 普通 | 管理端全部订单与时间范围 |
 | `order_items` | `idx_order_items_order_id` | `(order_id, id)` | 普通 | 订单详情稳定顺序 |
+| `inventory_transactions` | `uidx_inventory_idempotency_key` | `(idempotency_key)` | UNIQUE | 自动事件与管理员请求幂等兜底 |
+| `inventory_transactions` | `idx_inventory_product_created_id` | `(product_id, created_at, id)` | 普通 | 单 Kit 流水稳定分页 |
+| `inventory_transactions` | `idx_inventory_source_created_id` | `(source_type, source_id, created_at, id)` | 普通 | Order 来源追溯 |
+| `inventory_transactions` | `idx_inventory_type_created_id` | `(transaction_type, created_at, id)` | 普通 | 类型筛选稳定分页 |
+| `inventory_transactions` | `idx_inventory_created_id` | `(created_at, id)` | 普通 | 全局流水与时间范围 |
 | `audit_logs` | `idx_audit_target_created` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
 | `audit_logs` | `idx_audit_operator_created` | `(operator_id, created_at)` | 普通 | 操作人行为审计 |
 

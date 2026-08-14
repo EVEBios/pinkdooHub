@@ -5,7 +5,6 @@ import re
 from enum import IntEnum
 
 from app.common.constants.order import (
-    KIT_ORDERING_REQUIRED_PHASE,
     ORDER_AUDIT_ACTION_CANCEL,
     ORDER_AUDIT_ACTION_COMPLETE,
     ORDER_AUDIT_ACTION_CREATE,
@@ -129,8 +128,7 @@ def test_order_number_pattern_rejects_invalid_values() -> None:
     )
 
 
-def test_order_phase_and_audit_constants_match_frozen_contract() -> None:
-    assert KIT_ORDERING_REQUIRED_PHASE == "4.3"
+def test_order_audit_constants_match_frozen_contract() -> None:
     assert ORDER_AUDIT_TARGET_TYPE == "order"
     assert {
         ORDER_AUDIT_ACTION_CREATE,

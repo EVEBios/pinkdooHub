@@ -1,9 +1,6 @@
 """Order 模块命名业务异常。"""
 
-from app.common.constants.order import (
-    KIT_ORDERING_REQUIRED_PHASE,
-    ORDER_STATUS_VALUES,
-)
+from app.common.constants.order import ORDER_STATUS_VALUES
 from app.common.enums.order import OrderStatus
 from app.core.exceptions import (
     ConflictException,
@@ -54,23 +51,8 @@ class OrderStatusConflict(ConflictException):
         )
 
 
-class KitOrderingRequiresInventory(ConflictException):
-    """Phase 4.3 Inventory 接入前不允许 Kit 下单。"""
-
-    def __init__(self, *, product_id: int) -> None:
-        _validate_positive_id(product_id, field_name="product_id")
-        super().__init__(
-            code=40922,
-            message="Kit ordering requires inventory support",
-            data={
-                "product_id": product_id,
-                "required_phase": KIT_ORDERING_REQUIRED_PHASE,
-            },
-        )
-
-
 class OrderProductUnavailable(UnprocessableEntityException):
-    """Product 不满足 Phase 4.2 Experience 下单条件。"""
+    """Product 不满足当前 Experience 或 Kit 下单条件。"""
 
     def __init__(self, *, product_id: int) -> None:
         _validate_positive_id(product_id, field_name="product_id")
@@ -88,13 +70,14 @@ class OrderOptionUnavailable(UnprocessableEntityException):
         self,
         *,
         product_id: int,
-        experience_option_id: int,
+        experience_option_id: int | None,
     ) -> None:
         _validate_positive_id(product_id, field_name="product_id")
-        _validate_positive_id(
-            experience_option_id,
-            field_name="experience_option_id",
-        )
+        if experience_option_id is not None:
+            _validate_positive_id(
+                experience_option_id,
+                field_name="experience_option_id",
+            )
         super().__init__(
             code=42232,
             message="Order experience option is unavailable",

@@ -346,18 +346,20 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 
 > **实现状态：** ExperienceOption 逻辑删除 Service、Mapper 与 ADMIN+ 路由均已实现，并有资源/状态优先级、Draft/Offline、最后一项删除、Product 状态保留、权限、图片外键保留、快照审计及真实回滚测试。
 
-### 7.8 ProductKit 价格与库存修改事务
+### 7.8 ProductKit 价格修改与 Inventory 边界
 
-`update_kit_price(product_id, *, price, operator_id, ip_address)` 和 `update_kit_stock(product_id, *, stock, operator_id, ip_address)` 共享 Kit 聚合前置检查：
+`update_kit_price(product_id, *, price, operator_id, ip_address)` 保留在 Product 模块：
 
 - 使用 `get_product_by_id(..., include_deleted=True)`，依次处理 `ProductNotFound(40401)`、`ProductIsDeleted(40903)`、非 Kit 的 `ProductTypeMismatch(40001)` 和 `OnlineProductCannotBeModified(40905)`；只有 Draft/Offline Kit 可继续修改。
 - Product 确为可修改 Kit 后，再使用 `get_kit_by_product_id()` 加载一对一扩展；扩展记录缺失抛已登记的 `ProductKitNotFound`（`40404`, `Product kit not found`），不得伪造默认价格或库存。
-- 价格接口只修改 `ProductKit.price` 并写 `UPDATE_PRICE`；库存接口采用 Phase 4.1 的最终值设置模式，只修改 `ProductKit.stock` 并写 `UPDATE_STOCK`。价格快照使用两位小数字符串，库存快照使用整数，均以紧凑 JSON 写入现有 `AuditLog.description`。
-- Kit 更新和对应审计共享同一事务连接，更新失败不审计，审计失败回滚字段修改。两个流程都不加载完整 Product 聚合、不调用 ProductValidator，也不提前实现库存流水、扣减、恢复或并发库存控制。
+- 价格接口只修改 `ProductKit.price` 并写 `UPDATE_PRICE`；价格快照使用两位小数字符串，以紧凑 JSON 写入现有 `AuditLog.description`。
+- Kit 价格更新和对应审计共享同一事务连接，更新失败不审计，审计失败回滚字段修改。该流程不加载完整 Product 聚合，也不调用 ProductValidator。
 
-Service 返回更新后的 `ProductKit`；API Mapper 使用 `product_id` 作为 `KitPriceOut` / `KitStockOut` 的 `id`，不会把 ProductKit 内部主键暴露为 Product ID。
+Service 返回更新后的 `ProductKit`；API Mapper 使用 `product_id` 作为 `KitPriceOut` 的 `id`，不会把 ProductKit 内部主键暴露为 Product ID。
 
-> **实现状态：** Kit 价格与库存修改 Service、Mapper、ADMIN+ 路由及 `40404 ProductKitNotFound` 均已实现，并有资源/状态优先级、Draft/Offline、零库存、字段互不覆盖、权限、快照审计、Validator 隔离和真实事务回滚测试。
+Phase 4.3.10 已从 Product 模块移除直接库存设置路由、请求/响应 Schema、Mapper 与 Service 用例，也从 Kit 创建请求移除 `stock`。新 Kit 固定从 0 开始；管理员库存变化统一使用 Inventory adjustment。ProductRepository 保留通用 ProductKit 持久化原语，但业务层不得绕过 Inventory 流水直接修改余额。
+
+> **实现状态：** Kit 价格修改 Service、Mapper、ADMIN+ 路由及 `40404 ProductKitNotFound` 均已实现；Inventory adjustment 已替代旧库存写入口。
 
 ### 7.9 ProductImage 生命周期事务
 
@@ -647,17 +649,19 @@ product_id + Duration + Participants + Day Type
 
 拼豆套装在 **Phase 4.1** 即使用 `product_kits.stock` 保存当前库存，支持管理端直接设置最终值，并在用户详情中派生 `available = stock > 0`。这一阶段不引入库存流水，也不在 Product Service 中实现订单驱动的扣减或恢复。
 
-完整库存业务将在 **Inventory 模块（Phase 4.3）** 中实现：
+Phase 4.3.1 已在 [Inventory Module](inventory_module.md) 冻结完整库存业务，但运行时代码尚未接入：
 
 | 库存操作 | 所属模块 | 触发时机 |
 |----------|----------|----------|
-| 当前库存最终值设置 | Product（Phase 4.1） | 管理员维护套装时 |
-| 库存扣减 | Order / Payment + Inventory | 支付成功后 |
-| 库存恢复 | Order + Inventory | 订单取消时 |
-| 库存不足拒绝 | Order + Inventory | 下单 / 支付确认时 |
-| 库存流水与调整原因 | Inventory | Phase 4.3 |
+| 当前库存余额 | ProductKit + Inventory | `product_kits.stock` 继续作为唯一权威余额 |
+| 管理员调整 | Inventory | ADMIN+ 提交调整量、原因和幂等键；允许 Online Kit |
+| 库存扣减 | Order + Inventory | 创建 Pending Kit/混合订单时 |
+| 库存恢复 | Order + Inventory | Pending 订单取消时 |
+| 支付与完成 | Order | 不再改变库存 |
+| 库存不足拒绝 | Order + Inventory | 创建订单并锁后校验时 |
+| 库存流水 | Inventory | 与余额、Order 和 Audit 在相应事务内原子提交 |
 
-Product 模块只负责当前库存值的保存、展示和管理端直接设置，不负责扣减、恢复、流水及并发库存控制。
+Phase 4.3 已采用余额表 + 流水表模式：ProductKit 保存余额，Inventory 解释并控制每次变化。Phase 4.3.10 已移除管理员直接设置最终值的旧端点和 Kit 创建 `stock` 输入，新 Kit 从 0 开始并通过 Inventory adjustment 入库。Product 的价格、内容和图片仍遵守原状态限制，库存调整是独立 Inventory 行为。
 
 ---
 
@@ -668,9 +672,9 @@ Product 模块只负责当前库存值的保存、展示和管理端直接设置
 | Product（体验/套装） | Draft → Online → Offline → 逻辑删除 | Phase 4.1 |
 | ExperienceOption | 创建 / 恢复 → 修改 → 逻辑删除（无独立状态，跟随 Product） | Phase 4.1 |
 | Kit Product | 与 Product 相同，共用 Product 生命周期 | Phase 4.1 |
-| Order | 待后续 Phase 4.2 设计 | Phase 4.2 |
+| Order | Pending → Paid → Completed；Pending → Cancelled | Phase 4.2 已实现 |
 | Kit 当前库存值 | 创建 → 管理员直接设置 → 展示 | Phase 4.1 |
-| Inventory 流水与自动变更 | 待后续 Phase 4.3 设计 | Phase 4.3 |
+| Inventory 流水与自动变更 | 契约已冻结、运行时尚未实现 | Phase 4.3 |
 
 > **关于 ExperienceOption 的 status：** 当前不设独立状态。Option 仅作为 Product 的配置项存在，Product 的状态（draft/online/offline）已覆盖了"该配置是否对用户可见"的需求。如需独立控制某个 Option 的可见性，后续再扩展。
 

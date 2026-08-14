@@ -83,10 +83,25 @@ def test_order_item_mapper_serializes_exact_snapshot_whitelist() -> None:
     assert "password" not in result
 
 
+def test_order_item_mapper_serializes_kit_null_option_snapshot() -> None:
+    result = map_order_item(
+        _item(
+            experience_option_id=None,
+            option_duration_minutes=None,
+            option_participants=None,
+            option_day_type=None,
+        )
+    ).model_dump(mode="json")
+
+    assert result["experience_option_id"] is None
+    assert result["option_duration_minutes"] is None
+    assert result["option_participants"] is None
+    assert result["option_day_type"] is None
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"experience_option_id": None},
         {"option_duration_minutes": None},
         {"option_participants": None},
         {"option_day_type": None},

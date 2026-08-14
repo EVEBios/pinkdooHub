@@ -44,6 +44,7 @@ from fastapi import FastAPI
 
 from app.api.static import DeferredDirectoryStaticFiles
 from app.api.v1.admin import router as admin_router
+from app.api.v1.admin_inventory import router as admin_inventory_router
 from app.api.v1.admin_orders import router as admin_orders_router
 from app.api.v1.admin_products import router as admin_products_router
 from app.api.v1.admin_users import router as admin_users_router
@@ -189,6 +190,7 @@ app.include_router(admin_users_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(products_router, prefix="/api/v1")
 app.include_router(admin_products_router, prefix="/api/v1")
+app.include_router(admin_inventory_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(admin_orders_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")

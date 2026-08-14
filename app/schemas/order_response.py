@@ -167,21 +167,23 @@ class OrderItemOut(_OrderOut):
 
     id: int = Field(strict=True, gt=0)
     product_id: int = Field(strict=True, gt=0)
-    experience_option_id: int = Field(strict=True, gt=0)
+    experience_option_id: int | None = Field(default=None, strict=True, gt=0)
     product_name: str = Field(
         strict=True,
         min_length=1,
         max_length=PRODUCT_NAME_MAX_LENGTH,
     )
-    option_duration_minutes: int = Field(
+    option_duration_minutes: int | None = Field(
+        default=None,
         strict=True,
         ge=MIN_DURATION_MINUTES,
     )
-    option_participants: int = Field(
+    option_participants: int | None = Field(
+        default=None,
         strict=True,
         ge=MIN_PARTICIPANTS,
     )
-    option_day_type: OrderDayTypeOut
+    option_day_type: OrderDayTypeOut | None = None
     product_price: OrderUnitPriceOut
     quantity: int = Field(
         strict=True,
@@ -192,6 +194,16 @@ class OrderItemOut(_OrderOut):
 
     @model_validator(mode="after")
     def validate_subtotal(self) -> "OrderItemOut":
+        option_metadata = (
+            self.option_duration_minutes,
+            self.option_participants,
+            self.option_day_type,
+        )
+        if self.experience_option_id is None:
+            if any(value is not None for value in option_metadata):
+                raise ValueError("Kit item must not contain option snapshots")
+        elif any(value is None for value in option_metadata):
+            raise ValueError("Experience item requires complete option snapshots")
         if self.subtotal != self.product_price * self.quantity:
             raise ValueError("Order item subtotal does not match price and quantity")
         return self

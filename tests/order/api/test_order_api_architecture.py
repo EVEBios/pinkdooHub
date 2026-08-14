@@ -9,6 +9,7 @@ from app.api.v1.admin_orders import router as admin_orders_router
 from app.api.v1.orders import router as orders_router
 from app.main import app
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -58,16 +59,19 @@ def test_order_composition_root_wires_expected_dependencies() -> None:
 
     order_repository = OrderRepository()
     product_repository = ProductRepository()
+    inventory_repository = InventoryRepository()
     audit_repository = AuditLogRepository()
 
     service = get_order_service(
         order_repository,
         product_repository,
+        inventory_repository,
         audit_repository,
     )
 
     assert service.order_repository is order_repository
     assert service.product_repository is product_repository
+    assert service.inventory_repository is inventory_repository
     assert isinstance(service.audit_log_service, AuditLogService)
     assert service.audit_log_service.audit_repo is audit_repository
 

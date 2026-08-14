@@ -4,6 +4,316 @@
 
 ---
 
+## v0.6.0 (Unreleased) — Inventory Module Final Review (Phase 4.3.12)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Completed the final architecture, security, transaction, concurrency, migration, API, test, and documentation review for Inventory v0.6. Phase 4.3 is code-complete and the local application candidate is now v0.6.0; this is not a Git tag, release, deployment, or persistent-database migration.
+
+### Reviewed
+
+- Confirmed API → Service → Repository → Model dependency direction, explicit transaction ownership, stable Product-ID lock ordering, post-lock validation, whole-use-case MySQL 1205/1213 retries, and no InventoryService call from OrderService.
+- Confirmed administrator adjustment, Order deduction, and Pending cancellation keep balance, immutable ledger, Order/Audit writes, and response reloads on the owning transaction connection.
+- Confirmed the idempotency UNIQUE, state-machine defense in depth, privacy-safe insufficient-stock payload, ADMIN+ ledger access, internal-key/log exclusions, strict request/query schemas, explicit response projections, and zero-SQL Mapper invariants.
+- Reconciled Model, MySQL migration, named foreign keys/indexes, database design, DBML, OpenAPI, Product/Order integration contracts, and current implementation status.
+
+### Fixed
+
+- Added the frozen `stock <= 999999` upper bound to both public and administrator Product Kit detail Out Schemas. Added two regression cases so abnormal data cannot escape through Product responses even though ordinary Model writes already enforce the same bound.
+- Replaced stale database-design, DBML, exception, and test descriptions that still called Kit OrderItem fields a future Phase 4.2 extension; they now describe the implemented pure Kit and mixed-order lifecycle.
+- Corrected the AI context's stale Experience-only Order input summary and advanced the code default, `.env.example`, version contract, README, architecture example, project context, Inventory requirement, and API status to the v0.6.0 unreleased candidate.
+
+### Verification
+
+- Product/Order/Inventory plus version regressions pass 1358 tests without the optional MySQL directory.
+- A new disposable MySQL Community Server 8.0.46 instance on `127.0.0.1:13306` applied the real Aerich 0 → 1 → 2 chain and passed all 9 Inventory MySQL concurrency, lock-wait, EXPLAIN, and HTTP gates.
+- The complete suite passes 1431 tests with SQLite and MySQL gates in the same pytest process. `compileall`, `pip check`, secret/log pattern scans, and `git diff --check` pass. Ruff is not installed and was not claimed as executed.
+- The temporary MySQL directory and schema were removed after a graceful shutdown. The existing 3306 `MySQL80` service remained running and was not connected or modified.
+
+### Release and Database Boundary
+
+- No new dependency or migration was added by the final Review. The reviewed Inventory migration remains required before any persistent environment can use the module.
+- No push, tag, GitHub Release, deployment, development-database rebuild, Aerich fake, or persistent/shared/production migration was performed.
+
+## Unreleased — Inventory MySQL Concurrency and HTTP Gate (Phase 4.3.11)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Completed the Inventory release gate with reproducible real-MySQL concurrency, driver-level lock-timeout retry, query-plan verification, a real MySQL FastAPI smoke, and the complete three-endpoint HTTP permission/error/boundary matrix. No Inventory business implementation, physical schema, migration, dependency, or application version changed.
+
+### Verified
+
+- Added a guarded MySQL test fixture that only permits explicit enablement, `127.0.0.1`, a non-3306 port, and the disposable `pinkdoohub_inventory_4311` schema prefix; it preserves Aerich versions and clears only business tables between tests. It also clears Tortoise 1.1.7's backend-agnostic global Executor SQL cache before and after MySQL tests, allowing SQLite and asyncmy suites to coexist without placeholder leakage.
+- Ran the real Aerich 0 → 1 → 2 chain on an isolated MySQL Community Server 8.0.46 instance before testing, without `--fake` or `generate_schemas()`.
+- Verified concurrent distinct adjustments accumulate without lost updates, while identical concurrent idempotency keys create one balance change, ledger, and Audit and return one committed result plus one replay.
+- Verified exactly one of two last-item orders commits; reversed two-Kit request orders both complete through stable Product-ID locking; and concurrent cancellation of one Pending Order restores stock exactly once.
+- Held an administrator adjustment row lock and observed the competing order in `performance_schema.data_lock_waits`; after release, the order read the committed balance. Induced a real MySQL 1205 with `innodb_lock_wait_timeout=1` and verified the Service succeeds in its second fresh transaction without duplicate writes.
+- Seeded representative selective data and 5,000 valid ledger rows, refreshed statistics, and verified `EXPLAIN` selects ProductKit `product_id`, `idx_inventory_product_created_id`, and `idx_inventory_created_id` for the frozen lock/Product/global pagination queries.
+- Added a real MySQL FastAPI concurrent replay/query smoke and 41 SQLite-backed HTTP matrix cases covering every Inventory route's authentication, authorization, resource errors, balance/idempotency conflicts, strict validation, filters, pagination, UTC bounds, Order source metadata, and privacy exclusions.
+
+### Verification
+
+- The isolated MySQL gate passes 9 tests; the new complete HTTP matrix passes 41 tests; all Inventory tests pass together with 241 tests. The complete project suite, with MySQL gates explicitly enabled in the same pytest process as SQLite regressions, passes 1429 tests. `compileall`, dependency integrity, documentation contracts, and diff whitespace checks also pass.
+- The temporary server and schema are destroyed after verification; the existing `MySQL80` service and all persistent/shared/production databases remain untouched.
+
+## Unreleased — Inventory Management API (Phase 4.3.10)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Exposed Inventory adjustment and ledger queries through three ADMIN+ FastAPI endpoints, with strict Header/Body/Query adaptation, exact success/error envelopes, explicit Mapper serialization, and first-create versus replay status handling. Completed the frozen v0.6 breaking switch by removing Product's direct stock overwrite route and Kit creation stock input.
+
+### Implemented
+
+- Added `get_inventory_service()` as the sole composition root for InventoryRepository, ProductRepository, and shared AuditLogService.
+- Registered POST adjustment, Product-scoped ledger GET, and global ledger GET routes under `/api/v1/admin`, all protected by the existing JWT ADMIN+ dependency.
+- Required and normalized `Idempotency-Key`; mapped first commits to HTTP 201 and exact committed replays to HTTP 200 without moving transport semantics into Service.
+- Adapted all validated filters explicitly and serialized every successful result through Inventory Mapper, strict Out Schema, and the shared success envelope. OpenAPI declares precise generic success models and 400/401/403/404/409/422 error envelopes.
+- Removed the legacy `PATCH .../stock` route, `KitStockUpdate`, `KitStockOut`, Product stock Mapper, and `ProductService.update_kit_stock()` so application business code has one stock-write path.
+- Removed `stock` from `KitProductCreate`; ProductService now creates ProductKit with the Repository's fixed zero default, and any initial stock must be added through Inventory adjustment.
+
+### Verification
+
+- Added composition, layering, registration, OpenAPI, permission, strict validation, query adaptation, privacy, real SQLite adjustment/replay/query, zero-opening Kit, and legacy-request rejection tests.
+- Product and Inventory regression suites pass together with 909 tests; the complete project suite passes 1379 tests. `compileall`, dependency integrity, documentation contracts, and diff whitespace checks also pass.
+
+## Unreleased — Inventory Query Service and API Mapper (Phase 4.3.9)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the two Inventory ledger query use cases and the synchronous API mapping boundary. Product-scoped reads now validate the complete Kit resource identity, global reads preserve filter-only semantics, and ledger/adjustment responses are explicitly projected without SQL, ORM mutation, internal idempotency data, or user privacy fields. Inventory composition and HTTP routes remain Phase 4.3.10.
+
+### Implemented
+
+- Added `InventoryService.list_product_transactions()` with the stable Product missing/deleted/type/Kit-extension error priority before delegating all frozen filters and pagination to InventoryRepository.
+- Added `InventoryService.list_transactions()` for global filtering; an unknown Product ID is not treated as a resource lookup and returns an ordinary empty `Page`.
+- Kept both reads transaction-free and lock-free, with no duplicated ORM filtering or ordering in Service.
+- Added synchronous Inventory transaction, list-item, page, and adjustment Mappers. Every output is built from an explicit field whitelist and validated by its strict Out Schema.
+- Consumed only Repository-preloaded operator nicknames and batched Order numbers. Mapping performs zero SQL and zero ORM mutation, and excludes `idempotency_key`, technical `updated_at`, username, phone, password, Token, and order remark.
+- Kept the adjustment Mapper independent from `InventoryAdjustmentResult`; the future Router supplies its domain values and retains ownership of first-create 201 versus replay 200.
+
+### Verification
+
+- Added 18 focused Service/Mapper tests covering exact filter forwarding, resource error priority, global empty results, all four ledger metadata shapes, pagination, adjustment consistency, field isolation, layer direction, real SQLite data, zero SQL, and zero ORM mutation.
+- All 172 Inventory tests and the complete 1382-test project suite pass. `compileall` and diff whitespace checks also pass.
+
+## Unreleased — Pending Order Inventory Restoration (Phase 4.3.8)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Extended the existing owner cancellation endpoint so Pending Kit and mixed orders restore every Kit balance exactly once. Restoration, immutable ledgers, Cancelled status, audit, and response reload now form one transaction; payment and completion remain inventory-neutral.
+
+### Implemented
+
+- Added server-owned restore identities and reason: `inventory:order:{order_id}:restore:product:{product_id}` and `Order cancellation stock restore`.
+- Added a minimal immutable Order cancellation projection containing only Product ID, nullable Option ID, and quantity, loaded on the caller's transaction connection in stable Item order.
+- Added one Inventory Repository batch lookup for restore identities; empty sets execute no SQL, and Repository remains free of transaction ownership and business exceptions.
+- Split owner cancellation from the generic payment/completion transition helper. Cancellation now locks the owner-visible Order first, rechecks Pending, loads Items, aggregates Kit quantities, locks all Kit rows in ascending Product ID order, and checks every restore identity before writes.
+- Restored balances with one bulk update and wrote all `order_cancellation_restore` rows with one bulk insert before committing Cancelled, `CANCEL_ORDER` audit, and response reload.
+- Preserved catalog independence: restoration uses immutable OrderItem quantities and does not require the Product to remain Online or reuse its current price. Missing Kit rows and Pending/restore-identity contradictions fail as consistency conflicts instead of silently skipping stock.
+- Enforced the `0..999999` balance range during restoration. Any inventory, ledger, status, audit, or reload failure rolls back the complete use case.
+- Kept duplicate cancellation safe through two layers: the locked Order state rejects ordinary repeats, while the restore UNIQUE identity protects transaction replay and future automatic cancellation paths.
+- Added whole-use-case retries only for MySQL 1205/1213, using a fresh transaction and at most three attempts; other database errors are not retried.
+
+### Verification
+
+- Added Repository, Service orchestration, real SQLite transaction, real HTTP, rollback, idempotency-conflict, balance-boundary, duplicate-cancel, and transient-retry tests. The complete project suite passes 1364 tests.
+
+## Unreleased — Kit and Mixed Order Deduction (Phase 4.3.7)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Enabled pure Kit and Experience/Kit mixed creation through the existing Order endpoint. Pending Order creation now owns stable Kit locking, post-lock sellability and sufficiency checks, bulk balance/ledger persistence, and atomic Order/Items/Audit response creation. Pending cancellation restoration remains Phase 4.3.8.
+
+### Implemented
+
+- Made `experience_option_id` optional at the request/domain boundary: Experience requires a valid owned Option, while Kit requires omission/null. Order responses accept either a complete Experience Option snapshot or an all-null Kit Option snapshot.
+- Added one batched ProductKit candidate-price loader to ProductRepository and one `bulk_update_stocks()` primitive to InventoryRepository; empty collections execute no SQL and multi-Kit writes do not loop over awaited saves.
+- Injected InventoryRepository directly into OrderService and the API composition root without calling InventoryService. Pure Experience creation short-circuits before any InventoryRepository operation.
+- Preserved the frozen transaction order: build authoritative candidate snapshots outside the transaction, create Pending Order first, acquire all ProductKit locks in ascending Product ID order, re-read Product state on the same connection, then bulk-write balances and `order_deduction` rows before Items, Audit, and detail reload.
+- Generated one stable Order-source ledger identity per Kit: `inventory:order:{order_id}:deduct:product:{product_id}`, with the requesting user as operator and `Order stock deduction` as the server-owned reason.
+- Returned the first insufficient Kit in request order through privacy-safe `40931` data containing only Product ID and requested quantity. Any unavailable/insufficient Kit or downstream failure rolls back the complete Order, stock, ledger, Item, and Audit write set.
+- Kept order-number collision attribution ahead of all inventory locks/writes. Added whole-write-transaction retries only for MySQL 1205/1213, with a fresh transaction and at most three attempts; IntegrityError remains reserved for order-number attribution.
+- Removed the obsolete `40922 KitOrderingRequiresInventory` constant, exception, exports, tests, and current API registration.
+- Moved shared database error-code extraction into a stateless utility used by InventoryService and OrderService while preserving Python 3.10 compatibility through `timezone.utc`.
+
+### Verification
+
+- Added unit, architecture, real SQLite Service, and real HTTP tests for pure Kit and mixed orders, null Option snapshots, server prices, stable ledger metadata, multi-Kit rollback, audit rollback, order-number collision before deduction, insufficient-stock privacy, and transient retry limits.
+- The complete project suite passes 1350 tests; `compileall`, dependency integrity, and diff whitespace checks also pass.
+
+## Unreleased — Inventory Admin Adjustment Service (Phase 4.3.6)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the administrator stock-adjustment use case with row-locked balance arithmetic, immutable ledger and shared-audit atomicity, exact idempotent replay, and bounded MySQL transient-error retries. No Inventory Mapper, composition dependency, or HTTP route is registered yet.
+
+### Implemented
+
+- Added `InventoryService.adjust_stock()` with constructor-injected Inventory/Product repositories and shared AuditLogService; the Service owns only the administrator-adjustment transaction and does not call ProductService or access Models directly.
+- Locked ProductKit before revalidating Product existence, deletion state, Kit type, extension presence, and the post-change `0..999999` balance boundary.
+- Persisted balance, `admin_adjustment` ledger row, compact `ADJUST_INVENTORY` Product audit, and response detail reload on the same transaction connection so any failure rolls back the complete write set.
+- Namespaced client keys as `inventory:admin:adjust:{key}` and bound an existing identity to the exact Product/change/normalized reason/operator tuple. Identical retries return the originally committed transaction and its original after-balance; mismatches raise `40933`.
+- Resolved concurrent unique-key races only after the failed transaction exits: a matching committed row becomes a replay, an absent row preserves the original IntegrityError, and a different payload becomes a business conflict.
+- Retried only MySQL 1205/1213 for the whole use case with a fresh transaction, at most three attempts. Logs include operator/product/error/attempt context but never the reason or idempotency key.
+- Added frozen `InventoryAdjustmentResult.is_replay` so a future Router can select HTTP 201 for first creation and 200 for replay without introducing transport concepts into the Service.
+
+### Verification
+
+- Added real SQLite transaction tests for Draft/Online/Offline Kits, closed balance boundaries, rollback at every write/reload failure, missing/deleted/wrong-type resources, exact replay after later adjustments, conflict dimensions, maximum client-key capacity, ledger/audit privacy, and atomicity.
+- Added isolated retry/error-chain tests for 1205, 1213, retry exhaustion, non-retryable errors, concurrent unique resolution, and preservation of unrelated database exceptions.
+- Added architecture contracts for dependency direction, transaction ownership, frozen results, no direct ORM persistence, and sensitive logging exclusions.
+- Inventory passes 150 tests, Order passes 375 regression tests, and the complete project suite passes 1331 tests.
+
+## Unreleased — Fix OrderStatus MySQL Persistence
+
+**Date:** 2026-08-14
+
+### Fixed
+
+- Fixed MySQL 1366 failures caused by passing `OrderStatus(IntEnum)` objects through Tortoise `SmallIntField` to asyncmy: the Model Pending default, Repository status updates, and Repository status filters now cross the persistence boundary as native integers.
+- Kept the public Order enum/API contract and physical `orders.status SMALLINT DEFAULT 0` Schema unchanged; no database migration or dependency change is required.
+- Added connection-parameter regression tests that reject `OrderStatus` objects and require exact `int` values for creation, updates, and filters.
+- Re-ran the complete 0 → 1 → 2 migration chain on an isolated MySQL 8.0.46 instance and verified default creation (`0`), Pending filtering, update to Paid (`1`), and Paid filtering through the real `OrderRepository` and asyncmy driver.
+
+## Unreleased — Real MySQL Migration and Repository Smoke
+
+**Date:** 2026-08-14
+
+### Verification
+
+- Ran the complete Aerich 0 → 1 → 2 chain against an isolated MySQL Community Server 8.0.46 instance and verified InnoDB/utf8mb4 table metadata, columns, named indexes, the idempotency UNIQUE, foreign keys, and Aerich version rows.
+- Downgraded only Inventory version 2 in the disposable schema, seeded stock=7 and stock=0 Kit fixtures, and re-upgraded: the positive Kit received exactly one `0 → 7` opening row, the zero Kit received none, and the mismatch query returned zero.
+- Ran a real asyncmy/MySQL `InventoryRepository` smoke covering ordered multi-Kit locks, atomic balance/ledger commit, forced rollback, unique-key propagation, bulk rows, same-connection reads, detail hydration, and Order-source pagination.
+- Did not apply migrations to any persistent/shared/production database and did not use `--fake`; the temporary instance and test Schema were destroyed after verification.
+- Found a pre-existing release blocker outside InventoryRepository: plain `IntField` writes of `OrderStatus` were encoded as Enum strings by asyncmy, so `OrderRepository.create_order()` defaults and `update_status()` failed with MySQL 1366. The subsequent OrderStatus persistence fix above resolves this blocker and has its own real-MySQL regression.
+
+## Unreleased — Inventory Repository (Phase 4.3.5)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the Inventory data-access primitives for stable row locking, balance persistence, immutable ledger writes, idempotency reads, detail hydration, and filtered pagination without adding business decisions or runtime endpoints.
+
+### Implemented
+
+- Added `InventoryRepository.get_kit_for_update()` and a deduplicated, single-query `get_kits_for_update()` using the caller connection, `ORDER BY product_id`, and `SELECT ... FOR UPDATE`.
+- Added final-balance persistence that updates only `stock`/`updated_at` and leaves sufficiency/range decisions to the owning Service.
+- Added an immutable `InventoryTransactionCreateData` DTO, single-row creation for admin adjustments, and one-statement bulk creation for multi-Kit automatic events; empty collections execute no SQL.
+- Added lightweight same-connection idempotency lookup and same-connection detail reload for uncommitted adjustment responses.
+- Added Product/type/source/UTC-range filters, `created_at DESC, id DESC` pagination, operator preloading, and one batched Order lookup for safe `source_order_no` hydration. Order-source pages remain a constant three SELECTs regardless of row count.
+- Kept the Repository free of FastAPI, Schema, Service, Validator, business exceptions, Redis, transaction ownership, retry loops, Product status checks, inventory arithmetic, and error translation.
+
+### Verification
+
+- Added 24 Inventory Repository contracts covering architecture, static lock/bulk guarantees, empty-set SQL avoidance, deterministic lock order, balance/ledger rollback, bulk rollback, uniqueness propagation, uncommitted visibility, metadata hydration, every filter, stable pagination, time boundaries, empty pages, and constant query count.
+- The complete project suite passes with 1297 tests; `compileall`, `pip check`, and `git diff --check` also pass.
+
+## Unreleased — Inventory Offline MySQL Migration (Phase 4.3.4)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Generated and statically reviewed the MySQL 8+ Inventory incremental migration, including deterministic opening-balance ledger rows for existing positive Kit stock, without connecting to or changing any database.
+
+### Implemented
+
+- Generated `2_20260814104655_add_inventory_transactions.py` with `AERICH_MYSQL_VERSION=8.0` and Aerich offline mode, preserving the generated model state for future diffs.
+- Reviewed the table DDL for exact fields, nullable generic source/operator columns, two `RESTRICT` foreign keys, the named idempotency UNIQUE, and four stable-pagination indexes.
+- Removed `CREATE TABLE IF NOT EXISTS` so Schema drift cannot be silently treated as success, and declared `RUN_IN_TRANSACTION=False` because MySQL DDL implicitly commits.
+- Added one ordered `INSERT ... SELECT` that writes `opening_balance` only for `product_kits.stock > 0`, with UTC microsecond timestamps, stable reason/idempotency identity, null source/operator, and no balance mutation.
+- Kept zero stock as an implicit baseline and rejected silent recovery constructs such as `INSERT IGNORE` or `ON DUPLICATE KEY UPDATE`.
+- Documented the required stock-range preflight, write-quiescence window, backup, temporary-MySQL rehearsal, post-migration one-to-one verification, partial-failure forward-recovery process, and destructive downgrade semantics.
+- Kept all runtime boundaries unchanged: the migration is not applied, Kit ordering remains blocked, and Inventory Repository/Service/Mapper/routes remain unimplemented.
+
+### Verification
+
+- Added five static migration contracts covering scope, fields/FKs/indexes, positive-only backfill, destructive downgrade boundary, and compressed model state.
+- The complete project suite passes with 1273 tests; `compileall`, `pip check`, and `git diff --check` also pass.
+
+## Unreleased — Inventory Model and Database Design (Phase 4.3.3)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the Inventory ledger persistence shape and synchronized its authoritative database design without generating or executing a migration.
+
+### Implemented
+
+- Added and registered `InventoryTransaction` with Product and nullable operator `RESTRICT` foreign keys, stable string Enum fields, non-zero/range Model validators, required source/reason, nullable generic `source_id`, and a 256-character internal idempotency identity.
+- Added the named unique idempotency index plus Product, source, transaction-type, and global stable-pagination indexes. The generic source ID deliberately has no polymorphic foreign key.
+- Kept `product_kits.stock` as the authoritative balance and aligned its Model plus transitional Product request boundary to `0..999999`.
+- Added a reusable non-zero integer Model validator and documented that cross-field arithmetic/type-source rules remain Service responsibilities rather than Model business behavior.
+- Updated the database design and DBML with the ledger table, relations, index rationale, BaseModel `updated_at` boundary, and the current no-`CHECK` cross-dialect strategy.
+- Kept runtime behavior unchanged: Kit ordering is still blocked, the old direct stock endpoint still exists, and no Inventory migration, Repository, Service, Mapper, route, or database operation was added.
+
+### Verification
+
+- Added Inventory Model metadata, field boundary, round-trip, nullable migration actor/source, idempotency uniqueness, FK deletion protection, reverse relation, and real SQLite DDL tests; expanded Product stock upper-bound regressions.
+- The complete project suite passes with 1268 tests; `compileall`, `pip check`, and `git diff --check` also pass.
+
+## Unreleased — Inventory Domain Language and Schema (Phase 4.3.2)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the frozen Inventory domain vocabulary and strict Pydantic boundaries without introducing persistence or runtime endpoints.
+
+### Implemented
+
+- Added stable string Enums for four transaction types and three source types, plus named constants for stock/change limits, reason and idempotency-key lengths, audit identity, and bounded transaction retry attempts.
+- Added `InsufficientStock`, `InventoryBalanceExceeded`, and `InventoryTransactionConflict` as HTTP-semantic `ConflictException` subclasses and exported them through the common exception package.
+- Added strict adjustment input, standalone idempotency-header type, Product/global transaction queries, and UTC/time/source cross-field validation.
+- Added balance, transaction/list item, and adjustment response schemas with explicit field projection, internal-key/privacy isolation, UTC datetime enforcement, arithmetic consistency, transaction-direction/source metadata validation, and adjustment-result consistency.
+- Kept Order and Product runtime boundaries unchanged: Kit ordering remains blocked, direct stock setting remains available, and no Inventory table, migration, Repository, Service, Mapper, route, or database operation was added.
+
+### Verification
+
+- Added Inventory domain, exception middleware, request/query, response privacy, and cross-field contract tests.
+- The complete project suite passes with 1249 tests; `compileall` and `git diff --check` also pass.
+
+## Unreleased — Inventory Contract Freeze (Phase 4.3.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the Phase 4.3.1 current-state audit and froze the authoritative Inventory business/API contracts without implementing runtime Inventory code.
+
+### Important Decisions
+
+1. `product_kits.stock` remains the single authoritative sellable balance and will be paired with immutable same-transaction ledger entries.
+2. Pending Kit/mixed order creation deducts immediately; Pending cancellation restores idempotently; payment and completion do not change stock.
+3. Pure Experience, pure Kit, and mixed orders are supported by the target contract. Multi-Kit writes lock ProductKit rows in ascending Product ID order and remain atomic with Order/Items/Audit.
+4. ADMIN+ adjustments use strict `change`, a trimmed 1–256 character reason, and mandatory `Idempotency-Key`; Online Kit adjustment is allowed. Balance is bounded to `0..999999`.
+5. The v0.6.0 Inventory cutover will remove direct `PATCH .../stock` and non-zero stock from Kit creation instead of retaining a semantically ambiguous compatibility wrapper.
+6. Ledger types are `opening_balance`, `admin_adjustment`, `order_deduction`, and `order_cancellation_restore`. Existing positive balances receive migration baseline entries; zero balances do not create zero-change entries.
+7. User-facing insufficient-stock errors do not expose exact availability. Database unique identities, Order state validation, stable lock ordering, and bounded whole-transaction deadlock retries provide layered protection.
+8. Real MySQL 8+ concurrency tests are a release gate for v0.6.0. This step does not change the application version, schema, migration, dependencies, development database, or current runtime endpoints.
+
+### Documentation and Verification
+
+- Added authoritative Inventory requirement and API contract documents.
+- Synchronized Product, Order, API conventions, AI context, README, and project instructions while preserving clear implemented-versus-frozen boundaries.
+- Added documentation contract tests for the frozen decisions and current runtime boundary.
+
 ## Unreleased — Test Suite Domain and Layer Layout
 
 **Date:** 2026-08-13

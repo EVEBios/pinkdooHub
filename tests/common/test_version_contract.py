@@ -6,7 +6,7 @@ from app.core.config import Settings
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_VERSION = "0.5.0"
+EXPECTED_VERSION = "0.6.0"
 
 
 def test_default_application_version_matches_release_candidate() -> None:

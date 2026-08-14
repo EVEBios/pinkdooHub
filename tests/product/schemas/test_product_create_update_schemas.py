@@ -91,7 +91,7 @@ class TestKitProductCreate:
         )
 
         assert schema.price == Decimal("599.00")
-        assert schema.stock == 0
+        assert "stock" not in KitProductCreate.model_fields
         assert schema.description is None
 
     def test_price_is_required(self) -> None:
@@ -138,12 +138,14 @@ class TestKitProductCreate:
                 {"name": "新手拼豆套装", "price": price}
             )
 
-    @pytest.mark.parametrize("stock", [True, False, 1.0, "1", -1])
-    def test_invalid_stock_is_rejected(self, stock: object) -> None:
-        with pytest.raises(ValidationError):
+    @pytest.mark.parametrize("stock", [0, 1, True, 1.0, "1"])
+    def test_stock_is_no_longer_accepted(self, stock: object) -> None:
+        with pytest.raises(ValidationError) as exc_info:
             KitProductCreate.model_validate(
                 {"name": "新手拼豆套装", "price": "599.00", "stock": stock}
             )
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 
     def test_extra_fields_are_rejected(self) -> None:
         with pytest.raises(ValidationError) as exc_info:

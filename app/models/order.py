@@ -57,7 +57,7 @@ class Order(BaseModel):
         ],
     )
     status = fields.SmallIntField(
-        default=OrderStatus.PENDING,
+        default=OrderStatus.PENDING.value,
         db_default=OrderStatus.PENDING.value,
         validators=[
             MinValueValidator(OrderStatus.PENDING.value),

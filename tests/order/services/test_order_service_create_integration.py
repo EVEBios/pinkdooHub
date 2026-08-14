@@ -9,12 +9,16 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
 
 from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.exceptions import InsufficientStock
 from app.models.audit_log import AuditLog
 from app.models.experience_option import ExperienceOption
+from app.models.inventory_transaction import InventoryTransaction
 from app.models.order import Order, OrderItem
 from app.models.product import Product
+from app.models.product_kit import ProductKit
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -59,6 +63,27 @@ async def _create_experience(
     return product, option
 
 
+async def _create_kit(
+    number: int,
+    *,
+    name: str,
+    price: str,
+    stock: int,
+) -> tuple[Product, ProductKit]:
+    product = await Product.create(
+        name=name,
+        product_type=ProductType.KIT,
+        status=ProductStatus.ONLINE,
+    )
+    kit = await ProductKit.create(
+        product=product,
+        price=Decimal(price),
+        stock=stock,
+    )
+    assert product.id == number
+    return product, kit
+
+
 def _service(
     order_numbers: Iterator[str],
     *,
@@ -68,6 +93,7 @@ def _service(
     return OrderService(
         order_repository or OrderRepository(),
         ProductRepository(),
+        InventoryRepository(),
         audit_service or AuditLogService(AuditLogRepository()),
         lambda: next(order_numbers),
     )
@@ -150,6 +176,135 @@ async def test_create_persists_authoritative_immutable_snapshots_and_audit() -> 
     assert reloaded.items[0].product_price == Decimal("99.90")
     assert reloaded.items[0].option_duration_minutes == 60
     assert reloaded.total_amount == Decimal("349.85")
+
+
+async def test_create_mixed_order_deducts_only_kit_and_persists_null_option_snapshot() -> None:
+    """混合订单只扣减 Kit，并将扣减与全部订单写集原子提交。"""
+
+    user = await _create_user()
+    experience, option = await _create_experience(
+        1,
+        name="混合体验",
+        duration=60,
+        participants=1,
+        day_type=DayType.WEEKDAY,
+        price="99.00",
+    )
+    kit_product, kit = await _create_kit(
+        2,
+        name="混合材料包",
+        price="35.50",
+        stock=8,
+    )
+
+    created = await _service(iter([_order_no(1)])).create_order(
+        user_id=user.id,
+        items=[
+            OrderItemInput(experience.id, option.id, 1),
+            OrderItemInput(kit_product.id, None, 3),
+        ],
+        remark=None,
+        ip_address="127.0.0.1",
+    )
+
+    await kit.refresh_from_db()
+    assert kit.stock == 5
+    assert created.total_amount == Decimal("205.50")
+    assert len(created.items) == 2
+    kit_item = created.items[1]
+    assert kit_item.product_id == kit_product.id
+    assert kit_item.product_name == "混合材料包"
+    assert kit_item.product_price == Decimal("35.50")
+    assert kit_item.quantity == 3
+    assert kit_item.subtotal == Decimal("106.50")
+    assert kit_item.experience_option_id is None
+    assert kit_item.option_duration_minutes is None
+    assert kit_item.option_participants is None
+    assert kit_item.option_day_type is None
+
+    transaction = await InventoryTransaction.get(product_id=kit_product.id)
+    assert transaction.transaction_type.value == "order_deduction"
+    assert transaction.change_quantity == -3
+    assert transaction.before_quantity == 8
+    assert transaction.after_quantity == 5
+    assert transaction.source_type.value == "order"
+    assert transaction.source_id == created.id
+    assert transaction.operator_id == user.id
+    assert transaction.reason == "Order stock deduction"
+    assert transaction.idempotency_key == (
+        f"inventory:order:{created.id}:deduct:product:{kit_product.id}"
+    )
+
+
+async def test_multiple_kits_insufficient_rolls_back_order_and_all_stock() -> None:
+    """任一 Kit 不足时，先前候选扣减、Order、流水和审计全部回滚。"""
+
+    user = await _create_user()
+    first_product, first_kit = await _create_kit(
+        1,
+        name="库存充足 Kit",
+        price="10.00",
+        stock=5,
+    )
+    second_product, second_kit = await _create_kit(
+        2,
+        name="库存不足 Kit",
+        price="20.00",
+        stock=1,
+    )
+
+    with pytest.raises(InsufficientStock) as caught:
+        await _service(iter([_order_no(1)])).create_order(
+            user_id=user.id,
+            items=[
+                OrderItemInput(first_product.id, None, 3),
+                OrderItemInput(second_product.id, None, 2),
+            ],
+            remark=None,
+            ip_address="127.0.0.1",
+        )
+
+    assert caught.value.data == {
+        "product_id": second_product.id,
+        "requested_quantity": 2,
+    }
+    await first_kit.refresh_from_db()
+    await second_kit.refresh_from_db()
+    assert (first_kit.stock, second_kit.stock) == (5, 1)
+    assert await Order.all().count() == 0
+    assert await OrderItem.all().count() == 0
+    assert await InventoryTransaction.all().count() == 0
+    assert await AuditLog.all().count() == 0
+
+
+async def test_kit_deduction_rolls_back_when_audit_fails() -> None:
+    """扣减与流水已执行后审计失败，完整写集仍必须回滚。"""
+
+    user = await _create_user()
+    product, kit = await _create_kit(
+        1,
+        name="审计回滚 Kit",
+        price="25.00",
+        stock=4,
+    )
+
+    with pytest.raises(RuntimeError, match="fail after audit write"):
+        await _service(
+            iter([_order_no(1)]),
+            audit_service=_FailAfterAudit(AuditLogRepository()),
+        ).create_order(
+            user_id=user.id,
+            items=[OrderItemInput(product.id, None, 2)],
+            remark=None,
+            ip_address="127.0.0.1",
+        )
+
+    await kit.refresh_from_db()
+    assert kit.stock == 4
+    assert await Order.all().count() == 0
+    assert await OrderItem.all().count() == 0
+    assert await InventoryTransaction.all().count() == 0
+    assert await AuditLog.all().count() == 0
 
 
 class _FailAfterAudit(AuditLogService):
@@ -261,6 +416,41 @@ async def test_order_number_collision_retries_with_a_fresh_transaction() -> None
         target_id=created.id,
         action="CREATE_ORDER",
     ).count() == 1
+
+
+async def test_order_number_collision_occurs_before_kit_deduction() -> None:
+    """冲突编号事务不得触碰库存；新编号事务只扣减一次。"""
+
+    user = await _create_user()
+    product, kit = await _create_kit(
+        1,
+        name="编号冲突 Kit",
+        price="18.00",
+        stock=5,
+    )
+    await Order.create(
+        order_no=_order_no(1),
+        user=user,
+        total_amount=Decimal("1.00"),
+    )
+
+    created = await _service(
+        iter([_order_no(1), _order_no(2)])
+    ).create_order(
+        user_id=user.id,
+        items=[OrderItemInput(product.id, None, 2)],
+        remark=None,
+        ip_address="127.0.0.1",
+    )
+
+    await kit.refresh_from_db()
+    assert created.order_no == _order_no(2)
+    assert kit.stock == 3
+    transactions = await InventoryTransaction.filter(product_id=product.id)
+    assert len(transactions) == 1
+    assert transactions[0].source_id == created.id
+    assert transactions[0].before_quantity == 5
+    assert transactions[0].after_quantity == 3
 
 
 async def test_third_order_number_collision_preserves_integrity_error() -> None:

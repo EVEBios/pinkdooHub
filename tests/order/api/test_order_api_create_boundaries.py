@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from app.common.enums.product import DayType, ProductStatus, ProductType
 from app.models.audit_log import AuditLog
 from app.models.experience_option import ExperienceOption
+from app.models.inventory_transaction import InventoryTransaction
 from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.product_kit import ProductKit
@@ -243,14 +244,73 @@ async def test_unavailable_option_is_rejected_without_partial_writes(
     await _assert_no_order_side_effects()
 
 
-async def test_kit_ordering_is_rejected_and_stock_is_untouched(
+async def test_kit_ordering_deducts_stock_and_returns_null_option_snapshot(
     client: AsyncClient,
     auth_user: dict,
 ) -> None:
     kit = await _create_product(
-        name="暂不可下单套装",
+        name="可下单套装",
         product_type=ProductType.KIT,
     )
+    kit_data = await ProductKit.create(
+        product=kit,
+        price=Decimal("66.00"),
+        stock=8,
+    )
+
+    response = await _post_order(
+        client,
+        auth_user,
+        items=[
+            {
+                "product_id": kit.id,
+                "quantity": 2,
+            }
+        ],
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["code"] == 0
+    item = payload["data"]["items"][0]
+    assert item["product_id"] == kit.id
+    assert item["experience_option_id"] is None
+    assert item["option_duration_minutes"] is None
+    assert item["option_participants"] is None
+    assert item["option_day_type"] is None
+    assert item["product_price"] == "66.00"
+    assert item["subtotal"] == "132.00"
+    await kit_data.refresh_from_db()
+    assert kit_data.stock == 6
+    transaction = await InventoryTransaction.get(product_id=kit.id)
+    assert transaction.change_quantity == -2
+    assert transaction.after_quantity == 6
+
+    cancelled = await client.patch(
+        f"/api/v1/orders/{payload['data']['id']}/cancel",
+        headers=_headers(auth_user),
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["data"]["status"]["value"] == "cancelled"
+    await kit_data.refresh_from_db()
+    assert kit_data.stock == 8
+    transactions = await InventoryTransaction.filter(product_id=kit.id).order_by("id")
+    assert [item.transaction_type for item in transactions] == [
+        "order_deduction",
+        "order_cancellation_restore",
+    ]
+    assert [item.change_quantity for item in transactions] == [-2, 2]
+    assert transactions[1].before_quantity == 6
+    assert transactions[1].after_quantity == 8
+    assert transactions[1].source_id == payload["data"]["id"]
+    assert transactions[1].operator_id == auth_user["user"]["id"]
+
+
+async def test_kit_with_option_is_rejected_without_side_effects(
+    client: AsyncClient,
+    auth_user: dict,
+) -> None:
+    kit = await _create_product(product_type=ProductType.KIT)
     kit_data = await ProductKit.create(
         product=kit,
         price=Decimal("66.00"),
@@ -269,14 +329,47 @@ async def test_kit_ordering_is_rejected_and_stock_is_untouched(
         ],
     )
 
-    assert response.status_code == 409
+    assert response.status_code == 422
     assert response.json() == {
-        "code": 40922,
-        "message": "Kit ordering requires inventory support",
-        "data": {"product_id": kit.id, "required_phase": "4.3"},
+        "code": 42232,
+        "message": "Order experience option is unavailable",
+        "data": {
+            "product_id": kit.id,
+            "experience_option_id": 99999,
+        },
     }
     await kit_data.refresh_from_db()
     assert kit_data.stock == 8
+    await _assert_no_order_side_effects()
+
+
+async def test_insufficient_stock_response_does_not_expose_available_quantity(
+    client: AsyncClient,
+    auth_user: dict,
+) -> None:
+    kit = await _create_product(product_type=ProductType.KIT)
+    kit_data = await ProductKit.create(
+        product=kit,
+        price=Decimal("66.00"),
+        stock=1,
+    )
+
+    response = await _post_order(
+        client,
+        auth_user,
+        items=[{"product_id": kit.id, "quantity": 2}],
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "code": 40931,
+        "message": "Insufficient stock",
+        "data": {"product_id": kit.id, "requested_quantity": 2},
+    }
+    assert "available" not in response.text
+    await kit_data.refresh_from_db()
+    assert kit_data.stock == 1
+    assert await InventoryTransaction.all().count() == 0
     await _assert_no_order_side_effects()
 
 

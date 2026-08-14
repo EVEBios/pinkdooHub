@@ -2,7 +2,7 @@
 
 pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、Tortoise ORM、Pydantic 和 Redis 构建。开发环境使用 SQLite，生产数据库设计面向 MySQL 8+。
 
-当前代码版本候选为 **v0.5.0（尚未发布）**。Phase 4.1 Product Module 与 Phase 4.2 Order Module 均已完成实现和最终 Review；下一业务阶段为 Phase 4.3 Inventory。
+当前代码版本候选为 **v0.6.0（尚未发布）**。Phase 4.1 Product、Phase 4.2 Order 与 Phase 4.3 Inventory 均已完成实现和最终 Review。
 
 ## 当前能力
 
@@ -10,13 +10,16 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - RBAC 权限链、管理员用户列表和禁用操作。
 - 敏感操作顺序审计，以及 Product 操作历史分页查询。
 - Product、ExperienceOption、ProductKit 和 ProductImage 的完整业务、持久化与 API 链路。
-- 22 个 Product API 操作，包括公开查询、ADMIN+ 管理、图片上传和审计历史。
+- 21 个 Product API 操作，包括公开查询、ADMIN+ 管理、图片上传和审计历史；库存写入由 Inventory API 独立承担。
 - Product 图片大小、格式、MIME 和安全路径校验，以及上传失败补偿和延迟物理清理。
-- Order v1.0 的 Experience 下单、不可变 Product/Option/价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
+- Order 的 Experience、Kit 与混合下单、不可变 Product/Option/Kit 价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
+- Pending 创建时的稳定多 Kit 行锁、库存扣减、不可变 Order 来源流水和全写集原子回滚。
 - Order 状态与审计原子事务、订单号冲突重试、分页组合筛选、用户资源隐藏和完整 HTTP 错误/边界矩阵。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
 
-当前完整测试套件包含 **1178 项测试**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
+当前完整测试套件包含 **1431 项测试**（包含显式启用的 9 项真实 MySQL 发布门槛）。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
+
+Phase 4.3.1–4.3.12 已完成 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 8+ 增量迁移、Repository、管理员库存调整、Kit/混合订单创建扣减、Pending 取消幂等恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/完整 HTTP 发布门槛和最终 Review。最后一件库存、反向多 Kit、同单取消、同/异 key 调整、管理员调整与下单阻塞、真实 1205 全事务重试和 EXPLAIN 均已在隔离 MySQL 8.0.46 通过；三端点完整权限/错误/边界矩阵与真实 MySQL HTTP 并发重放也已通过。最终 Review 进一步统一了 Product Kit 详情的库存上限响应校验，并清理了数据库文档中的旧 Kit 规划描述。临时实例验证后销毁，未应用持久环境。
 
 ## 技术栈
 
@@ -167,7 +170,7 @@ python -m app.tasks.product_image_cleanup \
 
 ## 数据库迁移
 
-MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ 首迁移和 Order 增量迁移均已离线生成并通过静态契约测试，但尚未应用到任何 MySQL 数据库。
+MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ 首迁移、Order 增量迁移和 Inventory 增量迁移均已离线生成并通过静态契约测试；完整链已在一次性 MySQL 8.0.46 实例真实执行并销毁，但尚未应用到任何持久、共享或生产数据库。Inventory 迁移还包含正库存期初流水数据回填，正式执行前仍必须停写、扫描库存范围并备份。
 
 生产环境禁止通过应用启动自动建表。执行 `aerich upgrade` 前必须：
 
@@ -187,6 +190,8 @@ MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化�
 | Product API v1.0 | [Product API](docs/03_api/product_api.md) |
 | Order 业务规则 | [Order Module](docs/01_requirements/order_module.md) |
 | Order API v1.0 | [Order API](docs/03_api/order_api.md) |
+| Inventory 权威业务规则 | [Inventory Module](docs/01_requirements/inventory_module.md) |
+| Inventory API v0.6 | [Inventory API](docs/03_api/inventory_api.md) |
 | 通用 API 约定 | [API Design Conventions](docs/03_api/api_design_conventions.md) |
 | 数据库设计 | [Database Design](docs/02_database/database_design.md) |
 | 分层与目录 | [Architecture](docs/04_architecture/architecture.md) |
@@ -219,10 +224,11 @@ docs(readme): document local development workflow
 
 一个提交只包含一个逻辑单元。未经明确授权不得执行数据库迁移、创建 tag、发布 Release、force push 或直接向受保护分支推送。
 
-## 当前限制与下一阶段
+## 当前限制与后续工作
 
-- v0.5.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
-- MySQL 首迁移与 Order 增量迁移均尚未应用；部署必须遵循迁移流程。
+- v0.6.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
+- MySQL 首迁移、Order 增量迁移与 Inventory 增量迁移只在一次性 MySQL 8.0.46 完成演练，均尚未应用到持久环境；部署必须遵循迁移流程。
+- 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
 - refresh token 尚未轮换；登录/注册尚未限流。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
-- Phase 4.3 将引入库存流水、自动扣减/恢复和并发库存控制；当前 Order 明确拒绝 Kit 下单。
+- Phase 4.3.1–4.3.12 已完成并通过最终 Review；持久环境迁移、发布与下一业务 Phase 仍需单独规划和授权。

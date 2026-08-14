@@ -178,7 +178,6 @@ def test_order_item_out_rejects_inconsistent_subtotal() -> None:
     [
         ("id", 0),
         ("product_id", True),
-        ("experience_option_id", None),
         ("product_name", ""),
         ("option_duration_minutes", 0),
         ("option_participants", False),
@@ -194,6 +193,48 @@ def test_order_item_out_rejects_invalid_snapshot_fields(
 ) -> None:
     payload = order_item()
     payload[field] = value
+
+    with pytest.raises(ValidationError):
+        OrderItemOut.model_validate(payload)
+
+
+def test_order_item_out_accepts_complete_kit_snapshot() -> None:
+    payload = order_item()
+    payload.update(
+        {
+            "experience_option_id": None,
+            "option_duration_minutes": None,
+            "option_participants": None,
+            "option_day_type": None,
+        }
+    )
+
+    result = OrderItemOut.model_validate(payload).model_dump(mode="json")
+
+    assert result["experience_option_id"] is None
+    assert result["option_duration_minutes"] is None
+    assert result["option_participants"] is None
+    assert result["option_day_type"] is None
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "option_duration_minutes",
+        "option_participants",
+        "option_day_type",
+    ],
+)
+def test_order_item_out_rejects_kit_with_option_metadata(field: str) -> None:
+    payload = order_item()
+    payload["experience_option_id"] = None
+    for option_field in (
+        "option_duration_minutes",
+        "option_participants",
+        "option_day_type",
+    ):
+        payload[option_field] = None
+    payload[field] = order_item()[field]
 
     with pytest.raises(ValidationError):
         OrderItemOut.model_validate(payload)

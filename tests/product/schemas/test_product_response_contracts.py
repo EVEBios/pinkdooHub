@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from app.common.constants.inventory import INVENTORY_STOCK_MAX
 from app.common.pagination import Page
 from app.schemas.product_response import (
     AdminExperienceProductDetailOut,
@@ -145,6 +146,26 @@ def test_user_kit_rejects_inconsistent_availability(
         KitProductDetailOut.model_validate(payload)
 
     assert exc_info.value.errors()[0]["loc"] == ()
+
+
+@pytest.mark.parametrize(
+    "schema_type,payload_factory",
+    [
+        (KitProductDetailOut, user_kit),
+        (AdminKitProductDetailOut, admin_kit),
+    ],
+)
+def test_kit_details_reject_stock_above_inventory_limit(
+    schema_type: ResponseSchema,
+    payload_factory: PayloadFactory,
+) -> None:
+    payload = payload_factory()
+    payload["stock"] = INVENTORY_STOCK_MAX + 1
+
+    with pytest.raises(ValidationError) as exc_info:
+        schema_type.model_validate(payload)
+
+    assert exc_info.value.errors()[0]["loc"] == ("stock",)
 
 
 @pytest.mark.parametrize("field", ["cover_image", "display_price"])

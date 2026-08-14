@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.product import KitPriceUpdate, KitStockUpdate, ProductImageUpdate
+from app.schemas.product import KitPriceUpdate, ProductImageUpdate
 
 
 class TestProductImageUpdate:
@@ -90,26 +90,5 @@ class TestKitPriceUpdate:
     def test_extra_fields_are_rejected(self) -> None:
         with pytest.raises(ValidationError) as exc_info:
             KitPriceUpdate.model_validate({"price": "699.00", "stock": 1})
-
-        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
-
-
-class TestKitStockUpdate:
-    """套装库存修改请求。"""
-
-    @pytest.mark.parametrize("stock", [0, 1, 80])
-    def test_valid_stock(self, stock: int) -> None:
-        schema = KitStockUpdate.model_validate({"stock": stock})
-
-        assert schema.stock == stock
-
-    @pytest.mark.parametrize("stock", [None, -1, True, False, 1.0, "1"])
-    def test_invalid_stock_is_rejected(self, stock: object) -> None:
-        with pytest.raises(ValidationError):
-            KitStockUpdate.model_validate({"stock": stock})
-
-    def test_extra_fields_are_rejected(self) -> None:
-        with pytest.raises(ValidationError) as exc_info:
-            KitStockUpdate.model_validate({"stock": 10, "price": "699.00"})
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"

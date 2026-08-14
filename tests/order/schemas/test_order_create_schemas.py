@@ -31,6 +31,26 @@ def test_order_item_create_accepts_strict_valid_fields() -> None:
 
 
 @pytest.mark.parametrize(
+    "payload",
+    [
+        {"product_id": 1, "quantity": 2},
+        {"product_id": 1, "experience_option_id": None, "quantity": 2},
+    ],
+)
+def test_order_item_create_normalizes_kit_option_to_none(
+    payload: dict[str, object],
+) -> None:
+    schema = OrderItemCreate.model_validate(payload)
+
+    assert schema.experience_option_id is None
+    assert schema.model_dump() == {
+        "product_id": 1,
+        "experience_option_id": None,
+        "quantity": 2,
+    }
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("product_id", 0),
@@ -133,6 +153,22 @@ def test_order_create_rejects_duplicate_product_option_combination() -> None:
     error = exc_info.value.errors()[0]
     assert error["loc"] == ()
     assert "Duplicate product and experience option" in error["msg"]
+
+
+def test_order_create_rejects_duplicate_kit_product() -> None:
+    with pytest.raises(ValidationError):
+        OrderCreate.model_validate(
+            {
+                "items": [
+                    {"product_id": 1, "quantity": 1},
+                    {
+                        "product_id": 1,
+                        "experience_option_id": None,
+                        "quantity": 2,
+                    },
+                ]
+            }
+        )
 
 
 def test_order_create_allows_same_product_with_different_options() -> None:

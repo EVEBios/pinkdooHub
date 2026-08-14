@@ -30,6 +30,15 @@ class OrderItemCreateData:
     subtotal: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class OrderCancellationItemData:
+    """取消恢复只需要的不可变 OrderItem 库存快照字段。"""
+
+    product_id: int
+    experience_option_id: int | None
+    quantity: int
+
+
 def _apply_order_filters(
     query: QuerySet[Order],
     *,
@@ -42,7 +51,7 @@ def _apply_order_filters(
     """向 Order QuerySet 应用纯数据库筛选，不包含业务判断。"""
 
     if status is not None:
-        query = query.filter(status=status)
+        query = query.filter(status=status.value)
     if order_no is not None:
         query = query.filter(order_no=order_no)
     if user_id is not None:
@@ -143,6 +152,22 @@ class OrderRepository:
             query = query.using_db(using_db)
         return await query.first()
 
+    async def get_order_items(
+        self,
+        order_id: int,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[OrderCancellationItemData]:
+        """按稳定 ID 顺序只加载取消恢复需要的订单快照字段。"""
+
+        rows = await (
+            OrderItem.filter(order_id=order_id)
+            .using_db(using_db)
+            .order_by("id")
+            .values("product_id", "experience_option_id", "quantity")
+        )
+        return [OrderCancellationItemData(**row) for row in rows]
+
     async def get_order_detail_by_no(
         self,
         order_no: str,
@@ -184,7 +209,7 @@ class OrderRepository:
     ) -> Order:
         """持久化调用方已经判定合法的状态值。"""
 
-        order.status = status
+        order.status = status.value
         await order.save(
             using_db=using_db,
             update_fields=["status", "updated_at"],

@@ -81,7 +81,8 @@ def test_order_metadata_matches_database_contract() -> None:
     assert fields_map["total_amount"].max_digits == 10
     assert fields_map["total_amount"].decimal_places == ORDER_AMOUNT_DECIMAL_PLACES
     assert isinstance(fields_map["status"], fields.SmallIntField)
-    assert fields_map["status"].default == OrderStatus.PENDING
+    assert fields_map["status"].default == OrderStatus.PENDING.value
+    assert type(fields_map["status"].default) is int
     assert fields_map["status"].db_default == OrderStatus.PENDING.value
     assert isinstance(fields_map["remark"], fields.CharField)
     assert fields_map["remark"].max_length == ORDER_REMARK_MAX_LENGTH
@@ -99,7 +100,7 @@ def test_order_metadata_matches_database_contract() -> None:
 
 
 def test_order_item_metadata_matches_database_contract() -> None:
-    """明细表应保留历史快照，并允许未来 Kit Item 的 Option 字段为空。"""
+    """明细表应保留历史快照，并允许 Kit Item 的 Option 字段为空。"""
 
     fields_map = OrderItem._meta.fields_map
     expected_foreign_keys = {
@@ -252,7 +253,7 @@ async def test_order_item_rejects_invalid_snapshot_boundaries(
 
 
 async def test_order_item_allows_nullable_option_snapshot_for_future_kit() -> None:
-    """数据库形状保留未来 Kit 扩展位；Phase 4.2 的 Service 仍必须拒绝 Kit 下单。"""
+    """数据库形状支持 Kit 的空 Option 快照，并由 Service 约束 Item 类型。"""
 
     order = await _create_order()
     product = await Product.create(name="拼豆材料包", product_type=ProductType.KIT)

@@ -79,15 +79,15 @@ class _OrderRequest(BaseModel):
 
 
 class OrderItemCreate(_OrderRequest):
-    """创建订单时的单个 Experience Item。"""
+    """创建订单时的 Experience 或 Kit Item。"""
 
     product_id: PositiveOrderResourceId
-    experience_option_id: PositiveOrderResourceId
+    experience_option_id: PositiveOrderResourceId | None = None
     quantity: OrderItemQuantity
 
 
 class OrderCreate(_OrderRequest):
-    """创建 Experience 订单请求。"""
+    """创建 Experience、Kit 或混合订单请求。"""
 
     items: list[OrderItemCreate] = Field(
         min_length=ORDER_ITEMS_MIN_COUNT,

@@ -8,6 +8,7 @@ import pytest
 from app.common.constants.order import ORDER_AUDIT_TARGET_TYPE
 from app.common.exceptions import OrderNotFound
 from app.common.pagination import Page
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -22,6 +23,7 @@ def _service(order: object | None) -> tuple[OrderService, AsyncMock, AsyncMock]:
         OrderService(
             repository,
             AsyncMock(spec=ProductRepository),
+            AsyncMock(spec=InventoryRepository),
             audit_service,
         ),
         repository,

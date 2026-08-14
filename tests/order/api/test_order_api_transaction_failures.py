@@ -17,6 +17,7 @@ from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
@@ -59,6 +60,7 @@ def _service(
     return OrderService(
         repository or OrderRepository(),
         ProductRepository(),
+        InventoryRepository(),
         audit_service or AuditLogService(AuditLogRepository()),
         **kwargs,
     )

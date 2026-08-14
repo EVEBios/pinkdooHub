@@ -30,7 +30,7 @@ def test_delete_experience_option_is_async_orchestration() -> None:
 
 def test_kit_mutations_are_async_orchestration() -> None:
     assert inspect.iscoroutinefunction(ProductService.update_kit_price)
-    assert inspect.iscoroutinefunction(ProductService.update_kit_stock)
+    assert not hasattr(ProductService, "update_kit_stock")
 
 
 def test_image_mutations_are_async_orchestration() -> None:

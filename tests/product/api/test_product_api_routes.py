@@ -126,7 +126,6 @@ def _service() -> Mock:
         "create_product_image",
         "create_option_image",
         "update_kit_price",
-        "update_kit_stock",
         "update_product_image",
         "delete_product_image",
         "online_product",
@@ -419,7 +418,7 @@ async def test_admin_detail_routes_are_type_isolated(
         ),
         (
             "/api/v1/admin/products/kit",
-            {"name": "套装", "price": "699.00", "stock": 8},
+            {"name": "套装", "price": "699.00"},
             "create_kit_product",
             ProductType.KIT,
         ),
@@ -452,7 +451,7 @@ async def test_product_create_routes_return_201(
     assert kwargs["ip_address"] == "127.0.0.1"
     if product_type is ProductType.KIT:
         assert kwargs["price"] == Decimal("699.00")
-        assert kwargs["stock"] == 8
+        assert "stock" not in kwargs
 
 
 @pytest.mark.parametrize("restored,expected_status", [(False, 201), (True, 200)])
@@ -565,14 +564,6 @@ async def test_option_create_status_depends_on_restore_result(
             SimpleNamespace(id=900, product_id=2, price=Decimal("799.00"), stock=5),
             {"id": 2, "price": "799.00"},
         ),
-        (
-            "PATCH",
-            "/api/v1/admin/products/kit/2/stock",
-            {"stock": 20},
-            "update_kit_stock",
-            SimpleNamespace(id=900, product_id=2, price=Decimal("699.00"), stock=20),
-            {"id": 2, "stock": 20},
-        ),
     ],
 )
 async def test_json_mutation_routes_call_service_and_map_response(
@@ -621,6 +612,34 @@ async def test_json_request_rejects_unknown_fields_before_service(
     assert response.json()["code"] == 422
     assert response.json()["message"] == "Validation failed"
     admin_routed_service.create_experience_product.assert_not_awaited()
+
+
+async def test_kit_create_rejects_legacy_stock_field(
+    client: AsyncClient,
+    admin_routed_service: Mock,
+) -> None:
+    response = await client.post(
+        "/api/v1/admin/products/kit",
+        json={"name": "套装", "price": "699.00", "stock": 8},
+    )
+
+    assert response.status_code == 422
+    error = response.json()["data"]["errors"][0]
+    assert error["location"] == ["body", "stock"]
+    assert error["type"] == "extra_forbidden"
+    admin_routed_service.create_kit_product.assert_not_awaited()
+
+
+async def test_legacy_stock_route_is_removed(
+    client: AsyncClient,
+    admin_routed_service: Mock,
+) -> None:
+    response = await client.patch(
+        "/api/v1/admin/products/kit/2/stock",
+        json={"stock": 20},
+    )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.parametrize(

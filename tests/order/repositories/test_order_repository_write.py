@@ -46,10 +46,24 @@ def _item_data(product: Product, *, subtotal: str = "299.00") -> OrderItemCreate
     )
 
 
-async def test_create_order_uses_model_pending_default() -> None:
-    """Repository 只接收创建数据，初始状态由 Model 契约提供。"""
+async def test_create_order_uses_integer_model_pending_default(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Pending 默认值必须以原生 int 传给严格类型数据库驱动。"""
 
     user = await _create_user()
+    connection = connections.get("default")
+    original_execute_insert: Callable[..., Awaitable[Any]] = (
+        connection.execute_insert
+    )
+    insert_values: list[Any] = []
+
+    async def capture_insert(query: str, values: list[Any]) -> Any:
+        if query.lstrip().upper().startswith("INSERT INTO \"ORDERS\""):
+            insert_values.extend(values)
+        return await original_execute_insert(query, values)
+
+    monkeypatch.setattr(connection, "execute_insert", capture_insert)
 
     created = await OrderRepository().create_order(
         order_no="OD01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -61,6 +75,11 @@ async def test_create_order_uses_model_pending_default() -> None:
     assert created.id is not None
     assert created.user_id == user.id
     assert created.status == OrderStatus.PENDING
+    assert all(not isinstance(value, OrderStatus) for value in insert_values)
+    assert any(
+        type(value) is int and value == OrderStatus.PENDING.value
+        for value in insert_values
+    )
     assert created.total_amount == Decimal("299.00")
     assert created.remark == "预约晚场"
 
@@ -228,8 +247,10 @@ async def test_transaction_detail_reload_sees_uncommitted_bulk_items() -> None:
     assert not await OrderItem.filter(order_id=order_id).exists()
 
 
-async def test_update_status_uses_supplied_transaction_connection() -> None:
-    """Repository 持久化状态但不判断状态机，并加入调用方事务。"""
+async def test_update_status_uses_integer_and_supplied_transaction_connection(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """状态更新必须以原生 int 加入调用方事务。"""
 
     user = await _create_user()
     repository = OrderRepository()
@@ -239,9 +260,23 @@ async def test_update_status_uses_supplied_transaction_connection() -> None:
         total_amount=Decimal("299.00"),
         remark=None,
     )
+    update_values: list[Any] = []
 
     with pytest.raises(RuntimeError, match="rollback status"):
         async with in_transaction() as connection:
+            original_execute_query: Callable[..., Awaitable[Any]] = (
+                connection.execute_query
+            )
+
+            async def capture_query(
+                query: str,
+                values: list[Any] | None = None,
+            ) -> Any:
+                if query.lstrip().upper().startswith("UPDATE \"ORDERS\""):
+                    update_values.extend(values or [])
+                return await original_execute_query(query, values)
+
+            monkeypatch.setattr(connection, "execute_query", capture_query)
             locked = await repository.get_order_for_update(
                 order.id,
                 using_db=connection,
@@ -253,7 +288,13 @@ async def test_update_status_uses_supplied_transaction_connection() -> None:
                 using_db=connection,
             )
             assert updated.status == OrderStatus.PAID
+            assert type(updated.status) is int
             raise RuntimeError("rollback status")
 
     stored = await Order.get(id=order.id)
     assert stored.status == OrderStatus.PENDING
+    assert all(not isinstance(value, OrderStatus) for value in update_values)
+    assert any(
+        type(value) is int and value == OrderStatus.PAID.value
+        for value in update_values
+    )

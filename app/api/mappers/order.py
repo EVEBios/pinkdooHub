@@ -50,7 +50,11 @@ def map_order_item(item: OrderItem) -> OrderItemOut:
             "product_name": item.product_name,
             "option_duration_minutes": item.option_duration_minutes,
             "option_participants": item.option_participants,
-            "option_day_type": map_order_day_type(item.option_day_type),
+            "option_day_type": (
+                map_order_day_type(item.option_day_type)
+                if item.option_day_type is not None
+                else None
+            ),
             "product_price": item.product_price,
             "quantity": item.quantity,
             "subtotal": item.subtotal,

@@ -18,10 +18,12 @@ from app.core.exceptions import AuthenticationException, PermissionException
 from app.core.security import decode_token
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
+from app.services.inventory_service import InventoryService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
 from app.storage.image import LocalImageStorage
@@ -69,12 +71,28 @@ def get_product_service(
 def get_order_service(
     order_repository: OrderRepository = Depends(),
     product_repository: ProductRepository = Depends(),
+    inventory_repository: InventoryRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
 ) -> OrderService:
     """组装 OrderService 及其数据访问与共享审计依赖。"""
 
     return OrderService(
         order_repository,
+        product_repository,
+        inventory_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
+def get_inventory_service(
+    inventory_repository: InventoryRepository = Depends(),
+    product_repository: ProductRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> InventoryService:
+    """组装 InventoryService 及其数据访问与共享审计依赖。"""
+
+    return InventoryService(
+        inventory_repository,
         product_repository,
         AuditLogService(audit_log_repository),
     )

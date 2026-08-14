@@ -58,7 +58,7 @@ Table product_kits {
   id bigint [pk, increment]
   product_id bigint [not null, unique]
   price decimal(10,2) [not null, note: 'kit product price']
-  stock int [not null, default: 0, note: 'Phase 4.1 direct final-value setting; Phase 4.3 inventory ledger and automatic adjustments']
+  stock int [not null, default: 0, note: 'authoritative balance; application range 0..999999; every Phase 4.3 change writes a ledger row in the same transaction']
   created_at datetime
   updated_at datetime
 }
@@ -128,15 +128,16 @@ Table orders {
 
 // Lifecycle: pending -> cancelled | paid; paid -> completed.
 // Phase 4.2 payment entry is ADMIN+ manual confirmation until Payment integration.
-// Phase 4.2 does not accept Kit items and never checks/modifies ProductKit.stock.
+// Phase 4.3 accepts Experience, Kit, and mixed orders. Pending Kit items
+// deduct ProductKit.stock atomically and Pending cancellation restores it.
 
 Table order_items {
   id bigint [pk, increment]
   order_id bigint [not null]
   product_id bigint [not null]
 
-  // Nullable for future Kit items. Phase 4.2 only writes Experience items, so API values are non-null.
-  experience_option_id bigint [note: 'FK to experience_options; nullable for future kit products']
+  // Experience items reference an option; Kit items keep all option fields NULL.
+  experience_option_id bigint [note: 'FK to experience_options; NULL for kit products']
   option_duration_minutes int [note: 'snapshot: positive minutes']
   option_participants int [note: 'snapshot: positive participants']
   option_day_type varchar(20) [note: 'snapshot: weekday | holiday']
@@ -158,3 +159,32 @@ Ref: orders.user_id > users.id [delete: restrict]
 Ref: order_items.order_id > orders.id [delete: restrict]
 Ref: order_items.product_id > products.id [delete: restrict]
 Ref: order_items.experience_option_id > experience_options.id [delete: restrict]
+
+// ── Inventory (Phase 4.3.4 MySQL migration generated offline; not applied) ──
+
+Table inventory_transactions {
+  id bigint [pk, increment]
+  product_id bigint [not null, note: 'public Kit Product ID; balance row is product_kits']
+  transaction_type varchar(40) [not null, note: 'opening_balance | admin_adjustment | order_deduction | order_cancellation_restore']
+  change_quantity int [not null, note: 'application range -999999..999999, non-zero']
+  before_quantity int [not null, note: 'application range 0..999999']
+  after_quantity int [not null, note: 'application range 0..999999; equals before_quantity + change_quantity']
+  source_type varchar(30) [not null, note: 'migration | admin | order']
+  source_id bigint [note: 'Order ID only when source_type=order; deliberately no polymorphic FK']
+  operator_id bigint [note: 'triggering user; nullable for migration or future system events']
+  reason varchar(256) [not null, note: 'normalized admin reason or server-defined stable event reason']
+  idempotency_key varchar(256) [not null, note: 'internal namespaced business identity; never exposed by API']
+  created_at datetime
+  updated_at datetime [note: 'BaseModel technical field; ledger has no business update path']
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_inventory_idempotency_key']
+    (product_id, created_at, id) [name: 'idx_inventory_product_created_id']
+    (source_type, source_id, created_at, id) [name: 'idx_inventory_source_created_id']
+    (transaction_type, created_at, id) [name: 'idx_inventory_type_created_id']
+    (created_at, id) [name: 'idx_inventory_created_id']
+  }
+}
+
+Ref: inventory_transactions.product_id > products.id [delete: restrict]
+Ref: inventory_transactions.operator_id > users.id [delete: restrict]

@@ -11,7 +11,6 @@ from app.schemas.product_response import (
     ExperienceProductCreateOut,
     KitPriceOut,
     KitProductCreateOut,
-    KitStockOut,
     ProductBasicInfoOut,
     ProductOfflineOut,
     ProductOnlineOut,
@@ -167,15 +166,3 @@ def test_kit_price_response_serializes_decimal_and_filters_stock() -> None:
 def test_kit_price_response_rejects_non_decimal(price: object) -> None:
     with pytest.raises(ValidationError):
         KitPriceOut.model_validate({"id": 2, "price": price})
-
-
-def test_kit_stock_response_requires_strict_non_negative_integer() -> None:
-    schema = KitStockOut.model_validate(
-        {"id": 2, "stock": 0, "price": Decimal("699.00")}
-    )
-
-    assert schema.model_dump() == {"id": 2, "stock": 0}
-
-    for invalid_stock in (-1, True, 1.0, "1"):
-        with pytest.raises(ValidationError):
-            KitStockOut.model_validate({"id": 2, "stock": invalid_stock})

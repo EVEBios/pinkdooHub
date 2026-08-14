@@ -119,6 +119,23 @@ class ProductRepository:
             query = query.using_db(using_db)
         return await query
 
+    async def get_kits_by_product_ids(
+        self,
+        product_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[ProductKit]:
+        """一次查询加载指定 Product 的 Kit 扩展，供订单候选快照使用。"""
+
+        if not product_ids:
+            return []
+        query = ProductKit.filter(product_id__in=product_ids).order_by(
+            "product_id"
+        )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query
+
     async def get_product_detail(
         self,
         product_id: int,

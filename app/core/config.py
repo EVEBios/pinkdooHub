@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # 应用
     # ═══════════════════════════════════════════════
     app_name: str = "pinkdooHub"
-    app_version: str = "0.5.0"
+    app_version: str = "0.6.0"
     app_env: str = "development"
     app_debug: bool = True
 

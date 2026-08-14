@@ -18,7 +18,6 @@ from app.api.mappers.product import (
     map_kit_price,
     map_kit_product_create,
     map_kit_product_detail,
-    map_kit_stock,
     map_product_basic_info,
     map_product_offline,
     map_product_online,
@@ -243,4 +242,3 @@ def test_mutation_mappers_use_strict_whitelists_and_correct_ids() -> None:
     assert map_product_offline(experience).model_dump(mode="json")["status"]["value"] == "offline"
     assert map_deleted_resource(deleted).model_dump(mode="json") == {"id": 31, "is_deleted": True}
     assert map_kit_price(kit).model_dump(mode="json") == {"id": 2, "price": "699.00"}
-    assert map_kit_stock(kit).model_dump(mode="json") == {"id": 2, "stock": 20}
