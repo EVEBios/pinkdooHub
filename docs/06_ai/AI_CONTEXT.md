@@ -53,23 +53,23 @@
 | 测试 | pytest + pytest-asyncio + httpx | 9.1 / 1.4 / — |
 | 时区 | tzdata | —（Windows 必需） |
 
-规划中的跨端前端技术基线如下；当前尚未创建 `miniapp/` 或安装这些依赖，精确补丁版本必须由四端技术 Spike 固定，不能把规划表误报为已实现依赖：
+跨端前端技术基线如下。四端技术 Spike 已于 2026-08-15 通过并锁定精确版本（临时工程 `spikes/taro-four-end-spike/`，已 gitignore）；正式 `miniapp/` 尚未创建，未提交任何前端工程代码：
 
 | 层级 | 技术 | 状态 |
 |------|------|------|
-| 跨端框架 | Taro 4.x | Accepted；待 Spike 固定精确版本 |
-| UI 框架 | React 18 | Accepted；待 Spike 固定精确版本 |
-| 语言 | TypeScript strict | Accepted |
-| 编译器 | Webpack 5 | Proposed；待四端 Spike |
+| 跨端框架 | Taro 4.2.1（所有 `@tarojs/*` 同一版本） | Accepted |
+| UI 框架 | React 18.3.1 | Accepted |
+| 语言 | TypeScript 5.9.3 strict（`skipLibCheck`） | Accepted |
+| 编译器 | Webpack 5.91.0 | Accepted（Spike 四端通过） |
 | 基础组件 | `@tarojs/components` | Accepted |
-| 增强组件 | NutUI React Taro | Proposed；待逐组件四端验证 |
+| 增强组件 | NutUI React Taro 2.7.15（受控引入） | Accepted（基础组件四端编译通过；需按需引入控制体积） |
 | API 类型 | FastAPI OpenAPI + `openapi-typescript` | Accepted |
-| 测试 | Jest + Taro React Test Utils | Proposed；待 Spike |
+| 测试 | Jest 29.7.0 + `@tarojs/test-utils-react` 0.1.1 | Accepted（含 `legacy-peer-deps` 等已知 workaround） |
 
 ### 2.1 当前 Phase 与实现边界
 
-- 前端进入**架构文档阶段**：`docs/08_frontend/` 已新增总架构、多端策略、API 集成契约、测试策略、学习路线和六个初始 ADR。已接受 Taro 4 + React 18 + TypeScript strict、现有仓库新增未来 `miniapp/`、OpenAPI 类型生成，以及“账号密码/人工确认 MVP → 公开发布前微信登录/支付”的分阶段方向。总体架构仍为 Draft；Webpack 5 和 NutUI 策略仍为 Proposed，必须先通过 weapp/alipay/tt/h5 最小技术 Spike。当前没有前端代码、Node 依赖、构建产物、前端测试或生产发布能力，不得将文档规划误报为已实现。
-- 前端首发微信小程序，同步验证 H5，6–12 个月目标包含支付宝和抖音小程序；ADMIN 首版放同一 Taro 应用分包，未来复杂桌面管理端才在同仓库增加 `admin-web/`。H5 联调前需要为 FastAPI 实现严格 CORS allowlist；当前相对 Product 图片 URL、Order create 无客户端幂等键、微信登录/微信支付未实现、refresh 不轮换及登录/注册不限流均是明确集成/发布缺口。
+- 前端完成**阶段 2：四端 Taro Spike**（2026-08-15）：Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict + Webpack 5.91.0 + NutUI 2.7.15 + Jest 29.7.0 在 weapp/alipay/tt/h5 四端生产构建全部通过；`Taro.request`/Storage/上传适配层与 Jest + Taro Test Utils 链路已验证（13 项测试）。产物固定输出 `dist/<TARO_ENV>`，生产包注入 `TARO_APP_APP_ENV`/Origin 且无 localhost 泄漏。关键发现：Taro 只替换字面量 `process.env.TARO_APP_*`；测试工具需 `legacy-peer-deps` 并 mock `@tarojs/router`；NutUI 桶导入会把整库打入包（h5 入口 485 KiB），正式工程必须按需引入；H5 CORS 实测确认后端未配置白名单。Spike 结果已回写架构文档 §4.1、ADR-003/ADR-005、多端与测试策略；ADR-003/ADR-005 已 Accepted。总体架构仍为 Draft（等待正式工程落地后批准），当前**没有正式前端工程代码、构建产物、前端测试或生产发布能力**，不得把 Spike 与文档规划误报为已交付业务能力。
+- 下一步：创建正式 `miniapp/` 工程骨架（含 TypeScript/ESLint/Jest/四端构建命令），随后实现 OpenAPI 类型生成 + HTTP Client，再开始账号登录纵向链路。前端首发微信小程序，同步验证 H5，6–12 个月目标包含支付宝和抖音小程序；ADMIN 首版放同一 Taro 应用分包，未来复杂桌面管理端才在同仓库增加 `admin-web/`。H5 联调前需要为 FastAPI 实现严格 CORS allowlist；当前相对 Product 图片 URL、Order create 无客户端幂等键、微信登录/微信支付未实现、refresh 不轮换及登录/注册不限流均是明确集成/发布缺口。
 - 当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1 Product Module**、**Phase 4.2 Order Module** 与 **Phase 4.3 Inventory Module** 均已完成实现和最终 Review。Order v1.0 基线保持 release-ready，Phase 4.3.7–4.3.8 已在原 POST/cancel 上增加纯 Kit/混合创建扣减及 Pending 取消恢复。九个 Order 端点、查询、Mapper 和资源隐藏边界保持不变；Phase 4.3.11 真实 MySQL 库存竞争与 Phase 4.3.12 最终 Review 均已通过。
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约均已完成；Product API 文档已通过 Phase 4.1 最终 Review，并收口为 v1.0 Implemented。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。

@@ -34,9 +34,9 @@
 
 | 阶段 | 工程交付 | 新知识 |
 |------|----------|--------|
-| 0 | 架构文档与 ADR | 架构、边界、ADR、API 契约 |
+| 0 | 架构文档与 ADR（已完成 2026-08-15） | 架构、边界、ADR、API 契约 |
 | 1 | TypeScript 纯函数练习 | JS 运行时、类型、模块、Promise |
-| 2 | 四端 Taro Spike | Node/npm、Taro、编译、项目配置 |
+| 2 | 四端 Taro Spike（已完成 2026-08-15） | Node/npm、Taro、编译、项目配置 |
 | 3 | 正式脚手架 | React 组件、TSX、Props、事件 |
 | 4 | HTTP Client | 泛型、unknown、async、错误、JWT |
 | 5 | 登录纵向链路 | State、Context、Effect、Storage |
@@ -305,4 +305,3 @@ buildOrderItem
 - 知道它属于哪一层；
 - 知道何时不该使用；
 - 能在不复制旧实现的情况下完成一个相似任务。
-

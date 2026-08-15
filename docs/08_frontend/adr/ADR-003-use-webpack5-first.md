@@ -1,6 +1,6 @@
 # ADR-003：首个 Taro 工程使用 Webpack 5
 
-> **Status:** Proposed
+> **Status:** Accepted
 > **Date:** 2026-08-15
 > **Decision Owners:** pinkdooHub
 
@@ -40,3 +40,12 @@ Taro 4 支持 Webpack 4、Webpack 5 和 Vite。H5 使用 Vite 通常有较好的
 
 如果 Webpack 5 四端通过且无阻断，将状态改为 Accepted。若 Vite 显著更稳定或 Webpack 5 阻断，则新增替代 ADR，而不是直接改本文结论。
 
+## Spike Result（2026-08-15）
+
+`spikes/taro-four-end-spike`（Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict + Webpack 5.91.0）验证通过：
+
+- weapp / alipay / tt / h5 生产构建全部成功（4.7–8.1s），产物分别输出到 `dist/<TARO_ENV>`；
+- SCSS（sass 1.102.0）、NutUI 2.7.15 候选组件、Taro.request 适配层与 Jest 29.7.0 测试链路均可用；
+- 已知告警不影响决策：NutUI 主题 `@import` 弃用警告、h5 入口体积超 244 KiB 建议线（与 NutUI 桶导入相关，见 ADR-005）。
+
+因此首个正式工程沿用 Webpack 5；切换 Vite 需要新增 ADR，不在普通功能分支进行。

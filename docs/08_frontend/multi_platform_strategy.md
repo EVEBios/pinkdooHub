@@ -167,7 +167,7 @@ TARO_ENV = weapp | alipay | tt | h5
 
 ### 6.4 输出目录
 
-各平台输出目录由 Spike 固定并加入 `.gitignore`。正式工程不得提交构建产物，除非某个平台发布工具存在经 ADR 批准的强制要求。
+Spike 已固定为 `outputRoot: dist/<TARO_ENV>`：weapp/alipay/tt/h5 产物分别输出到 `dist/weapp`、`dist/alipay`、`dist/tt`、`dist/h5`，避免四端互相覆盖；微信开发者工具项目根指向 `dist/weapp`。构建产物加入 `.gitignore`，正式工程不得提交，除非某个平台发布工具存在经 ADR 批准的强制要求。
 
 ---
 
@@ -191,6 +191,8 @@ H5 需要 FastAPI 增加精确 CORS allowlist，并允许必要 Method/Header：
 
 生产不使用通配 Origin。Bearer Storage 的 XSS 风险在公开发布前专项 Review。
 
+Spike 实测（2026-08-15，`spikes/taro-four-end-spike/tools/cors_check.py`）：对 FastAPI 发送 `OPTIONS` 预检返回 405、普通 GET 响应无 `Access-Control-Allow-Origin` 头，确认后端当前未配置 CORS 白名单，H5 浏览器跨域调用会被拦截。该缺口是后端待办，前端不自行绕过（如禁用 CORS 检查或使用代理伪装成功）。
+
 ### 7.4 图片
 
 当前开发后端可返回 `/uploads/products/...` 相对地址。客户端通过唯一 `resolveAssetUrl()` 在开发期补全 Origin。生产应优先由后端返回对象存储/CDN 的绝对 HTTPS URL。
@@ -210,9 +212,9 @@ H5 需要 FastAPI 增加精确 CORS allowlist，并允许必要 Method/Header：
 
 | 组件/能力 | weapp | alipay | tt | h5 | 批准条件 |
 |-----------|-------|--------|----|-----|----------|
-| Button | 待验证 | 待验证 | 待验证 | 待验证 | 事件、disabled、loading 一致 |
-| Input/Form | 待验证 | 待验证 | 待验证 | 待验证 | 受控值、错误、键盘行为可接受 |
-| Dialog/Toast | 待验证 | 待验证 | 待验证 | 待验证 | 打开关闭、层级、回调一致 |
+| Button | ✅ 编译通过 | ✅ 编译通过 | ✅ 编译通过 | ✅ 编译通过 | 事件、disabled、loading 一致（受控用法有 Jest 覆盖；真机待验证） |
+| Input/Form | ✅ 编译通过 | ✅ 编译通过 | ✅ 编译通过 | ✅ 编译通过 | 受控值、错误、键盘行为可接受（Input 受控 value/onChange 已验证） |
+| Dialog/Toast | ✅ 编译通过 | ✅ 编译通过 | ✅ 编译通过 | ✅ 编译通过 | 打开关闭、层级、回调一致（受控 visible/onClose 已验证） |
 | Picker | 待验证 | 待验证 | 待验证 | 待验证 | value 和取消行为一致 |
 | Upload | 待验证 | 待验证 | 待验证 | 待验证 | 选择、进度、失败、multipart 可控 |
 | Image/Preview | 待验证 | 待验证 | 待验证 | 待验证 | HTTPS、失败占位和预览可用 |
@@ -272,4 +274,3 @@ MVP 的 Paid 状态由 ADMIN+ 人工确认。正式支付由服务端创建支�
 - [ ] 平台专属失败有显式反馈；
 - [ ] 域名、权限、隐私或项目配置变化已更新文档；
 - [ ] 不支持的平台能力没有伪装成功。
-

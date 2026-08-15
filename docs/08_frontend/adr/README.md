@@ -17,8 +17,7 @@ ADR 不通过静默改写来隐藏历史。重大方向改变时新增 ADR，并
 |-----|------|------|
 | [ADR-001](ADR-001-use-taro-react-typescript.md) | Accepted | Taro 4 + React 18 + TypeScript strict |
 | [ADR-002](ADR-002-keep-frontend-in-monorepo.md) | Accepted | 前端保留在现有仓库的 `miniapp/` |
-| [ADR-003](ADR-003-use-webpack5-first.md) | Proposed | 首个工程使用 Webpack 5 |
+| [ADR-003](ADR-003-use-webpack5-first.md) | Accepted | 首个工程使用 Webpack 5 |
 | [ADR-004](ADR-004-api-types-from-openapi.md) | Accepted | 从 FastAPI OpenAPI 生成类型 |
-| [ADR-005](ADR-005-cross-platform-ui-strategy.md) | Proposed | Taro 基础组件 + 受控 NutUI |
+| [ADR-005](ADR-005-cross-platform-ui-strategy.md) | Accepted | Taro 基础组件 + 受控 NutUI |
 | [ADR-006](ADR-006-auth-and-payment-roadmap.md) | Accepted | MVP/正式发布分阶段认证与支付 |
-

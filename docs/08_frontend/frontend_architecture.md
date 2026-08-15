@@ -1,9 +1,9 @@
 # pinkdooHub 前端架构
 
-> **Document Version:** v0.1
+> **Document Version:** v0.2
 > **Status:** Draft
 > **Last Updated:** 2026-08-15
-> **Scope:** `miniapp/` 规划架构；当前尚未创建前端工程、安装依赖或完成技术 Spike
+> **Scope:** `miniapp/` 规划架构；四端技术 Spike 已通过（2026-08-15），正式 `miniapp/` 工程尚未创建
 > **Decision Owners:** pinkdooHub
 
 本文档定义 pinkdooHub 跨端客户端的目标架构、依赖方向、职责边界和实施门槛。首发目标为微信小程序，并要求同一套核心代码在 6–12 个月内扩展到 H5、支付宝小程序和抖音小程序。
@@ -36,7 +36,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | 未来复杂管理端 | 同仓库增加独立 `admin-web/` |
 | GitHub | 继续使用当前仓库，不嵌套第二个 Git 仓库 |
 
-当前阶段只编写并 Review 架构文档。文档完成后先执行最小技术 Spike；只有 Spike 结果写回本文档和相关 ADR 后，才创建正式 `miniapp/` 工程。
+当前阶段已完成最小技术 Spike（见 [§4.1 Spike 结果摘要](#41-spike-结果摘要2026-08-15)），关键决策已写回本文档与 ADR；下一步是创建正式 `miniapp/` 工程并从账号登录开始实现第一条纵向链路。
 
 ---
 
@@ -89,22 +89,54 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 
 | 层级 | 选择 | 状态 |
 |------|------|------|
-| 跨端框架 | Taro 4.x；所有 `@tarojs/*` 使用同一精确版本 | Accepted；精确版本由 Spike 固定 |
-| UI 框架 | React 18 | Accepted；精确版本由 Spike 固定 |
+| 跨端框架 | Taro 4.2.1；所有 `@tarojs/*` 使用同一精确版本 | Accepted |
+| UI 框架 | React 18.3.1（react-dom 同版本） | Accepted |
 | 语言 | TypeScript strict | Accepted |
-| 编译器 | Webpack 5 | Proposed；四端 Spike 后决定是否 Accepted |
-| 样式 | SCSS + 项目 Design Tokens | Proposed |
+| 编译器 | Webpack 5.91.0 | Accepted（Spike 四端通过） |
+| 样式 | SCSS（sass 1.102.0）+ 项目 Design Tokens | Accepted（工具链已验证；Tokens 待正式工程） |
 | 基础组件 | `@tarojs/components` | Accepted |
-| 增强组件 | `@nutui/nutui-react-taro`，经项目组件层封装 | Proposed；逐组件四端验证 |
+| 增强组件 | `@nutui/nutui-react-taro` 2.7.15，经项目组件层封装 | Accepted（基础组件四端编译通过；需按需引入控制体积） |
 | 网络 | `Taro.request` / `Taro.uploadFile` 的项目适配层 | Accepted |
 | API 类型 | FastAPI OpenAPI + `openapi-typescript` | Accepted |
 | 会话状态 | React Context + Session/Token Manager | Proposed |
 | 页面状态 | React Hooks 本地状态 | Accepted |
 | 包管理 | npm + `package-lock.json` | Accepted |
-| 测试 | Jest + Taro React Test Utils | Proposed；Spike 验证 |
-| Node | 24 LTS | Proposed；工程初始化时锁定补丁版本 |
+| 测试 | Jest 29.7.0 + `@tarojs/test-utils-react` 0.1.1 + jsdom | Accepted（含已知 workaround，见 §4.1） |
+| Node | 24 LTS（本机 24.13.0 已验证） | Accepted |
 
 不全局安装或依赖系统 Taro CLI。工程内 `@tarojs/cli` 和所有运行时包必须保持同一精确版本，命令通过 npm script 执行。
+
+### 4.1 Spike 结果摘要（2026-08-15）
+
+临时工程位于仓库 `spikes/taro-four-end-spike/`（已被根 `.gitignore` 忽略，不进入版本控制），用于验证技术风险，不作为正式工程复制来源。验证结果：
+
+**四端生产构建全部通过**（`taro build --type <weapp|alipay|tt|h5>`，Webpack 5.91.0）：
+
+| 平台 | 构建 | 产物目录 | 体积（含 NutUI 桶导入 + 全量主题） |
+|------|------|----------|----------------------------------|
+| weapp | ✅ | `dist/weapp` | 543 KiB / 23 文件 |
+| alipay | ✅ | `dist/alipay` | 492 KiB / 20 文件 |
+| tt | ✅ | `dist/tt` | 487 KiB / 19 文件 |
+| h5 | ✅ | `dist/h5` | 627 KiB（JS 413 + CSS 211） |
+
+**环境变量注入规则（关键结论）**：Taro 通过 webpack DefinePlugin 只替换代码中“字面量”形式的 `process.env.TARO_APP_*` / `process.env.TARO_ENV`。环境读取模块必须直接书写这些字面量；经由参数/对象间接访问不会被注入，导致生产产物缺少配置。Spike 已按此修正 `resolveEnv()` 并通过产物字符串验证：四端生产包均注入 `TARO_APP_APP_ENV=production` 与占位 Origin，且不含 `localhost`。
+
+**各平台输出目录**：默认 `outputRoot: 'dist'` 会让四端互相覆盖；Spike 固定为 `dist/<TARO_ENV>`（`config/index.ts` 按 `process.env.TARO_ENV` 拼接），微信开发者工具项目根指向 `dist/weapp`。
+
+**H5 CORS 风险确认**：对 FastAPI 实测，`OPTIONS` 预检返回 405、GET 响应无 `Access-Control-Allow-Origin` 头——后端未配置 CORS 白名单，浏览器端 H5 跨域调用会被拦截。该缺口已记录于 [多端策略](multi_platform_strategy.md)，属于后端待办，不是前端可自行绕过的问题。
+
+**测试工具链（Jest + Taro Test Utils）**：
+- 必须 `--legacy-peer-deps`：`@tarojs/test-utils-react@0.1.1` 的 peerDependencies 仍声明 `@tarojs/* ^3.6.0`，与 Taro 4.2.1 冲突（`.npmrc` 已固化）。
+- 官方 transformer 未启用私有方法/属性插件，会转译失败；Spike 提供自定义 `jest.transformer.js` 补齐。
+- Taro 4.2.1 的 `@tarojs/router` 与 `@tarojs/components`（Stencil bundle）在 Jest 中经 taro-h5 runtime 形成循环依赖；组件测试需以工厂 mock `@tarojs/router`（`mount()` 不依赖 router）。
+- `html()` 序列化 Stencil Web Component 的 shadow DOM 会递归爆栈；断言改用 `queries.querySelector*`。
+- 运行时有 `ReactDOMTestUtils.act` 废弃告警（React 18.3 下 test-utils 内部 API），不阻断，升级测试工具时消除。
+
+**TypeScript strict**：Taro 4.2.1 自带类型声明在 strict 下不干净（数千条 d.ts 错误），需 `skipLibCheck: true`（只跳过声明文件，应用代码仍严格检查）；模板生成的 `config/index.ts` 存在未用解构，需修正后才能 `tsc --noEmit` 通过。
+
+**NutUI 体积（ADR-005 依据）**：2.7.15 没有按组件 JS 入口，`import { Button, Toast, Dialog, Input } from '@nutui/nutui-react-taro'` 会把整库打入包（构建日志可见 avatar/tour/sidenavbar 等全部模块）；全量主题 `default.scss` 使 h5 CSS 达 202 KiB。正式工程必须采用按需引入（babel-plugin-import 或等价方案）并重新测量门槛，否则违反架构性能目标。
+
+**其余告警**：Sass `@import` 弃用告警来自 NutUI 主题内部（Dart Sass 3.0 将移除），正式工程需关注升级；h5 入口超过 webpack 244 KiB 建议线（485 KiB），与 NutUI 全量引入直接相关。
 
 ---
 
@@ -517,11 +549,13 @@ Spike 只验证技术风险，不实现业务功能，也不作为正式工程�
 
 文档状态从 Draft 变为 Approved 前，必须完成：
 
-- [ ] 六个初始 ADR 已 Review；
-- [ ] 四端空应用可构建；
-- [ ] `Taro.request`/上传最小验证完成；
-- [ ] 候选 UI 基础组件四端验证完成；
-- [ ] Jest + Taro React Test Utils 验证完成；
-- [ ] H5 与 FastAPI CORS 风险验证完成；
-- [ ] Spike 结果已回写；
-- [ ] 不存在与实际后端/OpenAPI 冲突的描述。
+- [x] 六个初始 ADR 已 Review（2026-08-15 Spike 后更新，ADR-003/ADR-005 已接受）；
+- [x] 四端空应用可构建（`spikes/taro-four-end-spike`，weapp/alipay/tt/h5 生产构建通过）；
+- [x] `Taro.request`/上传最小验证完成（HTTP Client 单测覆盖成功/业务/HTTP/网络/契约错误，`uploadFile` 信封解析已验证）；
+- [x] 候选 UI 基础组件四端验证完成（Button/Toast/Dialog/Input 四端编译通过，受控用法有测试）；
+- [x] Jest + Taro React Test Utils 验证完成（12+ 测试通过，含已知 workaround）；
+- [x] H5 与 FastAPI CORS 风险验证完成（确认后端未配置 CORS，缺口已记录）；
+- [x] Spike 结果已回写（本文档 §4.1、ADR-003/ADR-005、多端/测试策略）；
+- [x] 不存在与实际后端/OpenAPI 冲突的描述。
+
+剩余发布门槛（不属于 Spike，属于正式工程与发布阶段）：微信/H5 Functional、支付宝/抖音 Smoke、真机与弱网、合法域名/HTTPS/CORS 白名单落地、包体积按需优化、OpenAPI 类型生成与漂移检查。

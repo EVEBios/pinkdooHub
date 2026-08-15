@@ -5,7 +5,14 @@
 > **Last Updated:** 2026-08-15
 > **Applies To:** 规划中的 `miniapp/` 与其 FastAPI 集成边界
 
-本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。具体工具版本由 Taro Spike 固定。
+本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。Spike 已固定：Jest 29.7.0 + `jest-environment-jsdom` 29.7.0 + `@tarojs/test-utils-react` 0.1.1（详见 [ADR-001](adr/ADR-001-use-taro-react-typescript.md) 与架构文档 §4.1）。
+
+## 0. 工具链已知结论（Spike 2026-08-15）
+
+- `@tarojs/test-utils-react@0.1.1` 的 peerDependencies 仍声明 `@tarojs/* ^3.6.0`，与 Taro 4.2.1 冲突；npm 安装必须 `--legacy-peer-deps`（Spike 工程 `.npmrc` 已固化，正式工程沿用）。
+- 官方 Jest transformer 未启用私有方法/属性插件，全量转译会失败；需要自定义 transformer 补齐（见 Spike 工程 `jest.transformer.js`）。
+- `@tarojs/router` 与 `@tarojs/components`（Stencil bundle）在 Jest 中形成循环依赖，组件测试需工厂 mock `@tarojs/router`；`html()` 序列化 shadow DOM 会爆栈，断言使用 `queries.querySelector*`。
+- React 18.3 下 test-utils 内部使用已废弃的 `ReactDOMTestUtils.act`，产生告警但不阻断；升级测试工具时消除。
 
 ---
 
@@ -302,12 +309,12 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 
 ### 架构 Draft → Approved
 
-- [ ] Taro 四端空应用构建；
-- [ ] 测试工具可运行；
-- [ ] Request/Upload 最小验证；
-- [ ] 候选组件矩阵；
-- [ ] H5 CORS Spike；
-- [ ] Proposed ADR 更新状态。
+- [x] Taro 四端空应用构建（Spike：weapp/alipay/tt/h5 生产构建通过，产物 `dist/<TARO_ENV>`）；
+- [x] 测试工具可运行（Jest 29.7.0 + test-utils，13 项测试通过）；
+- [x] Request/Upload 最小验证（HTTP Client 单测覆盖成功/业务/HTTP/网络/契约错误与上传信封解析）；
+- [x] 候选组件矩阵（Button/Toast/Dialog/Input 四端编译通过，见 ADR-005）；
+- [x] H5 CORS Spike（确认后端未配置 CORS，缺口已记录）；
+- [x] Proposed ADR 更新状态（ADR-003/ADR-005 已 Accepted）。
 
 ### MVP 功能完成
 
@@ -326,4 +333,3 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - [ ] 登录/注册限流和认证安全 Review；
 - [ ] 持久 MySQL 迁移按流程执行；
 - [ ] 真机、隐私、HTTPS、合法域名、回滚全部通过。
-

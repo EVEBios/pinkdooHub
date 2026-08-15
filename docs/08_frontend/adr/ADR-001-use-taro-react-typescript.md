@@ -76,3 +76,9 @@ Vue 学习曲线可控，但未来 H5/管理端计划同样需要选择生态；
 - Request、Storage、Upload 最小验证；
 - 一项平台差异 Adapter 示例。
 
+## Spike 验证（2026-08-15）
+
+- 精确版本锁定：Taro（全部 `@tarojs/*`）4.2.1、React/ReactDOM 18.3.1、TypeScript 5.9.3（strict）、Webpack 5.91.0、Sass 1.102.0、NutUI React Taro 2.7.15、Jest 29.7.0、`@tarojs/test-utils-react` 0.1.1、Node 24.13.0。
+- weapp/alipay/tt/h5 生产构建通过，`Taro.request` 适配层、Storage、NutUI Button/Toast/Dialog/Input 与 Jest 组件测试可用。
+- TypeScript strict 需要在 tsconfig 开启 `skipLibCheck`（Taro 4.2.1 声明文件本身不满足 strict），应用代码仍为严格检查。
+- 结论不变：Taro 4 + React 18 + TypeScript strict 满足多端与学习目标。

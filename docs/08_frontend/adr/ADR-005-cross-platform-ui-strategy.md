@@ -1,6 +1,6 @@
 # ADR-005：跨端 UI 使用 Taro 基础组件与受控 NutUI
 
-> **Status:** Proposed
+> **Status:** Accepted
 > **Date:** 2026-08-15
 > **Decision Owners:** pinkdooHub
 
@@ -51,3 +51,17 @@
 
 如果关键组件在目标端存在阻断，将缩小 NutUI 使用范围或评估其他候选，并用替代 ADR 记录。
 
+## Spike Result（2026-08-15）
+
+`spikes/taro-four-end-spike` 中验证 Button、Toast、Dialog、Input：
+
+| 组件/能力 | weapp | alipay | tt | h5 | 结论 |
+|-----------|-------|--------|----|-----|------|
+| Button（type/loading/disabled/事件） | ✅ 编译 | ✅ 编译 | ✅ 编译 | ✅ 编译 | 四端可用，受控用法由组件测试覆盖 |
+| Toast（visible/content/onClose） | ✅ 编译 | ✅ 编译 | ✅ 编译 | ✅ 编译 | 受控开关四端可用 |
+| Dialog（visible/onConfirm/onCancel） | ✅ 编译 | ✅ 编译 | ✅ 编译 | ✅ 编译 | 受控开关四端可用 |
+| Input（受控 value/onChange） | ✅ 编译 | ✅ 编译 | ✅ 编译 | ✅ 编译 | 受控值四端可用 |
+
+Picker、Upload、ImagePreview、InfiniteLoading、Safe Area 未进入本次最小 Spike，正式工程按需引入时再逐项更新矩阵；不把微信端通过误报为四端通过。
+
+**关键体积结论**：2.7.15 没有按组件 JS 入口，`import { ... } from '@nutui/nutui-react-taro'` 桶导入会把整库（avatar/tour/sidenavbar 等）打入产物；全量主题 `default.scss` 使 h5 CSS 达 202 KiB、入口合计 485 KiB（超过 webpack 244 KiB 建议线）。正式工程必须实现按需引入（babel-plugin-import 或等价方案）并把包体积纳入构建门槛后，才允许 NutUI 进入业务页面。

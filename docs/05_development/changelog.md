@@ -4,6 +4,32 @@
 
 ---
 
+## Frontend Phase 5 — Taro 四端最小技术 Spike（2026-08-15）
+
+### Summary
+
+完成前端阶段 2（Taro 四端最小技术 Spike），验证 Taro 4 + React 18 + TypeScript strict + Webpack 5 + NutUI + Jest 组合在 weapp/alipay/tt/h5 的技术风险，并把结论回写架构文档与 ADR。没有创建正式 `miniapp/`、没有提交前端工程代码、没有修改后端。
+
+### Verified
+
+- 四端生产构建全部通过（weapp/alipay/tt/h5，Webpack 5.91.0），产物固定 `dist/<TARO_ENV>`，微信项目根指向 `dist/weapp`。
+- 环境变量注入：Taro 只替换字面量 `process.env.TARO_APP_*`/`TARO_ENV`；修正后四端生产包均含生产 Origin 且无 localhost。
+- HTTP Client（`Taro.request`/`uploadFile` 适配层 + 统一错误模型）、Storage 封装与 NutUI Button/Toast/Dialog/Input 受控用法；13 项 Jest 测试通过，`tsc --noEmit`（strict + skipLibCheck）与 ESLint 通过。
+- H5 CORS 风险：实测 FastAPI 无 CORS 头，确认缺口。
+
+### Fixed / Recorded
+
+- `@tarojs/test-utils-react@0.1.1` 与 Taro 4.2.1 peer 冲突（需 `--legacy-peer-deps`）、官方 transformer 缺私有方法插件、`@tarojs/router` 循环依赖与 `html()` 爆栈问题均已在 Spike 工程记录 workaround。
+- NutUI 2.7.15 无按组件 JS 入口，桶导入 + 全量主题使 h5 入口 485 KiB；ADR-005 要求正式工程按需引入并纳入构建门槛。
+- TypeScript strict 需 `skipLibCheck`（Taro 声明文件本身不干净）；模板 `config/index.ts` 未用解构已修正。
+
+### Verification
+
+- `npm run typecheck`、`npm test`（13 项）、`npm run lint` 通过；四端 `taro build` 退出码 0。
+- 后端完整 pytest 未运行（本次未修改后端代码）；CORS 检查使用与测试夹具相同的 fakeredis + 临时 SQLite 隔离环境。
+
+---
+
 ## v0.6.0 (Unreleased) — Inventory Module Final Review (Phase 4.3.12)
 
 **Date:** 2026-08-14
