@@ -25,6 +25,12 @@
 | ER 图 | [er_diagram.dbml](../02_database/er_diagram.dbml) |
 | Code Review 清单 | [code_review_checklist.md](../07_process/code_review_checklist.md) |
 | 数据库迁移流程 | [database_migration_workflow.md](../07_process/database_migration_workflow.md) |
+| 前端总体架构（Draft） | [frontend_architecture.md](../08_frontend/frontend_architecture.md) |
+| 前端多端策略 | [multi_platform_strategy.md](../08_frontend/multi_platform_strategy.md) |
+| 前端 API 集成契约 | [api_integration_contract.md](../08_frontend/api_integration_contract.md) |
+| 前端测试策略 | [testing_strategy.md](../08_frontend/testing_strategy.md) |
+| 前端学习路线 | [learning_roadmap.md](../08_frontend/learning_roadmap.md) |
+| 前端 ADR | [ADR Index](../08_frontend/adr/README.md) |
 | 需求文档 | [../01_requirements/](../01_requirements/) |
 
 ---
@@ -47,8 +53,23 @@
 | 测试 | pytest + pytest-asyncio + httpx | 9.1 / 1.4 / — |
 | 时区 | tzdata | —（Windows 必需） |
 
+规划中的跨端前端技术基线如下；当前尚未创建 `miniapp/` 或安装这些依赖，精确补丁版本必须由四端技术 Spike 固定，不能把规划表误报为已实现依赖：
+
+| 层级 | 技术 | 状态 |
+|------|------|------|
+| 跨端框架 | Taro 4.x | Accepted；待 Spike 固定精确版本 |
+| UI 框架 | React 18 | Accepted；待 Spike 固定精确版本 |
+| 语言 | TypeScript strict | Accepted |
+| 编译器 | Webpack 5 | Proposed；待四端 Spike |
+| 基础组件 | `@tarojs/components` | Accepted |
+| 增强组件 | NutUI React Taro | Proposed；待逐组件四端验证 |
+| API 类型 | FastAPI OpenAPI + `openapi-typescript` | Accepted |
+| 测试 | Jest + Taro React Test Utils | Proposed；待 Spike |
+
 ### 2.1 当前 Phase 与实现边界
 
+- 前端进入**架构文档阶段**：`docs/08_frontend/` 已新增总架构、多端策略、API 集成契约、测试策略、学习路线和六个初始 ADR。已接受 Taro 4 + React 18 + TypeScript strict、现有仓库新增未来 `miniapp/`、OpenAPI 类型生成，以及“账号密码/人工确认 MVP → 公开发布前微信登录/支付”的分阶段方向。总体架构仍为 Draft；Webpack 5 和 NutUI 策略仍为 Proposed，必须先通过 weapp/alipay/tt/h5 最小技术 Spike。当前没有前端代码、Node 依赖、构建产物、前端测试或生产发布能力，不得将文档规划误报为已实现。
+- 前端首发微信小程序，同步验证 H5，6–12 个月目标包含支付宝和抖音小程序；ADMIN 首版放同一 Taro 应用分包，未来复杂桌面管理端才在同仓库增加 `admin-web/`。H5 联调前需要为 FastAPI 实现严格 CORS allowlist；当前相对 Product 图片 URL、Order create 无客户端幂等键、微信登录/微信支付未实现、refresh 不轮换及登录/注册不限流均是明确集成/发布缺口。
 - 当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1 Product Module**、**Phase 4.2 Order Module** 与 **Phase 4.3 Inventory Module** 均已完成实现和最终 Review。Order v1.0 基线保持 release-ready，Phase 4.3.7–4.3.8 已在原 POST/cancel 上增加纯 Kit/混合创建扣减及 Pending 取消恢复。九个 Order 端点、查询、Mapper 和资源隐藏边界保持不变；Phase 4.3.11 真实 MySQL 库存竞争与 Phase 4.3.12 最终 Review 均已通过。
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约均已完成；Product API 文档已通过 Phase 4.1 最终 Review，并收口为 v1.0 Implemented。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
@@ -179,7 +200,7 @@ Product Validator 契约速查：
 - ExperienceOption 新增/恢复 Service 与 ADMIN+ 路由已实现：Service 返回 `ExperienceOptionCreationResult(option, restored)`，Router 新建返回 201、恢复返回 200；全历史唯一、原图片关系和事务审计契约保持不变。
 - ExperienceOption 修改 Service 与 ADMIN+ JSON PATCH 路由已实现；Router 保留显式字段语义并返回不含图片的 `ExperienceOptionBaseOut`，全历史唯一与顺序审计契约不变。
 - ExperienceOption 删除 Service 与 ADMIN+ JSON DELETE 路由已实现；只设置 Option.is_deleted，保持 Product 状态与图片记录/外键，并经 `DeletedResourceOut` 返回。
-- Kit 价格/库存修改 Service 与 ADMIN+ JSON PATCH 路由已实现；响应 ID 使用 ProductKit.product_id。库存仍是 Phase 4.1 最终值设置，不含流水或并发扣减。
+- Kit 价格修改 Service 与 ADMIN+ JSON PATCH 路由已实现；响应 ID 使用 ProductKit.product_id。旧 Product 库存最终值写入口已移除，库存调整统一使用 Inventory API 的变化量、流水和幂等语义。
 - ProductImage 生命周期已实现：公共图/Option 图创建、排序/封面修改和逻辑删除使用 40401/40402/40403、40903/40905/40912、40021 与 42221 契约；封面批量清理、图片写入及一至两条审计同事务回滚。Service 只接收 image_url。API multipart 边界使用 `python-multipart==0.0.32`，严格表单模型拒绝未知字段；`LocalImageStorage` 完成 2 MiB、jpg/png/webp 签名/MIME、UUID 路径与原子写入；上传编排在 Service 失败时以 storage key 幂等删除文件。逻辑删除后的物理清理使用 `app.tasks.product_image_cleanup` 运维命令，显式截止时间、ID 游标分页、存储命名空间校验、有效引用保护、幂等缺失处理和失败退出码均有真实测试；不会由 Web 进程自动执行。
 
 ---
@@ -194,6 +215,9 @@ Product Validator 契约速查：
 修改目录结构         → architecture.md §2
 修改通用规范         → coding_standards.md
 完成功能模块         → changelog.md
+修改前端架构/依赖     → docs/08_frontend/frontend_architecture.md + 对应 ADR
+修改跨端行为          → multi_platform_strategy.md + 四端测试矩阵
+修改前后端集成契约     → api_integration_contract.md + OpenAPI 生成类型
 ```
 
 ---
@@ -218,6 +242,9 @@ must update related documents before commit.
 | New/changed coding rule | `coding_standards.md` + `AGENTS.md`（如影响优先级） |
 | Feature completion | `changelog.md` |
 | New error code | `api_design_conventions.md` §8 + `AI_CONTEXT.md` §4 |
+| New/changed frontend architecture/dependency | `docs/08_frontend/frontend_architecture.md` + corresponding ADR |
+| New/changed platform behavior | `multi_platform_strategy.md` + `testing_strategy.md` |
+| New/changed frontend API integration rule | `api_integration_contract.md` + generated OpenAPI types（工程创建后） |
 
 ### Workflow After Code Changes
 

@@ -195,6 +195,9 @@ MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化�
 | 通用 API 约定 | [API Design Conventions](docs/03_api/api_design_conventions.md) |
 | 数据库设计 | [Database Design](docs/02_database/database_design.md) |
 | 分层与目录 | [Architecture](docs/04_architecture/architecture.md) |
+| 前端架构（Draft） | [Frontend Architecture](docs/08_frontend/frontend_architecture.md) |
+| 前端多端/API/测试/学习策略 | [Frontend Documents](docs/08_frontend/) |
+| 前端架构决策 | [Frontend ADR](docs/08_frontend/adr/README.md) |
 | 编码与 Git 规范 | [Coding Standards](docs/05_development/coding_standards.md) |
 | AI/开发上下文 | [AI Context](docs/06_ai/AI_CONTEXT.md) |
 | 迁移流程 | [Database Migration Workflow](docs/07_process/database_migration_workflow.md) |
