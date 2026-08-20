@@ -1,8 +1,8 @@
 # pinkdooHub 前端学习路线
 
-> **Document Version:** v0.1
+> **Document Version:** v0.2
 > **Status:** Draft
-> **Last Updated:** 2026-08-15
+> **Last Updated:** 2026-08-20
 > **Audience:** 首次系统学习 JavaScript、TypeScript、React 与 Taro 的项目开发者
 
 本项目采用“知识点 → 小练习 → 真实功能 → 测试 → 复盘”的循环，不要求先学完全部前端理论再开始，也不把复制示例代码当作掌握。
@@ -37,9 +37,9 @@
 | 0 | 架构文档与 ADR（已完成 2026-08-15） | 架构、边界、ADR、API 契约 |
 | 1 | TypeScript 纯函数练习 | JS 运行时、类型、模块、Promise |
 | 2 | 四端 Taro Spike（已完成 2026-08-15） | Node/npm、Taro、编译、项目配置 |
-| 3 | 正式脚手架 | React 组件、TSX、Props、事件 |
-| 4 | HTTP Client | 泛型、unknown、async、错误、JWT |
-| 5 | 登录纵向链路 | State、Context、Effect、Storage |
+| 3 | 正式脚手架（已完成 2026-08-20 依赖复核） | React 组件、TSX、Props、事件 |
+| 4 | OpenAPI 类型 + HTTP Client 基础（已完成 2026-08-20） | 泛型、unknown、async、错误、JWT |
+| 5 | 登录纵向链路（代码、自动化与微信开发者工具 Functional 已完成 2026-08-20） | State、Context、Effect、Storage |
 | 6 | Product | 列表、分页、派生状态、组合算法 |
 | 7 | Order | 表单、状态机、幂等、未知结果 |
 | 8 | Admin | 权限、上传、复杂表单、审计 |
@@ -159,6 +159,8 @@ buildOrderItem
 
 ## 7. 阶段 4：请求、错误和异步
 
+> **基础层状态：已完成。** OpenAPI 导出/生成、Transport、信封 Guard、错误分类、取消、Bearer 与 single-flight refresh 已实现并有单元测试；auth Endpoint、真实 Session/Storage 和登录页面属于阶段 5。
+
 学习：
 
 - HTTP 与 Taro.request；
@@ -188,6 +190,8 @@ buildOrderItem
 
 ## 8. 阶段 5：React Effect、Context 与认证
 
+> **账号密码主链状态：已完成。** login/refresh/logout/getMe Endpoint、Session Manager、Taro Storage Adapter、AuthContext、登录守卫和受控登录表单均已实现并通过自动化测试与四端构建。2026-08-20 已在微信开发者工具连接本地 FastAPI + SQLite + Redis 完成错误/正确/禁用账号、三种角色、Storage、重启恢复、登出、主动/被动 refresh 与无效 refresh 清理 Functional。该结果不代表真机、H5、正式 HTTPS/合法域名或微信登录通过；注册页和 ADMIN 入口仍属后续功能。详细复盘见 [Phase 5 登录纵向链路学习笔记](learning_notes/phase5_auth_vertical_slice.md)。
+
 学习：
 
 - `useEffect` 和依赖数组；
@@ -199,7 +203,7 @@ buildOrderItem
 - 派生状态与重复状态；
 - 敏感信息。
 
-实践：登录、注册、恢复 Session、`/users/me`、登出、普通/ADMIN 入口。
+实践：登录（已完成）、注册（待实现）、恢复 Session（已完成）、`/users/me`（已完成）、登出（已完成）、普通/ADMIN 入口（待 Product/Admin 阶段实现）。
 
 注意：Effect 只处理副作用；能在 render/事件中算出的值不放 Effect；Context 不承载所有业务数据；密码不持久化。
 

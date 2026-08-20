@@ -1,11 +1,28 @@
 # pinkdooHub 前端 API 集成契约
 
-> **Document Version:** v0.1
+> **Document Version:** v0.3
 > **Status:** Draft
-> **Last Updated:** 2026-08-15
+> **Last Updated:** 2026-08-20
 > **Source of Truth:** 实际 FastAPI OpenAPI、路由/Schema/测试及对应业务/API 文档
 
 本文档是 Taro 客户端与现有 FastAPI 后端之间的适配契约。它不复制各模块完整 API 文档，而是冻结所有前端模块必须共同遵守的解析、认证、类型、错误、上传和幂等规则。
+
+## 0. 当前实现状态
+
+基础集成层与账号密码登录纵向链路已落地：
+
+- `scripts/export_openapi.py`：隔离导出当前 FastAPI OpenAPI；
+- `miniapp/openapi/openapi.json`：45 条路径、108 个 Schema 的生成输入；
+- `miniapp/src/api/generated/schema.d.ts`：`openapi-typescript@7.13.0` 生成的只读、字母序类型；
+- `miniapp/src/api/client.ts`：统一信封、Query、Bearer、错误与 refresh 边界；
+- `miniapp/src/api/taro_transport.ts`：`Taro.request` Transport 与取消/网络/超时分类；
+- `miniapp/src/api/factory.ts`：消费严格校验后的 `TARO_APP_API_ORIGIN`；
+- `miniapp/src/api/endpoints/auth.ts`：login/refresh/logout/getMe 薄 Endpoint，以及认证数据 Runtime Guard + 白名单投影；
+- `miniapp/src/auth/`：Session Manager、启动恢复、Context 与运行时组合；`miniapp/src/platform/storage.ts` 提供 Taro Storage Adapter；
+- `miniapp/src/pages/login/`：现有账号密码受控登录表单；首页完成登录守卫、当前用户显示和登出；
+- Jest 7 套件 / 29 项覆盖基础 Client、Endpoint、Session、表单错误映射、页面和环境；相关后端 33 项测试覆盖实际 HTTP 与 OpenAPI。
+
+当前完成表示代码链与自动化门槛通过，不表示已完成开发者工具/真机真实网络 Functional。下一步先验证真实后端登录/刷新/重启恢复/登出，再实现 Product 浏览。微信登录、支付、上传和其他业务页面仍未交付。
 
 ---
 
@@ -100,6 +117,10 @@ user
 ```
 
 客户端保存安全必要字段，并计算 `expiresAt`。密码永不持久化。
+
+当前实现把 Token 只保存在 `SessionManager` 内存和 Taro Storage 中；React Context 只接收不含 Token 的 User/Session Snapshot。Storage 恢复输入仍按 `unknown` 校验，版本或字段损坏时主动删除。Taro Storage 不是硬件安全区，H5 环境尤其必须以 XSS 防护、短期 access token、后端撤销和未来 refresh 轮换共同降低风险。
+
+启动恢复顺序固定为：读取并校验 Storage → access token 临近过期时 refresh → `/users/me` 服务端验证 → 标记 authenticated。缓存中的 User 只改善恢复体验，不是授权证据。
 
 ### 4.2 Header
 
@@ -364,4 +385,3 @@ Idempotency-Key: <stable-client-key>
 5. 更新本文件的公共集成规则或 Gap Matrix；
 6. 运行后端完整回归与前端四端构建；
 7. Git diff 确认无手改生成文件和意外输出。
-

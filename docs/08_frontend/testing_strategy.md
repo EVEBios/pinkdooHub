@@ -1,9 +1,9 @@
 # pinkdooHub 前端测试策略
 
-> **Document Version:** v0.1
+> **Document Version:** v0.3
 > **Status:** Draft
-> **Last Updated:** 2026-08-15
-> **Applies To:** 规划中的 `miniapp/` 与其 FastAPI 集成边界
+> **Last Updated:** 2026-08-20
+> **Applies To:** 正式 `miniapp/` 与其 FastAPI 集成边界
 
 本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。Spike 已固定：Jest 29.7.0 + `jest-environment-jsdom` 29.7.0 + `@tarojs/test-utils-react` 0.1.1（详见 [ADR-001](adr/ADR-001-use-taro-react-typescript.md) 与架构文档 §4.1）。
 
@@ -13,6 +13,10 @@
 - 官方 Jest transformer 未启用私有方法/属性插件，全量转译会失败；需要自定义 transformer 补齐（见 Spike 工程 `jest.transformer.js`）。
 - `@tarojs/router` 与 `@tarojs/components`（Stencil bundle）在 Jest 中形成循环依赖，组件测试需工厂 mock `@tarojs/router`；`html()` 序列化 shadow DOM 会爆栈，断言使用 `queries.querySelector*`。
 - React 18.3 下 test-utils 内部使用已废弃的 `ReactDOMTestUtils.act`，产生告警但不阻断；升级测试工具时消除。
+- `openapi-typescript@7.13.0` 通过 `--immutable --alphabetize` 生成类型，`npm run api:types:check` 直接检查生成物漂移。
+- 2026-08-20 正式工程依赖复核后，`npm ls --depth=0` 无错误；官方 registry 审计仍有 10 项生产依赖风险来自 Taro 4.2.1 H5 上游链，强制修复会破坏性降级 Taro，列为公开发布门槛。
+- 账号登录链完成后 Jest 为 7 套件 / 29 项；auth Endpoint 使用 fake transport，Session 使用 fake storage/clock/refresh，页面测试不接触真实 Token。H5 入口由空应用 281 KiB 增至 327 KiB。
+- 2026-08-20 微信开发者工具已连接本地 FastAPI + SQLite + Redis 完成账号密码认证 Functional：错误/正确/禁用账号、`user/admin/super_admin` 展示、Storage 写入、重启 `/users/me` 恢复、登出清理、`expiresAt` 主动 refresh、服务端 `1006` 被动 refresh，以及 access/refresh 同时无效后的 Session 清理全部通过；未记录或传播真实 Token。该结果不替代真机、H5、弱网、HTTPS/合法域名及正式微信登录门槛。
 
 ---
 
@@ -315,12 +319,18 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - [x] 候选组件矩阵（Button/Toast/Dialog/Input 四端编译通过，见 ADR-005）；
 - [x] H5 CORS Spike（确认后端未配置 CORS，缺口已记录）；
 - [x] Proposed ADR 更新状态（ADR-003/ADR-005 已 Accepted）。
+- [x] 正式工程依赖树可复现且无 extraneous/missing dependency；
+- [x] OpenAPI 导出与生成类型漂移检查（45 paths / 108 schemas，认证响应不再是 unknown）；
+- [x] HTTP Client 风险矩阵基础测试（14 项 API/环境测试；全项合计 19 项）；
+- [x] 正式工程四端 Build；H5 281 KiB 基线告警已记录。
+- [x] 账号登录代码链：Endpoint/Runtime Guard/Session/Storage/Context/受控表单/守卫/登出，Jest 7 套件 / 29 项；四端 Build 通过，H5 当前 327 KiB。
+- [x] 微信开发者工具连接本地隔离后端的账号密码认证 Functional：错误/正确/禁用账号、三种角色、Storage、重启 `/users/me` 恢复、登出、主动/被动 refresh 与无效 refresh 清理全部通过（2026-08-20；本地 SQLite + Redis，非真机/非 H5/非微信登录）。
 
 ### MVP 功能完成
 
 - [ ] 微信/H5 用户纵向 E2E；
 - [ ] 支付宝/抖音 Build + Smoke；
-- [ ] API Client 风险矩阵；
+- [ ] API Client 与真实后端集成矩阵；
 - [ ] 后端完整测试；
 - [ ] 文档与类型无漂移。
 

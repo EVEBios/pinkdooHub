@@ -4,6 +4,90 @@
 
 ---
 
+## Frontend Phase 5 — 账号密码登录纵向链路（2026-08-20）
+
+### Summary
+
+完成首条可运行的前端业务纵向链路：现有账号密码登录、Token 会话持久化、启动恢复、access token 刷新、`/users/me` 验证、页面守卫和登出。同步修复认证/用户成功响应在 OpenAPI 中为 `unknown`、以及 User `IntEnum` 数据库存储与 HTTP 字符串输出不一致的 Schema 描述；接口运行行为和数据库结构均未改变。
+
+### Implemented
+
+- 为 auth register/login/refresh/logout 和 users me/update/password 声明精确 `SuccessResponse[T]` / `ErrorResponse` OpenAPI 信封；User 输出 Schema 现在正确描述 `role=user|admin|super_admin` 与 `status=normal|disabled`，生成结果更新为 45 paths / 108 schemas。
+- 新增薄 `AuthApi` Endpoint，登录请求直接使用生成类型，登录/刷新/用户响应在运行时逐字段校验并重新构造白名单对象；坏 JSON 或意外额外敏感字段不会因 TypeScript 类型断言而进入应用状态/Storage。
+- 新增 Taro Storage Port/Adapter 与可注入 storage/clock/refresh 的 `SessionManager`；仅持久化 access token、refresh token、expiresAt 和公开 User，不保存密码。损坏缓存会删除，并发 refresh 共享一次 Promise。
+- 新增 React `AuthProvider`/`useAuth`：启动时恢复缓存，临近过期先 refresh，再用 `/users/me` 验证当前身份；缓存身份在服务端验证前不会被视为已认证。Session 失效清理会话，网络初始化失败保留为可重试 error 状态。
+- 新增受控登录表单、登录错误映射、提交中防重复、首页登录守卫、当前用户展示和登出。用户不存在与密码错误在 UI 统一为同一提示；密码提交失败后清空且永不写 Storage。
+- 新增阶段学习笔记，解释生成类型/Runtime Guard、受控表单、Context、Effect、Port/Adapter、Token 生命周期、判别状态与测试边界。
+
+### Verification
+
+- 后端完整 SQLite 套件 1425 项通过、9 项可选 MySQL 门槛跳过；其中认证/用户相关 33 项通过，OpenAPI 测试固定成功响应引用、密码排除及输出字符串 Enum。
+- 前端 `typecheck`、ESLint、Stylelint 和 OpenAPI 类型漂移检查通过；Jest 7 套件 / 29 项通过。Taro Test Utils 仍只有已记录的上游 `ReactDOMTestUtils.act` 弃用警告。
+- weapp/alipay/tt/h5 四端生产构建通过；加入认证链后 H5 入口为 327 KiB，仍超过 244 KiB 建议线，比 281 KiB 空应用基线增加 46 KiB。
+- 未新增 npm/Python 依赖、数据库迁移或配置密钥；尚未完成微信开发者工具/H5 对真实后端的人工 Functional，H5 仍受待实现的严格 CORS allowlist 阻挡。
+
+### Next
+
+先在微信开发者工具用隔离开发账号完成真实后端登录/刷新/重启恢复/登出 Functional；随后实现公开 Product 列表与详情纵向链路。微信登录仍是正式公开发布前门槛，不在本次账号密码 MVP 中伪实现。
+
+---
+
+## Frontend Phase 5 — 依赖复核与 API 基础层（2026-08-20）
+
+### Summary
+
+复核正式 `miniapp/` 的安装结果并完成下一步 OpenAPI 类型生成与 HTTP Client 基础层。依赖树已从 Spike `node_modules` 镜像残留状态收敛为 `package.json`/`package-lock.json` 可复现状态；当前尚未实现 auth Endpoint、Session Storage 或登录页面。
+
+### Implemented
+
+- 用官方 npm registry 确认 Taro 4.2.1 仍为最新版；清理 16 个 extraneous NutUI/React Spring 包，显式补齐 `solid-js@1.9.15` peer，并移除非目标平台插件、Taro Generator 与未启用的 Husky/Commitlint/Lint Staged，共减少 113 个未使用包。
+- 新增 `scripts/export_openapi.py`，以 `TESTING=1` 从真实 FastAPI `app.openapi()` 原子导出稳定 JSON；导出结果包含 45 条路径和 99 个组件 Schema。
+- 引入 `openapi-typescript@7.13.0`，使用 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并通过 `api:types:check` 检查漂移。
+- 实现可注入 Transport/AuthSession 的 HTTP Client、Taro Request Transport、统一响应信封 Runtime Guard，以及 Network/Timeout/HTTP/Business/Contract/Session/Cancel 错误模型。
+- code `1006` 使用 single-flight refresh，多个并发请求共享一次刷新并各自最多重放一次；403 不刷新，普通超时和写请求不自动重试，empty-body PATCH 不添加 data/Content-Type。
+- 环境 Origin 现在要求无路径、无凭据的 HTTP(S) Origin；生产环境必须 HTTPS，并拒绝 localhost、127.0.0.1、0.0.0.0 与 `[::1]`。
+
+### Verification
+
+- `npm ls --depth=0` 与 `npm ls --all --omit=dev` 通过，无 missing/extraneous dependency。
+- `npm run typecheck`、`npm run lint`、`npm run lint:styles`、`npm run api:types:check` 全部通过。
+- Jest 4 套件 / 19 用例通过，其中 14 项覆盖 API Client 与环境配置；Taro Test Utils 仍输出上游 `ReactDOMTestUtils.act` 弃用警告。
+- weapp/alipay/tt/h5 四端生产构建通过；H5 空应用入口 281 KiB，超过 Webpack 244 KiB 建议线，作为后续依赖体积基线。
+- 官方 registry `npm audit --omit=dev` 仍报告 10 项 Taro 4.2.1 H5 上游风险（4 moderate、1 high、5 critical）；`audit fix --force` 会破坏性降级 Taro 组件/插件，因此未执行，正式发布前必须重审。
+- 未运行后端完整 pytest：后端运行时代码未修改；OpenAPI 导出脚本已通过 `py_compile` 和真实导出验证。未做真机或真实后端网络联调。
+
+### Next
+
+使用生成类型实现 auth Endpoint、Session/Token Storage、账号密码登录/刷新/登出纵向链路；H5 真实联调前仍需后端严格 CORS allowlist。
+
+---
+
+## Frontend Phase 5 — 正式 miniapp 工程创建（2026-08-15）
+
+### Summary
+
+创建正式跨端前端工程 `miniapp/`（Taro 4.2.1 + React 18.3.1 + TypeScript 5.9.3 strict + Webpack 5.91.0 + Jest 29.7.0），包含四端构建命令、环境变量文件、测试与 lint 工具链；工程代码目前尚未提交（待用户确认）。工程不是从 Spike 复制，Spike 仅作为依赖版本与测试 workaround 的依据。
+
+### Verified
+
+- `npm run typecheck`（`tsc --noEmit`，strict + skipLibCheck）、`npm test`（2 套件 / 5 用例）、`npm run lint`（`--max-warnings=0`）全部通过。
+- weapp/alipay/tt/h5 四端生产构建全部通过（weapp 3.7s），产物固定输出 `dist/<TARO_ENV>`；`project.config.json` 的 `miniprogramRoot` 指向 `dist/weapp`。
+- 生产包无 localhost/HTTP 泄漏；`TARO_APP_APP_ENV`/Origin 按 Spike 结论仅对字面量引用注入，当前页面尚未消费 API Origin，将在 HTTP Client 步骤生效。
+- `package-lock.json` 已生成（559 KB），锁定 Taro 4.2.1 / React 18.3.1 / Jest 29.7.0 / `@tarojs/test-utils-react` 0.1.1 等版本。
+
+### Fixed / Recorded
+
+- npmmirror 安装多次卡死（进程无网络/磁盘/CPU 活动、包半提取），清华源不支持 scoped 包（`@babel/core` 404）；最终以 Spike 同版本完整 `node_modules` 镜像（robocopy /MIR，53,377 文件 / 397.67 MB）兜底，再以 `npm install --package-lock-only` 生成 lockfile。
+- Jest 链路沿用 Spike 结论：`.npmrc` 保留 `legacy-peer-deps`、自定义 transformer 补私有方法插件、mock `@tarojs/router` 打破循环依赖。
+- 正式工程尚未引入 NutUI（ADR-005 按需引入要求留待组件开发步骤）；Spike 遗留的 NutUI 相关包已在 2026-08-20 依赖复核中清理。
+
+### Verification
+
+- 已运行：`npm run typecheck`、`npm test`、`npm run lint`、`npm run build:weapp|alipay|tt|h5`，全部通过。
+- 未运行：后端完整 pytest（本次未修改后端代码）；未做真机/开发者工具预览（需微信开发者工具导入 `dist/weapp`）。
+
+---
+
 ## Frontend Phase 5 — Taro 四端最小技术 Spike（2026-08-15）
 
 ### Summary

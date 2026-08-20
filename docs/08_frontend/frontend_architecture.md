@@ -1,9 +1,9 @@
 # pinkdooHub 前端架构
 
-> **Document Version:** v0.2
+> **Document Version:** v0.3
 > **Status:** Draft
-> **Last Updated:** 2026-08-15
-> **Scope:** `miniapp/` 规划架构；四端技术 Spike 已通过（2026-08-15），正式 `miniapp/` 工程尚未创建
+> **Last Updated:** 2026-08-20
+> **Scope:** 正式 `miniapp/` 架构；四端 Spike、工程基础、HTTP Client 与账号登录纵向链路已落地
 > **Decision Owners:** pinkdooHub
 
 本文档定义 pinkdooHub 跨端客户端的目标架构、依赖方向、职责边界和实施门槛。首发目标为微信小程序，并要求同一套核心代码在 6–12 个月内扩展到 H5、支付宝小程序和抖音小程序。
@@ -36,7 +36,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | 未来复杂管理端 | 同仓库增加独立 `admin-web/` |
 | GitHub | 继续使用当前仓库，不嵌套第二个 Git 仓库 |
 
-当前阶段已完成最小技术 Spike（见 [§4.1 Spike 结果摘要](#41-spike-结果摘要2026-08-15)），关键决策已写回本文档与 ADR；下一步是创建正式 `miniapp/` 工程并从账号登录开始实现第一条纵向链路。
+当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础与账号密码登录纵向链路（见 §4.1–§4.3）。下一步先完成微信开发者工具连接真实后端的认证 Functional，再进入公开 Product 浏览纵向链路。
 
 ---
 
@@ -95,10 +95,10 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | 编译器 | Webpack 5.91.0 | Accepted（Spike 四端通过） |
 | 样式 | SCSS（sass 1.102.0）+ 项目 Design Tokens | Accepted（工具链已验证；Tokens 待正式工程） |
 | 基础组件 | `@tarojs/components` | Accepted |
-| 增强组件 | `@nutui/nutui-react-taro` 2.7.15，经项目组件层封装 | Accepted（基础组件四端编译通过；需按需引入控制体积） |
+| 增强组件 | `@nutui/nutui-react-taro` 2.7.15 候选，经项目组件层封装 | Deferred（Spike 通过但正式工程未安装；真实组件需要时再按 ADR-005 受控引入） |
 | 网络 | `Taro.request` / `Taro.uploadFile` 的项目适配层 | Accepted |
-| API 类型 | FastAPI OpenAPI + `openapi-typescript` | Accepted |
-| 会话状态 | React Context + Session/Token Manager | Proposed |
+| API 类型 | FastAPI OpenAPI + `openapi-typescript` 7.13.0 | Accepted（正式工程已落地） |
+| 会话状态 | React Context + Session/Token Manager | Accepted / Implemented |
 | 页面状态 | React Hooks 本地状态 | Accepted |
 | 包管理 | npm + `package-lock.json` | Accepted |
 | 测试 | Jest 29.7.0 + `@tarojs/test-utils-react` 0.1.1 + jsdom | Accepted（含已知 workaround，见 §4.1） |
@@ -137,6 +137,23 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 **NutUI 体积（ADR-005 依据）**：2.7.15 没有按组件 JS 入口，`import { Button, Toast, Dialog, Input } from '@nutui/nutui-react-taro'` 会把整库打入包（构建日志可见 avatar/tour/sidenavbar 等全部模块）；全量主题 `default.scss` 使 h5 CSS 达 202 KiB。正式工程必须采用按需引入（babel-plugin-import 或等价方案）并重新测量门槛，否则违反架构性能目标。
 
 **其余告警**：Sass `@import` 弃用告警来自 NutUI 主题内部（Dart Sass 3.0 将移除），正式工程需关注升级；h5 入口超过 webpack 244 KiB 建议线（485 KiB），与 NutUI 全量引入直接相关。
+
+### 4.2 正式工程依赖复核与 API 基础层（2026-08-20）
+
+- 正式 `miniapp/` 已用官方 npm registry 完成依赖收敛：清理 16 个未声明的 NutUI/React Spring 残留包，并显式安装 `solid-js@1.9.15`，补齐 `legacy-peer-deps` 模式跳过的 Taro H5 peer dependency；`npm ls --depth=0` 与生产依赖树均为零错误。
+- 只保留规划中的 weapp/alipay/tt/h5 平台插件；百度、京东、QQ、鸿蒙、RN、已完成使命的 Taro Generator，以及未配置实际 Hook 的 Husky/Commitlint/Lint Staged 均移除，避免扩大安装面和安全审计面。
+- `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。当前 Schema 为 45 条路径、99 个组件 Schema。
+- 正式 HTTP Client 已实现环境 Origin、Query、JSON、Bearer、统一信封 Runtime Guard、Network/Timeout/HTTP/Business/Contract/Session 错误、取消、code `1006` single-flight refresh 以及一次受控重放；普通写请求和超时不自动重试，empty-body PATCH 不设置 data。
+- 官方 registry 的 2026-08-20 审计仍报告 10 项生产依赖风险（4 moderate、1 high、5 critical），均位于 Taro 4.2.1 H5 上游链；Taro 4.2.1 当日仍为最新版，`audit fix --force` 会破坏性降级到 Taro 3.x，因此不执行。公开发布前必须重新审计并跟踪上游修复。
+- 无 NutUI 的正式 H5 空应用入口仍为 281 KiB，超过 Webpack 244 KiB 建议线；这是当前 Taro H5 基线告警，后续每次引入 UI/业务依赖都必须重新测量，不能以“尚未引入 NutUI”为由忽略。
+
+### 4.3 账号密码登录纵向链路（2026-08-20）
+
+- 后端 auth/users 成功响应已补齐精确统一信封 OpenAPI；User 内部 `IntEnum` 仍按原方式存储，但序列化 Schema 明确为 HTTP 字符串 Enum。当前生成输入为 45 paths / 108 schemas。
+- `api/endpoints/auth.ts` 消费生成请求/响应类型，同时对所有认证响应做运行时 Guard；Endpoint 不依赖 React。
+- `platform/storage.ts` 定义 Storage Port，Taro Adapter 隔离平台 API；`auth/session.ts` 通过 storage、clock 和 refresh 函数注入保持可测试，只向 React 暴露不含 Token 的 Session Snapshot。
+- `AuthProvider` 管理 `initializing/guest/authenticated/error`，恢复时先读缓存，必要时刷新，再调用 `/users/me` 验证；登录页为受控表单，首页执行登录守卫和登出。
+- 29 项 Jest、后端完整 SQLite 套件 1425 项（9 项可选 MySQL 跳过）、静态检查与四端生产构建通过。H5 入口增长至 327 KiB；真实开发者工具/真机 Functional 尚待人工完成，不能把 Build 通过描述成真实登录已联调。
 
 ---
 
@@ -487,7 +504,7 @@ npm run build:tt
 npm run build:h5
 ```
 
-具体 script 在 Spike 中验证后写入正式工程。
+这些 script 已写入正式工程 `miniapp/package.json` 并在四端执行通过。
 
 ### 15.3 秘密与项目配置
 
@@ -521,7 +538,7 @@ npm run build:h5
   → 回写结果并接受/否决 Proposed ADR
   → 正式 miniapp 脚手架
   → OpenAPI + HTTP Client
-  → 账号登录纵向链路
+  → 账号登录纵向链路（实现完成，真实后端 Functional 待验证）
   → 商品浏览纵向链路
   → 用户订单纵向链路
   → ADMIN 分包
