@@ -1,6 +1,7 @@
 """User Schema —— 用户模块请求/响应数据结构。"""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer
 
@@ -56,9 +57,26 @@ class _EnumSerializerMixin:
     UserOut 和 UserListItem 共享此逻辑。
     """
 
-    @field_serializer("role", "status")
-    def serialize_enum(self, v: object) -> str:
-        return v.name.lower()  # type: ignore[union-attr]
+    @field_serializer("role")
+    def serialize_role(
+        self,
+        value: UserRole,
+    ) -> Literal["user", "admin", "super_admin"]:
+        return {
+            UserRole.USER: "user",
+            UserRole.ADMIN: "admin",
+            UserRole.SUPER_ADMIN: "super_admin",
+        }[value]
+
+    @field_serializer("status")
+    def serialize_status(
+        self,
+        value: UserStatus,
+    ) -> Literal["normal", "disabled"]:
+        return {
+            UserStatus.NORMAL: "normal",
+            UserStatus.DISABLED: "disabled",
+        }[value]
 
 
 class UserOut(_EnumSerializerMixin, BaseModel):
@@ -75,7 +93,10 @@ class UserOut(_EnumSerializerMixin, BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_mode_override": "serialization",
+    }
 
 
 class UserListItem(_EnumSerializerMixin, BaseModel):
@@ -92,4 +113,7 @@ class UserListItem(_EnumSerializerMixin, BaseModel):
     last_login_at: datetime | None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_mode_override": "serialization",
+    }

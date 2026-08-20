@@ -1,8 +1,9 @@
 """认证 API —— 注册、登录、刷新、登出。"""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
 
 from app.api.deps import get_current_user, security
+from app.api.responses import error_responses, success_responses
 from app.common.response import success
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
@@ -11,27 +12,40 @@ from app.schemas.user import UserCreate, UserOut
 from app.services.auth_service import AuthService
 from app.utils.request import get_client_ip
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+    responses=error_responses(400, 401, 422),
+)
 
 
-@router.post("/register", status_code=201)
+@router.post(
+    "/register",
+    status_code=status.HTTP_201_CREATED,
+    response_model=None,
+    responses=success_responses(UserOut, status.HTTP_201_CREATED),
+)
 async def register(
     data: UserCreate,
     request: Request,
     user_repo: UserRepository = Depends(),
-):
+) -> dict:
     """用户注册。"""
     service = AuthService(user_repo)
     user = await service.register(data, ip_address=get_client_ip(request))
     return success(data=UserOut.model_validate(user).model_dump())
 
 
-@router.post("/login")
+@router.post(
+    "/login",
+    response_model=None,
+    responses=success_responses(TokenOut),
+)
 async def login(
     data: LoginRequest,
     request: Request,
     user_repo: UserRepository = Depends(),
-):
+) -> dict:
     """用户登录——返回 access_token + refresh_token。"""
     service = AuthService(user_repo)
     result = await service.login(data, ip_address=get_client_ip(request))
@@ -46,11 +60,15 @@ async def login(
     )
 
 
-@router.post("/refresh")
+@router.post(
+    "/refresh",
+    response_model=None,
+    responses=success_responses(RefreshOut),
+)
 async def refresh(
     data: RefreshRequest,
     user_repo: UserRepository = Depends(),
-):
+) -> dict:
     """用 refresh token 换取新的 access token。"""
     service = AuthService(user_repo)
     result = await service.refresh(data.refresh_token)
@@ -63,12 +81,16 @@ async def refresh(
     )
 
 
-@router.post("/logout")
+@router.post(
+    "/logout",
+    response_model=None,
+    responses=success_responses(type(None)),
+)
 async def logout(
     current_user: User = Depends(get_current_user),
     user_repo: UserRepository = Depends(),
     credentials: type = Depends(security),
-):
+) -> dict:
     """登出——撤销 refresh token。"""
     service = AuthService(user_repo)
     await service.logout(credentials.credentials)
