@@ -1,0 +1,33 @@
+.index {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: #f7f8fa;
+  box-sizing: border-box;
+
+  &__title {
+    font-size: 48px;
+    font-weight: 700;
+    color: #222;
+  }
+
+  &__subtitle {
+    margin-top: 16px;
+    font-size: 28px;
+    color: #666;
+    text-align: center;
+  }
+
+  &__error {
+    margin-top: 18px;
+    color: #b42318;
+    font-size: 24px;
+  }
+
+  &__action {
+    margin-top: 32px;
+  }
+}
