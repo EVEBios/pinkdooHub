@@ -211,6 +211,8 @@ buildOrderItem
 
 ## 9. 阶段 6：Product 与 UI 状态
 
+> **阶段状态：已完成并通过自动化与微信 Functional。** `ProductApi.listProducts()`、运行时 Guard、相对图片 Resolver、分页 Feature、公开首页四态、Product type 和 300ms keyword 防抖已实现；2026-08-22 已人工验证 Content、相对图片、第二页、筛选/组合搜索/Empty。Experience/Kit 详情 Endpoint、动态路由、详情状态、Kit 库存展示和真实 Option 组合选择均已完成；local-only Seed 提供一条带两个不同组合、价格和配色图片的 Experience。17 项 Seed 隔离测试、前端 11 套件/70 项、静态检查、OpenAPI 漂移、四端生产构建与后端完整 1442 项 SQLite 套件均通过，详见 [列表学习笔记](learning_notes/phase6_product_list.md)和[详情学习笔记](learning_notes/phase6_product_detail.md)。
+
 学习：
 
 - 分页；
@@ -221,7 +223,7 @@ buildOrderItem
 - 有效组合而不是无约束笛卡尔积；
 - 图片和响应式布局。
 
-实践：公开 Product 列表、搜索/筛选、Experience/Kit 详情、Option 选择。
+实践：公开 Product 列表与搜索/筛选、Experience/Kit 详情与 Option 选择（均已完成）。
 
 完成标准：只允许选择真实 Option；Kit stock 只用于展示；旧查询不会覆盖新筛选。
 

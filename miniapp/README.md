@@ -56,17 +56,23 @@ npm run api:types:check
 HTTP Client 不默认重试写请求。只有后端已明确返回 Token 失效 code `1006` 时，
 才通过共享 refresh Promise 刷新并重放一次；普通超时不会自动重新 POST/PATCH。
 
-## 当前认证链路
+## 当前认证与 Product 链路
 
 - `src/api/endpoints/auth.ts`：login/refresh/logout/getMe 与响应 Runtime Guard；
 - `src/platform/storage.ts`：跨端 Storage Port 和 Taro Adapter；
 - `src/auth/session.ts`：Token 内存状态、版本化持久化、过期时间和并发 refresh；
 - `src/auth/context.tsx`：启动恢复、`/users/me` 验证及全局认证状态；
-- `src/pages/login/`：受控账号密码表单；首页负责登录守卫、用户展示和登出。
+- `src/pages/login/`：受控账号密码表单；公开首页按认证状态展示登录、昵称或登出，游客不再被强制跳转；
+- `src/api/endpoints/products.ts`：公开 Product 列表生成类型、运行时 Guard 与白名单投影；
+- `src/features/product/`：第一页/下一页、Loading/Empty/Error/Content 和迟到响应隔离；
+- `src/utils/asset_url.ts`：绝对图片 URL 保留、`/uploads/...` 相对 API Origin 补全；
+- `src/pages/index/`：公开商品卡片、Experience 起价、Kit 固定价格、图片失败占位和分页按钮。
 
 本地联调时先启动 FastAPI，再执行 `npm run dev:weapp`，用微信开发者工具导入仓库的 `miniapp/`（`miniprogramRoot` 已指向 `dist/weapp`）。开发环境 Origin 默认是 `http://localhost:8000`；开发者工具需按本地调试策略处理合法域名校验，真机不能把电脑的 `localhost` 当成后端。H5 真实跨域联调仍需后端配置严格 CORS allowlist。
 
 认证缓存只保存 Token、过期时间和公开 User，密码不会持久化；不要用真实生产密码做本地测试，也不要打印 Storage 或完整 Token。
+
+Product 列表接口无需登录。若本地数据库没有完整且已上架的 Product，首页会正确显示 Empty。日常业务操作应通过现有 ADMIN Product API 配置并上架数据；本地 Functional 也可使用严格限定为 development + 仓库内 SQLite 的 Seed 脚本，执行条件和命令见[阶段 6 列表学习笔记](../docs/08_frontend/learning_notes/phase6_product_list.md)。两种方式都会经过正式 Service/Validator；不要直接修改数据库绕过 readiness 规则。
 
 ## 目录约定（随阶段逐步落地）
 
@@ -74,6 +80,7 @@ HTTP Client 不默认重试写请求。只有后端已明确返回 Token 失效 
 - `src/components/`：项目共享组件。
 - `src/api/`：生成类型、HTTP Client、Transport 与模块 Endpoint。
 - `src/auth/`：认证 Context、Session Manager 与运行时组合。
+- `src/features/`：页面业务用例和服务端状态，例如 Product 分页与请求竞态。
 - `src/platform/`：Taro Storage 等平台能力适配。
 - `src/config/`：环境与运行配置。
 - `src/utils/`：无状态纯函数。
@@ -104,3 +111,8 @@ HTTP Client 不默认重试写请求。只有后端已明确返回 Token 失效 
 - Effect 用于启动恢复等副作用，缓存 User 必须经 `/users/me` 验证后才视为已认证；
 - Port/Adapter 与依赖注入让 Storage、时钟和网络刷新在 Jest 中可替换；
 - 数据库 `IntEnum` 和 HTTP 字符串 Enum 是不同表示，OpenAPI 必须描述真正的网络输出。
+- Product Page 是服务端状态，使用互斥四态而不是多个可能矛盾的 boolean；
+- 分页事实来自后端 `page/pages/total`，客户端不根据数组长度猜测总页数；
+- 请求发出顺序不保证响应顺序，使用请求序号阻止迟到旧响应覆盖新数据；
+- TypeScript DOM 类型不证明所有小程序运行时都支持同名 Web API，跨端 Feature 避免无验证地依赖 `AbortController`；
+- Product 业务判断使用 Enum `value`，展示使用 `label`，金额保持服务端两位小数字符串。

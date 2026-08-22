@@ -36,7 +36,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | 未来复杂管理端 | 同仓库增加独立 `admin-web/` |
 | GitHub | 继续使用当前仓库，不嵌套第二个 Git 仓库 |
 
-当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础与账号密码登录纵向链路（见 §4.1–§4.3）。下一步先完成微信开发者工具连接真实后端的认证 Functional，再进入公开 Product 浏览纵向链路。
+当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础、账号密码登录纵向链路和公开 Product 列表代码链（见 §4.1–§4.4）。认证已在微信开发者工具连接本地后端完成 Functional；Product 列表的自动化与四端构建已通过，游客、Empty、Error 恢复和登录/退出后继续浏览的真实 Functional 也已通过。下一门槛是使用真实 Online Product 验证 Content、相对图片和超过 10 条分页。
 
 ---
 
@@ -152,8 +152,16 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 - 后端 auth/users 成功响应已补齐精确统一信封 OpenAPI；User 内部 `IntEnum` 仍按原方式存储，但序列化 Schema 明确为 HTTP 字符串 Enum。当前生成输入为 45 paths / 108 schemas。
 - `api/endpoints/auth.ts` 消费生成请求/响应类型，同时对所有认证响应做运行时 Guard；Endpoint 不依赖 React。
 - `platform/storage.ts` 定义 Storage Port，Taro Adapter 隔离平台 API；`auth/session.ts` 通过 storage、clock 和 refresh 函数注入保持可测试，只向 React 暴露不含 Token 的 Session Snapshot。
-- `AuthProvider` 管理 `initializing/guest/authenticated/error`，恢复时先读缓存，必要时刷新，再调用 `/users/me` 验证；登录页为受控表单，首页执行登录守卫和登出。
-- 29 项 Jest、后端完整 SQLite 套件 1425 项（9 项可选 MySQL 跳过）、静态检查与四端生产构建通过。H5 入口增长至 327 KiB；真实开发者工具/真机 Functional 尚待人工完成，不能把 Build 通过描述成真实登录已联调。
+- `AuthProvider` 管理 `initializing/guest/authenticated/error`，恢复时先读缓存，必要时刷新，再调用 `/users/me` 验证；登录页为受控表单，公开 Product 首页按认证状态展示登录、昵称或退出，不再把游客强制重定向到登录页。
+- 29 项 Jest、后端完整 SQLite 套件 1425 项（9 项可选 MySQL 跳过）、静态检查与四端生产构建通过。H5 入口增长至 327 KiB；微信开发者工具连接本地 FastAPI + SQLite + Redis 的错误/正确/禁用账号、三种角色、Storage、重启恢复、登出及三类 refresh Functional 已通过。该结果仍不代表真机、H5、正式 HTTPS/合法域名或微信登录通过。
+
+### 4.4 公开 Product 列表纵向链路（2026-08-20）
+
+- `api/endpoints/products.ts` 直接消费 OpenAPI 生成的 Query/Page/Product 类型，同时把网络数据视为 `unknown`，运行时校验并白名单重建分页项；ID、两位小数金额、Product 字符串 Enum、图片地址与分页字段不合约时抛 `ContractError`。
+- `features/product/use_product_list.ts` 拥有服务端列表状态：首屏固定 10 条、按服务端 `page/pages/total` 追加下一页、首屏/下一页分别处理错误，并用请求序号阻止迟到旧响应覆盖新结果。共享逻辑不依赖 `AbortController` 等不保证存在于所有小程序运行时的浏览器全局对象。
+- `utils/asset_url.ts` 是开发期相对图片路径的唯一解析点：HTTP(S) URL 原样保留，`/uploads/...` 相对 API Origin，其他路径拒绝。首页 ProductCard 使用图片懒加载和失败占位。
+- 首页现在是公开 Product 入口，明确渲染 Loading/Empty/Error/Content 四态；Experience 依据 `product_type.value` 展示“起”，Kit 展示固定价格。认证状态只影响账号操作，不阻断游客 Product 请求。
+- Product 新增 Endpoint、Resolver、Feature 和 Page 测试；Jest setup 集中处理 Taro router 循环依赖及 jsdom `IntersectionObserver`。完整 Jest 10 套件 / 44 项、Product 后端 API 52 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移检查与四端生产构建均通过；H5 入口保持 327 KiB。2026-08-21 微信开发者工具已通过游客、Empty、Error 恢复和登录/退出后继续浏览；Content、相对图片和超过 10 条分页仍待真实数据验证。
 
 ---
 

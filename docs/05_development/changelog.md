@@ -4,6 +4,39 @@
 
 ---
 
+## Frontend Phase 6 — 公开 Product 列表纵向链路（2026-08-20）
+
+### Summary
+
+完成前端 Product 浏览纵向链路：游客可通过公开首页读取 Online Product，按服务端分页、类型和 keyword 浏览 Experience 与 Kit，并进入类型专属详情选择真实 Option；Product 数据状态与 AuthContext 解耦。Endpoint、运行时契约、图片地址、分页/搜索 Feature、四态 UI、详情、自动化、四端构建和微信开发者工具 Functional 均已完成。
+
+### Implemented
+
+- 新增严格限定为本地开发环境的 `python -m app.tasks.product_functional_seed`：要求 development、仓库内 SQLite/图片目录、`--apply` + `--confirm-local-only` 双确认和启用的 ADMIN/SUPER_ADMIN 操作者。脚本复用 Product Service、Validator、AuditLog 与 LocalImageStorage，生成 7 Experience、6 Kit、13 条 Online Product 和 21 张相对图片；其中专用多配置 Experience 有两个不同组合、价格和配色图片的 Option。完整同名数据可幂等跳过，冲突数据安全停止，图片登记失败执行文件补偿。
+- 修复 Seed PNG 夹具只有文件签名、无法真实解码的问题：改为生成带 IHDR、zlib IDAT、IEND 和逐 chunk CRC 的 2×2 RGB PNG；重复执行只原子修复 Seed Product 引用的旧错误内容或缺失文件，不覆盖其他图片。2026-08-21 首次修复当时 12 条目录的结果为 `created=0 / skipped=12 / repaired_images=18`。
+- 新增 `ProductApi.listProducts()`，直接复用 OpenAPI 生成的 Product Query/Page/Item 类型；HTTP Client 结果保持 `unknown`，Endpoint 校验并白名单投影 ID、名称、Product Enum、两位小数金额、图片地址和分页字段。公开请求固定 `auth: none`，不会因本地存在 Session 而附带 Token。
+- 新增唯一 `resolveAssetUrl()`：HTTP(S) 绝对 URL 原样使用，`/uploads/...` 相对已校验 API Origin 补全，其他路径拒绝；ProductCard 使用懒加载和图片失败占位。
+- 新增 `useProductList` Feature，首屏固定 `page=1&page_size=10`，按服务端 `page/pages/total` 加载下一页；防止同页重复点击，并以请求 sequence 隔离迟到旧响应，不依赖所有小程序运行时未必提供的 `AbortController`。
+- 首页改为公开 Product 页面，互斥展示 Loading/Empty/Error/Content；首屏失败可重试，下一页失败保留已有内容。Experience 按 `product_type.value` 显示“起”，Kit 显示固定价格；guest/authenticated/error 状态只影响账号操作，不阻断公开浏览。
+- Jest setup 集中 mock Taro 4.2.1 router 循环依赖，并为 jsdom 提供 `IntersectionObserver`，支持 `Image lazyLoad` 组件测试且不隐藏现有上游 `act` 弃用告警。
+- 新增 Phase 6 学习笔记，解释生成类型与 Runtime Guard、金额字符串、Enum、判别四态、服务端分页、请求竞态、相对图片和公开数据/认证状态边界。
+- 首页新增“全部 / 拼豆体验 / 材料套装”类型筛选和最长 100 字符的受控 keyword 搜索；类型立即生效，keyword 在 300ms 静默期后去除首尾空白并查询。筛选变化重置第 1 页，加载更多保留查询上下文，迟到响应继续由 sequence token 隔离。
+- 新增公开 Product 详情纵向链路：列表卡片根据服务端 ProductType 跳转单一详情页，严格解析正整数 ID 与 experience/kit 类型；Endpoint 分别调用两条无认证详情 API 并对 unknown JSON 执行白名单 Runtime Guard。详情 Hook 提供 Loading/Error/Content 与重试、迟到响应隔离；Experience 只允许选择服务端真实 Option 完整组合并同步价格/专属图片，Kit 展示价格、库存和 available 且明确下单仍需服务端校验。
+
+### Verification
+
+- 本地 Product seed 17 项隔离测试通过，覆盖环境/引擎/路径/双确认门槛、13 条两类型目录、重复执行、保留名称冲突、图片补偿、PNG chunk/CRC/像素解压、旧夹具精准修复、缺失文件恢复、旧默认 Option 配色迁移，以及一次性 SQLite + 临时图片目录中的真实 13 Product / 21 图片纵向创建；集成断言会从 Online 详情重读两个 Option 的完整组合、价格、图片关系和不同像素内容。
+- 完整 Jest 11 套件 / 70 项通过，覆盖公开 Product Query/无认证头、坏契约拒绝、动态详情路由、Experience/Kit Runtime Guard、图片 URL、列表/详情四态、分页追加、完整 Option 选择及旧响应隔离。只有 Taro Test Utils 间接旧 `act` 的已知上游警告。
+- `npm run typecheck`、ESLint `--max-warnings=0`、Stylelint 与 OpenAPI 类型漂移检查均以退出码 0 通过；后端完整套件为 1442 项通过、9 项显式隔离 MySQL 门槛跳过。
+- weapp/alipay/tt/h5 四端生产构建均通过；为避免用户微信 watcher 竞态，weapp 在复用同一依赖的系统临时副本中隔离构建并核对详情产物。冷启动支付宝 25.11 分钟，预热后抖音 39.45 秒、微信 2.97 秒，H5 2.72 分钟。H5 入口保持 327 KiB、app JS 245 KiB，仍有 Webpack 244 KiB 性能建议和 `[hash]` 上游弃用警告。
+- 未修改 FastAPI Web 运行链、数据库 Schema 或依赖；不需要迁移。2026-08-22 列表 Content、相对图片、第二页、类型筛选、keyword 防抖/组合搜索、Empty，以及详情/多配置 Option 切换微信 Functional 均已通过。本地开发库增量 Seed 先得到 `created=1 / skipped=12 / repaired_images=0`，再把多配置 Experience 第二张旧默认测试图精准迁移为备用配色，结果为 `created=0 / skipped=13 / repaired_images=1`；当前共有 13 条 Online Product 和 21 张图片，全部由 Windows `System.Drawing` 解码为 2×2 PNG。
+
+### Next
+
+Phase 6 自动化与微信 Functional 已收口。下一步进入 Phase 7 购物车、确认页和 Order 创建。
+
+---
+
 ## Frontend Phase 5 — 账号密码登录纵向链路（2026-08-20）
 
 ### Summary

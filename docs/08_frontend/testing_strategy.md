@@ -15,7 +15,7 @@
 - React 18.3 下 test-utils 内部使用已废弃的 `ReactDOMTestUtils.act`，产生告警但不阻断；升级测试工具时消除。
 - `openapi-typescript@7.13.0` 通过 `--immutable --alphabetize` 生成类型，`npm run api:types:check` 直接检查生成物漂移。
 - 2026-08-20 正式工程依赖复核后，`npm ls --depth=0` 无错误；官方 registry 审计仍有 10 项生产依赖风险来自 Taro 4.2.1 H5 上游链，强制修复会破坏性降级 Taro，列为公开发布门槛。
-- 账号登录链完成后 Jest 为 7 套件 / 29 项；auth Endpoint 使用 fake transport，Session 使用 fake storage/clock/refresh，页面测试不接触真实 Token。H5 入口由空应用 281 KiB 增至 327 KiB。
+- 当前完整 Jest 为 10 套件 / 44 项；其中 Product 公开列表的 Endpoint/Resolver/Feature/Page 针对性矩阵为 4 套件 / 16 项。auth Endpoint 使用 fake transport，Session 使用 fake storage/clock/refresh，Product Endpoint 使用 fake transport，页面测试不接触真实 Token。四端生产构建通过，H5 入口保持 327 KiB。
 - 2026-08-20 微信开发者工具已连接本地 FastAPI + SQLite + Redis 完成账号密码认证 Functional：错误/正确/禁用账号、`user/admin/super_admin` 展示、Storage 写入、重启 `/users/me` 恢复、登出清理、`expiresAt` 主动 refresh、服务端 `1006` 被动 refresh，以及 access/refresh 同时无效后的 Session 清理全部通过；未记录或传播真实 Token。该结果不替代真机、H5、弱网、HTTPS/合法域名及正式微信登录门槛。
 
 ---
@@ -83,6 +83,12 @@ npm run format:check
 
 ### 4.2 Product
 
+- 公开列表 Query 只发送 `page/page_size/product_type/keyword`，且不附带 Token；
+- Page/Product Runtime Guard 拒绝非法 ID、金额、Enum、图片 URL 和分页字段；
+- Loading/Empty/Error/Content 四态互斥且可观察；
+- 下一页追加而不是替换，重复点击不重复请求；
+- 较早请求迟到时不能覆盖较新结果；
+- 相对/绝对图片 URL 与图片失败占位；
 - Experience 有效组合筛选；
 - 每一步选择后的可用值；
 - 最终唯一 Option；
@@ -324,6 +330,9 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - [x] HTTP Client 风险矩阵基础测试（14 项 API/环境测试；全项合计 19 项）；
 - [x] 正式工程四端 Build；H5 281 KiB 基线告警已记录。
 - [x] 账号登录代码链：Endpoint/Runtime Guard/Session/Storage/Context/受控表单/守卫/登出，Jest 7 套件 / 29 项；四端 Build 通过，H5 当前 327 KiB。
+- [x] 公开 Product 列表代码链：Endpoint/Runtime Guard/分页/迟到响应隔离/图片 Resolver/四态，针对性 Jest 4 套件 / 16 项、完整 Jest 10 套件 / 44 项、Product 后端 API 52 项及四端 Build 通过。
+- [x] 公开 Product 列表基础 Functional：游客、Empty、错误恢复、登录/退出后继续浏览。
+- [ ] 公开 Product 列表数据 Functional：Content、相对图片、超过 10 条分页。
 - [x] 微信开发者工具连接本地隔离后端的账号密码认证 Functional：错误/正确/禁用账号、三种角色、Storage、重启 `/users/me` 恢复、登出、主动/被动 refresh 与无效 refresh 清理全部通过（2026-08-20；本地 SQLite + Redis，非真机/非 H5/非微信登录）。
 
 ### MVP 功能完成

@@ -1,6 +1,6 @@
 # pinkdooHub 前端 API 集成契约
 
-> **Document Version:** v0.3
+> **Document Version:** v0.4
 > **Status:** Draft
 > **Last Updated:** 2026-08-20
 > **Source of Truth:** 实际 FastAPI OpenAPI、路由/Schema/测试及对应业务/API 文档
@@ -9,7 +9,7 @@
 
 ## 0. 当前实现状态
 
-基础集成层与账号密码登录纵向链路已落地：
+基础集成层、账号密码登录和公开 Product 列表纵向链路已落地：
 
 - `scripts/export_openapi.py`：隔离导出当前 FastAPI OpenAPI；
 - `miniapp/openapi/openapi.json`：45 条路径、108 个 Schema 的生成输入；
@@ -19,10 +19,12 @@
 - `miniapp/src/api/factory.ts`：消费严格校验后的 `TARO_APP_API_ORIGIN`；
 - `miniapp/src/api/endpoints/auth.ts`：login/refresh/logout/getMe 薄 Endpoint，以及认证数据 Runtime Guard + 白名单投影；
 - `miniapp/src/auth/`：Session Manager、启动恢复、Context 与运行时组合；`miniapp/src/platform/storage.ts` 提供 Taro Storage Adapter；
-- `miniapp/src/pages/login/`：现有账号密码受控登录表单；首页完成登录守卫、当前用户显示和登出；
-- Jest 7 套件 / 29 项覆盖基础 Client、Endpoint、Session、表单错误映射、页面和环境；相关后端 33 项测试覆盖实际 HTTP 与 OpenAPI。
+- `miniapp/src/pages/login/`：现有账号密码受控登录表单；公开首页按认证状态显示登录、当前用户或登出，但游客浏览不依赖认证；
+- `miniapp/src/api/endpoints/products.ts`：公开列表 Query/响应生成类型、运行时 Guard 与白名单投影；
+- `miniapp/src/features/product/`：第一页、下一页、四态、重复加载保护与迟到响应隔离；`miniapp/src/utils/asset_url.ts` 是相对图片 URL 的唯一解析点；
+- Product 针对性 Jest 4 套件 / 16 项覆盖 Endpoint、图片、Feature 和页面；完整前端为 10 套件 / 44 项。相关后端 Product API 52 项通过，OpenAPI 类型漂移检查与四端构建通过。
 
-当前完成表示代码链与自动化门槛通过，不表示已完成开发者工具/真机真实网络 Functional。下一步先验证真实后端登录/刷新/重启恢复/登出，再实现 Product 浏览。微信登录、支付、上传和其他业务页面仍未交付。
+认证已在微信开发者工具连接本地 FastAPI + SQLite + Redis 完成真实 Functional。Product 列表也已通过游客、Empty、Error 恢复以及登录/退出后继续浏览；Content、相对图片和超过 10 条分页仍需真实 Online Product 数据验证，因此不能把整个 Product Functional 矩阵标记为完成。下一步先补齐这些数据路径，再加入搜索、筛选与详情。微信登录、支付、前端上传和其他业务页面仍未交付。
 
 ---
 
