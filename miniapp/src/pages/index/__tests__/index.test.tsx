@@ -1,73 +1,118 @@
 import ReactTestUtil from '@tarojs/test-utils-react'
 
-import Index from '../index'
+import type { ProductListState } from '@/features/product/use_product_list'
+
+import ProductListPage from '../index'
+
+const mockRetry = jest.fn()
+const mockLoadNextPage = jest.fn()
+const mockSetKeyword = jest.fn()
+const mockSetProductType = jest.fn()
+let mockProductListState: ProductListState
+
+jest.mock('@/features/product/use_product_list', () => ({
+  useProductList: () => ({
+    state: mockProductListState,
+    productType: 'all',
+    keyword: '',
+    setKeyword: mockSetKeyword,
+    setProductType: mockSetProductType,
+    retry: mockRetry,
+    loadNextPage: mockLoadNextPage,
+  }),
+}))
 
 jest.mock('@/auth', () => ({
   useAuth: () => ({
-    status: 'authenticated',
-    user: {
-      id: 7,
-      username: 'alice',
-      nickname: 'Alice',
-      phone: '13800138000',
-      avatar: null,
-      role: 'user',
-      status: 'normal',
-      last_login_at: null,
-      created_at: '2026-08-01T08:00:00Z',
-      updated_at: '2026-08-20T08:00:00Z'
-    },
+    status: 'guest',
     logout: jest.fn(),
-    retryInitialization: jest.fn()
-  })
+  }),
 }))
 
-// Taro 4.2.1 的 @tarojs/router 与 @tarojs/components（Stencil bundle）在 Jest 中
-// 经 taro-h5 runtime 形成循环依赖；mount() 不依赖 router，工厂 mock 以打破循环
-// （Spike 结论）。
-jest.mock('@tarojs/router', () => ({
-  history: {},
-  getCurrentPages: jest.fn(() => []),
-  navigateBack: jest.fn(),
-  navigateTo: jest.fn(),
-  reLaunch: jest.fn(),
-  redirectTo: jest.fn(),
-  switchTab: jest.fn(),
-  createMpaHistory: jest.fn(),
-  prependBasename: jest.fn((url: string) => url),
-  setHistory: jest.fn(),
-  setHistoryMode: jest.fn(),
-  createMultiRouter: jest.fn(),
-  createRouter: jest.fn(),
-  routesAlias: {},
-  createBrowserHistory: jest.fn(),
-  createHashHistory: jest.fn(),
-  isDingTalk: jest.fn(() => false),
-  isWeixin: jest.fn(() => false),
-  setMpaTitle: jest.fn(),
-  setNavigationBarLoading: jest.fn(),
-  setNavigationBarStyle: jest.fn(),
-  setTitle: jest.fn(),
-  handleAppMount: jest.fn(),
-  handleAppMountWithTabbar: jest.fn()
+jest.mock('@/utils/asset_url', () => ({
+  resolveAssetUrl: (assetUrl: string) => assetUrl.startsWith('/')
+    ? `https://api.example.com${assetUrl}`
+    : assetUrl,
 }))
 
-describe('Index', () => {
+describe('ProductListPage', () => {
   let testUtils: ReactTestUtil
 
   beforeEach(() => {
     testUtils = new ReactTestUtil()
+    mockProductListState = {
+      status: 'loading',
+      items: [],
+      total: 0,
+      page: 1,
+      pages: 0,
+      loadingMore: false,
+    }
   })
 
   afterEach(() => {
     testUtils.unmout()
+    jest.clearAllMocks()
   })
 
-  it('渲染首页容器', async () => {
-    await testUtils.mount(Index)
+  it.each([
+    ['loading', '正在加载商品…'],
+    ['empty', '暂时没有可浏览的商品'],
+    ['error', '商品加载失败'],
+  ] as const)('渲染 %s 状态', async (status, expectedText) => {
+    mockProductListState = {
+      ...mockProductListState,
+      status,
+      errorMessage: status === 'error' ? '网络请求失败' : undefined,
+    }
+    await testUtils.mount(ProductListPage)
 
-    expect(testUtils.queries.querySelector('.index')).not.toBeNull()
-    expect(testUtils.queries.querySelector('.index__subtitle')?.textContent)
-      .toContain('Alice')
+    expect(testUtils.queries.querySelector('.product-page__state')?.textContent)
+      .toContain(expectedText)
+  })
+
+  it('渲染 Product 内容并只给体验商品添加起价后缀', async () => {
+    mockProductListState = {
+      status: 'content',
+      items: [
+        {
+          id: 1,
+          name: '周末拼豆体验',
+          product_type: { value: 'experience', label: '拼豆体验' },
+          cover_image: '/uploads/products/experience.webp',
+          display_price: '299.00',
+        },
+        {
+          id: 2,
+          name: '基础拼豆套装',
+          product_type: { value: 'kit', label: '拼豆套装' },
+          cover_image: 'https://cdn.example.com/kit.webp',
+          display_price: '599.00',
+        },
+      ],
+      total: 2,
+      page: 1,
+      pages: 1,
+      loadingMore: false,
+    }
+    await testUtils.mount(ProductListPage)
+
+    const cards = testUtils.queries.querySelectorAll('.product-card')
+    expect(cards).toHaveLength(2)
+    expect(cards[0].textContent).toContain('¥299.00 起')
+    expect(cards[1].textContent).toContain('¥599.00')
+    expect(cards[1].textContent).not.toContain('¥599.00 起')
+    expect(testUtils.queries.querySelector('.product-page__end')?.textContent)
+      .toContain('已经到底了')
+  })
+
+  it('渲染搜索和类型筛选并传递用户操作', async () => {
+    await testUtils.mount(ProductListPage)
+
+    expect(testUtils.queries.querySelector('.product-filters__search')).not.toBeNull()
+    const buttons = testUtils.queries.querySelectorAll('.product-filters__type')
+    expect(buttons).toHaveLength(3)
+    testUtils.fireEvent.click(buttons[2])
+    expect(mockSetProductType).toHaveBeenCalledWith('kit')
   })
 })

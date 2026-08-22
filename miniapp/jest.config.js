@@ -3,6 +3,7 @@ const defineJestConfig = require('@tarojs/test-utils-react/dist/jest.js').defaul
 module.exports = defineJestConfig({
   testMatch: ['<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}'],
   testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   transform: {
     '^.+\\.(js|jsx|mjs|ts|tsx)$': '<rootDir>/jest.transformer.js'
   },
