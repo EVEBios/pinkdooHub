@@ -1,13 +1,15 @@
 import { Button, Form, Input, Text, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
 
 import { ApiClientError, BusinessError } from '@/api'
-import { useAuth } from '@/auth'
+import { parseLoginRedirect, useAuth } from '@/auth'
 
 import './index.scss'
 
 export default function LoginPage() {
+  const router = useRouter()
+  const redirect = parseLoginRedirect(router.params.redirect)
   const { login, status } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -16,9 +18,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      void Taro.reLaunch({ url: '/pages/index/index' })
+      void Taro.reLaunch({ url: redirect ?? '/pages/index/index' })
     }
-  }, [status])
+  }, [redirect, status])
 
   async function submitLogin(): Promise<void> {
     const validationMessage = validateLogin(username, password)

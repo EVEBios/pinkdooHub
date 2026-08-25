@@ -1,6 +1,8 @@
 import ReactTestUtil from '@tarojs/test-utils-react'
+import Taro from '@tarojs/taro'
 
 import type { ProductListState } from '@/features/product/use_product_list'
+import type { AuthContextValue } from '@/auth'
 
 import ProductListPage from '../index'
 
@@ -9,6 +11,7 @@ const mockLoadNextPage = jest.fn()
 const mockSetKeyword = jest.fn()
 const mockSetProductType = jest.fn()
 let mockProductListState: ProductListState
+let mockAuth: AuthContextValue
 
 jest.mock('@/features/product/use_product_list', () => ({
   useProductList: () => ({
@@ -23,10 +26,8 @@ jest.mock('@/features/product/use_product_list', () => ({
 }))
 
 jest.mock('@/auth', () => ({
-  useAuth: () => ({
-    status: 'guest',
-    logout: jest.fn(),
-  }),
+  ADMIN_ORDER_LIST_PATH: '/admin/pages/orders/index',
+  useAuth: () => mockAuth,
 }))
 
 jest.mock('@/utils/asset_url', () => ({
@@ -47,6 +48,12 @@ describe('ProductListPage', () => {
       page: 1,
       pages: 0,
       loadingMore: false,
+    }
+    mockAuth = {
+      status: 'guest',
+      login: jest.fn(),
+      logout: jest.fn(),
+      retryInitialization: jest.fn(),
     }
   })
 
@@ -114,5 +121,33 @@ describe('ProductListPage', () => {
     expect(buttons).toHaveLength(3)
     testUtils.fireEvent.click(buttons[2])
     expect(mockSetProductType).toHaveBeenCalledWith('kit')
+  })
+
+  it('只为 ADMIN+ 展示管理订单入口', async () => {
+    const baseUser = {
+      id: 2,
+      username: 'dev_admin',
+      nickname: '开发管理员',
+      avatar: null,
+      phone: '13800000000',
+      role: 'admin' as const,
+      status: 'normal' as const,
+      last_login_at: null,
+      created_at: '2026-08-01T00:00:00Z',
+      updated_at: '2026-08-01T00:00:00Z',
+    }
+    mockAuth = { ...mockAuth, status: 'authenticated', user: { ...baseUser, role: 'user' } }
+    await testUtils.mount(ProductListPage)
+    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理订单')
+    testUtils.unmout()
+
+    testUtils = new ReactTestUtil()
+    mockAuth = { ...mockAuth, user: baseUser }
+    await testUtils.mount(ProductListPage)
+    const buttons = Array.from(testUtils.queries.querySelectorAll('.product-page__account-action'))
+    const adminButton = buttons.find((button) => button.textContent.includes('管理订单'))
+    expect(adminButton).toBeDefined()
+    testUtils.fireEvent.click(adminButton!)
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/orders/index' })
   })
 })

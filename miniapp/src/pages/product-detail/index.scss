@@ -107,6 +107,44 @@
   &__sold-out {
     color: #b42318;
   }
+
+  &__cart-actions {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 16px;
+    margin-top: 28px;
+  }
+
+  &__cart-link,
+  &__add-cart {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 84px;
+    margin: 0;
+    border-radius: 18px;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  &__cart-link {
+    color: #a34f74;
+    background: #fff;
+    border: 2px solid #e7b8cc;
+  }
+
+  &__add-cart {
+    color: #fff;
+    background: #c85f8d;
+    border: 2px solid #c85f8d;
+  }
+
+  &__add-cart[disabled] {
+    color: #8d8589;
+    background: #eee9eb;
+    border-color: #d8cfd3;
+  }
 }
 
 .product-gallery {

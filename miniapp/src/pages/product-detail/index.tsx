@@ -12,6 +12,11 @@ import {
   type ProductDetailRoute,
 } from '@/features/product/product_detail_route'
 import { useProductDetail } from '@/features/product/use_product_detail'
+import { useCart } from '@/features/order'
+import {
+  buildExperienceCartItem,
+  buildKitCartItem,
+} from '@/features/order/cart_item'
 import { resolveAssetUrl } from '@/utils/asset_url'
 import { formatPrice } from '@/utils/format'
 
@@ -85,6 +90,7 @@ function ExperienceDetail({ detail }: { detail: ExperienceProductDetail }) {
         </Text>
         <ImageGallery images={selectedOption.images} label='当前配置图片' />
       </View>
+      <CartActions item={buildExperienceCartItem(detail, selectedOption)} />
     </View>
   )
 }
@@ -122,6 +128,58 @@ function KitDetail({ detail }: { detail: KitProductDetail }) {
         </Text>
         <Text className='product-detail__section-hint'>库存仅供展示，后续下单仍以服务端实时校验为准</Text>
       </View>
+      <CartActions item={buildKitCartItem(detail)} unavailable={!detail.available} />
+    </View>
+  )
+}
+
+function CartActions({
+  item,
+  unavailable = false,
+}: {
+  item: ReturnType<typeof buildExperienceCartItem> | ReturnType<typeof buildKitCartItem>
+  unavailable?: boolean
+}) {
+  const cart = useCart()
+  const [adding, setAdding] = useState(false)
+
+  const addToCart = async () => {
+    if (adding || unavailable || cart.status !== 'ready') {
+      return
+    }
+    setAdding(true)
+    try {
+      await cart.addItem(item)
+      await Taro.showToast({ title: '已加入购物车', icon: 'success' })
+    } catch (cause) {
+      await Taro.showToast({ title: toUserMessage(cause), icon: 'none' })
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <View className='product-detail__cart-actions'>
+      <Button
+        className='product-detail__cart-link'
+        onClick={() => void Taro.navigateTo({ url: '/pages/cart/index' })}
+      >
+        查看购物车
+      </Button>
+      <Button
+        className='product-detail__add-cart'
+        disabled={unavailable || cart.status !== 'ready'}
+        loading={adding}
+        onClick={() => void addToCart()}
+      >
+        {unavailable
+          ? '暂时无货'
+          : cart.status === 'initializing'
+            ? '购物车加载中'
+            : cart.status === 'error'
+              ? '购物车不可用'
+              : '加入购物车'}
+      </Button>
     </View>
   )
 }
@@ -186,4 +244,8 @@ function DetailState({
       {children}
     </View>
   )
+}
+
+function toUserMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : '加入购物车失败，请重试'
 }
