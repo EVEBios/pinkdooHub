@@ -1,8 +1,8 @@
 # pinkdooHub 前端学习路线
 
-> **Document Version:** v0.2
+> **Document Version:** v0.4
 > **Status:** Draft
-> **Last Updated:** 2026-08-20
+> **Last Updated:** 2026-08-24
 > **Audience:** 首次系统学习 JavaScript、TypeScript、React 与 Taro 的项目开发者
 
 本项目采用“知识点 → 小练习 → 真实功能 → 测试 → 复盘”的循环，不要求先学完全部前端理论再开始，也不把复制示例代码当作掌握。
@@ -211,7 +211,7 @@ buildOrderItem
 
 ## 9. 阶段 6：Product 与 UI 状态
 
-> **阶段状态：已完成并通过自动化与微信 Functional。** `ProductApi.listProducts()`、运行时 Guard、相对图片 Resolver、分页 Feature、公开首页四态、Product type 和 300ms keyword 防抖已实现；2026-08-22 已人工验证 Content、相对图片、第二页、筛选/组合搜索/Empty。Experience/Kit 详情 Endpoint、动态路由、详情状态、Kit 库存展示和真实 Option 组合选择均已完成；local-only Seed 提供一条带两个不同组合、价格和配色图片的 Experience。17 项 Seed 隔离测试、前端 11 套件/70 项、静态检查、OpenAPI 漂移、四端生产构建与后端完整 1442 项 SQLite 套件均通过，详见 [列表学习笔记](learning_notes/phase6_product_list.md)和[详情学习笔记](learning_notes/phase6_product_detail.md)。
+> **阶段状态：已完成并通过自动化与微信 Functional。** `ProductApi.listProducts()`、运行时 Guard、相对图片 Resolver、分页 Feature、公开首页四态、Product type 和 300ms keyword 防抖已实现；2026-08-22 已人工验证 Content、相对图片、第二页、筛选/组合搜索/Empty。Experience/Kit 详情 Endpoint、动态路由、详情状态、Kit 库存展示和真实 Option 组合选择均已完成；local-only Seed 提供一条带两个不同组合、价格和配色图片的 Experience，并通过正式 Inventory 流水让一条 Kit 初始库存为 8、另外五条保持 0。20 项 Seed 隔离测试、前端 11 套件/70 项、静态检查、OpenAPI 漂移和四端生产构建均通过，详见 [列表学习笔记](learning_notes/phase6_product_list.md)和[详情学习笔记](learning_notes/phase6_product_detail.md)。
 
 学习：
 
@@ -231,6 +231,8 @@ buildOrderItem
 
 ## 10. 阶段 7：Order、状态机和幂等
 
+> **阶段状态：Phase 7.1–7.4 的工程实现、自动化与微信开发者工具 Functional 均已完成。** 7.1 已实现判别联合 Cart、版本化 Storage 和串行 mutation；7.2 已实现确认/创建、unknown 分流、服务端快照与保守 Cart 对账；7.3 已实现用户列表/详情/Pending cancel 和状态收敛；7.4 已实现 `admin` 分包、ADMIN+ 完整订单筛选/详情、Pending → Paid、Paid → Completed、前后端权限边界和命令结果收敛。2026-08-25 用户确认 7.3/7.4 两类 40921 独立客户端竞态、7.4 断网 unknown 不重发、普通用户 ADMIN API 403/不 refresh 及其余人工清单全部通过；Slow 3G 约 310 ms 返回、未触发 timeout，严格 timeout 保留为非阻断补测。完整前端 31 套件/213 项、静态检查、OpenAPI 漂移与四端 production build 通过，Order API 后端回归 107 项及完整后端 1445 项通过（9 项 MySQL-only 跳过）。详见[本地购物车学习笔记](learning_notes/phase7_local_cart.md)、[创建订单学习笔记](learning_notes/phase7_order_create.md)、[订单查询/取消学习笔记](learning_notes/phase7_order_query_cancel.md)和[ADMIN 订单操作学习笔记](learning_notes/phase7_admin_order_operations.md)。
+
 学习：
 
 - 本地缓存与服务端权威；
@@ -240,8 +242,11 @@ buildOrderItem
 - 幂等键；
 - 网络结果未知；
 - 防重复提交。
+- 角色入口与服务端授权；
+- 排他时间上界；
+- 小程序分包。
 
-实践：本地购物车、确认、创建、列表、详情、取消，ADMIN 人工支付/完成。
+实践：本地购物车（7.1）、确认与创建（7.2）、用户列表/详情/取消（7.3）、ADMIN 列表/详情/人工支付与完成（7.4）均已完成并通过对应微信开发者工具 Functional。下一步进入 Phase 8，先冻结第一条 ADMIN Product 最小纵向切片。
 
 完成标准：不伪造 Paid；不重复组合；不自动重试无幂等的 Order create；金额只用后端快照。
 

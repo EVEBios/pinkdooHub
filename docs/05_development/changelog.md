@@ -4,6 +4,121 @@
 
 ---
 
+## Frontend Phase 7.4 — ADMIN 订单查询与人工 Paid/Completed（2026-08-24）
+
+### Summary
+
+完成 ADMIN+“全部订单列表/完整筛选 → 管理详情 → Pending 人工标记 Paid → Paid 完成 → 服务端详情核对”的最小纵向切片。状态操作严格复用现有 FastAPI 无 body PATCH；普通用户在挂载管理请求前即被页面角色边界拦截，后端 ADMIN+ 依赖仍是唯一授权事实。支付渠道、退款、任意状态编辑、订单删除和审计历史页面不在本阶段范围。
+
+### Implemented
+
+- 扩展 `OrderApi`：新增 ADMIN 列表/详情、`markOrderPaid()`、`completeOrder()`；列表只投影 7 个冻结 Query，响应逐字段校验并只输出 `user_id/user_nickname` 安全用户字段，两个状态 PATCH 不设置 body 且必须返回目标状态。
+- 新增管理列表 Feature/Page：固定 `page_size=20`，支持状态、精确订单号、用户 ID、UTC 起止日期和服务端分页；界面包含结束日并转换为 API 次日排他上界，非法订单号/用户 ID/日期/范围在请求前拒绝；sequence 与同步 ref 隔离迟到响应和重复下一页。
+- 新增管理详情状态机：服务端 Pending 只派生 `mark_paid`，Paid 只派生 `complete`，Cancelled/Completed 无命令；进行中 Promise 合并。明确 40921 后 GET 权威详情，network/timeout/cancel/contract/5xx 进入 unknown 且不自动重发；PATCH 成功后的 GET 失败不推翻成功。
+- `admin` 分包注册管理列表/详情；首页只为 ADMIN+ 显示入口。列表和详情在认证并确认角色后才挂载 Hook；普通用户直接进入页面不发 ADMIN API。登录 redirect 白名单只增加固定管理列表，不允许动态详情或任意内部 URL。
+- 新增 API/纯函数/Hook/页面/权限/路由和真实客户端纵向测试；纵向测试保留真实 `OrderApi → ApiClient`，固定列表→详情→Paid→详情→Complete→详情及 Bearer/Query/empty-body 契约。
+- 新增 Phase 7.4 学习笔记并同步路线图、API 集成契约、前端架构、测试策略、README 与 AI Context；Phase 7.3 当时的人工状态按用户结果更新为“除 40921 双端竞态外均通过”，该竞态后于 2026-08-25 补测完成。
+
+### Verification
+
+- 完整前端 Jest 31 套件 / 213 项通过；TypeScript strict、全 `src` ESLint `--max-warnings=0`、Stylelint 和 OpenAPI 类型漂移检查全部通过。Taro Test Utils 仍输出既有 React 18 `act` 上游弃用告警。
+- 后端 Order API 回归 107 项通过；完整后端 1445 项通过，9 项 MySQL-only 门槛按配置跳过。未修改后端代码、数据库或开发数据，未启动临时 MySQL。
+- weapp、alipay、tt、h5 四端 production build 均成功。H5 app 入口 359 KiB、主 JS 276 KiB，超过 Webpack 244 KiB 建议线；保留 Taro/Webpack `[hash]` 弃用告警。
+- 未新增 npm/Python 依赖、FastAPI 端点、数据库 Schema、迁移或生成 Schema；未 commit、push、tag 或 release。
+
+### Next
+
+2026-08-25 用户确认 Phase 7.3/7.4 剩余微信 Functional 全部通过：断网 unknown 显示“结果待确认”且不自动重发，独立 Swagger 客户端抢先变更后旧用户 cancel/旧 ADMIN 状态操作均收到 40921 并通过 GET 收敛，普通用户直调 ADMIN API 返回 403 且不 refresh。Slow 3G 约 310 ms 正常返回、未触发 timeout，严格 timeout 仅作为非阻断补测。Phase 7.1–7.4 已收口；下一步冻结 Phase 8 第一条 ADMIN Product 最小纵向切片，不提前实现审计页、退款、任意状态修改或支付占位。
+
+---
+
+## Frontend Phase 7.3 — 我的订单、详情与 Pending 取消（2026-08-24）
+
+### Summary
+
+完成用户侧“创建结果/unknown → 我的订单 → owner-only 详情 → Pending 取消 → 服务端权威重拉”的纵向切片。列表、详情、状态和取消严格复用现有 FastAPI Order/Inventory 契约；客户端不伪造支付状态、库存恢复或历史商品信息。ADMIN 人工 Paid/Completed 尚未实现，Phase 7.3 微信开发者工具 Functional 待验证。
+
+### Implemented
+
+- 扩展 `OrderApi`：新增认证 `GET /orders`、`GET /orders/{id}` 与无 body `PATCH /orders/{id}/cancel`；Query 只投影 page/page_size/status，Page/ListItem/Detail/Status 从 unknown 逐字段校验并白名单输出。
+- 新增订单列表 Hook/Page：固定 `page_size=20`，支持全部及四种状态筛选、Loading/Empty/Error/Content、下一页错误恢复、同步重复加载保护和 sequence 迟到响应隔离；分页只采用服务端 page/pages/total。
+- 新增严格 Order ID 路由和详情页：只展示服务端历史 Item/Option/金额/备注/时间快照；不存在和他人订单的 40411 使用同一不可访问提示。
+- 新增取消状态机：仅服务端 Pending 显示入口，同一进行中操作复用 Promise；network/timeout/cancel、5xx 或成功响应契约损坏进入 unknown 且不自动重发。成功后 GET 详情，重拉失败不推翻已确认成功；40921 后也重拉以收敛跨端状态竞态。
+- 7.2 创建成功与 unknown 均增加“我的订单”核对入口，首页 authenticated 区域增加入口；登录 redirect 白名单仅增加固定订单列表，不开放动态详情或任意内部 URL。
+- 新增 Phase 7.3 学习笔记，并同步路线图、API 集成契约、前端架构、测试策略、README 与 AI Context。
+
+### Verification
+
+- Phase 7.3 定向 Jest 8 套件 / 61 项、完整前端 Jest 25 套件 / 172 项通过；TypeScript strict、全 `src` ESLint `--max-warnings=0`、Stylelint 与 OpenAPI 类型漂移检查全部通过。Taro Test Utils 仍输出既有 React 18 `act` 上游弃用告警。
+- 真实 FastAPI + SQLite Order HTTP 集成/状态矩阵 53 项通过；完整后端 1445 项通过，9 项 MySQL-only 门槛按配置跳过。本阶段未修改或迁移数据库，未启动临时 MySQL。
+- weapp、alipay、tt、h5 四端 production build 均成功。H5 app 入口 350 KiB、主 JS 266 KiB，超过 Webpack 244 KiB 建议线；保留 Taro/Webpack `[hash]` 弃用告警。
+- 首次 Node 工具加载受 Windows 文件扫描影响出现长时间 I/O 等待；所有 PASS 均来自真实退出码。最终使用 Codex 工作区 Node 运行同一项目依赖，未改 `package.json` 或 lockfile。
+- 未新增 npm/Python 依赖、后端 API、数据库 Schema 或迁移；未 commit、push、tag 或 release。
+
+### Next
+
+按学习笔记完成微信开发者工具 Functional：登录回跳、筛选/分页、7.2 unknown 核对、历史快照、40411 资源隐藏、Pending 取消与 Kit 库存恢复、终态无按钮、弱网 unknown 和 40921 竞态。通过后进入 ADMIN 订单列表/详情及人工 Pending → Paid → Completed。
+
+---
+
+## Frontend Phase 7.2 — Order 创建纵向切片（2026-08-24）
+
+### Summary
+
+完成“本地购物清单 → 登录确认 → `POST /api/v1/orders` → 服务端订单结果 → Cart 对账”的最小纵向切片。Experience 请求严格携带真实 Option ID，Kit 严格省略 Option；提交状态明确区分失败与网络结果未知，成功页只消费 FastAPI Order 快照。Phase 7.2 交付时尚未实现 Order 查询/详情/取消和 ADMIN 状态操作；用户侧查询/取消已由 Phase 7.3 补齐。
+
+### Implemented
+
+- 新增 `OrderApi.createOrder()`：复用现有认证 HTTP Client，显式白名单投影 items/remark，并对 OrderDetail 的订单号、状态、UTC 时间、金额聚合、Experience 完整 Option/Kit 全 null Option 快照执行运行时校验。
+- 新增 `OrderSubmissionStore` 的 `idle/submitting/succeeded/failed/unknown` 判别状态机：开始时冻结 Cart/request，同一进行中提交复用 Promise；network/timeout 进入 unknown 且不自动 POST，明确失败允许修正后主动重试。
+- 新增确认页和受控 remark；Cart 页面增加确认入口。Guest 登录回跳只允许注册的确认页，登录成功 `reLaunch` 返回；外部、未注册和畸形 redirect 安全回退首页。
+- 成功页只展示服务端 order_no、状态、时间、Item/Option、单价/小计/总额和 remark，不使用本地预览金额生成权威结果。
+- `CartStore.reconcileSubmittedItems()` 与其他 mutation 串行：相等移除、大于提交量保留差额、小于提交量保守保留并报告 conflict、无关 Item 不变；持久化失败不发布伪清理。Cart 对账失败只能附加成功警告，不把已创建订单降级为失败。
+- 新增纵向集成测试，保留真实 CartStore → SubmissionStore → OrderApi → ApiClient 调用链，仅替换 Storage、transport 与 Auth 平台边界；同步新增 Phase 7.2 学习笔记并更新架构、API 契约、路线图、测试策略、README 与 AI Context。
+
+### Verification
+
+- 完整前端 Jest 19 套件 / 130 项通过；`npm run typecheck`、ESLint `--max-warnings=0`、Stylelint 与 OpenAPI 类型漂移检查全部通过。已知 Taro Test Utils 旧 `act` 告警不阻断。
+- 真实 FastAPI + SQLite Order 创建、边界和事务失败 34 项通过，覆盖 Experience、Kit、混合订单、Inventory 校验与回滚；完整后端为 1445 项通过、9 项 MySQL-only 门槛按当前配置跳过。本轮未修改或迁移数据库，未运行临时 MySQL。
+- weapp、alipay、tt、h5 四端 production build 均成功。H5 app 入口 343 KiB、主 JS 259 KiB，仍超过 244 KiB 性能建议线，并保留 Taro/Webpack `[hash]` 弃用警告。
+- 未新增 npm/Python 依赖、后端 API、数据库 Schema 或迁移；未 commit、push、tag 或 release。
+
+### Functional Result
+
+2026-08-24 用户完成微信开发者工具 Functional，确认 Guest 登录返回、真实 Experience/Kit/混合下单、库存不足、快速连点、弱网 unknown 与成功 Cart 对账全部通过；同时确认 Phase 7.1 剩余的有库存 Kit 加入分支通过。该结果不替代真机、H5、正式 HTTPS/合法域名验收；H5 真实联调继续等待 FastAPI 严格 CORS allowlist。unknown 的我的订单核对入口和 Pending 取消已由 Phase 7.3 完成工程实现，微信 Functional 另行验证。
+
+---
+
+## Frontend Phase 7.1 — 本地购物车纵向切片（2026-08-22）
+
+### Summary
+
+完成 Phase 7 的第一条本地纵向切片：游客或登录用户可从 Product 详情把真实 Experience Option 或 Kit 加入设备级购物车，重启后恢复，并修改数量或移除；本地展示快照与后端 Order 权威事实保持明确隔离。确认页、真实 Order 创建、查询/取消和 ADMIN 状态操作尚未实现，微信开发者工具 Functional 待人工验证。
+
+### Implemented
+
+- 新增 Experience/Kit `CartItem` 判别联合：Experience 在类型层要求正整数 Option 和完整配置说明，Kit 固定 null Option/配置；本地唯一身份与后端一致，为 `(productId, experienceOptionId)`。
+- 新增可独立测试的 `CartStore`：`pinkdoohub.cart.v1` 版本化格式、unknown Runtime Guard、白名单重写、坏数据清除、最多 10 个不同组合和每项 1–99 数量；重复组合合并，不同 Option 保持独立。
+- 所有 mutation 经 Promise 队列串行化，避免快速点击基于旧数量并发写入；采用先写 Storage、成功后发布 Context 的保守更新，持久化失败不展示伪成功。
+- 新增应用级 `CartProvider`，复用现有 `StoragePort`/`TaroStorageAdapter`。Cart 是不含 Token/User/密码/remark 的设备级游客状态，登录或退出不自动清除。
+- Product 详情加入“查看购物车/加入购物车”：Experience 保存当前真实 Option ID、组合、预览价和 Option 图片；Kit 保存 null Option，无库存时禁用。新增 Cart 页面四态、预览单价、数量增减和移除。
+- 新增 `buildOrderItems()` 白名单映射：Experience 只发送 Product/Option/quantity，Kit 只发送 Product/quantity；名称、配置、图片、预览价和 ProductType 不进入未来 Order create 请求。
+- 新增 Phase 7.1 学习笔记，解释本地状态与服务端权威、判别联合、Storage unknown、版本迁移、异步 lost update、保守更新和无客户端幂等的 Order create 边界。
+
+### Verification
+
+- 新增 3 个 Jest 套件 / 17 项，覆盖坏缓存、白名单、并发合并、不同 Option、10/99 边界、Storage 失败、修改/删除/清空、Product→Cart 和 Cart→Order 映射及 Cart 页面四态；完整前端为 14 套件 / 87 项通过。
+- `npm run typecheck`、ESLint `--max-warnings=0`、Stylelint 和 OpenAPI 类型漂移检查均通过。已知非阻断输出仍只有 Taro Test Utils 的旧 `act` 警告。
+- 用户现有 weapp watcher 已产出并注册 Cart 页面；未启动第二组微信构建。alipay、tt、h5 独立生产构建通过。H5 入口为 334 KiB、主 JS 251 KiB，仍超过 244 KiB 建议线，并保留 Taro/Webpack `[hash]` 上游弃用警告。
+- 后端完整 SQLite 回归 1442 项通过，9 项必须显式配置隔离 MySQL 的发布门槛按预期跳过；本轮未启动临时 MySQL。
+- 未新增 npm/Python 依赖、后端 API、数据库 Schema 或迁移。
+
+### Next
+
+先按学习笔记完成微信开发者工具 Cart Functional：真实第二 Option、重复合并、不同 Option 分行、Kit、数量/移除、重启恢复、登录/退出保留、坏缓存清理和无库存禁用。通过后进入 Phase 7.2 确认页、登录返回和一次性 Order 创建；在服务端支持客户端幂等键前，未知结果的 POST 不自动重试。
+
+---
+
 ## Frontend Phase 6 — 公开 Product 列表纵向链路（2026-08-20）
 
 ### Summary

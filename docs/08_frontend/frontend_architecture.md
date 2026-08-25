@@ -1,9 +1,9 @@
 # pinkdooHub 前端架构
 
-> **Document Version:** v0.3
+> **Document Version:** v0.5
 > **Status:** Draft
-> **Last Updated:** 2026-08-20
-> **Scope:** 正式 `miniapp/` 架构；四端 Spike、工程基础、HTTP Client 与账号登录纵向链路已落地
+> **Last Updated:** 2026-08-24
+> **Scope:** 正式 `miniapp/` 架构；四端 Spike、工程基础、HTTP Client、Product、用户 Order 与首个 ADMIN 分包链路已落地
 > **Decision Owners:** pinkdooHub
 
 本文档定义 pinkdooHub 跨端客户端的目标架构、依赖方向、职责边界和实施门槛。首发目标为微信小程序，并要求同一套核心代码在 6–12 个月内扩展到 H5、支付宝小程序和抖音小程序。
@@ -36,7 +36,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | 未来复杂管理端 | 同仓库增加独立 `admin-web/` |
 | GitHub | 继续使用当前仓库，不嵌套第二个 Git 仓库 |
 
-当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础、账号密码登录纵向链路和公开 Product 列表代码链（见 §4.1–§4.4）。认证已在微信开发者工具连接本地后端完成 Functional；Product 列表的自动化与四端构建已通过，游客、Empty、Error 恢复和登录/退出后继续浏览的真实 Functional 也已通过。下一门槛是使用真实 Online Product 验证 Content、相对图片和超过 10 条分页。
+当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础、账号密码登录、公开 Product 列表/详情，以及 Phase 7.1–7.4 的本地 Cart、用户 Order 和 ADMIN Order 工程链路。认证、Product、Cart 与 Order 创建已通过微信开发者工具 Functional；用户查询/取消除 40921 双端竞态外均通过。ADMIN 列表/详情、完整筛选和人工 Pending → Paid → Completed 的自动化、后端回归与四端构建已通过，微信 Functional 待验证；H5 仍等待严格 CORS allowlist。
 
 ---
 
@@ -161,7 +161,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 - `features/product/use_product_list.ts` 拥有服务端列表状态：首屏固定 10 条、按服务端 `page/pages/total` 追加下一页、首屏/下一页分别处理错误，并用请求序号阻止迟到旧响应覆盖新结果。共享逻辑不依赖 `AbortController` 等不保证存在于所有小程序运行时的浏览器全局对象。
 - `utils/asset_url.ts` 是开发期相对图片路径的唯一解析点：HTTP(S) URL 原样保留，`/uploads/...` 相对 API Origin，其他路径拒绝。首页 ProductCard 使用图片懒加载和失败占位。
 - 首页现在是公开 Product 入口，明确渲染 Loading/Empty/Error/Content 四态；Experience 依据 `product_type.value` 展示“起”，Kit 展示固定价格。认证状态只影响账号操作，不阻断游客 Product 请求。
-- Product 新增 Endpoint、Resolver、Feature 和 Page 测试；Jest setup 集中处理 Taro router 循环依赖及 jsdom `IntersectionObserver`。完整 Jest 10 套件 / 44 项、Product 后端 API 52 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移检查与四端生产构建均通过；H5 入口保持 327 KiB。2026-08-21 微信开发者工具已通过游客、Empty、Error 恢复和登录/退出后继续浏览；Content、相对图片和超过 10 条分页仍待真实数据验证。
+- Product 新增 Endpoint、Resolver、Feature 和 Page 测试；Jest setup 集中处理 Taro router 循环依赖及 jsdom `IntersectionObserver`。阶段 6 最终门禁为完整 Jest 11 套件 / 70 项、后端 SQLite 1442 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移检查与四端生产构建通过。2026-08-22 微信开发者工具已通过游客、Content、相对图片、第二页、筛选/组合搜索、Empty、Error 恢复、登录/退出后继续浏览、Experience/Kit 详情及真实多配置 Option 切换。
 
 ---
 
@@ -219,12 +219,10 @@ pinkdooHub/
     │   ├── features/                 # auth/product/order/inventory/admin
     │   ├── hooks/                    # 经真实复用证明的通用 Hook
     │   ├── pages/                    # 主包页面
+    │   ├── admin/pages/              # ADMIN 分包页面
     │   ├── platform/                 # 跨端 Port 与 Adapter
     │   ├── shared/                   # 常量、Guard、Formatter、类型与存储
     │   ├── styles/                   # Token、Mixin、全局样式
-    │   ├── subpackages/
-    │   │   ├── order/
-    │   │   └── admin/
     │   ├── app.config.ts
     │   ├── app.scss
     │   └── app.tsx
@@ -337,9 +335,59 @@ Endpoint 依赖生成类型和 HTTP Client，不依赖 React、页面或组件�
 | 服务端列表/详情 | 页面 Feature | 请求 Hook + 明确 Loading/Error/Data |
 | 路由参数 | 路由 | Taro Router 参数，进入页面后严格解析 |
 | 本地购物车 | Order Feature | 独立 Store/Service + Taro Storage Adapter |
+| Order 创建提交 | Order Feature | 判别状态机 + 不可变提交快照 |
+| Order 列表/详情 | Order Feature | 请求 Hook + sequence 迟到响应隔离 |
+| Order 取消命令 | Order Feature | 判别状态机 + 进行中 Promise 合并 + 服务端重拉 |
 | 平台信息 | Platform Adapter | 只读查询或小范围缓存 |
 
-首版不引入 Redux、Zustand 或服务端缓存框架。出现以下证据之一时再写 ADR：
+### 8.1 本地购物车已实现边界
+
+Phase 7.1 使用应用级 `CartProvider` 注入可独立测试的 `CartStore`，没有引入 Redux/Zustand：
+
+- `CartItem` 是 Experience/Kit 判别联合；Experience Option 为正整数，Kit Option 固定 null；
+- 唯一身份与后端一致，为 `(productId, experienceOptionId)`；相同组合合并 quantity，不同 Option 保持独立；
+- Storage key 为 `pinkdoohub.cart.v1`，所有恢复输入从 unknown 开始校验；版本、字段、组合或边界无效时清除整份坏缓存；
+- 合法缓存也按白名单重写，不保存 Token、User、密码、remark 或订单状态；
+- 购物车是设备级游客状态，登录/退出不自动清除；确认和创建订单时才要求有效认证；
+- mutation 通过 Promise 队列串行化，并采用“Storage 成功后再发布 React 状态”的保守更新，避免快速点击丢失数量或写失败伪成功；
+- 本地名称、配置、图片和价格只用于预览；Order 请求只投影 Product ID、真实 Option ID 和 quantity。
+
+### 8.2 Order 创建已实现边界
+
+Phase 7.2 在 Cart、Auth 和 HTTP Client 之间新增一个可独立测试的提交用例，而不是把协议判断放进页面：
+
+- `OrderApi.createOrder()` 只负责认证 POST、请求白名单投影和 `unknown` 响应 Runtime Guard；
+- `OrderSubmissionStore` 使用 `idle/submitting/succeeded/failed/unknown` 判别联合，开始时冻结 Cart/request 快照，同一进行中操作只发出一次 POST；
+- network/timeout/cancel、成功响应契约损坏和 HTTP 5xx 都无法证明服务端事务未提交，进入 unknown 且不自动重试；明确业务/认证/非 5xx 拒绝与结果未知是不同状态；
+- Guest 通过固定白名单 redirect 登录，登录成功 `reLaunch` 回确认页；外部 URL、未注册页面和畸形编码都回退首页；
+- 成功页只渲染后端 Order/Item 金额和 Option 快照，不混入本地 Cart 预览字段；
+- 成功后的 Cart 对账复用 mutation 队列并先持久化再发布。相同数量移除、增量重新加入保留差额、无法安全推断时保留并提示；清理失败不改变服务端成功状态；
+- 成功状态的渲染优先级高于 Cart empty，因为对账可能先发布空 Cart，再发布 `succeeded`。这是事件顺序边界，不应通过延迟或伪造本地订单规避。
+
+### 8.3 Order 查询与取消已实现边界
+
+Phase 7.3 把 7.2 的创建结果和 unknown 恢复接到服务端权威查询：
+
+- `OrderApi` 对列表 Query 做白名单投影，对 Page/ListItem/Detail/Status 响应从 unknown 开始校验；列表和详情均要求认证；
+- 列表 Hook 固定 `page_size=20`，使用服务端 `page/pages/total`，支持状态筛选、下一页、重复加载保护和 sequence 迟到响应隔离；
+- 详情路由只接受正安全整数，页面只消费 Order Item 历史快照；owner-only 由后端保证，40411 不区分不存在与他人资源；
+- Pending cancel 使用 empty-body PATCH 和 `idle/submitting/failed/unknown/succeeded` 状态机，同一进行中操作复用 Promise；
+- network/timeout/cancel、5xx 或成功响应契约损坏进入 unknown，不自动重发；成功后 GET 详情，刷新失败不推翻已确认成功；40921 后也尝试 GET，以服务端状态收敛跨端竞态；
+- 页面不模拟 Inventory 恢复。Kit 库存、流水、Audit 与 Order 状态由后端同一事务维护。
+
+### 8.4 ADMIN Order 已实现边界
+
+Phase 7.4 在同一应用中落地首个 `admin` 分包，但不把分包或缓存角色误作授权：
+
+- `app.config.ts` 用 `root: admin` 注册管理列表和详情；首页只为 `admin/super_admin` 显示入口，普通用户在挂载管理 Hook 前被拦截；FastAPI ADMIN+ dependency 仍是唯一授权事实；
+- 登录回跳只允许固定管理列表，不允许动态详情进入 redirect 白名单；详情 ID 仍从不可信路由参数校验；
+- ADMIN 列表 Query 只包含冻结的 7 个字段。筛选草稿与已提交查询分离，结束日期转换为次日 UTC 零点，以满足后端排他 `created_to`；
+- ADMIN 响应 Guard 在用户订单字段之外只接收 `user_id/user_nickname`，不允许用户隐私或内部字段穿过 Endpoint；
+- 详情从服务端状态派生唯一命令：Pending → Paid、Paid → Completed，两个终态无按钮，不提供任意状态编辑器；
+- paid/complete 使用 empty-body PATCH、进行中 Promise 合并和 `failed/unknown/succeeded` 收敛。成功或 40921 后 GET 权威详情；unknown 不自动重发；
+- paid/complete 不触碰 Inventory。客户端不更新库存、流水或审计，只读取 Order 状态结果。
+
+后端提供 Order create 客户端幂等键之前，UI 防抖和 Promise 合并都不能替代服务端幂等。首版仍不引入 Redux、Zustand 或服务端缓存框架。出现以下证据之一时再写 ADR：
 
 - 多个非父子页面频繁修改同一复杂状态；
 - Context 更新造成已测量的广泛重渲染；
@@ -546,10 +594,11 @@ npm run build:h5
   → 回写结果并接受/否决 Proposed ADR
   → 正式 miniapp 脚手架
   → OpenAPI + HTTP Client
-  → 账号登录纵向链路（实现完成，真实后端 Functional 待验证）
-  → 商品浏览纵向链路
-  → 用户订单纵向链路
-  → ADMIN 分包
+  → 账号登录纵向链路（已完成）
+  → 商品浏览纵向链路（已完成）
+  → 用户订单纵向链路（7.1–7.3 已完成）
+  → ADMIN Order 分包纵向链路（7.4 已完成工程实现）
+  → 后续 ADMIN 最小能力（按需求逐项冻结）
   → 微信登录与支付等公开发布门槛
 ```
 

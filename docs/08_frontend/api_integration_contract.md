@@ -1,15 +1,15 @@
 # pinkdooHub 前端 API 集成契约
 
-> **Document Version:** v0.4
+> **Document Version:** v0.6
 > **Status:** Draft
-> **Last Updated:** 2026-08-20
+> **Last Updated:** 2026-08-24
 > **Source of Truth:** 实际 FastAPI OpenAPI、路由/Schema/测试及对应业务/API 文档
 
 本文档是 Taro 客户端与现有 FastAPI 后端之间的适配契约。它不复制各模块完整 API 文档，而是冻结所有前端模块必须共同遵守的解析、认证、类型、错误、上传和幂等规则。
 
 ## 0. 当前实现状态
 
-基础集成层、账号密码登录和公开 Product 列表纵向链路已落地：
+基础集成层、账号密码登录、公开 Product、用户侧 Order 与 ADMIN Order 人工状态纵向链路已落地：
 
 - `scripts/export_openapi.py`：隔离导出当前 FastAPI OpenAPI；
 - `miniapp/openapi/openapi.json`：45 条路径、108 个 Schema 的生成输入；
@@ -22,9 +22,11 @@
 - `miniapp/src/pages/login/`：现有账号密码受控登录表单；公开首页按认证状态显示登录、当前用户或登出，但游客浏览不依赖认证；
 - `miniapp/src/api/endpoints/products.ts`：公开列表 Query/响应生成类型、运行时 Guard 与白名单投影；
 - `miniapp/src/features/product/`：第一页、下一页、四态、重复加载保护与迟到响应隔离；`miniapp/src/utils/asset_url.ts` 是相对图片 URL 的唯一解析点；
-- Product 针对性 Jest 4 套件 / 16 项覆盖 Endpoint、图片、Feature 和页面；完整前端为 10 套件 / 44 项。相关后端 Product API 52 项通过，OpenAPI 类型漂移检查与四端构建通过。
+- `miniapp/src/api/endpoints/orders.ts`：用户创建/列表/详情/取消与 ADMIN 列表/详情/paid/complete 的最小请求投影，以及 Detail/Page/Status Runtime Guard；
+- `miniapp/src/features/order/`：本地 Cart、一次提交状态机、用户/管理列表竞态隔离、详情命令 unknown/40921 状态收敛；`miniapp/src/auth/login_route.ts` 只允许登录返回已注册的固定确认页、用户列表或管理列表；
+- `miniapp/src/pages/order-confirm/`、`pages/orders/`、`pages/order-detail/`：用户创建、核对、查询与 Pending 取消；`miniapp/src/admin/pages/`：ADMIN+ 完整筛选、详情、Pending → Paid 和 Paid → Completed。完整前端为 31 套件 / 213 项；OpenAPI 类型漂移检查与四端 production build 通过，Order API 后端回归 107 项及完整后端 1445 项通过（9 项 MySQL-only 跳过）。
 
-认证已在微信开发者工具连接本地 FastAPI + SQLite + Redis 完成真实 Functional。Product 列表也已通过游客、Empty、Error 恢复以及登录/退出后继续浏览；Content、相对图片和超过 10 条分页仍需真实 Online Product 数据验证，因此不能把整个 Product Functional 矩阵标记为完成。下一步先补齐这些数据路径，再加入搜索、筛选与详情。微信登录、支付、前端上传和其他业务页面仍未交付。
+认证、Product 浏览、Cart 与 Order 创建已在微信开发者工具连接本地 FastAPI + SQLite + Redis 完成既定 Functional。Order 查询/详情/取消由用户确认除 40921 双端竞态外均通过；该竞态仍待补测。ADMIN Order 工程实现、自动化和四端构建已完成，微信 Functional 待验证。H5 真实跨域联调仍受后端尚未注册 CORS allowlist 限制。微信登录、真实支付、前端上传和其他管理业务页面仍未交付。
 
 ---
 
@@ -305,6 +307,16 @@ Idempotency-Key: <stable-client-key>
 
 当前 `POST /orders` 没有客户端幂等键。客户端必须禁用重复提交，不在超时后自动重试。正式商业发布前应把 Order create idempotency 作为后端契约缺口处理。
 
+当前实现进一步冻结：
+
+- `OrderSubmissionStore` 在一次进行中的提交内复用同一个 Promise，页面按钮同时禁用；两层保护都不等于服务端幂等；
+- 请求开始时复制 Cart 快照，后续用户修改不改变已发出的请求；Experience 必须携带 `experience_option_id`，Kit 省略该字段；
+- 空白 remark 省略，非空 remark trim 后发送且最多 500 字符；请求只允许 `items` 与可选 `remark`；
+- 明确业务、认证或非 5xx HTTP 拒绝进入 `failed`，可以修正后由用户重新提交；network/timeout/cancel、成功响应契约损坏或 HTTP 5xx 无法证明事务未提交，进入 `unknown` 且页面不提供立即重试；
+- 成功结果只消费服务端 `OrderDetailOut` 快照。随后按已提交快照对账 Cart：当前数量相等则移除，大于提交量则扣除，小于提交量则保留并提示冲突；无关 Item 保留；
+- Cart 对账或 Storage 失败不改变“服务端订单已创建”的事实，只显示本地清理警告，避免用户再次 POST；
+- unknown 保留 Cart、不宣称失败、不自动重发，并提供“我的订单”入口读取服务端权威结果。
+
 ---
 
 ## 10. 特殊业务契约
@@ -322,8 +334,19 @@ Idempotency-Key: <stable-client-key>
 - Item 1–10，quantity 1–99，以实际 OpenAPI 常量为准；
 - 同一 Product/Option 组合不能重复；
 - Experience 必须有有效 Option；Kit 必须无 Option；
+- 本地 Cart 使用同一组合身份；重复加入在发送前合并 quantity，不同 Experience Option 保持不同 Item；
+- Cart 名称、配置、图片和价格是非权威预览字段；创建请求必须白名单投影，禁止把这些字段发给后端；
+- 当前 Cart Storage 是设备级游客缓存，版本为 `pinkdoohub.cart.v1`；坏数据清除，登录/退出不自动清空；
+- 我的订单固定由服务端按 `created_at DESC, id DESC` 排序；前端使用 `page/pages/total` 分页事实和可选 status 筛选，不根据本页长度推断总页数；
+- `item_count` 表示订单 Item 行数而非 quantity 总和；列表、详情和状态响应均按 unknown 做 Runtime Guard 与白名单投影；
+- 详情只渲染 Order Item 历史快照，不用当前 Product 名称、价格或 Option 覆盖；不存在与他人订单的 `40411` 使用同一不可访问提示；
 - 状态只允许 `pending → cancelled`、`pending → paid`、`paid → completed`；
 - cancel/paid/complete 三个 PATCH 不发送任何 body，连 `{}` 也不能发送；
+- 用户取消只在服务端详情为 Pending 时提供；进行中 Promise 合并不替代后端状态机。network/timeout/cancel、5xx 或成功响应契约损坏进入 unknown，不自动 PATCH；
+- cancel 成功后重新 GET 详情；刷新失败不改变已确认的 cancelled 事实。`40921` 后也重拉服务端状态，以收敛跨端竞态；
+- ADMIN 列表只发送 page/page_size/status/order_no/user_id/created_from/created_to；日期界面若按“包含结束日”表达，必须转成次日 UTC 零点作为 API 排他 `created_to`；
+- ADMIN 列表/详情只接收安全的 `user_id/user_nickname`。客户端角色守卫在挂载 Hook 前阻止普通用户请求，但后端 ADMIN+ dependency 仍是唯一授权边界；
+- ADMIN 详情只从服务端当前状态派生唯一命令：Pending → Paid，Paid → Completed，Cancelled/Completed 无命令。paid/complete 与 cancel 共用结果未知和成功后 GET 的收敛规则；
 - 用户不存在/他人订单统一 40411；
 - MVP Paid 只由 ADMIN+ 人工确认。
 
@@ -363,6 +386,7 @@ Idempotency-Key: <stable-client-key>
 | 登录 | `POST /auth/login` | Guest |
 | 恢复会话 | `POST /auth/refresh`、`GET /users/me` | Refresh/User |
 | 商品列表 | `GET /products` | Guest |
+| 本地购物车 | 无网络请求；Taro Storage | Guest/User |
 | Experience 详情 | `GET /products/experience/{id}` | Guest |
 | Kit 详情 | `GET /products/kit/{id}` | Guest |
 | 创建订单 | `POST /orders` | USER+ |
@@ -371,7 +395,8 @@ Idempotency-Key: <stable-client-key>
 | 取消订单 | `PATCH /orders/{id}/cancel` | USER+；empty body |
 | 管理商品 | `/admin/products...` | ADMIN+ |
 | 管理库存 | `/admin/.../inventory-adjustments`、流水 GET | ADMIN+ |
-| 管理订单 | `/admin/orders...` | ADMIN+ |
+| 管理订单列表/详情 | `GET /admin/orders`、`GET /admin/orders/{id}` | ADMIN+ |
+| 人工支付/完成 | `PATCH /admin/orders/{id}/paid`、`PATCH /admin/orders/{id}/complete` | ADMIN+；empty body |
 | 用户列表/禁用 | `/admin/users...` | ADMIN+ |
 
 完整字段和错误以对应模块 API 文档及 OpenAPI 为准。
