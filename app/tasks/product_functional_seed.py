@@ -21,9 +21,11 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.db.database import TORTOISE_ORM
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
+from app.services.inventory_service import InventoryService
 from app.services.product_service import ProductService
 from app.storage.image import LocalImageStorage
 
@@ -97,9 +99,25 @@ class SeedTotals:
     created: int = 0
     skipped: int = 0
     repaired_images: int = 0
+    in_stock_kit_id: int | None = None
+    in_stock_kit_stock: int = 0
+    inventory_adjusted: bool = False
+    inventory_replayed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class InventorySeedResult:
+    product_id: int
+    stock: int
+    adjusted: bool
+    replayed: bool
 
 
 MULTI_OPTION_SEED_NAME = f"{SEED_PREFIX} 多配置拼豆体验"
+IN_STOCK_KIT_SEED_NAME = f"{SEED_PREFIX} 拼豆材料包 01"
+IN_STOCK_KIT_INITIAL_CHANGE = 8
+IN_STOCK_KIT_IDEMPOTENCY_KEY = "local-fe-product-seed-kit-01-stock-v1"
+IN_STOCK_KIT_REASON = "Local frontend functional seed initial stock"
 
 
 SEED_SPECS = (
@@ -217,6 +235,63 @@ async def seed_products(
         await _create_one(service, storage, spec=spec, operator_id=operator_id)
         totals = SeedTotals(totals.created + 1, totals.skipped)
     return totals
+
+
+async def seed_in_stock_kit(
+    product_service: ProductService,
+    inventory_service: InventoryService,
+    *,
+    operator_id: int,
+) -> InventorySeedResult:
+    """通过正式 Inventory 用例为一个本地 Seed Kit 建立有库存场景。"""
+
+    matches = await product_service.list_admin_products(
+        page=1,
+        page_size=100,
+        keyword=IN_STOCK_KIT_SEED_NAME,
+        include_deleted=False,
+    )
+    exact = [item for item in matches.items if item.name == IN_STOCK_KIT_SEED_NAME]
+    if len(exact) != 1 or exact[0].product_type != ProductType.KIT:
+        raise RuntimeError(
+            f"In-stock seed Kit is missing or conflicting: {IN_STOCK_KIT_SEED_NAME}"
+        )
+
+    product = await product_service.get_admin_product_detail(
+        exact[0].id,
+        product_type=ProductType.KIT,
+    )
+    if product.kit.stock > 0:
+        return InventorySeedResult(
+            product_id=product.id,
+            stock=product.kit.stock,
+            adjusted=False,
+            replayed=False,
+        )
+
+    result = await inventory_service.adjust_stock(
+        product.id,
+        change=IN_STOCK_KIT_INITIAL_CHANGE,
+        reason=IN_STOCK_KIT_REASON,
+        operator_id=operator_id,
+        ip_address=LOCAL_IP,
+        idempotency_key=IN_STOCK_KIT_IDEMPOTENCY_KEY,
+    )
+    refreshed = await product_service.get_admin_product_detail(
+        product.id,
+        product_type=ProductType.KIT,
+    )
+    if refreshed.kit.stock <= 0:
+        raise RuntimeError(
+            "In-stock seed Kit initial adjustment was already consumed; "
+            "replenish it through the Inventory adjustment API"
+        )
+    return InventorySeedResult(
+        product_id=refreshed.id,
+        stock=refreshed.kit.stock,
+        adjusted=not result.is_replay,
+        replayed=result.is_replay,
+    )
 
 
 async def repair_legacy_seed_images(
@@ -426,9 +501,13 @@ async def run(*, operator_username: str) -> SeedTotals:
         if operator.status != UserStatus.NORMAL:
             raise RuntimeError("Operator must be enabled")
 
-        service = ProductService(
-            ProductRepository(),
-            AuditLogService(AuditLogRepository()),
+        product_repository = ProductRepository()
+        audit_log_service = AuditLogService(AuditLogRepository())
+        service = ProductService(product_repository, audit_log_service)
+        inventory_service = InventoryService(
+            InventoryRepository(),
+            product_repository,
+            audit_log_service,
         )
         storage = LocalImageStorage(
             root=settings.product_image_upload_dir,
@@ -436,10 +515,19 @@ async def run(*, operator_username: str) -> SeedTotals:
         )
         repaired_images = await repair_legacy_seed_images(service, storage)
         totals = await seed_products(service, storage, operator_id=operator.id)
+        inventory = await seed_in_stock_kit(
+            service,
+            inventory_service,
+            operator_id=operator.id,
+        )
         return SeedTotals(
             created=totals.created,
             skipped=totals.skipped,
             repaired_images=repaired_images,
+            in_stock_kit_id=inventory.product_id,
+            in_stock_kit_stock=inventory.stock,
+            inventory_adjusted=inventory.adjusted,
+            inventory_replayed=inventory.replayed,
         )
     finally:
         await Tortoise.close_connections()
@@ -463,11 +551,16 @@ def main() -> int:
         return 2
     logger.info(
         "Local Product seed complete: created=%d skipped=%d "
-        "repaired_images=%d total=%d",
+        "repaired_images=%d total=%d in_stock_kit_id=%d stock=%d "
+        "inventory_adjusted=%s inventory_replayed=%s",
         totals.created,
         totals.skipped,
         totals.repaired_images,
         len(SEED_SPECS),
+        totals.in_stock_kit_id,
+        totals.in_stock_kit_stock,
+        totals.inventory_adjusted,
+        totals.inventory_replayed,
     )
     return 0
 

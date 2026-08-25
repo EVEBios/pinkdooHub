@@ -7,19 +7,29 @@ import pytest
 
 from app.common.enums.product import DayType, ProductStatus, ProductType
 from app.common.pagination import Page
+from app.models.inventory_transaction import InventoryTransaction
 from app.models.product import Product
 from app.models.product_image import ProductImage
+from app.models.product_kit import ProductKit
+from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
+from app.services.inventory_service import InventoryService
 from app.services.product_service import ProductService
 from app.storage.image import LocalImageStorage
 from app.storage.image import StoredImage
 from app.tasks.product_functional_seed import (
     MULTI_OPTION_SEED_NAME,
+    IN_STOCK_KIT_IDEMPOTENCY_KEY,
+    IN_STOCK_KIT_INITIAL_CHANGE,
+    IN_STOCK_KIT_REASON,
+    IN_STOCK_KIT_SEED_NAME,
     SEED_SPECS,
     _store_image,
     assert_local_seed_allowed,
+    seed_in_stock_kit,
     seed_products,
 )
 
@@ -133,6 +143,118 @@ async def test_seed_products_stops_on_reserved_name_conflict():
 
 
 @pytest.mark.asyncio
+async def test_seed_in_stock_kit_uses_formal_inventory_adjustment():
+    product = SimpleNamespace(
+        id=31,
+        name=IN_STOCK_KIT_SEED_NAME,
+        product_type=ProductType.KIT,
+    )
+    product_service = Mock()
+    product_service.list_admin_products = AsyncMock(
+        return_value=Page(items=[product], total=1, page=1, page_size=100, pages=1)
+    )
+    product_service.get_admin_product_detail = AsyncMock(
+        side_effect=[
+            SimpleNamespace(id=31, kit=SimpleNamespace(stock=0)),
+            SimpleNamespace(
+                id=31,
+                kit=SimpleNamespace(stock=IN_STOCK_KIT_INITIAL_CHANGE),
+            ),
+        ]
+    )
+    inventory_service = Mock()
+    inventory_service.adjust_stock = AsyncMock(
+        return_value=SimpleNamespace(
+            product_id=31,
+            stock=IN_STOCK_KIT_INITIAL_CHANGE,
+            is_replay=False,
+        )
+    )
+
+    result = await seed_in_stock_kit(
+        product_service,
+        inventory_service,
+        operator_id=7,
+    )
+
+    assert result.product_id == 31
+    assert result.stock == IN_STOCK_KIT_INITIAL_CHANGE
+    assert result.adjusted is True
+    assert result.replayed is False
+    inventory_service.adjust_stock.assert_awaited_once_with(
+        31,
+        change=IN_STOCK_KIT_INITIAL_CHANGE,
+        reason=IN_STOCK_KIT_REASON,
+        operator_id=7,
+        ip_address="127.0.0.1",
+        idempotency_key=IN_STOCK_KIT_IDEMPOTENCY_KEY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_seed_in_stock_kit_rejects_stale_replay_after_stock_is_consumed():
+    product = SimpleNamespace(
+        id=31,
+        name=IN_STOCK_KIT_SEED_NAME,
+        product_type=ProductType.KIT,
+    )
+    product_service = Mock()
+    product_service.list_admin_products = AsyncMock(
+        return_value=Page(items=[product], total=1, page=1, page_size=100, pages=1)
+    )
+    product_service.get_admin_product_detail = AsyncMock(
+        side_effect=[
+            SimpleNamespace(id=31, kit=SimpleNamespace(stock=0)),
+            SimpleNamespace(id=31, kit=SimpleNamespace(stock=0)),
+        ]
+    )
+    inventory_service = Mock()
+    inventory_service.adjust_stock = AsyncMock(
+        return_value=SimpleNamespace(
+            product_id=31,
+            stock=IN_STOCK_KIT_INITIAL_CHANGE,
+            is_replay=True,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="already consumed"):
+        await seed_in_stock_kit(
+            product_service,
+            inventory_service,
+            operator_id=7,
+        )
+
+
+@pytest.mark.asyncio
+async def test_seed_in_stock_kit_preserves_existing_positive_stock():
+    product = SimpleNamespace(
+        id=31,
+        name=IN_STOCK_KIT_SEED_NAME,
+        product_type=ProductType.KIT,
+    )
+    product_service = Mock()
+    product_service.list_admin_products = AsyncMock(
+        return_value=Page(items=[product], total=1, page=1, page_size=100, pages=1)
+    )
+    product_service.get_admin_product_detail = AsyncMock(
+        return_value=SimpleNamespace(id=31, kit=SimpleNamespace(stock=5))
+    )
+    inventory_service = Mock()
+    inventory_service.adjust_stock = AsyncMock()
+
+    result = await seed_in_stock_kit(
+        product_service,
+        inventory_service,
+        operator_id=7,
+    )
+
+    assert result.stock == 5
+    assert result.adjusted is False
+    assert result.replayed is False
+    inventory_service.adjust_stock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_store_image_compensates_file_when_database_registration_fails():
     service = Mock()
     service.create_product_image = AsyncMock(side_effect=RuntimeError("db failed"))
@@ -158,6 +280,12 @@ async def test_store_image_compensates_file_when_database_registration_fails():
 
 @pytest.mark.asyncio
 async def test_real_seed_creates_online_catalog_and_second_run_is_idempotent(tmp_path):
+    operator = await User.create(
+        username="product-functional-seed-admin",
+        password="test-password-hash",
+        nickname="Product Seed Admin",
+        phone="13900009951",
+    )
     service = ProductService(
         ProductRepository(),
         AuditLogService(AuditLogRepository()),
@@ -167,8 +295,23 @@ async def test_real_seed_creates_online_catalog_and_second_run_is_idempotent(tmp
         base_url="/uploads/products",
     )
 
-    first = await seed_products(service, storage, operator_id=51)
-    second = await seed_products(service, storage, operator_id=51)
+    first = await seed_products(service, storage, operator_id=operator.id)
+    second = await seed_products(service, storage, operator_id=operator.id)
+    inventory_service = InventoryService(
+        InventoryRepository(),
+        ProductRepository(),
+        AuditLogService(AuditLogRepository()),
+    )
+    first_inventory = await seed_in_stock_kit(
+        service,
+        inventory_service,
+        operator_id=operator.id,
+    )
+    second_inventory = await seed_in_stock_kit(
+        service,
+        inventory_service,
+        operator_id=operator.id,
+    )
 
     assert first.created == 13
     assert first.skipped == 0
@@ -179,6 +322,18 @@ async def test_real_seed_creates_online_catalog_and_second_run_is_idempotent(tmp
     assert all(product.status == ProductStatus.ONLINE for product in products)
     assert await ProductImage.filter(is_deleted=False).count() == 21
     assert len(list((tmp_path / "uploads").glob("*.png"))) == 21
+    assert first_inventory.stock == IN_STOCK_KIT_INITIAL_CHANGE
+    assert first_inventory.adjusted is True
+    assert second_inventory.stock == IN_STOCK_KIT_INITIAL_CHANGE
+    assert second_inventory.adjusted is False
+    assert await InventoryTransaction.all().count() == 1
+    kit_stocks = sorted(
+        await ProductKit.filter(product__name__startswith="[LOCAL-FE]").values_list(
+            "stock",
+            flat=True,
+        )
+    )
+    assert kit_stocks == [0, 0, 0, 0, 0, IN_STOCK_KIT_INITIAL_CHANGE]
 
     multi_option_product = next(
         product for product in products if product.name == MULTI_OPTION_SEED_NAME
