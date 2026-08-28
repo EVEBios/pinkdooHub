@@ -21,6 +21,7 @@ from app.common.constants.order import (
     ORDER_NO_PATTERN,
     ORDER_REMARK_MAX_LENGTH,
 )
+from app.common.constants.product import PRODUCT_NAME_MAX_LENGTH
 from app.common.enums.order import OrderStatusValue
 from app.common.pagination import PageParams
 
@@ -61,6 +62,10 @@ OrderRemark = Annotated[
 OrderNumberQuery = Annotated[
     str,
     Field(strict=True, pattern=ORDER_NO_PATTERN),
+]
+OrderProductNameQuery = Annotated[
+    str,
+    Field(strict=True, min_length=1, max_length=PRODUCT_NAME_MAX_LENGTH),
 ]
 
 
@@ -130,6 +135,7 @@ class AdminOrderListQuery(OrderListQuery):
     """管理端订单分页与组合筛选。"""
 
     order_no: OrderNumberQuery | None = None
+    product_name: OrderProductNameQuery | None = None
     user_id: PositiveOrderQueryId | None = None
     created_from: AwareDatetime | None = None
     created_to: AwareDatetime | None = None

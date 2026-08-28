@@ -152,6 +152,18 @@ def test_order_openapi_has_security_success_errors_and_body_contracts() -> None:
         elif method == "post":
             assert "requestBody" in operation
 
+    admin_list_parameters = schema["paths"]["/api/v1/admin/orders"]["get"][
+        "parameters"
+    ]
+    product_name_parameter = next(
+        parameter
+        for parameter in admin_list_parameters
+        if parameter["name"] == "product_name"
+    )
+    product_name_string_schema = product_name_parameter["schema"]["anyOf"][0]
+    assert product_name_string_schema["minLength"] == 1
+    assert product_name_string_schema["maxLength"] == 100
+
 
 def test_all_openapi_operation_ids_remain_unique_with_order_routes() -> None:
     """新增 Order 路由不能与任何既有模块产生 operationId 冲突。"""

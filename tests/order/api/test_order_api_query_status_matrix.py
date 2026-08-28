@@ -170,6 +170,7 @@ async def test_user_and_admin_lists_apply_visibility_filters_and_pagination(
         params={
             "status": "paid",
             "order_no": owner_paid.order_no,
+            "product_name": "矩阵体验",
             "user_id": owner.id,
             "created_from": (anchor - timedelta(hours=2, minutes=30)).isoformat(),
             "created_to": (anchor - timedelta(hours=1, minutes=30)).isoformat(),
@@ -187,6 +188,75 @@ async def test_user_and_admin_lists_apply_visibility_filters_and_pagination(
     }
 
 
+async def test_admin_product_name_filter_uses_history_and_deduplicates_orders(
+    client: AsyncClient,
+) -> None:
+    """真实 HTTP 必须按历史快照搜索，并按订单而非命中 Item 分页。"""
+
+    owner, _ = await _create_user(20)
+    _, admin_token = await _create_user(21, role=UserRole.ADMIN)
+    product, option = await _create_catalog()
+    matched = await _seed_order(
+        user=owner,
+        product=product,
+        option=option,
+        index=20,
+        status=OrderStatus.PAID,
+    )
+    await OrderItem.create(
+        order=matched,
+        product=product,
+        experience_option=option,
+        option_duration_minutes=option.duration,
+        option_participants=option.participants,
+        option_day_type=option.day_type,
+        product_name="历史矩阵材料包",
+        product_price=option.price,
+        quantity=1,
+        subtotal=Decimal("10.00"),
+    )
+    await OrderItem.filter(order_id=matched.id).update(
+        product_name="历史矩阵体验",
+    )
+    await Product.filter(id=product.id).update(name="当前已改名")
+
+    current_name_only_product = await Product.create(
+        name="当前历史矩阵商品",
+        product_type=ProductType.EXPERIENCE,
+        status=ProductStatus.ONLINE,
+    )
+    current_name_only_option = await ExperienceOption.create(
+        product=current_name_only_product,
+        duration=60,
+        participants=1,
+        day_type=DayType.HOLIDAY,
+        price=Decimal("10.00"),
+    )
+    not_matched = await _seed_order(
+        user=owner,
+        product=current_name_only_product,
+        option=current_name_only_option,
+        index=21,
+        status=OrderStatus.PAID,
+    )
+    await OrderItem.filter(order_id=not_matched.id).update(
+        product_name="下单时其他商品",
+    )
+
+    response = await client.get(
+        "/api/v1/admin/orders",
+        params={"product_name": "历史矩阵", "page": 1, "page_size": 1},
+        headers=_headers(admin_token),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["total"] == 1
+    assert data["pages"] == 1
+    assert [item["id"] for item in data["items"]] == [matched.id]
+    assert data["items"][0]["item_count"] == 2
+
+
 @pytest.mark.parametrize(
     "params",
     [
@@ -194,6 +264,8 @@ async def test_user_and_admin_lists_apply_visibility_filters_and_pagination(
         {"page_size": 101},
         {"status": "unknown"},
         {"order_no": "invalid"},
+        {"product_name": " "},
+        {"product_name": "拼" * 101},
         {"user_id": "true"},
         {"created_from": "2026-08-13T08:00:00+08:00"},
         {

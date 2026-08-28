@@ -226,7 +226,7 @@ async def test_admin_list_forwards_all_validated_filters(
 
     response = await client.get(
         "/api/v1/admin/orders?page=1&page_size=10&status=paid"
-        f"&order_no={ORDER_NO}&user_id=7"
+        f"&order_no={ORDER_NO}&product_name=%E6%98%9F%E7%A9%BA%E6%8B%BC%E8%B1%86&user_id=7"
         "&created_from=2026-08-13T00%3A00%3A00Z"
         "&created_to=2026-08-14T00%3A00%3A00Z"
     )
@@ -238,6 +238,7 @@ async def test_admin_list_forwards_all_validated_filters(
     assert kwargs["page_size"] == 10
     assert kwargs["status"] == "paid"
     assert kwargs["order_no"] == ORDER_NO
+    assert kwargs["product_name"] == "星空拼豆"
     assert kwargs["user_id"] == 7
     assert kwargs["created_from"] == datetime(
         2026, 8, 13, tzinfo=timezone.utc

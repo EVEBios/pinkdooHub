@@ -52,6 +52,7 @@ async def list_admin_orders(
         page_size=query.page_size,
         status=query.status,
         order_no=query.order_no,
+        product_name=query.product_name,
         user_id=query.user_id,
         created_from=query.created_from,
         created_to=query.created_to,

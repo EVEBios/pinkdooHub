@@ -129,6 +129,7 @@ async def test_real_admin_queries_return_user_and_items() -> None:
         page_size=20,
         status="completed",
         order_no=order.order_no,
+        product_name="订单 1 商品",
         user_id=user.id,
     )
     detail = await service.get_admin_order_detail(order.id)

@@ -46,6 +46,7 @@ def test_admin_order_query_accepts_all_frozen_filters() -> None:
             "page_size": "20",
             "status": "paid",
             "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
+            "product_name": " 星空拼豆 ",
             "user_id": "7",
             "created_from": "2026-08-13T00:00:00Z",
             "created_to": "2026-08-14T00:00:00+00:00",
@@ -53,6 +54,7 @@ def test_admin_order_query_accepts_all_frozen_filters() -> None:
     )
 
     assert schema.status == "paid"
+    assert schema.product_name == "星空拼豆"
     assert schema.user_id == 7
     assert schema.created_from == datetime(
         2026,
@@ -83,6 +85,16 @@ def test_admin_order_query_rejects_invalid_order_number(
         AdminOrderListQuery.model_validate({"order_no": order_no})
 
     assert exc_info.value.errors()[0]["loc"] == ("order_no",)
+
+
+@pytest.mark.parametrize("product_name", ["", "   ", "拼" * 101])
+def test_admin_order_query_rejects_invalid_product_name(
+    product_name: str,
+) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AdminOrderListQuery.model_validate({"product_name": product_name})
+
+    assert exc_info.value.errors()[0]["loc"] == ("product_name",)
 
 
 @pytest.mark.parametrize("user_id", ["0", "-1", "abc", 0, True])

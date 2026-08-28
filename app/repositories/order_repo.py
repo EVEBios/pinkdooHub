@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from tortoise.backends.base.client import BaseDBAsyncClient
+from tortoise.expressions import Subquery
 from tortoise.functions import Count
 from tortoise.query_utils import Prefetch
 from tortoise.queryset import QuerySet
@@ -44,6 +45,7 @@ def _apply_order_filters(
     *,
     status: OrderStatus | None = None,
     order_no: str | None = None,
+    product_name: str | None = None,
     user_id: int | None = None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
@@ -54,6 +56,12 @@ def _apply_order_filters(
         query = query.filter(status=status.value)
     if order_no is not None:
         query = query.filter(order_no=order_no)
+    if product_name is not None:
+        # 先把一对多命中收敛为 Order ID，避免外层分页和 Count(items) 被 JOIN 放大。
+        matching_order_ids = OrderItem.filter(
+            product_name__contains=product_name,
+        ).values_list("order_id", flat=True)
+        query = query.filter(id__in=Subquery(matching_order_ids))
     if user_id is not None:
         query = query.filter(user_id=user_id)
     if created_from is not None:
@@ -245,6 +253,7 @@ class OrderRepository:
         page_size: int,
         status: OrderStatus | None = None,
         order_no: str | None = None,
+        product_name: str | None = None,
         user_id: int | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
@@ -255,6 +264,7 @@ class OrderRepository:
             Order.all(),
             status=status,
             order_no=order_no,
+            product_name=product_name,
             user_id=user_id,
             created_from=created_from,
             created_to=created_to,

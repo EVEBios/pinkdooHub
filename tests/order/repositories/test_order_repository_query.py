@@ -309,6 +309,7 @@ async def test_admin_list_applies_all_filters_and_preloads_user() -> None:
         page_size=20,
         status=OrderStatus.PAID,
         order_no=expected.order_no,
+        product_name="订单 1 商品",
         user_id=user.id,
         created_from=start + timedelta(hours=1),
         created_to=start + timedelta(hours=2),
@@ -318,6 +319,63 @@ async def test_admin_list_applies_all_filters_and_preloads_user() -> None:
     assert result.items[0].user.id == user.id
     assert result.items[0].user.nickname == "用户 1"
     assert result.items[0].item_count == 2
+
+
+async def test_admin_product_name_filter_uses_snapshot_without_duplicate_pages(
+) -> None:
+    """多 Item 命中只计一单，且当前 Product 改名不改变历史检索。"""
+
+    user = await _create_user(1)
+    same_time = datetime(2026, 8, 13, 8, 0, tzinfo=timezone.utc)
+    older = await _create_order(
+        user,
+        1,
+        created_at=same_time,
+        item_count=3,
+    )
+    newer = await _create_order(
+        user,
+        2,
+        created_at=same_time,
+        item_count=2,
+    )
+    current_name_only = await _create_order(user, 3, item_count=1)
+
+    older_items = await OrderItem.filter(order_id=older.id).order_by("id")
+    newer_items = await OrderItem.filter(order_id=newer.id).order_by("id")
+    current_only_item = await OrderItem.get(order_id=current_name_only.id)
+    await OrderItem.filter(id__in=[older_items[0].id, older_items[1].id]).update(
+        product_name="历史星空拼豆",
+    )
+    await OrderItem.filter(id=newer_items[0].id).update(
+        product_name="星空材料包历史快照",
+    )
+    await Product.filter(id=older_items[0].product_id).update(name="当前已改名")
+    await Product.filter(id=current_only_item.product_id).update(
+        name="当前星空商品",
+    )
+
+    first = await OrderRepository().list_admin_orders(
+        page=1,
+        page_size=1,
+        product_name="星空",
+    )
+    second = await OrderRepository().list_admin_orders(
+        page=2,
+        page_size=1,
+        product_name="星空",
+    )
+
+    assert [order.id for order in first.items] == [newer.id]
+    assert [order.id for order in second.items] == [older.id]
+    assert first.total == second.total == 2
+    assert first.pages == second.pages == 2
+    assert first.items[0].item_count == 2
+    assert second.items[0].item_count == 3
+    assert current_name_only.id not in {
+        *(order.id for order in first.items),
+        *(order.id for order in second.items),
+    }
 
 
 async def test_admin_created_range_boundaries() -> None:
