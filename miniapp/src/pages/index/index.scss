@@ -46,15 +46,29 @@
 
   &__account {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 16px;
     margin-top: 28px;
     font-size: 24px;
   }
 
+  &__account-user {
+    display: block;
+  }
+
+  &__account-actions {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
   &__account-action {
+    flex-shrink: 0;
     margin: 0;
     color: #8f2948;
+    white-space: nowrap;
     border-color: #d99aae;
     background: rgb(255 255 255 / 72%);
   }

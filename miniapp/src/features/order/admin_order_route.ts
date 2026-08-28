@@ -1,4 +1,5 @@
 export { ADMIN_ORDER_LIST_PATH } from '@/auth/login_route'
+export { isAdminRole } from '@/auth/role'
 
 export interface AdminOrderDetailRoute {
   readonly orderId: number
@@ -19,8 +20,4 @@ export function buildAdminOrderDetailUrl(orderId: number): string {
     throw new Error('Order ID 必须是正安全整数')
   }
   return `/admin/pages/order-detail/index?id=${orderId}`
-}
-
-export function isAdminRole(role: string | undefined): role is 'admin' | 'super_admin' {
-  return role === 'admin' || role === 'super_admin'
 }

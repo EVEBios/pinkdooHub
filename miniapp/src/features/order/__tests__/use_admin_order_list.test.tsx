@@ -40,6 +40,7 @@ function Harness({ source }: { readonly source: AdminOrderListSource }) {
       <span className='ids'>{state.items.map((item) => item.id).join(',')}</span>
       <button className='apply' onClick={() => applyFilters({
         status: 'paid',
+        productName: '星空拼豆',
         orderNo: firstPage.items[0].order_no,
         userId: 7,
         createdFrom: '2026-08-01T00:00:00.000Z',
@@ -71,6 +72,7 @@ describe('useAdminOrderList', () => {
       page: 1,
       page_size: 20,
       status: 'paid',
+      product_name: '星空拼豆',
       order_no: firstPage.items[0].order_no,
       user_id: 7,
       created_from: '2026-08-01T00:00:00.000Z',
@@ -97,12 +99,14 @@ describe('parseAdminOrderFilters', () => {
   it('规范化订单号/用户 ID，并将结束日转为次日排他上界', () => {
     expect(parseAdminOrderFilters({
       status: 'completed',
+      productName: ' 星空拼豆 ',
       orderNo: ' od01k2m7y0j7a3n5q8t4v6w9x2bc ',
       userId: '7',
       createdFrom: '2026-08-01',
       createdTo: '2026-08-31',
     })).toEqual({ filters: {
       status: 'completed',
+      productName: '星空拼豆',
       orderNo: 'OD01K2M7Y0J7A3N5Q8T4V6W9X2BC',
       userId: 7,
       createdFrom: '2026-08-01T00:00:00.000Z',
@@ -111,10 +115,11 @@ describe('parseAdminOrderFilters', () => {
   })
 
   it.each([
-    [{ status: 'all', orderNo: 'bad', userId: '', createdFrom: '', createdTo: '' }, '订单号格式'],
-    [{ status: 'all', orderNo: '', userId: '0', createdFrom: '', createdTo: '' }, '用户 ID'],
-    [{ status: 'all', orderNo: '', userId: '', createdFrom: '2026-02-30', createdTo: '' }, '开始日期'],
-    [{ status: 'all', orderNo: '', userId: '', createdFrom: '2026-09-01', createdTo: '2026-08-01' }, '不能早于'],
+    [{ status: 'all', productName: '拼'.repeat(101), orderNo: '', userId: '', createdFrom: '', createdTo: '' }, '商品名称'],
+    [{ status: 'all', productName: '', orderNo: 'bad', userId: '', createdFrom: '', createdTo: '' }, '订单号格式'],
+    [{ status: 'all', productName: '', orderNo: '', userId: '0', createdFrom: '', createdTo: '' }, '用户 ID'],
+    [{ status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '2026-02-30', createdTo: '' }, '开始日期'],
+    [{ status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '2026-09-01', createdTo: '2026-08-01' }, '不能早于'],
   ] as const)('拒绝非法筛选：%p', (draft, expected) => {
     expect(parseAdminOrderFilters(draft).error).toContain(expected)
   })

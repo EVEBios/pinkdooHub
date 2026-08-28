@@ -10,7 +10,7 @@ import {
 } from 'react'
 
 import { BusinessError, SessionExpiredError } from '@/api'
-import type { UserProfile } from '@/api/endpoints/auth'
+import type { RegistrationRequest, UserProfile } from '@/api/endpoints/auth'
 
 import { getDefaultAuthRuntime, type AuthRuntime } from './runtime'
 
@@ -20,6 +20,7 @@ export interface AuthContextValue {
   status: AuthStatus
   user?: UserProfile
   initializationError?: Error
+  register(data: RegistrationRequest): Promise<UserProfile>
   login(username: string, password: string): Promise<void>
   logout(): Promise<void>
   retryInitialization(): void
@@ -97,6 +98,10 @@ export function AuthProvider({ children, runtime: runtimeProp }: AuthProviderPro
     setStatus('authenticated')
   }, [runtime])
 
+  const register = useCallback(async (data: RegistrationRequest) => {
+    return runtime.api.register(data)
+  }, [runtime])
+
   const logout = useCallback(async () => {
     try {
       await runtime.api.logout()
@@ -113,10 +118,11 @@ export function AuthProvider({ children, runtime: runtimeProp }: AuthProviderPro
     status,
     user,
     initializationError,
+    register,
     login,
     logout,
     retryInitialization,
-  }), [initializationError, login, logout, retryInitialization, status, user])
+  }), [initializationError, login, logout, register, retryInitialization, status, user])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

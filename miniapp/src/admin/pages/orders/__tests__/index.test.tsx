@@ -18,7 +18,7 @@ jest.mock('@/auth', () => ({
 
 jest.mock('@/features/order', () => ({
   ADMIN_ORDER_LIST_PATH: '/admin/pages/orders/index',
-  EMPTY_ADMIN_ORDER_FILTER_DRAFT: { status: 'all', orderNo: '', userId: '', createdFrom: '', createdTo: '' },
+  EMPTY_ADMIN_ORDER_FILTER_DRAFT: { status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '', createdTo: '' },
   buildAdminOrderDetailUrl: (id: number) => `/admin/pages/order-detail/index?id=${id}`,
   isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
   parseAdminOrderFilters: (draft: { status: string }) => ({ filters: { status: draft.status } }),
@@ -46,6 +46,7 @@ describe('AdminOrdersPage', () => {
         created_at: '2026-08-01T00:00:00Z',
         updated_at: '2026-08-01T00:00:00Z',
       },
+      register: jest.fn(),
       login: jest.fn(),
       logout: jest.fn(),
       retryInitialization: jest.fn(),
@@ -106,6 +107,15 @@ describe('AdminOrdersPage', () => {
     expect(card.textContent).toContain('用户 #7 · 开发用户')
     testUtils.fireEvent.click(card)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/order-detail/index?id=101' })
+  })
+
+  it('提供基于历史快照的商品名称部分匹配入口', async () => {
+    await testUtils.mount(AuthenticatedAdminOrders)
+
+    const input = Array.from(testUtils.queries.querySelectorAll('.admin-order-filters__input'))
+      .find((element) => element.getAttribute('placeholder') === '商品名称（支持部分匹配）')
+    expect(input).toBeDefined()
+    expect(input?.getAttribute('maxlength')).toBe('100')
   })
 })
 

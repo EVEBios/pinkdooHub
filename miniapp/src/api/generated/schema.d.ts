@@ -545,9 +545,7 @@ export interface paths {
         };
         /**
          * List Users
-         * @description 分页获取用户列表，支持按 status/role 筛选。
-         *
-         *     ?page=1&page_size=20&status=normal&role=user
+         * @description 按状态、角色稳定倒序分页查询用户安全摘要。
          */
         readonly get: operations["list_users_api_v1_admin_users_get"];
         readonly put?: never;
@@ -568,7 +566,7 @@ export interface paths {
         readonly get?: never;
         /**
          * Disable User
-         * @description 禁用指定用户。
+         * @description 幂等禁用指定用户，状态写入与审计日志同事务提交。
          */
         readonly put: operations["disable_user_api_v1_admin_users__user_id__disable_put"];
         readonly post?: never;
@@ -1301,11 +1299,6 @@ export interface components {
             readonly options: readonly components["schemas"]["_OnlineExperienceOptionOut"][];
             readonly product_type: components["schemas"]["LabeledValue_Literal_EXPERIENCE__"];
         };
-        /** HTTPValidationError */
-        readonly HTTPValidationError: {
-            /** Detail */
-            readonly detail?: readonly components["schemas"]["ValidationError"][];
-        };
         /**
          * InventoryAdjustmentCreate
          * @description 管理员以变化量和原因调整 Kit 当前库存。
@@ -1828,6 +1821,19 @@ export interface components {
             /** Total */
             readonly total: number;
         };
+        /** Page[UserListItem] */
+        readonly Page_UserListItem_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["UserListItem"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
         /**
          * PasswordChange
          * @description 修改密码请求。
@@ -2330,6 +2336,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[Page[UserListItem]] */
+        readonly SuccessResponse_Page_UserListItem__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_UserListItem_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[ProductBasicInfoOut] */
         readonly SuccessResponse_ProductBasicInfoOut_: {
             /**
@@ -2487,6 +2508,31 @@ export interface components {
             readonly username: string;
         };
         /**
+         * UserListItem
+         * @description 用户列表项——后台列表用，比 UserOut 更轻量。
+         *
+         *     排除 phone、avatar、updated_at，减少列表接口的响应体积。
+         */
+        readonly UserListItem: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Last Login At */
+            readonly last_login_at: string | null;
+            /** Nickname */
+            readonly nickname: string;
+            /** @enum {string} */
+            readonly role: "user" | "admin" | "super_admin";
+            /** @enum {string} */
+            readonly status: "normal" | "disabled";
+            /** Username */
+            readonly username: string;
+        };
+        /**
          * UserOut
          * @description 用户详情响应——不含 password。
          */
@@ -2539,19 +2585,6 @@ export interface components {
             readonly nickname?: string | null;
             /** Phone */
             readonly phone?: string | null;
-        };
-        /** ValidationError */
-        readonly ValidationError: {
-            /** Context */
-            readonly ctx?: Record<string, never>;
-            /** Input */
-            readonly input?: unknown;
-            /** Location */
-            readonly loc: readonly (string | number)[];
-            /** Message */
-            readonly msg: string;
-            /** Error Type */
-            readonly type: string;
         };
     };
     responses: never;
@@ -2949,6 +2982,7 @@ export interface operations {
                 readonly order_no?: string | null;
                 readonly page?: number;
                 readonly page_size?: number;
+                readonly product_name?: string | null;
                 readonly status?: ("pending" | "paid" | "cancelled" | "completed") | null;
                 readonly user_id?: number | null;
             };
@@ -4691,8 +4725,8 @@ export interface operations {
             readonly query?: {
                 readonly page?: number;
                 readonly page_size?: number;
-                readonly role?: string | null;
-                readonly status?: string | null;
+                readonly role?: ("user" | "admin" | "super_admin") | null;
+                readonly status?: ("normal" | "disabled") | null;
             };
             readonly header?: never;
             readonly path?: never;
@@ -4706,16 +4740,43 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": unknown;
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_UserListItem__"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
             readonly 422: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4737,16 +4798,43 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": unknown;
+                    readonly "application/json": components["schemas"]["SuccessResponse_NoneType_"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
             readonly 422: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

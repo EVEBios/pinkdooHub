@@ -3,7 +3,7 @@ import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useState } from 'react'
 
 import { ApiClientError, BusinessError } from '@/api'
-import { parseLoginRedirect, useAuth } from '@/auth'
+import { buildRegisterUrl, parseLoginRedirect, useAuth } from '@/auth'
 
 import './index.scss'
 
@@ -51,6 +51,7 @@ export default function LoginPage() {
         <Form className='login-form' onSubmit={() => void submitLogin()}>
           <Text className='login-form__label'>用户名</Text>
           <Input
+            alwaysEmbed
             className='login-form__input'
             maxlength={32}
             placeholder='请输入用户名'
@@ -60,6 +61,7 @@ export default function LoginPage() {
 
           <Text className='login-form__label'>密码</Text>
           <Input
+            alwaysEmbed
             className='login-form__input'
             maxlength={128}
             password
@@ -79,6 +81,13 @@ export default function LoginPage() {
             {status === 'initializing' ? '正在恢复会话…' : submitting ? '登录中…' : '登录'}
           </Button>
         </Form>
+
+        <Button
+          className='login-card__register'
+          onClick={() => void Taro.navigateTo({ url: buildRegisterUrl(redirect) })}
+        >
+          没有账号？立即注册
+        </Button>
 
         <Text className='login-card__notice'>密码只用于本次请求，不会保存在本地。</Text>
       </View>

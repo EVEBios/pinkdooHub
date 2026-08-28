@@ -369,6 +369,7 @@ describe('OrderApi admin query and transitions', () => {
       page_size: 20,
       status: 'paid',
       order_no: orderDetail.order_no,
+      product_name: '星空拼豆',
       user_id: 7,
       created_from: '2026-08-01T00:00:00Z',
       created_to: '2026-09-01T00:00:00Z',
@@ -378,7 +379,7 @@ describe('OrderApi admin query and transitions', () => {
     expect(transport.requests[0]).toEqual(expect.objectContaining({
       operation: 'orders.admin.list',
       method: 'GET',
-      url: `https://api.example.com/api/v1/admin/orders?page=2&page_size=20&status=paid&order_no=${orderDetail.order_no}&user_id=7&created_from=2026-08-01T00%3A00%3A00Z&created_to=2026-09-01T00%3A00%3A00Z`,
+      url: `https://api.example.com/api/v1/admin/orders?page=2&page_size=20&status=paid&order_no=${orderDetail.order_no}&product_name=%E6%98%9F%E7%A9%BA%E6%8B%BC%E8%B1%86&user_id=7&created_from=2026-08-01T00%3A00%3A00Z&created_to=2026-09-01T00%3A00%3A00Z`,
       headers: { Authorization: 'Bearer access-token' },
     }))
     expect(transport.requests[0].body).toBeUndefined()

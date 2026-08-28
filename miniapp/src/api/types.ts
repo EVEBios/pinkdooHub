@@ -9,6 +9,11 @@ export interface ApiEnvelope<T> {
   data: T
 }
 
+export interface ApiResponse<T> {
+  data: T
+  statusCode: number
+}
+
 export interface TransportRequest {
   operation: string
   url: string
@@ -29,6 +34,21 @@ export interface HttpTransport {
   request(request: TransportRequest): Promise<TransportResponse>
 }
 
+export interface FileUploadTransportRequest {
+  operation: string
+  url: string
+  filePath: string
+  name: string
+  headers: Record<string, string>
+  formData: Record<string, string>
+  timeoutMs: number
+  signal?: AbortSignal
+}
+
+export interface FileUploadTransport {
+  upload(request: FileUploadTransportRequest): Promise<TransportResponse>
+}
+
 export interface AuthSession {
   getAccessToken(): string | undefined
   refreshAccessToken(): Promise<string | undefined>
@@ -43,6 +63,18 @@ export interface ApiRequestOptions {
   method?: HttpMethod
   query?: Readonly<Record<string, QueryValue>>
   body?: unknown
+  headers?: Readonly<Record<string, string>>
+  auth?: AuthMode
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
+export interface ApiFileUploadOptions {
+  operation: string
+  path: string
+  filePath: string
+  name?: string
+  formData?: Readonly<Record<string, string>>
   headers?: Readonly<Record<string, string>>
   auth?: AuthMode
   timeoutMs?: number

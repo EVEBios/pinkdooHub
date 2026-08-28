@@ -3,7 +3,13 @@ import Taro from '@tarojs/taro'
 import { useState } from 'react'
 
 import type { ProductListItem } from '@/api/endpoints/products'
-import { ADMIN_ORDER_LIST_PATH, useAuth } from '@/auth'
+import {
+  ADMIN_ORDER_LIST_PATH,
+  ADMIN_INVENTORY_LIST_PATH,
+  ADMIN_PRODUCT_LIST_PATH,
+  ADMIN_USER_LIST_PATH,
+  useAuth,
+} from '@/auth'
 import { type ProductTypeFilter, useProductList } from '@/features/product/use_product_list'
 import { buildProductDetailUrl } from '@/features/product/product_detail_route'
 import { resolveAssetUrl } from '@/utils/asset_url'
@@ -154,24 +160,53 @@ function AccountActions({ onLogout, status, userNickname, userRole }: AccountAct
   if (status === 'authenticated' && userNickname) {
     return (
       <View className='product-page__account'>
-        <Text>你好，{userNickname}</Text>
-        <Button
-          className='product-page__account-action'
-          size='mini'
-          onClick={() => void Taro.navigateTo({ url: '/pages/orders/index' })}
-        >
-          我的订单
-        </Button>
-        {(userRole === 'admin' || userRole === 'super_admin') && (
+        <Text className='product-page__account-user'>你好，{userNickname}</Text>
+        <View className='product-page__account-actions'>
           <Button
             className='product-page__account-action'
             size='mini'
-            onClick={() => void Taro.navigateTo({ url: ADMIN_ORDER_LIST_PATH })}
+            onClick={() => void Taro.navigateTo({ url: '/pages/orders/index' })}
           >
-            管理订单
+            我的订单
           </Button>
-        )}
-        <Button className='product-page__account-action' size='mini' onClick={onLogout}>退出</Button>
+          {(userRole === 'admin' || userRole === 'super_admin') && (
+            <Button
+              className='product-page__account-action'
+              size='mini'
+              onClick={() => void Taro.navigateTo({ url: ADMIN_INVENTORY_LIST_PATH })}
+            >
+              库存流水
+            </Button>
+          )}
+          {(userRole === 'admin' || userRole === 'super_admin') && (
+            <Button
+              className='product-page__account-action'
+              size='mini'
+              onClick={() => void Taro.navigateTo({ url: ADMIN_PRODUCT_LIST_PATH })}
+            >
+              管理商品
+            </Button>
+          )}
+          {(userRole === 'admin' || userRole === 'super_admin') && (
+            <Button
+              className='product-page__account-action'
+              size='mini'
+              onClick={() => void Taro.navigateTo({ url: ADMIN_ORDER_LIST_PATH })}
+            >
+              管理订单
+            </Button>
+          )}
+          {(userRole === 'admin' || userRole === 'super_admin') && (
+            <Button
+              className='product-page__account-action'
+              size='mini'
+              onClick={() => void Taro.navigateTo({ url: ADMIN_USER_LIST_PATH })}
+            >
+              管理用户
+            </Button>
+          )}
+          <Button className='product-page__account-action' size='mini' onClick={onLogout}>退出</Button>
+        </View>
       </View>
     )
   }

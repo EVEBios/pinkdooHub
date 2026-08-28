@@ -1,0 +1,147 @@
+.product-audit-page {
+  min-height: 100vh;
+  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
+  color: #292532;
+  background: #f7f5fb;
+  box-sizing: border-box;
+
+  &__header {
+    margin: 0 -28px 24px;
+    padding: 46px 32px 30px;
+    color: #fff;
+    background: linear-gradient(145deg, #3f6178, #745777);
+  }
+
+  &__eyebrow,
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__eyebrow {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+
+  &__title {
+    margin-top: 9px;
+    font-size: 38px;
+    font-weight: 700;
+  }
+
+  &__subtitle {
+    margin-top: 12px;
+    font-size: 22px;
+    opacity: 0.85;
+  }
+
+  &__back {
+    margin-top: 22px;
+    color: #fff;
+    background: #4d6079;
+    border: 0;
+  }
+}
+
+.product-audit-list {
+  &__summary {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    color: #756b7d;
+    font-size: 22px;
+  }
+
+  &__error,
+  &__end {
+    display: block;
+    padding: 22px 0;
+    color: #756b7d;
+    font-size: 22px;
+    text-align: center;
+  }
+
+  &__error {
+    color: #b42318;
+  }
+}
+
+.product-audit-card {
+  margin-bottom: 17px;
+  padding: 23px;
+  background: #fff;
+  border: 1px solid #e2dce8;
+  border-radius: 18px;
+
+  &__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  &__action {
+    font-size: 27px;
+    font-weight: 650;
+  }
+
+  &__id {
+    flex: 0 0 auto;
+    color: #796b82;
+    font-size: 20px;
+  }
+
+  &__operator,
+  &__time,
+  &__ip,
+  &__description {
+    display: block;
+    margin-top: 11px;
+    color: #675d6e;
+    font-size: 21px;
+    line-height: 1.5;
+    word-break: break-all;
+  }
+
+  &__description {
+    padding: 13px;
+    color: #4f4555;
+    background: #f7f4f9;
+    border-radius: 10px;
+  }
+}
+
+.product-audit-state {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  text-align: center;
+
+  &__title,
+  &__description {
+    display: block;
+  }
+
+  &__title {
+    font-size: 30px;
+    font-weight: 600;
+  }
+
+  &__description {
+    margin-top: 13px;
+    color: #756b7d;
+    font-size: 23px;
+    line-height: 1.5;
+  }
+
+  &__action {
+    margin-top: 24px;
+    color: #fff;
+    background: #4d6079;
+    border: 0;
+  }
+}

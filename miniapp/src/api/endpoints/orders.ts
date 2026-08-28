@@ -174,6 +174,9 @@ function projectAdminOrderListRequest(request: AdminOrderListRequest): AdminOrde
     ...(request.page_size === undefined ? {} : { page_size: request.page_size }),
     ...(request.status === undefined || request.status === null ? {} : { status: request.status }),
     ...(request.order_no === undefined || request.order_no === null ? {} : { order_no: request.order_no }),
+    ...(request.product_name === undefined || request.product_name === null
+      ? {}
+      : { product_name: request.product_name }),
     ...(request.user_id === undefined || request.user_id === null ? {} : { user_id: request.user_id }),
     ...(request.created_from === undefined || request.created_from === null
       ? {}

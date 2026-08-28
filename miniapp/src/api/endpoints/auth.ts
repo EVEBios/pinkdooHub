@@ -3,6 +3,7 @@ import type { ApiClient } from '@/api/client'
 import type { components } from '@/api/schema'
 
 export type LoginRequest = components['schemas']['LoginRequest']
+export type RegistrationRequest = components['schemas']['UserCreate']
 export type RefreshRequest = components['schemas']['RefreshRequest']
 export type LoginResult = components['schemas']['TokenOut']
 export type RefreshResult = components['schemas']['RefreshOut']
@@ -12,6 +13,21 @@ type AuthApiClient = Pick<ApiClient, 'request'>
 
 export class AuthApi {
   constructor(private readonly client: AuthApiClient) {}
+
+  async register(data: RegistrationRequest): Promise<UserProfile> {
+    const result = await this.client.request<unknown>({
+      operation: 'auth.register',
+      path: '/api/v1/auth/register',
+      method: 'POST',
+      body: data,
+      auth: 'none',
+    })
+    const parsed = parseUserProfile(result)
+    if (!parsed) {
+      throw new ContractError({ operation: 'auth.register' })
+    }
+    return parsed
+  }
 
   async login(data: LoginRequest): Promise<LoginResult> {
     const result = await this.client.request<unknown>({

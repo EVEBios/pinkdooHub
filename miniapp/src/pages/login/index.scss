@@ -51,6 +51,18 @@
     font-size: 22px;
     text-align: center;
   }
+
+  &__register {
+    margin-top: 24px;
+    color: #a92e51;
+    font-size: 25px;
+    background: transparent;
+    border: 0;
+
+    &::after {
+      border: 0;
+    }
+  }
 }
 
 .login-form {

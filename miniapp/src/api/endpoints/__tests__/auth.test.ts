@@ -33,6 +33,47 @@ class FakeTransport implements HttpTransport {
 }
 
 describe('AuthApi', () => {
+  it('注册请求不携带认证，并对白名单用户响应做运行时投影', async () => {
+    const transport = new FakeTransport({ ...user, password: 'must-not-cross-endpoint' })
+    const api = new AuthApi(new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport,
+    }))
+
+    await expect(api.register({
+      username: 'alice',
+      password: 'secret-password',
+      nickname: 'Alice',
+      phone: '13800138000',
+    })).resolves.toEqual(user)
+    expect(transport.requests[0]).toMatchObject({
+      operation: 'auth.register',
+      method: 'POST',
+      url: 'https://api.example.com/api/v1/auth/register',
+      body: {
+        username: 'alice',
+        password: 'secret-password',
+        nickname: 'Alice',
+        phone: '13800138000',
+      },
+    })
+    expect(transport.requests[0].headers).not.toHaveProperty('Authorization')
+  })
+
+  it('拒绝形状错误的注册成功响应', async () => {
+    const api = new AuthApi(new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport: new FakeTransport({ id: 7, username: 'alice' }),
+    }))
+
+    await expect(api.register({
+      username: 'alice',
+      password: 'secret-password',
+      nickname: 'Alice',
+      phone: '13800138000',
+    })).rejects.toBeInstanceOf(ContractError)
+  })
+
   it('按生成请求类型调用登录端点，并校验返回数据', async () => {
     const transport = new FakeTransport({
       access_token: 'access-token',

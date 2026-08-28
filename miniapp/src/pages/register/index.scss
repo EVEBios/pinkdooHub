@@ -1,0 +1,118 @@
+.registration-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  background: linear-gradient(160deg, #fff5f8 0%, #f7f8fa 58%, #eef4ff 100%);
+  box-sizing: border-box;
+}
+
+.registration-card {
+  width: 100%;
+  max-width: 640px;
+  padding: 48px 40px;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid #f0dfe5;
+  border-radius: 28px;
+  box-shadow: 0 18px 60px rgb(80 42 58 / 10%);
+  box-sizing: border-box;
+
+  &__eyebrow,
+  &__title,
+  &__subtitle,
+  &__notice {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: #c5416c;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+
+  &__title {
+    margin-top: 10px;
+    color: #2a2024;
+    font-size: 48px;
+    font-weight: 700;
+  }
+
+  &__subtitle {
+    margin-top: 12px;
+    color: #71676b;
+    font-size: 26px;
+    line-height: 1.5;
+  }
+
+  &__login {
+    margin-top: 24px;
+    color: #a92e51;
+    font-size: 25px;
+    background: transparent;
+    border: 0;
+
+    &::after {
+      border: 0;
+    }
+  }
+
+  &__notice {
+    margin-top: 24px;
+    color: #8a7f83;
+    font-size: 22px;
+    line-height: 1.5;
+    text-align: center;
+  }
+}
+
+.registration-form {
+  display: block;
+  margin-top: 34px;
+
+  &__label {
+    display: block;
+    margin: 22px 0 10px;
+    color: #43393d;
+    font-size: 26px;
+    font-weight: 600;
+  }
+
+  &__input {
+    height: 82px;
+    padding: 0 24px;
+    color: #282125;
+    font-size: 28px;
+    background: #fff;
+    border: 2px solid #ded7da;
+    border-radius: 16px;
+    box-sizing: border-box;
+  }
+
+  &__error {
+    display: block;
+    margin-top: 20px;
+    color: #b42318;
+    font-size: 24px;
+    line-height: 1.5;
+  }
+
+  &__submit {
+    margin-top: 34px;
+    font-size: 30px;
+    font-weight: 600;
+    background: #c5416c;
+    border-radius: 16px;
+  }
+}
+
+.registration-success {
+  &__description {
+    display: block;
+    margin-top: 28px;
+    color: #5f5358;
+    font-size: 27px;
+    line-height: 1.6;
+  }
+}

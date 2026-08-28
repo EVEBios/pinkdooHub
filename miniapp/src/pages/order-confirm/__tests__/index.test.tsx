@@ -117,6 +117,7 @@ describe('OrderConfirmPage', () => {
         created_at: '2026-08-13T10:30:00Z',
         updated_at: '2026-08-13T10:30:00Z',
       },
+      register: jest.fn(),
       login: jest.fn(async () => undefined),
       logout: jest.fn(async () => undefined),
       retryInitialization: jest.fn(),

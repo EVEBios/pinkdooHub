@@ -89,57 +89,66 @@ export function AuthenticatedAdminOrders() {
         <Text className='admin-orders-page__subtitle'>查询全部用户订单，并执行契约允许的状态变迁</Text>
       </View>
 
-      <Form className='admin-order-filters' onSubmit={submitFilters}>
-        <View className='admin-order-filters__statuses'>
-          {STATUS_FILTERS.map((filter) => (
-            <Button
-              key={filter.value}
-              className={`admin-order-filters__status${draft.status === filter.value ? ' admin-order-filters__status--active' : ''}`}
-              size='mini'
-              onClick={() => updateDraft({ status: filter.value })}
-            >
-              {filter.label}
-            </Button>
-          ))}
-        </View>
-        <Input
-          className='admin-order-filters__input'
-          maxlength={28}
-          placeholder='精确订单号（可选）'
-          value={draft.orderNo}
-          onInput={(event) => updateDraft({ orderNo: event.detail.value })}
-        />
-        <Input
-          className='admin-order-filters__input'
-          maxlength={16}
-          placeholder='用户 ID（可选）'
-          type='number'
-          value={draft.userId}
-          onInput={(event) => updateDraft({ userId: event.detail.value })}
-        />
-        <View className='admin-order-filters__dates'>
+      <View className='admin-order-filters'>
+        <Form onSubmit={submitFilters}>
+          <View className='admin-order-filters__statuses'>
+            {STATUS_FILTERS.map((filter) => (
+              <Button
+                key={filter.value}
+                className={`admin-order-filters__status${draft.status === filter.value ? ' admin-order-filters__status--active' : ''}`}
+                size='mini'
+                onClick={() => updateDraft({ status: filter.value })}
+              >
+                {filter.label}
+              </Button>
+            ))}
+          </View>
           <Input
             className='admin-order-filters__input'
-            maxlength={10}
-            placeholder='开始 UTC 日期 YYYY-MM-DD'
-            value={draft.createdFrom}
-            onInput={(event) => updateDraft({ createdFrom: event.detail.value })}
+            maxlength={100}
+            placeholder='商品名称（支持部分匹配）'
+            value={draft.productName}
+            onInput={(event) => updateDraft({ productName: event.detail.value })}
           />
           <Input
             className='admin-order-filters__input'
-            maxlength={10}
-            placeholder='结束 UTC 日期 YYYY-MM-DD'
-            value={draft.createdTo}
-            onInput={(event) => updateDraft({ createdTo: event.detail.value })}
+            maxlength={28}
+            placeholder='精确订单号（可选）'
+            value={draft.orderNo}
+            onInput={(event) => updateDraft({ orderNo: event.detail.value })}
           />
-        </View>
-        {filterError && <Text className='admin-order-filters__error'>{filterError}</Text>}
-        <View className='admin-order-filters__actions'>
-          <Button formType='submit' type='primary'>查询</Button>
-          <Button onClick={resetFilters}>清空</Button>
-        </View>
-        <Text className='admin-order-filters__hint'>结束日期按当日包含处理，客户端会转为 API 要求的次日排他上界。</Text>
-      </Form>
+          <Input
+            className='admin-order-filters__input'
+            maxlength={16}
+            placeholder='用户 ID（可选）'
+            type='number'
+            value={draft.userId}
+            onInput={(event) => updateDraft({ userId: event.detail.value })}
+          />
+          <View className='admin-order-filters__dates'>
+            <Input
+              className='admin-order-filters__input'
+              maxlength={10}
+              placeholder='开始 UTC 日期 YYYY-MM-DD'
+              value={draft.createdFrom}
+              onInput={(event) => updateDraft({ createdFrom: event.detail.value })}
+            />
+            <Input
+              className='admin-order-filters__input'
+              maxlength={10}
+              placeholder='结束 UTC 日期 YYYY-MM-DD'
+              value={draft.createdTo}
+              onInput={(event) => updateDraft({ createdTo: event.detail.value })}
+            />
+          </View>
+          {filterError && <Text className='admin-order-filters__error'>{filterError}</Text>}
+          <View className='admin-order-filters__actions'>
+            <Button formType='submit' type='primary'>查询</Button>
+            <Button onClick={resetFilters}>清空</Button>
+          </View>
+          <Text className='admin-order-filters__hint'>结束日期按当日包含处理，客户端会转为 API 要求的次日排他上界。</Text>
+        </Form>
+      </View>
 
       {state.status === 'loading' && <AdminOrdersState title='正在加载管理订单…' description='正在读取服务端第一页' />}
       {state.status === 'empty' && <AdminOrdersState title='当前筛选下没有订单' description='可清空筛选后重试' />}
@@ -163,7 +172,13 @@ export function AuthenticatedAdminOrders() {
           ) : <Text className='admin-orders-content__end'>已经到底了</Text>}
         </View>
       )}
-      {filters.status !== 'all' && <Text className='admin-orders-page__active-filter'>当前状态筛选：{filters.status}</Text>}
+      {(filters.status !== 'all' || filters.productName) && (
+        <Text className='admin-orders-page__active-filter'>
+          {filters.status !== 'all' ? `当前状态：${filters.status}` : ''}
+          {filters.status !== 'all' && filters.productName ? ' · ' : ''}
+          {filters.productName ? `商品名称：${filters.productName}` : ''}
+        </Text>
+      )}
     </View>
   )
 }

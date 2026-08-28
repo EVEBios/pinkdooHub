@@ -827,19 +827,6 @@
         "title": "ExperienceProductDetailOut",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
       "InventoryAdjustmentCreate": {
         "additionalProperties": false,
         "description": "管理员以变化量和原因调整 Kit 当前库存。",
@@ -2142,6 +2129,42 @@
         "title": "Page[ProductListItemOut]",
         "type": "object"
       },
+      "Page_UserListItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[UserListItem]",
+        "type": "object"
+      },
       "PasswordChange": {
         "description": "修改密码请求。",
         "properties": {
@@ -3026,6 +3049,30 @@
         "title": "SuccessResponse[Page[ProductListItemOut]]",
         "type": "object"
       },
+      "SuccessResponse_Page_UserListItem__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_UserListItem_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[UserListItem]]",
+        "type": "object"
+      },
       "SuccessResponse_ProductBasicInfoOut_": {
         "additionalProperties": false,
         "properties": {
@@ -3295,6 +3342,66 @@
         "title": "UserCreate",
         "type": "object"
       },
+      "UserListItem": {
+        "description": "用户列表项——后台列表用，比 UserOut 更轻量。\n\n排除 phone、avatar、updated_at，减少列表接口的响应体积。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "nickname": {
+            "title": "Nickname",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "admin",
+              "super_admin"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "normal",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "nickname",
+          "role",
+          "status",
+          "last_login_at",
+          "created_at"
+        ],
+        "title": "UserListItem",
+        "type": "object"
+      },
       "UserOut": {
         "description": "用户详情响应——不含 password。",
         "properties": {
@@ -3437,46 +3544,6 @@
           }
         },
         "title": "UserUpdate",
-        "type": "object"
-      },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
         "type": "object"
       },
       "_OnlineExperienceDimensionsOut": {
@@ -4229,6 +4296,24 @@
                 }
               ],
               "title": "Order No"
+            }
+          },
+          {
+            "in": "query",
+            "name": "product_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Product Name"
             }
           },
           {
@@ -6754,7 +6839,7 @@
     },
     "/api/v1/admin/users": {
       "get": {
-        "description": "分页获取用户列表，支持按 status/role 筛选。\n\n?page=1&page_size=20&status=normal&role=user",
+        "description": "按状态、角色稳定倒序分页查询用户安全摘要。",
         "operationId": "list_users_api_v1_admin_users_get",
         "parameters": [
           {
@@ -6787,6 +6872,10 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "normal",
+                    "disabled"
+                  ],
                   "type": "string"
                 },
                 {
@@ -6803,6 +6892,11 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "user",
+                    "admin",
+                    "super_admin"
+                  ],
                   "type": "string"
                 },
                 {
@@ -6817,20 +6911,52 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_UserListItem__"
+                }
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Unprocessable Entity"
           }
         },
         "security": [
@@ -6840,13 +6966,13 @@
         ],
         "summary": "List Users",
         "tags": [
-          "admin"
+          "admin-users"
         ]
       }
     },
     "/api/v1/admin/users/{user_id}/disable": {
       "put": {
-        "description": "禁用指定用户。",
+        "description": "幂等禁用指定用户，状态写入与审计日志同事务提交。",
         "operationId": "disable_user_api_v1_admin_users__user_id__disable_put",
         "parameters": [
           {
@@ -6854,6 +6980,7 @@
             "name": "user_id",
             "required": true,
             "schema": {
+              "exclusiveMinimum": 0,
               "title": "User Id",
               "type": "integer"
             }
@@ -6863,20 +6990,52 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_NoneType_"
+                }
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Unprocessable Entity"
           }
         },
         "security": [
@@ -6886,7 +7045,7 @@
         ],
         "summary": "Disable User",
         "tags": [
-          "admin"
+          "admin-users"
         ]
       }
     },

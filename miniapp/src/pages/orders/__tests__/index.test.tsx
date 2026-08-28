@@ -39,6 +39,7 @@ describe('OrdersPage', () => {
     testUtils = new ReactTestUtil()
     mockAuth = {
       status: 'authenticated',
+      register: jest.fn(),
       login: jest.fn(),
       logout: jest.fn(),
       retryInitialization: jest.fn(),

@@ -16,6 +16,7 @@ export type AdminOrderStatusFilter = 'all' | NonNullable<AdminOrderListRequest['
 
 export interface AdminOrderFilterDraft {
   readonly status: AdminOrderStatusFilter
+  readonly productName: string
   readonly orderNo: string
   readonly userId: string
   readonly createdFrom: string
@@ -24,6 +25,7 @@ export interface AdminOrderFilterDraft {
 
 export interface AdminOrderFilters {
   readonly status: AdminOrderStatusFilter
+  readonly productName?: string
   readonly orderNo?: string
   readonly userId?: number
   readonly createdFrom?: string
@@ -60,6 +62,7 @@ export interface AdminOrderListFeature {
 
 export const EMPTY_ADMIN_ORDER_FILTER_DRAFT: AdminOrderFilterDraft = {
   status: 'all',
+  productName: '',
   orderNo: '',
   userId: '',
   createdFrom: '',
@@ -152,11 +155,15 @@ export function useAdminOrderList(
 }
 
 export function parseAdminOrderFilters(draft: AdminOrderFilterDraft): AdminOrderFilterResult {
+  const productName = draft.productName.trim()
   const orderNo = draft.orderNo.trim().toUpperCase()
   const userIdText = draft.userId.trim()
   const createdFromDate = parseDate(draft.createdFrom.trim())
   const createdToDate = parseDate(draft.createdTo.trim())
 
+  if (productName.length > 100) {
+    return { error: '商品名称不能超过 100 个字符' }
+  }
   if (orderNo && !ORDER_NO_PATTERN.test(orderNo)) {
     return { error: '订单号格式不正确' }
   }
@@ -176,6 +183,7 @@ export function parseAdminOrderFilters(draft: AdminOrderFilterDraft): AdminOrder
   return {
     filters: {
       status: draft.status,
+      ...(productName ? { productName } : {}),
       ...(orderNo ? { orderNo } : {}),
       ...(userIdText ? { userId: Number(userIdText) } : {}),
       ...(createdFromDate ? { createdFrom: createdFromDate.toISOString() } : {}),
@@ -189,6 +197,7 @@ function buildRequest(filters: AdminOrderFilters, page: number): AdminOrderListR
     page,
     page_size: ADMIN_ORDER_LIST_PAGE_SIZE,
     ...(filters.status === 'all' ? {} : { status: filters.status }),
+    ...(filters.productName ? { product_name: filters.productName } : {}),
     ...(filters.orderNo ? { order_no: filters.orderNo } : {}),
     ...(filters.userId ? { user_id: filters.userId } : {}),
     ...(filters.createdFrom ? { created_from: filters.createdFrom } : {}),

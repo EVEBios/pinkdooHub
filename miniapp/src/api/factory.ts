@@ -2,6 +2,7 @@ import { resolveEnv } from '@/config/env'
 
 import { ApiClient } from './client'
 import { TaroHttpTransport } from './taro_transport'
+import { TaroFileUploadTransport } from './taro_upload_transport'
 import type { AuthSession } from './types'
 
 export function createApiClient(authSession?: AuthSession): ApiClient {
@@ -9,6 +10,7 @@ export function createApiClient(authSession?: AuthSession): ApiClient {
   return new ApiClient({
     baseUrl: environment.apiOrigin,
     transport: new TaroHttpTransport(),
+    uploadTransport: new TaroFileUploadTransport(),
     authSession,
   })
 }

@@ -8,6 +8,8 @@ import {
 } from '../errors'
 import type {
   AuthSession,
+  FileUploadTransport,
+  FileUploadTransportRequest,
   HttpTransport,
   TransportRequest,
   TransportResponse,
@@ -24,6 +26,22 @@ class FakeTransport implements HttpTransport {
   ) {}
 
   async request(request: TransportRequest): Promise<TransportResponse> {
+    this.requests.push(request)
+    return this.responder(request, this.requests.length - 1)
+  }
+}
+
+class FakeUploadTransport implements FileUploadTransport {
+  readonly requests: FileUploadTransportRequest[] = []
+
+  constructor(
+    private readonly responder: (
+      request: FileUploadTransportRequest,
+      index: number,
+    ) => TransportResponse | Promise<TransportResponse>,
+  ) {}
+
+  async upload(request: FileUploadTransportRequest): Promise<TransportResponse> {
     this.requests.push(request)
     return this.responder(request, this.requests.length - 1)
   }
@@ -51,6 +69,51 @@ describe('ApiClient', () => {
     expect(transport.requests[0].url).toBe(
       'https://api.example.com/api/v1/products?page=1&status=online&status=offline',
     )
+  })
+
+  it('requestWithMeta 保留最终成功 HTTP 状态且不改变普通 request 返回形状', async () => {
+    const transport = new FakeTransport(() => response(201, {
+      code: 0,
+      message: 'success',
+      data: { id: 7 },
+    }))
+    const client = new ApiClient({ baseUrl: 'https://api.example.com', transport })
+
+    await expect(client.requestWithMeta<{ id: number }>({
+      operation: 'adjustInventory',
+      path: '/api/v1/admin/products/kit/7/inventory-adjustments',
+      method: 'POST',
+    })).resolves.toEqual({ data: { id: 7 }, statusCode: 201 })
+    await expect(client.request<{ id: number }>({
+      operation: 'adjustInventory',
+      path: '/api/v1/admin/products/kit/7/inventory-adjustments',
+      method: 'POST',
+    })).resolves.toEqual({ id: 7 })
+  })
+
+  it('requestWithMeta 在 refresh 后返回重放请求的最终状态', async () => {
+    let accessToken = 'expired-token'
+    const authSession: AuthSession = {
+      getAccessToken: () => accessToken,
+      refreshAccessToken: jest.fn(async () => {
+        accessToken = 'new-token'
+        return accessToken
+      }),
+      clearSession: jest.fn(),
+    }
+    const transport = new FakeTransport((request) => request.headers.Authorization === 'Bearer expired-token'
+      ? response(400, { code: 1006, message: 'Token 已失效', data: null })
+      : response(200, { code: 0, message: 'success', data: { id: 7 } }))
+    const client = new ApiClient({ baseUrl: 'https://api.example.com', transport, authSession })
+
+    await expect(client.requestWithMeta<{ id: number }>({
+      operation: 'adjustInventory',
+      path: '/api/v1/admin/products/kit/7/inventory-adjustments',
+      method: 'POST',
+      auth: 'required',
+    })).resolves.toEqual({ data: { id: 7 }, statusCode: 200 })
+    expect(authSession.refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(transport.requests).toHaveLength(2)
   })
 
   it('把后端业务错误保留为 BusinessError', async () => {
@@ -201,5 +264,90 @@ describe('ApiClient', () => {
       body: { items: [] },
     })).rejects.toBe(timeout)
     expect(transport.requests).toHaveLength(1)
+  })
+
+  it('multipart 上传携带 Bearer 和严格 formData，但不手写 Content-Type', async () => {
+    const uploadTransport = new FakeUploadTransport(() => response(201, {
+      code: 0,
+      message: 'success',
+      data: { id: 31 },
+    }))
+    const client = new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport: new FakeTransport(() => response(500, null)),
+      uploadTransport,
+      authSession: {
+        getAccessToken: () => 'admin-token',
+        refreshAccessToken: jest.fn(async () => 'new-token'),
+        clearSession: jest.fn(),
+      },
+    })
+
+    await expect(client.uploadFile<{ id: number }>({
+      operation: 'uploadProductImage',
+      path: '/api/v1/admin/products/7/images',
+      filePath: 'wxfile://cover.png',
+      auth: 'required',
+      formData: { is_cover: 'true', sort: '0' },
+    })).resolves.toEqual({ id: 31 })
+    expect(uploadTransport.requests[0]).toMatchObject({
+      url: 'https://api.example.com/api/v1/admin/products/7/images',
+      filePath: 'wxfile://cover.png',
+      name: 'file',
+      headers: { Authorization: 'Bearer admin-token' },
+      formData: { is_cover: 'true', sort: '0' },
+    })
+    expect(uploadTransport.requests[0].headers).not.toHaveProperty('Content-Type')
+  })
+
+  it('上传收到 1006 时只在刷新成功后安全重放一次', async () => {
+    let accessToken = 'expired-token'
+    const refreshAccessToken = jest.fn(async () => {
+      accessToken = 'new-token'
+      return accessToken
+    })
+    const uploadTransport = new FakeUploadTransport((request) => request.headers.Authorization === 'Bearer expired-token'
+      ? response(400, { code: 1006, message: 'Token 已失效', data: null })
+      : response(201, { code: 0, message: 'success', data: { id: 31 } }))
+    const client = new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport: new FakeTransport(() => response(500, null)),
+      uploadTransport,
+      authSession: { getAccessToken: () => accessToken, refreshAccessToken, clearSession: jest.fn() },
+    })
+    await expect(client.uploadFile({
+      operation: 'uploadProductImage',
+      path: '/api/v1/admin/products/7/images',
+      filePath: 'wxfile://cover.png',
+      auth: 'required',
+    })).resolves.toEqual({ id: 31 })
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(uploadTransport.requests).toHaveLength(2)
+  })
+
+  it.each(['request', 'upload'] as const)('%s 收到已禁用 1005 时清理本地会话且不 refresh', async (kind) => {
+    const clearSession = jest.fn()
+    const refreshAccessToken = jest.fn(async () => 'new-token')
+    const disabled = response(400, { code: 1005, message: 'User is disabled', data: null })
+    const transport = new FakeTransport(() => disabled)
+    const uploadTransport = new FakeUploadTransport(() => disabled)
+    const client = new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport,
+      uploadTransport,
+      authSession: { getAccessToken: () => 'disabled-token', refreshAccessToken, clearSession },
+    })
+
+    const operation = kind === 'request'
+      ? client.request({ operation: 'getMe', path: '/api/v1/users/me', auth: 'required' })
+      : client.uploadFile({
+          operation: 'uploadProductImage',
+          path: '/api/v1/admin/products/7/images',
+          filePath: 'wxfile://cover.png',
+          auth: 'required',
+        })
+    await expect(operation).rejects.toBeInstanceOf(SessionExpiredError)
+    expect(clearSession).toHaveBeenCalledTimes(1)
+    expect(refreshAccessToken).not.toHaveBeenCalled()
   })
 })
