@@ -1,5 +1,6 @@
 """Product 图片文件校验与本地存储适配器测试。"""
 
+from hashlib import md5
 from io import BytesIO
 from pathlib import Path
 
@@ -18,6 +19,15 @@ JPEG_CONTENT = b"\xff\xd8\xff" + b"valid-test-payload" + b"\xff\xd9"
 WEBP_PAYLOAD = b"WEBPVP8 " + b"payload"
 WEBP_CONTENT = b"RIFF" + len(WEBP_PAYLOAD).to_bytes(4, "little") + WEBP_PAYLOAD
 FIXED_KEY = "a" * 32
+JPEG_HASH_TRAILER_PREFIX = b"\x17\x4d\xa1\x01\x00\x00\x00\x00"
+
+
+def _with_jpeg_hash_trailer(content: bytes) -> bytes:
+    return (
+        content
+        + JPEG_HASH_TRAILER_PREFIX
+        + md5(content, usedforsecurity=False).digest()
+    )
 
 
 def _storage(root: Path) -> LocalImageStorage:
@@ -54,6 +64,19 @@ def test_save_valid_image_uses_server_generated_name_and_returns_metadata(
     assert not list(storage.root.glob("*.tmp"))
 
 
+def test_save_verified_jpeg_hash_trailer_stores_canonical_jpeg(tmp_path: Path) -> None:
+    storage = _storage(tmp_path / "products")
+
+    result = storage.save(
+        BytesIO(_with_jpeg_hash_trailer(JPEG_CONTENT)),
+        declared_media_type="image/jpeg",
+    )
+
+    assert result.key == f"{FIXED_KEY}.jpg"
+    assert result.size == len(JPEG_CONTENT)
+    assert (storage.root / result.key).read_bytes() == JPEG_CONTENT
+
+
 @pytest.mark.parametrize(
     ("content", "media_type", "reason"),
     [
@@ -62,6 +85,17 @@ def test_save_valid_image_uses_server_generated_name_and_returns_metadata(
         (b"not-an-image", "image/png", "invalid_image_content"),
         (b"\x89PNG\r\n\x1a\ntruncated", "image/png", "invalid_image_content"),
         (PNG_CONTENT, "image/jpeg", "content_type_mismatch"),
+        (JPEG_CONTENT + b"arbitrary-trailer", "image/jpeg", "invalid_image_content"),
+        (
+            JPEG_CONTENT + JPEG_HASH_TRAILER_PREFIX + b"\x00" * 16,
+            "image/jpeg",
+            "invalid_image_content",
+        ),
+        (
+            _with_jpeg_hash_trailer(JPEG_CONTENT),
+            "image/png",
+            "content_type_mismatch",
+        ),
         (b"", "image/png", "empty_file"),
     ],
 )

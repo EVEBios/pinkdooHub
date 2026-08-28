@@ -1,11 +1,11 @@
 """Product 普通 JSON API 的真实 SQLite 端到端测试。"""
 
+from hashlib import md5
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
-
-from pathlib import Path
 
 from app.api.deps import get_current_admin, get_product_image_storage
 from app.main import app
@@ -385,6 +385,11 @@ async def test_image_upload_http_flow_persists_ownership_audit_and_static_files(
         b"\x89PNG\r\n\x1a\npublic\x00\x00\x00\x00IEND\xaeB`\x82"
     )
     option_content = b"\xff\xd8\xffoption\xff\xd9"
+    option_upload_content = (
+        option_content
+        + b"\x17\x4d\xa1\x01\x00\x00\x00\x00"
+        + md5(option_content, usedforsecurity=False).digest()
+    )
     public_response = await client.post(
         f"/api/v1/admin/products/{product_id}/images",
         data={"is_cover": "true", "sort": "4"},
@@ -393,7 +398,7 @@ async def test_image_upload_http_flow_persists_ownership_audit_and_static_files(
     option_image_response = await client.post(
         f"/api/v1/admin/options/{option_id}/images",
         data={"sort": "2"},
-        files={"file": ("unsafe.jpg", option_content, "image/jpeg")},
+        files={"file": ("unsafe.jpg", option_upload_content, "image/jpeg")},
     )
 
     assert public_response.status_code == 201
