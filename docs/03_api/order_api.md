@@ -337,11 +337,12 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 | `page_size` | integer | 否 | 20 | 1 至 100 |
 | `status` | string | 否 | - | OrderStatus value |
 | `order_no` | string | 否 | - | 完整订单号精确匹配 |
+| `product_name` | string | 否 | - | trim 后 1 至 100 字符；按下单时商品名称快照包含匹配 |
 | `user_id` | integer | 否 | - | 正整数 |
 | `created_from` | datetime | 否 | - | UTC ISO 8601，包含下界 |
 | `created_to` | datetime | 否 | - | UTC ISO 8601，不包含上界，必须大于 `created_from` |
 
-无筛选及所有筛选组合均使用 `created_at DESC, id DESC` 稳定排序。列表必须数据库分页。
+无筛选及所有筛选组合均使用 `created_at DESC, id DESC` 稳定排序。列表必须数据库分页。`product_name` 查询基于 `order_items.product_name` 历史快照，不读取当前 Product 名称；一张订单即使有多条 Item 命中也只计入一次，且不改变该订单完整的 `item_count`。
 
 ```json
 {

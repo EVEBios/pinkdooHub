@@ -1,9 +1,9 @@
 # pinkdooHub 前端架构
 
-> **Document Version:** v0.5
+> **Document Version:** v0.9
 > **Status:** Draft
-> **Last Updated:** 2026-08-24
-> **Scope:** 正式 `miniapp/` 架构；四端 Spike、工程基础、HTTP Client、Product、用户 Order 与首个 ADMIN 分包链路已落地
+> **Last Updated:** 2026-08-29
+> **Scope:** 正式 `miniapp/` 架构；四端 Spike、工程基础、HTTP Client、公开 Product、Order 与 ADMIN Order/Product/Inventory 链路已落地
 > **Decision Owners:** pinkdooHub
 
 本文档定义 pinkdooHub 跨端客户端的目标架构、依赖方向、职责边界和实施门槛。首发目标为微信小程序，并要求同一套核心代码在 6–12 个月内扩展到 H5、支付宝小程序和抖音小程序。
@@ -36,7 +36,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | 未来复杂管理端 | 同仓库增加独立 `admin-web/` |
 | GitHub | 继续使用当前仓库，不嵌套第二个 Git 仓库 |
 
-当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础、账号密码登录、公开 Product 列表/详情，以及 Phase 7.1–7.4 的本地 Cart、用户 Order 和 ADMIN Order 工程链路。认证、Product、Cart 与 Order 创建已通过微信开发者工具 Functional；用户查询/取消除 40921 双端竞态外均通过。ADMIN 列表/详情、完整筛选和人工 Pending → Paid → Completed 的自动化、后端回归与四端构建已通过，微信 Functional 待验证；H5 仍等待严格 CORS allowlist。
+当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础、账号密码注册/登录、公开 Product 列表/详情、Phase 7.1–7.4 的 Cart/Order，以及 Phase 8.1–8.6 ADMIN Product/Inventory 和 8.8–8.9 Product Audit/ADMIN User 工程；当前后端能力范围均已通过微信开发者工具 Functional。Phase 8.2 延期的管理页白色图案和登录 `_` 闪烁已于 2026-08-29 完成专项复测并关闭。H5 继续等待严格 CORS allowlist。
 
 ---
 
@@ -142,7 +142,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 
 - 正式 `miniapp/` 已用官方 npm registry 完成依赖收敛：清理 16 个未声明的 NutUI/React Spring 残留包，并显式安装 `solid-js@1.9.15`，补齐 `legacy-peer-deps` 模式跳过的 Taro H5 peer dependency；`npm ls --depth=0` 与生产依赖树均为零错误。
 - 只保留规划中的 weapp/alipay/tt/h5 平台插件；百度、京东、QQ、鸿蒙、RN、已完成使命的 Taro Generator，以及未配置实际 Hook 的 Husky/Commitlint/Lint Staged 均移除，避免扩大安装面和安全审计面。
-- `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。当前 Schema 为 45 条路径、99 个组件 Schema。
+- `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。当前 Schema 为 45 条路径、109 个组件 Schema。
 - 正式 HTTP Client 已实现环境 Origin、Query、JSON、Bearer、统一信封 Runtime Guard、Network/Timeout/HTTP/Business/Contract/Session 错误、取消、code `1006` single-flight refresh 以及一次受控重放；普通写请求和超时不自动重试，empty-body PATCH 不设置 data。
 - 官方 registry 的 2026-08-20 审计仍报告 10 项生产依赖风险（4 moderate、1 high、5 critical），均位于 Taro 4.2.1 H5 上游链；Taro 4.2.1 当日仍为最新版，`audit fix --force` 会破坏性降级到 Taro 3.x，因此不执行。公开发布前必须重新审计并跟踪上游修复。
 - 无 NutUI 的正式 H5 空应用入口仍为 281 KiB，超过 Webpack 244 KiB 建议线；这是当前 Taro H5 基线告警，后续每次引入 UI/业务依赖都必须重新测量，不能以“尚未引入 NutUI”为由忽略。
@@ -154,6 +154,13 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 - `platform/storage.ts` 定义 Storage Port，Taro Adapter 隔离平台 API；`auth/session.ts` 通过 storage、clock 和 refresh 函数注入保持可测试，只向 React 暴露不含 Token 的 Session Snapshot。
 - `AuthProvider` 管理 `initializing/guest/authenticated/error`，恢复时先读缓存，必要时刷新，再调用 `/users/me` 验证；登录页为受控表单，公开 Product 首页按认证状态展示登录、昵称或退出，不再把游客强制重定向到登录页。
 - 29 项 Jest、后端完整 SQLite 套件 1425 项（9 项可选 MySQL 跳过）、静态检查与四端生产构建通过。H5 入口增长至 327 KiB；微信开发者工具连接本地 FastAPI + SQLite + Redis 的错误/正确/禁用账号、三种角色、Storage、重启恢复、登出及三类 refresh Functional 已通过。该结果仍不代表真机、H5、正式 HTTPS/合法域名或微信登录通过。
+
+### 4.3.1 账号密码注册补漏（2026-08-25）
+
+- `AuthApi.register()` 消费 OpenAPI `UserCreate`，以无认证 POST 调用现有注册端点，成功响应复用 User Runtime Guard 做白名单投影；confirm password 只属于页面，不进入 Endpoint；
+- `AuthContext.register()` 只返回服务端 User，不启动 Session。注册成功页明确要求继续登录，避免把不含 Token 的响应伪装成认证；
+- 登录/注册双向入口复用同一白名单 redirect，密码不进入 URL/Storage。注册进行中使用同步 ref 防同帧双击；network/timeout/cancel/contract/5xx 统一视为 POST 结果未知，不自动重试；
+- 审阅时发现 `user_api.md` 曾将 username 写为仅限字母/数字/下划线，而实际 Pydantic/OpenAPI 没有 pattern；文档已同步为当前事实。客户端按实际 Schema 只执行长度约束；后续收紧必须从后端 Schema、测试和 OpenAPI 开始。
 
 ### 4.4 公开 Product 列表纵向链路（2026-08-20）
 
@@ -381,11 +388,82 @@ Phase 7.4 在同一应用中落地首个 `admin` 分包，但不把分包或缓�
 
 - `app.config.ts` 用 `root: admin` 注册管理列表和详情；首页只为 `admin/super_admin` 显示入口，普通用户在挂载管理 Hook 前被拦截；FastAPI ADMIN+ dependency 仍是唯一授权事实；
 - 登录回跳只允许固定管理列表，不允许动态详情进入 redirect 白名单；详情 ID 仍从不可信路由参数校验；
-- ADMIN 列表 Query 只包含冻结的 7 个字段。筛选草稿与已提交查询分离，结束日期转换为次日 UTC 零点，以满足后端排他 `created_to`；
+- ADMIN 列表 Query 只包含冻结的 8 个字段。除状态、精确订单号、用户与 UTC 时间外，`product_name` 按 Order Item 下单时名称快照做服务端包含匹配；筛选草稿与已提交查询分离，结束日期转换为次日 UTC 零点，以满足后端排他 `created_to`；
+- 商品名筛选不关联当前 Product，也不在当前前端页做本地过滤；后端用订单 ID 子查询保持一单一行、完整 `item_count` 和正确的 `total/pages`，前端翻页继续携带同一关键词；
 - ADMIN 响应 Guard 在用户订单字段之外只接收 `user_id/user_nickname`，不允许用户隐私或内部字段穿过 Endpoint；
 - 详情从服务端状态派生唯一命令：Pending → Paid、Paid → Completed，两个终态无按钮，不提供任意状态编辑器；
 - paid/complete 使用 empty-body PATCH、进行中 Promise 合并和 `failed/unknown/succeeded` 收敛。成功或 40921 后 GET 权威详情；unknown 不自动重发；
 - paid/complete 不触碰 Inventory。客户端不更新库存、流水或审计，只读取 Order 状态结果。
+
+### 8.5 ADMIN Product 只读管理边界
+
+Phase 8.1 在既有 `admin` 分包内增加 Product 列表与详情，先建立后续管理 mutation 共同依赖的读模型：
+
+- `AdminProductApi` 使用认证 Client 请求 `/api/v1/admin/products` 及两类管理详情；与无需 Token、只接受完整 Online 聚合的公开 `ProductApi` 分离；
+- 管理 Runtime Guard 从 `unknown` 逐字段投影。列表允许草稿 `cover_image/display_price` 为 null，详情允许 description/null、空公共图片、空 Experience Option 和空 dimensions；同时严格校验 Product 类型/状态、UTC 时间、金额、库存上限和 Option 聚合维度；
+- 列表的筛选草稿与已提交筛选分离，支持 type/status/keyword/include_deleted、服务端分页、重复加载保护与 sequence 迟到响应隔离；逻辑删除只用于辨识历史记录，不在客户端推导恢复能力；
+- 动态详情路由同时携带并校验正安全整数 Product ID 与 `experience|kit` 类型，随后调用类型专属后端端点；错误类型不回退到另一个端点；
+- 首页只为 ADMIN+ 显示管理商品入口，Guest 登录回跳只允许固定管理列表。列表和详情均在角色确认后才挂载 Hook；这只是减少错误请求，最终授权仍由 FastAPI ADMIN+ dependency 执行；
+- 8.1 页面先只展示服务端管理快照与草稿缺失提示；Phase 8.2 已开放创建、基本信息编辑与逻辑删除，Phase 8.3 已开放 Option 与 Kit 价格，Phase 8.4–8.5 已开放图片生命周期与上下架/readiness，Phase 8.6 已开放 Kit Inventory，Phase 8.8 已开放 Product Audit。
+
+### 8.6 ADMIN Product 基本写入边界
+
+Phase 8.2 复用管理读模型，但把写请求收敛到一个独立、可测试的 mutation Hook：
+
+- Experience 与 Kit 创建使用独立请求形状和页面字段；Experience 不携带价格，Kit 创建携带价格但不携带 stock，新库存由后端固定为 0；
+- 基本信息编辑从权威详情初始化，比较规范化前后值后只 PATCH 真正改变的 `name/description`；字段缺失表示不修改，`description: null` 表示清空；
+- 创建、编辑、删除共用 `idle/submitting/succeeded/failed/unknown` 判别状态。进行中 Promise 合并；network/timeout/cancel/contract/5xx 进入 unknown 且不自动重发；
+- 管理详情只对未删除且非 Online Product 开放编辑/删除。客户端禁用用于及时反馈，40903/40904/40905 仍由服务端决定；逻辑删除不被解释为关联数据级联删除；
+- Guest 仍只允许登录后返回固定管理列表，动态创建/编辑/详情不进入 redirect 白名单；普通用户在挂载查询和 mutation Hook 前拦截，FastAPI ADMIN+ 是最终授权边界。
+- 2026-08-29 已关闭 Phase 8.2 延期视觉问题。管理页白色图案最终定位为原生 `Form` 同时承担提交语义和白色卡片背景、边框、圆角、内边距时的微信渲染异常；筛选/调整区域统一改为外层 `View` 绘制视觉卡片、内层透明 `Form` 只处理提交，无提交语义的 Product 创建/编辑/配置容器直接使用 `View`。用户复测库存流水、管理商品、Kit 管理库存、管理订单及预防性调整页面全部通过。登录 `_` 闪烁后续无法再复现并由用户确认已消失；`alwaysEmbed` 只保留为历史排查记录，不单独作为因果结论。
+
+### 8.7 ADMIN Product Option 与 Kit 价格边界
+
+Phase 8.3 在同一管理详情读模型上增加一个按 Product 类型分支的配置页：
+
+- Experience 通过 POST 新增或恢复 Option、PATCH 真实差异、DELETE 逻辑删除；组合身份固定为 `duration_minutes + participants + day_type`，客户端不创建独立 Option 版本；
+- POST 命中已逻辑删除组合时，服务端恢复原 Option ID、保留图片关联并使用本次价格。客户端只接受响应中的真实 ID，不根据 HTTP 动作自行生成 ID；
+- Kit 配置页只 PATCH `price`，库存余额仅展示，不能穿过 Product 价格 Endpoint；库存写入必须从 Phase 8.6 Inventory 页面进入；
+- Online 或已删除 Product 在页面禁用写入口，但 40001/404xx/40903/40905/40911/40912 仍由后端权威裁决；
+- 四类配置 mutation 使用独立判别状态和进行中 Promise 合并。network/timeout/cancel/contract/5xx 进入 unknown，禁止自动重发，只允许重新读取管理详情核对；
+- Option/Kit 当前价格只影响未来订单。历史订单页面继续渲染 Order Item 快照，不读取当前 Product/Option 价格覆盖历史事实。
+
+### 8.8 ADMIN Product 图片与状态边界
+
+Phase 8.4–8.5 在同一管理详情聚合上增加跨端上传适配与状态命令：
+
+- `ImagePickerPort` 隔离 `Taro.chooseImage`；`TaroFileUploadTransport` 隔离 `Taro.uploadFile` 的字符串响应和平台错误。Feature/Page 不直接依赖微信、支付宝或抖音原生 API；
+- `ApiClient.uploadFile()` 与 JSON Client 共享 Bearer、统一信封、错误类型、code `1006` single-flight refresh 和一次重放，但不手工设置 multipart `Content-Type/boundary`；
+- Product 公共图可以设置唯一封面，Option 专属图没有封面语义。图片归属、封面切换、排序和逻辑删除由后端 Service/事务裁决；逻辑删除后的物理文件由后端独立清理任务负责；
+- 前端文件大小/MIME 检查只提供即时体验，后端继续验证 2 MiB、jpg/png/webp 签名和 MIME/内容一致性。数据库与文件系统不能形成同一事务，上传失败文件补偿属于后端 storage 编排；
+- online/offline 都是 empty-body PATCH。上架失败的 `42201.data.issues` 必须完整、有序展示，客户端不复制 ProductValidator；下架不修改 Option、图片、库存、流水或历史订单；
+- 图片和状态 mutation 使用 `idle/submitting/succeeded/failed/unknown`、进行中 Promise 合并和详情页同步命令互斥。network/timeout/cancel/contract/5xx unknown 不自动重发，恢复后重新 GET 权威详情；
+- Guest 只返回固定管理列表，普通用户在 Hook 挂载前拦截，Online/逻辑删除页面只读；这些 UI 守卫不替代 FastAPI ADMIN+ 与 409xx 后端裁决。
+
+### 8.9 Product Audit 与 ADMIN User 边界
+
+Phase 8.8–8.9 增加两个只依赖现有后端能力的纵向切片，并完成管理端总体 Review：
+
+- Product Audit 只读页绑定当前 Product ID，支持逻辑删除历史；Runtime Guard 只接受审计白名单，未知 action 显示原值，不在前端复制审计语义；
+- ADMIN User 列表只接受严格角色/状态筛选，后端 Mapper 和前端 Guard 双重排除 phone/avatar/password；分页使用服务端事实和稳定排序；
+- 禁用用户由后端行锁、状态更新与审计同事务保证；重复禁用幂等。前端对 unknown 不自动重发，只重新加载列表核对；
+- 已禁用用户的旧 access 和 refresh 会被后端当前状态阻断；受保护 API 收到 `1005` 时客户端清理 Session，不发起 refresh；
+- 用户管理固定路径加入 redirect 白名单；动态 Product Audit 路由不加入，Guest 登录后返回固定管理商品列表；
+- `admin` 分包只是下载边界，ADMIN+ FastAPI dependency 仍是授权边界。用户详情、启用和头像上传没有真实端点，因此没有页面按钮。
+
+最终自动门槛为 OpenAPI 45 paths/109 schemas、前端 54 套件/350 项、后端 1465 项通过（9 项 MySQL-only 跳过），以及 TypeScript、ESLint、Stylelint、类型漂移和四端生产构建通过。微信 `admin` 分包约 131.2 KiB；H5 主 JS 282 KiB、入口 369 KiB，继续保留既有体积建议。官方 registry 审计的 10 项问题均来自当前 Taro H5 上游依赖链，破坏性 `audit fix` 不属于本阶段。
+
+### 8.10 Kit Inventory 管理边界
+
+Phase 8.6 在 Product 管理读模型和既有后端 Inventory 契约之上增加两个页面，不把库存规则搬到 Product Feature：
+
+- `InventoryApi` 独立于 `AdminProductApi`，负责调整、指定 Kit 流水和全局流水。请求只投影 OpenAPI 允许的 body/query/header，响应从 unknown 校验库存算术、枚举/source 组合、UTC 与分页公式后白名单重建；
+- `ApiClient.requestWithMeta()` 是对既有 data-only `request()` 的向后兼容扩展，只让需要区分首次 201/重放 200 的调用取得最终 HTTP status。refresh 后返回重放请求的最终 metadata；
+- `useInventoryAdjustment()` 以业务意图为幂等边界，冻结 product/payload/key。进行中 Promise 合并；unknown 不自动重发，用户安全重试复用原 payload/key；明确失败或成功后下一次意图生成新 key；
+- `useInventoryTransactionList()` 复用指定 Kit/全局两类 Endpoint，服务端分页、筛选草稿提交和 sequence 隔离规则与其他管理列表一致。日期使用 UTC 半开区间，Order source ID 只在 order 来源下发送；
+- Product 管理详情只导航，不直接写库存。动态 Kit 页面先校验 ADMIN+ 并读取未删除 Kit 详情，再挂载 Inventory Hook；全局流水固定页加入安全登录白名单，动态 Kit 地址不加入；
+- Draft、Offline、Online Kit 都允许管理员调整，客户端不把 Product 可编辑状态误当 Inventory 规则。逻辑删除、类型、余额上下限、权限、事务、行锁、流水和 Audit 继续由后端权威裁决；
+- 本阶段工程门槛为前端 60 套件/375 项、后端 1465 项通过（9 项 MySQL-only 跳过）、静态检查和四端生产构建。三端 `admin` 分包约 167 KiB；H5 主 JS 283 KiB、入口 370 KiB。2026-08-28 用户确认微信开发者工具 Functional 全部通过。
 
 后端提供 Order create 客户端幂等键之前，UI 防抖和 Promise 合并都不能替代服务端幂等。首版仍不引入 Redux、Zustand 或服务端缓存框架。出现以下证据之一时再写 ADR：
 
@@ -421,7 +499,7 @@ MVP 使用现有用户名密码和 Bearer JWT：
 - user：AuthContext 的安全公开字段；
 - expiresAt：由登录响应 `expires_in` 和客户端时钟计算。
 
-Token Manager 必须处理当前后端的特殊契约：无凭据为 HTTP 401；无效或过期 Token 当前为 HTTP 400 + code `1006`。多个并发请求遇到 `1006` 时只能共享一次 refresh。
+Token Manager 必须处理当前后端的特殊契约：无凭据为 HTTP 401；无效或过期 Token 当前为 HTTP 400 + code `1006`；已禁用账号为 HTTP 400 + code `1005`。多个并发请求遇到 `1006` 时只能共享一次 refresh；受保护请求遇到 `1005` 必须清理 Session 且不能 refresh。
 
 ### 10.2 平台登录
 

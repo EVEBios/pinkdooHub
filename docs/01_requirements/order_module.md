@@ -185,7 +185,9 @@ pending ──→ paid ──→ completed
 
 ### 7.2 管理端
 
-- 支持按状态、精确订单号、用户 ID、创建时间范围筛选并分页。
+- 支持按状态、精确订单号、订单商品名称、用户 ID、创建时间范围筛选并分页。
+- 商品名称筛选使用 `order_items.product_name` 的下单时快照进行包含匹配，不关联当前 Product 名称；Product 后续改名、下架或逻辑删除都不得改变历史订单的检索结果。
+- 同一订单有多条 Item 命中商品名称时，列表仍只返回一条订单，`total`、`pages` 和 `item_count` 均按原订单语义计算；商品名称可以与其他管理端筛选条件组合使用。
 - 时间范围采用 UTC ISO 8601；`created_from` 包含边界，`created_to` 不包含边界。
 - 列表和详情可返回 `user_id` 与 `user_nickname`，不得返回用户名、手机号、密码、Token 等非必要字段；详情不返回列表派生字段 `item_count`。
 - 无筛选时同样按 `created_at DESC, id DESC` 稳定排序。

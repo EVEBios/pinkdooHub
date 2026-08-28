@@ -1,9 +1,9 @@
 # Product Module Business Rules
 
-> **Document Version:** v2.2
+> **Document Version:** v2.3
 > **Module:** Product
 > **Phase:** 4.1 Product Module
-> **Last Updated:** 2026-08-12
+> **Last Updated:** 2026-08-27
 >
 > 本文档定义 Product 模块的业务规则。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
 >
@@ -593,6 +593,16 @@ product_images
 | Option 无图片 | 返回 `[]`，前端展示占位图；**不**回退到 Product 公共图片 |
 | 逻辑删除 Option | 关联图片保持不动，随已删除 Option 从正常查询中隐藏；恢复 Option 时重新可见 |
 | 异常物理删除 Option | FK 的 `ON DELETE SET NULL` 将关联图片归入 Product 公共图片，仅作数据库兜底 |
+
+**上传文件规范化：** 上传原始文件仍必须不超过 2 MiB，声明 MIME 只接受 `image/jpeg`、`image/png`、`image/webp`，并与内容格式一致。标准 JPEG 以 `FF D8 FF` 开始、以 `FF D9` 结束。为兼容已验证的微信导出文件，存储层还接受以下精确尾部：
+
+```text
+<标准 JPEG，含 FF D9>
+17 4D A1 01 00 00 00 00
+<JPEG 本体的 16-byte MD5>
+```
+
+只有固定 8 字节前缀、JPEG 本体结束标记和 16 字节摘要全部匹配时才剥离 24 字节尾部，并只保存规范化后的标准 JPEG；MD5 只作为该导出格式的完整性标记，不构成认证或安全摘要。错误摘要、伪造前缀、任意尾随内容仍使用 `42221 invalid_image_content` 拒绝。大小限制按收到的原始上传文件计算，不能依靠剥离尾部绕过 2 MiB。
 
 **Kit 上架检查项：**
 

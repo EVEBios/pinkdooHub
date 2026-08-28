@@ -1,8 +1,8 @@
 # pinkdooHub 前端学习路线
 
-> **Document Version:** v0.4
+> **Document Version:** v0.7
 > **Status:** Draft
-> **Last Updated:** 2026-08-24
+> **Last Updated:** 2026-08-29
 > **Audience:** 首次系统学习 JavaScript、TypeScript、React 与 Taro 的项目开发者
 
 本项目采用“知识点 → 小练习 → 真实功能 → 测试 → 复盘”的循环，不要求先学完全部前端理论再开始，也不把复制示例代码当作掌握。
@@ -190,7 +190,7 @@ buildOrderItem
 
 ## 8. 阶段 5：React Effect、Context 与认证
 
-> **账号密码主链状态：已完成。** login/refresh/logout/getMe Endpoint、Session Manager、Taro Storage Adapter、AuthContext、登录守卫和受控登录表单均已实现并通过自动化测试与四端构建。2026-08-20 已在微信开发者工具连接本地 FastAPI + SQLite + Redis 完成错误/正确/禁用账号、三种角色、Storage、重启恢复、登出、主动/被动 refresh 与无效 refresh 清理 Functional。该结果不代表真机、H5、正式 HTTPS/合法域名或微信登录通过；注册页和 ADMIN 入口仍属后续功能。详细复盘见 [Phase 5 登录纵向链路学习笔记](learning_notes/phase5_auth_vertical_slice.md)。
+> **账号密码主链状态：已完成。** login/register/refresh/logout/getMe Endpoint、Session Manager、Taro Storage Adapter、AuthContext、登录守卫、受控登录表单和账号密码注册页均已实现。登录链已于 2026-08-20 完成微信 Functional；注册补漏项于 2026-08-25 完成工程实现与微信 Functional。注册成功只创建普通用户，不自动登录；非幂等 POST 的未知结果不自动重发。该结果不代表真机、H5、正式 HTTPS/合法域名或微信登录通过。详细复盘见 [Phase 5 登录纵向链路学习笔记](learning_notes/phase5_auth_vertical_slice.md)与[账号密码注册补漏学习笔记](learning_notes/phase5_account_registration.md)。
 
 学习：
 
@@ -203,7 +203,7 @@ buildOrderItem
 - 派生状态与重复状态；
 - 敏感信息。
 
-实践：登录（已完成）、注册（待实现）、恢复 Session（已完成）、`/users/me`（已完成）、登出（已完成）、普通/ADMIN 入口（待 Product/Admin 阶段实现）。
+实践：登录、注册、恢复 Session、`/users/me`、登出、普通入口与 ADMIN 入口均已完成；注册成功不自动登录，ADMIN 最终授权仍由后端执行。
 
 注意：Effect 只处理副作用；能在 render/事件中算出的值不放 Effect；Context 不承载所有业务数据；密码不持久化。
 
@@ -254,6 +254,8 @@ buildOrderItem
 
 ## 11. 阶段 8：Admin、上传与权限
 
+> **阶段规划已冻结。** Phase 8 以现有 FastAPI 能力为上限，采用“先建立安全读模型，再逐步开放 mutation”的顺序。8.1 ADMIN Product 只读管理纵向切片已实现并完成现有数据范围内的微信开发者工具 Functional；后续写操作与发布门槛按下表逐阶段验收。
+
 学习：
 
 - 分包；
@@ -265,7 +267,29 @@ buildOrderItem
 - Inventory Idempotency-Key；
 - Audit Log。
 
-实践按 Product → Option → Image → Inventory → Order → Audit → User 顺序接入。
+实施顺序：
+
+| 子阶段 | 工程交付 | 关键边界 | 状态 |
+|--------|----------|----------|------|
+| 8.1 | ADMIN Product 列表、筛选、分页与 Experience/Kit 管理详情 | 草稿允许空封面/价格/Option；逻辑删除可查；普通用户不挂载管理 Hook；后端 ADMIN+ 最终授权 | 已完成，含完整微信 Functional |
+| 8.2 | Experience/Kit 创建与基本信息编辑、逻辑删除 | 复杂表单按 Product 类型拆分；PATCH 只发送改动字段；删除只服从后端前置条件 | 已完成，含业务 Functional；延期的管理页白色图案与登录 `_` 闪烁已于 2026-08-29 复测关闭 |
+| 8.3 | Experience Option 与 Kit 价格管理 | Option 全历史组合唯一与恢复原 ID；Kit 无 Option；历史订单快照不被覆盖 | 工程实现、自动化及可验收微信 Functional 已完成；改价前后订单快照联动现已纳入 8.4–8.5 Functional |
+| 8.4 | Product/Option 图片上传、排序、封面与删除 | multipart；2 MiB/jpg/png/webp 双端校验；部分成功可恢复；相对 URL | 已完成，含完整微信 Functional |
+| 8.5 | 上下架与 readiness issues | online 使用 empty-body PATCH；`42201.data.issues` 一次完整展示；不在客户端复制 Validator | 已完成，含微信 Functional 与 8.3 新旧订单快照联动 |
+| 8.6 | Kit Inventory 调整与两类流水查询 | 每次业务意图生成 key，同次重试复用；首次 201/重放 200；不泄露 key | 已完成，含工程门槛与完整微信 Functional |
+| 8.7 | Order 管理整合 | 复用已完成的 7.4 查询、Paid/Completed 与 unknown/40921 收敛，不重复造状态编辑器 | 由 7.4 完成，Phase 8 只做导航整合 |
+| 8.8 | Product Audit 与 ADMIN User 列表/禁用 | 审计只读白名单；用户能力只做现有列表/禁用，不提供尚不存在的启用/详情/头像按钮 | 已完成，含完整微信 Functional |
+| 8.9 | 管理端整体 Review 与多端门槛 | 权限、上传、幂等、隐私、包体、微信 Functional、四端 Build 和真实后端回归 | 当前后端能力范围的工程 Review、自动门槛与微信 Functional 均完成；8.2 两项延期视觉问题已于 2026-08-29 关闭 |
+
+8.1 明确不包含创建、编辑、删除、Option mutation、图片上传、上下架、库存调整或审计；详情页显示“只读”说明，避免按钮暗示尚未交付的能力。后续每个 mutation 子阶段都必须先冻结请求、成功、失败、unknown/幂等与恢复语义，再开放 UI。
+
+8.3 的端点、状态机、页面、自动化、知识点与微信验收清单见 [Phase 8.3 学习笔记](learning_notes/phase8_admin_product_configuration.md)。
+
+8.4–8.5 的 multipart 上传适配、图片生命周期、readiness/状态机、结果未知恢复、知识点与合并微信验收清单见 [Phase 8.4–8.5 学习笔记](learning_notes/phase8_admin_product_images_status.md)。
+
+8.6 的 Kit 库存调整、HTTP 201/200 metadata、业务意图幂等、两类流水筛选分页、知识点与微信验收清单见 [Phase 8.6 学习笔记](learning_notes/phase8_admin_inventory.md)。
+
+8.8–8.9 的 Product Audit、ADMIN User 契约收口、禁用事务/旧 Token 阻断、总体 Review、知识点与微信验收清单见 [Phase 8.8–8.9 学习笔记](learning_notes/phase8_admin_audit_users_review.md)。
 
 完成标准：普通用户 403；上传/库存错误可解释；同次库存重试复用 key；不存在的后端功能没有按钮。
 

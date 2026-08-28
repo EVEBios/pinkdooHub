@@ -417,11 +417,14 @@ CREATE INDEX idx_orders_created_id ON orders (created_at, id);
 | # | 查询 | 频率 | 索引 |
 |---|------|------|------|
 | 1 | `WHERE order_id = ? ORDER BY id` | 高（订单详情） | `(order_id, id)` |
+| 2 | `WHERE product_name LIKE '%keyword%'` 子查询订单 ID | 低至中（管理端按历史商品名查订单） | 暂无可移植 B-Tree 索引；保留现有索引并按下述方式约束 |
 
 ```sql
 -- Migration SQL
 CREATE INDEX idx_order_items_order_id ON order_items (order_id, id);
 ```
+
+管理端商品名查询必须使用 `order_items.product_name` 快照，并以订单 ID 子查询过滤外层 `orders`，不能直接 JOIN 后再分页，否则多条 Item 命中会放大 `total`、`pages` 或 `item_count`。包含匹配前导 `%` 无法利用普通 B-Tree；MySQL FULLTEXT 对中文分词还需要额外 ngram 设计，SQLite 则需独立 FTS 方案，两者不能由当前跨数据库 Model 索引安全表达。因此本阶段不增加无效的 `product_name` 普通索引，也不产生迁移；该 ADMIN-only 查询限制关键词为 1 至 100 字符并继续数据库分页。数据规模或查询频率增长后，应基于生产 MySQL `EXPLAIN` 和实际中文关键词分布决定是否引入专用搜索索引，而不是预建无法命中的索引。
 
 #### inventory_transactions
 

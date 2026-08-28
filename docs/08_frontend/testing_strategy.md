@@ -1,8 +1,8 @@
 # pinkdooHub 前端测试策略
 
-> **Document Version:** v0.5
+> **Document Version:** v0.9
 > **Status:** Draft
-> **Last Updated:** 2026-08-24
+> **Last Updated:** 2026-08-29
 > **Applies To:** 正式 `miniapp/` 与其 FastAPI 集成边界
 
 本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。Spike 已固定：Jest 29.7.0 + `jest-environment-jsdom` 29.7.0 + `@tarojs/test-utils-react` 0.1.1（详见 [ADR-001](adr/ADR-001-use-taro-react-typescript.md) 与架构文档 §4.1）。
@@ -15,7 +15,7 @@
 - React 18.3 下 test-utils 内部使用已废弃的 `ReactDOMTestUtils.act`，产生告警但不阻断；升级测试工具时消除。
 - `openapi-typescript@7.13.0` 通过 `--immutable --alphabetize` 生成类型，`npm run api:types:check` 直接检查生成物漂移。
 - 2026-08-20 正式工程依赖复核后，`npm ls --depth=0` 无错误；官方 registry 审计仍有 10 项生产依赖风险来自 Taro 4.2.1 H5 上游链，强制修复会破坏性降级 Taro，列为公开发布门槛。
-- 当前完整 Jest 为 31 套件 / 213 项。Auth/Product/Cart/Order Endpoint 与 Feature 使用 fake transport、storage、clock 等平台边界；Order 创建纵向集成保留真实 CartStore → SubmissionStore → OrderApi → ApiClient，用户查询/取消及 ADMIN 列表→Paid→Completed 纵向集成都保留真实 OrderApi → ApiClient，只替换网络、Storage 与 Auth 平台边界。四端 production build 通过；H5 入口 359 KiB、主 JS 276 KiB，仍超过 Webpack 244 KiB 性能建议线。
+- 当前完整 Jest 为 60 套件 / 375 项。Auth/Product/Cart/Order/Inventory Endpoint 与 Feature 使用 fake transport、upload transport、image picker、storage、clock 等平台边界；账号注册覆盖请求投影、User Runtime Guard、字段校验、白名单 redirect、登录页入口、成功不自动登录、唯一性错误、未知结果和同步防双击。Order 创建纵向集成保留真实 CartStore → SubmissionStore → OrderApi → ApiClient，用户查询/取消及 ADMIN 列表→Paid→Completed 纵向集成都保留真实 OrderApi → ApiClient，只替换网络、Storage 与 Auth 平台边界。
 - 2026-08-20 微信开发者工具已连接本地 FastAPI + SQLite + Redis 完成账号密码认证 Functional：错误/正确/禁用账号、`user/admin/super_admin` 展示、Storage 写入、重启 `/users/me` 恢复、登出清理、`expiresAt` 主动 refresh、服务端 `1006` 被动 refresh，以及 access/refresh 同时无效后的 Session 清理全部通过；未记录或传播真实 Token。该结果不替代真机、H5、弱网、HTTPS/合法域名及正式微信登录门槛。
 
 ---
@@ -111,7 +111,19 @@ Phase 7.2 自动化固定以下高风险边界：Experience 请求携带真实 O
 
 Phase 7.3 自动化固定以下高风险边界：列表 Query/响应白名单、分页公式、状态 value/label、服务端 page/pages/total、筛选和迟到响应隔离、owner-only 40411 统一提示、路由正安全整数、历史 Item 快照、仅 Pending 显示取消、empty-body PATCH、重复点击单 cancel、成功后 GET、刷新失败不推翻成功、network/timeout/contract/5xx unknown 不自动重发，以及 40921 后按服务端状态收敛。定向 Jest 8 套件 / 61 项，完整前端 25 套件 / 172 项；后端真实 FastAPI + SQLite Order HTTP 53 项及完整 1445 项通过（9 项 MySQL-only 跳过）。
 
-Phase 7.4 自动化固定以下高风险边界：ADMIN Query/响应白名单、精确订单号/用户 ID/UTC 日期范围、包含结束日到排他上界转换、管理安全用户字段、普通用户在挂载 Hook 前拦截、固定登录回跳、`admin` 分包路由、Pending 仅 paid、Paid 仅 complete、两个终态无命令、两个 PATCH empty body、重复命令单请求、成功后 GET、权威 GET 完成前保持 submitting、刷新失败不推翻成功、unknown 不重发、40921 后重读，以及真实 `OrderApi → ApiClient` 的列表→详情→Paid→详情→Completed→详情链路。完整前端 31 套件 / 213 项；后端 Order API 107 项及完整 1445 项通过（9 项 MySQL-only 跳过）。
+Phase 7.4 自动化固定以下高风险边界：ADMIN Query/响应白名单、精确订单号/历史商品名称快照/用户 ID/UTC 日期范围、包含结束日到排他上界转换、商品改名后的历史检索、多 Item 同时命中的订单去重与 `item_count/total/pages`、管理安全用户字段、普通用户在挂载 Hook 前拦截、固定登录回跳、`admin` 分包路由、Pending 仅 paid、Paid 仅 complete、两个终态无命令、两个 PATCH empty body、重复命令单请求、成功后 GET、权威 GET 完成前保持 submitting、刷新失败不推翻成功、unknown 不重发、40921 后重读，以及真实 `OrderApi → ApiClient` 的列表→详情→Paid→详情→Completed→详情链路。初始阶段完整前端 31 套件 / 213 项、后端 Order API 107 项及完整 1445 项通过（9 项 MySQL-only 跳过）；2026-08-28 的商品名筛选增量结果见本页工程门槛与 changelog。
+
+Phase 8.1 自动化固定以下高风险边界：ADMIN Product 六字段 Query 白名单与 Bearer、草稿空封面/空价格/空图片/空 Option、逻辑删除标记、Experience/Kit 类型专属详情、正安全整数动态路由、服务端分页、筛选换页与迟到响应隔离、普通用户挂载 Hook 前拦截、固定管理列表登录回跳，以及页面不提前出现任何 mutation。微信 Functional 需覆盖 ADMIN 与普通用户边界、四类筛选组合、Draft/Online/Offline/已删除记录、两类详情和空配置提示。
+
+Phase 8.2 自动化固定以下高风险边界：Experience/Kit 创建请求严格分型、Kit 不发送 stock、响应 Runtime Guard、创建/编辑路由参数、PATCH 只发送真实差异、`description: null` 清空、空 PATCH 前端阻止、DELETE 无 body、进行中 Promise 合并、明确失败与 unknown 分流、unknown 不自动重发、普通用户不挂载写 Hook、Online/已删除操作禁用、删除二次确认和成功后以服务端 ID/类型导航。定向 7 套件/56 项，完整前端 41 套件/288 项；2026-08-26 用户确认业务 Functional 全部通过。当时延期的管理页白色图案和登录 `_` 闪烁已于 2026-08-29 关闭：白色图案最终定位为带白色卡片视觉样式的原生 `Form` 渲染异常，改由外层 `View` 绘制卡片、内层透明 `Form` 只保留提交语义；无提交语义的表单容器直接改为 `View`。用户在库存流水、管理商品、Kit 管理库存、管理订单及预防性调整页面完成微信复测并确认通过。登录 `_` 闪烁后续无法再复现，用户确认已消失，按验收结论标记为已解决；不把此前无效的 `alwaysEmbed` 尝试单独视为因果证明。
+
+Phase 8.3 自动化固定以下高风险边界：Option POST/PATCH/DELETE 与 Kit price PATCH 的路径、Bearer、请求白名单和 Runtime Guard；Option POST 完整四维组合、PATCH 只发送差异、空差异前端阻止、DELETE 无 body；Kit 改价绝不发送 stock；恢复结果保留服务端 Option ID；40911/40912/40905 提示；进行中 Promise 合并；unknown 不自动重发；普通用户不挂载详情或 mutation Hook；Online/已删除只读；删除确认明确历史订单快照和恢复原 ID；成功后重新读取权威管理详情。定向 5 套件/48 项、完整前端 43 套件/306 项、静态检查、OpenAPI 漂移和四端 build 通过；Product API 52 项与完整后端 1446 项通过，9 项 MySQL-only 跳过。2026-08-26 用户确认微信 Functional 除改价前后订单快照外均已通过；该项现已具备 Phase 8.5 上下架界面并纳入 8.4–8.5 合并 Functional。
+
+Phase 8.4–8.5 自动化固定以下高风险边界：`Taro.chooseImage`/`Taro.uploadFile` 平台适配、multipart form 字段与平台生成 boundary、Bearer、字符串响应信封、code `1006` single-flight refresh 和一次上传重放；Product/Option 图片归属、响应联合 Runtime Guard、2 MiB/MIME 预检、`42221` 原因；排序、设封面、逻辑删除；online/offline empty-body PATCH、`42201.data.issues` 完整有序保留和未知 issue；进行中 Promise 合并、不同命令同步互斥、unknown 不自动重发、成功或核对后重新 GET；Guest/普通用户/Online/逻辑删除权限与只读边界。定向 8 套件/66 项、完整前端 47 套件/328 项、静态检查、OpenAPI 漂移、四端 build、Product API 52 项和完整后端 1446 项均通过，9 项 MySQL-only 跳过；2026-08-28 用户确认微信 Functional 和 Phase 8.3 延期的旧/新订单价格快照联动全部通过。
+
+Phase 8.6 自动化固定以下高风险边界：调整 path/header/body 白名单；Idempotency-Key 的可打印 ASCII/长度边界；首次 201 与重放 200；refresh 后保留最终重放 status；非法 2xx、库存算术与 transaction/source/operator/order 元数据 Runtime Guard；四类流水及额外字段丢弃；指定 Kit/全局 Query 白名单、UTC 半开日期、source ID 依赖、服务端分页与筛选换页；新业务意图新 key、unknown 不自动重发、用户安全重试复用完全相同的 payload/key、双击 Promise 合并、明确失败清除意图；Guest 固定回跳、普通用户零管理 Hook、已删除 Kit 阻断、Online Kit 可调整及导航回归。定向 9 套件/42 项，另有共享 Client metadata 回归；完整前端 60 套件/375 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移、四端 build 和完整后端 1465 项均通过，9 项 MySQL-only 跳过。2026-08-28 用户确认微信开发者工具 Functional 全部通过。
+
+Phase 8.8–8.9 自动化固定以下高风险边界：Product Audit 动态路由正安全整数/类型、目标类型与 Product ID 绑定、响应白名单、逻辑删除历史和分页；ADMIN User 严格 `status/role` Query、额外参数 422、安全列表字段、稳定分页、Guest/普通用户在 Hook 前拦截、固定登录 redirect；禁用无 body、自己/角色层级、行锁下状态与审计同事务、重复调用幂等、审计失败回滚、旧 access/refresh 立即失效；客户端 code `1005` 清理 Session、不 refresh，network/timeout/contract/5xx unknown 不自动禁用重发。该阶段当时完整前端 54 套件/350 项、完整后端 1465 项通过（9 项 MySQL-only 跳过），并由用户确认微信 Functional 全部通过；随后 Phase 8.6 作为独立增量实施，其门槛见上一段。
 
 ### 4.4 Inventory
 
@@ -338,6 +350,7 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - [x] HTTP Client 风险矩阵基础测试（14 项 API/环境测试；全项合计 19 项）；
 - [x] 正式工程四端 Build；H5 281 KiB 基线告警已记录。
 - [x] 账号登录代码链：Endpoint/Runtime Guard/Session/Storage/Context/受控表单/守卫/登出，Jest 7 套件 / 29 项；四端 Build 通过，H5 当前 327 KiB。
+- [x] 账号密码注册补漏工程链：UserCreate 请求投影、User Runtime Guard、AuthContext、受控五字段表单、确认密码、登录/注册白名单回跳、同步防双击与 POST unknown；完整 Jest 38 套件 / 255 项、静态检查与 OpenAPI 漂移通过，注册页微信隔离构建生成完整产物。四端 production build 沿用注册补漏前的 Phase 8.1 基线；微信注册 Functional 已通过。
 - [x] 公开 Product 列表代码链：Endpoint/Runtime Guard/分页/迟到响应隔离/图片 Resolver/四态，针对性 Jest 4 套件 / 16 项、完整 Jest 10 套件 / 44 项、Product 后端 API 52 项及四端 Build 通过。
 - [x] 公开 Product 列表基础 Functional：游客、Empty、错误恢复、登录/退出后继续浏览。
 - [x] 公开 Product 列表/详情数据 Functional：Content、相对图片、第二页、筛选/搜索、Experience/Kit 详情与真实多配置 Option（2026-08-22）。
@@ -350,6 +363,19 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - [x] Phase 7.3 40921 双端竞态：2026-08-25 用户使用独立客户端先把 Pending 变为 Paid，旧用户详情 cancel 收到 40921 后重新 GET 并收敛到 Paid，未重复发送 cancel PATCH。
 - [x] Phase 7.4 ADMIN Order 工程门槛：完整筛选、管理详情、权限边界、empty-body paid/complete、unknown/40921 收敛与 `admin` 分包；完整 Jest 31 套件 / 213 项、静态检查、OpenAPI 漂移、Order API 107 项、完整后端 1445 项（9 项 MySQL-only 跳过）和四端 build 通过。
 - [x] Phase 7.4 微信 Functional：2026-08-25 用户确认普通用户边界、ADMIN 登录回跳/筛选/详情、Pending → Paid、Paid → Completed、终态无按钮、库存不变、弱网 unknown、40921 竞态及普通用户直调 ADMIN API 403/不 refresh 全部通过。断网分支显示“结果待确认”且未自动再次 PATCH；Slow 3G 约 310 ms 返回而未触发 timeout，严格 timeout 只保留为非阻断补测。
+- [x] 2026-08-28 ADMIN Order 商品名称筛选工程与微信 Functional：历史 `product_name` 快照包含匹配、当前 Product 改名隔离、多 Item 命中去重、组合筛选、完整 `item_count/total/pages`、Query 白名单、翻页保持和页面入口均已覆盖；后端定向 128 项、Order 411 项、完整 1457 项（9 项 MySQL-only 跳过）、前端 47 套件/330 项、静态检查、OpenAPI 漂移与四端 build 通过，用户确认微信验证全部通过。
+- [x] Phase 8.1 ADMIN Product 只读管理工程实现：列表/筛选/分页、两类详情、草稿/删除形状、权限与路由边界均已落地；定向前端 8 套件/39 项、完整前端 37 套件/240 项、Product API 52 项、完整后端 1445 项（9 项 MySQL-only 跳过）、静态检查、OpenAPI 漂移和四端 Build 全部通过。
+- [x] Phase 8.1 微信 Functional：2026-08-25 用户确认 Guest 固定入口登录跳转、普通用户边界、ADMIN 登录回跳、筛选/分页、Experience/Kit 详情、断网重试、无 mutation 按钮、Draft 空配置与逻辑删除标记全部通过。
+- [x] Phase 8.2 微信业务 Functional：2026-08-26 用户确认 Experience/Kit 创建、零库存、基本信息 diff/描述清空、Draft/Offline 删除、删除记录查回、Online/已删除边界、快速连点、unknown 核对和普通用户权限全部通过。
+- [x] Phase 8.2 延期视觉问题已关闭（2026-08-29）：原生 `Form` 不再直接承担白色卡片背景/边框/圆角，管理页改为 `View` 视觉外壳后用户复测白色图案全部消失；登录输入 `_` 闪烁后续无法复现并由用户确认已消失。
+- [x] Phase 8.3 工程门槛：Option/Kit price Endpoint、Runtime Guard、状态机、分型配置页、权限/路由/表单自动化；完整前端、静态检查、OpenAPI、四端 build、Product API 与后端全量回归均通过。
+- [x] Phase 8.3 微信 Functional（已可验收范围）：2026-08-26 用户确认 Option 新增/恢复/修改/删除、Kit 改价、权限、重复点击、unknown 核对与 Online/删除边界全部通过。
+- [x] Phase 8.3 延期联动验收：为存在历史订单的 Online 商品下架改价，确认旧订单保持旧快照、新订单使用新价格；2026-08-28 已随 8.4–8.5 微信 Functional 通过。
+- [x] Phase 8.4–8.5 工程门槛：图片选择/上传适配、multipart/refresh、图片生命周期、readiness/上下架状态机、权限/路由/页面自动化；完整前端、静态检查、OpenAPI、四端 build 与 Product API 回归均通过。
+- [x] Phase 8.4–8.5 微信 Functional：2026-08-28 用户确认真实相册/相机与三种格式、大小/内容拒绝、封面/排序/删除、Option 图片归属、完整 readiness、Kit 零库存上架、下架不改库存/历史、unknown 核对，以及 8.3 订单快照联动全部通过。
+- [x] Phase 8.8–8.9 Product Audit/ADMIN User/当前范围 Review 微信 Functional：2026-08-28 用户确认全部通过，包括 Swagger 独立 ADMIN Session 禁用后旧 refresh/access 阻断与前端 Session 清理。
+- [x] Phase 8.6 工程门槛：Inventory Endpoint/Runtime Guard、201/200 metadata、业务意图幂等、指定 Kit/全局流水、权限/路由/筛选/分页；定向 9 套件/42 项并补充共享 Client metadata 回归，完整前端 60 套件/375 项、静态检查、OpenAPI 漂移、四端 build 与完整后端 1465 项（9 项 MySQL-only 跳过）全部通过。
+- [x] Phase 8.6 微信 Functional：2026-08-28 用户确认 Guest/普通用户/ADMIN 边界、Draft/Offline/Online 与逻辑删除 Kit、正负调整/40932、快速连点、unknown 安全重试 201/200、两类流水与组合筛选/分页/订单跳转/隐私字段全部验证完成并通过。
 
 ### MVP 功能完成
 

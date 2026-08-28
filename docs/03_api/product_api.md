@@ -4,6 +4,7 @@
 > **Module:** Product
 > **Phase:** 4.1 Product Module
 > **Status:** Implemented — Phase 4.1 Product API complete
+> **Last Updated:** 2026-08-27
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -1553,7 +1554,7 @@ Content-Type: multipart/form-data
 
 **可能的业务错误：** `40401`, `40903`, `40905`, `42221`
 
-> **实现边界：** `ProductService.create_product_image()` 接收存储层生成的 `image_url` 并负责数据库业务事务；API 负责 multipart 严格表单校验、文件存储调用和失败补偿。文件内容/大小/MIME 校验、安全 UUID 文件名、原子本地存储、URL 生成与 `42221` 映射已接入。若文件已存储但 Service 失败，调用方使用 storage key 幂等删除文件，再让原异常由全局中间件响应。
+> **实现边界：** `ProductService.create_product_image()` 接收存储层生成的 `image_url` 并负责数据库业务事务；API 负责 multipart 严格表单校验、文件存储调用和失败补偿。文件内容/大小/MIME 校验、安全 UUID 文件名、原子本地存储、URL 生成与 `42221` 映射已接入。若文件已存储但 Service 失败，调用方使用 storage key 幂等删除文件，再让原异常由全局中间件响应。标准 JPEG 直接保存；对于精确符合“`FF D9` + 固定 8 字节导出标记 + JPEG 本体 16-byte MD5”的微信导出文件，存储层验证尾部后将其剥离，只保存标准 JPEG。任意尾随内容、错误摘要或伪造前缀仍返回 `42221`、`data.reason=invalid_image_content`；2 MiB 上限按规范化前的原始上传大小计算。
 
 **请求参数**
 
@@ -1608,7 +1609,7 @@ Content-Type: multipart/form-data
 
 **可能的业务错误：** `40402`, `40912`, `40905`, `42221`
 
-> **实现边界：** 文件处理与失败补偿同 §7.14；Service 只接收生成后的 `image_url`，从已加载 Option 固定 Product 归属并强制 `is_cover=false`。
+> **实现边界：** 文件处理、严格 JPEG 导出尾部校验/规范化与失败补偿同 §7.14；Service 只接收生成后的 `image_url`，从已加载 Option 固定 Product 归属并强制 `is_cover=false`。
 
 **请求参数**
 

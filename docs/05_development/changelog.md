@@ -4,6 +4,132 @@
 
 ---
 
+## Frontend 微信视觉兼容问题关闭（2026-08-29）
+
+关闭 Phase 8.2 延期的管理页白色图案与登录输入 `_` 闪烁。用户已在微信开发者工具和真机相关页面完成复测并确认两项问题均已解决。
+
+- 白色图案最终定位为原生 `Form` 同时承担提交语义和白色卡片背景、边框、圆角、内边距时的微信渲染异常。库存流水、管理商品、Kit 管理库存和管理订单统一改为外层 `View` 绘制卡片、内层透明 `Form` 只处理提交；没有提交语义的商品创建、编辑、Experience Option 和 Kit 价格配置容器直接改为 `View`。
+- 全项目复查后，登录/注册的白色卡片本来就由外层 `View` 绘制，`Form` 只负责字段与提交，因此无需套用管理页改法；其余管理页未发现直接把白色卡片视觉样式挂到原生 `Form` 的同类风险。
+- 登录输入 `_` 闪烁在后续复测中不再出现，用户确认已经消失，现按验收结论关闭；此前 `alwaysEmbed` 的单独尝试不足以证明因果关系，保留为历史排查记录而不将其表述为确定根因。
+- Taro 4.2.1 微信 development build 成功，结构审计确认管理页视觉卡片均由 `View` 承担；真机构建继续使用 `.env.development.local` 的局域网 API 覆盖。用户最终确认库存流水、管理商品、Kit 管理库存、管理订单和预防性调整页面全部验证通过。
+- 本次没有后端/API/OpenAPI、数据库 Schema/迁移、依赖或版本候选变化；未 commit、push、tag、release，也未执行持久数据库迁移。
+
+---
+
+## Frontend Phase 8.6 — Kit Inventory 管理（2026-08-28）
+
+完成 ADMIN+ Kit 库存调整、指定 Kit 流水和全局库存流水纵向切片。工程实现、自动化、四端构建与后端完整回归均已完成；2026-08-28 用户确认微信开发者工具 Functional 全部验证完成并通过。
+
+- 新增 `InventoryApi`，消费既有三个 ADMIN+ Inventory Endpoint；调整请求只发送 `change/reason` 和专属 `Idempotency-Key`，查询只投影允许的分页/type/source/product/UTC 条件。响应从 unknown 校验库存算术、transaction/source/operator/order 组合、UTC 与分页后白名单重建，不暴露内部 key 或额外字段。
+- `ApiClient` 新增向后兼容的 `requestWithMeta()`，只为需要区分最终 HTTP 201 首次提交与 200 幂等重放的调用保留 status；既有 `request()` 继续只返回 data，refresh 后 metadata 来自最终重放响应。
+- 新增调整业务意图状态机：每个新意图生成新 key，冻结 product/change/reason；进行中双击合并。network/timeout/cancel/contract/5xx 进入 unknown 且不自动重发，用户安全重试复用完全相同的 payload/key；明确失败或成功后清除意图。
+- `admin` 分包新增动态 Kit 库存页和固定全局流水页；Product 管理详情与首页增加入口。Draft/Offline/Online Kit 均可调整；逻辑删除 Kit 在挂载 Inventory Hook 前阻断。全局固定页加入登录白名单，动态页不加入并让 Guest 返回固定管理商品列表；普通用户不会挂载管理 Hook，FastAPI ADMIN+ 仍是最终授权边界。
+- 两类流水复用筛选/分页组件，支持 transaction/source、Order source ID、全局 Product ID 与 UTC 自然日；结束日期转次日排他上界，筛选换页保持服务端条件，sequence 隔离迟到响应。Order 来源可进入管理订单详情。
+- 定向 9 套件/42 项并补充共享 Client metadata 回归，完整前端 60 套件/375 项、TypeScript strict、ESLint、Stylelint、OpenAPI 类型漂移、weapp/alipay/tt/h5 production build 及完整后端 1465 项通过，9 项 MySQL-only 按配置跳过。三端 `admin` 分包约 167 KiB；H5 主 JS 283 KiB、入口 370 KiB，继续保留既有 244 KiB 和 `[hash]` 告警。
+- `npm ls --depth=0` 正常；官方 registry 审计仍为 Taro H5 上游链 10 项风险（4 moderate、1 high、5 critical），破坏性强制降级未执行。同步前端路线、架构、API 集成、测试策略、README、AI Context 与 Phase 8.6 学习笔记；后端业务/API 文档无需变化，因为没有修改任何后端契约。
+- 没有数据库 Schema/迁移、OpenAPI 生成物、依赖、版本候选变化；未 commit、push、tag、release，也未执行持久数据库迁移。Phase 8.2 管理页白色图案和登录 `_` 闪烁在本阶段结束时仍为延期项，后于 2026-08-29 完成专项复测并关闭。
+
+---
+
+## Frontend Phase 8.8–8.9 — Product Audit、ADMIN User 与管理端 Review（2026-08-28）
+
+完成 Product 操作历史、ADMIN 用户列表/筛选/禁用，并对当时已交付管理端执行权限、上传、幂等、隐私、分包、契约、包体与四端构建 Review。2026-08-28 用户确认微信开发者工具 Functional 全部通过，包括用独立 Swagger ADMIN Session 禁用普通用户后，旧 refresh 首次 `1005`、重放 `1006`，旧 access 触发前端 Session 清理；该次 Review 当时未包含尚未实施的 Phase 8.6，随后 8.6 已在上方独立条目完成工程与微信 Functional 收口。
+
+- Product Audit 复用既有 ADMIN+ 分页端点，新页面从 Product 管理详情进入，支持 Draft、Offline、Online 与逻辑删除历史；动态路由要求正安全整数 ID 和 Experience/Kit 类型，Runtime Guard 绑定 `target_type=product` 与目标 ID，只投影允许的审计字段，未知 action 安全回退到服务端原值。
+- ADMIN User 后端收口为严格 `page/page_size/status/role` Query、稳定 `created_at DESC,id DESC` 分页、显式 Mapper 和 typed Page；列表不返回 phone/avatar/password。禁用使用目标行锁，状态更新与 `DISABLE_USER` 审计同事务提交；重复禁用幂等且不重复写审计，审计失败会整体回滚。
+- 认证边界补齐当前状态检查：禁用账号的旧 access 立即返回 code `1005`；旧 refresh 首次返回 `1005` 并撤销，后续重放返回 `1006`。前端受保护 JSON/上传请求遇到 `1005` 立即清理 Session 且不 refresh；network/timeout/cancel/contract/5xx 的禁用结果保持 unknown，不自动重发。
+- `admin` 分包新增商品操作历史和用户管理页；首页只向 ADMIN+ 展示“管理用户”，管理详情新增“操作历史”。Guest 仅允许固定 `/admin/pages/users/index` 登录回跳，普通用户在挂载管理 Hook 前拦截；FastAPI ADMIN+ 仍是最终授权边界。不存在的用户详情、启用和头像上传未伪造页面按钮。
+- OpenAPI 已更新为 45 paths/109 schemas。完整前端 54 套件/350 项、完整后端 1465 项通过（9 项 MySQL-only 按配置跳过）；TypeScript strict、ESLint、Stylelint、OpenAPI 类型漂移、npm 依赖树和 weapp/alipay/tt/h5 production build 全部通过。微信 `admin` 分包约 131.2 KiB；H5 主 JS 282 KiB、入口 369 KiB，继续保留既有 244 KiB 体积建议和 `[hash]` 上游告警。
+- 官方 npm registry 审计报告 10 项当前 Taro H5 上游依赖链问题（4 moderate、1 high、5 critical）；建议修复会破坏性降级到 Taro 3.x，因此未执行 `npm audit fix`，需后续跟踪 Taro 升级窗口。同步 User 需求/API、前端路线/架构/集成/测试/README、AI Context 与学习笔记；没有数据库 Schema/迁移、依赖或版本候选变化。
+- Phase 8.2 的管理商品列表白色图案和登录 `_` 闪烁在本阶段结束时继续延期且未被误报修复；后于 2026-08-29 完成专项复测并关闭。未 commit、push、tag、release，也未执行持久数据库迁移。
+
+---
+
+## ADMIN Order 历史商品名称筛选（2026-08-28）
+
+补齐管理订单列表按商品名称查找能力。新增 `GET /api/v1/admin/orders?product_name=...`，trim 后限制 1 至 100 字符，并可与状态、精确订单号、用户 ID 和 UTC 时间范围组合；匹配事实来源固定为 `order_items.product_name` 下单快照，不关联当前 Product，因此商品改名、下架或逻辑删除不会改变历史订单检索结果。
+
+- Repository 通过匹配 Item 的 Order ID 子查询过滤外层 Order，再沿用原有计数、`Count(items)`、`created_at DESC,id DESC` 和数据库分页；同一订单多条 Item 命中时仍只返回一单，`total/pages/item_count` 不被放大。
+- 管理订单页新增“商品名称（支持部分匹配）”，筛选草稿 trim 后才提交；第一页、下一页与当前筛选提示携带同一关键词。OpenAPI、生成 TypeScript 类型和 `OrderApi` Query 白名单同步增加 `product_name`，列表响应形状不变。
+- 自动化覆盖 1–100 字符契约、Router/Service 转发、历史快照与当前 Product 名称隔离、多 Item 命中去重、组合筛选、分页元数据、HTTP/OpenAPI、Endpoint 白名单、Hook 翻页和页面输入。后端定向 128 项、Order 全模块 411 项、完整 SQLite 1457 项均通过，9 项 MySQL-only 按配置跳过；前端完整 47 套件/330 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移和 weapp/alipay/tt/h5 production build 均通过。
+- H5 继续只有既有的 Webpack `[hash]` 弃用与 244 KiB 体积建议：主 JS 281 KiB、入口 368 KiB；Jest 继续只有 Taro Test Utils 的 React `act` 弃用告警。
+- 同步 Order 需求/API、数据库查询与索引取舍、前端架构/集成/测试/学习笔记和 AI Context。包含查询的前导 `%` 无法利用普通 B-Tree；跨 MySQL 中文 FULLTEXT 与 SQLite FTS 的专用搜索设计需由生产数据和 `EXPLAIN` 驱动，因此本次不新增无效索引、数据库 Schema、迁移或依赖，也不改变版本候选。微信开发者工具的新增商品名称筛选 Functional 待用户补测。
+
+---
+
+## Product JPEG 导出尾部兼容与规范化（2026-08-27）
+
+修复微信导出的有效 JPEG 被误报为 `42221 invalid_image_content`：19 个真实样本均为可解码 JPEG，但在标准 `FF D9` 后附加固定 8 字节标记和 JPEG 本体的 16-byte MD5，旧 `content.endswith(FF D9)` 检测产生假阴性。
+
+- `LocalImageStorage` 只接受精确匹配的 24 字节尾部：JPEG 本体必须有正确头尾、固定前缀必须一致、MD5 必须匹配；随后剥离尾部并以 UUID 文件名原子保存规范化 JPEG。原始上传大小仍受 2 MiB 限制。
+- 任意尾随数据、错误摘要、伪造前缀和 MIME/内容不匹配继续分别按既有 `invalid_image_content` / `content_type_mismatch` 契约拒绝；MD5 只用于识别导出格式，不作为认证或安全摘要。
+- 存储单测覆盖成功规范化、错误 MD5、任意尾随、MIME 不匹配和规范化后 size/content；真实 multipart SQLite API 测试覆盖上传带尾部 JPEG、数据库/审计成功及静态文件只返回规范化 JPEG。定向 28 项通过；`D:\pinkdooPics` 的 19 个真实样本全部经正式存储类规范化成功且临时输出已清理；完整后端 1450 项通过，9 项 MySQL-only 按配置跳过。
+- 同步 Product 业务规则、API 文档、前端集成/学习笔记与 AI Context。没有 API 路径、请求/响应 Schema、错误码、数据库、迁移、依赖或版本候选变化。
+
+---
+
+## Frontend Phase 8.4–8.5 — ADMIN Product 图片与上下架/readiness（2026-08-26）
+
+在 Phase 8.1–8.3 管理读写聚合之上，完成 Product 公共图和 Experience Option 专属图的上传、排序、封面、逻辑删除，以及 Product 上下架和完整 readiness issues 展示。工程实现、自动化与四端构建已完成；微信 Functional 待用户验收，并包含 Phase 8.3 延期的旧/新订单价格快照联动。
+
+- `ApiClient` 新增可注入 Upload Transport；`TaroFileUploadTransport` 使用 `Taro.uploadFile`，解析字符串响应信封，分类取消/网络/超时，并复用 Bearer、code `1006` single-flight refresh 与最多一次重放。multipart boundary 由平台生成，不手工设置 `Content-Type`。
+- 新增跨端 `ImagePickerPort/TaroImagePickerAdapter`，管理页面不直接依赖平台原生 API。前端可用元数据预检 2 MiB 和 jpg/png/webp；后端继续权威验证签名、MIME/内容一致性、图片归属和封面唯一。
+- `AdminProductApi` 新增 Product/Option 图片上传、图片 sort/封面 PATCH、无 body DELETE，以及 online/offline empty-body PATCH；所有响应继续从 `unknown` 做联合 Runtime Guard 与白名单投影。
+- 新增图片/状态 mutation Hook 和图片管理页。Product 公共图可设唯一封面，Option 专属图无封面；Draft/Offline 可写，Online/逻辑删除只读。详情页增加“管理图片”“上架/下架”，上架失败完整、有序展示 `42201.data.issues`，不复制后端 ProductValidator。
+- 写命令使用 `idle/submitting/succeeded/failed/unknown`、进行中 Promise 合并和详情页同步命令互斥；network/timeout/cancel/contract/5xx unknown 不自动重发，成功或核对均重新读取服务端管理详情。
+- 定向 8 套件/66 项、完整前端 47 套件/328 项、TypeScript strict、ESLint、Stylelint、OpenAPI 漂移、weapp/alipay/tt/h5 production build、Product API 52 项及完整后端 1446 项均通过，9 项 MySQL-only 按配置跳过。保留 H5 体积、Webpack `[hash]` 和 React Test Utils `act` 既有告警。没有后端行为、数据库 Schema/迁移、OpenAPI 生成物、依赖或版本变化。
+- 新增 Phase 8.4–8.5 学习笔记和微信 Functional 清单，覆盖真实选图/上传、文件拒绝、封面/排序/删除、Option 图片归属、完整 readiness、Kit 零库存上架、下架不改库存/历史、unknown 核对与订单快照；Phase 8.2 的管理页白色图案和登录 `_` 闪烁在本阶段结束时仍是独立延期问题，后于 2026-08-29 完成专项复测并关闭。
+
+---
+
+## Frontend Phase 8.3 — ADMIN Experience Option 与 Kit 价格管理（2026-08-26）
+
+在 Phase 8.1 管理读模型和 8.2 Product 基本写入之上，完成 Experience Option 新增/恢复、部分修改、逻辑删除，以及 Kit 当前价格修改。图片、上下架/readiness、Inventory 与 Audit 仍由后续阶段负责。
+
+- `AdminProductApi` 新增 Option POST/PATCH/DELETE 和 Kit price PATCH；请求严格投影，Option 完整/Base、删除与 KitPrice 响应均从 unknown 做白名单 Runtime Guard。Kit 改价绝不发送 stock。
+- 新增配置 mutation Hook，四类动作共享 `idle/submitting/succeeded/failed/unknown` 与进行中 Promise 合并；network/timeout/cancel/contract/5xx 不自动重发，只引导重新加载管理详情核对。
+- 管理详情新增类型专属入口和分型配置页。Experience 表单按四维组合工作，PATCH 只发送真实差异，删除确认说明历史订单快照与“再建同组合恢复原 ID”；Kit 页面把库存固定为只读。
+- Online/已删除 Product 禁用配置写入只作即时反馈；FastAPI ADMIN+ 与 40001/404xx/40903/40905/40911/40912 仍是最终裁决。当前价格只影响未来下单，既有订单页面继续消费快照。
+- 新增 Endpoint、路由、状态机、页面、权限和表单回归测试。8.3 定向 5 套件/48 项、完整前端 43 套件/306 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移与 weapp/alipay/tt/h5 production build 均通过；Product API 52 项及完整后端 1446 项通过，9 项 MySQL-only 跳过。H5 主 JS 278 KiB、入口 362 KiB，保留既有 244 KiB 体积建议与 Webpack `[hash]` 告警。2026-08-26 用户确认微信 Functional 除改价前后订单快照外全部通过；该联动场景因当前没有上下架按钮，延期到 Phase 8.5 后补测。没有后端行为、数据库 Schema/迁移、OpenAPI 生成物、依赖或版本变化。
+
+### Phase 8.2 视觉问题后续状态
+
+管理商品列表左上角白色图案与登录输入 `_` 闪烁在 2026-08-26 阶段结束时尚未修复，三处 Input 的 `alwaysEmbed` 已编译生效但首次复测无效，因此当时正确标记为延期。两项后于 2026-08-29 完成专项复测并关闭：白色图案通过把卡片视觉层从原生 `Form` 移到外层 `View` 解决；登录 `_` 闪烁后续无法复现并由用户确认消失。
+
+---
+
+## Frontend Phase 8.2 — ADMIN Product 基本写入（2026-08-26）
+
+在 Phase 8.1 管理读模型之上完成 Product 最小写入纵向切片：Experience/Kit 草稿创建、名称/描述编辑，以及 Draft/Offline Product 逻辑删除。范围不包含 Option、创建后的 Kit 价格、图片、上下架、Inventory、Audit 或删除恢复。
+
+- `AdminProductApi` 新增两类创建、基本信息 PATCH 和无 body DELETE；请求严格白名单投影，响应从 `unknown` 逐字段校验。Kit 创建不接受 stock，Experience 创建不混入 Option 价格。
+- 新增统一 mutation Hook，以 `idle/submitting/succeeded/failed/unknown` 表示写请求；进行中 Promise 合并，network/timeout/cancel/contract/5xx 结果未知且不自动重发。
+- 管理列表新增类型明确的创建入口；新增分型创建页与权威详情驱动的编辑页；详情页增加状态边界、编辑、删除确认和 unknown 后核对入口。PATCH 只发送真实改动，区分字段缺失与 `description: null`。
+- 普通用户在挂载查询或 mutation Hook 前拦截，Guest 只允许登录后返回固定管理列表；客户端禁用不替代 FastAPI ADMIN+ 与 40903/40904/40905 服务端裁决。
+- Phase 8.2 定向 7 套件/56 项、完整前端 41 套件/288 项与 TypeScript strict 通过。2026-08-26 用户确认微信业务 Functional 全部通过。管理页白色图案及登录输入 `_` 闪烁当时仍未解决，`alwaysEmbed` 已编译但首次复测无效，因此延期专项处理；两项已于 2026-08-29 完成复测并关闭。未修改后端行为、数据库 Schema、OpenAPI 生成物、依赖或版本。
+
+## Frontend Auth Backfill — 账号密码注册（2026-08-25）
+
+补齐 Phase 5 曾延后的 Guest 账号密码注册纵向链路。`AuthApi.register()` 使用生成 `UserCreate` 类型与 User Runtime Guard；`AuthContext.register()` 只返回服务端 User，不在缺少 Token 时建立 Session。登录页新增注册入口，注册页包含用户名、昵称、手机号、密码与确认密码，成功后由用户主动登录，并在登录/注册切换间保留固定白名单 redirect。
+
+- 注册请求只投影 username/password/nickname/phone；确认密码不进入 API。非密码字段 trim，密码不 trim、不进 URL/Storage/日志；成功响应白名单不含 password。
+- 同步 ref 门闩覆盖 React state 尚未提交时的快速双击；network/timeout/cancel/contract/5xx 视为非幂等 POST 结果未知，不自动重发，先引导尝试登录。1001/1007 分别显示用户名/手机号唯一性提示。
+- 审阅发现 `user_api.md` 的 username 字符集旧说明与实际 Pydantic/OpenAPI 无 pattern 不一致，已把 API 文档同步为当前事实；客户端只做实际 Schema 的长度校验，不以客户端规则代替后端安全边界。
+- 新增 Endpoint、路由、登录入口、页面、成功/未知/重复提交和字段边界测试；完整前端为 38 套件/255 项。没有后端行为、数据库 Schema、OpenAPI 生成物、依赖或版本变化。
+- 2026-08-25 用户确认微信注册 Functional 全部通过：普通注册、字段校验、用户名/手机号唯一性、快速连点、断网结果未知、密码不进入 URL/Storage/日志，以及订单列表 redirect 经注册和登录后正确返回“我的订单”。
+
+## Frontend Phase 8.1 — ADMIN Product 只读管理（2026-08-25）
+
+Phase 8 已按“安全读模型 → Product 基本写入 → Option/Kit 价格 → 图片 → readiness/状态 → Inventory → 既有 Order 整合 → Audit/User → 最终 Review”冻结为 8.1–8.9。8.1 完成 ADMIN Product 列表、组合筛选、服务端分页与 Experience/Kit 管理详情；管理读模型允许未完成 Draft 与逻辑删除历史，不复用只接受完整 Online 聚合的公开 Product Guard。
+
+- 新增认证 `AdminProductApi`、管理 Page/Detail Runtime Guard 与请求白名单；严格校验 Product 类型/状态、金额、UTC 时间、Kit stock 上限及 Experience dimensions/Option 一致性。
+- 新增管理 Product 列表/详情 Hook、正安全整数 ID + 类型动态路由、筛选换页重置、重复加载保护和 sequence 迟到响应隔离。
+- `admin` 分包新增管理商品列表与详情：首页只为 ADMIN+ 展示入口，Guest 只允许固定列表回跳，普通用户在挂载 Hook 前拦截；页面展示草稿空配置、状态与删除标记，但明确不提供任何 mutation。
+- 新增 Phase 8.1 Endpoint、Feature、路由和页面测试；同步学习路线、学习笔记、架构、API 集成契约、测试策略、README 与 AI Context。未改变后端 API、数据库、OpenAPI Schema 或依赖。
+- Phase 8.1 定向前端 8 套件/39 项、完整前端 37 套件/240 项、TypeScript strict、全 `src` ESLint、Stylelint、OpenAPI 类型漂移、Product API 52 项、完整后端 1445 项（9 项 MySQL-only 跳过）及 weapp/alipay/tt/h5 production build 全部通过。H5 保留 276 KiB 主 JS/360 KiB 入口体积及 `[hash]` 上游告警。首页账号信息与操作按钮同步拆为两层，按钮文字固定单行，窄屏按整颗按钮换行。
+- 新增受 development、仓库内 SQLite 和双显式参数保护的 `[LOCAL-ADMIN-FE]` Seed，通过正式 Product Service 幂等创建空配置 Experience Draft、无封面 Kit Draft 和逻辑删除 Kit，并保留正常审计链。2026-08-25 已写入本地开发库作为剩余 Functional 样本；不创建图片、不调整库存、不触碰既有 `[LOCAL-FE]` Online 商品。
+- 2026-08-25 用户确认上述 Draft/逻辑删除真实样本的筛选、详情、空配置、删除标记及无恢复按钮均通过，Phase 8.1 微信 Functional 全部收口。
+
 ## Frontend Phase 7.4 — ADMIN 订单查询与人工 Paid/Completed（2026-08-24）
 
 ### Summary

@@ -11,7 +11,6 @@
 - 身份认证（JWT）
 - Token 刷新
 - 个人资料管理
-- 头像上传
 - 用户管理（管理员）
 
 ### Base URL
@@ -57,7 +56,7 @@ Authorization: Bearer <access_token>
 | nickname | string | 昵称 |
 | phone | string | 手机号 |
 | avatar | string | 头像 URL |
-| role | string | 角色：`"user"` 普通用户，`"admin"` 管理员 |
+| role | string | 角色：`"user"` / `"admin"` / `"super_admin"` |
 | status | string | 状态：`"normal"` 正常 / `"disabled"` 禁用 |
 | created_at | datetime | 注册时间 |
 | updated_at | datetime | 最近更新时间 |
@@ -88,11 +87,11 @@ Authorization: Bearer <access_token>
 
 | 字段 | 规则 |
 |------|------|
-| username | 必填，3-32 字符，字母数字下划线 |
+| username | 必填，3-32 字符；当前 Schema 未限制字符集 |
 | password | 必填，8-64 字符 |
 | nickname | 必填，1-32 字符 |
 | phone | 必填，11 位中国大陆手机号 |
-| avatar | 可选，图片文件，最大 2MB，支持 jpg/png/webp |
+| avatar | 当前仅支持在资料 PATCH 中提交 URL；文件上传端点尚未实现 |
 
 ---
 
@@ -103,14 +102,12 @@ Authorization: Bearer <access_token>
 | POST | /auth/register | 用户注册 | ❌ | 游客 |
 | POST | /auth/login | 用户登录 | ❌ | 游客 |
 | POST | /auth/refresh | 刷新 Token | ✅ | 所有登录用户 |
+| POST | /auth/logout | 登出并撤销当前 refresh | ✅ | 所有登录用户 |
 | GET | /users/me | 获取个人信息 | ✅ | 所有登录用户 |
-| PUT | /users/me | 修改个人信息 | ✅ | 所有登录用户 |
+| PATCH | /users/me | 修改个人信息 | ✅ | 所有登录用户 |
 | PUT | /users/me/password | 修改密码 | ✅ | 所有登录用户 |
-| POST | /users/me/avatar | 上传头像 | ✅ | 所有登录用户 |
 | GET | /admin/users | 用户列表 | ✅ | 管理员 |
-| GET | /admin/users/{id} | 用户详情 | ✅ | 管理员 |
 | PUT | /admin/users/{id}/disable | 禁用用户 | ✅ | 管理员 |
-| PUT | /admin/users/{id}/enable | 启用用户 | ✅ | 管理员 |
 
 ---
 
@@ -123,7 +120,7 @@ Authorization: Bearer <access_token>
 | 默认状态 | 注册后状态默认为 `"normal"`（正常） |
 | 修改密码需旧密码 | 修改密码时必须验证当前密码 |
 | 不能禁用自己 | 管理员不可通过 `/admin/users/{id}/disable` 禁用自己的账号 |
-| 禁用后不可登录 | `status = "disabled"` 的用户调用 `/auth/login` 返回 1005 |
+| 禁用即时生效 | 登录、旧 access 鉴权和旧 refresh 换取新 access 均返回 1005；首次 refresh 拒绝同时撤销该 refresh |
 | 删除用户 | ❌ 当前版本不支持，计划在 v1.0 实现 |
 
 ---
@@ -152,7 +149,7 @@ POST /api/v1/auth/register
 ```json
 {
     "username": "alice",
-    "password": "123456",
+    "password": "12345678",
     "nickname": "Alice",
     "phone": "13800138000"
 }
@@ -199,7 +196,7 @@ HTTP 201
     "message": "Validation failed",
     "data": {
         "username": "Username must be 3-32 characters",
-        "password": "Password must be at least 6 characters"
+        "password": "Password must be at least 8 characters"
     }
 }
 ```
@@ -528,64 +525,15 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 6.4 上传头像
+### 6.4 头像文件上传（未实现）
 
-```
-POST /api/v1/users/me/avatar
-```
-
-上传当前用户的头像图片。
-
-**Header**
-
-```
-Authorization: Bearer <access_token>
-Content-Type: multipart/form-data
-```
-
-**请求参数**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| file | file | 是 | 图片文件，最大 2MB，支持 jpg/png/webp |
-
-**成功响应**
-
-```json
-{
-    "code": 0,
-    "message": "success",
-    "data": {
-        "avatar": "https://cdn.example.com/avatars/1.jpg"
-    }
-}
-```
-
-**失败响应**
-
-文件过大：
-
-```json
-{
-    "code": 422,
-    "message": "File size must not exceed 2MB"
-}
-```
-
-不支持的格式：
-
-```json
-{
-    "code": 422,
-    "message": "Only jpg, png and webp are allowed"
-}
-```
+当前没有 `POST /api/v1/users/me/avatar`。资料 PATCH 仅能保存调用方提供的头像 URL；正式文件上传必须在后端补齐存储、内容校验和授权契约后再开放。
 
 ---
 
 ## 7. 管理接口
 
-> 以下接口需要管理员角色（`role = "admin"`），普通用户调用返回 403。
+> 以下接口需要 `ADMIN+`，普通用户调用返回 HTTP 403。当前只实现列表和禁用；用户详情、启用和头像文件上传仍是未来能力，客户端不得提前提供按钮。
 
 ### 7.1 用户列表
 
@@ -607,8 +555,10 @@ Authorization: Bearer <access_token>
 |------|------|------|--------|------|
 | page | int | 否 | 1 | 页码 |
 | page_size | int | 否 | 20 | 每页数量，最大 100 |
-| keyword | string | 否 | - | 搜索关键词（匹配 username / nickname） |
 | status | string | 否 | - | 筛选状态：`"normal"` 正常 / `"disabled"` 禁用 |
+| role | string | 否 | - | 筛选角色：`"user"` / `"admin"` / `"super_admin"` |
+
+未知枚举、额外查询参数、`page < 1` 或超出范围的 `page_size` 均返回 HTTP 422，不会被静默忽略。结果按 `created_at DESC, id DESC` 稳定分页。
 
 **成功响应**
 
@@ -622,71 +572,23 @@ Authorization: Bearer <access_token>
                 "id": 1,
                 "username": "alice",
                 "nickname": "Alice",
-                "phone": "13800138000",
-                "avatar": "https://cdn.example.com/avatars/1.jpg",
                 "role": "user",
                 "status": "normal",
-                "created_at": "2026-01-15T10:30:00Z",
-                "updated_at": "2026-01-15T10:30:00Z"
+                "last_login_at": "2026-08-28T08:00:00Z",
+                "created_at": "2026-01-15T10:30:00Z"
             }
         ],
         "total": 100,
         "page": 1,
-        "page_size": 20
+        "page_size": 20,
+        "pages": 5
     }
 }
 ```
 
 ---
 
-### 7.2 用户详情
-
-```
-GET /api/v1/admin/users/{id}
-```
-
-查看指定用户的详细信息。
-
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**成功响应**
-
-```json
-{
-    "code": 0,
-    "message": "success",
-    "data": {
-        "id": 1,
-        "username": "alice",
-        "nickname": "Alice",
-        "phone": "13800138000",
-        "avatar": "https://cdn.example.com/avatars/1.jpg",
-        "role": "user",
-        "status": "normal",
-        "created_at": "2026-01-15T10:30:00Z",
-        "updated_at": "2026-07-20T14:00:00Z"
-    }
-}
-```
-
-**失败响应**
-
-用户不存在：
-
-```json
-{
-    "code": 1002,
-    "message": "User not found"
-}
-```
-
----
-
-### 7.3 禁用用户
+### 7.2 禁用用户
 
 ```
 PUT /api/v1/admin/users/{id}/disable
@@ -694,14 +596,17 @@ PUT /api/v1/admin/users/{id}/disable
 
 将指定用户状态设为禁用（`status = "disabled"`）。
 
+请求不接收 body；任何非空 body 返回 HTTP 422。目标行会在事务内锁定，状态更新与 `DISABLE_USER` 审计日志原子提交。已经禁用的目标直接成功，不重复写审计。
+
 **权限**
 
 | 操作者 | 目标 | 结果 |
 |--------|------|------|
 | ADMIN | USER | ✅ 成功 |
-| ADMIN | 自己 | ❌ 422 "Cannot disable yourself" |
+| ADMIN / SUPER_ADMIN | 自己 | ❌ HTTP 400 / code 422 |
 | ADMIN | SUPER_ADMIN | ❌ 403 |
-| ANY | 已禁用用户 | ✅ 幂等，直接返回成功 |
+| SUPER_ADMIN | 其他 SUPER_ADMIN | ✅ 成功 |
+| ADMIN+ | 已禁用用户 | ✅ 幂等，直接返回成功 |
 
 **Header**
 
@@ -714,7 +619,8 @@ Authorization: Bearer <access_token>
 ```json
 {
     "code": 0,
-    "message": "User disabled"
+    "message": "User disabled",
+    "data": null
 }
 ```
 
@@ -746,44 +652,6 @@ Authorization: Bearer <access_token>
     "message": "Cannot disable super admin"
 }
 ```
-
----
-
-### 7.4 启用用户
-
-```
-PUT /api/v1/admin/users/{id}/enable
-```
-
-将指定用户状态设为正常（`status = "normal"`）。
-
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**成功响应**
-
-```json
-{
-    "code": 0,
-    "message": "User enabled"
-}
-```
-
-**失败响应**
-
-用户不存在：
-
-```json
-{
-    "code": 1002,
-    "message": "User not found"
-}
-```
-
----
 
 ## 8. 附录
 
@@ -828,3 +696,5 @@ Authorization: Bearer <access_token>
 - OAuth 登录
 - 手机号绑定/换绑
 - 找回密码
+- 管理端用户详情与启用
+- 头像文件上传

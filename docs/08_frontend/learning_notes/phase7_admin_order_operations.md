@@ -1,6 +1,6 @@
 # Phase 7.4 学习笔记：ADMIN 订单查询与人工状态操作
 
-> 状态：**工程实现与微信开发者工具 Functional 全部通过。** 2026-08-24 已完成 ADMIN+ 订单列表/详情、完整筛选、Pending → Paid、Paid → Completed、普通用户前端边界、`admin` 分包和服务端状态收敛。完整前端 31 套件 / 213 项、后端 Order API 107 项、后端全量 1445 项（另 9 项 MySQL-only 跳过）、TypeScript、ESLint、Stylelint、OpenAPI 漂移和四端 production build 均通过。2026-08-25 用户确认清单全部通过：断网时进入“结果待确认”且不自动重发 PATCH；Slow 3G 约 310 ms 正常返回，未触发 timeout，严格 timeout 仍只作为非阻断补测；独立客户端抢先变更订单后，旧 ADMIN 页面收到 40921 并通过 GET 收敛到最新状态；普通用户直调 ADMIN API 返回 403 且不触发 Token refresh。本结论不代表真机或 H5 Functional 已通过。
+> 状态：**原 Phase 7.4 工程实现与微信开发者工具 Functional 全部通过；2026-08-28 新增的商品名称筛选工程门槛已通过、微信 Functional 待补测。** 原阶段完成 ADMIN+ 订单列表/详情、完整筛选、Pending → Paid、Paid → Completed、普通用户前端边界、`admin` 分包和服务端状态收敛。商品名称增量后，完整前端为 47 套件/330 项，Order 后端 411 项、后端全量 1457 项（另 9 项 MySQL-only 跳过），TypeScript、ESLint、Stylelint、OpenAPI 漂移和四端 production build 均通过。2026-08-25 原清单已全部通过：断网时进入“结果待确认”且不自动重发 PATCH；Slow 3G 约 310 ms 正常返回，未触发 timeout；独立客户端抢先变更订单后，旧 ADMIN 页面收到 40921 并通过 GET 收敛到最新状态；普通用户直调 ADMIN API 返回 403 且不触发 Token refresh。本结论不代表真机或 H5 Functional 已通过。
 
 ## 1. 最小纵向切片
 
@@ -9,7 +9,8 @@ ADMIN+ 首页入口
       │
       ▼
 GET /api/v1/admin/orders
-      │ status/order_no/user_id/UTC range + server pagination
+      │ status/order_no/product_name(snapshot)/user_id/UTC range
+      │ + server pagination
       ▼
 GET /api/v1/admin/orders/{id}
       │
@@ -28,7 +29,7 @@ GET /api/v1/admin/orders/{id}
 
 `OrderApi` 新增：
 
-- `listAdminOrders()`：认证 GET，只投影 `page/page_size/status/order_no/user_id/created_from/created_to`；
+- `listAdminOrders()`：认证 GET，只投影 `page/page_size/status/order_no/product_name/user_id/created_from/created_to`；
 - `getAdminOrderDetail()`：认证 GET，只接受正整数 ID；
 - `markOrderPaid()` 与 `completeOrder()`：认证、严格无 body PATCH；
 - ADMIN 列表和详情只额外接受 `user_id/user_nickname`，继续复用金额、状态、时间和 Item 快照 Guard。
@@ -41,7 +42,15 @@ GET /api/v1/admin/orders/{id}
 
 ### 7.4.2 管理订单列表与筛选
 
-管理列表位于 `admin` 分包，固定每页 20 条，支持状态、精确订单号、用户 ID、UTC 开始/结束日期和服务端分页。筛选草稿经纯函数校验后才变成请求条件。
+管理列表位于 `admin` 分包，固定每页 20 条，支持状态、精确订单号、下单时商品名称快照、用户 ID、UTC 开始/结束日期和服务端分页。筛选草稿经纯函数校验后才变成请求条件。
+
+2026-08-28 增补商品名称部分匹配。后端查询 `order_items.product_name` 快照而不是当前 Product 名称，并通过订单 ID 子查询过滤外层 Order；因此商品改名、下架或逻辑删除不影响历史检索，一张订单多条 Item 命中也不会放大 `total/pages/item_count`。客户端只新增输入、白名单 Query 和筛选快照传递，不改变列表响应形状。
+
+**新知识：历史订单检索必须和历史展示使用同一事实来源。** 页面展示的是下单时名称与价格快照，如果搜索却关联当前 Product，商品改名后就会出现“看得到旧名、却按旧名搜不到”的矛盾。
+
+**新知识：跨一对多关系筛选不能直接把 JOIN 结果拿去分页。** 多个 Item 命中会让同一 Order 出现多行，并可能同时破坏总数、页数和明细计数。先用 Item 子查询得到 Order ID，再在 Order 层计数、聚合和分页，可以保持列表原有语义。
+
+**新知识：不要为了满足形式上的“有索引”而建立无效索引。** `%keyword%` 前导通配符不能利用普通 B-Tree；MySQL 中文 FULLTEXT 与 SQLite FTS 也不是同一套可移植设计。本阶段保留 ADMIN-only、严格长度和数据库分页，未来用生产 MySQL `EXPLAIN` 与真实关键词分布决定专用搜索方案。
 
 **新知识：API 的排他时间上界和用户理解的“包含结束日”不同。** 界面输入 `2026-08-31` 作为结束日时，客户端发送 `created_to=2026-09-01T00:00:00.000Z`，从而遵守后端 `< created_to` 契约。
 
@@ -110,7 +119,7 @@ Taro Test Utils 仍输出 React 18 `ReactDOMTestUtils.act` 上游弃用告警。
 
 1. `dev_user` 首页不显示管理入口，手工进入管理列表/详情也不发 ADMIN 请求；
 2. `dev_admin` 登录后显示管理入口，登录回跳返回管理列表；
-3. 全部状态、精确订单号、用户 ID、开始/结束日期及组合筛选正确；
+3. 全部状态、精确订单号、历史商品名称、用户 ID、开始/结束日期及组合筛选正确；商品改名后旧订单仍可按旧名找到，多 Item 命中只显示一单；
 4. Empty/Error/重新加载/下一页恢复正确；
 5. 管理详情只显示 `user_id/user_nickname` 和历史订单快照；
 6. Pending 仅显示“标记为已支付”，确认后变为 Paid，快速连点只提交一次；
