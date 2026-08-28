@@ -1,6 +1,11 @@
 """管理端用户管理测试 —— 分页列表 + 禁用用户。"""
 
+import pytest
 from httpx import AsyncClient
+
+from app.common.enums.user import UserStatus
+from app.models.audit_log import AuditLog
+from app.services.audit_log_service import AuditLogService
 
 
 class TestListUsers:
@@ -31,6 +36,41 @@ class TestListUsers:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 200
+
+    async def test_list_rejects_unknown_filters_and_query_keys(self, client: AsyncClient):
+        """未知枚举或额外 Query 不得被静默忽略。"""
+        await _register_admin(client, "strictboss", "13800000011")
+        token = await _login(client, "strictboss")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        for query in ("status=unknown", "role=owner", "keyword=alice"):
+            resp = await client.get(f"/api/v1/admin/users?{query}", headers=headers)
+            assert resp.status_code == 422
+
+    async def test_list_has_safe_whitelist_and_stable_order(self, client: AsyncClient):
+        """列表不输出手机号等敏感字段，并以 ID 作为稳定倒序键。"""
+        await _register_admin(client, "orderboss", "13800000012")
+        token = await _login(client, "orderboss")
+        await client.post(
+            "/api/v1/auth/register",
+            json={"username": "listedone", "password": "12345678", "nickname": "一", "phone": "13800000013"},
+        )
+        await client.post(
+            "/api/v1/auth/register",
+            json={"username": "listedtwo", "password": "12345678", "nickname": "二", "phone": "13800000014"},
+        )
+
+        resp = await client.get(
+            "/api/v1/admin/users?role=user&page_size=100",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        matching = [item for item in items if item["username"] in {"listedone", "listedtwo"}]
+        assert [item["username"] for item in matching] == ["listedtwo", "listedone"]
+        assert set(matching[0]) == {
+            "id", "username", "nickname", "role", "status", "last_login_at", "created_at",
+        }
 
     async def test_user_cannot_access(self, client: AsyncClient, auth_user: dict):
         """普通用户 → 403。"""
@@ -75,6 +115,120 @@ class TestDisableUser:
         )
         assert resp.status_code == 200
         assert resp.json()["message"] == "User disabled"
+
+        stored = await UserRepository().get_by_id(user.id)
+        assert stored is not None
+        assert stored.status == UserStatus.DISABLED
+        log = await AuditLog.filter(
+            action="DISABLE_USER",
+            target_type="user",
+            target_id=user.id,
+        ).get()
+        assert log.operator_id > 0
+
+    async def test_disable_is_idempotent_and_does_not_duplicate_audit(self, client: AsyncClient):
+        """重复禁用成功，但仅首次状态变更写一条审计。"""
+        await _register_admin(client, "idemadmin", "13800000015")
+        token = await _login(client, "idemadmin")
+        await client.post(
+            "/api/v1/auth/register",
+            json={"username": "idemvictim", "password": "12345678", "nickname": "I", "phone": "13800000016"},
+        )
+        from app.repositories.user_repo import UserRepository
+        user = await UserRepository().get_by_username("idemvictim")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        first = await client.put(f"/api/v1/admin/users/{user.id}/disable", headers=headers)
+        second = await client.put(f"/api/v1/admin/users/{user.id}/disable", headers=headers)
+        assert first.status_code == second.status_code == 200
+        assert await AuditLog.filter(
+            action="DISABLE_USER",
+            target_type="user",
+            target_id=user.id,
+        ).count() == 1
+
+    async def test_disable_immediately_blocks_existing_access_and_refresh_tokens(
+        self,
+        client: AsyncClient,
+    ):
+        """禁用后旧 access 不再鉴权，旧 refresh 也不能签发新 access。"""
+        await _register_admin(client, "revoker", "13800000020")
+        admin_token = await _login(client, "revoker")
+        await client.post(
+            "/api/v1/auth/register",
+            json={"username": "activevictim", "password": "12345678", "nickname": "A", "phone": "13800000021"},
+        )
+        victim_login = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "activevictim", "password": "12345678"},
+        )
+        victim_tokens = victim_login.json()["data"]
+        from app.repositories.user_repo import UserRepository
+        victim = await UserRepository().get_by_username("activevictim")
+
+        disabled = await client.put(
+            f"/api/v1/admin/users/{victim.id}/disable",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        access = await client.get(
+            "/api/v1/users/me",
+            headers={"Authorization": f"Bearer {victim_tokens['access_token']}"},
+        )
+        refresh = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": victim_tokens["refresh_token"]},
+        )
+        replay_refresh = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": victim_tokens["refresh_token"]},
+        )
+
+        assert disabled.status_code == 200
+        assert (access.status_code, access.json()["code"]) == (400, 1005)
+        assert (refresh.status_code, refresh.json()["code"]) == (400, 1005)
+        assert (replay_refresh.status_code, replay_refresh.json()["code"]) == (400, 1006)
+
+    async def test_disable_rejects_body_and_non_positive_id(self, client: AsyncClient):
+        await _register_admin(client, "bodyadmin", "13800000017")
+        token = await _login(client, "bodyadmin")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        body_resp = await client.put(
+            "/api/v1/admin/users/1/disable",
+            headers=headers,
+            json={"status": "disabled"},
+        )
+        invalid_id = await client.put("/api/v1/admin/users/0/disable", headers=headers)
+        assert body_resp.status_code == 422
+        assert invalid_id.status_code == 422
+
+    async def test_audit_failure_rolls_back_disable(
+        self,
+        client: AsyncClient,
+        monkeypatch,
+    ):
+        """审计写入失败时用户状态不得单独提交。"""
+        await _register_admin(client, "rollbackadmin", "13800000018")
+        token = await _login(client, "rollbackadmin")
+        await client.post(
+            "/api/v1/auth/register",
+            json={"username": "rollbackvictim", "password": "12345678", "nickname": "R", "phone": "13800000019"},
+        )
+        from app.repositories.user_repo import UserRepository
+        user = await UserRepository().get_by_username("rollbackvictim")
+
+        async def fail_audit(*args, **kwargs):
+            raise RuntimeError("injected audit failure")
+
+        monkeypatch.setattr(AuditLogService, "log", fail_audit)
+        with pytest.raises(RuntimeError, match="injected audit failure"):
+            await client.put(
+                f"/api/v1/admin/users/{user.id}/disable",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        stored = await UserRepository().get_by_id(user.id)
+        assert stored is not None
+        assert stored.status == UserStatus.NORMAL
 
     async def test_disable_self(self, client: AsyncClient):
         """不能禁用自己。"""

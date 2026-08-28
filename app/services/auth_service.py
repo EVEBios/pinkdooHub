@@ -137,6 +137,14 @@ class AuthService:
         if not user_id_from_redis or user_id_from_redis != user_id:
             raise TokenExpired()
 
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            await delete_refresh_token(jti)
+            raise TokenExpired()
+        if user.status == UserStatus.DISABLED:
+            await delete_refresh_token(jti)
+            raise UserDisabled()
+
         access_token = create_access_token(user_id, jti)
         return {"access_token": access_token}
 

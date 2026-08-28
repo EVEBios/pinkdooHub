@@ -10,7 +10,7 @@
 中间件自动根据 code 映射 HTTP 状态码，读取 message 构造响应。
 """
 
-from app.core.exceptions import BusinessException
+from app.core.exceptions import BusinessException, PermissionException
 
 
 class UserException(BusinessException):
@@ -50,3 +50,17 @@ class TokenExpired(UserException):
 class PhoneAlreadyExists(UserException):
     def __init__(self) -> None:
         super().__init__(code=1007, message="Phone already exists")
+
+
+class CannotDisableSelf(UserException):
+    """管理员不能禁用自己的当前账号。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=422, message="Cannot disable yourself")
+
+
+class CannotDisableSuperAdmin(PermissionException):
+    """ADMIN 不能禁用 SUPER_ADMIN。"""
+
+    def __init__(self) -> None:
+        super().__init__(message="Cannot disable super admin")

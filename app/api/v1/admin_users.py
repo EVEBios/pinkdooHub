@@ -1,48 +1,84 @@
-"""管理端用户 API —— 用户列表、禁用。
+"""管理端用户 API —— 严格分页筛选与幂等禁用。"""
 
-Phase 3.4: 分页筛选 + 角色层级保护 + 幂等禁用。
-"""
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 
-from app.api.deps import get_current_admin
-from app.common.pagination import PageParams
+from app.api.deps import (
+    get_admin_user_service,
+    get_current_admin,
+    reject_request_body,
+)
+from app.api.mappers.user import map_admin_user_page
+from app.api.responses import error_responses, success_responses
+from app.common.enums.user import UserRole, UserStatus
+from app.common.pagination import Page, PageParams
 from app.common.response import success
 from app.models.user import User
-from app.repositories.user_repo import UserRepository
+from app.schemas.user import AdminUserListQuery, UserListItem
 from app.services.admin_user_service import AdminUserService
 from app.utils.request import get_client_ip
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/admin/users",
+    tags=["admin-users"],
+    responses=error_responses(400, 401, 403, 422),
+)
+UserId = Annotated[int, Path(gt=0)]
+CurrentAdmin = Annotated[User, Depends(get_current_admin)]
+AdminUserServiceDependency = Annotated[
+    AdminUserService,
+    Depends(get_admin_user_service),
+]
+
+_STATUS_BY_VALUE = {
+    "normal": UserStatus.NORMAL,
+    "disabled": UserStatus.DISABLED,
+}
+_ROLE_BY_VALUE = {
+    "user": UserRole.USER,
+    "admin": UserRole.ADMIN,
+    "super_admin": UserRole.SUPER_ADMIN,
+}
 
 
-@router.get("/users")
+@router.get(
+    "",
+    response_model=None,
+    responses=success_responses(Page[UserListItem]),
+)
 async def list_users(
-    admin: User = Depends(get_current_admin),
-    user_repo: UserRepository = Depends(),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    status: str | None = Query(None),
-    role: str | None = Query(None),
-):
-    """分页获取用户列表，支持按 status/role 筛选。
+    query: Annotated[AdminUserListQuery, Query()],
+    current_admin: CurrentAdmin,
+    service: AdminUserServiceDependency,
+) -> dict:
+    """按状态、角色稳定倒序分页查询用户安全摘要。"""
 
-    ?page=1&page_size=20&status=normal&role=user
-    """
-    service = AdminUserService(user_repo)
-    params = PageParams(page=page, page_size=page_size)
-    result = await service.list_users(params, status=status, role=role)
-    return success(data=result.model_dump())
+    page = await service.list_users(
+        PageParams(page=query.page, page_size=query.page_size),
+        status=_STATUS_BY_VALUE[query.status] if query.status else None,
+        role=_ROLE_BY_VALUE[query.role] if query.role else None,
+    )
+    return success(data=map_admin_user_page(page).model_dump(mode="json"))
 
 
-@router.put("/users/{user_id}/disable")
+@router.put(
+    "/{user_id}/disable",
+    response_model=None,
+    responses=success_responses(type(None)),
+)
 async def disable_user(
-    user_id: int,
+    user_id: UserId,
     request: Request,
-    admin: User = Depends(get_current_admin),
-    user_repo: UserRepository = Depends(),
-):
-    """禁用指定用户。"""
-    service = AdminUserService(user_repo)
-    await service.disable_user(admin, user_id, ip_address=get_client_ip(request))
+    current_admin: CurrentAdmin,
+    service: AdminUserServiceDependency,
+    _empty_body: Annotated[None, Depends(reject_request_body)],
+) -> dict:
+    """幂等禁用指定用户，状态写入与审计日志同事务提交。"""
+
+    await service.disable_user(
+        current_admin,
+        user_id,
+        ip_address=get_client_ip(request),
+    )
     return success(message="User disabled")

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.common.constants.validation import (
     NICKNAME_MAX_LENGTH,
@@ -15,6 +15,16 @@ from app.common.constants.validation import (
     USERNAME_MIN_LENGTH,
 )
 from app.common.enums.user import UserRole, UserStatus
+from app.common.pagination import PageParams
+
+
+class AdminUserListQuery(PageParams):
+    """管理端用户列表的严格分页与枚举筛选。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    status: Literal["normal", "disabled"] | None = None
+    role: Literal["user", "admin", "super_admin"] | None = None
 
 
 class UserCreate(BaseModel):

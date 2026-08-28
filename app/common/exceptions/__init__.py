@@ -27,6 +27,8 @@ from app.common.exceptions.product import (
     ProductTypeMismatch,
 )
 from app.common.exceptions.user import (
+    CannotDisableSelf,
+    CannotDisableSuperAdmin,
     IncorrectPassword,
     OldPasswordIncorrect,
     PhoneAlreadyExists,
@@ -37,6 +39,8 @@ from app.common.exceptions.user import (
 )
 
 __all__ = [
+    "CannotDisableSelf",
+    "CannotDisableSuperAdmin",
     "ExperienceOptionAlreadyDeleted",
     "ExperienceOptionAlreadyExists",
     "ExperienceOptionNotFound",

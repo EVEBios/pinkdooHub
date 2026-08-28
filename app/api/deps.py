@@ -12,9 +12,14 @@ from fastapi import Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.common.enums.user import UserRole
+from app.common.enums.user import UserRole, UserStatus
+from app.common.exceptions.user import UserDisabled
 from app.core.config import settings
-from app.core.exceptions import AuthenticationException, PermissionException
+from app.core.exceptions import (
+    AuthenticationException,
+    NotFoundException,
+    PermissionException,
+)
 from app.core.security import decode_token
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
@@ -23,6 +28,7 @@ from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
+from app.services.admin_user_service import AdminUserService
 from app.services.inventory_service import InventoryService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
@@ -98,6 +104,18 @@ def get_inventory_service(
     )
 
 
+def get_admin_user_service(
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> AdminUserService:
+    """组装 AdminUserService 及共享审计依赖。"""
+
+    return AdminUserService(
+        user_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(),
@@ -108,8 +126,9 @@ async def get_current_user(
     payload = decode_token(credentials.credentials, "access")
     user = await user_repo.get_by_id(int(payload["sub"]))
     if not user:
-        from app.core.exceptions import NotFoundException
         raise NotFoundException(message="User not found")
+    if user.status == UserStatus.DISABLED:
+        raise UserDisabled()
     return user
 
 
