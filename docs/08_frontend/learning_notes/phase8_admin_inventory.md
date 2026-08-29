@@ -1,6 +1,6 @@
 # Phase 8.6：Kit Inventory 管理前端
 
-> **状态：** 工程实现、自动化、四端生产构建、后端完整回归与微信开发者工具 Functional 全部完成；2026-08-29 按钮即时筛选与待应用提示增量也已验收通过。
+> **状态：** 工程实现、自动化、四端生产构建、后端完整回归与微信开发者工具 Functional 全部完成；2026-08-29 按钮即时筛选、待应用提示与 8 位日期掩码增量也已验收通过。
 > **完成日期：** 2026-08-28
 > **范围：** ADMIN+ Kit 库存调整、指定 Kit 流水、全局流水、导航与权限边界。
 > **不包含：** 新库存后端规则、直接设置最终库存、删除商品库存查询、普通用户库存管理、Product 删除恢复、真机/H5 Functional。
@@ -85,7 +85,7 @@ Inventory Endpoint 只接受 200/201；其他 2xx 即使信封正确也视为契
 - source type：migration、admin、order；
 - Order source ID 只能与 `source_type=order` 一起发送；
 - 全局页额外支持 Product ID；指定 Kit 页不发送 Product ID；
-- 日期输入按 UTC 自然日解释。开始日转当日 `00:00:00Z`，包含式结束日转次日 `00:00:00Z`，与后端 `[created_from, created_to)` 一致；
+- 日期使用一个真实数字输入源，用户可连续输入 `YYYYMMDD` 8 位数字，覆盖层始终以固定横杠显示 `YYYY-MM-DD`。经真实日期校验后按 UTC 自然日解释：开始日转当日 `00:00:00Z`，包含式结束日转次日 `00:00:00Z`，与后端 `[created_from, created_to)` 一致；
 - 筛选草稿与已提交筛选分离。transaction/source 按钮自 2026-08-29 起点击后立即与上一次已提交的 ID/日期组合并回到第一页；Product ID、Order source ID 和日期仍只在点击“查询”后生效；
 - 当 ID/日期草稿的规范化值与上次成功提交快照不同时，显示“输入条件尚未应用”浅色提示；校验失败不会错误更新已提交快照；
 - 来源从 `order` 切到 migration/admin/all 时，同时清空界面中的 source ID 草稿并从已提交筛选移除 source ID，避免按钮即时查询产生不自洽组合；

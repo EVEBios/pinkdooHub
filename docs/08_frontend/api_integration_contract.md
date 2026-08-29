@@ -375,7 +375,7 @@ Idempotency-Key: <stable-client-key>
 - cancel/paid/complete 三个 PATCH 不发送任何 body，连 `{}` 也不能发送；
 - 用户取消只在服务端详情为 Pending 时提供；进行中 Promise 合并不替代后端状态机。network/timeout/cancel、5xx 或成功响应契约损坏进入 unknown，不自动 PATCH；
 - cancel 成功后重新 GET 详情；刷新失败不改变已确认的 cancelled 事实。`40921` 后也重拉服务端状态，以收敛跨端竞态；
-- ADMIN 列表只发送 page/page_size/status/order_no/product_name/user_id/created_from/created_to；`product_name` trim 后按订单 Item 历史名称快照做服务端包含匹配，不能用当前 Product 名称或前端当前页过滤替代；日期界面若按“包含结束日”表达，必须转成次日 UTC 零点作为 API 排他 `created_to`；
+- ADMIN 列表只发送 page/page_size/status/order_no/product_name/user_id/created_from/created_to；`product_name` trim 后按订单 Item 历史名称快照做服务端包含匹配，不能用当前 Product 名称或前端当前页过滤替代；日期界面连续接收 `YYYYMMDD` 并用固定横杠显示 `YYYY-MM-DD`，若按“包含结束日”表达，必须转成次日 UTC 零点作为 API 排他 `created_to`；
 - ADMIN 列表/详情只接收安全的 `user_id/user_nickname`。客户端角色守卫在挂载 Hook 前阻止普通用户请求，但后端 ADMIN+ dependency 仍是唯一授权边界；
 - ADMIN 详情只从服务端当前状态派生唯一命令：Pending → Paid，Paid → Completed，Cancelled/Completed 无命令。paid/complete 与 cancel 共用结果未知和成功后 GET 的收敛规则；
 - 用户不存在/他人订单统一 40411；
@@ -391,7 +391,7 @@ Idempotency-Key: <stable-client-key>
 - Draft/Offline/Online 的未删除 Kit 均可调整；逻辑删除或非 Kit 仍由服务端资源/类型错误裁决；
 - 指定 Kit 查询不发送 product_id，全局查询才允许 product_id；`source_id` 只与 `source_type=order` 同时发送；
 - 调整、流水和分页均从 unknown 校验并白名单重建，要求 `after=before+change` 以及 transaction/source/operator/order 元数据自洽；
-- 包含式结束日期转换为次日 UTC 零点作为排他 `created_to`；换筛选回第一页，加载更多保持原条件；
+- 日期界面连续接收 `YYYYMMDD` 并用固定横杠显示 `YYYY-MM-DD`；包含式结束日期转换为次日 UTC 零点作为排他 `created_to`；换筛选回第一页，加载更多保持原条件；
 - 指定 Kit 动态页不进登录 redirect 白名单；Guest 返回固定管理商品列表。全局流水固定页可安全加入白名单。
 
 ---

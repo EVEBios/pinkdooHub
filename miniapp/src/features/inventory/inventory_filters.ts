@@ -58,7 +58,7 @@ export const EMPTY_INVENTORY_INPUT_SNAPSHOT: InventoryInputSnapshot = {
   createdTo: '',
 }
 
-const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
+const DATE_PATTERN = /^(\d{4})(\d{2})(\d{2})$/
 
 export function createInventoryInputSnapshot(
   draft: InventoryFilterDraft,
@@ -98,8 +98,8 @@ export function parseInventoryFilters(
   const toText = draft.createdTo.trim()
   const fromDate = parseDate(fromText)
   const toDate = parseDate(toText)
-  if (fromText && !fromDate) return { error: '开始日期必须是有效的 YYYY-MM-DD' }
-  if (toText && !toDate) return { error: '结束日期必须是有效的 YYYY-MM-DD' }
+  if (fromText && !fromDate) return { error: '开始日期必须是有效的 8 位日期，例如 20260208' }
+  if (toText && !toDate) return { error: '结束日期必须是有效的 8 位日期，例如 20260208' }
   if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
     return { error: '结束日期不能早于开始日期' }
   }

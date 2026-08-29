@@ -3,6 +3,7 @@ import Taro from '@tarojs/taro'
 import { useState } from 'react'
 
 import type { AdminOrderListItem } from '@/api/endpoints/orders'
+import { MaskedDateInput } from '@/admin/components/masked_date_input'
 import { buildLoginUrl, useAuth } from '@/auth'
 import {
   ADMIN_ORDER_LIST_PATH,
@@ -139,19 +140,15 @@ export function AuthenticatedAdminOrders() {
             onInput={(event) => updateDraft({ userId: event.detail.value })}
           />
           <View className='admin-order-filters__dates'>
-            <Input
-              className='admin-order-filters__input'
-              maxlength={10}
-              placeholder='开始 UTC 日期 YYYY-MM-DD'
+            <MaskedDateInput
+              label='开始日期（UTC）'
               value={draft.createdFrom}
-              onInput={(event) => updateDraft({ createdFrom: event.detail.value })}
+              onChange={(createdFrom) => updateDraft({ createdFrom })}
             />
-            <Input
-              className='admin-order-filters__input'
-              maxlength={10}
-              placeholder='结束 UTC 日期 YYYY-MM-DD'
+            <MaskedDateInput
+              label='结束日期（UTC）'
               value={draft.createdTo}
-              onInput={(event) => updateDraft({ createdTo: event.detail.value })}
+              onChange={(createdTo) => updateDraft({ createdTo })}
             />
           </View>
           {filterError && <Text className='admin-order-filters__error'>{filterError}</Text>}

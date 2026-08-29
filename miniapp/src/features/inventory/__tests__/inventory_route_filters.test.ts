@@ -25,8 +25,8 @@ describe('Inventory route、筛选与幂等键', () => {
       sourceType: 'order',
       sourceId: '9',
       productId: '7',
-      createdFrom: '2026-08-01',
-      createdTo: '2026-08-28',
+      createdFrom: '20260801',
+      createdTo: '20260828',
     }, { allowProductId: true })
     expect(parsed.error).toBeUndefined()
     expect(buildGlobalInventoryRequest(parsed.filters!, 2)).toEqual({
@@ -54,29 +54,36 @@ describe('Inventory route、筛选与幂等键', () => {
     expect(parseInventoryFilters({
       ...base,
       sourceId: '',
-      createdFrom: '2026-02-30',
+      createdFrom: '2026020',
+    }, { allowProductId: true }).error).toContain('8 位日期')
+    expect(parseInventoryFilters({
+      ...base,
+      sourceId: '',
+      createdFrom: '20260230',
     }, { allowProductId: true }).error).toContain('有效')
     expect(parseInventoryFilters({
       ...base,
       sourceId: '',
-      createdFrom: '2026-08-29',
-      createdTo: '2026-08-28',
+      createdFrom: '20260829',
+      createdTo: '20260828',
     }, { allowProductId: true }).error).toContain('不能早于')
   })
 
-  it('只比较需要查询提交的输入条件', () => {
+  it('接受紧凑闰日，并只比较需要查询提交的输入条件', () => {
     const draft = {
       transactionType: 'order_deduction' as const,
       sourceType: 'order' as const,
       sourceId: ' 9 ',
       productId: ' 7 ',
-      createdFrom: '2028-02-29',
+      createdFrom: '20280229',
       createdTo: '',
     }
+    expect(parseInventoryFilters(draft, { allowProductId: true }).filters?.createdFrom)
+      .toBe('2028-02-29T00:00:00.000Z')
     expect(createInventoryInputSnapshot(draft, { allowProductId: true })).toEqual({
       sourceId: '9',
       productId: '7',
-      createdFrom: '2028-02-29',
+      createdFrom: '20280229',
       createdTo: '',
     })
     expect(inventoryInputSnapshotsEqual(
@@ -85,7 +92,7 @@ describe('Inventory route、筛选与幂等键', () => {
     )).toBe(true)
     expect(inventoryInputSnapshotsEqual(EMPTY_INVENTORY_INPUT_SNAPSHOT, {
       ...EMPTY_INVENTORY_INPUT_SNAPSHOT,
-      createdFrom: '2028-02-29',
+      createdFrom: '20280229',
     })).toBe(false)
   })
 

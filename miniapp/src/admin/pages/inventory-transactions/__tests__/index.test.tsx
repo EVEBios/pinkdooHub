@@ -93,6 +93,7 @@ describe('InventoryTransactionsPage', () => {
   it('ADMIN 使用全局作用域并可清空筛选', async () => {
     await testUtils.mount(AuthenticatedInventoryTransactions)
     expect(mockUseInventoryTransactionList).toHaveBeenCalledWith({ kind: 'global' })
+    expect(testUtils.queries.querySelectorAll('.masked-date-input')).toHaveLength(2)
     testUtils.fireEvent.click(requireElement(testUtils, '.inventory-filters__reset'))
     expect(mockApplyFilters).toHaveBeenCalledWith({ transactionType: 'all', sourceType: 'all' })
   })

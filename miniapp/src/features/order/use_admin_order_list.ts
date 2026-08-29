@@ -10,7 +10,7 @@ import { getDefaultOrderApi } from './runtime'
 
 const ADMIN_ORDER_LIST_PAGE_SIZE = 20
 const ORDER_NO_PATTERN = /^OD[0-9A-HJKMNP-TV-Z]{26}$/
-const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
+const DATE_PATTERN = /^(\d{4})(\d{2})(\d{2})$/
 
 export type AdminOrderStatusFilter = 'all' | NonNullable<AdminOrderListRequest['status']>
 
@@ -171,10 +171,10 @@ export function parseAdminOrderFilters(draft: AdminOrderFilterDraft): AdminOrder
     return { error: '用户 ID 必须是正整数' }
   }
   if (draft.createdFrom.trim() && !createdFromDate) {
-    return { error: '开始日期必须是 YYYY-MM-DD' }
+    return { error: '开始日期必须是有效的 8 位日期，例如 20260208' }
   }
   if (draft.createdTo.trim() && !createdToDate) {
-    return { error: '结束日期必须是 YYYY-MM-DD' }
+    return { error: '结束日期必须是有效的 8 位日期，例如 20260208' }
   }
   if (createdFromDate && createdToDate && createdFromDate.getTime() > createdToDate.getTime()) {
     return { error: '结束日期不能早于开始日期' }

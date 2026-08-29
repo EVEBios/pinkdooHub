@@ -102,8 +102,8 @@ describe('parseAdminOrderFilters', () => {
       productName: ' 星空拼豆 ',
       orderNo: ' od01k2m7y0j7a3n5q8t4v6w9x2bc ',
       userId: '7',
-      createdFrom: '2026-08-01',
-      createdTo: '2026-08-31',
+      createdFrom: '20260801',
+      createdTo: '20260831',
     })).toEqual({ filters: {
       status: 'completed',
       productName: '星空拼豆',
@@ -114,12 +114,34 @@ describe('parseAdminOrderFilters', () => {
     } })
   })
 
+  it('接受紧凑闰日并拒绝不足 8 位的日期', () => {
+    expect(parseAdminOrderFilters({
+      status: 'all',
+      productName: '',
+      orderNo: '',
+      userId: '',
+      createdFrom: '20280229',
+      createdTo: '',
+    })).toEqual({ filters: {
+      status: 'all',
+      createdFrom: '2028-02-29T00:00:00.000Z',
+    } })
+    expect(parseAdminOrderFilters({
+      status: 'all',
+      productName: '',
+      orderNo: '',
+      userId: '',
+      createdFrom: '2026020',
+      createdTo: '',
+    }).error).toContain('8 位日期')
+  })
+
   it.each([
     [{ status: 'all', productName: '拼'.repeat(101), orderNo: '', userId: '', createdFrom: '', createdTo: '' }, '商品名称'],
     [{ status: 'all', productName: '', orderNo: 'bad', userId: '', createdFrom: '', createdTo: '' }, '订单号格式'],
     [{ status: 'all', productName: '', orderNo: '', userId: '0', createdFrom: '', createdTo: '' }, '用户 ID'],
-    [{ status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '2026-02-30', createdTo: '' }, '开始日期'],
-    [{ status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '2026-09-01', createdTo: '2026-08-01' }, '不能早于'],
+    [{ status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '20260230', createdTo: '' }, '开始日期'],
+    [{ status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '20260901', createdTo: '20260801' }, '不能早于'],
   ] as const)('拒绝非法筛选：%p', (draft, expected) => {
     expect(parseAdminOrderFilters(draft).error).toContain(expected)
   })

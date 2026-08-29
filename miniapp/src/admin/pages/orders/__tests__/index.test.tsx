@@ -123,6 +123,7 @@ describe('AdminOrdersPage', () => {
       .find((element) => element.getAttribute('placeholder') === '商品名称（支持部分匹配）')
     expect(input).toBeDefined()
     expect(input?.getAttribute('maxlength')).toBe('100')
+    expect(testUtils.queries.querySelectorAll('.masked-date-input')).toHaveLength(2)
   })
 
   it('状态按钮立即组合已提交文字，输入文字只在查询后生效', async () => {

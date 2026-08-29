@@ -115,6 +115,7 @@ describe('ProductInventoryPage', () => {
     expect(testUtils.queries.querySelector('.product-inventory-page')?.textContent).toContain('当前权威库存 10')
     expect(mockUseInventoryAdjustment).toHaveBeenCalledTimes(1)
     expect(mockUseInventoryTransactionList).toHaveBeenCalledWith({ kind: 'product', productId: 7 })
+    expect(testUtils.queries.querySelectorAll('.masked-date-input')).toHaveLength(2)
   })
 
   it('指定 Kit 流水按钮切换后立即查询', async () => {

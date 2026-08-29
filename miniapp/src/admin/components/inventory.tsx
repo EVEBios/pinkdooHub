@@ -10,6 +10,8 @@ import type {
 } from '@/features/inventory'
 import { buildAdminOrderDetailUrl } from '@/features/order'
 
+import { MaskedDateInput } from './masked_date_input'
+
 const TRANSACTION_TYPES: ReadonlyArray<{ value: InventoryTransactionTypeFilter; label: string }> = [
   { value: 'all', label: '全部类型' },
   { value: 'opening_balance', label: '期初余额' },
@@ -100,19 +102,15 @@ export function InventoryFilterPanel({
           value={draft.sourceId}
           onInput={(event) => onUpdate({ sourceId: event.detail.value })}
         />
-        <Input
-          className='inventory-filters__input'
-          maxlength={10}
-          placeholder='开始 UTC 日期 YYYY-MM-DD'
+        <MaskedDateInput
+          label='开始日期（UTC）'
           value={draft.createdFrom}
-          onInput={(event) => onUpdate({ createdFrom: event.detail.value })}
+          onChange={(createdFrom) => onUpdate({ createdFrom })}
         />
-        <Input
-          className='inventory-filters__input'
-          maxlength={10}
-          placeholder='结束 UTC 日期 YYYY-MM-DD'
+        <MaskedDateInput
+          label='结束日期（UTC）'
           value={draft.createdTo}
-          onInput={(event) => onUpdate({ createdTo: event.detail.value })}
+          onChange={(createdTo) => onUpdate({ createdTo })}
         />
         {errorMessage && <Text className='inventory-filters__error'>{errorMessage}</Text>}
         {hasPendingInput && (
