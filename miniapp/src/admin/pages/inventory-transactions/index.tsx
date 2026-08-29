@@ -10,9 +10,14 @@ import {
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
   ADMIN_INVENTORY_LIST_PATH,
+  createInventoryInputSnapshot,
   EMPTY_INVENTORY_FILTER_DRAFT,
+  EMPTY_INVENTORY_INPUT_SNAPSHOT,
   type InventoryFilterDraft,
+  type InventoryInputSnapshot,
+  inventoryInputSnapshotsEqual,
   parseInventoryFilters,
+  replaceInventorySourceType,
   useInventoryTransactionList,
 } from '@/features/inventory'
 
@@ -50,6 +55,11 @@ export function AuthenticatedInventoryTransactions() {
   const list = useInventoryTransactionList({ kind: 'global' })
   const [draft, setDraft] = useState<InventoryFilterDraft>(EMPTY_INVENTORY_FILTER_DRAFT)
   const [filterError, setFilterError] = useState('')
+  const [submittedInputs, setSubmittedInputs] = useState<InventoryInputSnapshot>(EMPTY_INVENTORY_INPUT_SNAPSHOT)
+  const hasPendingInput = !inventoryInputSnapshotsEqual(
+    createInventoryInputSnapshot(draft, { allowProductId: true }),
+    submittedInputs,
+  )
 
   function submitFilters(): void {
     const parsed = parseInventoryFilters(draft, { allowProductId: true })
@@ -58,13 +68,34 @@ export function AuthenticatedInventoryTransactions() {
       return
     }
     setFilterError('')
+    setSubmittedInputs(createInventoryInputSnapshot(draft, { allowProductId: true }))
     list.applyFilters(parsed.filters)
   }
 
   function resetFilters(): void {
     setDraft(EMPTY_INVENTORY_FILTER_DRAFT)
     setFilterError('')
+    setSubmittedInputs(EMPTY_INVENTORY_INPUT_SNAPSHOT)
     list.applyFilters({ transactionType: 'all', sourceType: 'all' })
+  }
+
+  function selectTransactionType(transactionType: InventoryFilterDraft['transactionType']): void {
+    setDraft((current) => ({ ...current, transactionType }))
+    setFilterError('')
+    list.applyFilters({ ...list.filters, transactionType })
+  }
+
+  function selectSourceType(sourceType: InventoryFilterDraft['sourceType']): void {
+    setDraft((current) => ({
+      ...current,
+      sourceType,
+      ...(sourceType === 'order' ? {} : { sourceId: '' }),
+    }))
+    if (sourceType !== 'order') {
+      setSubmittedInputs((current) => ({ ...current, sourceId: '' }))
+    }
+    setFilterError('')
+    list.applyFilters(replaceInventorySourceType(list.filters, sourceType))
   }
 
   return (
@@ -78,9 +109,15 @@ export function AuthenticatedInventoryTransactions() {
         allowProductId
         draft={draft}
         errorMessage={filterError}
+        hasPendingInput={hasPendingInput}
         onReset={resetFilters}
+        onSelectSourceType={selectSourceType}
+        onSelectTransactionType={selectTransactionType}
         onSubmit={submitFilters}
-        onUpdate={(patch) => setDraft((current) => ({ ...current, ...patch }))}
+        onUpdate={(patch) => {
+          setDraft((current) => ({ ...current, ...patch }))
+          setFilterError('')
+        }}
       />
       <InventoryTransactionList
         loadNextPage={list.loadNextPage}

@@ -92,8 +92,17 @@
     border-radius: 12px;
   }
 
+  &__pending {
+    display: block;
+    margin-top: 14px;
+    color: #8a7555;
+    font-size: 20px;
+    line-height: 1.5;
+  }
+
   &__deleted {
-    margin: 15px 0 0;
+    flex: 0 0 auto;
+    margin: 0;
     color: #675d6e;
   }
 

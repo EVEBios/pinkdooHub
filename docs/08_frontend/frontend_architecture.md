@@ -388,7 +388,7 @@ Phase 7.4 在同一应用中落地首个 `admin` 分包，但不把分包或缓�
 
 - `app.config.ts` 用 `root: admin` 注册管理列表和详情；首页只为 `admin/super_admin` 显示入口，普通用户在挂载管理 Hook 前被拦截；FastAPI ADMIN+ dependency 仍是唯一授权事实；
 - 登录回跳只允许固定管理列表，不允许动态详情进入 redirect 白名单；详情 ID 仍从不可信路由参数校验；
-- ADMIN 列表 Query 只包含冻结的 8 个字段。除状态、精确订单号、用户与 UTC 时间外，`product_name` 按 Order Item 下单时名称快照做服务端包含匹配；筛选草稿与已提交查询分离，结束日期转换为次日 UTC 零点，以满足后端排他 `created_to`；
+- ADMIN 列表 Query 只包含冻结的 8 个字段。除状态、精确订单号、用户与 UTC 时间外，`product_name` 按 Order Item 下单时名称快照做服务端包含匹配；状态按钮立即与上次已提交文字快照组合查询，未提交草稿用浅色提示显式标记；结束日期转换为次日 UTC 零点，以满足后端排他 `created_to`；
 - 商品名筛选不关联当前 Product，也不在当前前端页做本地过滤；后端用订单 ID 子查询保持一单一行、完整 `item_count` 和正确的 `total/pages`，前端翻页继续携带同一关键词；
 - ADMIN 响应 Guard 在用户订单字段之外只接收 `user_id/user_nickname`，不允许用户隐私或内部字段穿过 Endpoint；
 - 详情从服务端状态派生唯一命令：Pending → Paid、Paid → Completed，两个终态无按钮，不提供任意状态编辑器；
@@ -401,7 +401,7 @@ Phase 8.1 在既有 `admin` 分包内增加 Product 列表与详情，先建立�
 
 - `AdminProductApi` 使用认证 Client 请求 `/api/v1/admin/products` 及两类管理详情；与无需 Token、只接受完整 Online 聚合的公开 `ProductApi` 分离；
 - 管理 Runtime Guard 从 `unknown` 逐字段投影。列表允许草稿 `cover_image/display_price` 为 null，详情允许 description/null、空公共图片、空 Experience Option 和空 dimensions；同时严格校验 Product 类型/状态、UTC 时间、金额、库存上限和 Option 聚合维度；
-- 列表的筛选草稿与已提交筛选分离，支持 type/status/keyword/include_deleted、服务端分页、重复加载保护与 sequence 迟到响应隔离；逻辑删除只用于辨识历史记录，不在客户端推导恢复能力；
+- 列表的筛选草稿与已提交筛选分离：type/status/include_deleted 按钮立即与上次已提交 keyword 组合查询，keyword 未提交时显示浅色提示；删除记录使用“不含 / 包含”两个互斥按钮。服务端分页、重复加载保护与 sequence 迟到响应隔离保持不变；逻辑删除只用于辨识历史记录，不在客户端推导恢复能力；
 - 动态详情路由同时携带并校验正安全整数 Product ID 与 `experience|kit` 类型，随后调用类型专属后端端点；错误类型不回退到另一个端点；
 - 首页只为 ADMIN+ 显示管理商品入口，Guest 登录回跳只允许固定管理列表。列表和详情均在角色确认后才挂载 Hook；这只是减少错误请求，最终授权仍由 FastAPI ADMIN+ dependency 执行；
 - 8.1 页面先只展示服务端管理快照与草稿缺失提示；Phase 8.2 已开放创建、基本信息编辑与逻辑删除，Phase 8.3 已开放 Option 与 Kit 价格，Phase 8.4–8.5 已开放图片生命周期与上下架/readiness，Phase 8.6 已开放 Kit Inventory，Phase 8.8 已开放 Product Audit。
@@ -460,7 +460,7 @@ Phase 8.6 在 Product 管理读模型和既有后端 Inventory 契约之上增�
 - `InventoryApi` 独立于 `AdminProductApi`，负责调整、指定 Kit 流水和全局流水。请求只投影 OpenAPI 允许的 body/query/header，响应从 unknown 校验库存算术、枚举/source 组合、UTC 与分页公式后白名单重建；
 - `ApiClient.requestWithMeta()` 是对既有 data-only `request()` 的向后兼容扩展，只让需要区分首次 201/重放 200 的调用取得最终 HTTP status。refresh 后返回重放请求的最终 metadata；
 - `useInventoryAdjustment()` 以业务意图为幂等边界，冻结 product/payload/key。进行中 Promise 合并；unknown 不自动重发，用户安全重试复用原 payload/key；明确失败或成功后下一次意图生成新 key；
-- `useInventoryTransactionList()` 复用指定 Kit/全局两类 Endpoint，服务端分页、筛选草稿提交和 sequence 隔离规则与其他管理列表一致。日期使用 UTC 半开区间，Order source ID 只在 order 来源下发送；
+- `useInventoryTransactionList()` 复用指定 Kit/全局两类 Endpoint，transaction/source 按钮立即与上次已提交 ID/日期快照组合查询，未提交输入显示浅色提示；服务端分页与 sequence 隔离规则与其他管理列表一致。日期使用 UTC 半开区间，Order source ID 只在 order 来源下发送；
 - Product 管理详情只导航，不直接写库存。动态 Kit 页面先校验 ADMIN+ 并读取未删除 Kit 详情，再挂载 Inventory Hook；全局流水固定页加入安全登录白名单，动态 Kit 地址不加入；
 - Draft、Offline、Online Kit 都允许管理员调整，客户端不把 Product 可编辑状态误当 Inventory 规则。逻辑删除、类型、余额上下限、权限、事务、行锁、流水和 Audit 继续由后端权威裁决；
 - 本阶段工程门槛为前端 60 套件/375 项、后端 1465 项通过（9 项 MySQL-only 跳过）、静态检查和四端生产构建。三端 `admin` 分包约 167 KiB；H5 主 JS 283 KiB、入口 370 KiB。2026-08-28 用户确认微信开发者工具 Functional 全部通过。

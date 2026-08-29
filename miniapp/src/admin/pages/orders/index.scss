@@ -84,6 +84,7 @@
   }
 
   &__error,
+  &__pending,
   &__hint {
     display: block;
     margin-top: 14px;
@@ -92,6 +93,10 @@
 
   &__error {
     color: #b42318;
+  }
+
+  &__pending {
+    color: #8a7555;
   }
 
   &__hint {

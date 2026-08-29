@@ -125,6 +125,8 @@ Phase 8.6 自动化固定以下高风险边界：调整 path/header/body 白名�
 
 Phase 8.8–8.9 自动化固定以下高风险边界：Product Audit 动态路由正安全整数/类型、目标类型与 Product ID 绑定、响应白名单、逻辑删除历史和分页；ADMIN User 严格 `status/role` Query、额外参数 422、安全列表字段、稳定分页、Guest/普通用户在 Hook 前拦截、固定登录 redirect；禁用无 body、自己/角色层级、行锁下状态与审计同事务、重复调用幂等、审计失败回滚、旧 access/refresh 立即失效；客户端 code `1005` 清理 Session、不 refresh，network/timeout/contract/5xx unknown 不自动禁用重发。该阶段当时完整前端 54 套件/350 项、完整后端 1465 项通过（9 项 MySQL-only 跳过），并由用户确认微信 Functional 全部通过；随后 Phase 8.6 作为独立增量实施，其门槛见上一段。
 
+2026-08-29 管理筛选交互增量增加页面级契约：按钮型筛选点击后立即调用 `applyFilters`；调用参数必须保留上一次已提交的文字条件，不得混入尚未点击“查询”的草稿；草稿规范化值与已提交快照不同时必须显示待应用提示，校验失败不得更新快照；商品删除记录必须渲染“不含删除记录 / 包含删除记录”两个互斥按钮；库存来源离开 `order` 时必须从已提交筛选移除 `sourceId`；管理用户原有状态/角色即时筛选保持不变。定向 6 套件/29 项、完整前端 60 套件/381 项通过，TypeScript、ESLint 与 Stylelint 通过。用户随后完成微信端 Functional，确认上述交互、组合查询与清空行为全部通过。
+
 ### 4.4 Inventory
 
 - Idempotency-Key 生命周期；

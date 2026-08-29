@@ -93,7 +93,7 @@ export function AuthenticatedAdminUsers({ currentRole, currentUserId }: {
           {STATUS_FILTERS.map((filter) => (
             <Button
               key={filter.value}
-              className={list.filters.status === filter.value ? 'admin-user-filters__active' : ''}
+              className={`admin-user-filters__choice${list.filters.status === filter.value ? ' admin-user-filters__active' : ''}`}
               size='mini'
               onClick={() => list.applyFilters({ ...list.filters, status: filter.value })}
             >{filter.label}</Button>
@@ -104,7 +104,7 @@ export function AuthenticatedAdminUsers({ currentRole, currentUserId }: {
           {ROLE_FILTERS.map((filter) => (
             <Button
               key={filter.value}
-              className={list.filters.role === filter.value ? 'admin-user-filters__active' : ''}
+              className={`admin-user-filters__choice${list.filters.role === filter.value ? ' admin-user-filters__active' : ''}`}
               size='mini'
               onClick={() => list.applyFilters({ ...list.filters, role: filter.value })}
             >{filter.label}</Button>

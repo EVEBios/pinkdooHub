@@ -11,6 +11,7 @@ const mockUseAdminUserDisable = jest.fn()
 const mockDisableUser = jest.fn()
 const mockRetry = jest.fn()
 const mockReset = jest.fn()
+const mockApplyFilters = jest.fn()
 
 jest.mock('@tarojs/taro', () => ({
   __esModule: true,
@@ -45,7 +46,7 @@ describe('AdminUsersPage', () => {
     mockUseAdminUserList.mockReturnValue({
       filters: { status: 'all', role: 'all' },
       state: { status: 'loading', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
-      applyFilters: jest.fn(), retry: mockRetry, loadNextPage: jest.fn(),
+      applyFilters: mockApplyFilters, retry: mockRetry, loadNextPage: jest.fn(),
     })
     mockUseAdminUserDisable.mockReturnValue({
       state: { status: 'idle' }, disableUser: mockDisableUser, reset: mockReset,
@@ -71,6 +72,12 @@ describe('AdminUsersPage', () => {
       url: '/pages/login/index?redirect=%2Fadmin%2Fpages%2Fusers%2Findex',
     })
     expect(mockUseAdminUserList).not.toHaveBeenCalled()
+  })
+
+  it('状态和角色按钮保持立即查询', async () => {
+    await testUtils.mount(AuthenticatedAdminUsers, { props: { currentUserId: 2, currentRole: 'admin' } })
+    testUtils.fireEvent.click(findFilterButton(testUtils, '已禁用'))
+    expect(mockApplyFilters).toHaveBeenCalledWith({ status: 'disabled', role: 'all' })
   })
 
   it('展示安全摘要并确认后禁用普通用户', async () => {
@@ -101,6 +108,13 @@ function requireElement(testUtils: ReactTestUtil, selector: string): Element {
   const element = testUtils.queries.querySelector(selector)
   if (!element) throw new Error(`${selector} not found`)
   return element
+}
+
+function findFilterButton(testUtils: ReactTestUtil, label: string): Element {
+  const button = Array.from(testUtils.queries.querySelectorAll('.admin-user-filters__choice'))
+    .find((candidate) => candidate.textContent === label)
+  if (!button) throw new Error(`button ${label} not found`)
+  return button
 }
 
 async function flush(testUtils: ReactTestUtil): Promise<void> {

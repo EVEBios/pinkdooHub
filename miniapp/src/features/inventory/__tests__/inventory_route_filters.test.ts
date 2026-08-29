@@ -1,9 +1,13 @@
 import {
   buildGlobalInventoryRequest,
   buildKitInventoryUrl,
+  createInventoryInputSnapshot,
   createInventoryIdempotencyKey,
+  EMPTY_INVENTORY_INPUT_SNAPSHOT,
+  inventoryInputSnapshotsEqual,
   parseInventoryFilters,
   parseKitInventoryRoute,
+  replaceInventorySourceType,
 } from '..'
 
 describe('Inventory route、筛选与幂等键', () => {
@@ -58,6 +62,46 @@ describe('Inventory route、筛选与幂等键', () => {
       createdFrom: '2026-08-29',
       createdTo: '2026-08-28',
     }, { allowProductId: true }).error).toContain('不能早于')
+  })
+
+  it('只比较需要查询提交的输入条件', () => {
+    const draft = {
+      transactionType: 'order_deduction' as const,
+      sourceType: 'order' as const,
+      sourceId: ' 9 ',
+      productId: ' 7 ',
+      createdFrom: '2028-02-29',
+      createdTo: '',
+    }
+    expect(createInventoryInputSnapshot(draft, { allowProductId: true })).toEqual({
+      sourceId: '9',
+      productId: '7',
+      createdFrom: '2028-02-29',
+      createdTo: '',
+    })
+    expect(inventoryInputSnapshotsEqual(
+      createInventoryInputSnapshot({ ...draft, transactionType: 'admin_adjustment' }, { allowProductId: true }),
+      createInventoryInputSnapshot(draft, { allowProductId: true }),
+    )).toBe(true)
+    expect(inventoryInputSnapshotsEqual(EMPTY_INVENTORY_INPUT_SNAPSHOT, {
+      ...EMPTY_INVENTORY_INPUT_SNAPSHOT,
+      createdFrom: '2028-02-29',
+    })).toBe(false)
+  })
+
+  it('按钮切换非订单来源时移除已提交的 source ID 并保留其他文字筛选', () => {
+    expect(replaceInventorySourceType({
+      transactionType: 'order_deduction',
+      sourceType: 'order',
+      sourceId: 9,
+      productId: 7,
+      createdFrom: '2026-08-01T00:00:00.000Z',
+    }, 'admin')).toEqual({
+      transactionType: 'order_deduction',
+      sourceType: 'admin',
+      productId: 7,
+      createdFrom: '2026-08-01T00:00:00.000Z',
+    })
   })
 
   it('生成互不相同且符合 HTTP Header 约束的幂等键', () => {

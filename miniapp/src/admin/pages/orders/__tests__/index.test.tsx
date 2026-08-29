@@ -8,6 +8,7 @@ import AdminOrdersPage, { AuthenticatedAdminOrders } from '../index'
 
 let mockAuth: AuthContextValue
 let mockState: AdminOrderListState
+let mockFilters: { status: string; productName?: string }
 const mockUseAdminOrderList = jest.fn()
 const mockApplyFilters = jest.fn()
 
@@ -21,7 +22,12 @@ jest.mock('@/features/order', () => ({
   EMPTY_ADMIN_ORDER_FILTER_DRAFT: { status: 'all', productName: '', orderNo: '', userId: '', createdFrom: '', createdTo: '' },
   buildAdminOrderDetailUrl: (id: number) => `/admin/pages/order-detail/index?id=${id}`,
   isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
-  parseAdminOrderFilters: (draft: { status: string }) => ({ filters: { status: draft.status } }),
+  parseAdminOrderFilters: (draft: { status: string; productName: string }) => ({
+    filters: {
+      status: draft.status,
+      ...(draft.productName.trim() ? { productName: draft.productName.trim() } : {}),
+    },
+  }),
   useAdminOrderList: () => mockUseAdminOrderList(),
 }))
 
@@ -52,9 +58,10 @@ describe('AdminOrdersPage', () => {
       retryInitialization: jest.fn(),
     }
     mockState = { status: 'loading', items: [], total: 0, page: 1, pages: 0, loadingMore: false }
+    mockFilters = { status: 'all' }
     mockUseAdminOrderList.mockImplementation(() => ({
       state: mockState,
-      filters: { status: 'all' },
+      filters: mockFilters,
       applyFilters: mockApplyFilters,
       retry: jest.fn(),
       loadNextPage: jest.fn(),
@@ -117,10 +124,41 @@ describe('AdminOrdersPage', () => {
     expect(input).toBeDefined()
     expect(input?.getAttribute('maxlength')).toBe('100')
   })
+
+  it('状态按钮立即组合已提交文字，输入文字只在查询后生效', async () => {
+    mockFilters = { status: 'all', productName: '旧名称' }
+    await testUtils.mount(AuthenticatedAdminOrders)
+    const productNameInput = Array.from(testUtils.queries.querySelectorAll('.admin-order-filters__input'))
+      .find((element) => element.getAttribute('placeholder') === '商品名称（支持部分匹配）')
+    expect(productNameInput).toBeDefined()
+    inputValue(testUtils, productNameInput!, '新名称')
+    expect(mockApplyFilters).not.toHaveBeenCalled()
+    expect(requireElement(testUtils, '.admin-order-filters__pending').textContent).toContain('尚未应用')
+
+    testUtils.fireEvent.click(findButton(testUtils, '已支付'))
+    expect(mockApplyFilters).toHaveBeenLastCalledWith({ status: 'paid', productName: '旧名称' })
+
+    const filterCard = requireElement(testUtils, '.admin-order-filters')
+    testUtils.fireEvent.submit(filterCard.firstElementChild!)
+    expect(mockApplyFilters).toHaveBeenLastCalledWith({ status: 'paid', productName: '新名称' })
+    expect(testUtils.queries.querySelector('.admin-order-filters__pending')).toBeNull()
+  })
 })
 
 function requireElement(testUtils: ReactTestUtil, selector: string): Element {
   const element = testUtils.queries.querySelector(selector)
   if (!element) throw new Error(`${selector} not found`)
   return element
+}
+
+function findButton(testUtils: ReactTestUtil, label: string): Element {
+  const button = Array.from(testUtils.queries.querySelectorAll('.admin-order-filters__status'))
+    .find((candidate) => candidate.textContent === label)
+  if (!button) throw new Error(`button ${label} not found`)
+  return button
+}
+
+function inputValue(testUtils: ReactTestUtil, element: Element, value: string): void {
+  const fireCustomEvent = testUtils.fireEvent as unknown as (target: Element, event: Event) => void
+  fireCustomEvent(element, new CustomEvent('input', { bubbles: true, detail: { value } }))
 }

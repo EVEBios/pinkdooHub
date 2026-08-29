@@ -39,14 +39,20 @@ export function InventoryFilterPanel({
   allowProductId,
   draft,
   errorMessage,
+  hasPendingInput,
   onReset,
+  onSelectSourceType,
+  onSelectTransactionType,
   onSubmit,
   onUpdate,
 }: {
   readonly allowProductId: boolean
   readonly draft: InventoryFilterDraft
   readonly errorMessage: string
+  readonly hasPendingInput: boolean
   readonly onUpdate: (patch: Partial<InventoryFilterDraft>) => void
+  readonly onSelectTransactionType: (value: InventoryTransactionTypeFilter) => void
+  readonly onSelectSourceType: (value: InventorySourceTypeFilter) => void
   readonly onSubmit: () => void
   readonly onReset: () => void
 }) {
@@ -58,9 +64,9 @@ export function InventoryFilterPanel({
           {TRANSACTION_TYPES.map((item) => (
             <Button
               key={item.value}
-              className={draft.transactionType === item.value ? 'inventory-filters__choice--active' : ''}
+              className={`inventory-filters__choice${draft.transactionType === item.value ? ' inventory-filters__choice--active' : ''}`}
               size='mini'
-              onClick={() => onUpdate({ transactionType: item.value })}
+              onClick={() => onSelectTransactionType(item.value)}
             >{item.label}</Button>
           ))}
         </View>
@@ -69,12 +75,9 @@ export function InventoryFilterPanel({
           {SOURCE_TYPES.map((item) => (
             <Button
               key={item.value}
-              className={draft.sourceType === item.value ? 'inventory-filters__choice--active' : ''}
+              className={`inventory-filters__choice${draft.sourceType === item.value ? ' inventory-filters__choice--active' : ''}`}
               size='mini'
-              onClick={() => onUpdate({
-                sourceType: item.value,
-                ...(item.value === 'order' ? {} : { sourceId: '' }),
-              })}
+              onClick={() => onSelectSourceType(item.value)}
             >{item.label}</Button>
           ))}
         </View>
@@ -112,6 +115,9 @@ export function InventoryFilterPanel({
           onInput={(event) => onUpdate({ createdTo: event.detail.value })}
         />
         {errorMessage && <Text className='inventory-filters__error'>{errorMessage}</Text>}
+        {hasPendingInput && (
+          <Text className='inventory-filters__pending'>输入条件尚未应用，点击「查询」后生效</Text>
+        )}
         <View className='inventory-filters__actions'>
           <Button formType='submit' type='primary'>查询</Button>
           <Button className='inventory-filters__reset' onClick={onReset}>清空</Button>

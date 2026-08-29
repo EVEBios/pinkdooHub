@@ -8,6 +8,12 @@ import InventoryTransactionsPage, { AuthenticatedInventoryTransactions } from '.
 let mockAuth: AuthContextValue
 const mockUseInventoryTransactionList = jest.fn()
 const mockApplyFilters = jest.fn()
+let mockFilters: {
+  transactionType: string
+  sourceType: string
+  productId?: number
+  sourceId?: number
+}
 
 jest.mock('@tarojs/taro', () => ({
   __esModule: true,
@@ -22,10 +28,32 @@ jest.mock('@/auth', () => ({
 
 jest.mock('@/features/inventory', () => ({
   ADMIN_INVENTORY_LIST_PATH: '/admin/pages/inventory-transactions/index',
+  EMPTY_INVENTORY_INPUT_SNAPSHOT: { sourceId: '', productId: '', createdFrom: '', createdTo: '' },
   EMPTY_INVENTORY_FILTER_DRAFT: {
     transactionType: 'all', sourceType: 'all', sourceId: '', productId: '', createdFrom: '', createdTo: '',
   },
+  createInventoryInputSnapshot: (draft: {
+    sourceType: string
+    sourceId: string
+    productId: string
+    createdFrom: string
+    createdTo: string
+  }, options: { allowProductId: boolean }) => ({
+    sourceId: draft.sourceType === 'order' ? draft.sourceId.trim() : '',
+    productId: options.allowProductId ? draft.productId.trim() : '',
+    createdFrom: draft.createdFrom.trim(),
+    createdTo: draft.createdTo.trim(),
+  }),
+  inventoryInputSnapshotsEqual: (left: Record<string, string>, right: Record<string, string>) => (
+    left.sourceId === right.sourceId && left.productId === right.productId &&
+    left.createdFrom === right.createdFrom && left.createdTo === right.createdTo
+  ),
   parseInventoryFilters: () => ({ filters: { transactionType: 'all', sourceType: 'all' } }),
+  replaceInventorySourceType: (filters: Record<string, unknown>, sourceType: string) => {
+    const next: Record<string, unknown> = { ...filters, sourceType }
+    if (sourceType !== 'order') delete next.sourceId
+    return next
+  },
   useInventoryTransactionList: (...args: unknown[]) => mockUseInventoryTransactionList(...args),
 }))
 
@@ -34,8 +62,9 @@ describe('InventoryTransactionsPage', () => {
   beforeEach(() => {
     testUtils = new ReactTestUtil()
     mockAuth = authenticated('admin')
+    mockFilters = { transactionType: 'all', sourceType: 'all' }
     mockUseInventoryTransactionList.mockReturnValue({
-      filters: { transactionType: 'all', sourceType: 'all' },
+      filters: mockFilters,
       state: { status: 'empty', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
       applyFilters: mockApplyFilters,
       retry: jest.fn(),
@@ -67,6 +96,45 @@ describe('InventoryTransactionsPage', () => {
     testUtils.fireEvent.click(requireElement(testUtils, '.inventory-filters__reset'))
     expect(mockApplyFilters).toHaveBeenCalledWith({ transactionType: 'all', sourceType: 'all' })
   })
+
+  it('按钮立即使用已提交文字筛选，不使用尚未查询的输入值', async () => {
+    mockFilters = {
+      transactionType: 'all', sourceType: 'order', productId: 12, sourceId: 7,
+    }
+    mockUseInventoryTransactionList.mockReturnValue({
+      filters: mockFilters,
+      state: { status: 'empty', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
+      applyFilters: mockApplyFilters,
+      retry: jest.fn(),
+      loadNextPage: jest.fn(),
+    })
+    await testUtils.mount(AuthenticatedInventoryTransactions)
+    input(testUtils, findInput(testUtils, 'Product ID（可选）'), '99')
+    expect(mockApplyFilters).not.toHaveBeenCalled()
+
+    testUtils.fireEvent.click(findButton(testUtils, '订单扣减'))
+    expect(requireElement(testUtils, '.inventory-filters__pending').textContent).toContain('尚未应用')
+    expect(mockApplyFilters).toHaveBeenLastCalledWith({
+      transactionType: 'order_deduction', sourceType: 'order', productId: 12, sourceId: 7,
+    })
+
+    testUtils.fireEvent.click(findButton(testUtils, '管理员'))
+    expect(mockApplyFilters).toHaveBeenLastCalledWith({
+      transactionType: 'all', sourceType: 'admin', productId: 12,
+    })
+  })
+
+  it('来源切离订单时同步清除已应用的 source ID，不留下未应用提示', async () => {
+    await testUtils.mount(AuthenticatedInventoryTransactions)
+    testUtils.fireEvent.click(findButton(testUtils, '订单'))
+    input(testUtils, findInput(testUtils, 'Order source ID（可选）'), '7')
+    const filterCard = requireElement(testUtils, '.inventory-filters')
+    testUtils.fireEvent.submit(filterCard.firstElementChild!)
+    expect(testUtils.queries.querySelector('.inventory-filters__pending')).toBeNull()
+
+    testUtils.fireEvent.click(findButton(testUtils, '管理员'))
+    expect(testUtils.queries.querySelector('.inventory-filters__pending')).toBeNull()
+  })
 })
 
 function authenticated(role: 'user' | 'admin'): AuthContextValue {
@@ -85,4 +153,23 @@ function requireElement(testUtils: ReactTestUtil, selector: string): Element {
   const element = testUtils.queries.querySelector(selector)
   if (!element) throw new Error(`${selector} not found`)
   return element
+}
+
+function findButton(testUtils: ReactTestUtil, label: string): Element {
+  const button = Array.from(testUtils.queries.querySelectorAll('.inventory-filters__choice'))
+    .find((candidate) => candidate.textContent === label)
+  if (!button) throw new Error(`button ${label} not found`)
+  return button
+}
+
+function findInput(testUtils: ReactTestUtil, placeholder: string): Element {
+  const element = Array.from(testUtils.queries.querySelectorAll('.inventory-filters__input'))
+    .find((candidate) => candidate.getAttribute('placeholder') === placeholder)
+  if (!element) throw new Error(`input ${placeholder} not found`)
+  return element
+}
+
+function input(testUtils: ReactTestUtil, element: Element, value: string): void {
+  const fireCustomEvent = testUtils.fireEvent as unknown as (target: Element, event: Event) => void
+  fireCustomEvent(element, new CustomEvent('input', { bubbles: true, detail: { value } }))
 }

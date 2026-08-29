@@ -9,6 +9,7 @@ let mockAuth: AuthContextValue
 const mockUseAdminProductDetail = jest.fn()
 const mockUseInventoryAdjustment = jest.fn()
 const mockUseInventoryTransactionList = jest.fn()
+const mockApplyFilters = jest.fn()
 
 jest.mock('@tarojs/taro', () => ({
   __esModule: true,
@@ -29,11 +30,33 @@ jest.mock('@/features/product', () => ({
 }))
 
 jest.mock('@/features/inventory', () => ({
+  EMPTY_INVENTORY_INPUT_SNAPSHOT: { sourceId: '', productId: '', createdFrom: '', createdTo: '' },
   EMPTY_INVENTORY_FILTER_DRAFT: {
     transactionType: 'all', sourceType: 'all', sourceId: '', productId: '', createdFrom: '', createdTo: '',
   },
+  createInventoryInputSnapshot: (draft: {
+    sourceType: string
+    sourceId: string
+    productId: string
+    createdFrom: string
+    createdTo: string
+  }, options: { allowProductId: boolean }) => ({
+    sourceId: draft.sourceType === 'order' ? draft.sourceId.trim() : '',
+    productId: options.allowProductId ? draft.productId.trim() : '',
+    createdFrom: draft.createdFrom.trim(),
+    createdTo: draft.createdTo.trim(),
+  }),
+  inventoryInputSnapshotsEqual: (left: Record<string, string>, right: Record<string, string>) => (
+    left.sourceId === right.sourceId && left.productId === right.productId &&
+    left.createdFrom === right.createdFrom && left.createdTo === right.createdTo
+  ),
   parseInventoryFilters: () => ({ filters: { transactionType: 'all', sourceType: 'all' } }),
   parseKitInventoryRoute: () => ({ productId: 7 }),
+  replaceInventorySourceType: (filters: Record<string, unknown>, sourceType: string) => {
+    const next: Record<string, unknown> = { ...filters, sourceType }
+    if (sourceType !== 'order') delete next.sourceId
+    return next
+  },
   useInventoryAdjustment: () => mockUseInventoryAdjustment(),
   useInventoryTransactionList: (...args: unknown[]) => mockUseInventoryTransactionList(...args),
 }))
@@ -53,7 +76,7 @@ describe('ProductInventoryPage', () => {
     mockUseInventoryTransactionList.mockReturnValue({
       filters: { transactionType: 'all', sourceType: 'all' },
       state: { status: 'empty', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
-      applyFilters: jest.fn(), retry: jest.fn(), loadNextPage: jest.fn(),
+      applyFilters: mockApplyFilters, retry: jest.fn(), loadNextPage: jest.fn(),
     })
   })
   afterEach(() => { testUtils.unmout(); jest.clearAllMocks() })
@@ -93,6 +116,19 @@ describe('ProductInventoryPage', () => {
     expect(mockUseInventoryAdjustment).toHaveBeenCalledTimes(1)
     expect(mockUseInventoryTransactionList).toHaveBeenCalledWith({ kind: 'product', productId: 7 })
   })
+
+  it('指定 Kit 流水按钮切换后立即查询', async () => {
+    mockUseInventoryTransactionList.mockReturnValue({
+      filters: { transactionType: 'admin_adjustment', sourceType: 'admin' },
+      state: { status: 'empty', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
+      applyFilters: mockApplyFilters, retry: jest.fn(), loadNextPage: jest.fn(),
+    })
+    await testUtils.mount(AuthenticatedProductInventory, { props: { productId: 7 } })
+    testUtils.fireEvent.click(findButton(testUtils, '取消恢复'))
+    expect(mockApplyFilters).toHaveBeenCalledWith({
+      transactionType: 'order_cancellation_restore', sourceType: 'admin',
+    })
+  })
 })
 
 function authenticated(role: 'user' | 'admin'): AuthContextValue {
@@ -127,4 +163,11 @@ function requireElement(testUtils: ReactTestUtil, selector: string): Element {
   const element = testUtils.queries.querySelector(selector)
   if (!element) throw new Error(`${selector} not found`)
   return element
+}
+
+function findButton(testUtils: ReactTestUtil, label: string): Element {
+  const button = Array.from(testUtils.queries.querySelectorAll('.inventory-filters__choice'))
+    .find((candidate) => candidate.textContent === label)
+  if (!button) throw new Error(`button ${label} not found`)
+  return button
 }

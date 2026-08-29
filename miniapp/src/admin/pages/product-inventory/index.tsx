@@ -11,10 +11,15 @@ import type { AdminKitProductDetail } from '@/api/endpoints/admin_products'
 import type { InventoryAdjustmentRequest } from '@/api/endpoints/inventory'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
+  createInventoryInputSnapshot,
   EMPTY_INVENTORY_FILTER_DRAFT,
+  EMPTY_INVENTORY_INPUT_SNAPSHOT,
   type InventoryFilterDraft,
+  type InventoryInputSnapshot,
+  inventoryInputSnapshotsEqual,
   parseInventoryFilters,
   parseKitInventoryRoute,
+  replaceInventorySourceType,
   useInventoryAdjustment,
   useInventoryTransactionList,
 } from '@/features/inventory'
@@ -99,6 +104,11 @@ function KitInventoryWorkspace({ product, refreshProduct }: {
   const [adjustmentError, setAdjustmentError] = useState('')
   const [filterDraft, setFilterDraft] = useState<InventoryFilterDraft>(EMPTY_INVENTORY_FILTER_DRAFT)
   const [filterError, setFilterError] = useState('')
+  const [submittedInputs, setSubmittedInputs] = useState<InventoryInputSnapshot>(EMPTY_INVENTORY_INPUT_SNAPSHOT)
+  const hasPendingInput = !inventoryInputSnapshotsEqual(
+    createInventoryInputSnapshot(filterDraft, { allowProductId: false }),
+    submittedInputs,
+  )
   const visibleStock = adjustment.state.status === 'created' || adjustment.state.status === 'replayed'
     ? adjustment.state.result.adjustment.stock
     : product.stock
@@ -137,13 +147,34 @@ function KitInventoryWorkspace({ product, refreshProduct }: {
       return
     }
     setFilterError('')
+    setSubmittedInputs(createInventoryInputSnapshot(filterDraft, { allowProductId: false }))
     transactions.applyFilters(parsed.filters)
   }
 
   function resetFilters(): void {
     setFilterDraft(EMPTY_INVENTORY_FILTER_DRAFT)
     setFilterError('')
+    setSubmittedInputs(EMPTY_INVENTORY_INPUT_SNAPSHOT)
     transactions.applyFilters({ transactionType: 'all', sourceType: 'all' })
+  }
+
+  function selectTransactionType(transactionType: InventoryFilterDraft['transactionType']): void {
+    setFilterDraft((current) => ({ ...current, transactionType }))
+    setFilterError('')
+    transactions.applyFilters({ ...transactions.filters, transactionType })
+  }
+
+  function selectSourceType(sourceType: InventoryFilterDraft['sourceType']): void {
+    setFilterDraft((current) => ({
+      ...current,
+      sourceType,
+      ...(sourceType === 'order' ? {} : { sourceId: '' }),
+    }))
+    if (sourceType !== 'order') {
+      setSubmittedInputs((current) => ({ ...current, sourceId: '' }))
+    }
+    setFilterError('')
+    transactions.applyFilters(replaceInventorySourceType(transactions.filters, sourceType))
   }
 
   const resultMessage = adjustment.state.status === 'created'
@@ -208,9 +239,15 @@ function KitInventoryWorkspace({ product, refreshProduct }: {
         allowProductId={false}
         draft={filterDraft}
         errorMessage={filterError}
+        hasPendingInput={hasPendingInput}
         onReset={resetFilters}
+        onSelectSourceType={selectSourceType}
+        onSelectTransactionType={selectTransactionType}
         onSubmit={submitFilters}
-        onUpdate={(patch) => setFilterDraft((current) => ({ ...current, ...patch }))}
+        onUpdate={(patch) => {
+          setFilterDraft((current) => ({ ...current, ...patch }))
+          setFilterError('')
+        }}
       />
       <InventoryTransactionList
         loadNextPage={transactions.loadNextPage}

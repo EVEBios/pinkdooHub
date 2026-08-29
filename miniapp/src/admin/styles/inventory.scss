@@ -8,6 +8,7 @@
 
   &__label,
   &__hint,
+  &__pending,
   &__error,
   &__success {
     display: block;
@@ -51,6 +52,7 @@
   }
 
   &__hint,
+  &__pending,
   &__error,
   &__success {
     margin-top: 14px;
@@ -59,6 +61,7 @@
   }
 
   &__hint { color: #756b7d; }
+  &__pending { color: #8a7555; }
   &__error { color: #b42318; }
   &__success { color: #14633e; }
 

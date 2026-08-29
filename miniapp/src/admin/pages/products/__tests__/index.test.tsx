@@ -8,6 +8,12 @@ import AdminProductsPage, { AuthenticatedAdminProducts } from '../index'
 
 let mockAuth: AuthContextValue
 let mockState: AdminProductListState
+let mockFilters: {
+  productType: 'all' | 'experience' | 'kit'
+  status: 'all' | 'draft' | 'online' | 'offline'
+  keyword: string
+  includeDeleted: boolean
+}
 const mockUseAdminProductList = jest.fn()
 const mockApplyFilters = jest.fn()
 
@@ -42,9 +48,10 @@ describe('AdminProductsPage', () => {
       register: jest.fn(), login: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
     }
     mockState = { status: 'loading', items: [], total: 0, page: 1, pages: 0, loadingMore: false }
+    mockFilters = { productType: 'all', status: 'all', keyword: '', includeDeleted: false }
     mockUseAdminProductList.mockImplementation(() => ({
       state: mockState,
-      filters: { productType: 'all', status: 'all', keyword: '', includeDeleted: false },
+      filters: mockFilters,
       applyFilters: mockApplyFilters,
       retry: jest.fn(),
       loadNextPage: jest.fn(),
@@ -95,15 +102,34 @@ describe('AdminProductsPage', () => {
     })
   })
 
-  it('受控筛选只有提交时才应用，并可包含删除记录', async () => {
+  it('按钮立即组合已提交文字筛选，输入文字仍等待查询提交', async () => {
+    mockFilters = { productType: 'experience', status: 'draft', keyword: '已提交名称', includeDeleted: false }
     await testUtils.mount(AuthenticatedAdminProducts)
-    const toggle = requireElement(testUtils, '.admin-product-filters__deleted')
-    testUtils.fireEvent.click(toggle)
+
+    input(testUtils, requireElement(testUtils, '.admin-product-filters__input'), '新输入名称')
     expect(mockApplyFilters).not.toHaveBeenCalled()
+    expect(requireElement(testUtils, '.admin-product-filters__pending').textContent).toContain('尚未应用')
+
+    testUtils.fireEvent.click(findButton(testUtils, '材料套装'))
+    expect(mockApplyFilters).toHaveBeenLastCalledWith({
+      productType: 'kit', status: 'draft', keyword: '已提交名称', includeDeleted: false,
+    })
+
     const filterCard = requireElement(testUtils, '.admin-product-filters')
     expect(filterCard.firstElementChild).not.toBeNull()
     testUtils.fireEvent.submit(filterCard.firstElementChild!)
-    expect(mockApplyFilters).toHaveBeenCalledWith(expect.objectContaining({ includeDeleted: true }))
+    expect(mockApplyFilters).toHaveBeenLastCalledWith(expect.objectContaining({ keyword: '新输入名称' }))
+    expect(testUtils.queries.querySelector('.admin-product-filters__pending')).toBeNull()
+  })
+
+  it('删除记录使用两个按钮并立即查询', async () => {
+    await testUtils.mount(AuthenticatedAdminProducts)
+    const buttons = Array.from(testUtils.queries.querySelectorAll('.admin-product-filters__deleted'))
+    expect(buttons.map((button) => button.textContent)).toEqual(['不含删除记录', '包含删除记录'])
+    testUtils.fireEvent.click(findButton(testUtils, '包含删除记录'))
+    expect(mockApplyFilters).toHaveBeenCalledWith({
+      productType: 'all', status: 'all', keyword: '', includeDeleted: true,
+    })
   })
 
   it('提供两个类型明确的创建入口', async () => {
@@ -123,4 +149,18 @@ function requireElement(testUtils: ReactTestUtil, selector: string): Element {
   const element = testUtils.queries.querySelector(selector)
   if (!element) throw new Error(`${selector} not found`)
   return element
+}
+
+function findButton(testUtils: ReactTestUtil, label: string): Element {
+  const button = Array.from(testUtils.queries.querySelectorAll(
+    '.admin-product-filters__button, .admin-product-filters__deleted',
+  ))
+    .find((candidate) => candidate.textContent === label)
+  if (!button) throw new Error(`button ${label} not found`)
+  return button
+}
+
+function input(testUtils: ReactTestUtil, element: Element, value: string): void {
+  const fireCustomEvent = testUtils.fireEvent as unknown as (target: Element, event: Event) => void
+  fireCustomEvent(element, new CustomEvent('input', { bubbles: true, detail: { value } }))
 }

@@ -61,8 +61,10 @@ export default function AdminProductsPage() {
 }
 
 export function AuthenticatedAdminProducts() {
-  const { applyFilters, loadNextPage, retry, state } = useAdminProductList()
+  const { applyFilters, filters, loadNextPage, retry, state } = useAdminProductList()
   const [draft, setDraft] = useState<AdminProductFilterDraft>(EMPTY_ADMIN_PRODUCT_FILTERS)
+  const [submittedKeyword, setSubmittedKeyword] = useState('')
+  const hasPendingInput = draft.keyword.trim() !== submittedKeyword
 
   function updateDraft(patch: Partial<AdminProductFilterDraft>): void {
     setDraft((current) => ({ ...current, ...patch }))
@@ -70,7 +72,22 @@ export function AuthenticatedAdminProducts() {
 
   function resetFilters(): void {
     setDraft(EMPTY_ADMIN_PRODUCT_FILTERS)
+    setSubmittedKeyword('')
     applyFilters(EMPTY_ADMIN_PRODUCT_FILTERS)
+  }
+
+  function submitFilters(): void {
+    const keyword = draft.keyword.trim()
+    setSubmittedKeyword(keyword)
+    applyFilters({ ...draft, keyword })
+  }
+
+  function selectButtonFilter(patch: Partial<Pick<
+    AdminProductFilterDraft,
+    'productType' | 'status' | 'includeDeleted'
+  >>): void {
+    setDraft((current) => ({ ...current, ...patch }))
+    applyFilters({ ...filters, ...patch })
   }
 
   return (
@@ -94,18 +111,18 @@ export function AuthenticatedAdminProducts() {
       </View>
 
       <View className='admin-product-filters'>
-        <Form onSubmit={() => applyFilters(draft)}>
+        <Form onSubmit={submitFilters}>
           <Text className='admin-product-filters__label'>商品类型</Text>
           <FilterButtons
             filters={TYPE_FILTERS}
             selected={draft.productType}
-            onSelect={(productType) => updateDraft({ productType })}
+            onSelect={(productType) => selectButtonFilter({ productType })}
           />
           <Text className='admin-product-filters__label'>商品状态</Text>
           <FilterButtons
             filters={STATUS_FILTERS}
             selected={draft.status}
-            onSelect={(status) => updateDraft({ status })}
+            onSelect={(status) => selectButtonFilter({ status })}
           />
           <Input
             className='admin-product-filters__input'
@@ -114,11 +131,22 @@ export function AuthenticatedAdminProducts() {
             value={draft.keyword}
             onInput={(event) => updateDraft({ keyword: event.detail.value })}
           />
-          <Button
-            className={`admin-product-filters__deleted${draft.includeDeleted ? ' admin-product-filters__deleted--active' : ''}`}
-            size='mini'
-            onClick={() => updateDraft({ includeDeleted: !draft.includeDeleted })}
-          >{draft.includeDeleted ? '已包含删除记录' : '不含删除记录'}</Button>
+          <Text className='admin-product-filters__label'>删除记录</Text>
+          <View className='admin-product-filters__buttons'>
+            <Button
+              className={`admin-product-filters__deleted${!draft.includeDeleted ? ' admin-product-filters__deleted--active' : ''}`}
+              size='mini'
+              onClick={() => selectButtonFilter({ includeDeleted: false })}
+            >不含删除记录</Button>
+            <Button
+              className={`admin-product-filters__deleted${draft.includeDeleted ? ' admin-product-filters__deleted--active' : ''}`}
+              size='mini'
+              onClick={() => selectButtonFilter({ includeDeleted: true })}
+            >包含删除记录</Button>
+          </View>
+          {hasPendingInput && (
+            <Text className='admin-product-filters__pending'>输入条件尚未应用，点击「查询」后生效</Text>
+          )}
           <View className='admin-product-filters__actions'>
             <Button formType='submit' type='primary'>查询</Button>
             <Button onClick={resetFilters}>清空</Button>

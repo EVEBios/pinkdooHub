@@ -26,6 +26,8 @@ const STATUS_FILTERS: ReadonlyArray<{ value: AdminOrderStatusFilter; label: stri
   { value: 'completed', label: '已完成' },
 ]
 
+const EMPTY_INPUT_SIGNATURE = buildInputSignature(EMPTY_ADMIN_ORDER_FILTER_DRAFT)
+
 export default function AdminOrdersPage() {
   const auth = useAuth()
   if (auth.status === 'initializing') {
@@ -60,9 +62,12 @@ export function AuthenticatedAdminOrders() {
   const { applyFilters, filters, loadNextPage, retry, state } = useAdminOrderList()
   const [draft, setDraft] = useState<AdminOrderFilterDraft>(EMPTY_ADMIN_ORDER_FILTER_DRAFT)
   const [filterError, setFilterError] = useState('')
+  const [submittedInputSignature, setSubmittedInputSignature] = useState(EMPTY_INPUT_SIGNATURE)
+  const hasPendingInput = buildInputSignature(draft) !== submittedInputSignature
 
   function updateDraft(patch: Partial<AdminOrderFilterDraft>): void {
     setDraft((current) => ({ ...current, ...patch }))
+    setFilterError('')
   }
 
   function submitFilters(): void {
@@ -72,12 +77,20 @@ export function AuthenticatedAdminOrders() {
       return
     }
     setFilterError('')
+    setSubmittedInputSignature(buildInputSignature(draft))
     applyFilters(parsed.filters)
+  }
+
+  function selectStatus(status: AdminOrderStatusFilter): void {
+    updateDraft({ status })
+    setFilterError('')
+    applyFilters({ ...filters, status })
   }
 
   function resetFilters(): void {
     setDraft(EMPTY_ADMIN_ORDER_FILTER_DRAFT)
     setFilterError('')
+    setSubmittedInputSignature(EMPTY_INPUT_SIGNATURE)
     applyFilters({ status: 'all' })
   }
 
@@ -97,7 +110,7 @@ export function AuthenticatedAdminOrders() {
                 key={filter.value}
                 className={`admin-order-filters__status${draft.status === filter.value ? ' admin-order-filters__status--active' : ''}`}
                 size='mini'
-                onClick={() => updateDraft({ status: filter.value })}
+                onClick={() => selectStatus(filter.value)}
               >
                 {filter.label}
               </Button>
@@ -142,6 +155,9 @@ export function AuthenticatedAdminOrders() {
             />
           </View>
           {filterError && <Text className='admin-order-filters__error'>{filterError}</Text>}
+          {hasPendingInput && (
+            <Text className='admin-order-filters__pending'>输入条件尚未应用，点击「查询」后生效</Text>
+          )}
           <View className='admin-order-filters__actions'>
             <Button formType='submit' type='primary'>查询</Button>
             <Button onClick={resetFilters}>清空</Button>
@@ -181,6 +197,16 @@ export function AuthenticatedAdminOrders() {
       )}
     </View>
   )
+}
+
+function buildInputSignature(draft: AdminOrderFilterDraft): string {
+  return JSON.stringify([
+    draft.productName.trim(),
+    draft.orderNo.trim().toUpperCase(),
+    draft.userId.trim(),
+    draft.createdFrom.trim(),
+    draft.createdTo.trim(),
+  ])
 }
 
 function AdminOrderCard({ order }: { readonly order: AdminOrderListItem }) {

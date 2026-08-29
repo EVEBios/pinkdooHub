@@ -26,6 +26,13 @@ export interface InventoryFilters {
   readonly createdTo?: string
 }
 
+export interface InventoryInputSnapshot {
+  readonly sourceId: string
+  readonly productId: string
+  readonly createdFrom: string
+  readonly createdTo: string
+}
+
 export type InventoryFilterParseResult =
   | { readonly filters: InventoryFilters; readonly error?: never }
   | { readonly filters?: never; readonly error: string }
@@ -44,7 +51,34 @@ export const EMPTY_INVENTORY_FILTERS: InventoryFilters = {
   sourceType: 'all',
 }
 
+export const EMPTY_INVENTORY_INPUT_SNAPSHOT: InventoryInputSnapshot = {
+  sourceId: '',
+  productId: '',
+  createdFrom: '',
+  createdTo: '',
+}
+
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
+
+export function createInventoryInputSnapshot(
+  draft: InventoryFilterDraft,
+  options: { readonly allowProductId: boolean },
+): InventoryInputSnapshot {
+  return {
+    sourceId: draft.sourceType === 'order' ? draft.sourceId.trim() : '',
+    productId: options.allowProductId ? draft.productId.trim() : '',
+    createdFrom: draft.createdFrom.trim(),
+    createdTo: draft.createdTo.trim(),
+  }
+}
+
+export function inventoryInputSnapshotsEqual(
+  left: InventoryInputSnapshot,
+  right: InventoryInputSnapshot,
+): boolean {
+  return left.sourceId === right.sourceId && left.productId === right.productId &&
+    left.createdFrom === right.createdFrom && left.createdTo === right.createdTo
+}
 
 export function parseInventoryFilters(
   draft: InventoryFilterDraft,
@@ -97,6 +131,15 @@ export function buildGlobalInventoryRequest(
     ...buildBaseRequest(filters, page),
     ...(filters.productId === undefined ? {} : { product_id: filters.productId }),
   }
+}
+
+export function replaceInventorySourceType(
+  filters: InventoryFilters,
+  sourceType: InventorySourceTypeFilter,
+): InventoryFilters {
+  const next = { ...filters, sourceType }
+  if (sourceType !== 'order') delete next.sourceId
+  return next
 }
 
 function buildBaseRequest(
