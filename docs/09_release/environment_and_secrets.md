@@ -1,0 +1,125 @@
+# Phase 9 环境矩阵与 Secret 清单
+
+> **Status:** Baseline Frozen; Concrete Infrastructure Pending
+> **Last Updated:** 2026-08-29
+> **Values Policy:** 本文只记录键名和责任，不记录真实值
+
+## 1. 环境矩阵
+
+| 层级 | 前端环境 | 后端环境 | 数据库 | Redis | 网络 | 数据性质 |
+|------|----------|----------|--------|-------|------|----------|
+| Local | `TARO_APP_APP_ENV=development` | `APP_ENV=development` | SQLite | 本地 Redis | HTTP localhost/局域网；开发工具可临时关闭域名校验 | 可丢弃开发数据，不产生发布证据 |
+| CI | `testing` | `testing` | 临时 SQLite + 专用 MySQL 8+ Job | CI 隔离实例 | Job 内部网络 | 每次重建，禁止访问共享资源 |
+| Release Rehearsal | `production` 构建模式 | `production` 配置语义 | 生产相似、可销毁 MySQL 8+ | 生产相似隔离 Redis | 真实 HTTPS 测试域名；开启微信域名校验 | 合成/脱敏数据，可完整备份恢复 |
+| Gate A Experience | `production` 构建模式 | `production` 配置语义 | 独立持久 MySQL 8+ | 独立持久 Redis | 微信体验版 + 测试 HTTPS 域名 | 仅受邀测试数据，有保留和清理期限 |
+| Production | `production` | `production` | 持久 MySQL 8+ | 持久 Redis | 正式 HTTPS 域名 | 仅 Gate B 授权后启用 |
+
+发布演练和 Gate A 都必须走与生产相同的安全配置语义，才能发现 debug、SQLite、弱 Secret 等配置差异；“staging/experience”属于部署层级和数据分类，不应靠放宽 `APP_ENV` 表示。若需要在监控或运维界面区分层级，应使用独立、非安全开关的部署元数据，不能把测试数据环境误当作正式商业生产。
+
+## 2. 当前已有配置键
+
+### 2.1 后端
+
+| 键 | Secret | 当前能力 | Gate A 要求 | 责任角色 |
+|----|--------|----------|------------|----------|
+| `APP_NAME` | 否 | 已有 | 固定展示值 | Yijie Shen |
+| `APP_VERSION` | 否 | 已有，默认 0.6.0 | 与 Release Record 对齐 | Yijie Shen |
+| `APP_ENV` | 否 | development/testing/production 校验 | 明确环境，不靠默认值 | Yijie Shen |
+| `APP_DEBUG` | 否 | 控制日志级别 | Gate A/生产必须显式 `false`；当前代码未强制 | Yijie Shen |
+| `DB_ENGINE` | 否 | sqlite/mysql | Gate A/生产必须显式 mysql；当前代码未强制 | Yijie Shen |
+| `DB_HOST`/`DB_PORT`/`DB_NAME` | 部分敏感 | 已有 | 从部署配置注入，不进入日志/前端 | Yijie Shen |
+| `DB_USER`/`DB_PASSWORD` | 是 | 已有 | 最小权限账号；专用 Secret 注入 | Yijie Shen |
+| `REDIS_URL` | 是 | 已有 | 专用实例、认证/网络边界；日志不得输出完整 URL | Yijie Shen |
+| `PRODUCT_IMAGE_UPLOAD_DIR` | 否 | 已有 | Gate A 指向持久卷或隔离对象存储适配 | Yijie Shen |
+| `PRODUCT_IMAGE_BASE_URL` | 否 | 已有 | 真实 HTTPS 可访问地址 | Yijie Shen |
+| `JWT_SECRET_KEY` | 是 | 生产拒绝默认值 | 每环境独立随机值；保管和轮换记录 | Yijie Shen |
+| `JWT_ALGORITHM` | 否 | 默认 HS256 | 变更需安全 Review | Yijie Shen |
+| `JWT_ACCESS_TOKEN_EXPIRE` | 否 | 已有 | 与测试/运营策略一致 | Yijie Shen |
+| `JWT_REFRESH_TOKEN_EXPIRE` | 否 | 已有 | Gate A 可沿用；Gate B 与轮换设计一起冻结 | Yijie Shen |
+
+当前生产配置校验只阻止弱 JWT Secret，没有强制 `APP_DEBUG=false`、`DB_ENGINE=mysql`、绝对 HTTPS 图片地址或非本机 Redis。9.2 应增加 fail-fast 配置契约测试；不要依赖 Runbook 人工记忆。
+
+### 2.2 微信前端
+
+| 键/配置 | Secret | 当前能力 | Gate A 要求 | 责任角色 |
+|---------|--------|----------|------------|----------|
+| `TARO_APP_APP_ENV` | 否 | 已有三环境 | 微信 RC 使用 production 构建模式 | Yijie Shen |
+| `TARO_APP_API_ORIGIN` | 否 | production 强制 HTTPS/非本机 | 替换 `.example.invalid`，只含 Origin、无路径/凭据 | Yijie Shen |
+| `project.config.json` AppID | 否 | 已配置 | 确认属于目标小程序账号；不在日志重复传播 | Yijie Shen |
+| `urlCheck` | 否 | 当前为 true | 保持 true；真机证据禁止关闭域名校验 | Yijie Shen |
+| `miniprogramRoot` | 否 | 指向 `dist/weapp` | 与 CI artifact 一致 | Yijie Shen |
+| `uploadWithSourceMap` | 否 | 当前为 true | 9.2 冻结是否上传、访问权限和保留期 | Yijie Shen |
+
+所有 `TARO_APP_*` 都会进入客户端包，只能承载公开配置。任何 AppSecret、JWT、数据库、Redis、支付密钥或私钥都禁止使用该前缀。
+
+## 3. 未来 Secret Inventory
+
+| Secret | 首次需要 | 存放位置要求 | 读取主体 | 轮换/撤销要求 | 责任角色 |
+|--------|----------|--------------|----------|---------------|----------|
+| DB password | Gate A | CI/部署 Secret 系统 | 后端运行身份、迁移 Job | 人员变更/疑似泄漏/周期轮换 | Yijie Shen |
+| Redis credential | Gate A | CI/部署 Secret 系统 | 后端运行身份 | 同上；连接日志必须脱敏 | Yijie Shen |
+| JWT secret | Gate A | CI/部署 Secret 系统 | 后端运行身份 | 定义旧 Token 失效和轮换窗口 | Yijie Shen |
+| Backup encryption credential | Gate A | 与备份数据分离的 Secret 系统 | 备份/恢复 Job | 恢复演练验证；最小权限 | Yijie Shen |
+| Image storage credential | Gate A 或 Gate B | CI/部署 Secret 系统 | 图片服务身份 | 权限限于目标 bucket/namespace | Yijie Shen |
+| Monitoring ingest credential | Gate A 最低观察或 Gate B | CI/部署 Secret 系统 | 后端/前端上传 Job | 禁止进入客户端和公开日志 | Yijie Shen |
+| WeChat AppSecret | Gate B 微信登录 | 后端 Secret 系统 | 微信身份交换服务 | 不下发客户端；泄漏立即重置 | Yijie Shen |
+| WeChat Pay private key/API key/cert | Gate B 在线收款 | 专用 Secret/证书系统 | 支付后端 | 到期告警、轮换、吊销和审计 | Yijie Shen |
+| WeChat upload private key | 自动上传被批准时 | CI Secret 系统 | 受保护上传 Job | 限制分支/环境；可立即撤销 | Yijie Shen |
+
+Secret Inventory 的 Release Record 只记录 Secret ID/版本/更新时间，不记录值。
+
+## 4. 微信网络与域名清单
+
+Gate A 前由发布负责人 Yijie Shen 填写实际值并附微信后台截图/导出证据：
+
+| 用途 | 计划域名 | 微信后台类型 | 当前状态 |
+|------|----------|--------------|----------|
+| JSON API | 待选 | request 合法域名 | `blocked` |
+| 图片上传 | 待选；可与 API 同 Origin | uploadFile 合法域名 | `blocked` |
+| 商品图片读取 | 待选 | downloadFile 合法域名；是否必需按实际 Image 行为复核 | `blocked` |
+| WebSocket | 当前未使用 | socket 合法域名 | `N/A` |
+
+域名验收：
+
+- [ ] HTTPS 证书链和主机名在 iOS/Android 真机通过；
+- [ ] 域名不是 IP、localhost 或内网临时地址；
+- [ ] 域名满足微信当前备案与服务器域名规则；
+- [ ] request/upload/download 分别按真实调用配置；
+- [ ] 不把 `api.weixin.qq.com` 配成客户端服务器域名；
+- [ ] 测试和正式 Origin 不混入同一个 RC；
+- [ ] 证书到期负责人、提前告警和续期流程明确；
+- [ ] 微信后台变更有操作者、时间和回滚记录。
+
+## 5. 日志与敏感信息
+
+Gate A 最低规则：
+
+- 不记录密码、Token、JWT payload、AppSecret、session_key、支付密钥、完整 Redis URL 或数据库连接串；
+- Inventory reason/idempotency key 沿用现有不输出规则；
+- 登录、注册、上传、订单和管理员操作只记录定位所需的内部 ID/结果，不记录完整个人资料；
+- 异常响应不回显原始敏感输入；
+- 日志采集凭据不进入小程序；
+- 保存期限、访问角色、删除方式和事故导出范围在 Gate A 前冻结。
+
+当前 `app/core/redis.py` 连接成功日志输出完整 `settings.redis_url`，在 URL 含密码时存在泄漏风险，必须在 Gate A 前改为安全目标摘要或完全省略。
+
+## 6. 配置冻结记录模板
+
+```text
+Release candidate:
+Git SHA:
+Environment:
+API Origin:
+Request domain configured:
+Upload domain configured:
+Download domain configured:
+MySQL target ID (no credential):
+Redis target ID (no credential):
+Image namespace/base URL:
+Secret versions (IDs only):
+Certificate expiry:
+Configured by: Yijie Shen（实际配置后填写时间）
+Reviewed by: Yijie Shen（独立复核步骤完成后填写时间）
+Timestamp:
+Responsible owner: Yijie Shen
+```

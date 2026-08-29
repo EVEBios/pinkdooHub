@@ -14,8 +14,9 @@
 - `@tarojs/router` 与 `@tarojs/components`（Stencil bundle）在 Jest 中形成循环依赖，组件测试需工厂 mock `@tarojs/router`；`html()` 序列化 shadow DOM 会爆栈，断言使用 `queries.querySelector*`。
 - React 18.3 下 test-utils 内部使用已废弃的 `ReactDOMTestUtils.act`，产生告警但不阻断；升级测试工具时消除。
 - `openapi-typescript@7.13.0` 通过 `--immutable --alphabetize` 生成类型，`npm run api:types:check` 直接检查生成物漂移。
-- 2026-08-20 正式工程依赖复核后，`npm ls --depth=0` 无错误；官方 registry 审计仍有 10 项生产依赖风险来自 Taro 4.2.1 H5 上游链，强制修复会破坏性降级 Taro，列为公开发布门槛。
-- 当前完整 Jest 为 60 套件 / 375 项。Auth/Product/Cart/Order/Inventory Endpoint 与 Feature 使用 fake transport、upload transport、image picker、storage、clock 等平台边界；账号注册覆盖请求投影、User Runtime Guard、字段校验、白名单 redirect、登录页入口、成功不自动登录、唯一性错误、未知结果和同步防双击。Order 创建纵向集成保留真实 CartStore → SubmissionStore → OrderApi → ApiClient，用户查询/取消及 ADMIN 列表→Paid→Completed 纵向集成都保留真实 OrderApi → ApiClient，只替换网络、Storage 与 Auth 平台边界。
+- 2026-08-29 Phase 9.1 重跑 `npm ls --depth=0` 无错误；官方 registry 审计有 10 项（4 moderate、1 high、5 critical），链路包含直接 `@tarojs/components`/swiper、构建工具和 H5 依赖，尚不能证明全部 H5-only。9.2 必须分析微信运行时/构建时可达性；不执行会破坏性降级 Taro 3.x 的强制修复。
+- 当前完整 Jest 最新基线为 61 套件 / 387 项。Auth/Product/Cart/Order/Inventory Endpoint 与 Feature 使用 fake transport、upload transport、image picker、storage、clock 等平台边界；账号注册覆盖请求投影、User Runtime Guard、字段校验、白名单 redirect、登录页入口、成功不自动登录、唯一性错误、未知结果和同步防双击。Order 创建纵向集成保留真实 CartStore → SubmissionStore → OrderApi → ApiClient，用户查询/取消及 ADMIN 列表→Paid→Completed 纵向集成都保留真实 OrderApi → ApiClient，只替换网络、Storage 与 Auth 平台边界。
+- 2026-08-29 Phase 9.1 当前源码本地基线：后端 `1465 passed, 9 skipped`（均为 MySQL-only），前端 TypeScript/ESLint/Stylelint、61 套件/387 项、OpenAPI 45 paths/109 schemas 字节一致及类型漂移通过；微信构建 97 文件/603,604 bytes、无 source map，但因产物含 `.example.invalid` API Origin 不能作为 Gate A RC。完整证据见 [发布基线审计](../09_release/baseline_audit_2026-08-29.md)。
 - 2026-08-20 微信开发者工具已连接本地 FastAPI + SQLite + Redis 完成账号密码认证 Functional：错误/正确/禁用账号、`user/admin/super_admin` 展示、Storage 写入、重启 `/users/me` 恢复、登出清理、`expiresAt` 主动 refresh、服务端 `1006` 被动 refresh，以及 access/refresh 同时无效后的 Session 清理全部通过；未记录或传播真实 Token。该结果不替代真机、H5、弱网、HTTPS/合法域名及正式微信登录门槛。
 
 ---
@@ -26,7 +27,7 @@
 2. 纯业务算法、请求层、认证与幂等逻辑必须可脱离开发者工具运行。
 3. Mock 平台、网络、时间和 Storage 等不稳定边界，不 Mock 被测 Feature 本身。
 4. 构建成功不等于功能可用；Build、Smoke、Functional 分层验收。
-5. 微信通过不代表支付宝、抖音或 H5 通过。
+5. 微信通过不代表支付宝、抖音或 H5 通过；本版只发布微信，因此其他平台不作为本版阻断门槛，也不得被描述为本版已发布能力。
 6. 不为固定覆盖率制造低价值测试；关键风险必须完整覆盖正常和失败分支。
 7. 测试夹具不得包含真实密码、Token、手机号或 AppSecret。
 
@@ -42,7 +43,7 @@
 | Component | Props、事件、四态、生命周期外观 | Taro React Test Utils + Jest | 每次提交 |
 | API Client | transport、信封、Token、上传、幂等 | Jest + fake transport/storage/clock | 每次提交 |
 | Contract | OpenAPI 类型和关键 Operation | OpenAPI 导出 + 生成 + diff | 每个 PR |
-| Build | 四端可编译 | Taro CLI | 每个 PR |
+| Build | 本版微信产物可编译、配置正确且可追溯 | Taro CLI | 每个 PR |
 | Smoke | 启动、导航、网络、Storage | 各端工具/H5 浏览器 | 阶段候选 |
 | E2E | 用户/管理员纵向链路 | 平台自动化/H5 E2E | PR 或发布候选 |
 | Real device | 真机、弱网、前后台、上传 | 人工/平台能力 | 发布候选 |
@@ -213,7 +214,9 @@ FastAPI app.openapi()
 
 ---
 
-## 8. 四端构建与 Smoke
+## 8. 微信构建与 Smoke
+
+Phase 9 本版发布目标只包含微信小程序。支付宝、抖音和 H5 的历史 Build 仍可作为跨端架构证据，但不进入本版 PR/RC 阻断项；未来重新启动对应平台时，必须重新建立当时的 Build、Smoke、Functional 与安全基线。
 
 ### 8.1 Build
 
@@ -221,9 +224,6 @@ FastAPI app.openapi()
 
 ```text
 npm run build:weapp
-npm run build:alipay
-npm run build:tt
-npm run build:h5
 ```
 
 检查：
@@ -232,8 +232,11 @@ npm run build:h5
 - 编译 warning 白名单；
 - secret 扫描；
 - 包体积；
-- 目标配置文件；
+- 目标 AppID、`project.config.json`、`miniprogramRoot` 与配置文件；
 - 没有 development Origin 进入 production 产物。
+- 没有 `.example.invalid`、测试 Origin 或非预期 source map 进入正式产物；
+- 主包、`admin` 分包和总包体记录实际大小，并满足 RC 当日微信规则；
+- 构建 artifact、checksum 和 Git SHA 可追溯。
 
 ### 8.2 Smoke
 
@@ -291,8 +294,7 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - 重复点击和结果未知；
 - 图片 HTTPS、失败占位和预览；
 - 小程序冷启动和分包首次加载；
-- H5 移动浏览器、刷新、后退和直接链接；
-- 合法域名、证书、CORS 和 CSP；
+- 微信 request/upload/download 合法域名和证书；
 - 无障碍基础：点击区域、对比度、非纯颜色提示。
 
 性能以测量为准：首屏时间、列表滚动、请求数、包体积和图片体积。没有测量证据不做预优化。
@@ -323,17 +325,19 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 
 ## 12. CI 路径
 
-建议任务：
+Phase 9.2 先采用全量门槛。只有在采集到稳定 CI 时长并证明路径优化不会漏跑契约、后端或构建影响后，才允许减少 Job；发布分支和 RC 始终全量运行。
 
-| 变更路径 | 后端测试 | 前端静态/单测 | OpenAPI | 四端构建 |
-|----------|----------|---------------|---------|----------|
-| `app/`、`tests/` | 是 | 契约相关时 | 是 | 是 |
-| `docs/` only | 文档契约相关时 | 否 | 否 | 否 |
-| `miniapp/src/` | 相关 smoke | 是 | 是 | 是 |
-| OpenAPI Schema/路由 | 是 | 是 | 是 | 是 |
-| 前端构建配置/依赖 | 否 | 是 | 否 | 是 |
+| Job | 内容 | 当前 PR | RC |
+|-----|------|---------|----|
+| Backend SQLite | `pytest tests/ -q`，明确报告 MySQL-only 状态 | 必须 | 必须 |
+| Backend MySQL | 隔离 MySQL 8+、Aerich 0→当前、9 项 MySQL-only | 必须 | 必须 |
+| Frontend quality | `npm ci --legacy-peer-deps`、TypeScript、ESLint、Stylelint、Jest | 必须 | 必须 |
+| OpenAPI contract | 真实导出、固定 JSON、生成类型和干净 diff | 必须 | 必须 |
+| WeChat build | production mode `npm run build:weapp`、Origin/Secret/包体/artifact 检查 | 必须 | 必须 |
+| Repository hygiene | 生成物、`git diff --exit-code`、Secret 和意外文件检查 | 必须 | 必须 |
+| Dependency audit | Python/npm 完整性、漏洞、许可证与处置记录 | 必须记录 | 必须关闭微信可达阻断项 |
 
-先保证正确性，再根据真实 CI 时长做安全缓存和路径优化。
+CI 产物必须绑定 Git SHA。上传微信体验版、提交审核和公开发布继续保留人工审批，不因 CI 成功自动发生。完整 Job 输入、证据和阻断语义见 [Phase 9 微信小程序发布规划](phase9_wechat_release_plan.md)。
 
 ---
 
@@ -379,20 +383,33 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - [x] Phase 8.6 工程门槛：Inventory Endpoint/Runtime Guard、201/200 metadata、业务意图幂等、指定 Kit/全局流水、权限/路由/筛选/分页；定向 9 套件/42 项并补充共享 Client metadata 回归，完整前端 60 套件/375 项、静态检查、OpenAPI 漂移、四端 build 与完整后端 1465 项（9 项 MySQL-only 跳过）全部通过。
 - [x] Phase 8.6 微信 Functional：2026-08-28 用户确认 Guest/普通用户/ADMIN 边界、Draft/Offline/Online 与逻辑删除 Kit、正负调整/40932、快速连点、unknown 安全重试 201/200、两类流水与组合筛选/分页/订单跳转/隐私字段全部验证完成并通过。
 
-### MVP 功能完成
+### Phase 9.1 发布基线
 
-- [ ] 微信/H5 用户纵向 E2E；
-- [ ] 支付宝/抖音 Build + Smoke；
-- [ ] API Client 与真实后端集成矩阵；
-- [ ] 后端完整测试；
-- [ ] 文档与类型无漂移。
+- [x] 本版发布平台冻结为微信小程序；
+- [x] 第一交付目标与公开发布拆成 Gate A 内部测试版、Gate B 对外公开版；
+- [x] 支付宝、抖音和 H5 移出本版 CI、Functional 与发布门槛；
+- [x] 配置、CI、迁移演练、验收矩阵、风险和 Go/No-Go 交付物已定义；
+- [x] Release Decision、环境/Secret、CI、Runbook、验收矩阵、风险、Go/No-Go 和当前审计八类文件已建档；
+- [x] 每个缺口已记录关闭 Gate，所有责任角色统一为 Yijie Shen；
+- [x] Yijie Shen 已于 2026-08-29 以项目负责人角色完成 Phase 9.1 交付物 Review；9.1 Complete，进入 9.2。
 
-### 正式公开发布
+### Gate A：内部微信测试版
 
-- [ ] 微信登录；
-- [ ] 商业需要时的微信支付闭环；
-- [ ] Order create 幂等；
-- [ ] 生产对象存储/CDN；
-- [ ] 登录/注册限流和认证安全 Review；
-- [ ] 持久 MySQL 迁移按流程执行；
-- [ ] 真机、隐私、HTTPS、合法域名、回滚全部通过。
+- [ ] 后端 SQLite、隔离 MySQL-only、前端、OpenAPI 和微信构建 CI 绑定同一 Git SHA 并通过；
+- [ ] 测试 HTTPS Origin、证书与 request/upload/download 合法域名在真机通过；
+- [ ] MySQL 0→当前、受支持升级、备份恢复、失败处置和应用回滚演练通过；
+- [ ] FastAPI、Redis、readiness、图片持久化和受控 SUPER_ADMIN 初始化通过；
+- [ ] Guest、普通用户、ADMIN、SUPER_ADMIN、禁用用户纵向 Functional 通过；
+- [ ] iOS/Android、弱网/断网、前后台、上传中断、重复点击和未知结果通过；
+- [ ] Secret、生成物、依赖和微信包体审计完成；
+- [ ] 体验版只向受邀测试人员开放，账号密码和人工 Paid 明确不是公开能力。
+
+### Gate B：正式公开微信小程序
+
+- [ ] 微信登录与既有账号绑定/冲突/禁用规则完成；
+- [ ] Order create 服务端幂等完成；
+- [ ] 登录/注册限流、refresh token 轮换、撤销与认证安全 Review 完成；
+- [ ] 若在线成交或收款，微信支付、通知验签/幂等、查单、退款和对账闭环完成；
+- [ ] 正式 MySQL/Redis、Secret 管理、对象存储/CDN、监控告警和备份恢复完成；
+- [ ] 真机、隐私保护指引、用户权利、审核材料、HTTPS、合法域名和发布回滚全部通过；
+- [ ] 最终 RC 通过 Go/No-Go，并取得明确提审和发布授权。

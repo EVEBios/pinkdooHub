@@ -446,5 +446,5 @@ Idempotency-Key: <stable-client-key>
 3. 重新生成 TypeScript 类型；
 4. 更新 Endpoint、Runtime Guard 和前端测试；
 5. 更新本文件的公共集成规则或 Gap Matrix；
-6. 运行后端完整回归与前端四端构建；
+6. 运行后端完整回归与当前发布平台构建；Phase 9 本版为微信 `weapp`，其他平台只在对应 Phase 重新冻结后成为门槛；
 7. Git diff 确认无手改生成文件和意外输出。

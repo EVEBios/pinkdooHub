@@ -197,6 +197,8 @@ MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化�
 | 分层与目录 | [Architecture](docs/04_architecture/architecture.md) |
 | 前端架构（Draft） | [Frontend Architecture](docs/08_frontend/frontend_architecture.md) |
 | 前端多端/API/测试/学习策略 | [Frontend Documents](docs/08_frontend/) |
+| Phase 9 微信发布规划 | [WeChat Release Plan](docs/08_frontend/phase9_wechat_release_plan.md) |
+| Phase 9 发布审计与清单 | [Release Audit & Checklists](docs/09_release/README.md) |
 | 前端架构决策 | [Frontend ADR](docs/08_frontend/adr/README.md) |
 | 编码与 Git 规范 | [Coding Standards](docs/05_development/coding_standards.md) |
 | AI/开发上下文 | [AI Context](docs/06_ai/AI_CONTEXT.md) |
@@ -234,4 +236,5 @@ docs(readme): document local development workflow
 - 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
 - refresh token 尚未轮换；登录/注册尚未限流。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
+- Phase 9.1 仓库级基线审计、八类发布交付物、责任人映射和 Yijie Shen 项目 Review 已于 2026-08-29 完成，当前进入 9.2 CI 与可重复构建；本版只发布微信小程序并先交付受控内部测试版。当前本地代码基线通过，但 CI、真实 HTTPS/合法域名、当前 SHA 的 MySQL 门槛自动化、生产相似迁移/备份恢复、readiness、管理员初始化和真机 RC 仍是 Gate A 缺口。对外公开版还需微信登录、Order create 服务端幂等、认证安全、生产监控/Secret/隐私，以及在线收款时的微信支付闭环。
 - Phase 4.3.1–4.3.12 已完成并通过最终 Review；持久环境迁移、发布与下一业务 Phase 仍需单独规划和授权。

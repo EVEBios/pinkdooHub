@@ -4,6 +4,35 @@
 
 ---
 
+## Frontend Phase 9.1 — 微信发布基线审计执行（2026-08-29）
+
+按微信单平台 Gate A 目标完成仓库级发布审计，并把规划转换为可直接用于 9.2 CI、9.3 演练和 9.4 真机验收的八类控制文档。Yijie Shen 已于 2026-08-29 完成项目负责人 Review，Phase 9.1 状态为 **Complete**，当前进入 9.2；这不代表 Gate A 已通过或已授权发布。
+
+- 新增 `docs/09_release/` 发布文档目录：Release Decision、2026-08-29 基线证据、环境/Secret、CI Matrix、隔离演练 Runbook、微信 Functional/Smoke/E2E 矩阵、Risk Register 和 Gate A/Gate B Go/No-Go Checklist。
+- 本地重新验证后端完整套件为 `1465 passed, 9 skipped`（9 项均为 MySQL-only）；前端 TypeScript、ESLint、Stylelint、61 套件/387 项 Jest、OpenAPI 类型漂移全部通过。真实 FastAPI 导出为 45 paths/109 schemas，与固定 OpenAPI JSON 字节一致。
+- 微信 production build 成功（97 文件、603,604 bytes；主包侧 425,512 bytes、`admin` 分包 178,092 bytes、0 source map），但产物包含 `.example.invalid` API Origin，明确判为 Gate A No-Go，不把“编译成功”误报成可上传 RC。
+- 依赖完整性 `npm ls --depth=0` 与 `pip check` 通过；官方 npm registry 审计为 10 项（4 moderate、1 high、5 critical）。风险链含直接组件、构建工具和 H5 依赖，不能继续统一归类为 H5-only；9.2 必须分析微信运行时/构建时可达性。Python 漏洞扫描尚未建立，未安装依赖，也未执行破坏性 `audit fix --force`。
+- 审计确认仓库尚无 CI/部署/备份自动化、依赖 readiness 或受控 SUPER_ADMIN bootstrap；production 配置仍缺全面 fail-fast，Redis 日志存在完整 URL 泄漏风险，Node/npm 未 pin，OpenAPI CLI 在 Windows 非 UTF-8 帮助输出有编码缺口。这些均已登记责任角色、关闭 Gate 和所需证据。
+- 同步 Phase 9 总规划、测试策略、README 和 AI Context。没有修改运行时代码、API、OpenAPI、数据库 Schema/迁移、依赖或版本；未连接/修改微信后台、持久数据库或远端环境，未上传、提审、commit、push、tag、release 或发布。
+
+所有项目、前端、后端、CI/发布、测试和安全/合规责任角色统一映射为 Yijie Shen；其已确认微信单平台、Gate A 边界、production 安全配置、独立基础设施、CI→演练→真机顺序和外部操作禁区。当前进入 9.2 CI 与可重复构建；真实 MySQL、备份恢复、外部 HTTPS、微信体验版和真机证据仍未执行。
+
+---
+
+## Frontend Phase 9.1 — 微信发布目标与基线规划（2026-08-29）
+
+将原“微信/H5 Functional、支付宝/抖音 Smoke”的宽泛 Phase 9 收敛为本版只发布微信小程序，并把发布拆为受控内部测试版 Gate A 与对外公开版 Gate B。当前仅完成规划和基线审计，不代表 CI、演练、体验版或公开发布已经通过。
+
+- 新增 Phase 9 微信发布权威规划，定义 9.1–9.7 的输入、交付物和退出条件；内部测试版暂时沿用账号密码与 ADMIN+ 人工 Paid，公开版本必须单独关闭微信身份、安全、生产运维、隐私及在线收款时的微信支付门槛。
+- 记录当前可复用证据与真实缺口：最新前端基线为 61 套件/387 项；OpenAPI、微信构建、后端 SQLite 和历史 MySQL 9 项门槛已有基础，但仓库尚无 CI，生产 Origin 仍为占位值，缺少生产相似备份恢复、依赖 readiness、受控 SUPER_ADMIN 初始化和正式图片存储方案。
+- 冻结 CI 蓝图：后端 SQLite、隔离 MySQL 0→当前与 9 项门槛、前端 TypeScript/ESLint/Stylelint/Jest、OpenAPI 漂移、微信生产构建、生成物/Secret 和依赖审计。支付宝、抖音和 H5 不作为本版阻断项或发布承诺。
+- 冻结隔离发布演练、Guest/普通用户/ADMIN/SUPER_ADMIN/禁用用户、业务、iOS/Android、弱网/断网、前后台和 unknown 矩阵，以及 Gate A/Gate B Go/No-Go 清单。
+- 同步 README、学习路线、测试策略、多端策略、前端架构/API 集成契约和 AI Context。没有修改运行时代码、API、OpenAPI、数据库 Schema/迁移、依赖或版本；未启动 CI、外部服务或后台进程，未执行持久数据库迁移、微信后台变更、构建上传、提审、tag、release 或发布。
+
+下一步是 9.2 CI 与可重复构建，不是直接实现微信支付或直接上传正式版。
+
+---
+
 ## Frontend 管理筛选按钮即时查询、输入反馈与日期掩码（2026-08-29）
 
 统一管理商品、管理订单、全局库存流水和指定 Kit 流水的查询交互：按钮型选项切换后立即请求第一页；文字输入继续保留显式“查询”提交，避免键入过程持续请求。管理用户的状态/角色按钮原本已经即时查询，本次补充回归覆盖但不改变行为。

@@ -30,6 +30,8 @@
 | 前端 API 集成契约 | [api_integration_contract.md](../08_frontend/api_integration_contract.md) |
 | 前端测试策略 | [testing_strategy.md](../08_frontend/testing_strategy.md) |
 | 前端学习路线 | [learning_roadmap.md](../08_frontend/learning_roadmap.md) |
+| Phase 9 微信发布规划 | [phase9_wechat_release_plan.md](../08_frontend/phase9_wechat_release_plan.md) |
+| Phase 9 发布审计与清单 | [Release Documents](../09_release/README.md) |
 | 前端 ADR | [ADR Index](../08_frontend/adr/README.md) |
 | 需求文档 | [../01_requirements/](../01_requirements/) |
 
@@ -68,6 +70,7 @@
 
 ### 2.1 当前 Phase 与实现边界
 
+- 前端 **Phase 9.1 发布目标与发布基线审计已于 2026-08-29 Complete，当前进入 9.2 CI 与可重复构建**：Yijie Shen 已确认微信单平台、Gate A 受邀内部测试版、账号密码与 ADMIN+ 人工 Paid、production 安全配置语义、独立 MySQL 8+/Redis/持久图片、CI→演练→真机顺序和外部操作禁区，并承担全部责任角色。当前源码本地复核为后端 `1465 passed, 9 skipped`（MySQL-only）、前端 61 套件/387 项及全部静态检查、OpenAPI 45 paths/109 schemas 无漂移、微信构建成功；但构建产物含占位 API Origin，不能作为 Gate A RC。仓库尚无 CI，npm 10 项风险的微信/构建可达性未定，真实 HTTPS/合法域名、当前 SHA MySQL 自动门槛、备份恢复、readiness、图片持久化、SUPER_ADMIN bootstrap 和真机仍待 9.2–9.4 关闭。八类操作文档见 [Phase 9 发布审计与清单](../09_release/README.md)，总路线见 [Phase 9 微信小程序发布规划](../08_frontend/phase9_wechat_release_plan.md)。9.1 Complete 不代表 Gate A Ready，且未授权持久迁移、微信后台变更、上传、提审或发布。
 - 前端完成**阶段 2：四端 Taro Spike**（2026-08-15）：Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict + Webpack 5.91.0 + NutUI 2.7.15 + Jest 29.7.0 在 weapp/alipay/tt/h5 四端生产构建全部通过；`Taro.request`/Storage/上传适配层与 Jest + Taro Test Utils 链路已验证（13 项测试）。产物固定输出 `dist/<TARO_ENV>`，生产包注入 `TARO_APP_APP_ENV`/Origin 且无 localhost 泄漏。关键发现：Taro 只替换字面量 `process.env.TARO_APP_*`；测试工具需 `legacy-peer-deps` 并 mock `@tarojs/router`；NutUI 桶导入会把整库打入包（h5 入口 485 KiB），正式工程必须按需引入；H5 CORS 实测确认后端未配置白名单。Spike 结果已回写架构文档 §4.1、ADR-003/ADR-005、多端与测试策略；ADR-003/ADR-005 已 Accepted。总体架构仍为 Draft（正式工程已落地，待批准），不得把 Spike 与文档规划误报为已交付业务能力。
 - 前端完成**阶段 3：正式 `miniapp/` 工程创建与依赖复核**（2026-08-15 创建，2026-08-20 复核）：Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict 正式工程已落地，包含四端构建、环境配置、Jest/ESLint/Stylelint 与金额格式化测试。官方 npm registry 复核确认 Taro 4.2.1 仍为最新版；16 个 Spike 遗留 extraneous 包已清理，`solid-js@1.9.15` 显式补齐 H5 peer，非目标平台插件、Generator 和未启用 Git Hook 依赖已移除；`npm ls` 零错误。生产 Origin 必须是无路径/凭据的 HTTPS，并拒绝本机地址。正式工程尚未引入 NutUI；基线与认证链路均已提交。
 - 前端完成**阶段 4 基础：OpenAPI 类型 + HTTP Client**（2026-08-20）：`scripts/export_openapi.py` 从真实 FastAPI 导出 45 paths / 99 schemas，`openapi-typescript@7.13.0` 生成 immutable/alphabetized 类型并支持 `--check` 漂移门槛；`miniapp/src/api/` 已实现 Taro JSON Transport、统一信封 Runtime Guard、Query/Bearer、取消、Network/Timeout/HTTP/Business/Contract/Session 错误、code `1006` single-flight refresh 与一次受控重放。普通写请求/超时不自动重试，empty-body PATCH 不添加 data。前端共 4 套件 / 19 用例通过，其中 14 项覆盖 API/环境；四端生产构建通过，H5 空应用入口 281 KiB 超过 244 KiB 建议线。官方审计仍有 10 项生产风险来自 Taro 4.2.1 H5 上游链，强制修复会破坏性降级，公开发布前必须跟踪重审。

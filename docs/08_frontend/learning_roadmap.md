@@ -43,7 +43,7 @@
 | 6 | Product | 列表、分页、派生状态、组合算法 |
 | 7 | Order | 表单、状态机、幂等、未知结果 |
 | 8 | Admin | 权限、上传、复杂表单、审计 |
-| 9 | 多端发布 | HTTPS、域名、CORS、安全、CI/E2E |
+| 9 | 微信发布 | HTTPS、合法域名、安全、CI、迁移、E2E 与发布 |
 
 ---
 
@@ -295,22 +295,34 @@ buildOrderItem
 
 ---
 
-## 12. 阶段 9：多端、CI 与发布
+## 12. 阶段 9：微信、CI 与发布
+
+> **本版范围已冻结为微信小程序。** 第一交付目标是受控的内部微信测试版；通过后再以独立 Go/No-Go 门决定是否进入对外公开发布。支付宝、抖音和 H5 不属于本版 CI 阻断项、Functional 矩阵或发布承诺，已有跨端源码与构建能力只作为未来兼容基础保留。Phase 9.1 仓库级证据、八类控制文档、责任人映射和项目负责人 Review 已完成，当前进入 9.2；完整范围见 [Phase 9 微信小程序发布规划](phase9_wechat_release_plan.md)，可执行审计与清单见 [Phase 9 发布文档](../09_release/README.md)。
 
 学习：
 
-- HTTPS、DNS、证书；
-- 小程序合法域名；
-- H5 CORS/CSP/XSS；
-- AppID 与 AppSecret；
-- Build/Smoke/E2E/真机；
-- CI、可重复构建；
-- 数据库迁移与回滚；
-- 隐私与审核。
+- HTTPS、DNS、证书与微信 request/upload/download 合法域名；
+- AppID 与 AppSecret、前端公开配置与后端 Secret 的边界；
+- Build、Smoke、Functional、E2E 与真机证据的区别；
+- CI、锁文件、不可变 artifact、Git SHA 与可重复构建；
+- MySQL 迁移、备份恢复、前滚修复与应用回滚的区别；
+- liveness/readiness、日志脱敏、监控、告警和事故响应；
+- 微信登录、账号绑定、支付通知、服务端幂等和未知结果；
+- 隐私保护指引、用户权利、平台审核和发布授权。
 
-实践：微信/H5 Functional，支付宝/抖音 Smoke，再按发布顺序提升平台门槛。
+| 子阶段 | 实践 | 完成标准 |
+|--------|------|----------|
+| 9.1 | 冻结微信单平台、Gate A 内部测试版与 Gate B 公开版；审计配置、CI、迁移、测试和风险 | **已完成（2026-08-29）**：Yijie Shen 已确认范围、责任和关闭 Gate；不代表 Gate A Ready |
+| 9.2 | 建立后端 SQLite、MySQL-only、前端质量、OpenAPI、微信构建、生成物/Secret/依赖审计 CI | 干净 checkout 可重复通过，artifact 绑定 Git SHA |
+| 9.3 | 在可销毁的生产相似环境完成 0→当前、受支持升级、备份恢复、失败处置和完整 Smoke | 迁移、恢复、FastAPI、Redis、图片、管理员初始化、健康检查均有证据 |
+| 9.4 | 上传受控微信体验版并在 iOS/Android 完成弱网、前后台、上传和角色 Functional | Gate A 全部通过，版本仍明确不可公开 |
+| 9.5 | 完成微信身份、账号关联、认证强化、Secret、存储、监控和隐私基线 | Gate B 的身份、安全、运维与合规项全部通过 |
+| 9.6 | 仅在公开版在线成交/收款时完成 Order create 幂等与微信支付/退款/对账 | 金额、签名、通知幂等、重复/延迟/未知结果和退款对账通过 |
+| 9.7 | 冻结公开 RC、提审、发布后观察与回滚准备 | Gate B 全部通过并取得明确发布授权 |
 
-完成标准以 [测试策略](testing_strategy.md) 的正式发布门槛为准。
+当前进入 9.2 CI 与可重复构建。9.1 已完成但未直接实现微信支付、未迁移持久数据库、未修改微信后台，也未上传或发布任何版本；Gate A 继续保持 No-Go，直到 9.2–9.4 的证据全部通过。
+
+阶段完成标准以 [Phase 9 微信小程序发布规划](phase9_wechat_release_plan.md) 的 Gate A/Gate B 和[测试策略](testing_strategy.md)为准。
 
 ---
 
