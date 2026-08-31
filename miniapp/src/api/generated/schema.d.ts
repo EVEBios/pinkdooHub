@@ -711,9 +711,49 @@ export interface paths {
         };
         /**
          * Health
-         * @description 健康检查 —— success(data=...)
+         * @description 兼容既有存活检查；不访问数据库或 Redis。
          */
         readonly get: operations["health_api_v1_health_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/health/live": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Liveness
+         * @description 证明应用进程能够响应，不访问任何外部依赖。
+         */
+        readonly get: operations["liveness_api_v1_health_live_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/health/ready": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Readiness
+         * @description 检查数据库与 Redis；任一失败时摘除业务流量。
+         */
+        readonly get: operations["readiness_api_v1_health_ready_get"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1168,6 +1208,22 @@ export interface components {
             readonly is_deleted: true;
         };
         /**
+         * DependencyChecksOut
+         * @description 不包含连接目标或凭据的依赖状态。
+         */
+        readonly DependencyChecksOut: {
+            /**
+             * Database
+             * @enum {string}
+             */
+            readonly database: "up" | "down";
+            /**
+             * Redis
+             * @enum {string}
+             */
+            readonly redis: "up" | "down";
+        };
+        /**
          * ErrorResponse
          * @description 统一错误信封；具体 code 与 data 形状由模块契约定义。
          */
@@ -1551,6 +1607,34 @@ export interface components {
             /** Label */
             readonly label: string;
             readonly value: components["schemas"]["ProductType"];
+        };
+        /**
+         * LegacyHealthOut
+         * @description 既有 ``/health`` 兼容响应。
+         */
+        readonly LegacyHealthOut: {
+            /** App */
+            readonly app: string;
+            /** Env */
+            readonly env: string;
+            /**
+             * Status
+             * @constant
+             */
+            readonly status: "ok";
+        };
+        /**
+         * LivenessOut
+         * @description 只表达应用进程可响应，不检查外部依赖。
+         */
+        readonly LivenessOut: {
+            /** App */
+            readonly app: string;
+            /**
+             * Status
+             * @constant
+             */
+            readonly status: "alive";
         };
         /**
          * LoginRequest
@@ -1966,6 +2050,37 @@ export interface components {
             readonly name?: string | null;
         };
         /**
+         * ReadinessErrorResponse
+         * @description Readiness 失败时的精确 HTTP 503 信封。
+         */
+        readonly ReadinessErrorResponse: {
+            /**
+             * Code
+             * @default 503
+             * @constant
+             */
+            readonly code: 503;
+            readonly data: components["schemas"]["ReadinessOut"];
+            /**
+             * Message
+             * @default Service unavailable
+             * @constant
+             */
+            readonly message: "Service unavailable";
+        };
+        /**
+         * ReadinessOut
+         * @description 实例是否具备接收业务流量的条件。
+         */
+        readonly ReadinessOut: {
+            readonly checks: components["schemas"]["DependencyChecksOut"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            readonly status: "ready" | "not_ready";
+        };
+        /**
          * RefreshOut
          * @description 刷新响应——只返回新的 access token。
          */
@@ -2179,6 +2294,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["KitProductDetailOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[LegacyHealthOut] */
+        readonly SuccessResponse_LegacyHealthOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["LegacyHealthOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[LivenessOut] */
+        readonly SuccessResponse_LivenessOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["LivenessOut"];
             /**
              * Message
              * @default success
@@ -2405,6 +2550,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["ProductOnlineOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[ReadinessOut] */
+        readonly SuccessResponse_ReadinessOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["ReadinessOut"];
             /**
              * Message
              * @default success
@@ -5094,9 +5254,56 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": {
-                        readonly [key: string]: unknown;
-                    };
+                    readonly "application/json": components["schemas"]["SuccessResponse_LegacyHealthOut_"];
+                };
+            };
+        };
+    };
+    readonly liveness_api_v1_health_live_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_LivenessOut_"];
+                };
+            };
+        };
+    };
+    readonly readiness_api_v1_health_ready_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReadinessOut_"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ReadinessErrorResponse"];
                 };
             };
         };

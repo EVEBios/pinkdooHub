@@ -1,6 +1,6 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** Baseline Frozen; 9.2.2 Hardening and 9.2.4 MySQL Gate Implemented Locally
+> **Status:** Baseline Frozen; 9.2 Complete; 9.3 Rehearsal Secret/Topology Contract Implemented Locally
 > **Last Updated:** 2026-08-31
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
@@ -38,6 +38,8 @@
 | `JWT_ALGORITHM` | 否 | production 固定 HS256 | 变更需安全 Review | Yijie Shen |
 | `JWT_ACCESS_TOKEN_EXPIRE` | 否 | 已有 | 与测试/运营策略一致 | Yijie Shen |
 | `JWT_REFRESH_TOKEN_EXPIRE` | 否 | 已有 | Gate A 可沿用；Gate B 与轮换设计一起冻结 | Yijie Shen |
+| `PINKDOOHUB_BOOTSTRAP_PASSWORD` | 是 | 9.3.2 管理命令的非交互 Secret 输入；不进入应用常驻配置、参数或日志 | 只在首次初始化/严格重放命令进程短期注入，完成后撤销 | Yijie Shen |
+| Phase 9.3 rotated bootstrap password | 是 | 仅由主机侧 HTTPS Smoke 读取，用于完成初始凭据轮换并验证独立 Restore App 登录 | 不进入 Compose 参数、应用常驻环境、日志或报告；随演练工作区清理 | Yijie Shen |
 
 9.2.2 已在本地实现上述 production fail-fast 规则，并让 Pydantic 配置错误隐藏原始输入；契约测试已覆盖接受路径、每类拒绝路径和 Secret 不回显。风险关闭仍需要 CI 在干净环境提供同一组证据，不能只依赖本地通过。
 
@@ -61,6 +63,7 @@
 | DB password | Gate A | CI/部署 Secret 系统 | 后端运行身份、迁移 Job | 人员变更/疑似泄漏/周期轮换 | Yijie Shen |
 | Redis credential | Gate A | CI/部署 Secret 系统 | 后端运行身份 | 同上；连接日志必须脱敏 | Yijie Shen |
 | JWT secret | Gate A | CI/部署 Secret 系统 | 后端运行身份 | 定义旧 Token 失效和轮换窗口 | Yijie Shen |
+| Initial SUPER_ADMIN password | Gate A 首次初始化 | 部署 Secret 系统或人工 TTY 隐藏输入；不得放命令参数/仓库/报告 | 一次性 Bootstrap 命令 | 首次登录后按批准流程轮换并撤销初始 Secret | Yijie Shen |
 | Backup encryption credential | Gate A | 与备份数据分离的 Secret 系统 | 备份/恢复 Job | 恢复演练验证；最小权限 | Yijie Shen |
 | Image storage credential | Gate A 或 Gate B | CI/部署 Secret 系统 | 图片服务身份 | 权限限于目标 bucket/namespace | Yijie Shen |
 | Monitoring ingest credential | Gate A 最低观察或 Gate B | CI/部署 Secret 系统 | 后端/前端上传 Job | 禁止进入客户端和公开日志 | Yijie Shen |

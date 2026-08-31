@@ -4,6 +4,43 @@
 
 ---
 
+## Release Phase 9.3.3–9.3.4 — 隔离拓扑与可审计演练编排（2026-08-31）
+
+完成 Phase 9.3 写操作前的生产相似拓扑和自动化工具；本节是本地实现状态，不代表 DR 场景已经执行或 Gate A 已通过。
+
+- 新增固定版本 Docker App 镜像、Compose 和 Nginx HTTPS：所有宿主端口只绑定回环且避开 3306，Source/Restore MySQL 8.0.46、认证 Redis 8.0.1、Source/Restore 图片卷、非 root FastAPI 和内部网络均使用唯一 project label 管理；现有 `pinkdoohub-dev-redis` 不复用、不接管。
+- 新增严格演练准备/运维工具：候选必须 Git clean 且 SHA/Compose digest 不漂移；Secret/短期 CA 仅写入 0700/0600 任务目录；命令覆盖镜像 digest、DR-01 空库、DR-02/03 旧迁移合成数据、DR-04 双实例数据库与图片备份恢复、DR-05 可控 DDL 部分失败、DR-06 依赖摘流量/恢复及优雅重启、DR-07 Bootstrap 首次/重放/轮换、DR-09 服务端真实 HTTPS 纵向 Smoke、脱敏摘要和精确资源回收。
+- 旧迁移与运行时 fixture 都使用 Repository、显式事务和合成身份；旧迁移 fixture 拒绝 production，运行时 fixture 只接受 Compose 内精确 production Source，二者都会拒绝未知主机、非冻结端口/Schema 或缺少显式启用。工具不会用手工 SQL fake Aerich 版本或修补业务状态；恢复、故障注入和删除卷均要求精确 project/数据库/工作区确认。
+- 发布工具契约 50 项通过，Docker Compose 标准化 JSON 可解析；未新增 Python/前端依赖，未修改数据库 Schema/迁移、业务 API、OpenAPI 或版本。尚未 commit/push，也未启动演练容器、连接持久/共享数据库、执行恢复/故障注入或删除 volume。
+
+下一步是完整回归、形成用户批准且 CI 通过的干净候选提交，再按 Runbook 取得精确写操作授权并执行 DR-01～DR-07、DR-09 服务端部分；DR-08 仍属于 9.4 真机。
+
+---
+
+## Backend Phase 9.3.2 — 受控 SUPER_ADMIN Bootstrap（2026-08-31）
+
+完成 Phase 9.3 的第二个代码前置能力；本地实现和自动化通过后，仍需 DR-07 在隔离 MySQL 环境执行并安全处置初始凭据，不能据此勾选 Gate A。
+
+- 新增 `python -m app.tasks.super_admin_bootstrap` 独立管理命令。命令要求 `--apply`，只接受 username/nickname/phone；故意不提供 `--password`，密码仅从 `PINKDOOHUB_BOOTSTRAP_PASSWORD` 或 TTY 隐藏双输入读取。非交互环境缺少 Secret 时直接拒绝，参数、校验、异常和成功日志均不回显密码。
+- `SuperAdminBootstrapService` 在单事务内创建首个正常状态 SUPER_ADMIN 和自指向 `BOOTSTRAP_SUPER_ADMIN` Audit。相同 username/phone/nickname/password 且唯一 Audit 完整时只返回 replay，不更新密码、昵称、角色、状态或时间戳，也不重复写审计。
+- 已有普通用户占用 username/phone、已有不同或多个 SUPER_ADMIN、手工 SUPER_ADMIN 无 Bootstrap Audit、Audit 无匹配用户、禁用账号或任一身份/密码变化都稳定拒绝；绝不把已有普通用户静默提权或把禁用管理员重新启用。审计失败时用户创建完整回滚。
+- 同进程先通过有界 asyncio 锁串行化；production MySQL 再使用参数化固定名称的 `GET_LOCK/RELEASE_LOCK` 覆盖多进程竞争。成功路径显式先提交用户与审计，再释放 session lock，关闭另一进程在提交前读取旧状态的窗口；SQLite 仅作为本地与自动化适配。
+- User/Audit Repository 只增加可选事务连接、角色锁定和审计计数原语；Service 不直接调用 Model、FastAPI 或 HTTP Schema。数据库字段、表、索引、Aerich 迁移、依赖、OpenAPI 和应用版本均未变化。
+
+---
+
+## Backend Phase 9.3.1 — Dependency-aware Liveness / Readiness（2026-08-31）
+
+完成 Phase 9.3 的第一个代码前置能力；这只是本地实现与自动化证据，不代表生产相似演练或 Gate A 已通过。
+
+- 保留既有无依赖 `/api/v1/health` 响应，新增 `/api/v1/health/live` 和 `/api/v1/health/ready`。Liveness 不触碰外部服务；Readiness 并行执行 Tortoise 默认数据库连接的 `SELECT 1` 与 Redis `PING`，每项独立限制 1 秒。
+- 数据库和 Redis 同时可用才返回 HTTP 200 / `ready`；任一失败或超时均通过新增 `ServiceUnavailableException` 与统一异常中间件返回 HTTP 503 / code `503` / `not_ready`，并保留两项独立 `up/down` 结果。
+- 探针响应不输出连接目标或驱动错误；失败日志只记录 `database/redis` 与异常类型，避免驱动异常中的 URL、用户名、密码或查询参数泄漏。
+- 新增严格 Pydantic 输出与 OpenAPI 200/503 契约，固定 OpenAPI JSON 和 TypeScript 生成类型同步更新。数据库 Schema、Aerich 迁移、依赖和应用版本均未变化。
+- 定向健康检查 11 项通过，覆盖真实测试 SQLite/fakeredis、兼容入口、无依赖 Liveness、全部 Up、数据库/Redis 单项及双项失败、超时、日志脱敏和 OpenAPI 类型；健康/OpenAPI 定向合计 16 项、完整后端 `1518 passed, 9 skipped`、前端 TypeScript 与 OpenAPI 类型漂移全部通过。9 项 skip 均为既有、显式隔离的 MySQL-only 门槛。R-011 调整为 `mitigating`；必须在 9.3 DR-06 使用隔离 MySQL/Redis 验证故障摘流量与恢复后才可关闭。
+
+---
+
 ## Frontend Phase 9.2.6 — 真实 PR CI 与可移植性收口（2026-08-31）
 
 Phase 9.2 已完成。Draft PR [#2](https://github.com/EVEBios/pinkdooHub/pull/2) 面向 `develop` 创建并保持未合并；实现 head `23a0f08` 的 GitHub Actions [Run 33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212) 在真实 Ubuntu 干净 checkout 上 8/8 Job 全部通过。

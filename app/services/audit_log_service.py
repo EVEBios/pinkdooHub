@@ -62,3 +62,33 @@ class AuditLogService:
             page=page,
             page_size=page_size,
         )
+
+    async def count_action(
+        self,
+        action: str,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """统计动作审计，供受控基础设施用例校验不可变事实。"""
+
+        return await self.audit_repo.count_by_action(
+            action,
+            using_db=using_db,
+        )
+
+    async def count_action_target(
+        self,
+        *,
+        action: str,
+        target_type: str,
+        target_id: int,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """统计指定动作与目标的审计。"""
+
+        return await self.audit_repo.count_by_action_target(
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            using_db=using_db,
+        )

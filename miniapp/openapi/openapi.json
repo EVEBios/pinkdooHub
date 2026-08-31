@@ -472,6 +472,34 @@
         "title": "DeletedResourceOut",
         "type": "object"
       },
+      "DependencyChecksOut": {
+        "additionalProperties": false,
+        "description": "不包含连接目标或凭据的依赖状态。",
+        "properties": {
+          "database": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Database",
+            "type": "string"
+          },
+          "redis": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Redis",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database",
+          "redis"
+        ],
+        "title": "DependencyChecksOut",
+        "type": "object"
+      },
       "ErrorResponse": {
         "additionalProperties": false,
         "description": "统一错误信封；具体 code 与 data 形状由模块契约定义。",
@@ -1474,6 +1502,53 @@
         "title": "LabeledValue[ProductType]",
         "type": "object"
       },
+      "LegacyHealthOut": {
+        "additionalProperties": false,
+        "description": "既有 ``/health`` 兼容响应。",
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "env": {
+            "title": "Env",
+            "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "env",
+          "status"
+        ],
+        "title": "LegacyHealthOut",
+        "type": "object"
+      },
+      "LivenessOut": {
+        "additionalProperties": false,
+        "description": "只表达应用进程可响应，不检查外部依赖。",
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "status": {
+            "const": "alive",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "status"
+        ],
+        "title": "LivenessOut",
+        "type": "object"
+      },
       "LoginRequest": {
         "description": "登录请求。",
         "properties": {
@@ -2452,6 +2527,55 @@
         "title": "ProductUpdate",
         "type": "object"
       },
+      "ReadinessErrorResponse": {
+        "additionalProperties": false,
+        "description": "Readiness 失败时的精确 HTTP 503 信封。",
+        "properties": {
+          "code": {
+            "const": 503,
+            "default": 503,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReadinessOut"
+          },
+          "message": {
+            "const": "Service unavailable",
+            "default": "Service unavailable",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ReadinessErrorResponse",
+        "type": "object"
+      },
+      "ReadinessOut": {
+        "additionalProperties": false,
+        "description": "实例是否具备接收业务流量的条件。",
+        "properties": {
+          "checks": {
+            "$ref": "#/components/schemas/DependencyChecksOut"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessOut",
+        "type": "object"
+      },
       "RefreshOut": {
         "description": "刷新响应——只返回新的 access token。",
         "properties": {
@@ -2806,6 +2930,54 @@
           "data"
         ],
         "title": "SuccessResponse[KitProductDetailOut]",
+        "type": "object"
+      },
+      "SuccessResponse_LegacyHealthOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LegacyHealthOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[LegacyHealthOut]",
+        "type": "object"
+      },
+      "SuccessResponse_LivenessOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LivenessOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[LivenessOut]",
         "type": "object"
       },
       "SuccessResponse_NoneType_": {
@@ -3167,6 +3339,30 @@
           "data"
         ],
         "title": "SuccessResponse[ProductOnlineOut]",
+        "type": "object"
+      },
+      "SuccessResponse_ReadinessOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReadinessOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ReadinessOut]",
         "type": "object"
       },
       "SuccessResponse_RefreshOut_": {
@@ -7328,16 +7524,14 @@
     },
     "/api/v1/health": {
       "get": {
-        "description": "健康检查 —— success(data=...)",
+        "description": "兼容既有存活检查；不访问数据库或 Redis。",
         "operationId": "health_api_v1_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Health Api V1 Health Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SuccessResponse_LegacyHealthOut_"
                 }
               }
             },
@@ -7345,6 +7539,54 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/v1/health/live": {
+      "get": {
+        "description": "证明应用进程能够响应，不访问任何外部依赖。",
+        "operationId": "liveness_api_v1_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_LivenessOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness"
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "description": "检查数据库与 Redis；任一失败时摘除业务流量。",
+        "operationId": "readiness_api_v1_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReadinessOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Readiness"
       }
     },
     "/api/v1/not-found": {

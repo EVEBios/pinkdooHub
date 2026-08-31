@@ -39,13 +39,44 @@ class UserRepository:
             .first()
         )
 
-    async def get_by_username(self, username: str) -> User | None:
+    async def get_by_username(
+        self,
+        username: str,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> User | None:
         """根据用户名查询用户。"""
-        return await User.filter(username=username).first()
+        query = User.filter(username=username)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
 
-    async def get_by_phone(self, phone: str) -> User | None:
+    async def get_by_phone(
+        self,
+        phone: str,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> User | None:
         """根据手机号查询用户。"""
-        return await User.filter(phone=phone).first()
+        query = User.filter(phone=phone)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
+
+    async def list_by_role_for_update(
+        self,
+        role: int,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[User]:
+        """在调用方事务中锁定并返回指定角色的全部用户。"""
+
+        return await (
+            User.filter(role=role)
+            .using_db(using_db)
+            .select_for_update()
+            .order_by("id")
+        )
 
     async def get_by_phone_exclude_id(self, phone: str, user_id: int) -> User | None:
         """根据手机号查询用户，排除指定 ID。
@@ -79,9 +110,14 @@ class UserRepository:
         )
         return items, total
 
-    async def create(self, **kwargs) -> User:
+    async def create(
+        self,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+        **kwargs,
+    ) -> User:
         """创建用户，返回包含 id 的完整 User 对象。"""
-        return await User.create(**kwargs)
+        return await User.create(using_db=using_db, **kwargs)
 
     async def update(
         self,

@@ -1,7 +1,7 @@
 # Phase 9 微信小程序发布规划
 
 > **Document Version:** v0.2
-> **Status:** Phase 9.1–9.2 Complete — Phase 9.3 Next
+> **Status:** Phase 9.1–9.2 Complete — Phase 9.3 In Progress（9.3.1–9.3.4 Tooling Complete；Execution Pending）
 > **Last Updated:** 2026-08-31
 > **Release Scope:** 本版只发布微信小程序（`weapp`）
 
@@ -84,11 +84,11 @@ Phase 9.1 不实现以下能力：
 | 微信合法域名 | `project.config.json` 开启 `urlCheck` | `gap` | 在微信后台分别配置实际使用的 request/upload/download 域名并真机验证 |
 | HTTPS/DNS | 生产配置要求 HTTPS，但尚无已冻结域名和证书证据 | `blocker` | 冻结 DNS、证书续期和 TLS 检查；发布前从外网与真机验证 |
 | Redis | 应用启动会 `PING` Redis | `partial` | 使用隔离/生产相似 Redis；验证认证、TLS/网络边界、持久性策略和故障行为 |
-| 健康检查 | `/api/v1/health` 只返回应用状态，不检查 DB/Redis | `gap` | 区分 liveness/readiness；readiness 检查依赖且不泄露凭据、内部地址或异常明细 |
+| 健康检查 | 9.3.1 已保留 `/api/v1/health` 并新增 dependency-free `/health/live`、DB/Redis `/health/ready`；本地失败/超时/脱敏契约通过 | `mitigating` | 在 DR-06 的隔离 MySQL/Redis 验证依赖故障摘流量、恢复后重新 Ready，保存演练证据 |
 | 图片 | 开发期本地目录和相对 `/uploads/products` 可用 | `gap` | Gate A 冻结持久卷与 HTTPS 备份方案；Gate B 冻结对象存储/CDN 或等价的高可用方案 |
 | 日志 | Redis 连接日志已在 9.2.2 改为安全目标摘要并通过脱敏测试 | `mitigating` | CI 重跑脱敏契约；继续定义采集、保留、检索和告警 |
 | Secret | 9.2.2 production fail-fast 已覆盖 JWT/Redis/图片地址且错误隐藏输入；`.env` 被忽略 | `mitigating` | CI 重跑配置契约；建立 Secret 清单、注入、轮换、最小权限和 artifact 泄漏扫描 |
-| 管理员初始化 | 现有业务支持角色，但没有受控生产初始化命令 | `blocker` | 实现一次性、幂等、可审计的 SUPER_ADMIN bootstrap；不得用手工 SQL 或提交密码 |
+| 管理员初始化 | 9.3.2 已实现一次性、严格重放、同事务审计且 MySQL 多进程互斥的独立命令；密码不进参数/日志 | `mitigating` | 在 DR-07 的隔离 MySQL 首次执行与重放，核验登录、唯一用户/Audit，并安全处置初始凭据 |
 | CI | Draft PR #2 的 Run 33355935212 已在干净 checkout 完成 8/8 Job；失败 Run 与可移植性修复均保留证据 | `closed-9.2` | 9.3 继续执行生产相似演练，不把 CI 通过当成 RC 通过 |
 | 依赖审计 | `pip-audit==2.10.1` 的 1 条 HS256 不可达例外与 npm 10 包/5 公告精确策略均在 Run 33355935212 通过，策略于 2026-11-30 到期 | `accepted-until` | 到期前升级上游或重新审批，不得破坏性强制降级 |
 | E2E | 有大量前端纵向 Jest 和人工 Functional，但没有生产相似微信自动 E2E | `gap` | 冻结最低 Smoke/Functional；自动化能力单独 Spike，不用脆弱脚本伪装已覆盖 |
@@ -120,7 +120,7 @@ Phase 9.1 不实现以下能力：
 |----------|--------------|----------------|--------|-------|-------------|----------|
 | 本地开发 | `development` | `development` | SQLite | 本地 Redis | HTTP localhost，可关闭微信域名校验 | 可丢弃，不产生发布证据 |
 | CI | `testing` | `testing` | 隔离 SQLite + 专用 MySQL 8+ Job | 隔离服务 | CI 内部地址 | 每次重建，不访问共享资源 |
-| 发布演练 | `testing` | `testing` | 生产相似、可销毁 MySQL 8+ | 生产相似隔离实例 | 真实 HTTPS 测试域名并加入微信白名单 | 使用脱敏/合成数据，可完整备份恢复 |
+| 发布演练 | `production` 构建模式 | `production` 配置语义 | 生产相似、可销毁 MySQL 8+ | 生产相似隔离实例 | 短期受信 HTTPS；微信合法域名/真机留到 9.4 | 使用脱敏/合成数据，可完整备份恢复 |
 | 正式生产 | `production` | `production` | 持久 MySQL 8+ | 持久 Redis | 正式 HTTPS 域名并加入微信白名单 | 受控迁移、备份、监控和数据保留 |
 
 发布演练和生产可以使用不同基础设施实现，但配置语义必须相同。不得把 `APP_ENV=production` 当作安全保证；仍需逐项验证 `APP_DEBUG=false`、MySQL、Redis、JWT、图片地址、日志和网络边界。正式应用启动不得自动建表。

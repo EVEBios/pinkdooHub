@@ -1,7 +1,7 @@
 # 微信 Gate A 隔离发布演练 Runbook
 
 > **Status:** Draft Ready — 尚未执行 9.3 演练
-> **Last Updated:** 2026-08-29
+> **Last Updated:** 2026-08-31
 > **Scope:** 微信小程序内部测试版（Gate A）
 
 本文定义 Phase 9.3 的安全执行顺序、证据和失败处置。它不是生产操作授权，也不包含任何真实连接信息。首次实际演练必须在专用、可销毁、与共享环境隔离的 MySQL 8+、Redis 和图片存储中执行。
@@ -48,14 +48,78 @@
 | DR-03 | 迁移 1 代表性数据升级 | Order、库存余额、opening balance 和历史快照不漂移 | 待 9.3 |
 | DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | 待 9.3 |
 | DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | 待 9.3 |
-| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | 待 9.3 |
-| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | 当前能力缺失 |
+| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | readiness 已实现，待 9.3 环境演练 |
+| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | 命令已实现，待 9.3 MySQL 演练 |
 | DR-08 | 微信真机网络 | request/upload/download、证书、Token、图片和错误信封通过 | 待 9.4 |
 | DR-09 | Gate A 纵向 Smoke | Guest、用户、ADMIN、SUPER_ADMIN、禁用用户最小链路通过 | 待 9.3/9.4 |
 
 如果未来出现需要接管的既有数据库，必须先新增只读审计场景，确认 Schema、Aerich 版本、数据质量和备份；未审计的库不自动成为“受支持升级起点”。
 
 ## 4. 执行顺序
+
+### 4.0 本仓库自动化入口
+
+9.3.3–9.3.4 已把本 Runbook 固化为以下入口。`<run-id>` 必须使用 `YYYYMMDDtHHMMSS`；准备命令会先要求工作树 clean、记录 HEAD/Compose digest、确认四个回环端口空闲且同名 project 不存在，未通过时不会创建 Secret、证书或 Docker 资源。以下命令不包含 Secret 值，所有原始证据只写入 `/tmp/pinkdoohub-phase93/<run-id>/evidence`：
+
+```bash
+python -m scripts.release.phase93_rehearsal prepare --run-id <run-id>
+
+python -m scripts.release.phase93_operations pull-images --run-id <run-id>
+python -m scripts.release.phase93_operations build-app --run-id <run-id>
+python -m scripts.release.phase93_operations start-data --run-id <run-id>
+
+python -m scripts.release.phase93_operations migrate --run-id <run-id>
+python -m scripts.release.phase93_operations verify-current --run-id <run-id>
+python -m scripts.release.phase93_operations legacy-m0 --run-id <run-id>
+python -m scripts.release.phase93_operations legacy-m1 --run-id <run-id>
+
+python -m scripts.release.phase93_operations bootstrap --run-id <run-id>
+python -m scripts.release.phase93_operations bootstrap-replay --run-id <run-id>
+python -m scripts.release.phase93_operations verify-bootstrap --run-id <run-id>
+python -m scripts.release.phase93_operations runtime-seed --run-id <run-id>
+python -m scripts.release.phase93_operations start-app --run-id <run-id>
+python -m scripts.release.phase93_operations live-smoke --run-id <run-id>
+
+python -m scripts.release.phase93_operations backup-db --run-id <run-id>
+python -m scripts.release.phase93_operations backup-images --run-id <run-id>
+```
+
+以下步骤会执行恢复、依赖停止、受控失败或资源删除，必须在执行时把 `<project>` 替换为 manifest 中的精确 project，并取得当次授权：
+
+```bash
+python -m scripts.release.phase93_operations restore-db \
+  --run-id <run-id> \
+  --confirm-project <project> \
+  --confirm-database pinkdoohub_phase93_restore
+python -m scripts.release.phase93_operations restore-images \
+  --run-id <run-id> \
+  --confirm-project <project>
+python -m scripts.release.phase93_operations verify-restore \
+  --run-id <run-id> \
+  --confirm-project <project> \
+  --confirm-database pinkdoohub_phase93_restore
+python -m scripts.release.phase93_operations dependency-drill \
+  --run-id <run-id> \
+  --confirm-project <project>
+python -m scripts.release.phase93_operations restart-app \
+  --run-id <run-id> \
+  --confirm-project <project>
+python -m scripts.release.phase93_operations failure-drill \
+  --run-id <run-id> \
+  --confirm-project <project> \
+  --confirm-database pinkdoohub_phase93_failure
+
+python -m scripts.release.phase93_report --run-id <run-id>
+python -m scripts.release.phase93_operations stop \
+  --run-id <run-id> \
+  --confirm-project <project>
+python -m scripts.release.phase93_operations cleanup \
+  --run-id <run-id> \
+  --confirm-project <project> \
+  --confirm-workspace /tmp/pinkdoohub-phase93/<run-id>
+```
+
+`phase93_report` 只有在 DR-01～DR-07 与 DR-09 服务端必需报告全部 `passed=true` 时才生成仓库外脱敏摘要；DR-08 明确写为 9.4 deferred。清理前先保存该摘要，清理后再把端口释放、project label 归零和临时目录删除结果人工回写最终报告。工具不会自动 commit、push、连接微信后台或执行任何持久/生产资源操作。
 
 ### 4.1 预检（只读）
 
@@ -92,7 +156,21 @@
 4. 执行管理员幂等 bootstrap，保存审计证据并按流程处置初始凭据。
 5. 执行 API Smoke、图片上传/读取、日志检索和优雅停止/再次启动。
 
-当前仓库尚无依赖 readiness 和受控 SUPER_ADMIN bootstrap；这两项实现并通过前，本节必须停在 No-Go。
+当前仓库已实现 dependency-free liveness 与 DB/Redis dependency-aware readiness，并有本地 SQLite/fakeredis、失败、超时和脱敏契约；它仍需在本场景使用隔离 MySQL/Redis 验证故障摘流量与恢复。受控 SUPER_ADMIN bootstrap 也已实现本地事务、并发、重放、回滚与 Secret 契约；仍需在本场景使用隔离 MySQL 执行首次创建、重复运行、登录、Audit 与初始凭据处置，才能关闭对应风险。
+
+#### 4.4.1 SUPER_ADMIN Bootstrap 安全执行
+
+人工执行时优先使用 TTY 隐藏双输入，命令行不出现密码：
+
+```bash
+python -m app.tasks.super_admin_bootstrap \
+  --username <synthetic-username> \
+  --nickname <synthetic-nickname> \
+  --phone <synthetic-phone> \
+  --apply
+```
+
+非交互部署只允许 Secret 系统短期注入 `PINKDOOHUB_BOOTSTRAP_PASSWORD`；不得在 shell 命令、`.env`、日志、截图、报告或 CI artifact 中填写真实值。命令必须在已迁移数据库上运行，不会自动建表。演练依次验证：首次结果 `created=true`；数据库只有一个正常 SUPER_ADMIN 和一条自指向 `BOOTSTRAP_SUPER_ADMIN` Audit；相同四项身份/密码重放为 `created=false/replay=true` 且 `updated_at`、密码哈希和 Audit 数量不变；不同输入、普通用户占用、禁用状态和审计矛盾均拒绝。最后完成真实登录、初始凭据轮换/撤销记录，再移除命令进程 Secret。
 
 ### 4.5 微信体验版与真机验证
 

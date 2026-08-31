@@ -14,6 +14,7 @@ from app.core.exceptions import (
     ConflictException,
     NotFoundException,
     PermissionException,
+    ServiceUnavailableException,
     UnprocessableEntityException,
 )
 
@@ -87,6 +88,22 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_not_found(request: Request, exc: NotFoundException) -> JSONResponse:
         logger.warning("HTTP 404: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
         return JSONResponse(status_code=404, content=error(exc.code, exc.message, exc.data))
+
+    @app.exception_handler(ServiceUnavailableException)
+    async def handle_service_unavailable(
+        request: Request,
+        exc: ServiceUnavailableException,
+    ) -> JSONResponse:
+        logger.warning(
+            "HTTP 503: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            request.url.path,
+        )
+        return JSONResponse(
+            status_code=503,
+            content=error(exc.code, exc.message, exc.data),
+        )
 
     @app.exception_handler(AppException)
     async def handle_app(request: Request, exc: AppException) -> JSONResponse:

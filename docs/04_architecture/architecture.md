@@ -136,7 +136,11 @@ pinkdooHub/
 │   │   └── image.py        #   Product 图片校验、本地原子存储与补偿删除
 │   │
 │   ├── tasks/                  # 外部调度器可重复执行的运维任务入口
-│   │   └── product_image_cleanup.py # ProductImage 延迟文件清理命令
+│   │   ├── product_image_cleanup.py # ProductImage 延迟文件清理命令
+│   │   ├── super_admin_bootstrap.py # 受控首个 SUPER_ADMIN 初始化
+│   │   ├── phase93_legacy_seed.py   # 仅限冻结旧迁移 Schema 的合成 fixture
+│   │   ├── phase93_runtime_seed.py  # 仅限隔离 Source 的角色 Smoke fixture
+│   │   └── phase93_restore_smoke.py # Restore App readiness/login 验证
 │   │
 │   ├── repositories/           # 数据访问层 —— 封装数据库查询
 │   │   ├── __init__.py
@@ -170,6 +174,7 @@ pinkdooHub/
 │   │   ├── config.py           #   配置类（从 .env 读取）
 │   │   ├── security.py         #   JWT 签发/验证、密码哈希
 │   │   ├── redis.py            #   Redis 连接与工具函数
+│   │   ├── health.py           #   DB/Redis 并行 Readiness 检查
 │   │   └── exceptions.py       #   业务异常类定义（BusinessException）
 │   │
 │   ├── middleware/              # 中间件 —— HTTP 生命周期切面
@@ -206,6 +211,9 @@ pinkdooHub/
 │
 ├── migrations/                 # Aerich 数据库迁移文件
 │   └── models/
+│
+├── deploy/rehearsal/           # Phase 9.3 可销毁生产相似 Compose/Nginx/App 镜像
+├── scripts/release/            # 演练预检、DR 编排、HTTPS Smoke、摘要与清理
 │
 ├── requirements.txt            # Python 依赖
 ├── pyproject.toml              # 项目元数据 + 工具配置
@@ -479,6 +487,8 @@ ProductImage Service 的输入边界是已生成的 `image_url` 和领域字段�
 文件上传是 API/基础设施边界。`app/api/forms/product.py` 以 `extra=forbid` 限定两种 multipart 请求形状；`app/storage/image.py` 不依赖 FastAPI、Model、Repository 或 Service，限量读取最大 2 MiB，校验 jpg/png/webp 文件签名与声明 MIME，使用服务端 UUID 和不覆盖的原子发布，返回 URL 及 storage key。`app/api/uploads.py` 在线程池调用同步文件存储，再调用 ProductService；Service 失败时幂等删除已存储文件，补偿异常只记录 storage key，不掩盖原业务异常。`app/api/static.py` 将本地 URL 挂载为开发环境可访问静态文件，首次上传前目录不存在时返回 404。
 
 ProductImage 物理文件清理位于独立运维任务边界，而不是 DELETE HTTP 请求、ProductService 数据库事务或 FastAPI 进程内后台任务。`ProductImageCleanupService` 通过 ProductRepository 按 `is_deleted=true`、显式截止时间与 ID 游标分批读取候选，并以单条批量查询取得仍被有效记录引用的 URL，避免 N+1；`LocalImageStorage.key_from_url()` 只接受当前配置命名空间中的 UUID key。清理前在内存中排除有效共享引用，再在线程中执行幂等删除；外部 URL、异常 URL和有效共享引用不会被删除，单项 I/O 失败记录上下文并继续。`app/tasks/product_image_cleanup.py` 只负责数据库生命周期、批次循环、统计与退出码，默认预览并逐项记录候选，只有 `--apply` 才执行删除；可由 cron、容器定时任务或其他外部调度器重复调用。逻辑删除记录与 AuditLog 不因文件清理而修改，因此不需要新增清理状态表或数据库迁移。
+
+Phase 9.3.2 的首个管理员初始化同样位于独立运维任务边界。`app/tasks/super_admin_bootstrap.py` 只负责 CLI 确认、Secret 输入、注册字段校验和 ORM 生命周期；不提供 HTTP 端点，也不允许普通注册或手工 SQL 提权。`SuperAdminBootstrapService` 拥有用户创建与 Bootstrap Audit 的事务，严格区分首次创建与完全相同的重放；现有普通用户、不同 SUPER_ADMIN、凭据变化、禁用状态或审计不一致都会拒绝且不修改数据。`BootstrapLockRepository` 先做进程内串行化，production MySQL 再使用固定、参数化的 session advisory lock；成功路径先提交用户与审计再释放数据库锁，避免并发命令在提交窗口创建第二个 SUPER_ADMIN。SQLite 锁只服务本地/自动化，production 配置仍强制 MySQL。
 
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务
@@ -1096,3 +1106,14 @@ async def rate_limit(key: str, max_requests: int, window: int) -> bool:
         await redis_client.expire(key, window)
     return current <= max_requests
 ```
+
+### 6.6 Liveness / Readiness（app/core/health.py）
+
+运行平台通过两个无认证 HTTP 探针区分“进程存活”和“实例可接流量”：
+
+- `/api/v1/health/live` 由 Router 直接构造严格 `LivenessOut`，不访问数据库、Redis 或其他外部服务；既有 `/api/v1/health` 保留为相同的 dependency-free 兼容入口。
+- `/api/v1/health/ready` 调用 `core/health.py`，并行执行 Tortoise 默认连接的最小只读查询与当前 Redis 客户端 `PING`。每项独立限制为 1 秒；两项均成功才返回 HTTP 200，任一失败或超时即通过统一异常中间件返回 HTTP 503。
+- Core 只返回不可变的布尔结果，不依赖 FastAPI 或公开 Schema；Router 负责映射为 `ready/not_ready` 与 `up/down`，并先经 Pydantic Out Schema 校验。
+- 驱动异常可能携带连接目标或凭据，因此 Core 日志只记录依赖类别和异常类型，HTTP 也不输出连接目标或原始异常。
+
+Readiness 只决定是否接收新业务流量，不负责重启进程；Liveness 失败才属于进程级处置。9.3 仍需在生产相似 MySQL/Redis 环境实际证明依赖故障摘流量与恢复行为，本地自动化不能替代演练证据。

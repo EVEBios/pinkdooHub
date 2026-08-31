@@ -1,6 +1,6 @@
 # API Design Conventions
 
-> **Document Version:** v2.1
+> **Document Version:** v2.2
 > **Status:** Active
 > **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
 >
@@ -280,6 +280,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 413 | Payload Too Large | 上传文件超过大小限制 |
 | 422 | Unprocessable Entity | 参数校验失败，或请求语法正确但当前业务聚合不满足处理条件 |
 | 500 | Internal Server Error | 服务器内部错误 |
+| 503 | Service Unavailable | 实例存活，但数据库或 Redis 等关键依赖暂不可用 |
 
 > 业务状态以响应体中的 `code` 字段为准，HTTP 状态码用于表达请求层面的结果。
 
@@ -289,10 +290,23 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 |----------|-------------|------|
 | `BusinessException` | 400 | 一般业务规则不满足 |
 | `UnprocessableEntityException` | 422 | 请求语法正确，但当前业务数据或聚合状态不满足处理条件 |
+| `ServiceUnavailableException` | 503 | 关键基础设施不可用，实例不得接收业务流量 |
 
 `UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
 
 > **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 21 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。Product 原库存直设端点已在 Phase 4.3.10 移除，库存写入统一由 Inventory API 承担。
+
+### 7.1 Liveness 与 Readiness
+
+运行时探针不需要认证，并按职责拆分：
+
+| Method | URI | 外部依赖 | 成功 | 失败语义 |
+|--------|-----|----------|------|----------|
+| GET | `/api/v1/health` | 无 | HTTP 200；保留既有 `app/env/status=ok` 响应 | 仅作兼容入口，不代表依赖可用 |
+| GET | `/api/v1/health/live` | 无 | HTTP 200；`status=alive` | 进程无法响应时由运行平台判定失败 |
+| GET | `/api/v1/health/ready` | MySQL/SQLite 默认连接、Redis | 两项均为 `up` 时 HTTP 200；`status=ready` | 任一失败或超过单项 1 秒时 HTTP 503 / code `503`；`status=not_ready` |
+
+Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败不得跳过另一项。HTTP 只公开 `database` / `redis` 的 `up` / `down`，日志只记录依赖类别和异常类型；响应与日志禁止包含 host、port、数据库名、用户名、密码、URL、驱动异常文本或查询参数。Liveness 不得查询数据库或 Redis，避免依赖故障触发错误的进程重启循环。
 
 ---
 
@@ -321,6 +335,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 404 | 资源不存在 |
 | 422 | 请求参数校验失败 |
 | 500 | 服务器内部错误 |
+| 503 | 数据库或 Redis 等关键依赖暂不可用 |
 
 ### 8.3 用户模块错误码（1xxx）
 

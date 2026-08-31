@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 9.3 隔离发布演练（待规划与授权）
+> **Current Phase:** 9.3 隔离发布演练（9.3.1–9.3.4 本地工具完成；候选提交与执行证据待完成）
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-08-31
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -15,7 +15,8 @@
 | 当前基线审计 | [baseline_audit_2026-08-29.md](baseline_audit_2026-08-29.md) | 已采集本地证据；MySQL/真机/外部环境未执行 |
 | Environment Matrix + Secret Inventory | [environment_and_secrets.md](environment_and_secrets.md) | 配置类别已冻结；具体域名/供应商/Secret 保管系统待选 |
 | CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | Phase 9.2 Complete；PR #2 Run 33355935212 的 8 个 Job 全部通过 |
-| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | Draft Ready；需 9.3 在隔离环境执行 |
+| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | 拓扑、命令和停止条件已冻结；需对已提交候选执行 |
+| 9.3 演练环境 | [rehearsal_environment_2026-08-31.md](rehearsal_environment_2026-08-31.md) | 双 MySQL/Redis/HTTPS/图片恢复拓扑与资源名已冻结；未启动 |
 | Functional/Smoke/E2E Matrix | [wechat_acceptance_matrix.md](wechat_acceptance_matrix.md) | 场景与证据等级已冻结；RC 真机结果待填 |
 | Risk Register | [risk_register.md](risk_register.md) | 已登记并分配责任角色/关闭 Gate |
 | Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | Gate A/Gate B 清单已建立；未授权发布 |
@@ -26,7 +27,7 @@
 - 当前目标是受控内部测试版，不是公开发布。
 - Phase 9.1 已完成仓库级证据采集、交付物建档、责任人映射和项目负责人 Review，状态为 `Complete`。
 - Phase 9.2 CI 与可重复构建已完成：Draft PR #2 的 Run 33355935212 在真实干净 checkout 上 8/8 Job 通过并保存 7 组 artifact。该结果不授权微信后台变更、持久迁移、上传、提审或发布。
-- 当前进入 9.3 隔离发布演练的规划边界；真实 HTTPS/合法域名、生产相似备份恢复、readiness、管理员初始化、图片持久化和真机 RC 仍是 Gate A 缺口。
+- 当前进入 9.3 隔离发布演练：9.3.1 Readiness、9.3.2 受控 SUPER_ADMIN Bootstrap、9.3.3 可销毁生产相似拓扑和 9.3.4 可审计编排均已完成本地实现。50 项发布工具契约覆盖 Compose 解析、目标限制、Secret、恢复/失败确认、合成数据和脱敏摘要；仍需形成干净候选提交后真实执行 DR-01～DR-07、DR-09 服务端部分。微信合法域名和 iOS/Android 真机 DR-08 保持 9.4。
 
 ## 3. 状态词
 
