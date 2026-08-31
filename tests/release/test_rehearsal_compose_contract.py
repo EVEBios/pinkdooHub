@@ -87,6 +87,19 @@ def test_rehearsal_uses_frozen_images_and_internal_network() -> None:
     assert compose["networks"]["rehearsal"]["internal"] is True
 
 
+def test_only_https_joins_the_host_publishable_edge_network() -> None:
+    compose = _compose()
+    services = compose["services"]
+
+    assert compose["networks"]["edge"].get("internal", False) is False
+    assert set(services["https"]["networks"]) == {"edge", "rehearsal"}
+    assert all(
+        "edge" not in service.get("networks", {})
+        for name, service in services.items()
+        if name != "https"
+    )
+
+
 def test_all_host_ports_are_loopback_and_non_default() -> None:
     compose = _compose()
     published = {

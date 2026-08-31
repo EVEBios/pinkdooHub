@@ -278,6 +278,7 @@ services:
       retries: 20
     networks:
       - rehearsal
+      - edge
 
 secrets:
   mysql_app_password:
@@ -303,3 +304,4 @@ volumes:
 networks:
   rehearsal:
     internal: true
+  edge:

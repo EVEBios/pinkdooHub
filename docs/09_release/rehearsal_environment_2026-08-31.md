@@ -49,7 +49,7 @@ Host 127.0.0.1:14307 → mysql-restore:3306（独立 volume / 独立恢复实例
 | App | 无宿主端口 | production 配置语义、非 root UID 10001 | image 与容器可销毁 |
 | Product images | 仅经 HTTPS 读取 | app 读写、Nginx 只读 | 独立 volume，必须备份/恢复验证 |
 
-Docker network 设置为 `internal: true`；只通过上述回环端口访问，不绑定 `0.0.0.0`，不修改 `/etc/hosts`。Host 验证统一用 `curl --resolve pinkdoohub-phase93.test:18443:127.0.0.1 --cacert <task-ca>`。
+MySQL、Redis、App 与 Nginx 共享的 `rehearsal` network 设置为 `internal: true`；只有 Nginx 额外挂入非 internal 的 `edge` network，以便 Docker 实际发布 `127.0.0.1:18443`。所有入口仍只绑定回环地址，不绑定 `0.0.0.0`，不修改 `/etc/hosts`。Host 验证统一用 `curl --resolve pinkdoohub-phase93.test:18443:127.0.0.1 --cacert <task-ca>`。
 
 ## 3. 配置与 Secret
 
