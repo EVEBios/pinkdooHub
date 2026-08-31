@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +38,7 @@ def _run(tmp_path: Path, report: dict, policy_path: Path = POLICY) -> subprocess
     report_path.write_text(json.dumps(report), encoding="utf-8")
     return subprocess.run(
         [
-            str(REPOSITORY_ROOT / ".venv" / "bin" / "python"),
+            sys.executable,
             str(CHECKER),
             "--report",
             str(report_path),

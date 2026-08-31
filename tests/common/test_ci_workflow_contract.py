@@ -125,5 +125,7 @@ def test_package_exposes_ci_policy_and_weapp_check_commands() -> None:
     assert package["scripts"]["ci:test"].startswith("node --test ")
     assert package["scripts"]["build:weapp:check"] == (
         "node ../scripts/ci/check_weapp_artifact.mjs "
-        "--artifact-root dist/weapp --manifest dist/weapp-manifest.json"
+        "--artifact-root dist/weapp --project-config project.config.json "
+        "--manifest dist/weapp-manifest.json"
     )
+    assert "rmSync('dist/weapp'" in package["scripts"]["build:weapp"]

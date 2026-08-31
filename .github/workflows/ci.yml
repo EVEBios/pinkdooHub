@@ -302,6 +302,7 @@ jobs:
             miniapp/dist/weapp-manifest.json
             miniapp/dist/weapp-manifest.sha256
             miniapp/dist/weapp-build.log
+            miniapp/project.config.json
           if-no-files-found: error
           retention-days: 14
 

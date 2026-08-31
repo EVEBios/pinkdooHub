@@ -27,8 +27,9 @@ function createFixture(mainSource = `const apiOrigin = '${EXPECTED_ORIGIN}'`) {
     pages: ['pages/index/index'],
     subPackages: [{ root: 'admin', pages: ['pages/users/index'] }]
   }))
-  writeFileSync(join(artifactRoot, 'project.config.json'), JSON.stringify({
-    miniprogramRoot: './',
+  const projectConfig = join(root, 'project.config.json')
+  writeFileSync(projectConfig, JSON.stringify({
+    miniprogramRoot: 'dist/weapp/',
     setting: { uploadWithSourceMap: false }
   }))
   writeFileSync(join(artifactRoot, 'app.js'), mainSource)
@@ -36,6 +37,7 @@ function createFixture(mainSource = `const apiOrigin = '${EXPECTED_ORIGIN}'`) {
   return {
     root,
     artifactRoot,
+    projectConfig,
     manifest: join(root, 'weapp-manifest.json')
   }
 }
@@ -44,6 +46,7 @@ function runChecker(fixture, extraEnvironment = {}) {
   return spawnSync(process.execPath, [
     CHECKER,
     '--artifact-root', fixture.artifactRoot,
+    '--project-config', fixture.projectConfig,
     '--manifest', fixture.manifest
   ], {
     encoding: 'utf8',
@@ -71,6 +74,9 @@ test('writes a traceable manifest and aggregate checksum for a valid CI artifact
   assert.equal(manifest.expected_origin, EXPECTED_ORIGIN)
   assert.equal(manifest.git_sha, '0123456789abcdef')
   assert.equal(manifest.workflow_run_id, '12345')
+  assert.equal(manifest.project_config.path, 'project.config.json')
+  assert.equal(manifest.project_config.size > 0, true)
+  assert.match(manifest.project_config.sha256, /^[a-f0-9]{64}$/)
   assert.equal(manifest.sizes.subpackages.admin > 0, true)
   assert.equal(manifest.files.some((file) => file.path === 'app.js'), true)
 
@@ -134,6 +140,59 @@ test('rejects release eligibility for the reserved CI test origin', () => {
 
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /reserved CI Origin/i)
+})
+
+test('rejects a project config that targets the wrong build root', () => {
+  const fixture = createFixture()
+  writeFileSync(fixture.projectConfig, JSON.stringify({
+    miniprogramRoot: './',
+    setting: { uploadWithSourceMap: false }
+  }))
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /must target dist\/weapp\//i)
+})
+
+test('rejects a project config that uploads source maps', () => {
+  const fixture = createFixture()
+  writeFileSync(fixture.projectConfig, JSON.stringify({
+    miniprogramRoot: 'dist/weapp/',
+    setting: { uploadWithSourceMap: true }
+  }))
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /disable source map upload/i)
+})
+
+test('rejects a stale project config copied into the compiled artifact', () => {
+  const fixture = createFixture()
+  writeFileSync(
+    join(fixture.artifactRoot, 'project.config.json'),
+    JSON.stringify({ miniprogramRoot: './' })
+  )
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /must match the normalized project-root config/i)
+})
+
+test('accepts the project config normalization produced by Taro', () => {
+  const fixture = createFixture()
+  const copiedConfig = JSON.parse(readFileSync(fixture.projectConfig, 'utf8'))
+  copiedConfig.miniprogramRoot = './'
+  writeFileSync(
+    join(fixture.artifactRoot, 'project.config.json'),
+    JSON.stringify(copiedConfig)
+  )
+
+  const result = runChecker(fixture)
+
+  assert.equal(result.status, 0, result.stderr)
 })
 
 test('rejects a main package above the frozen raw byte limit', () => {

@@ -40,8 +40,9 @@ npm run dev:weapp      # 开发构建（watch，加载 .env.development）
 
 生产环境只接受不含路径/凭据的 HTTPS Origin，并拒绝 localhost、127.0.0.1、
 0.0.0.0 与 `[::1]`。`.env.production` 当前是不可发布的占位域名，部署前必须替换。
-Gate A 微信上传关闭 source map；9.2.3 检查器已覆盖 `dist/weapp`，远端 CI 和
-真实 RC 仍须分别重跑并保留证据。
+Gate A 微信上传关闭 source map；9.2.3 检查器分别校验干净生成的 `dist/weapp`
+和项目根 `project.config.json`，并把上传配置的 SHA-256 写入 manifest。远端 CI
+和真实 RC 仍须分别重跑并保留证据。
 
 `build:weapp:check` 要求显式提供 `WEAPP_EXPECTED_ORIGIN` 和
 `WEAPP_RELEASE_ELIGIBLE=0|1`。GitHub Actions 基础 Job 固定使用保留的

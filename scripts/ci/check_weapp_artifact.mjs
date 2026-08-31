@@ -9,6 +9,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 
 const MAIN_PACKAGE_LIMIT = 2 * 1024 * 1024
 const SUBPACKAGE_LIMIT = 2 * 1024 * 1024
@@ -40,11 +41,18 @@ function parseArguments(argv) {
     values.set(option, value)
   }
   const artifactRoot = values.get('--artifact-root')
+  const projectConfig = values.get('--project-config')
   const manifest = values.get('--manifest')
-  if (!artifactRoot || !manifest || values.size !== 2) {
-    throw new Error('usage: --artifact-root <dir> --manifest <file>')
+  if (!artifactRoot || !projectConfig || !manifest || values.size !== 3) {
+    throw new Error(
+      'usage: --artifact-root <dir> --project-config <file> --manifest <file>'
+    )
   }
-  return { artifactRoot: resolve(artifactRoot), manifest: resolve(manifest) }
+  return {
+    artifactRoot: resolve(artifactRoot),
+    projectConfig: resolve(projectConfig),
+    manifest: resolve(manifest)
+  }
 }
 
 function validateExpectedOrigin(rawOrigin) {
@@ -129,6 +137,22 @@ function readJson(root, artifactPath) {
     return JSON.parse(readFileSync(absolutePath, 'utf8'))
   } catch {
     throw new Error(`required artifact JSON is missing or invalid: ${artifactPath}`)
+  }
+}
+
+function readProjectConfig(path) {
+  try {
+    const entry = lstatSync(path)
+    if (!entry.isFile() || entry.isSymbolicLink()) {
+      throw new Error('not a regular file')
+    }
+    const content = readFileSync(path)
+    return {
+      content,
+      document: JSON.parse(content.toString('utf8'))
+    }
+  } catch {
+    throw new Error('required project config JSON is missing or invalid')
   }
 }
 
@@ -223,12 +247,23 @@ function checksumPathFor(manifestPath) {
 }
 
 function run() {
-  const { artifactRoot, manifest } = parseArguments(process.argv.slice(2))
-  if (!isAbsolute(artifactRoot) || !isAbsolute(manifest)) {
-    throw new Error('artifact and manifest paths must resolve absolutely')
+  const {
+    artifactRoot,
+    projectConfig,
+    manifest
+  } = parseArguments(process.argv.slice(2))
+  if (
+    !isAbsolute(artifactRoot) ||
+    !isAbsolute(projectConfig) ||
+    !isAbsolute(manifest)
+  ) {
+    throw new Error('artifact, project config and manifest paths must resolve absolutely')
   }
   if (isInside(artifactRoot, manifest) || artifactRoot === manifest) {
     throw new Error('manifest must be written outside the artifact root')
+  }
+  if (isInside(artifactRoot, projectConfig) || artifactRoot === projectConfig) {
+    throw new Error('project config must be supplied from outside the compiled artifact root')
   }
 
   const expectedOrigin = validateExpectedOrigin(process.env.WEAPP_EXPECTED_ORIGIN)
@@ -237,14 +272,35 @@ function run() {
     throw new Error('reserved CI Origin cannot produce a release-eligible artifact')
   }
 
-  const projectConfig = readJson(artifactRoot, 'project.config.json')
-  if (projectConfig?.setting?.uploadWithSourceMap !== false) {
+  const projectConfigFile = readProjectConfig(projectConfig)
+  if (projectConfigFile.document?.miniprogramRoot !== 'dist/weapp/') {
+    throw new Error('project.config.json must target dist/weapp/')
+  }
+  if (projectConfigFile.document?.setting?.uploadWithSourceMap !== false) {
     throw new Error('project.config.json must disable source map upload')
   }
   const roots = packageRoots(readJson(artifactRoot, 'app.json'))
   const artifactFiles = listArtifactFiles(artifactRoot)
   if (artifactFiles.length === 0) {
     throw new Error('artifact contains no files')
+  }
+  const copiedProjectConfig = artifactFiles.find(
+    (file) => file.artifactPath === 'project.config.json'
+  )
+  if (copiedProjectConfig) {
+    const copiedDocument = readJson(
+      artifactRoot,
+      copiedProjectConfig.artifactPath
+    )
+    const expectedCopiedDocument = {
+      ...projectConfigFile.document,
+      miniprogramRoot: './'
+    }
+    if (!isDeepStrictEqual(copiedDocument, expectedCopiedDocument)) {
+      throw new Error(
+        'compiled project.config.json must match the normalized project-root config'
+      )
+    }
   }
 
   let expectedOriginFound = false
@@ -279,6 +335,11 @@ function run() {
     expected_origin: expectedOrigin.origin,
     git_sha: process.env.GITHUB_SHA || 'local-uncommitted',
     workflow_run_id: process.env.GITHUB_RUN_ID || 'local',
+    project_config: {
+      path: basename(projectConfig),
+      size: projectConfigFile.content.length,
+      sha256: createHash('sha256').update(projectConfigFile.content).digest('hex')
+    },
     limits: {
       main_package_bytes: MAIN_PACKAGE_LIMIT,
       subpackage_bytes: SUBPACKAGE_LIMIT,
