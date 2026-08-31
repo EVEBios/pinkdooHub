@@ -15,7 +15,7 @@
 | Host architecture | arm64 |
 | MySQL image | `mysql:8.0.46`，本机已有；实际执行记录 immutable image ID/digest |
 | Redis image | `redis:8.0.1-alpine`，本机已有；实际执行记录 immutable image ID/digest |
-| App base image | `python:3.10.9-slim-bookworm`，执行前拉取并记录 digest |
+| App base image | `python:3.10.9-slim-bullseye`，执行前拉取并记录 digest；3.10.9 没有对应的 Bookworm 官方标签 |
 | HTTPS image | `nginx:1.27.5-alpine`，执行前拉取并记录 digest |
 | 磁盘 | 约 842 GiB 可用，满足双 MySQL/备份/镜像需求 |
 | 已有用户资源 | `pinkdoohub-dev-redis` / `127.0.0.1:6379`，不接管、不复用、不停止 |
