@@ -43,7 +43,7 @@ SECRET_NAMES = (
 IMAGE_TAGS = (
     "mysql:8.0.46",
     "redis:8.0.1-alpine",
-    "python:3.10.9-slim-bookworm",
+    "python:3.10.9-slim-bullseye",
     "nginx:1.27.5-alpine",
 )
 

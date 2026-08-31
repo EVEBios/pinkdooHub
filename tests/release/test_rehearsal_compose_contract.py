@@ -9,9 +9,12 @@ import tempfile
 
 import pytest
 
+from scripts.release.phase93_rehearsal import IMAGE_TAGS
+
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = ROOT / "deploy" / "rehearsal" / "compose.yml"
+DOCKERFILE_PATH = ROOT / "deploy" / "rehearsal" / "Dockerfile"
 
 
 def _compose() -> dict:
@@ -68,11 +71,19 @@ def _compose() -> dict:
 def test_rehearsal_uses_frozen_images_and_internal_network() -> None:
     compose = _compose()
     services = compose["services"]
+    dockerfile_base = DOCKERFILE_PATH.read_text(encoding="utf-8").splitlines()[0]
 
     assert services["mysql-source"]["image"] == "mysql:8.0.46"
     assert services["mysql-restore"]["image"] == "mysql:8.0.46"
     assert services["redis"]["image"] == "redis:8.0.1-alpine"
     assert services["https"]["image"] == "nginx:1.27.5-alpine"
+    assert dockerfile_base == "FROM python:3.10.9-slim-bullseye"
+    assert IMAGE_TAGS == (
+        "mysql:8.0.46",
+        "redis:8.0.1-alpine",
+        "python:3.10.9-slim-bullseye",
+        "nginx:1.27.5-alpine",
+    )
     assert compose["networks"]["rehearsal"]["internal"] is True
 
 
@@ -188,9 +199,7 @@ def test_runtime_secrets_are_files_not_literal_environment_values() -> None:
 
 
 def test_app_runs_non_root_and_is_not_published_directly() -> None:
-    dockerfile = (ROOT / "deploy" / "rehearsal" / "Dockerfile").read_text(
-        encoding="utf-8"
-    )
+    dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
     services = _compose()["services"]
 
     assert "USER 10001:10001" in dockerfile
