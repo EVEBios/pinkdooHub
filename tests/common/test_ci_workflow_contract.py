@@ -108,6 +108,8 @@ def test_workflow_keeps_the_weapp_artifact_non_release_and_traceable() -> None:
 
     assert "TARO_APP_API_ORIGIN: https://api.ci.pinkdoohub.test" in workflow
     assert "WEAPP_RELEASE_ELIGIBLE: '0'" in workflow
+    assert "npm ci --include=dev --legacy-peer-deps" in workflow
+    assert "set -o pipefail" in workflow
     assert "mkdir -p dist" in workflow
     assert "npm run build:weapp" in workflow
     assert "npm run build:weapp:check" in workflow

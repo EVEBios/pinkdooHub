@@ -273,10 +273,11 @@ jobs:
       - name: Install locked frontend dependencies
         run: |
           npm install --global "npm@${NPM_VERSION}"
-          npm ci --legacy-peer-deps
+          npm ci --include=dev --legacy-peer-deps
 
       - name: Build production WeChat artifact
         run: |
+          set -o pipefail
           mkdir -p dist
           npm run build:weapp 2>&1 | tee dist/weapp-build.log
           if grep -Eiq '(^|[[:space:]])(warning|warn)(:|[[:space:]])' dist/weapp-build.log; then
