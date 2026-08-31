@@ -1,6 +1,6 @@
 # 微信 Gate A 隔离发布演练 Runbook
 
-> **Status:** Draft Ready — 尚未执行 9.3 演练
+> **Status:** Phase 9.3 Executed — DR-01～DR-07、DR-09 服务端部分通过
 > **Last Updated:** 2026-08-31
 > **Scope:** 微信小程序内部测试版（Gate A）
 
@@ -43,17 +43,19 @@
 
 | ID | 场景 | 核心断言 | 状态 |
 |----|------|----------|------|
-| DR-01 | 全新空库 0→当前 | 迁移 0→1→2 完成；表、约束、索引、Aerich 版本正确 | 待 9.3 |
-| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；新增结构正确 | 待 9.3 |
-| DR-03 | 迁移 1 代表性数据升级 | Order、库存余额、opening balance 和历史快照不漂移 | 待 9.3 |
-| DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | 待 9.3 |
-| DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | 待 9.3 |
-| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | readiness 已实现，待 9.3 环境演练 |
-| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | 命令已实现，待 9.3 MySQL 演练 |
+| DR-01 | 全新空库 0→当前 | 迁移 0→1→2 完成；表、约束、索引、Aerich 版本正确 | PASS（9.3 Report） |
+| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；新增结构正确 | PASS（9.3 Report） |
+| DR-03 | 迁移 1 代表性数据升级 | Order、库存余额、opening balance 和历史快照不漂移 | PASS（9.3 Report） |
+| DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | PASS（9.3 Report） |
+| DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | PASS（9.3 Report） |
+| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | PASS（9.3 Report） |
+| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | PASS（9.3 Report） |
 | DR-08 | 微信真机网络 | request/upload/download、证书、Token、图片和错误信封通过 | 待 9.4 |
-| DR-09 | Gate A 纵向 Smoke | Guest、用户、ADMIN、SUPER_ADMIN、禁用用户最小链路通过 | 待 9.3/9.4 |
+| DR-09 | Gate A 纵向 Smoke | Guest、用户、ADMIN、SUPER_ADMIN、禁用用户最小链路通过 | 服务端 HTTPS 32 请求 PASS；真机扩展待 9.4 |
 
 如果未来出现需要接管的既有数据库，必须先新增只读审计场景，确认 Schema、Aerich 版本、数据质量和备份；未审计的库不自动成为“受支持升级起点”。
+
+本次执行的 SHA、CI、结果、耗时、修复项和资源清理记录见 [Phase 9.3 隔离发布演练报告](reports/phase93_rehearsal_2026-08-31.md)。
 
 ## 4. 执行顺序
 

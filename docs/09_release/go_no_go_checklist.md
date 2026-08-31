@@ -1,7 +1,7 @@
 # 微信发布 Go/No-Go Checklist
 
-> **Status:** Not Authorized — Gate A 清单已建立
-> **Last Updated:** 2026-08-29
+> **Status:** No-Go / Not Authorized — Phase 9.3 证据已回填，待 9.4
+> **Last Updated:** 2026-08-31
 > **Current Scope:** 微信小程序内部测试版（Gate A）
 
 本清单是发布决策索引，不替代 CI、演练或验收证据。勾选项必须附证据链接、执行时间和责任人；“本机试过”“历史通过”“应该没问题”不能勾选。Phase 9.1 只建立清单，不授权微信上传、体验版分发、提审或公开发布。
@@ -22,21 +22,21 @@
 
 ### 1.2 CI 与代码质量
 
-- [ ] backend-sqlite：完整 pytest 通过，跳过项仅限已声明 MySQL-only；
-- [ ] backend-mysql-release：专用 MySQL 8+、0→当前迁移及 9 项门槛通过；
-- [ ] frontend-quality：TypeScript、ESLint、Stylelint、Jest 通过；
-- [ ] openapi-contract：导出、固定 JSON、类型生成和 clean diff 通过；
-- [ ] weapp-build：受控 Origin、包体、分包、warning、Secret/占位域名扫描通过；
-- [ ] repository-hygiene：无意外生成物、缓存、数据库、上传文件或敏感信息；
-- [ ] dependency-audit：Python/npm 报告齐全，微信可达高风险已关闭或有合规例外；
-- [ ] Node/npm/Python/Taro 支持版本由仓库和 CI 固定。
+- [x] backend-sqlite：Phase 9.3 候选 Run 33408135841 通过，跳过项仅限已声明 MySQL-only；
+- [x] backend-mysql-release：专用 MySQL 8+、0→当前迁移及 9 项门槛通过；
+- [x] frontend-quality：TypeScript、ESLint、Stylelint、Jest 通过；
+- [x] openapi-contract：导出、固定 JSON、类型生成和 clean diff 通过；
+- [x] weapp-build：受控非发布 Origin、包体、分包、warning、Secret/占位域名策略扫描通过；
+- [x] repository-hygiene：无意外生成物、缓存、数据库、上传文件或敏感信息；
+- [x] dependency-audit：Python/npm 报告齐全，微信可达高风险已关闭或有合规例外；
+- [x] Node/npm/Python/Taro 支持版本由仓库和 CI 固定。
 
 ### 1.3 环境、HTTPS 与 Secret
 
 - [ ] 测试 API Origin、DNS、证书、续期责任和目标 AppID 已冻结；
 - [ ] 微信后台 request/upload/download 合法域名与实际调用一致；
-- [ ] 生产语义启动强制 `APP_DEBUG=false`、MySQL、随机 JWT 和必要配置；
-- [ ] MySQL、Redis 和图片存储均为 Gate A 专用/受控资源；
+- [x] 生产语义演练启动强制 `APP_DEBUG=false`、MySQL、随机 JWT 和必要配置；
+- [x] Phase 9.3 MySQL、Redis 和图片存储均为专用/受控资源；
 - [ ] Secret inventory 已映射到实际保管系统、读取主体、轮换和责任人；
 - [ ] 前端源码、artifact、日志和 source map 无 Secret；
 - [ ] source map 上传、访问和保留策略已批准；
@@ -44,20 +44,20 @@
 
 ### 1.4 迁移、备份与恢复
 
-- [ ] 空 MySQL 8+ 执行 0→1→2 并核验版本、表、约束、索引和 opening balance；
-- [ ] 迁移 0/1 的代表性数据升级到当前版本，关键业务数据不漂移；
-- [ ] 迁移前备份在独立实例恢复，Schema、行数、抽样聚合和启动通过；
-- [ ] 可控部分失败演练完成，前滚/恢复决策符合 MySQL DDL 真实语义；
-- [ ] 演练未连接共享 3306、开发 SQLite、持久/生产资源或使用 `--fake`；
-- [ ] 演练资源、端口、临时目录和合成数据已按记录清理并复核。
+- [x] 空 MySQL 8+ 执行 0→1→2 并核验版本、表、约束、索引和 opening balance；
+- [x] 迁移 0/1 的代表性数据升级到当前版本，关键业务数据不漂移；
+- [x] 迁移前备份在独立实例恢复，Schema、行数、抽样聚合和启动通过；
+- [x] 可控部分失败演练完成，前滚/恢复决策符合 MySQL DDL 真实语义；
+- [x] 演练未连接共享 3306、开发 SQLite、持久/生产资源或使用 `--fake`；
+- [x] 演练资源、端口、临时目录和合成数据已按记录清理并复核。
 
 ### 1.5 运行时与运维
 
-- [ ] FastAPI/Uvicorn 可启动、优雅停止、重启，错误不泄露配置；
-- [ ] liveness 与 DB/Redis readiness 分离，依赖故障时不接业务流量；
-- [ ] Redis 认证/网络边界和故障行为验证通过；
-- [ ] 图片上传、HTTPS 读取、持久化、备份和恢复通过；
-- [ ] SUPER_ADMIN bootstrap 一次性、幂等、可审计，初始凭据已安全处置；
+- [x] FastAPI/Uvicorn 可启动、优雅停止、重启，错误不泄露配置；
+- [x] liveness 与 DB/Redis readiness 分离，依赖故障时不接业务流量；
+- [x] Redis 认证/网络边界和故障行为验证通过；
+- [x] 图片上传、HTTPS 读取、持久化、备份和恢复通过；
+- [x] SUPER_ADMIN bootstrap 一次性、严格重放、可审计，初始凭据已安全处置；
 - [ ] 日志可查询，错误、延迟和依赖故障至少有 Gate A 观察办法；
 - [ ] 体验版测试人员、反馈入口、停用日期、数据清理和事故联系人明确。
 
@@ -65,7 +65,7 @@
 
 - [ ] iOS 和 Android 真机记录设备、系统、微信、基础库和网络；
 - [ ] request/upload/download、HTTPS 和合法域名在真机通过；
-- [ ] Guest、普通用户、ADMIN、SUPER_ADMIN、禁用用户纵向链路通过；
+- [x] Guest、普通用户、ADMIN、SUPER_ADMIN、禁用用户服务端 HTTPS 纵向链路通过；
 - [ ] Product、Cart、创建订单、用户订单/取消、管理订单通过；
 - [ ] Product 管理、图片、Inventory、Audit、用户禁用通过；
 - [ ] access/refresh 失效、权限、资源隐藏和错误信封通过；

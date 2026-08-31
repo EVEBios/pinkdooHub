@@ -4,6 +4,19 @@
 
 ---
 
+## Release Phase 9.3 Complete — 隔离发布演练（2026-08-31）
+
+Phase 9.3 已在最终候选 `136a8bd8833f9b23433cfb3a2f9ceca7dab70db5` 完成。GitHub Actions Run 33408135841 的 8 个 Job 全部 success；Run ID `20260831t221625` 的可销毁生产相似环境完成 DR-01～DR-07 与 DR-09 服务端部分，完整脱敏证据见 `docs/09_release/reports/phase93_rehearsal_2026-08-31.md`。这不等于 Gate A 已通过，也不授权微信后台、上传、分发、提审或公开发布。
+
+- MySQL 8.0.46 真实完成空库 0→1→2、m0/m1 代表数据升级和 opening balance 核对；订单、Items、金额/Option 快照、Product/Kit/库存与 Audit 均保持。数据库和三类图片备份恢复到独立 Restore MySQL/volume，restore-app Ready 且轮换后账号登录通过。
+- 受控 migration 2 失败证明 MySQL DDL 部分提交：新表存在、Aerich 仍停 m1、opening balance 未写；失败前备份在独立 Schema 恢复后用官方迁移完成 m2。MySQL/Redis 分别中断时 Readiness 为 503，恢复后为 200；应用优雅重启后数据/图片保持。
+- SUPER_ADMIN Bootstrap 首次、严格重放、唯一用户/Audit、登录和凭据轮换通过。真实 Nginx HTTPS 完成 32 请求纵向 Smoke，覆盖五类身份、Product/Option/Kit、三类上传/读取、Inventory 幂等、混合订单/取消、Paid/Completed、权限、Refresh、禁用 Token 和凭据轮换。
+- 演练发现并修复四项工具问题：不存在的 Python Bookworm 标签改为 3.10.9 Bullseye；Compose one-off 环境参数改用 `--env`；m1 fixture 使用合法 OD+ULID 编号；Nginx 通过独立 edge network 发布回环 HTTPS，数据面仍在 internal network。每项均增加回归断言，发布工具契约从 50 增至 53 项。
+- R-004、R-006、R-011 已关闭；R-014 的 Gate A 持久化/恢复部分完成，Gate B 高可用存储仍待后续。DR-08、真实测试 Origin/DNS/证书、微信合法域名、iOS/Android 真机和弱网/前后台矩阵保持 Phase 9.4。
+- 最终精确删除 Compose containers/networks/volumes、任务端口、短期 Secret/CA/原始证据目录和任务 App 镜像；用户既有 `pinkdoohub-dev-redis` 未复用、未停止。没有访问开发 SQLite、默认 3306、持久/共享/生产数据库或微信后台；没有数据库迁移、版本升级或新增依赖。
+
+---
+
 ## Release Phase 9.3.3–9.3.4 — 隔离拓扑与可审计演练编排（2026-08-31）
 
 完成 Phase 9.3 写操作前的生产相似拓扑和自动化工具；本节是本地实现状态，不代表 DR 场景已经执行或 Gate A 已通过。

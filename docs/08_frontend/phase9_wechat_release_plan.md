@@ -1,7 +1,7 @@
 # Phase 9 微信小程序发布规划
 
 > **Document Version:** v0.2
-> **Status:** Phase 9.1–9.2 Complete — Phase 9.3 In Progress（9.3.1–9.3.4 Tooling Complete；Execution Pending）
+> **Status:** Phase 9.1–9.3 Complete — Next: Phase 9.4 微信内部测试版
 > **Last Updated:** 2026-08-31
 > **Release Scope:** 本版只发布微信小程序（`weapp`）
 
@@ -77,19 +77,19 @@ Phase 9.1 不实现以下能力：
 | OpenAPI | PR #2 Run 33355935212 完成 CLI UTF-8/CP1252 契约、真实 FastAPI 导出字节比较与类型漂移检查 | `verified-pr-ci-9.2.6` | RC 继续从当前 FastAPI 导出并检查干净 diff |
 | 后端 SQLite | PR #2 Run 33355935212 的 `backend-sqlite` 从干净 checkout 通过；本地完整基线为 `1507 passed, 9 skipped` | `verified-pr-ci-9.2.6` | MySQL-only 继续由独立 Job 执行 |
 | MySQL-only | PR #2 Run 33355935212 使用固定 MySQL 8.0.46、回环 13306、专用 Schema 真实执行 Aerich 0→1→2 与 9 项门槛，并保存 cleanup artifact | `verified-pr-ci-9.2.6` | 发布演练仍需 9.3 生产相似环境、备份恢复和失败处置 |
-| 迁移 | MySQL 权威迁移为 0→1→2，空库演练通过 | `partial` | 再演练空库；如存在待接管数据库，先只读审计其 Schema/Aerich 状态，再定义升级起点 |
+| 迁移 | Phase 9.3 DR-01～DR-03 在 MySQL 8.0.46 完成空库、m0 与 m1→当前，数据/快照/opening balance 保持 | `verified-9.3` | 如未来出现待接管数据库，先只读审计其 Schema/Aerich 状态，再定义升级起点 |
 | 现有生产升级 | 当前没有已发布、由项目确认接管的持久生产 MySQL 基线 | `not-applicable-now` | 不虚构“现有生产升级已通过”；首次上线按空库部署，未来每次发布建立 N-1→N 演练 |
-| 备份与恢复 | 有迁移流程要求，但没有本版生产相似环境的恢复证据 | `gap` | 生成备份、在新实例恢复、校验 Schema/行数/关键业务并记录耗时 |
+| 备份与恢复 | DR-04 数据库/图片备份恢复到独立 MySQL/volume，restore-app Ready 与轮换后登录通过；DR-05 部分失败恢复通过 | `verified-9.3` | Gate A RC 继续绑定实际测试环境备份责任；正式生产另行冻结持久备份策略 |
 | API Origin | `.env.production` 仍是 `.example.invalid` 占位 Origin | `blocker` | 冻结测试与正式 HTTPS Origin；构建时显式注入且扫描产物无 localhost/占位域名 |
 | 微信合法域名 | `project.config.json` 开启 `urlCheck` | `gap` | 在微信后台分别配置实际使用的 request/upload/download 域名并真机验证 |
 | HTTPS/DNS | 生产配置要求 HTTPS，但尚无已冻结域名和证书证据 | `blocker` | 冻结 DNS、证书续期和 TLS 检查；发布前从外网与真机验证 |
-| Redis | 应用启动会 `PING` Redis | `partial` | 使用隔离/生产相似 Redis；验证认证、TLS/网络边界、持久性策略和故障行为 |
-| 健康检查 | 9.3.1 已保留 `/api/v1/health` 并新增 dependency-free `/health/live`、DB/Redis `/health/ready`；本地失败/超时/脱敏契约通过 | `mitigating` | 在 DR-06 的隔离 MySQL/Redis 验证依赖故障摘流量、恢复后重新 Ready，保存演练证据 |
-| 图片 | 开发期本地目录和相对 `/uploads/products` 可用 | `gap` | Gate A 冻结持久卷与 HTTPS 备份方案；Gate B 冻结对象存储/CDN 或等价的高可用方案 |
+| Redis | DR-06 在认证 Redis 8.0.1 验证启动、故障 503、恢复 Ready 和优雅重启 | `verified-9.3` | Phase 9.4 继续使用冻结的测试环境；Gate B 再冻结正式高可用/TLS 策略 |
+| 健康检查 | 9.3.1 契约与 DR-06 真实 MySQL/Redis 故障/恢复均通过，Liveness 与 dependency-aware Readiness 分离 | `verified-9.3` | 9.4 在真实测试 Origin 复核；Gate B 补监控告警 |
+| 图片 | DR-09 三类上传/HTTPS 读取、DR-06 重启保持、DR-04 独立备份恢复均通过 | `verified-gate-a-9.3` | Gate B 冻结对象存储/CDN 或等价高可用方案 |
 | 日志 | Redis 连接日志已在 9.2.2 改为安全目标摘要并通过脱敏测试 | `mitigating` | CI 重跑脱敏契约；继续定义采集、保留、检索和告警 |
 | Secret | 9.2.2 production fail-fast 已覆盖 JWT/Redis/图片地址且错误隐藏输入；`.env` 被忽略 | `mitigating` | CI 重跑配置契约；建立 Secret 清单、注入、轮换、最小权限和 artifact 泄漏扫描 |
-| 管理员初始化 | 9.3.2 已实现一次性、严格重放、同事务审计且 MySQL 多进程互斥的独立命令；密码不进参数/日志 | `mitigating` | 在 DR-07 的隔离 MySQL 首次执行与重放，核验登录、唯一用户/Audit，并安全处置初始凭据 |
-| CI | Draft PR #2 的 Run 33355935212 已在干净 checkout 完成 8/8 Job；失败 Run 与可移植性修复均保留证据 | `closed-9.2` | 9.3 继续执行生产相似演练，不把 CI 通过当成 RC 通过 |
+| 管理员初始化 | DR-07 在隔离 MySQL 完成首次/重放、登录、唯一用户/Audit 与凭据轮换；任务 Secret 已清理 | `verified-9.3` | 真实 Gate A 环境按同一 Runbook 注入和轮换，不复用演练凭据 |
+| CI | Phase 9.3 最终候选 `136a8bd...` 的 Run 33408135841 在干净 checkout 完成 8/8 Job | `verified-9.3-candidate` | 9.4 RC 需重新绑定真实 Origin/产物，不能复用演练短期证书 |
 | 依赖审计 | `pip-audit==2.10.1` 的 1 条 HS256 不可达例外与 npm 10 包/5 公告精确策略均在 Run 33355935212 通过，策略于 2026-11-30 到期 | `accepted-until` | 到期前升级上游或重新审批，不得破坏性强制降级 |
 | E2E | 有大量前端纵向 Jest 和人工 Functional，但没有生产相似微信自动 E2E | `gap` | 冻结最低 Smoke/Functional；自动化能力单独 Spike，不用脆弱脚本伪装已覆盖 |
 | 公开身份/交易 | 只有用户名密码与 ADMIN+ 人工 Paid | `Gate B blocker` | 9.5/9.6 分别实施微信身份和交易闭环；Gate A 不要求但必须限制测试人群 |

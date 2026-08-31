@@ -1,6 +1,6 @@
 # Phase 9.3 隔离演练环境冻结记录
 
-> **Status:** Topology and Tooling Frozen — Candidate Commit / Execution Evidence Pending
+> **Status:** Executed and Cleaned — 详见 `reports/phase93_rehearsal_2026-08-31.md`
 > **Frozen At:** 2026-08-31（Asia/Shanghai）
 > **Owner / Executor / Reviewer / Decision Role:** Yijie Shen（执行和复核仍分步记录）
 
@@ -19,7 +19,7 @@
 | HTTPS image | `nginx:1.27.5-alpine`，执行前拉取并记录 digest |
 | 磁盘 | 约 842 GiB 可用，满足双 MySQL/备份/镜像需求 |
 | 已有用户资源 | `pinkdoohub-dev-redis` / `127.0.0.1:6379`，不接管、不复用、不停止 |
-| 候选 Git 基线 | `d714f1c70c200dc52a702660d1c6cdf4ef77768b`；9.3.1–9.3.4 尚未 commit，禁止作为正式演练 SHA |
+| 候选 Git SHA | `136a8bd8833f9b23433cfb3a2f9ceca7dab70db5`；GitHub Actions Run 33408135841 为 8/8 success |
 
 ## 2. 冻结拓扑与资源命名
 
@@ -92,10 +92,13 @@ MySQL、Redis、App 与 Nginx 共享的 `rehearsal` network 设置为 `internal:
 | 沟通/决策记录 | 当前 Codex 任务 + 最终脱敏报告 |
 | 清理 | 无论成功/失败均停止精确 Compose project，删除其 containers/network/volumes 和任务 Secret/cert 临时目录；复核四个端口关闭 |
 
-## 7. 写操作前未满足项
+## 7. 执行完成记录
 
-- [ ] 用户授权形成候选 Git commit；工作树 clean；记录最终 SHA；
-- [x] 编排、预检、备份恢复、受控失败、HTTPS Smoke、脱敏摘要和精确清理工具已实现，并通过 50 项发布工具契约；完整项目回归仍在候选提交前执行；
-- [ ] 四个镜像拉取/构建成功并记录 digest；
-- [ ] 自动预检确认端口、项目名、目标身份、Secret 权限和证据目录；
-- [ ] 对 DR-05 故障注入、恢复/覆盖和最终删除 volumes 的精确目标取得执行时授权。
+- [x] 用户授权候选提交与精确演练操作；最终候选 SHA 为 `136a8bd8833f9b23433cfb3a2f9ceca7dab70db5`，Run 33408135841 为 8/8 success；
+- [x] 编排、预检、备份恢复、受控失败、HTTPS Smoke、脱敏摘要和精确清理工具已实现，并通过 53 项发布工具契约；
+- [x] 四个基础镜像及应用镜像拉取/构建成功并记录不可变 image ID/digest；
+- [x] 自动预检确认端口、项目名、目标身份、Secret 权限和证据目录；
+- [x] DR-05 故障注入、独立恢复及最终删除 volumes 使用精确 project/database/workspace 确认执行；
+- [x] 最终 Compose resources、四个端口、任务工作区和应用镜像已删除并复核；用户既有开发 Redis 未被接管。
+
+最终脱敏结果见 [Phase 9.3 隔离发布演练报告](reports/phase93_rehearsal_2026-08-31.md)。
