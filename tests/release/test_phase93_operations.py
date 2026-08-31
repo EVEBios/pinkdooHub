@@ -1,5 +1,7 @@
 """Phase 9.3 运维命令的确认闸门与目标契约。"""
 
+from pathlib import Path
+
 import pytest
 
 from scripts.release.phase93_operations import (
@@ -8,6 +10,9 @@ from scripts.release.phase93_operations import (
     Phase93Operations,
 )
 from scripts.release.phase93_rehearsal import RehearsalError, config_for_run
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _operations() -> Phase93Operations:
@@ -89,3 +94,12 @@ def test_restore_verification_requires_exact_project_and_database() -> None:
             confirm_project=operations.config.project,
             confirm_database="pinkdoohub",
         )
+
+
+def test_compose_run_uses_supported_environment_option() -> None:
+    source = (ROOT / "scripts" / "release" / "phase93_operations.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"--environment"' not in source
+    assert source.count('"--env"') == 2
