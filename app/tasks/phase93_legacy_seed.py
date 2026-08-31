@@ -17,6 +17,8 @@ from tortoise.transactions import in_transaction
 from app.common.constants.order import (
     ORDER_AUDIT_ACTION_CREATE,
     ORDER_AUDIT_TARGET_TYPE,
+    ORDER_NO_PREFIX,
+    ORDER_NO_ULID_LENGTH,
 )
 from app.common.enums.product import DayType, ProductStatus, ProductType
 from app.common.enums.user import UserRole, UserStatus
@@ -51,6 +53,9 @@ EXPECTED_MIGRATIONS = {
         "1_20260813130455_add_order_tables.py",
     ],
 }
+PHASE93_LEGACY_ORDER_NO = (
+    f"{ORDER_NO_PREFIX}{'0' * (ORDER_NO_ULID_LENGTH - 1)}1"
+)
 
 
 class LegacySeedError(RuntimeError):
@@ -176,7 +181,7 @@ async def seed(migration_version: int) -> dict[str, int]:
             order_count = 0
             if migration_version == 1:
                 order = await order_repository.create_order(
-                    order_no="P93" + "0" * 24 + "1",
+                    order_no=PHASE93_LEGACY_ORDER_NO,
                     user_id=operator.id,
                     total_amount=Decimal("160.00"),
                     remark="Phase 9.3 migration 1 snapshot fixture",

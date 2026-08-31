@@ -1,8 +1,15 @@
 """Phase 9.3 旧迁移 fixture 的隔离目标契约。"""
 
+import re
+
 import pytest
 
-from app.tasks.phase93_legacy_seed import LegacySeedError, validate_target
+from app.common.constants.order import ORDER_NO_LENGTH, ORDER_NO_PATTERN
+from app.tasks.phase93_legacy_seed import (
+    PHASE93_LEGACY_ORDER_NO,
+    LegacySeedError,
+    validate_target,
+)
 
 
 def _environment(version: int) -> dict[str, str]:
@@ -55,3 +62,8 @@ def test_migration_one_seed_accepts_only_the_named_failure_scenario_alias() -> N
     environment["DB_NAME"] = "pinkdoohub_phase93_failure_typo"
     with pytest.raises(LegacySeedError):
         validate_target(environment, 1)
+
+
+def test_migration_one_fixture_order_number_matches_domain_contract() -> None:
+    assert len(PHASE93_LEGACY_ORDER_NO) == ORDER_NO_LENGTH
+    assert re.fullmatch(ORDER_NO_PATTERN, PHASE93_LEGACY_ORDER_NO)
