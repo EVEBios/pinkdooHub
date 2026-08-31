@@ -1,17 +1,29 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Design Frozen; 9.2.1–9.2.5 Eight Jobs Implemented Locally
+> **Status:** Phase 9.2 Complete — PR #2 Eight Jobs Passed
 > **Last Updated:** 2026-08-31
-> **Current Provider:** GitHub Actions（8 个 Job 已本地实现；真实 PR Run 待执行）
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [Run 33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
-9.2.1–9.2.5 已在 `.github/workflows/ci.yml` 本地实现 `backend-sqlite`、
-`backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`
-和 `repository-hygiene`，以及 `python-dependency-audit`、`npm-dependency-audit`。
-当前尚没有 GitHub PR Run，因此所有 workflow 状态都只是 `implemented-local`，不是远端 CI
-通过证据。`backend-mysql-release` 已额外完成同配置本地 Docker 真实演练，但仍需
-当前 SHA 的 PR Run 才能关闭 CI 风险。
+9.2.1–9.2.6 已完成：`.github/workflows/ci.yml` 的 `backend-sqlite`、
+`backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、
+`repository-hygiene`、`python-dependency-audit` 和 `npm-dependency-audit` 已在真实
+Pull Request 的干净 checkout 全部通过。该结论只关闭 Phase 9.2 的 CI 与可重复构建范围，
+不替代 9.3 的生产相似演练或 9.4 的微信真机 RC。
+
+## 0. Phase 9.2.6 远端证据
+
+- Draft PR：[#2 `feature/phase9-ci` → `develop`](https://github.com/EVEBios/pinkdooHub/pull/2)，保持 Draft/Open，未合并；实现证据 head SHA 为 `23a0f0898d1b4e2b49e16035bb1e382939865dd6`。
+- 成功 Run：[33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212)，事件为 `pull_request`，2026-08-31 04:06:12Z 启动，04:08:21Z 完成，8 个 Job 全部 `success`。
+- PR Run 的 `github.sha` 是 GitHub 生成的 merge-ref `eac0d5e85585520d3e41828ec7ede61106c7384e`；JUnit、MySQL、双依赖审计、repository hygiene 和微信 artifact 名称均绑定该 merge-ref 与 Run ID。PR head SHA 由 Run 元数据单独绑定，二者不得混写。
+- 微信 Job 远端证据为 97 文件，主包 425,527 bytes、`admin` 分包 178,092 bytes、总计 603,619 bytes，`release_eligible=false`；manifest SHA-256 为 `d915912d711cf6f6408a833c084e27fd399b2c46fd3a4a0c8b5f7eb8ac8ece92`，权威 `project.config.json` SHA-256 为 `0c9d34336b46bbdb82b511838bced106454e9028a61a312ea6e33d6beecb47db`。
+- Run 保存 7 组未过期证据 artifact：SQLite JUnit、MySQL 迁移/JUnit/cleanup、前端 Jest、微信产物/manifest/checksum/根配置、Python/npm 原始审计与策略结果，以及 repository hygiene 报告。
+
+真实 Runner 的两轮失败被保留为回归依据，而不是删除或重跑掩盖：
+
+1. Run `33354728020` 暴露 Python 策略测试硬编码 `.venv/bin/python`，以及微信检查器错误假设 `project.config.json` 一定存在于 `dist/weapp`；改为 `sys.executable`，并分别校验编译目录与项目根配置。Taro 若生成规范化副本，只允许 `miniprogramRoot` 从 `dist/weapp/` 变为 `./`，其他字段必须一致。
+2. Run `33355556336` 进一步暴露 `NODE_ENV=production` 使 `npm ci` 省略 Taro 构建期 devDependencies，且 `tee` 掩盖 `taro: not found`；微信 Job 现显式 `--include=dev` 并启用 `pipefail`。构建期依赖不会因此进入微信运行产物。
 
 ## 1. 全局规则
 
@@ -161,13 +173,13 @@ Python 漏洞扫描器尚未选型。新增工具前检查维护状态、许可�
 
 ## 6. 9.2 完成定义
 
-- [ ] CI 配置已提交并经过至少一个 PR 真实运行；
-- [ ] 所有 Job 从干净 checkout 通过；
-- [ ] MySQL Job 创建、迁移、测试、关闭和清理均有证据；
-- [ ] 微信 artifact 绑定 SHA、checksum 和配置摘要；
-- [ ] OpenAPI 漂移在修改与未修改场景均被验证；
-- [ ] npm registry audit 失败会显式失败，不被吞掉；
+- [x] CI 配置已提交并经过至少一个 PR 真实运行；
+- [x] 所有 Job 从干净 checkout 通过；
+- [x] MySQL Job 创建、迁移、测试、关闭和清理均有证据；
+- [x] 微信 artifact 绑定 SHA、checksum 和配置摘要；
+- [x] OpenAPI 漂移在修改与未修改场景均被验证；
+- [x] npm registry audit 失败会显式失败，不被吞掉；
 - [x] 当前 10 项 npm 风险完成微信 reachability 分类并有 2026-11-30 到期策略；
 - [x] Python 漏洞扫描已锁定，修复可升级项并只保留 1 条有期限不可达例外；
-- [ ] warning 白名单精确、最小、可到期；
-- [ ] 没有配置自动迁移持久数据库、自动提审或自动发布。
+- [x] warning 策略为零项白名单，任何未批准 warning 都阻断；
+- [x] 没有配置自动迁移持久数据库、自动提审或自动发布。

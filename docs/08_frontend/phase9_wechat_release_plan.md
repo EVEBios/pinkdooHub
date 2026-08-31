@@ -1,7 +1,7 @@
 # Phase 9 微信小程序发布规划
 
 > **Document Version:** v0.2
-> **Status:** Phase 9.1 Complete — Phase 9.2.1–9.2.5 Implemented Locally
+> **Status:** Phase 9.1–9.2 Complete — Phase 9.3 Next
 > **Last Updated:** 2026-08-31
 > **Release Scope:** 本版只发布微信小程序（`weapp`）
 
@@ -71,12 +71,12 @@ Phase 9.1 不实现以下能力：
 | 领域 | 当前证据 | 9.1 状态 | 进入 Gate A 前的动作 |
 |------|----------|----------|----------------------|
 | 微信业务 Functional | Phase 5–8 已在微信开发者工具覆盖 Guest、用户、ADMIN、SUPER_ADMIN 的当前能力 | `pass-with-limitations` | 在当前 RC、真实 HTTPS、MySQL/Redis 和真机上重跑；不能复用本地 SQLite 结论 |
-| 前端静态与单测 | 2026-08-29 本地重跑 TypeScript、ESLint、Stylelint、61 套件/387 项 Jest 均通过 | `verified-local` | 由 CI 从干净 checkout 重跑并绑定 Git SHA、版本和结果 |
-| 微信生产构建 | 2026-08-31 使用保留 CI Origin 构建并扫描：97 文件/603,619 bytes，主包 425,527 bytes、`admin` 分包 178,092 bytes、0 source map；manifest 明确不可发布 | `verified-local-9.2.3 / non-release` | 远端 CI 重跑；Gate A 另用批准 Origin 生成并绑定 RC |
+| 前端静态与单测 | PR #2 Run 33355935212 从干净 checkout 完成 TypeScript、ESLint、Stylelint、61 套件/387 项 Jest | `verified-pr-ci-9.2.6` | Gate A RC 继续在冻结依赖和当前 SHA 重跑 |
+| 微信生产构建 | PR #2 Run 33355935212 使用保留 CI Origin 构建并扫描：97 文件/603,619 bytes，主包 425,527 bytes、`admin` 分包 178,092 bytes；manifest 明确不可发布并绑定配置 SHA | `verified-pr-ci-9.2.6 / non-release` | Gate A 另用批准 Origin 生成并绑定 RC |
 | 非微信平台 | 历史上有四端构建记录 | `deferred` | 不作为本版门槛，不继续宣称支付宝、抖音或 H5 本版可发布 |
-| OpenAPI | 2026-08-31 CLI UTF-8/CP1252 回归、真实 FastAPI 导出字节比较与类型漂移检查通过 | `verified-local-9.2.2` | CI 从当前 FastAPI 导出、比较固定 JSON、检查生成类型和干净 diff |
-| 后端 SQLite | 2026-08-31 完整套件 `1507 passed, 9 skipped`，跳过项均为 MySQL-only | `verified-local-9.2.5` | CI 每次运行普通套件；MySQL-only 由独立 Job 执行 |
-| MySQL-only | 9.2.4 workflow 已实现固定 MySQL 8.0.46、回环 13306、专用 Schema、真实 Aerich 0→1→2、9 项门槛与 always cleanup；9.2.5 升级 asyncmy 后再次本地通过且完全销毁 | `verified-local-9.2.5` | 在真实 PR Run 重跑并保存版本/迁移/JUnit/cleanup artifact；发布演练仍需生产相似环境 |
+| OpenAPI | PR #2 Run 33355935212 完成 CLI UTF-8/CP1252 契约、真实 FastAPI 导出字节比较与类型漂移检查 | `verified-pr-ci-9.2.6` | RC 继续从当前 FastAPI 导出并检查干净 diff |
+| 后端 SQLite | PR #2 Run 33355935212 的 `backend-sqlite` 从干净 checkout 通过；本地完整基线为 `1507 passed, 9 skipped` | `verified-pr-ci-9.2.6` | MySQL-only 继续由独立 Job 执行 |
+| MySQL-only | PR #2 Run 33355935212 使用固定 MySQL 8.0.46、回环 13306、专用 Schema 真实执行 Aerich 0→1→2 与 9 项门槛，并保存 cleanup artifact | `verified-pr-ci-9.2.6` | 发布演练仍需 9.3 生产相似环境、备份恢复和失败处置 |
 | 迁移 | MySQL 权威迁移为 0→1→2，空库演练通过 | `partial` | 再演练空库；如存在待接管数据库，先只读审计其 Schema/Aerich 状态，再定义升级起点 |
 | 现有生产升级 | 当前没有已发布、由项目确认接管的持久生产 MySQL 基线 | `not-applicable-now` | 不虚构“现有生产升级已通过”；首次上线按空库部署，未来每次发布建立 N-1→N 演练 |
 | 备份与恢复 | 有迁移流程要求，但没有本版生产相似环境的恢复证据 | `gap` | 生成备份、在新实例恢复、校验 Schema/行数/关键业务并记录耗时 |
@@ -89,8 +89,8 @@ Phase 9.1 不实现以下能力：
 | 日志 | Redis 连接日志已在 9.2.2 改为安全目标摘要并通过脱敏测试 | `mitigating` | CI 重跑脱敏契约；继续定义采集、保留、检索和告警 |
 | Secret | 9.2.2 production fail-fast 已覆盖 JWT/Redis/图片地址且错误隐藏输入；`.env` 被忽略 | `mitigating` | CI 重跑配置契约；建立 Secret 清单、注入、轮换、最小权限和 artifact 泄漏扫描 |
 | 管理员初始化 | 现有业务支持角色，但没有受控生产初始化命令 | `blocker` | 实现一次性、幂等、可审计的 SUPER_ADMIN bootstrap；不得用手工 SQL 或提交密码 |
-| CI | `.github/workflows/ci.yml` 已本地实现含隔离 MySQL 与双依赖审计的 8 个 Job；MySQL 同配置本地真实演练通过，但尚无真实 PR Run | `mitigating` | 9.2.6 在真实 PR 的干净 checkout 全部通过 |
-| 依赖审计 | `pip-audit==2.10.1` 修复可升级项后剩 1 条 HS256 不可达例外；npm 官方生产树 10 包/5 公告已逐项分类，策略均于 2026-11-30 到期 | `accepted-until` | 真实 PR 执行双 Job；到期前升级上游或重新审批，不得破坏性强制降级 |
+| CI | Draft PR #2 的 Run 33355935212 已在干净 checkout 完成 8/8 Job；失败 Run 与可移植性修复均保留证据 | `closed-9.2` | 9.3 继续执行生产相似演练，不把 CI 通过当成 RC 通过 |
+| 依赖审计 | `pip-audit==2.10.1` 的 1 条 HS256 不可达例外与 npm 10 包/5 公告精确策略均在 Run 33355935212 通过，策略于 2026-11-30 到期 | `accepted-until` | 到期前升级上游或重新审批，不得破坏性强制降级 |
 | E2E | 有大量前端纵向 Jest 和人工 Functional，但没有生产相似微信自动 E2E | `gap` | 冻结最低 Smoke/Functional；自动化能力单独 Spike，不用脆弱脚本伪装已覆盖 |
 | 公开身份/交易 | 只有用户名密码与 ADMIN+ 人工 Paid | `Gate B blocker` | 9.5/9.6 分别实施微信身份和交易闭环；Gate A 不要求但必须限制测试人群 |
 | 安全与合规 | 已知缺少限流、refresh 轮换、隐私/审核材料 | `Gate B blocker` | 按 9.5 的公开发布门关闭，不由 UI 或已有测试替代 |

@@ -18,7 +18,7 @@
 
 结果只能使用 `PASS`、`FAIL`、`BLOCKED`、`NOT RUN`。开发者工具关闭域名校验、历史截图、未绑定 SHA 的口头结果不能填 `PASS`。
 
-当前自动化参考证据：2026-08-31 后端 `1507 passed, 9 skipped`（9 项为 MySQL-only），另在固定 MySQL 8.0.46、回环 13306 与专用 Schema 上真实执行 Aerich 0→1→2 并通过这 9 项；asyncmy 0.2.14 升级后已再次通过，cleanup 证明 Schema/容器/端口均已回收。CI Node policy 13 项、前端 61 suites/387 tests、TypeScript、ESLint、Stylelint、OpenAPI 真实导出字节比较与类型漂移通过。真实 pip/npm 审计分别为 1 包/1 公告和 10 包/5 公告，均通过 2026-11-30 到期的精确策略。本地 production 微信 artifact 为 97 文件、603,619 bytes、0 source map，使用保留 CI Origin 并明确不可发布；真实 PR Run 完成前这些仍只是本地证据。
+当前自动化参考证据：2026-08-31 本地后端 `1507 passed, 9 skipped`（9 项为 MySQL-only）；Draft PR #2 的 Run 33355935212 已从干净 checkout 完成 8/8 Job，包含固定 MySQL 8.0.46、专用 Schema、Aerich 0→1→2、9 项 MySQL 门槛及 cleanup artifact，另覆盖前端 61 suites/387 tests、TypeScript、ESLint、Stylelint、OpenAPI、双依赖审计和仓库卫生。远端 production 微信 artifact 为 97 文件、603,619 bytes、0 source map，绑定 manifest/配置 SHA，使用保留 CI Origin 并明确 `release_eligible=false`。这些属于证据等级 `A`，仍不能替代真实 HTTPS、微信合法域名和 iOS/Android 真机的 `M` 证据。
 
 ## 2. 身份、角色与权限
 

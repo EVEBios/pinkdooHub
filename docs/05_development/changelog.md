@@ -4,6 +4,19 @@
 
 ---
 
+## Frontend Phase 9.2.6 — 真实 PR CI 与可移植性收口（2026-08-31）
+
+Phase 9.2 已完成。Draft PR [#2](https://github.com/EVEBios/pinkdooHub/pull/2) 面向 `develop` 创建并保持未合并；实现 head `23a0f08` 的 GitHub Actions [Run 33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212) 在真实 Ubuntu 干净 checkout 上 8/8 Job 全部通过。
+
+- 首轮 Run `33354728020` 为 6/8：`backend-sqlite` 暴露 Python 策略测试硬编码本地 `.venv/bin/python`，`weapp-build` 暴露检查器依赖本机构建残留。测试改用 `sys.executable`；微信检查器改为分别校验编译产物与项目根 `project.config.json`，把权威配置 SHA-256 写入 manifest，并兼容 Taro 只规范化 `miniprogramRoot` 的合法副本。
+- 第二轮 Run `33355556336` 暴露更早的真实构建错误 `taro: not found`：Job 级 `NODE_ENV=production` 使 npm 省略构建期 devDependencies，而没有 `pipefail` 的 `tee` 管道吞掉了失败。微信 Job 现显式安装锁定 devDependencies 并启用 `pipefail`；以后编译失败会在构建步骤直接失败。
+- 修复后本地完整后端为 `1507 passed, 9 skipped`，CI 契约 13 项、Node policy 17 项通过；一次性干净微信构建通过 97 文件/603,660 bytes 检查，临时目录已删除且未改动开发者工具使用的现有 `miniapp/dist`。
+- 成功远端 Run 的 `backend-sqlite`、`backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、双依赖审计和 repository hygiene 全部 `success`。7 组 artifact 绑定 PR merge-ref `eac0d5e8...` 与 Run ID；PR head `23a0f08...` 由 Run 元数据单独绑定。
+- 远端微信证据为 97 文件、主包 425,527 bytes、`admin` 分包 178,092 bytes、总计 603,619 bytes、`release_eligible=false`；manifest SHA-256 为 `d915912d...ece92`，不会自动上传微信。
+- 本阶段没有业务 API、OpenAPI Schema、数据库 Schema/迁移或新增依赖；没有连接持久数据库、修改微信后台、上传、提审、发布、合并 PR、tag 或 release。下一阶段是 9.3 隔离发布演练，仍需单独规划与授权。
+
+---
+
 ## Frontend Phase 9.2.5 — Python/npm 依赖审计门槛（2026-08-31）
 
 完成两个依赖审计 Job、真实报告策略检查器和 Gate A 可达性分类的本地实现；workflow 仍未 commit/push 或产生真实 PR Run，因此 9.2 尚未完成，下一步为 9.2.6。
