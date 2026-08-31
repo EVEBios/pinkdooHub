@@ -1,0 +1,35 @@
+{
+  "audited_scope": "requirements.txt exact pins",
+  "expected_vulnerabilities": [
+    {
+      "actual_usage": "应用只使用固定 HS256 的 JWT encode/decode；不生成 ECDSA 私钥，不执行 ECDSA/ECDH 或 P-256 签名。",
+      "canonical_advisory": "GHSA-wj6h-64fc-37mp",
+      "decision": "time-boxed-exception",
+      "dependency_paths": [
+        "python-jose==3.5.0 -> ecdsa==0.19.2"
+      ],
+      "fix_options": "上游当前没有 patched release；持续跟踪 python-ecdsa/python-jose，若移除 ecdsa 可选后端或出现修复版本则立即删除例外。",
+      "fix_versions": [],
+      "identifiers": [
+        "CVE-2024-23342",
+        "GHSA-wj6h-64fc-37mp",
+        "PYSEC-2026-1325"
+      ],
+      "installed_version": "0.19.2",
+      "package": "ecdsa",
+      "rationale": "公告影响签名、密钥生成和 ECDH 的可观测时序；当前服务端只校验/签发对称 HS256 Token，受影响私钥操作不可达。",
+      "reachability": "not-reachable-current-hs256",
+      "regression_scope": "每次依赖或 JWT 算法变更重跑认证测试、production HS256 契约和 pip-audit；任何非 HS256 算法提案先做安全 Review。",
+      "severity": "high"
+    }
+  ],
+  "expires_on": "2026-11-30",
+  "owner": "Yijie Shen (Security Owner)",
+  "reviewed_on": "2026-08-31",
+  "risk_accepted_by": "Yijie Shen (Project Owner)",
+  "schema_version": 1,
+  "tool": {
+    "name": "pip-audit",
+    "version": "2.10.1"
+  }
+}

@@ -1,24 +1,31 @@
-# miniapp —— pinkdooHub 跨端客户端
+# miniapp —— pinkdooHub 微信小程序客户端
 
 > 正式前端工程（Taro 4.2.1 + React 18.3.1 + TypeScript strict + Webpack 5.91.0）。
-> 首发微信小程序，同步验证 H5；6–12 个月目标扩展支付宝与抖音小程序。
+> 当前 Release 只交付 Gate A 微信内部测试版，不承诺同步发布 H5、支付宝或抖音。
 > 架构与决策见 [`docs/08_frontend/`](../docs/08_frontend/)，配置结论继承自四端 Spike。
+
+干净安装工具链冻结为 Node 24.13.0 和 npm 11.6.2，分别以
+`.node-version`、`package.json#engines` 和 `packageManager` 为契约。`.npmrc`
+固定官方 registry、legacy peer 解析及严格 engine 检查；安装前必须先
+确认 `node --version` 和 `npm --version` 精确匹配。
 
 ## 常用命令
 
 ```bash
-npm install            # .npmrc 已固化 legacy-peer-deps
-npm ci                 # 按 package-lock.json 干净复现依赖（CI/验收优先）
+npm install            # 日常依赖维护；仍受 .npmrc 的严格策略约束
+npm ci                 # 按 package-lock.json 干净复现依赖（CI/验收必须）
 npm run typecheck      # tsc --noEmit（strict + skipLibCheck）
 npm test               # jest（runInBand）
 npm run lint           # eslint src
 npm run lint:styles    # stylelint CSS/SCSS
 npm run api:types      # 从 openapi/openapi.json 生成只读 TypeScript 类型
 npm run api:types:check # 检查生成类型是否最新
+npm run ci:test        # 运行 scripts/ci 下的 Node policy 测试
 npm run build:weapp    # 生产构建 → dist/weapp
-npm run build:alipay   # 生产构建 → dist/alipay
-npm run build:tt       # 生产构建 → dist/tt
-npm run build:h5       # 生产构建 → dist/h5
+npm run build:weapp:check # 扫描微信产物并生成 manifest/checksum
+npm run build:alipay   # 保留的未来平台构建能力；非本版发布门槛
+npm run build:tt       # 保留的未来平台构建能力；非本版发布门槛
+npm run build:h5       # 保留的未来平台构建能力；非本版发布门槛
 npm run dev:weapp      # 开发构建（watch，加载 .env.development）
 ```
 
@@ -33,6 +40,15 @@ npm run dev:weapp      # 开发构建（watch，加载 .env.development）
 
 生产环境只接受不含路径/凭据的 HTTPS Origin，并拒绝 localhost、127.0.0.1、
 0.0.0.0 与 `[::1]`。`.env.production` 当前是不可发布的占位域名，部署前必须替换。
+Gate A 微信上传关闭 source map；9.2.3 检查器已覆盖 `dist/weapp`，远端 CI 和
+真实 RC 仍须分别重跑并保留证据。
+
+`build:weapp:check` 要求显式提供 `WEAPP_EXPECTED_ORIGIN` 和
+`WEAPP_RELEASE_ELIGIBLE=0|1`。GitHub Actions 基础 Job 固定使用保留的
+`https://api.ci.pinkdoohub.test` 和 `WEAPP_RELEASE_ELIGIBLE=0`，只生成不可发布
+的 CI artifact；真实 Gate A 必须换成已批准 HTTPS Origin 并重新绑定 Git SHA、
+workflow run 与 checksum。检查器拒绝占位/本机 Origin、Secret marker、source map、
+H5-only marker、符号链接和超限原始包体，并生成逐文件 SHA-256 manifest。
 
 ## OpenAPI 与 HTTP Client
 

@@ -1,7 +1,7 @@
 # Phase 9 微信发布风险登记
 
 > **Status:** Active
-> **Last Updated:** 2026-08-29
+> **Last Updated:** 2026-08-31
 > **Current Gate:** Gate A — 内部微信测试版
 
 风险状态使用 `open`、`mitigating`、`accepted-until`、`closed`、`deferred`。只有满足“关闭证据”才能标记 `closed`；降低优先级或口头接受不等于关闭。
@@ -10,28 +10,28 @@
 
 | ID | 级别 | 风险/信号 | 概率×影响 | 缓解与关闭证据 | 责任角色 | 最晚关闭 | 状态 |
 |----|------|-----------|-----------|--------------|----------|----------|------|
-| R-001 | P0 | 无 CI；候选包与历史测试不绑定 | 高×高 | 9.2 全部门槛在干净 checkout 通过，artifact 绑定 SHA/checksum | Yijie Shen | 9.2 | open |
+| R-001 | P0 | 8 个 CI Job 已本地实现，但尚无真实 PR Run | 高×高 | 9.2 全部门槛在干净 checkout 通过，artifact 绑定 SHA/checksum | Yijie Shen | 9.2 | mitigating |
 | R-002 | P0 | 生产构建仍含 `.example.invalid` API Origin | 确定×高 | 冻结测试 HTTPS Origin；CI 语义扫描；真机 request 成功 | Yijie Shen | Gate A | open |
 | R-003 | P0 | request/upload/download 合法域名、DNS、证书未冻结 | 高×高 | 微信后台配置、TLS 外部验证、iOS/Android 真机证据 | Yijie Shen | Gate A | open |
 | R-004 | P0 | 备份恢复和迁移失败处置未实际演练 | 中×极高 | DR-01–DR-05 完成，独立恢复、耗时与数据断言通过 | Yijie Shen | Gate A | open |
-| R-005 | P0 | 当前 SHA 的 9 项 MySQL-only 未进入稳定 CI | 中×高 | 专用 MySQL 8+ CI 0→当前并发/锁/重试/HTTP 门槛通过 | Yijie Shen | 9.2 | open |
+| R-005 | P0 | 当前 workflow 已本地实现并真实演练 9 项 MySQL-only，但尚无当前 SHA 的远端 PR Run | 中×高 | 专用 MySQL 8+ CI 0→当前并发/锁/重试/HTTP 门槛通过并保存 cleanup 证据 | Yijie Shen | 9.2 | mitigating |
 | R-006 | P0 | 无受控、幂等、可审计的 SUPER_ADMIN bootstrap | 高×高 | 实现命令/流程、测试重复执行与凭据处置、演练通过 | Yijie Shen | Gate A | open |
-| R-007 | P0 | npm audit 报 10 项（4 moderate/1 high/5 critical），含 components/swiper 与构建链，微信可达性未知 | 中×高 | 逐项判断生产/构建/微信 reachability，升级或隔离；高风险无未审批残留 | Yijie Shen | 9.2/Gate A | open |
+| R-007 | P0 | npm audit 仍报 10 个包/5 个叶子公告；Taro 当前版没有无破坏修复 | 中×高 | 已逐项证明为未启用 esbuild serve、H5-only 或当前微信源码/产物不可达；精确策略、新告警 fail-closed，2026-11-30 到期 | Yijie Shen | 2026-11-30/Gate A | accepted-until |
 | R-008 | P0 | 对外公开仍无微信登录和账号关联规则 | 高×极高 | 9.5 实现 code2Session 服务端链路、绑定/冲突/禁用和真机矩阵 | Yijie Shen | Gate B | deferred |
 | R-009 | P0 | Order create 无服务端幂等，弱网重试可能重复订单/扣库存 | 中×极高 | 冻结键/身份/冲突语义并实现并发、unknown、重放测试 | Yijie Shen | Gate B | deferred |
 | R-010 | P0 | 若公开在线收款，缺微信支付可信闭环 | 高×极高 | 服务端下单、验签、金额核对、通知幂等、查单、退款、对账和告警 | Yijie Shen | Gate B（收款时） | deferred |
 | R-011 | P1 | `/health` 仅检查进程，不代表 DB/Redis 可服务 | 高×高 | 拆分 liveness/readiness；故障时摘流量且不泄漏明细 | Yijie Shen | Gate A | open |
-| R-012 | P1 | Redis 初始化日志可能输出完整 URL | 中×高 | 日志仅显示脱敏目标；测试/Review 证明凭据不输出 | Yijie Shen | Gate A | open |
-| R-013 | P1 | production 只拒绝默认 JWT，未强制 debug=false/MySQL/必要配置 | 中×高 | 生产启动 fail-fast 校验及测试，错误不含 Secret | Yijie Shen | Gate A | open |
+| R-012 | P1 | 本地已将 Redis 初始化日志改为安全目标摘要，尚缺 CI 证据 | 中×高 | CI 测试/Review 证明 username、password、query 不输出 | Yijie Shen | Gate A | mitigating |
+| R-013 | P1 | production fail-fast 与 Secret 隐藏已在本地实现，尚缺干净 CI 证据 | 中×高 | CI 覆盖 debug/MySQL/JWT/Redis/HTTPS 图片配置的接受与拒绝路径 | Yijie Shen | Gate A | mitigating |
 | R-014 | P1 | 图片依赖本地目录，重建/扩缩容可能丢失 | 高×高 | Gate A 持久卷+备份恢复；Gate B 对象存储/CDN 或等价 Review | Yijie Shen | Gate A/B | open |
 | R-015 | P1 | Secret Manager、轮换、最小权限和泄漏响应未选 | 中×高 | Secret inventory 映射到实际系统、主体、轮换和审计 | Yijie Shen | Gate A（测试）/B（正式） | open |
-| R-016 | P1 | Node/npm 未由仓库 pin，干净构建可能漂移 | 高×中 | 冻结支持版本、仓库版本文件/engines、CI 校验 | Yijie Shen | 9.2 | open |
-| R-017 | P1 | Python 无漏洞扫描工具/结果 | 中×高 | 锁定工具和策略，保存报告并处置可达高风险 | Yijie Shen | 9.2 | open |
-| R-018 | P1 | `uploadWithSourceMap=true`，上传/访问/保留策略未冻结 | 中×中 | 决定关闭或受控上传；artifact/权限/保留有证据 | Yijie Shen | Gate A | open |
+| R-016 | P1 | Python/Node/npm/pip 已在仓库与基础 workflow 固定，尚缺远端干净 CI 证据 | 高×中 | PR Run 验证版本文件、engines 和 CI 精确版本 | Yijie Shen | 9.2 | mitigating |
+| R-017 | P1 | pip-audit 修复可升级项后只剩 ecdsa 无修复的 P-256 时序公告 | 中×高 | 固定 pip-audit 2.10.1；production HS256 不可达策略 fail-closed，算法/版本变化重审，2026-11-30 到期 | Yijie Shen | 2026-11-30 | accepted-until |
+| R-018 | P1 | 本地 production artifact 已证明配置关闭且 0 source map，尚缺远端 CI/RC 证据 | 中×中 | CI 与真实 RC 证明配置关闭且 artifact 不含 source map/上传入口 | Yijie Shen | Gate A | mitigating |
 | R-019 | P1 | 管理分包是否随公开包发布未决定 | 中×中 | Gate B 前评估包体、审核面、运营入口和后端授权 | Yijie Shen | Gate B | deferred |
 | R-020 | P1 | refresh 不轮换、登录/注册不限流、监控告警缺失 | 高×高 | 9.5 安全方案、测试和告警演练完成 | Yijie Shen | Gate B | deferred |
-| R-021 | P2 | OpenAPI CLI 在 Windows 非 UTF-8 控制台显示帮助会编码失败 | 高×低 | 脚本强制/兼容 UTF-8，Windows 回归通过 | Yijie Shen | 9.2 | open |
-| R-022 | P2 | 前端 metadata/文档仍可能暗示同步 H5 | 中×中 | 本版发布元数据只声明微信；H5 保留为未来能力 | Yijie Shen | 9.2 | open |
+| R-021 | P2 | OpenAPI CLI 已强制 UTF-8 并有 CP1252 回归，尚缺 CI 运行证据 | 高×低 | Windows/CI 的 `--help` 与真实导出回归通过 | Yijie Shen | 9.2 | mitigating |
+| R-022 | P2 | metadata/README 已收敛，artifact checker 拒绝 H5-only marker；尚缺 CI/RC 复核 | 中×中 | CI/RC 证明发布元数据只声明微信；H5 仅为未来能力 | Yijie Shen | 9.2 | mitigating |
 | R-023 | P2 | Jest 重复提示 ReactDOMTestUtils.act deprecated | 高×低 | Taro 测试依赖升级窗口或有期限 warning 白名单 | Yijie Shen | Gate A 后可排期 | open |
 
 ## 2. 风险例外规则

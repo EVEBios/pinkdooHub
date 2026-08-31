@@ -4,6 +4,7 @@ Phase 3: 用于 refresh token 的保存、验证和撤销。
 """
 
 import logging
+from urllib.parse import urlsplit
 
 import redis.asyncio as aioredis
 
@@ -12,6 +13,25 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _redis: aioredis.Redis | None = None
+
+
+def _log_redis_connected(redis_url: str) -> None:
+    """仅记录可观测连接目标，不输出 Redis 凭据或查询参数。"""
+
+    parsed = urlsplit(redis_url)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    database = parsed.path.removeprefix("/")
+    safe_database = database if database.isdigit() else "unknown"
+    logger.info(
+        "Redis connected: scheme=%s host=%s port=%s db=%s",
+        parsed.scheme or "unknown",
+        parsed.hostname or "unknown",
+        port,
+        safe_database or "0",
+    )
 
 
 def get_redis() -> aioredis.Redis:
@@ -26,7 +46,7 @@ async def init_redis() -> None:
     global _redis
     _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     await _redis.ping()
-    logger.info("Redis connected: url=%s", settings.redis_url)
+    _log_redis_connected(settings.redis_url)
 
 
 async def close_redis() -> None:

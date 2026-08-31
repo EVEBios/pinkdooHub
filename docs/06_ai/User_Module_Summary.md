@@ -159,7 +159,7 @@ Authorization: Bearer <token>
 | pydantic-settings | 2.14 | 配置管理 |
 | passlib[bcrypt] | 1.7.4 | 密码哈希 |
 | bcrypt | 3.2.2 | 加密后端 |
-| python-jose[cryptography] | 3.3.0 | JWT 签发与验证 |
+| python-jose + cryptography | 3.5.0 + 50.0.1 | JWT 签发与验证 |
 | tzdata | 2026.3 | 时区数据（Windows） |
 
 ---

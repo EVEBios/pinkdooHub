@@ -1,7 +1,7 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** Baseline Frozen; Concrete Infrastructure Pending
-> **Last Updated:** 2026-08-29
+> **Status:** Baseline Frozen; 9.2.2 Hardening and 9.2.4 MySQL Gate Implemented Locally
+> **Last Updated:** 2026-08-31
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
 ## 1. 环境矩阵
@@ -16,6 +16,8 @@
 
 发布演练和 Gate A 都必须走与生产相同的安全配置语义，才能发现 debug、SQLite、弱 Secret 等配置差异；“staging/experience”属于部署层级和数据分类，不应靠放宽 `APP_ENV` 表示。若需要在监控或运维界面区分层级，应使用独立、非安全开关的部署元数据，不能把测试数据环境误当作正式商业生产。
 
+9.2.4 的 CI MySQL 密码是仓库内明确标识的 disposable test credential，只用于每次新建的 service container，不是 Gate A/生产 Secret。安全脚本要求 Aerich 的 `DB_*` 与 pytest 的 `INVENTORY_MYSQL_TEST_*` 完全相同，并固定 `127.0.0.1:13306` 和精确专用 Schema；任何远端地址、3306、目标漂移或未显式启用都会在连接前失败。真实 Gate A 数据库凭据仍必须由受保护 Secret 系统注入，不能沿用该测试值。
+
 ## 2. 当前已有配置键
 
 ### 2.1 后端
@@ -25,19 +27,19 @@
 | `APP_NAME` | 否 | 已有 | 固定展示值 | Yijie Shen |
 | `APP_VERSION` | 否 | 已有，默认 0.6.0 | 与 Release Record 对齐 | Yijie Shen |
 | `APP_ENV` | 否 | development/testing/production 校验 | 明确环境，不靠默认值 | Yijie Shen |
-| `APP_DEBUG` | 否 | 控制日志级别 | Gate A/生产必须显式 `false`；当前代码未强制 | Yijie Shen |
-| `DB_ENGINE` | 否 | sqlite/mysql | Gate A/生产必须显式 mysql；当前代码未强制 | Yijie Shen |
+| `APP_DEBUG` | 否 | production 启动强制 `false` | Gate A/生产必须显式 `false` | Yijie Shen |
+| `DB_ENGINE` | 否 | sqlite/mysql；production 强制 mysql | Gate A/生产必须显式 mysql | Yijie Shen |
 | `DB_HOST`/`DB_PORT`/`DB_NAME` | 部分敏感 | 已有 | 从部署配置注入，不进入日志/前端 | Yijie Shen |
 | `DB_USER`/`DB_PASSWORD` | 是 | 已有 | 最小权限账号；专用 Secret 注入 | Yijie Shen |
-| `REDIS_URL` | 是 | 已有 | 专用实例、认证/网络边界；日志不得输出完整 URL | Yijie Shen |
+| `REDIS_URL` | 是 | production 强制 redis/rediss、有效且非本机 host；连接日志仅输出安全目标摘要 | 专用实例、认证/网络边界；CI 复核日志脱敏 | Yijie Shen |
 | `PRODUCT_IMAGE_UPLOAD_DIR` | 否 | 已有 | Gate A 指向持久卷或隔离对象存储适配 | Yijie Shen |
-| `PRODUCT_IMAGE_BASE_URL` | 否 | 已有 | 真实 HTTPS 可访问地址 | Yijie Shen |
-| `JWT_SECRET_KEY` | 是 | 生产拒绝默认值 | 每环境独立随机值；保管和轮换记录 | Yijie Shen |
-| `JWT_ALGORITHM` | 否 | 默认 HS256 | 变更需安全 Review | Yijie Shen |
+| `PRODUCT_IMAGE_BASE_URL` | 否 | production 强制无凭据的绝对 HTTPS URL | 真实 HTTPS 可访问地址 | Yijie Shen |
+| `JWT_SECRET_KEY` | 是 | production 拒绝弱值并要求 trim 后至少 32 字符 | 每环境独立随机值；保管和轮换记录 | Yijie Shen |
+| `JWT_ALGORITHM` | 否 | production 固定 HS256 | 变更需安全 Review | Yijie Shen |
 | `JWT_ACCESS_TOKEN_EXPIRE` | 否 | 已有 | 与测试/运营策略一致 | Yijie Shen |
 | `JWT_REFRESH_TOKEN_EXPIRE` | 否 | 已有 | Gate A 可沿用；Gate B 与轮换设计一起冻结 | Yijie Shen |
 
-当前生产配置校验只阻止弱 JWT Secret，没有强制 `APP_DEBUG=false`、`DB_ENGINE=mysql`、绝对 HTTPS 图片地址或非本机 Redis。9.2 应增加 fail-fast 配置契约测试；不要依赖 Runbook 人工记忆。
+9.2.2 已在本地实现上述 production fail-fast 规则，并让 Pydantic 配置错误隐藏原始输入；契约测试已覆盖接受路径、每类拒绝路径和 Secret 不回显。风险关闭仍需要 CI 在干净环境提供同一组证据，不能只依赖本地通过。
 
 ### 2.2 微信前端
 
@@ -48,7 +50,7 @@
 | `project.config.json` AppID | 否 | 已配置 | 确认属于目标小程序账号；不在日志重复传播 | Yijie Shen |
 | `urlCheck` | 否 | 当前为 true | 保持 true；真机证据禁止关闭域名校验 | Yijie Shen |
 | `miniprogramRoot` | 否 | 指向 `dist/weapp` | 与 CI artifact 一致 | Yijie Shen |
-| `uploadWithSourceMap` | 否 | 当前为 true | 9.2 冻结是否上传、访问权限和保留期 | Yijie Shen |
+| `uploadWithSourceMap` | 否 | 当前为 false；9.2.3 本地 production artifact 扫描为 0 source map | Gate A 禁止上传 source map；远端 CI/真实 RC 重跑 | Yijie Shen |
 
 所有 `TARO_APP_*` 都会进入客户端包，只能承载公开配置。任何 AppSecret、JWT、数据库、Redis、支付密钥或私钥都禁止使用该前缀。
 
@@ -101,7 +103,7 @@ Gate A 最低规则：
 - 日志采集凭据不进入小程序；
 - 保存期限、访问角色、删除方式和事故导出范围在 Gate A 前冻结。
 
-当前 `app/core/redis.py` 连接成功日志输出完整 `settings.redis_url`，在 URL 含密码时存在泄漏风险，必须在 Gate A 前改为安全目标摘要或完全省略。
+9.2.2 已将 `app/core/redis.py` 连接成功日志改为 `scheme/host/port/db` 安全目标摘要，不再输出 username、password 或 query，并有专门脱敏测试；CI 证据完成前 R-012 保持 `mitigating`。
 
 ## 6. 配置冻结记录模板
 

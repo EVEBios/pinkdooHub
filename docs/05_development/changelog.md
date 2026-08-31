@@ -4,6 +4,42 @@
 
 ---
 
+## Frontend Phase 9.2.5 — Python/npm 依赖审计门槛（2026-08-31）
+
+完成两个依赖审计 Job、真实报告策略检查器和 Gate A 可达性分类的本地实现；workflow 仍未 commit/push 或产生真实 PR Run，因此 9.2 尚未完成，下一步为 9.2.6。
+
+- GitHub Actions 从 6 个 Job 扩展为 8 个，新增 `python-dependency-audit` 与 `npm-dependency-audit`。两者都保存绑定 Git SHA/run ID 的原始 JSON 与策略结果，不自动修改依赖、不发布、不迁移数据库。
+- Python 扫描器选用并锁定 `pip-audit==2.10.1`，在隔离 CI venv 安装。首次对 55 个精确 pin 扫描得到 4 个包/9 条记录；可修复项分别升级 asyncmy 0.2.11→0.2.14、cryptography 49.0.0→50.0.1、python-jose 3.3.0→3.5.0，复扫降为 ecdsa 0.19.2 的 1 条 `GHSA-wj6h-64fc-37mp`。
+- ecdsa 公告影响 P-256 私钥签名、密钥生成和 ECDH 的时序；项目 production 固定 HS256，只做对称 JWT encode/decode，当前路径不可达。上游没有 patched release，因此由安全负责人建议、项目负责人接受到 2026-11-30；任何 JWT 算法、包版本、公告集合或日期变化都会使门槛失败。
+- npm 11.6.2 显式使用官方 registry 并只审计 `--omit=dev` production tree，当前精确结果仍为 10 个受影响包、5 个叶子公告和 4 moderate/1 high/5 critical。完整含 dev 树此前观察到的 45 项不作为 Gate A runtime 集合，也没有被隐藏或误报为已修复。
+- npm 策略逐项固定 Taro 4.2.1、swiper 11.1.15、lodash-es 4.17.21、esbuild 0.21.5 的依赖路径与 actual usage：esbuild 公告只影响未启用的 development server；lodash/H5 Taro 链不进入 `TARO_ENV=weapp` artifact；业务源码不使用 Swiper，微信产物使用原生 swiper 映射而非 npm swiper 运行实现。全部例外到期日为 2026-11-30，未来 H5 Gate 或新增 Swiper 使用自动重新打开。
+- 两个策略检查器拒绝审计端点/JSON 失败、新增或消失漏洞、版本/严重性/direct/range/公告集合变化、缺少 Review 字段和到期策略；npm 不执行会破坏性降级到 Taro 3.x 的 `audit fix --force`，也不做未经上游验证的 override。
+- 新增 Python 与 Node 策略单元测试，覆盖当前精确报告、新公告、版本变化、过期和 registry 错误；workflow 契约同步固定 8 Job、官方 registry、原始 artifact 与禁止强制修复。
+- 本地真实复验通过：Python 原始审计 1 包/1 公告及 npm 原始审计 10 包/5 公告均通过策略检查；后端完整套件 `1507 passed, 9 skipped`，前端 61 套件/387 项、CI Node policy 13 项、TypeScript、ESLint、Stylelint、OpenAPI 字节/类型漂移和 97 文件微信 production artifact 检查均通过。
+- 因 asyncmy 属于生产 MySQL 边界，升级后重新启动一次性 MySQL 8.0.46，真实应用 Aerich 0→1→2 并通过 9 项并发/锁/1205/EXPLAIN/HTTP 门槛（2.30 秒）；cleanup 确认 Schema 删除、容器停止且端口 13306 关闭，容器对象和临时证据目录已删除。
+- 本阶段不修改业务 API、OpenAPI 或数据库 Schema/迁移；新增/升级的是三项生产依赖和仅在隔离 CI venv 使用的审计工具，没有持久环境变更、微信后台操作、上传、提审或发布。
+
+---
+
+## Frontend Phase 9.2.1–9.2.4 — 工具链、运行时与隔离 MySQL CI（2026-08-31）
+
+完成 9.2.1–9.2.4 本地实现；依赖审计、真实 PR Run 和完整 Gate 证据仍属于后续 9.2.5–9.2.6，本条不把 9.2 或 Gate A 标记为完成。
+
+- 仓库固定 Python 3.10.9、Node 24.13.0 和 npm 11.6.2，npm 使用官方 registry、严格 engine 与既有 legacy peer 策略；干净 Python/Node 安装已在本机验证。
+- production 启动现在强制 `APP_DEBUG=false`、MySQL、HS256、至少 32 字符且非已知弱值的 JWT Secret、非本机 redis/rediss，以及无凭据的绝对 HTTPS 图片地址；Pydantic 错误隐藏原始输入。
+- Redis 连接成功日志只保留 scheme/host/port/db，不再输出 username、password 或 query；OpenAPI CLI 主动把 stdout/stderr 切为 UTF-8，覆盖 CP1252 父环境的中文 `--help` 与真实导出。
+- 微信 `project.config.json` 关闭 source map 上传，当前发布 description 与 README 只声明 Gate A 微信内部测试版；支付宝、抖音和 H5 构建命令保留为未来能力，不是本版发布门槛。
+- 新增 GitHub Actions 初版，当前包含 `backend-sqlite`、`backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build` 和 `repository-hygiene` 6 个 Job；PR、main push 和手工 dispatch 触发，权限仅 `contents: read`，不会迁移持久数据库或上传/提审微信。
+- `backend-mysql-release` 使用固定 MySQL 8.0.46 service、`127.0.0.1:13306` 与精确专用 Schema；安全脚本强制 Aerich 和 pytest 的 DB/Inventory 双配置完全一致，拒绝 3306、远端 host、非 testing、非专用 Schema 和目标漂移。Job 真实执行 Aerich 0→1→2、9 项 MySQL release gate，并保存 preflight、迁移日志、版本链、JUnit 和 cleanup JSON；`always()` 清理删除 Schema、停止准确 service container 并确认容器未运行和端口已关闭。
+- 微信检查器验证期望 Origin、不可发布标记、source map、Secret/H5 marker、主包/分包/总包原始大小和符号链接，并生成含 SHA/run/逐文件 SHA-256 的 manifest 与聚合 checksum；repository hygiene 拒绝数据库、上传、备份、虚拟环境、非法 env、缓存/构建产物和高置信 Secret，报告不回显命中内容。
+- 本地受控微信 production build 使用保留 CI Origin，通过 97 文件扫描：主包 425,527 bytes、`admin` 分包 178,092 bytes、总计 603,619 bytes、0 source map，明确为 `release_eligible=false`；它不是 Gate A RC，也没有上传。
+- 新增工具链、production 配置、Redis 日志、OpenAPI CLI、微信发布配置、workflow、MySQL gate 和 repository hygiene 契约测试；完整后端 `1502 passed, 9 skipped`，CI Node policy 9 项、前端 61 套件/387 项、TypeScript、ESLint、Stylelint、OpenAPI 真实导出字节比较与类型漂移通过。OpenAPI 固定文件中的应用版本从陈旧的 0.4.0 同步为真实 0.6.0，路径和 Schema 未变化。
+- 9.2.4 本地真实演练下载固定 `mysql:8.0.46` 镜像，启动唯一命名且只绑定 `127.0.0.1:13306` 的容器，成功应用三条迁移并通过 9 项门槛（2.32 秒）。清理报告确认专用 Schema 已删除、容器已停止、容器状态为非运行且端口关闭；随后删除容器对象和临时证据目录，未访问 3306 或任何持久/共享数据库。Docker 镜像作为共享缓存保留。
+- `npm ci` 按 lockfile 成功，但 npm 对完整含 dev 依赖树报告 45 项（16 moderate、23 high、6 critical）；本阶段未执行破坏性自动修复或风险降级，逐项审计与 reachability 仍由 9.2.5 处理。
+- 没有修改业务 API、数据库 Schema/迁移或依赖；除上述已销毁的专用 MySQL 容器外，没有连接微信后台、持久数据库或远端环境，也未上传、提审、commit、push、tag、release 或发布。
+
+---
+
 ## Frontend Phase 9.1 — 微信发布基线审计执行（2026-08-29）
 
 按微信单平台 Gate A 目标完成仓库级发布审计，并把规划转换为可直接用于 9.2 CI、9.3 演练和 9.4 真机验收的八类控制文档。Yijie Shen 已于 2026-08-29 完成项目负责人 Review，Phase 9.1 状态为 **Complete**，当前进入 9.2；这不代表 Gate A 已通过或已授权发布。

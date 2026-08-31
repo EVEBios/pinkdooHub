@@ -31,8 +31,12 @@ Phase 4.3.1–4.3.12 已完成 Inventory 契约、领域/Schema、Model/数据�
 | Schema / Config | Pydantic 2.13.4、pydantic-settings 2.14.2 |
 | Cache / Token State | Redis 8.0.1 |
 | Testing | pytest 9.1.1、pytest-asyncio、HTTPX、fakeredis |
+| Build Toolchain | Python 3.10.9、Node 24.13.0、npm 11.6.2 |
 
 精确依赖版本以 [requirements.txt](requirements.txt) 为准，测试配置以 [pyproject.toml](pyproject.toml) 为准。
+运行时版本分别由 [`.python-version`](.python-version)、
+[`miniapp/.node-version`](miniapp/.node-version) 和 `miniapp/package.json#packageManager`
+冻结，干净构建不得使用未经验证的其他版本。
 
 ## 快速开始
 
@@ -54,7 +58,8 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-项目当前以 Python 3.10 兼容性为基线。不要提交 `.venv`、缓存目录或本地运行文件。
+项目当前将 Python 3.10.9 冻结为干净构建基线。创建环境后应先执行
+`python --version` 确认精确版本；不要提交 `.venv`、缓存目录或本地运行文件。
 
 ### 2. 创建本地配置
 
@@ -236,5 +241,5 @@ docs(readme): document local development workflow
 - 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
 - refresh token 尚未轮换；登录/注册尚未限流。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
-- Phase 9.1 仓库级基线审计、八类发布交付物、责任人映射和 Yijie Shen 项目 Review 已于 2026-08-29 完成，当前进入 9.2 CI 与可重复构建；本版只发布微信小程序并先交付受控内部测试版。当前本地代码基线通过，但 CI、真实 HTTPS/合法域名、当前 SHA 的 MySQL 门槛自动化、生产相似迁移/备份恢复、readiness、管理员初始化和真机 RC 仍是 Gate A 缺口。对外公开版还需微信登录、Order create 服务端幂等、认证安全、生产监控/Secret/隐私，以及在线收款时的微信支付闭环。
+- Phase 9.1 仓库级基线审计已完成；9.2.1–9.2.5 已于 2026-08-31 完成本地实现，当前 GitHub Actions 已扩展为 8 个 Job：既有微信 artifact、repository hygiene、SQLite 与隔离 MySQL 8.0.46 发布门槛外，增加固定 `pip-audit==2.10.1` 的 Python 审计和官方 registry npm 生产树审计。Python 可修复风险已通过 asyncmy 0.2.14、cryptography 50.0.1、python-jose 3.5.0 关闭，只剩 ecdsa 无修复且当前 HS256 不可达的有期限例外；npm 10 个包/5 个叶子公告已按构建、H5 和微信可达性逐项记录，策略均于 2026-11-30 到期，任何新/少告警、版本或分类变化都失败。在真实 PR 的干净 checkout 取得 8 Job 结果前，不能把本地证据记为 CI 已通过；下一步是 9.2.6。真实 HTTPS/合法域名、生产相似备份恢复、readiness、管理员初始化和真机 RC 仍是 Gate A 缺口；公开版还需微信登录、Order create 服务端幂等、认证安全、生产监控/Secret/隐私，以及在线收款时的微信支付闭环。
 - Phase 4.3.1–4.3.12 已完成并通过最终 Review；持久环境迁移、发布与下一业务 Phase 仍需单独规划和授权。

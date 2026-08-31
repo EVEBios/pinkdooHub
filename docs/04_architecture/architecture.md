@@ -12,12 +12,13 @@
 | ORM | Tortoise ORM | 1.1.7 |
 | 数据校验 | Pydantic | 2.13 |
 | 数据库 | MySQL（生产）/ SQLite（开发） | - |
-| MySQL 异步驱动 | asyncmy | 0.2.11 |
+| MySQL 异步驱动 | asyncmy | 0.2.14 |
 | 缓存 | Redis | - |
 | 迁移工具 | Aerich | 0.9.3 |
 | ASGI 服务器 | Uvicorn | 0.51 |
 | 配置管理 | pydantic-settings | 2.14 |
 | 密码加密 | passlib[bcrypt] | 1.7.4 |
+| JWT | python-jose + cryptography | 3.5.0 + 50.0.1 |
 | 时区数据 | tzdata | —（Windows 必需） |
 | multipart 解析 | python-multipart | 0.0.32 |
 
@@ -866,6 +867,7 @@ class Settings(BaseSettings):
     model_config = {
         "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",
+        "hide_input_in_errors": True,
     }
 
     @model_validator(mode="after")
@@ -874,12 +876,24 @@ class Settings(BaseSettings):
             raise ValueError(f"APP_ENV must be development/testing/production")
         if self.db_engine not in ("sqlite", "mysql"):
             raise ValueError(f"DB_ENGINE must be sqlite or mysql")
-        if self.app_env == "production" and self.jwt_secret_key == "dev-secret-change-in-production":
-            raise ValueError("JWT_SECRET_KEY must be set in production")
+        if self.app_env == "production":
+            # 实际实现还通过 URL/地址解析 helper 完成以下全部检查。
+            if self.app_debug or self.db_engine != "mysql":
+                raise ValueError("production runtime configuration is unsafe")
+            if self.jwt_algorithm != "HS256" or len(self.jwt_secret_key.strip()) < 32:
+                raise ValueError("production JWT configuration is unsafe")
+            # REDIS_URL: redis/rediss + 有效非本机 host
+            # PRODUCT_IMAGE_BASE_URL: 无凭据的绝对 HTTPS URL
         return self
 
 settings = Settings()
 ```
+
+生产环境会在应用导入/启动阶段 fail-fast：`APP_DEBUG=false`、MySQL、HS256、
+trim 后至少 32 字符且非已知弱值的 JWT Secret、`redis`/`rediss` 非本机
+Redis host，以及无凭据的绝对 HTTPS 图片地址缺一不可。校验错误隐藏原始输入，
+避免把 Secret 或带凭据 URL 回显到启动日志；development/testing 继续保留本地
+SQLite、localhost Redis 和相对图片路径的开发默认值。
 
 ### 5.3 环境切换
 

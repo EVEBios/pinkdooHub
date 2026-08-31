@@ -2,7 +2,7 @@
 
 > **Document Version:** v0.9
 > **Status:** Draft
-> **Last Updated:** 2026-08-29
+> **Last Updated:** 2026-08-31
 > **Applies To:** 正式 `miniapp/` 与其 FastAPI 集成边界
 
 本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。Spike 已固定：Jest 29.7.0 + `jest-environment-jsdom` 29.7.0 + `@tarojs/test-utils-react` 0.1.1（详见 [ADR-001](adr/ADR-001-use-taro-react-typescript.md) 与架构文档 §4.1）。
@@ -14,9 +14,13 @@
 - `@tarojs/router` 与 `@tarojs/components`（Stencil bundle）在 Jest 中形成循环依赖，组件测试需工厂 mock `@tarojs/router`；`html()` 序列化 shadow DOM 会爆栈，断言使用 `queries.querySelector*`。
 - React 18.3 下 test-utils 内部使用已废弃的 `ReactDOMTestUtils.act`，产生告警但不阻断；升级测试工具时消除。
 - `openapi-typescript@7.13.0` 通过 `--immutable --alphabetize` 生成类型，`npm run api:types:check` 直接检查生成物漂移。
-- 2026-08-29 Phase 9.1 重跑 `npm ls --depth=0` 无错误；官方 registry 审计有 10 项（4 moderate、1 high、5 critical），链路包含直接 `@tarojs/components`/swiper、构建工具和 H5 依赖，尚不能证明全部 H5-only。9.2 必须分析微信运行时/构建时可达性；不执行会破坏性降级 Taro 3.x 的强制修复。
+- 2026-08-31 Phase 9.2.5 已完成依赖可达性分析：官方 npm production tree 仍为 10 包/5 叶子公告（4 moderate、1 high、5 critical），分别归入未启用的 esbuild development server、H5-only 链和当前微信源码/产物未使用的 npm swiper 实现；精确策略于 2026-11-30 到期，不执行会破坏性降级 Taro 3.x 的强制修复。Python 固定 `pip-audit==2.10.1`，升级 asyncmy/cryptography/python-jose 后只剩 ecdsa 的无修复 P-256 时序公告；production 固定 HS256，因此同样按 2026-11-30 不可达例外处理。
 - 当前完整 Jest 最新基线为 61 套件 / 387 项。Auth/Product/Cart/Order/Inventory Endpoint 与 Feature 使用 fake transport、upload transport、image picker、storage、clock 等平台边界；账号注册覆盖请求投影、User Runtime Guard、字段校验、白名单 redirect、登录页入口、成功不自动登录、唯一性错误、未知结果和同步防双击。Order 创建纵向集成保留真实 CartStore → SubmissionStore → OrderApi → ApiClient，用户查询/取消及 ADMIN 列表→Paid→Completed 纵向集成都保留真实 OrderApi → ApiClient，只替换网络、Storage 与 Auth 平台边界。
 - 2026-08-29 Phase 9.1 当前源码本地基线：后端 `1465 passed, 9 skipped`（均为 MySQL-only），前端 TypeScript/ESLint/Stylelint、61 套件/387 项、OpenAPI 45 paths/109 schemas 字节一致及类型漂移通过；微信构建 97 文件/603,604 bytes、无 source map，但因产物含 `.example.invalid` API Origin 不能作为 Gate A RC。完整证据见 [发布基线审计](../09_release/baseline_audit_2026-08-29.md)。
+- 2026-08-31 Phase 9.2.1–9.2.2 最新本地基线：新增工具链、production 配置、Redis 日志、OpenAPI CLI 和微信发布配置契约后，后端 `1489 passed, 9 skipped`；前端仍为 61 套件/387 项，TypeScript、ESLint、Stylelint、真实 OpenAPI 字节比较和生成类型漂移通过。CI 与最终微信 artifact 证据尚未建立。
+- 2026-08-31 Phase 9.2.3 最新本地基线：新增 5 个基础 GitHub Actions Job、repository hygiene 与微信 artifact checker 后，后端 `1497 passed, 9 skipped`，CI Node policy 9 项通过；前端仍为 61 套件/387 项，静态检查、真实 OpenAPI 字节比较和类型漂移通过。保留 CI Origin 的 production 微信产物为 97 文件、603,619 bytes、0 source map，manifest 明确 `release_eligible=false`；尚无 commit/PR/远端 CI Run，不能作为 Gate A RC。
+- 2026-08-31 Phase 9.2.4 最新本地基线：新增 `backend-mysql-release` 与安全/清理脚本后，固定 MySQL 8.0.46 Docker 容器在 `127.0.0.1:13306` 和专用 Schema 上真实执行 Aerich 0→1→2，9 项 MySQL 并发/1205/EXPLAIN/HTTP 门槛全部通过；清理确认 Schema 删除、容器停止/删除、端口关闭和临时目录删除。完整普通套件为 `1502 passed, 9 skipped`，新增 MySQL CI 契约/安全测试 9 项通过；尚无 commit/PR/远端 CI Run，因此状态仍是 `verified-local`。
+- 2026-08-31 Phase 9.2.5 最新本地基线：8 Job workflow、Python/npm 精确策略和依赖升级完成；真实 pip-audit 为 1 包/1 公告，真实 npm production audit 为 10 包/5 公告，均通过 fail-closed 检查。完整后端 `1507 passed, 9 skipped`，前端 61 套件/387 项、CI Node policy 13 项和全静态/OpenAPI 门槛通过；升级后的 asyncmy 0.2.14 再次通过 MySQL 8.0.46 Aerich 0→1→2 与 9 项门槛，Schema/容器/13306/临时目录均已清理。微信 CI production artifact 保持 97 文件/603,619 bytes/0 source map、`release_eligible=false`。尚无真实 PR Run，因此下一步仍是 9.2.6。
 - 2026-08-20 微信开发者工具已连接本地 FastAPI + SQLite + Redis 完成账号密码认证 Functional：错误/正确/禁用账号、`user/admin/super_admin` 展示、Storage 写入、重启 `/users/me` 恢复、登出清理、`expiresAt` 主动 refresh、服务端 `1006` 被动 refresh，以及 access/refresh 同时无效后的 Session 清理全部通过；未记录或传播真实 Token。该结果不替代真机、H5、弱网、HTTPS/合法域名及正式微信登录门槛。
 
 ---

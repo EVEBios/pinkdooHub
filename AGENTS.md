@@ -10,7 +10,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 - FastAPI 0.139.2 + Uvicorn 0.51.0
 - Tortoise ORM 1.1.7 + Aerich 0.9.3
-- asyncmy 0.2.11（MySQL 异步驱动）
+- asyncmy 0.2.14（MySQL 异步驱动）
 - Pydantic 2.13.4 + pydantic-settings 2.14.2
 - Redis 8.0.1
 - pytest 9.1.1 + pytest-asyncio + httpx

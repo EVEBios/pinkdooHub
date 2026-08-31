@@ -19,6 +19,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def _configure_utf8_stdio() -> None:
+    """固定 CLI 文本编码，兼容 Windows 等非 UTF-8 父环境。"""
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def build_openapi_schema() -> dict[str, Any]:
     """在不注册测试数据库的情况下生成当前 FastAPI OpenAPI Schema。"""
 
@@ -64,6 +73,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """运行 OpenAPI 导出命令。"""
 
+    _configure_utf8_stdio()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
     export_openapi(args.output.resolve())

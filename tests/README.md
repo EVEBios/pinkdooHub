@@ -55,12 +55,14 @@ python -m pytest tests/common/ tests/audit/ tests/users/ -q
 $env:INVENTORY_MYSQL_TEST_ENABLED = "1"
 $env:INVENTORY_MYSQL_TEST_HOST = "127.0.0.1"
 $env:INVENTORY_MYSQL_TEST_PORT = "13306"
-$env:INVENTORY_MYSQL_TEST_DB = "pinkdoohub_inventory_4311"
+$env:INVENTORY_MYSQL_TEST_DB = "pinkdoohub_inventory_4311_ci"
 $env:INVENTORY_MYSQL_TEST_USER = "root"
 $env:INVENTORY_MYSQL_TEST_PASSWORD = ""
 python -m pytest tests/inventory/mysql -q
 ```
 
 该命令不会创建 Schema 或执行迁移。必须先按数据库迁移流程在一次性实例中执行真实 Aerich 0 → 1 → 2；测试只清空专用 Schema 的业务表并保留 `aerich` 版本记录。
+
+GitHub Actions 的 `backend-mysql-release` 会完成上述一次性实例生命周期。`scripts/ci/check_mysql_gate.py` 在迁移前验证 Aerich/pytest 目标完全一致，在迁移后记录 MySQL 8.0.46 和三条 Aerich 版本，并在 `always()` 清理路径删除专用 Schema、停止准确的 service container、确认容器不再运行和 13306 关闭。禁止为方便本地运行而放宽 fixture、改用 3306、`--fake`、`init-db` 或应用自动建表。
 
 新增测试时，优先放入对应领域和被测层；只有真正跨领域的基础能力才放入 `common/`。全局 fixture 留在根 `conftest.py`，仅供多个测试文件复用的数据构造器放入 `support/`。

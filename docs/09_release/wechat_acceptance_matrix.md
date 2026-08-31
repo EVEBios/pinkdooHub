@@ -1,7 +1,7 @@
 # 微信 Gate A Functional / Smoke / E2E 验收矩阵
 
 > **Status:** Matrix Frozen — 当前 RC 真机结果待填
-> **Last Updated:** 2026-08-29
+> **Last Updated:** 2026-08-31
 > **Scope:** 微信小程序内部测试版（Gate A）
 
 本矩阵冻结“必须证明什么”和证据等级。2026-08-29 的本地自动化基线证明当前源码质量，但不等于未来 RC 在真实 HTTPS、MySQL、Redis 和微信真机上已经通过。
@@ -18,7 +18,7 @@
 
 结果只能使用 `PASS`、`FAIL`、`BLOCKED`、`NOT RUN`。开发者工具关闭域名校验、历史截图、未绑定 SHA 的口头结果不能填 `PASS`。
 
-当前自动化参考证据：后端 `1465 passed, 9 skipped`（9 项为 MySQL-only），前端 61 suites/387 tests、TypeScript、ESLint、Stylelint、OpenAPI 漂移和微信构建通过。它们在 9.2 CI 落地前仍是本地审计证据。
+当前自动化参考证据：2026-08-31 后端 `1507 passed, 9 skipped`（9 项为 MySQL-only），另在固定 MySQL 8.0.46、回环 13306 与专用 Schema 上真实执行 Aerich 0→1→2 并通过这 9 项；asyncmy 0.2.14 升级后已再次通过，cleanup 证明 Schema/容器/端口均已回收。CI Node policy 13 项、前端 61 suites/387 tests、TypeScript、ESLint、Stylelint、OpenAPI 真实导出字节比较与类型漂移通过。真实 pip/npm 审计分别为 1 包/1 公告和 10 包/5 公告，均通过 2026-11-30 到期的精确策略。本地 production 微信 artifact 为 97 文件、603,619 bytes、0 source map，使用保留 CI Origin 并明确不可发布；真实 PR Run 完成前这些仍只是本地证据。
 
 ## 2. 身份、角色与权限
 
@@ -89,8 +89,8 @@
 | SE-01 | Secret 扫描 | 源码、日志、artifact、source map 无 Secret/私钥/连接串 | `A` | 本地扫描有限；CI `GAP` |
 | SE-02 | 产物 Origin | 无 `.example.invalid`、开发 Origin 或意外主机 | `A` | 当前产物 `FAIL` |
 | SE-03 | 权限 | UI 隐藏不替代后端 ADMIN+/owner 校验 | `A+M` | RC `NOT RUN` |
-| SE-04 | 日志脱敏 | 无密码、Token、完整 Redis URL、reason/key 和个人敏感信息 | `A+M` | Redis URL 风险待修 |
-| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | npm 可达性 `GAP` |
+| SE-04 | 日志脱敏 | 无密码、Token、完整 Redis URL、reason/key 和个人敏感信息 | `A+M` | 本地契约通过；RC/CI 待运行 |
+| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | 本地策略通过；例外 2026-11-30 到期，RC/CI 待运行 |
 | SE-06 | 内部声明 | 体验版明确受邀、不可公开、无微信支付/登录误导 | `M` | `NOT RUN` |
 | SE-07 | 隐私 | Gate A 使用合成/受控账号，数据保留、反馈和停用日期明确 | `M` | `NOT RUN` |
 

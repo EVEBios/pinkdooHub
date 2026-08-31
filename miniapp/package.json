@@ -2,7 +2,12 @@
   "name": "miniapp",
   "version": "1.0.0",
   "private": true,
-  "description": "pinkdooHub 跨端客户端（微信首发，同步 H5）",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": "24.13.0",
+    "npm": "11.6.2"
+  },
+  "description": "pinkdooHub 微信小程序客户端（Gate A 内部测试版；不可公开）",
   "templateInfo": {
     "name": "default",
     "typescript": true,
@@ -17,7 +22,9 @@
     "lint:styles": "stylelint \"src/**/*.{css,scss}\"",
     "api:types": "openapi-typescript openapi/openapi.json --immutable --alphabetize -o src/api/generated/schema.d.ts",
     "api:types:check": "openapi-typescript openapi/openapi.json --immutable --alphabetize --check -o src/api/generated/schema.d.ts",
+    "ci:test": "node --test ../scripts/ci/tests/*.test.mjs",
     "build:weapp": "taro build --type weapp",
+    "build:weapp:check": "node ../scripts/ci/check_weapp_artifact.mjs --artifact-root dist/weapp --manifest dist/weapp-manifest.json",
     "build:alipay": "taro build --type alipay",
     "build:tt": "taro build --type tt",
     "build:h5": "taro build --type h5",

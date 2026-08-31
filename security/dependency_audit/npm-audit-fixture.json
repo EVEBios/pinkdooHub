@@ -1,0 +1,127 @@
+{
+  "auditReportVersion": 2,
+  "metadata": {
+    "dependencies": {
+      "dev": 1433,
+      "optional": 106,
+      "peer": 0,
+      "peerOptional": 0,
+      "prod": 267,
+      "total": 1747
+    },
+    "vulnerabilities": {
+      "critical": 5,
+      "high": 1,
+      "info": 0,
+      "low": 0,
+      "moderate": 4,
+      "total": 10
+    }
+  },
+  "vulnerabilities": {
+    "@tarojs/components": {
+      "effects": ["@tarojs/components-react", "@tarojs/plugin-platform-h5", "@tarojs/taro-h5"],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/components", "version": "3.2.16"},
+      "isDirect": true,
+      "name": "@tarojs/components",
+      "nodes": ["node_modules/@tarojs/components"],
+      "range": ">=3.3.0-alpha.0",
+      "severity": "critical",
+      "via": ["swiper"]
+    },
+    "@tarojs/components-react": {
+      "effects": [],
+      "fixAvailable": true,
+      "isDirect": false,
+      "name": "@tarojs/components-react",
+      "nodes": ["node_modules/@tarojs/components-react"],
+      "range": ">=3.3.0-alpha.4",
+      "severity": "critical",
+      "via": ["@tarojs/components", "swiper"]
+    },
+    "@tarojs/helper": {
+      "effects": ["@tarojs/plugin-platform-h5", "@tarojs/runner-utils", "@tarojs/service"],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/helper", "version": "3.6.5"},
+      "isDirect": true,
+      "name": "@tarojs/helper",
+      "nodes": ["node_modules/@tarojs/helper"],
+      "range": ">=3.6.6-alpha.0",
+      "severity": "moderate",
+      "via": ["esbuild"]
+    },
+    "@tarojs/plugin-platform-h5": {
+      "effects": [],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/plugin-platform-h5", "version": "3.6.7"},
+      "isDirect": true,
+      "name": "@tarojs/plugin-platform-h5",
+      "nodes": ["node_modules/@tarojs/plugin-platform-h5"],
+      "range": "*",
+      "severity": "critical",
+      "via": ["@tarojs/components", "@tarojs/components-react", "@tarojs/helper", "@tarojs/service", "@tarojs/taro-h5", "lodash-es"]
+    },
+    "@tarojs/runner-utils": {
+      "effects": ["@tarojs/service"],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/plugin-platform-h5", "version": "3.6.7"},
+      "isDirect": false,
+      "name": "@tarojs/runner-utils",
+      "nodes": ["node_modules/@tarojs/runner-utils"],
+      "range": "3.5.0-alpha.0 - 3.5.0-theta.0 || >=3.6.6-alpha.0",
+      "severity": "moderate",
+      "via": ["@tarojs/helper"]
+    },
+    "@tarojs/service": {
+      "effects": ["@tarojs/plugin-platform-h5"],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/plugin-platform-h5", "version": "3.6.7"},
+      "isDirect": false,
+      "name": "@tarojs/service",
+      "nodes": ["node_modules/@tarojs/service"],
+      "range": "3.5.0-alpha.0 - 3.5.0-theta.0 || >=3.6.6-alpha.0",
+      "severity": "moderate",
+      "via": ["@tarojs/helper", "@tarojs/runner-utils"]
+    },
+    "@tarojs/taro-h5": {
+      "effects": [],
+      "fixAvailable": true,
+      "isDirect": false,
+      "name": "@tarojs/taro-h5",
+      "nodes": ["node_modules/@tarojs/taro-h5"],
+      "range": ">=3.6.0-alpha.0",
+      "severity": "critical",
+      "via": ["@tarojs/components", "lodash-es"]
+    },
+    "esbuild": {
+      "effects": ["@tarojs/helper"],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/helper", "version": "3.6.5"},
+      "isDirect": false,
+      "name": "esbuild",
+      "nodes": ["node_modules/esbuild"],
+      "range": "<=0.24.2",
+      "severity": "moderate",
+      "via": [{"dependency": "esbuild", "name": "esbuild", "range": "<=0.24.2", "severity": "moderate", "source": 1102341, "url": "https://github.com/advisories/GHSA-67mh-4wv8-2f99"}]
+    },
+    "lodash-es": {
+      "effects": ["@tarojs/plugin-platform-h5", "@tarojs/taro-h5"],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/plugin-platform-h5", "version": "3.6.7"},
+      "isDirect": false,
+      "name": "lodash-es",
+      "nodes": ["node_modules/lodash-es"],
+      "range": "<=4.17.23",
+      "severity": "high",
+      "via": [
+        {"dependency": "lodash-es", "name": "lodash-es", "range": ">=4.0.0 <=4.17.23", "severity": "high", "source": 1115805, "url": "https://github.com/advisories/GHSA-r5fr-rjxr-66jc"},
+        {"dependency": "lodash-es", "name": "lodash-es", "range": "<=4.17.23", "severity": "moderate", "source": 1115809, "url": "https://github.com/advisories/GHSA-f23m-r3pf-42rh"},
+        {"dependency": "lodash-es", "name": "lodash-es", "range": ">=4.0.0 <=4.17.22", "severity": "moderate", "source": 1120368, "url": "https://github.com/advisories/GHSA-xxjr-mmjv-4gpg"}
+      ]
+    },
+    "swiper": {
+      "effects": ["@tarojs/components", "@tarojs/components-react"],
+      "fixAvailable": {"isSemVerMajor": true, "name": "@tarojs/components", "version": "3.2.16"},
+      "isDirect": false,
+      "name": "swiper",
+      "nodes": ["node_modules/swiper"],
+      "range": "6.5.1 - 12.1.1",
+      "severity": "critical",
+      "via": [{"dependency": "swiper", "name": "swiper", "range": ">=6.5.1 <12.1.2", "severity": "critical", "source": 1113431, "url": "https://github.com/advisories/GHSA-hmx5-qpq5-p643"}]
+    }
+  }
+}
