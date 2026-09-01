@@ -18,7 +18,7 @@ RUN python -m pip install --no-cache-dir --requirement requirements.txt
 COPY --chown=10001:10001 app ./app
 COPY --chown=10001:10001 migrations ./migrations
 COPY --chown=10001:10001 pyproject.toml ./pyproject.toml
-COPY deploy/rehearsal/app-entrypoint.sh /usr/local/bin/pinkdoo-entrypoint
+COPY deploy/runtime/app-entrypoint.sh /usr/local/bin/pinkdoo-entrypoint
 
 RUN chmod 0755 /usr/local/bin/pinkdoo-entrypoint
 

@@ -14,7 +14,7 @@ from scripts.release.phase93_rehearsal import IMAGE_TAGS
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = ROOT / "deploy" / "rehearsal" / "compose.yml"
-DOCKERFILE_PATH = ROOT / "deploy" / "rehearsal" / "Dockerfile"
+DOCKERFILE_PATH = ROOT / "deploy" / "runtime" / "Dockerfile"
 
 
 def _compose() -> dict:
@@ -216,6 +216,7 @@ def test_app_runs_non_root_and_is_not_published_directly() -> None:
     services = _compose()["services"]
 
     assert "USER 10001:10001" in dockerfile
+    assert "COPY deploy/runtime/app-entrypoint.sh" in dockerfile
     assert "ports" not in services["app"]
     assert services["app"]["environment"]["APP_ENV"] == "production"
     assert services["app"]["environment"]["APP_DEBUG"] == "false"

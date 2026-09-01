@@ -1,7 +1,7 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** Baseline Frozen; 9.2 Complete; 9.3 Rehearsal Secret/Topology Contract Implemented Locally
-> **Last Updated:** 2026-08-31
+> **Status:** 9.1–9.3 Complete; 9.4 Gate A Persistent Topology Implemented Locally
+> **Last Updated:** 2026-09-02
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
 ## 1. 环境矩阵
@@ -72,6 +72,23 @@
 | WeChat upload private key | 自动上传被批准时 | CI Secret 系统 | 受保护上传 Job | 限制分支/环境；可立即撤销 | Yijie Shen |
 
 Secret Inventory 的 Release Record 只记录 Secret ID/版本/更新时间，不记录值。
+
+### 3.1 Gate A 实际保管映射（本地实现，服务器待配置）
+
+Phase 9.4 已在 `deploy/gatea/` 建立文件型 Secret 边界，但真实文件尚未写入服务器：
+
+| Secret | 计划路径 | 宿主权限 | 读取主体 |
+|--------|----------|----------|----------|
+| DB app password | `/etc/pinkdoohub/gatea/secrets/mysql_app_password` | `root:root 0400` | MySQL 初始化、App、迁移/Bootstrap Job |
+| DB root password | `/etc/pinkdoohub/gatea/secrets/mysql_root_password` | `root:root 0400` | MySQL 初始化及后续受控备份/恢复；App 禁止读取 |
+| Redis password | `/etc/pinkdoohub/gatea/secrets/redis_password` | `root:root 0400` | Redis、App、迁移/Bootstrap Job |
+| JWT secret | `/etc/pinkdoohub/gatea/secrets/jwt_secret` | `root:root 0400` | App、迁移/Bootstrap Job |
+| Initial SUPER_ADMIN password | `/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending` | `root:root 0400` | 只在明确 Bootstrap override 中短期挂载，轮换后删除 |
+
+Secret 目录固定为 `root:root 0700`；非 Secret 配置固定为
+`/etc/pinkdoohub/gatea/config.env`、`root:root 0640`。只读预检会检查类型、所有者、
+权限和非空大小，但不会读取或输出 Secret 值。该文件系统映射满足 Gate A 单机测试
+环境的最小保管基线，不自动满足 Gate B 的集中 Secret Manager、审计或高可用要求。
 
 ## 4. 微信网络与域名清单
 

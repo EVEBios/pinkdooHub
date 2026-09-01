@@ -4,6 +4,17 @@
 
 ---
 
+## Release Phase 9.4.2 — Gate A 持久部署拓扑（本地实现，2026-09-02）
+
+开始 Phase 9.4 真实内部测试环境准备。本节只记录本地仓库实现；尚未把应用部署到腾讯云主机，未写真实 Secret、运行持久迁移、启动 Gate A 容器、开放 80/443、配置 DNS/证书/微信后台或上传体验版，Gate A 仍为 No-Go。
+
+- 将 Phase 9.3 已验证的 Python 3.10.9 非 root App Runtime 提升到共享 `deploy/runtime/`；演练编排改为构建同一 Runtime，避免 Gate A 复制并漂移入口脚本。MySQL 8.0.46、Redis 8.0.1、Nginx 1.27.5 和应用依赖没有升级。
+- 新增 `deploy/gatea/`：长期 MySQL/Redis/App/Nginx 使用固定 named volumes；只有 Nginx 加入 edge network，MySQL 3306、Redis 6379 和 App 8000 均不发布。备案等待期 override 只绑定 `127.0.0.1:18080`；TLS override 单独发布 80/443，必须显式提供已批准域名、证书和 ACME 目录。
+- App 继续以 UID 10001、只读根文件系统、`no-new-privileges` 运行，迁移保留为显式 `operations` profile。Bootstrap 使用独立 override 和 `bootstrap_password.pending`，没有密码参数或常驻挂载。App 不获得 MySQL Root Secret，Nginx 不获得应用 Secret。
+- Nginx 覆盖客户端 `X-Forwarded-For`/`X-Real-IP` 为 `$remote_addr`，避免公网客户端伪造审计地址；access log 只记录方法与 `$uri`，不记录 query、Authorization、Cookie 或请求体。图片卷保持 App 可写/Nginx 只读。
+- 新增 `scripts/release/gatea_operations.py` 只读预检：拒绝 `latest`/短 SHA、非 production/Debug、SQLite、外部 DB 目标、错误图片 Origin 和非 Secret 配置中的敏感键；只检查 Root Secret 文件元数据/非空大小，不读取或输出值。当前故意不提供启动、迁移、Bootstrap、备份、恢复或销毁子命令，避免未经 Review 的服务器写操作。
+- 新增 32 项 Gate A/既有 Rehearsal 定向契约并通过，覆盖 Compose 双 mode 渲染、内部网络、唯一 Nginx 端口、固定镜像/卷、Secret 分离、显式迁移/Bootstrap、共享 Runtime、代理 Header、日志和预检命令边界；`tests/release` 74 项与完整后端 `1614 passed, 9 skipped` 同步通过。共享 Runtime 镜像完成真实构建，并验证 UID/GID、Entrypoint 与 Uvicorn CMD 后清理验证镜像。未修改业务 API、OpenAPI、数据库 Schema/Aerich 迁移、Python/npm 依赖或应用版本。
+
 ## Release Phase 9.3 Complete — 隔离发布演练（2026-08-31）
 
 Phase 9.3 已在最终候选 `136a8bd8833f9b23433cfb3a2f9ceca7dab70db5` 完成。GitHub Actions Run 33408135841 的 8 个 Job 全部 success；Run ID `20260831t221625` 的可销毁生产相似环境完成 DR-01～DR-07 与 DR-09 服务端部分，完整脱敏证据见 `docs/09_release/reports/phase93_rehearsal_2026-08-31.md`。这不等于 Gate A 已通过，也不授权微信后台、上传、分发、提审或公开发布。

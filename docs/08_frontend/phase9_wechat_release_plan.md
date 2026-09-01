@@ -1,8 +1,8 @@
 # Phase 9 微信小程序发布规划
 
 > **Document Version:** v0.2
-> **Status:** Phase 9.1–9.3 Complete — Next: Phase 9.4 微信内部测试版
-> **Last Updated:** 2026-08-31
+> **Status:** Phase 9.1–9.3 Complete; Phase 9.4 进行中（Gate A 仍为 No-Go）
+> **Last Updated:** 2026-09-02
 > **Release Scope:** 本版只发布微信小程序（`weapp`）
 
 本文把“多端、CI 与发布”收敛为本版可执行的微信单平台路线。Phase 9 不是一次性把代码上传到微信，而是依次建立发布目标、可重复门槛、隔离演练、内部测试版和公开发布门。每一阶段都必须产生可复核证据；历史测试通过、单次本机构建或开发者工具 Functional 不能替代当前候选版本的发布证据。

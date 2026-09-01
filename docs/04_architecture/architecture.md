@@ -212,7 +212,9 @@ pinkdooHub/
 ├── migrations/                 # Aerich 数据库迁移文件
 │   └── models/
 │
-├── deploy/rehearsal/           # Phase 9.3 可销毁生产相似 Compose/Nginx/App 镜像
+├── deploy/runtime/             # Phase 9.3/9.4 共用的非 root FastAPI Runtime
+├── deploy/rehearsal/           # Phase 9.3 可销毁生产相似 Compose/Nginx
+├── deploy/gatea/               # Phase 9.4 持久 Gate A Compose、Nginx 与配置模板
 ├── scripts/release/            # 演练预检、DR 编排、HTTPS Smoke、摘要与清理
 │
 ├── requirements.txt            # Python 依赖

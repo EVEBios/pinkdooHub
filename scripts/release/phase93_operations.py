@@ -227,7 +227,7 @@ class Phase93Operations:
                 "docker",
                 "build",
                 "--file",
-                str(REPOSITORY_ROOT / "deploy" / "rehearsal" / "Dockerfile"),
+                str(REPOSITORY_ROOT / "deploy" / "runtime" / "Dockerfile"),
                 "--tag",
                 self.config.app_image,
                 "--label",

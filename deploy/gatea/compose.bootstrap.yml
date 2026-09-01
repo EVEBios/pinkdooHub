@@ -1,0 +1,40 @@
+services:
+  bootstrap:
+    image: ${GATEA_APP_IMAGE:?Set GATEA_APP_IMAGE to an immutable Git-SHA tag}
+    profiles: ["bootstrap"]
+    env_file:
+      - ${GATEA_CONFIG_FILE:-/etc/pinkdoohub/gatea/config.env}
+    secrets:
+      - mysql_app_password
+      - redis_password
+      - jwt_secret
+      - bootstrap_password
+    command:
+      - python
+      - -m
+      - app.tasks.super_admin_bootstrap
+      - --username
+      - ${GATEA_BOOTSTRAP_USERNAME:?Set the approved bootstrap username}
+      - --nickname
+      - ${GATEA_BOOTSTRAP_NICKNAME:?Set the approved bootstrap nickname}
+      - --phone
+      - ${GATEA_BOOTSTRAP_PHONE:?Set the approved bootstrap phone}
+      - --apply
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    networks:
+      - backend
+
+secrets:
+  bootstrap_password:
+    file: ${GATEA_BOOTSTRAP_SECRET_FILE:-/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending}
