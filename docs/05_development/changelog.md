@@ -9,7 +9,7 @@
 - 新增 `gatea_backup.py`：备份 ID 固定为 UTC `YYYYMMDDtHHMMSSz`，操作前验证 Root 配置/Secret、Runtime image、首次迁移 Record 和四项服务健康；短暂停止 Nginx/App 形成一致停写窗口，生成 `root:root 0600` 的 MySQL 单事务逻辑备份和图片卷 Tar，记录 SHA-256、数据库摘要、图片 manifest 与候选身份，并自动恢复 App/Nginx health。任何备份或恢复应用可用性失败都不写成功 Record。
 - 新增完全独立的 `compose.restore.yml`：动态 project、internal network、MySQL 8.0.46、空 Redis、临时图片卷和 Restore App 均无宿主端口，也不引用来源 volumes。恢复要求精确 project 确认与备份 checksum，比较 Schema/业务摘要和图片内容，验证 Restore App readiness；成功、失败和中断路径均精确执行 `down --volumes` 并复核恢复容器/卷消失，来源 Gate A 不属于清理目标。
 - Redis 只保存 refresh-token 会话，不作为权威备份资产；恢复使用空 Redis，使旧 refresh 会话全部失效，避免旧 AOF/RDB 重新激活已撤销 Token。当前同机 `0600` 备份只证明流程，保留期、加密异机副本和定期演练仍是 Gate A 后续门槛。
-- 9 项定向契约已通过，覆盖 Compose 隔离、无 host ports/来源卷、ID/project 确认、Artifact 防篡改、短暂停写与自动恢复、成功比较、失败清理和 Redis 策略；尚未运行完整回归、commit/push、远端 CI 或真实服务器备份/恢复。
+- 9 项定向、94 项 Release 与完整后端 `1634 passed, 9 skipped`；提交 `d1f3379...` 的 GitHub Actions Run 33570862787 为 8/8 success。真实 Backup `20260901t232740z` 生成 148,782-byte MySQL 与 10,240-byte 空图片归档，独立无端口 Restore project 完成 10 表/90 列/26 约束/63 statistics、业务摘要、图片 manifest、空 Redis 和 Restore App readiness 比较，并删除全部临时容器/网络/卷；来源 4 项服务保持 Healthy。当前同机备份保留，Bootstrap 后代表性数据复验、保留期与加密异机副本仍未完成，完整证据见 `docs/09_release/reports/phase94_gatea_backup_restore_2026-09-02.md`。
 
 ## Release Phase 9.4.3 — Gate A 首次部署生命周期（本地实现，2026-09-02）
 
