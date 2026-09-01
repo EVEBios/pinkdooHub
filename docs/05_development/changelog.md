@@ -6,7 +6,7 @@
 
 ## Release Phase 9.4.3 — Gate A 首次部署生命周期（本地实现，2026-09-02）
 
-候选 `eb42538d054eaa1a461c49758b3851127fd908ac` 已推送并在 GitHub Actions Run 33564610625 完成 8/8 Job；服务器已按该 SHA 校验归档 checksum，准备 Root 配置/文件型 Secret 和带 revision 标签的 UID 10001 App 镜像，loopback preflight 通过。当前仍未启动容器/数据卷或执行迁移。
+真实腾讯云 Gate A 主机的 loopback 首次部署已通过。Runtime candidate `51ad3152c8960bc133c25a600418f5f850d69199` 的 GitHub Actions Run 33568184860 与 Operations revision `17114d7278860c0e09901f493280a56bf6043c3f` 的 Run 33568983950 均为 8/8 success；后者只修改运维脚本、测试和本文，服务器逐文件确认 App、迁移、依赖与 Runtime 输入完全一致，因此首次迁移记录继续严格绑定前者的 App image，没有伪造候选迁移记录。
 
 - 扩展 `gatea_operations.py`，新增 `infra-up`、`initial-migrate`、`app-up`、脱敏 `status` 和 `safe-stop`；所有生命周期写操作当前严格限制为 loopback，TLS 模式 fail closed。
 - `infra-up` 只启动 MySQL/Redis 并等待 health；启动或 health 失败会停止本次服务但不删除命名卷。`initial-migrate` 要求两项依赖 healthy、目标 application schema 为 0 张表，才使用显式 operations profile 执行 Aerich；成功后以候选 SHA、Image ID 和 UTC 时间原子记录，匹配记录的严格重放为 no-op，非空未知状态拒绝迁移且停止基础设施。
@@ -15,6 +15,7 @@
 - 真实主机首次 `infra-up` 发现 Docker Compose v5.5 的 `ps --format json` 使用 newline-delimited JSON，而本地 v5.3 在空项目及既有契约中使用 JSON 数组；解析器已同时支持两种官方输出形状并新增回归。首次 MySQL/Redis 均曾达到 Healthy，但解析器按 fail-closed 自动停止两项服务；卷内尚无应用表或业务数据，未运行迁移。
 - 第二次 `infra-up` 通过后，首次迁移在非 root Entrypoint 读取 Secret 时发现 Compose 本地文件 Secret bind mount 保留宿主 `root:root 0400`，UID/GID 10001 无读取权限；入口在 Aerich 前退出，基础设施再次由 fail-closed 路径停止，迁移记录未创建。修复保持 Secret 目录 `root:root 0700`，将三个 App Runtime Secret 收敛为 `root:10001 0440`（宿主 GID 10001 未分配），Root Secret 保持 `root:root 0400` 且不挂载给 App；预检与测试固定这组精确元数据。
 - 首次 `app-up` 中 App/Nginx 均达到 Healthy，Compose v5.5 仍把 Nginx 镜像未绑定的 `EXPOSE 80/tcp` 表示为 `URL=""`、`PublishedPort=0` 的 publisher，导致精确端口断言按 fail-closed 停止 App edge。运行时 Docker 绑定已独立确认只有 `127.0.0.1:18080 -> nginx:8080`，无公网业务监听；校验器现只忽略这种无宿主 listener 的未发布元数据，任何额外、非 Nginx 或非环回宿主映射仍被严格拒绝，并新增 Compose v5 回归。
+- 最终 Runtime 真实完成空库 Aerich 0→1→2 并核验 10 张应用表，MySQL/Redis/App/Nginx 全部 Healthy，Liveness/Readiness 经 loopback Nginx 返回 200。MySQL、Redis 和 App 没有宿主 publisher，Nginx 唯一绑定为 `127.0.0.1:18080`，公网 18080 不可达；App 保持 UID/GID 10001、只读根文件系统和 `no-new-privileges`。三个 named volumes、4 个长期容器、版本化 Release/Record 与回滚备份按 Gate A 要求保留；DNS/HTTPS、Bootstrap、持久备份恢复、微信合法域名和真机仍未执行，Gate A 继续 No-Go。完整证据见 `docs/09_release/reports/phase94_gatea_loopback_2026-09-02.md`。
 
 ## Release Phase 9.4.2 — Gate A 持久部署拓扑（本地实现，2026-09-02）
 
