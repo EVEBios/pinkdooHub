@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 9.4 进行中 — Gate A 持久部署拓扑已本地实现，服务器待部署
+> **Current Phase:** 9.4 进行中 — Gate A 候选已准备，待执行 loopback 生命周期
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-02
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -29,7 +29,7 @@
 - Phase 9.1 已完成仓库级证据采集、交付物建档、责任人映射和项目负责人 Review，状态为 `Complete`。
 - Phase 9.2 CI 与可重复构建已完成：Draft PR #2 的 Run 33355935212 在真实干净 checkout 上 8/8 Job 通过并保存 7 组 artifact。该结果不授权微信后台变更、持久迁移、上传、提审或发布。
 - Phase 9.3 已完成：候选 SHA `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success；Run ID `20260831t221625` 在可销毁双 MySQL/Redis/Nginx/App/图片卷环境完成 DR-01～DR-07 与 DR-09 服务端部分，53 项发布工具契约通过，全部任务资源已清理。详见[演练报告](reports/phase93_rehearsal_2026-08-31.md)。微信合法域名、真实 RC、iOS/Android 真机 DR-08 和 Gate A 决策保持 Phase 9.4；当前仍未授权上传、分发、提审或发布。
-- Phase 9.4 已开始：真实腾讯云 Gate A 主机完成 Ubuntu/Docker/SSH 基础加固；仓库新增 `deploy/gatea/` 持久 MySQL/Redis/App/Nginx 拓扑、loopback/TLS 分离、Root 文件型 Secret 边界和只读预检。该实现尚未部署，真实 Secret、迁移、Bootstrap、备份恢复、DNS/证书、微信合法域名和真机仍未执行，Gate A 保持 No-Go。
+- Phase 9.4 已开始：真实腾讯云 Gate A 主机完成 Ubuntu/Docker/SSH 基础加固；CI Run 33564610625 的 8 个 Job 全部通过，候选 `eb42538...`、Root 文件型 Secret 和绑定 revision 的非 root App 镜像已准备，loopback preflight 通过。仓库已新增受控 `infra-up`、首次空库 `initial-migrate`、`app-up`、脱敏 `status` 和不删卷 `safe-stop`，当前待 Review/CI 后执行。容器、数据卷、迁移、Bootstrap、备份恢复、DNS/证书、微信合法域名和真机尚未执行，Gate A 保持 No-Go。
 
 ## 3. 状态词
 

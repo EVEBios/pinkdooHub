@@ -4,6 +4,15 @@
 
 ---
 
+## Release Phase 9.4.3 — Gate A 首次部署生命周期（本地实现，2026-09-02）
+
+候选 `eb42538d054eaa1a461c49758b3851127fd908ac` 已推送并在 GitHub Actions Run 33564610625 完成 8/8 Job；服务器已按该 SHA 校验归档 checksum，准备 Root 配置/文件型 Secret 和带 revision 标签的 UID 10001 App 镜像，loopback preflight 通过。当前仍未启动容器/数据卷或执行迁移。
+
+- 扩展 `gatea_operations.py`，新增 `infra-up`、`initial-migrate`、`app-up`、脱敏 `status` 和 `safe-stop`；所有生命周期写操作当前严格限制为 loopback，TLS 模式 fail closed。
+- `infra-up` 只启动 MySQL/Redis 并等待 health；启动或 health 失败会停止本次服务但不删除命名卷。`initial-migrate` 要求两项依赖 healthy、目标 application schema 为 0 张表，才使用显式 operations profile 执行 Aerich；成功后以候选 SHA、Image ID 和 UTC 时间原子记录，匹配记录的严格重放为 no-op，非空未知状态拒绝迁移且停止基础设施。
+- `app-up` 验证镜像 SHA/revision、UID/GID、Entrypoint、CMD 和迁移记录，再启动 App/Nginx；失败时停止 App edge、保留基础设施与卷。成功条件同时包括 App/Nginx healthy，以及运行时唯一 publisher 精确为 `127.0.0.1:18080 -> nginx:8080`。
+- `safe-stop` 只执行有序 stop，命令中不存在 `down` 或 `--volumes`；脚本仍不提供 Bootstrap、备份、恢复、删卷、TLS 切换或公开发布能力。
+
 ## Release Phase 9.4.2 — Gate A 持久部署拓扑（本地实现，2026-09-02）
 
 开始 Phase 9.4 真实内部测试环境准备。本节只记录本地仓库实现；尚未把应用部署到腾讯云主机，未写真实 Secret、运行持久迁移、启动 Gate A 容器、开放 80/443、配置 DNS/证书/微信后台或上传体验版，Gate A 仍为 No-Go。

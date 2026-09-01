@@ -1,9 +1,12 @@
-"""Gate A 持久部署预检的配置与命令边界。"""
+"""Gate A 持久部署预检与生命周期命令边界。"""
 
+import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
+from scripts.release import gatea_operations as gatea
 from scripts.release.gatea_operations import (
     GateAError,
     compose_command,
@@ -119,3 +122,349 @@ def test_compose_command_binds_exact_mode_and_optional_bootstrap() -> None:
     assert "compose.loopback.yml" in command[7]
     assert "compose.bootstrap.yml" in command[9]
     assert command[-4:] == ["--profile", "bootstrap", "config", "--quiet"]
+
+
+def _healthy_rows(*services: str) -> list[dict[str, str]]:
+    return [
+        {"Service": service, "State": "running", "Health": "healthy"}
+        for service in services
+    ]
+
+
+def test_validate_app_image_requires_matching_sha_and_non_root_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _valid_values()
+    payload = {
+        "Id": "sha256:image-id",
+        "Config": {
+            "User": "10001:10001",
+            "Entrypoint": ["/usr/local/bin/pinkdoo-entrypoint"],
+            "Cmd": [
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
+                "--no-server-header",
+            ],
+            "Labels": {
+                "org.opencontainers.image.revision": "a" * 40,
+            },
+        },
+    }
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=json.dumps(payload),
+        ),
+    )
+
+    assert gatea.validate_app_image(values) == "sha256:image-id"
+
+    payload["Config"]["Labels"]["org.opencontainers.image.revision"] = "b" * 40
+    with pytest.raises(GateAError, match="revision"):
+        gatea.validate_app_image(values)
+
+
+def test_infra_up_uses_wait_and_stops_services_on_failed_health(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _valid_values()
+    commands: list[tuple[tuple[str, ...], bool]] = []
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(
+            (tuple(kwargs["arguments"]), kwargs.get("check", True))
+        )
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: _healthy_rows("mysql"),
+    )
+
+    with pytest.raises(GateAError, match="redis is unavailable"):
+        gatea.infra_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            wait_timeout=120,
+        )
+
+    assert commands[0][0] == (
+        "up",
+        "--detach",
+        "--no-build",
+        "--wait",
+        "--wait-timeout",
+        "120",
+        "mysql",
+        "redis",
+    )
+    assert commands[-1] == (
+        ("stop", "--timeout", "30", "redis", "mysql"),
+        False,
+    )
+
+
+def test_initial_migrate_requires_empty_schema_and_records_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    commands: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: _healthy_rows("mysql", "redis"),
+    )
+
+    def fake_run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        arguments = tuple(kwargs["arguments"])
+        profiles = tuple(kwargs.get("profiles", ()))
+        commands.append((arguments, profiles))
+        stdout = "0\n" if arguments[:3] == ("exec", "--no-tty", "mysql") else ""
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout)
+
+    monkeypatch.setattr(gatea, "_run_compose", fake_run_compose)
+    gatea.initial_migrate(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+    )
+
+    assert commands[-1] == (
+        ("run", "--rm", "--no-deps", "migrate"),
+        ("operations",),
+    )
+    marker = tmp_path / f"{'a' * 40}.initial-migration.json"
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    assert payload["candidate_sha"] == "a" * 40
+    assert payload["image_id"] == "sha256:image"
+    assert payload["schema_version"] == 1
+
+
+def test_initial_migrate_rejects_nonempty_database_before_aerich(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: _healthy_rows("mysql", "redis"),
+    )
+
+    def fake_run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        arguments = tuple(kwargs["arguments"])
+        commands.append(arguments)
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="1\n")
+
+    monkeypatch.setattr(gatea, "_run_compose", fake_run_compose)
+
+    with pytest.raises(GateAError, match="requires an empty"):
+        gatea.initial_migrate(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+        )
+
+    assert not any(command[:1] == ("run",) for command in commands)
+    assert commands[-1] == ("stop", "--timeout", "30", "redis", "mysql")
+    assert not list(tmp_path.glob("*.initial-migration.json"))
+
+
+def test_app_up_requires_matching_migration_record_and_waits_for_health(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    commands: list[tuple[str, ...]] = []
+    gatea._write_migration_record(
+        record_dir=tmp_path,
+        candidate_sha="a" * 40,
+        image_id="sha256:image",
+    )
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+    def fake_compose_ps(**kwargs: object) -> list[dict[str, object]]:
+        services = tuple(kwargs["services"])
+        rows: list[dict[str, object]] = _healthy_rows(*services)
+        for row in rows:
+            if row["Service"] == "nginx":
+                row["Publishers"] = [
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    }
+                ]
+        return rows
+
+    monkeypatch.setattr(gatea, "_compose_ps", fake_compose_ps)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+
+    gatea.app_up(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+        wait_timeout=180,
+    )
+
+    assert commands == [
+        (
+            "up",
+            "--detach",
+            "--no-build",
+            "--wait",
+            "--wait-timeout",
+            "180",
+            "app",
+            "nginx",
+        )
+    ]
+
+
+def test_lifecycle_writes_reject_tls_and_safe_stop_never_removes_volumes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(GateAError, match="restricted to loopback"):
+        gatea.infra_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="tls",
+            wait_timeout=180,
+        )
+
+    values = _valid_values()
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+    gatea.safe_stop(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+    )
+
+    assert commands == [
+        (
+            "stop",
+            "--timeout",
+            "30",
+            "nginx",
+            "app",
+            "image-init",
+            "redis",
+            "mysql",
+        )
+    ]
+    assert "--volumes" not in commands[0]
+    assert "down" not in commands[0]
+
+
+def test_loopback_runtime_rejects_non_nginx_or_public_publishers() -> None:
+    with pytest.raises(GateAError, match="app must not publish"):
+        gatea._validate_loopback_publishers(
+            [
+                {
+                    "Service": "app",
+                    "Publishers": [
+                        {
+                            "URL": "127.0.0.1",
+                            "TargetPort": 8000,
+                            "PublishedPort": 8000,
+                            "Protocol": "tcp",
+                        }
+                    ],
+                }
+            ],
+            18080,
+        )
+
+    with pytest.raises(GateAError, match="does not match"):
+        gatea._validate_loopback_publishers(
+            [
+                {
+                    "Service": "nginx",
+                    "Publishers": [
+                        {
+                            "URL": "0.0.0.0",
+                            "TargetPort": 8080,
+                            "PublishedPort": 18080,
+                            "Protocol": "tcp",
+                        }
+                    ],
+                }
+            ],
+            18080,
+        )
+
+
+def test_status_outputs_only_sanitized_service_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    values = _valid_values()
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [
+            {
+                "Service": "app",
+                "State": "running",
+                "Health": "healthy",
+                "Mounts": "must-not-appear",
+                "Publishers": [{"URL": "must-not-appear"}],
+            }
+        ],
+    )
+
+    gatea.status(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+    )
+    output = capsys.readouterr().out
+
+    assert '"service": "app"' in output
+    assert '"health": "healthy"' in output
+    assert "must-not-appear" not in output

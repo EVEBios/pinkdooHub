@@ -73,9 +73,11 @@
 
 Secret Inventory 的 Release Record 只记录 Secret ID/版本/更新时间，不记录值。
 
-### 3.1 Gate A 实际保管映射（本地实现，服务器待配置）
+### 3.1 Gate A 实际保管映射
 
-Phase 9.4 已在 `deploy/gatea/` 建立文件型 Secret 边界，但真实文件尚未写入服务器：
+Phase 9.4 已在 `deploy/gatea/` 建立文件型 Secret 边界，并于 2026-09-02 在 Gate A
+主机创建以下 Root 文件。本文及 Release Record 只记录路径、权限和读取主体，不记录
+或导出真实值：
 
 | Secret | 计划路径 | 宿主权限 | 读取主体 |
 |--------|----------|----------|----------|

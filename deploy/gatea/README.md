@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** 本地实现与静态契约已建立，尚未部署到真实服务器
+> **Status:** 候选 SHA/配置/Secret/镜像已在真实服务器准备；容器与数据卷尚未启动
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
@@ -57,7 +57,7 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 
 真实 Secret 值不得写入本文、仓库、命令行参数、聊天、日志或 Release Record。
 
-## 当前只允许的预检
+## 受控生命周期命令
 
 Root 创建真实配置后，先执行只读预检。预检只检查非 Secret 配置语义、Secret
 文件元数据/非空大小、环回端口和 Compose 渲染，不输出 Secret 值，也不创建
@@ -81,16 +81,52 @@ sudo python -m scripts.release.gatea_operations \
   --mode tls
 ```
 
-当前脚本故意还没有提供 `up`、`migrate`、`bootstrap`、`backup`、`restore` 或
-`down` 子命令。它们必须先完成独立实现、测试和 Review，不能用一段未经审查的
-现场 Shell 绕过。
+当前脚本只实现首次 loopback 部署需要的最小生命周期，所有写操作都会再次验证
+Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 和 CMD。
+TLS 写操作仍被拒绝。
+
+```bash
+# 只启动 MySQL/Redis；失败时停止服务但保留命名卷。
+sudo python -m scripts.release.gatea_operations \
+  infra-up \
+  --mode loopback
+
+# 只允许空 application schema；迁移成功后原子记录 SHA 与 Image ID。
+sudo python -m scripts.release.gatea_operations \
+  initial-migrate \
+  --mode loopback
+
+# 必须存在与候选 SHA/Image ID 匹配的迁移记录；运行时复核唯一发布端口。
+sudo python -m scripts.release.gatea_operations \
+  app-up \
+  --mode loopback
+
+# 只输出 service/state/health、候选 SHA 和迁移记录布尔状态。
+sudo python -m scripts.release.gatea_operations \
+  status \
+  --mode loopback
+
+# 停止服务但不删除容器、命名卷、Secret 或迁移记录。
+sudo python -m scripts.release.gatea_operations \
+  safe-stop \
+  --mode loopback
+```
+
+`initial-migrate` 在运行 Aerich 前通过 MySQL 容器内 Root Secret 查询
+`information_schema`，只有目标 application schema 为 0 张表才继续。候选已有匹配
+迁移记录时严格重放为 no-op；记录缺失但数据库非空时 fail closed，不会猜测状态或
+使用 `--fake`。`app-up` 完成后要求 App/Nginx 均为 healthy，且只有 Nginx 发布
+`127.0.0.1:${GATEA_LOOPBACK_PORT}:8080`。
+
+脚本仍故意不提供 Bootstrap、备份、恢复、删卷、TLS 切换或公开发布命令；这些
+步骤必须分别实现、测试和 Review，不能用未经审查的现场 Shell 绕过。
 
 ## 后续执行顺序
 
 1. 从干净 Git SHA 构建 `pinkdoohub-gatea:<40位SHA>` 并记录 image ID。
-2. Root 创建配置/Secret/持久运维目录；仅运行 loopback preflight。
-3. 启动 MySQL、Redis；确认健康后显式执行空库 Aerich 迁移。
-4. 启动 App/Nginx loopback；验证 liveness/readiness，确认没有公网业务端口。
+2. Root 创建配置/Secret/持久运维目录；运行 loopback preflight。
+3. 使用 `infra-up` 启动 MySQL、Redis；使用 `initial-migrate` 完成空库迁移。
+4. 使用 `app-up` 启动 App/Nginx loopback；验证 liveness/readiness 与端口边界。
 5. 临时注入 Bootstrap Secret，执行首次/严格重放、登录和凭据轮换后删除。
 6. 实现并验证 MySQL/图片独立备份、恢复、校验和、保留和异机副本。
 7. ICP 通过后再配置 DNS、证书、80/443 和 TLS override。
