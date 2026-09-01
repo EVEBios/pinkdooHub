@@ -14,6 +14,7 @@
 - `safe-stop` 只执行有序 stop，命令中不存在 `down` 或 `--volumes`；脚本仍不提供 Bootstrap、备份、恢复、删卷、TLS 切换或公开发布能力。
 - 真实主机首次 `infra-up` 发现 Docker Compose v5.5 的 `ps --format json` 使用 newline-delimited JSON，而本地 v5.3 在空项目及既有契约中使用 JSON 数组；解析器已同时支持两种官方输出形状并新增回归。首次 MySQL/Redis 均曾达到 Healthy，但解析器按 fail-closed 自动停止两项服务；卷内尚无应用表或业务数据，未运行迁移。
 - 第二次 `infra-up` 通过后，首次迁移在非 root Entrypoint 读取 Secret 时发现 Compose 本地文件 Secret bind mount 保留宿主 `root:root 0400`，UID/GID 10001 无读取权限；入口在 Aerich 前退出，基础设施再次由 fail-closed 路径停止，迁移记录未创建。修复保持 Secret 目录 `root:root 0700`，将三个 App Runtime Secret 收敛为 `root:10001 0440`（宿主 GID 10001 未分配），Root Secret 保持 `root:root 0400` 且不挂载给 App；预检与测试固定这组精确元数据。
+- 首次 `app-up` 中 App/Nginx 均达到 Healthy，Compose v5.5 仍把 Nginx 镜像未绑定的 `EXPOSE 80/tcp` 表示为 `URL=""`、`PublishedPort=0` 的 publisher，导致精确端口断言按 fail-closed 停止 App edge。运行时 Docker 绑定已独立确认只有 `127.0.0.1:18080 -> nginx:8080`，无公网业务监听；校验器现只忽略这种无宿主 listener 的未发布元数据，任何额外、非 Nginx 或非环回宿主映射仍被严格拒绝，并新增 Compose v5 回归。
 
 ## Release Phase 9.4.2 — Gate A 持久部署拓扑（本地实现，2026-09-02）
 

@@ -488,18 +488,24 @@ def _validate_loopback_publishers(
             if not isinstance(publisher, dict):
                 raise GateAError("Gate A runtime publisher metadata is invalid")
             try:
-                publishers.append(
-                    (
-                        str(publisher.get("URL") or ""),
-                        int(publisher["TargetPort"]),
-                        int(publisher["PublishedPort"]),
-                        str(publisher.get("Protocol") or ""),
-                    )
-                )
+                url = str(publisher.get("URL") or "")
+                target_port = int(publisher["TargetPort"])
+                published_port = int(publisher["PublishedPort"])
+                protocol = str(publisher.get("Protocol") or "")
             except (KeyError, TypeError, ValueError) as error:
                 raise GateAError(
                     "Gate A runtime publisher metadata is invalid"
                 ) from error
+            # Compose v5 also reports image EXPOSE metadata as an unbound
+            # publisher (empty URL and published port zero). It is not a host
+            # listener, so keep it out of the exact host-binding contract.
+            if url == "" and published_port == 0:
+                if target_port <= 0 or protocol not in {"tcp", "udp"}:
+                    raise GateAError("Gate A runtime publisher metadata is invalid")
+                continue
+            if service != "nginx":
+                raise GateAError(f"Gate A service {service} must not publish host ports")
+            publishers.append((url, target_port, published_port, protocol))
     if publishers != [("127.0.0.1", 8080, expected_port, "tcp")]:
         raise GateAError("Gate A loopback publisher does not match the port contract")
 

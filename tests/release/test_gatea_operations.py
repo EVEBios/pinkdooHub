@@ -482,6 +482,31 @@ def test_loopback_runtime_rejects_non_nginx_or_public_publishers() -> None:
         )
 
 
+def test_loopback_runtime_accepts_compose_v5_unpublished_exposed_port() -> None:
+    gatea._validate_loopback_publishers(
+        [
+            {
+                "Service": "nginx",
+                "Publishers": [
+                    {
+                        "URL": "",
+                        "TargetPort": 80,
+                        "PublishedPort": 0,
+                        "Protocol": "tcp",
+                    },
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    },
+                ],
+            }
+        ],
+        18080,
+    )
+
+
 def test_status_outputs_only_sanitized_service_fields(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
