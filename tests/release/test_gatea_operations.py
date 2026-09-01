@@ -147,6 +147,36 @@ def test_parse_compose_status_accepts_array_and_v5_ndjson() -> None:
         gatea._parse_compose_ps_output('{"Service": "mysql"}\nnot-json')
 
 
+def test_secret_metadata_keeps_root_secret_private_and_grants_app_group_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, int, int]] = []
+    for name in gatea.EXPECTED_SECRET_FILES:
+        (tmp_path / name).write_text("nonempty\n", encoding="utf-8")
+
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    def fake_validate(
+        path: Path,
+        expected_mode: int,
+        description: str,
+        *,
+        expected_gid: int = 0,
+    ) -> None:
+        calls.append((path.name, expected_mode, expected_gid))
+
+    monkeypatch.setattr(gatea, "_validate_root_file", fake_validate)
+    gatea.validate_secret_metadata(tmp_path)
+
+    assert calls == [
+        ("mysql_app_password", 0o440, 10001),
+        ("mysql_root_password", 0o400, 0),
+        ("redis_password", 0o440, 10001),
+        ("jwt_secret", 0o440, 10001),
+    ]
+
+
 def test_validate_app_image_requires_matching_sha_and_non_root_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -42,10 +42,11 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 ```text
 /etc/pinkdoohub/gatea/config.env                         root:root 0640
 /etc/pinkdoohub/gatea/secrets/                           root:root 0700
-/etc/pinkdoohub/gatea/secrets/mysql_app_password         root:root 0400
+/etc/pinkdoohub/gatea/secrets/mysql_app_password         root:10001 0440
 /etc/pinkdoohub/gatea/secrets/mysql_root_password        root:root 0400
-/etc/pinkdoohub/gatea/secrets/redis_password             root:root 0400
-/etc/pinkdoohub/gatea/secrets/jwt_secret                 root:root 0400
+/etc/pinkdoohub/gatea/secrets/redis_password             root:10001 0440
+/etc/pinkdoohub/gatea/secrets/jwt_secret                 root:10001 0440
+/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending root:10001 0440（仅临时）
 
 /srv/pinkdoohub/gatea/releases/<git-sha>/
 /srv/pinkdoohub/gatea/current -> releases/<git-sha>
@@ -56,6 +57,11 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 ```
 
 真实 Secret 值不得写入本文、仓库、命令行参数、聊天、日志或 Release Record。
+Secret 目录本身保持 `root:root 0700`，因此宿主普通用户无法遍历。三个 App Runtime
+Secret 使用未分配给宿主账号的数值 GID 10001 和 `0440`，使 Compose bind mount
+保留宿主权限时，容器内 UID/GID 10001 仍能只读；MySQL Root Secret 继续保持
+`root:root 0400`，App 不挂载它。未来临时 Bootstrap Secret 使用同一 Runtime
+GID/mode，并在完成登录与轮换后删除。
 
 ## 受控生命周期命令
 

@@ -40,6 +40,13 @@ EXPECTED_SECRET_FILES = (
     "redis_password",
     "jwt_secret",
 )
+APP_RUNTIME_SECRET_GID = 10001
+EXPECTED_SECRET_METADATA = {
+    "mysql_app_password": (0o440, APP_RUNTIME_SECRET_GID),
+    "mysql_root_password": (0o400, 0),
+    "redis_password": (0o440, APP_RUNTIME_SECRET_GID),
+    "jwt_secret": (0o440, APP_RUNTIME_SECRET_GID),
+}
 REQUIRED_CONFIG_KEYS = (
     "GATEA_APP_IMAGE",
     "GATEA_API_HOST",
@@ -185,7 +192,13 @@ def validate_config_values(values: Mapping[str, str], *, mode: str) -> None:
                 raise GateAError(f"TLS mode requires {key}")
 
 
-def _validate_root_file(path: Path, expected_mode: int, description: str) -> None:
+def _validate_root_file(
+    path: Path,
+    expected_mode: int,
+    description: str,
+    *,
+    expected_gid: int = 0,
+) -> None:
     """验证 Root 所有普通文件及其精确权限，不读取内容。"""
 
     try:
@@ -194,8 +207,8 @@ def _validate_root_file(path: Path, expected_mode: int, description: str) -> Non
         raise GateAError(f"{description} is unavailable") from error
     if not stat.S_ISREG(metadata.st_mode):
         raise GateAError(f"{description} must be a regular file")
-    if metadata.st_uid != 0 or metadata.st_gid != 0:
-        raise GateAError(f"{description} must be owned by root:root")
+    if metadata.st_uid != 0 or metadata.st_gid != expected_gid:
+        raise GateAError(f"{description} has an unexpected owner or group")
     if stat.S_IMODE(metadata.st_mode) != expected_mode:
         raise GateAError(f"{description} has unsafe permissions")
 
@@ -225,7 +238,13 @@ def validate_secret_metadata(secret_dir: Path) -> None:
     _validate_root_directory(secret_dir, 0o700, "Gate A Secret directory")
     for name in EXPECTED_SECRET_FILES:
         path = secret_dir / name
-        _validate_root_file(path, 0o400, f"Gate A Secret file {name}")
+        expected_mode, expected_gid = EXPECTED_SECRET_METADATA[name]
+        _validate_root_file(
+            path,
+            expected_mode,
+            f"Gate A Secret file {name}",
+            expected_gid=expected_gid,
+        )
         if path.stat().st_size == 0:
             raise GateAError(f"Gate A Secret file {name} is empty")
 

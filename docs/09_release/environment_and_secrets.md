@@ -81,13 +81,16 @@ Phase 9.4 已在 `deploy/gatea/` 建立文件型 Secret 边界，并于 2026-09-
 
 | Secret | 计划路径 | 宿主权限 | 读取主体 |
 |--------|----------|----------|----------|
-| DB app password | `/etc/pinkdoohub/gatea/secrets/mysql_app_password` | `root:root 0400` | MySQL 初始化、App、迁移/Bootstrap Job |
+| DB app password | `/etc/pinkdoohub/gatea/secrets/mysql_app_password` | `root:10001 0440` | MySQL 初始化、App、迁移/Bootstrap Job |
 | DB root password | `/etc/pinkdoohub/gatea/secrets/mysql_root_password` | `root:root 0400` | MySQL 初始化及后续受控备份/恢复；App 禁止读取 |
-| Redis password | `/etc/pinkdoohub/gatea/secrets/redis_password` | `root:root 0400` | Redis、App、迁移/Bootstrap Job |
-| JWT secret | `/etc/pinkdoohub/gatea/secrets/jwt_secret` | `root:root 0400` | App、迁移/Bootstrap Job |
-| Initial SUPER_ADMIN password | `/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending` | `root:root 0400` | 只在明确 Bootstrap override 中短期挂载，轮换后删除 |
+| Redis password | `/etc/pinkdoohub/gatea/secrets/redis_password` | `root:10001 0440` | Redis、App、迁移/Bootstrap Job |
+| JWT secret | `/etc/pinkdoohub/gatea/secrets/jwt_secret` | `root:10001 0440` | App、迁移/Bootstrap Job |
+| Initial SUPER_ADMIN password | `/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending` | `root:10001 0440` | 只在明确 Bootstrap override 中短期挂载，轮换后删除 |
 
-Secret 目录固定为 `root:root 0700`；非 Secret 配置固定为
+Secret 目录固定为 `root:root 0700`，宿主普通用户无法遍历。Compose 对本地文件型
+Secret 使用 bind mount 并保留宿主元数据，因此三个 App Runtime Secret 使用宿主
+未分配的数值 GID 10001 与 `0440`，供容器内固定 UID/GID 10001 只读；Root Secret
+继续为 `root:root 0400` 且不挂载给 App。非 Secret 配置固定为
 `/etc/pinkdoohub/gatea/config.env`、`root:root 0640`。只读预检会检查类型、所有者、
 权限和非空大小，但不会读取或输出 Secret 值。该文件系统映射满足 Gate A 单机测试
 环境的最小保管基线，不自动满足 Gate B 的集中 Secret Manager、审计或高可用要求。
