@@ -251,7 +251,7 @@ def test_bootstrap_is_an_explicit_profile_with_a_pending_secret_file() -> None:
         secret["source"] for secret in bootstrap["secrets"]
     }
     assert compose["secrets"]["bootstrap_password"]["file"].endswith(
-        "/bootstrap_password.pending"
+        "/run/pinkdoohub-gatea/bootstrap_password.pending"
     )
 
 

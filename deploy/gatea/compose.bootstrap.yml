@@ -37,4 +37,4 @@ services:
 
 secrets:
   bootstrap_password:
-    file: ${GATEA_BOOTSTRAP_SECRET_FILE:-/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending}
+    file: ${GATEA_BOOTSTRAP_SECRET_FILE:-/run/pinkdoohub-gatea/bootstrap_password.pending}

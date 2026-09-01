@@ -85,7 +85,7 @@ Phase 9.4 已在 `deploy/gatea/` 建立文件型 Secret 边界，并于 2026-09-
 | DB root password | `/etc/pinkdoohub/gatea/secrets/mysql_root_password` | `root:root 0400` | MySQL 初始化及后续受控备份/恢复；App 禁止读取 |
 | Redis password | `/etc/pinkdoohub/gatea/secrets/redis_password` | `root:10001 0440` | Redis、App、迁移/Bootstrap Job |
 | JWT secret | `/etc/pinkdoohub/gatea/secrets/jwt_secret` | `root:10001 0440` | App、迁移/Bootstrap Job |
-| Initial SUPER_ADMIN password | `/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending` | `root:10001 0440` | 只在明确 Bootstrap override 中短期挂载，轮换后删除 |
+| Initial SUPER_ADMIN password | `/run/pinkdoohub-gatea/bootstrap_password.pending` | `root:10001 0440` | 只在明确 Bootstrap override 中短期挂载，轮换后删除；`/run` 重启不保留 |
 
 Secret 目录固定为 `root:root 0700`，宿主普通用户无法遍历。Compose 对本地文件型
 Secret 使用 bind mount 并保留宿主元数据，因此三个 App Runtime Secret 使用宿主
@@ -94,6 +94,14 @@ Secret 使用 bind mount 并保留宿主元数据，因此三个 App Runtime Sec
 `/etc/pinkdoohub/gatea/config.env`、`root:root 0640`。只读预检会检查类型、所有者、
 权限和非空大小，但不会读取或输出 Secret 值。该文件系统映射满足 Gate A 单机测试
 环境的最小保管基线，不自动满足 Gate B 的集中 Secret Manager、审计或高可用要求。
+
+Gate A 持久 Bootstrap 只允许 `gatea_bootstrap.py` 从人工 TTY 隐藏读取初始/最终
+密码。初始值短暂落在上述 `/run` tmpfs 文件，最终值不落文件；两个值都不进入
+命令参数、宿主/常驻应用环境、仓库、日志或 Record。初始值只由 Compose Secret
+提供给一次性 Bootstrap 容器入口，并在该进程内转换为既有管理命令要求的短期
+环境变量。工具在成功和失败路径删除初始 Secret，成功后同时撤销验证期间产生的
+两个 Refresh 会话。脱敏 Bootstrap Record 只包含候选、用户 ID、唯一性/重放/
+登录/轮换/清理布尔值和 UTC 时间，不保存身份字段。
 
 ### 3.2 Gate A 备份保管与 Redis 恢复策略
 

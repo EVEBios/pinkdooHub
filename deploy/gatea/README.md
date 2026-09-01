@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** Loopback 首次部署与空数据持久备份/隔离恢复已通过
+> **Status:** Loopback、空数据备份/恢复已通过；Bootstrap 编排待真实执行
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
@@ -47,13 +47,13 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 /etc/pinkdoohub/gatea/secrets/mysql_root_password        root:root 0400
 /etc/pinkdoohub/gatea/secrets/redis_password             root:10001 0440
 /etc/pinkdoohub/gatea/secrets/jwt_secret                 root:10001 0440
-/etc/pinkdoohub/gatea/secrets/bootstrap_password.pending root:10001 0440（仅临时）
+/run/pinkdoohub-gatea/bootstrap_password.pending        root:10001 0440（仅临时）
 
 /srv/pinkdoohub/gatea/releases/<git-sha>/
 /srv/pinkdoohub/gatea/current -> releases/<git-sha>
 /srv/pinkdoohub/gatea/backups/mysql/
 /srv/pinkdoohub/gatea/backups/images/
-/srv/pinkdoohub/gatea/records/{releases,backups,restores}/
+/srv/pinkdoohub/gatea/records/{releases,backups,restores,bootstrap}/
 /srv/pinkdoohub/gatea/staging/
 ```
 
@@ -61,8 +61,8 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 Secret 目录本身保持 `root:root 0700`，因此宿主普通用户无法遍历。三个 App Runtime
 Secret 使用未分配给宿主账号的数值 GID 10001 和 `0440`，使 Compose bind mount
 保留宿主权限时，容器内 UID/GID 10001 仍能只读；MySQL Root Secret 继续保持
-`root:root 0400`，App 不挂载它。未来临时 Bootstrap Secret 使用同一 Runtime
-GID/mode，并在完成登录与轮换后删除。
+`root:root 0400`，App 不挂载它。临时 Bootstrap Secret 使用同一 Runtime
+GID/mode，但只写入 `/run` tmpfs，并在完成登录与轮换后删除。
 
 ## 受控生命周期命令
 
@@ -125,6 +125,40 @@ sudo python -m scripts.release.gatea_operations \
 使用 `--fake`。`app-up` 完成后要求 App/Nginx 均为 healthy，且只有 Nginx 发布
 `127.0.0.1:${GATEA_LOOPBACK_PORT}:8080`。
 
+## 受控 SUPER_ADMIN Bootstrap
+
+`gatea_bootstrap.py` 是持久 Gate A 唯一批准的 Bootstrap 编排入口。它要求 Root、
+完整 Runtime image/首次迁移 Record、MySQL/Redis/App/Nginx 四项健康、唯一 loopback
+publisher，以及精确重复的用户名确认。命令不接受任何密码参数或密码环境变量；
+初始密码和最终密码都通过 TTY 各隐藏输入两次，且最终密码必须不同。
+
+执行前由 Root 创建脱敏 Record 目录：
+
+```bash
+sudo install -d -o root -g root -m 0755 \
+  /srv/pinkdoohub/gatea/records/bootstrap
+
+sudo python -m scripts.release.gatea_bootstrap \
+  --username <approved-username> \
+  --nickname <approved-nickname> \
+  --phone <approved-phone> \
+  --confirm-username <approved-username> \
+  --apply
+```
+
+初始密码只短暂写入 tmpfs 上的
+`/run/pinkdoohub-gatea/bootstrap_password.pending`，权限为 `root:10001 0440`；
+首次创建后使用同一 Secret 严格重放，要求 SUPER_ADMIN/Audit 各唯一且用户时间戳
+不变。随后脚本只经 `127.0.0.1` Nginx 执行初始登录、密码轮换、旧密码拒绝、
+新密码登录、两次 Refresh 会话注销与撤销验证。成功或失败都会删除临时 Secret 和
+一次性容器；成功 Record 固定为
+`records/bootstrap/super-admin-bootstrap.json`，只记录用户 ID、计数、候选、布尔
+证据和 UTC 时间，不记录 username、nickname、phone、密码、Token 或密码 hash。
+
+已有成功 Record 时命令 fail closed；不得删除 Record 后尝试创建第二个
+SUPER_ADMIN。若操作返回失败，先保留数据库与日志现场并确认临时 Secret 已删除，
+再按同一批准身份和已知初始密码决定是否恢复执行，不能改用不同身份绕过严格重放。
+
 ## 受控备份与隔离恢复
 
 `gatea_backup.py` 只备份权威 MySQL 与商品图片。Redis 当前只保存 refresh-token
@@ -158,8 +192,8 @@ sudo python -m scripts.release.gatea_backup \
 同机备份只能证明流程和恢复能力，不能覆盖服务器或系统盘故障。Gate A Go 前仍需
 定义保留期，并把批准备份加密复制到独立故障域；工具不自动上传或删除备份。
 
-脚本仍故意不提供 Bootstrap、备份删除、来源卷恢复、TLS 切换或公开发布命令；
-这些步骤必须分别实现、测试和 Review，不能用未经审查的现场 Shell 绕过。
+运维工具仍故意不提供备份删除、来源卷恢复、TLS 切换或公开发布命令；这些步骤
+必须分别实现、测试和 Review，不能用未经审查的现场 Shell 绕过。
 
 ## 后续执行顺序
 

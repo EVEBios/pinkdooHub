@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 9.4 进行中 — Loopback 与空数据持久备份/隔离恢复已通过，待 Bootstrap/DNS/HTTPS/真机
+> **Current Phase:** 9.4 进行中 — Bootstrap 编排已实现，待真实执行/DNS/HTTPS/真机
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-02
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -33,6 +33,7 @@
 - Phase 9.3 已完成：候选 SHA `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success；Run ID `20260831t221625` 在可销毁双 MySQL/Redis/Nginx/App/图片卷环境完成 DR-01～DR-07 与 DR-09 服务端部分，53 项发布工具契约通过，全部任务资源已清理。详见[演练报告](reports/phase93_rehearsal_2026-08-31.md)。微信合法域名、真实 RC、iOS/Android 真机 DR-08 和 Gate A 决策保持 Phase 9.4；当前仍未授权上传、分发、提审或发布。
 - Phase 9.4 持久主机 loopback 首次部署已通过：Runtime `51ad315...` 的 Run 33568184860 与 Operations `17114d7...` 的 Run 33568983950 均为 8/8 success；真实腾讯云主机完成空库 Aerich 0→1→2、10 表核验、持久 MySQL/Redis/图片卷、非 root App、只读根文件系统、Healthy Nginx 和 liveness/readiness。MySQL/Redis/App 不发布宿主端口，唯一边界是 `127.0.0.1:18080`，公网 18080 不可达。完整脱敏证据见 [9.4 Loopback 报告](reports/phase94_gatea_loopback_2026-09-02.md)。Bootstrap、DNS/证书、微信合法域名、真实 RC 和 iOS/Android 真机仍未执行，Gate A 保持 No-Go。
 - Phase 9.4 空数据持久备份/隔离恢复已通过：Operations `d1f3379...` 的 Run 33570862787 为 8/8 success；Backup `20260901t232740z` 在停写窗口生成 `0600` MySQL/图片 Artifact，独立无端口 Restore project 完成数据库摘要、图片 manifest、空 Redis 和 Restore App readiness 验证，并删除全部临时容器/网络/卷。当前备份仍在同机，Bootstrap 后含代表性数据的复验、保留期和加密异机副本仍未完成，详见[备份恢复报告](reports/phase94_gatea_backup_restore_2026-09-02.md)。
+- Phase 9.4 持久 Bootstrap 主机编排已在仓库实现、尚未执行：TTY 隐藏读取初始/最终密码，初始值只短暂写入 `/run` 的 `0440` Secret；工具绑定完整 Runtime/迁移 Record、四项健康和 loopback 端口，自动执行首次/严格重放、唯一用户/Audit、初始登录、密码轮换、旧密码拒绝、新密码登录、Refresh 会话撤销和所有退出路径 Secret 清理。成功 Record 不保存 PII、密码、Token 或 hash；真实结果只有在 CI 和 Gate A 执行通过后才能补充。
 
 ## 3. 状态词
 

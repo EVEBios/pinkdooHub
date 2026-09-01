@@ -4,6 +4,14 @@
 
 ---
 
+## Release Phase 9.4.5 — Gate A 持久 SUPER_ADMIN Bootstrap（本地实现，2026-09-02）
+
+- 新增 `scripts/release/gatea_bootstrap.py` 作为持久 Gate A 唯一批准的管理员初始化入口。命令要求 Root、`--apply`、批准身份和精确 username 二次确认，不接受任何密码参数/环境变量；初始与最终密码均通过 TTY 隐藏双输入，最终密码必须不同。
+- 初始密码只短暂写入 `/run/pinkdoohub-gatea/bootstrap_password.pending`（`root:10001 0440`），供一次性 Compose Bootstrap 首次执行和严格重放；最终密码只在主机进程内存与 loopback API 请求体中使用。成功、失败和中断路径都删除临时 Secret，一次性容器必须由 `--rm` 清理。
+- 编排器在写入前验证完整 Runtime image、首次迁移 Record、MySQL/Redis/App/Nginx 健康和唯一 `127.0.0.1` publisher；首次/重放间比较唯一 SUPER_ADMIN、自指 Bootstrap Audit、用户 ID 与 `updated_at`，随后经 Nginx 验证初始登录、密码轮换、旧密码拒绝、新密码登录，并注销/验证撤销两个 Refresh 会话。
+- 成功 Record 固定写入 `records/bootstrap/super-admin-bootstrap.json`，只包含候选、Image ID、用户 ID、计数、UTC 时间和重放/登录/轮换/清理布尔值；明确不保存 username、nickname、phone、密码、Token 或 hash。已有 Record 时 fail closed，不提供第二个管理员或 Record 删除能力。
+- 新增 9 项定向测试，覆盖参数 Secret 不回显、身份/密码确认、TTY 门槛、tmpfs Secret 权限/排他创建/清理、首次与恢复重放、脱敏 Record、失败清理、已有 Record 拒绝及严格结果/数据库证据。真实 Gate A 尚未执行，仍需完整回归、CI 和用户交互输入后才能记录通过；未修改业务 API、数据库 Schema/Aerich、依赖或应用版本。
+
 ## Release Phase 9.4.4 — Gate A 持久备份与隔离恢复（本地实现，2026-09-02）
 
 - 新增 `gatea_backup.py`：备份 ID 固定为 UTC `YYYYMMDDtHHMMSSz`，操作前验证 Root 配置/Secret、Runtime image、首次迁移 Record 和四项服务健康；短暂停止 Nginx/App 形成一致停写窗口，生成 `root:root 0600` 的 MySQL 单事务逻辑备份和图片卷 Tar，记录 SHA-256、数据库摘要、图片 manifest 与候选身份，并自动恢复 App/Nginx health。任何备份或恢复应用可用性失败都不写成功 Record。
