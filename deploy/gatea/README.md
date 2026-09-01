@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** 候选 SHA/配置/Secret/镜像已在真实服务器准备；容器与数据卷尚未启动
+> **Status:** Loopback 首次部署已通过；持久备份/隔离恢复工具待 CI 与真实执行
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
@@ -16,6 +16,7 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 | `compose.loopback.yml` | 备案等待期只绑定 `127.0.0.1:18080` |
 | `compose.tls.yml` | ICP/DNS/证书完成后才允许发布 80/443 |
 | `compose.bootstrap.yml` | 一次性 SUPER_ADMIN Bootstrap；不属于常驻服务 |
+| `compose.restore.yml` | 独立 MySQL/空 Redis/图片卷/Restore App；无宿主端口，验证后删卷 |
 | `nginx/loopback.conf` | SSH 隧道/宿主环回 Smoke，不构成微信 RC 证据 |
 | `nginx/tls.conf.template` | 真实 Gate A HTTPS、ACME、图片和反向代理 |
 | `config.env.example` | 非 Secret 配置模板；真实文件位于 `/etc` |
@@ -124,8 +125,41 @@ sudo python -m scripts.release.gatea_operations \
 使用 `--fake`。`app-up` 完成后要求 App/Nginx 均为 healthy，且只有 Nginx 发布
 `127.0.0.1:${GATEA_LOOPBACK_PORT}:8080`。
 
-脚本仍故意不提供 Bootstrap、备份、恢复、删卷、TLS 切换或公开发布命令；这些
-步骤必须分别实现、测试和 Review，不能用未经审查的现场 Shell 绕过。
+## 受控备份与隔离恢复
+
+`gatea_backup.py` 只备份权威 MySQL 与商品图片。Redis 当前只保存 refresh-token
+会话，恢复旧快照可能重新激活应失效的会话，因此恢复环境固定启动空 Redis，使
+全部旧 refresh 会话失效。备份 ID 必须使用 UTC `YYYYMMDDtHHMMSSz`；备份短暂
+停止 Nginx/App 形成停写窗口，MySQL/Redis 保持运行，完成后自动恢复 App/Nginx
+并再次验证 health。SQL/Tar 为 `root:root 0600`，Record 只保存摘要、计数、路径、
+checksum 和 Redis 策略，不保存 Secret 值。
+
+```bash
+backup_id=20260902t120000z
+
+sudo python -m scripts.release.gatea_backup \
+  backup \
+  --backup-id "$backup_id" \
+  --mode loopback
+
+sudo python -m scripts.release.gatea_backup \
+  restore-verify \
+  --backup-id "$backup_id" \
+  --confirm-project "pinkdoohub-gatea-restore-$backup_id" \
+  --mode loopback
+```
+
+恢复只写入精确确认的独立 project、internal network 和两个临时 named volumes；
+不加入来源 project、不挂载来源卷、不发布宿主端口。工具比较数据库 Schema/业务
+摘要与图片内容 manifest，启动 Restore App 验证 readiness，并在成功、失败和
+中断路径执行精确 `down --volumes` 后复核恢复容器/卷消失。来源 Gate A 服务和
+三个持久卷不属于清理目标。
+
+同机备份只能证明流程和恢复能力，不能覆盖服务器或系统盘故障。Gate A Go 前仍需
+定义保留期，并把批准备份加密复制到独立故障域；工具不自动上传或删除备份。
+
+脚本仍故意不提供 Bootstrap、备份删除、来源卷恢复、TLS 切换或公开发布命令；
+这些步骤必须分别实现、测试和 Review，不能用未经审查的现场 Shell 绕过。
 
 ## 后续执行顺序
 
@@ -134,7 +168,7 @@ sudo python -m scripts.release.gatea_operations \
 3. 使用 `infra-up` 启动 MySQL、Redis；使用 `initial-migrate` 完成空库迁移。
 4. 使用 `app-up` 启动 App/Nginx loopback；验证 liveness/readiness 与端口边界。
 5. 临时注入 Bootstrap Secret，执行首次/严格重放、登录和凭据轮换后删除。
-6. 实现并验证 MySQL/图片独立备份、恢复、校验和、保留和异机副本。
+6. 使用受控工具验证 MySQL/图片独立备份、恢复和校验和；再定义保留和加密异机副本。
 7. ICP 通过后再配置 DNS、证书、80/443 和 TLS override。
 8. 将同一 SHA 绑定后端、OpenAPI 和微信 RC，配置合法域名并执行真机矩阵。
 

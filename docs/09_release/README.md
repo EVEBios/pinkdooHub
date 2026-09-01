@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 9.4 进行中 — Gate A 持久主机 loopback 首次部署已通过，待 DNS/HTTPS 与微信真机
+> **Current Phase:** 9.4 进行中 — Loopback 已通过；持久备份/隔离恢复工具待 CI 与真实执行
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-02
 > **Release Scope:** 微信小程序内部测试版（Gate A）

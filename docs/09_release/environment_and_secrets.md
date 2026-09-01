@@ -95,6 +95,22 @@ Secret 使用 bind mount 并保留宿主元数据，因此三个 App Runtime Sec
 权限和非空大小，但不会读取或输出 Secret 值。该文件系统映射满足 Gate A 单机测试
 环境的最小保管基线，不自动满足 Gate B 的集中 Secret Manager、审计或高可用要求。
 
+### 3.2 Gate A 备份保管与 Redis 恢复策略
+
+Gate A 权威备份资产是 MySQL 逻辑备份与商品图片归档。两者固定写入
+`/srv/pinkdoohub/gatea/backups/{mysql,images}/`，文件为 `root:root 0600`；脱敏
+Record 写入 `records/{backups,restores}/`。MySQL Root Secret 只在容器内通过
+`/run/secrets` 供 `mysqldump/mysql` 读取，不进入命令参数、备份 Record 或日志。
+
+Redis 当前只保存 refresh-token 会话，不保存 Product、Order、Inventory 或图片
+权威数据。灾难恢复固定启动空 Redis，不恢复 AOF/RDB，使所有旧 refresh 会话失效
+并要求用户重新登录；这比恢复可能包含已撤销 Token 的旧 Redis 快照更安全。该策略
+不改变正常重启时现有 Redis named volume 的持久化行为。
+
+同机 `0600` 备份只用于首次流程验证，不是完整灾难恢复保管方案。Gate A 决策前仍需
+冻结保留期、删除审批、加密方式、独立故障域副本、恢复授权和定期演练频率；在这些
+项目完成前不得把“独立恢复验证通过”描述为主机/磁盘故障已覆盖。
+
 ## 4. 微信网络与域名清单
 
 Gate A 前由发布负责人 Yijie Shen 填写实际值并附微信后台截图/导出证据：
