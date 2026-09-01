@@ -12,6 +12,7 @@
 - `infra-up` 只启动 MySQL/Redis 并等待 health；启动或 health 失败会停止本次服务但不删除命名卷。`initial-migrate` 要求两项依赖 healthy、目标 application schema 为 0 张表，才使用显式 operations profile 执行 Aerich；成功后以候选 SHA、Image ID 和 UTC 时间原子记录，匹配记录的严格重放为 no-op，非空未知状态拒绝迁移且停止基础设施。
 - `app-up` 验证镜像 SHA/revision、UID/GID、Entrypoint、CMD 和迁移记录，再启动 App/Nginx；失败时停止 App edge、保留基础设施与卷。成功条件同时包括 App/Nginx healthy，以及运行时唯一 publisher 精确为 `127.0.0.1:18080 -> nginx:8080`。
 - `safe-stop` 只执行有序 stop，命令中不存在 `down` 或 `--volumes`；脚本仍不提供 Bootstrap、备份、恢复、删卷、TLS 切换或公开发布能力。
+- 真实主机首次 `infra-up` 发现 Docker Compose v5.5 的 `ps --format json` 使用 newline-delimited JSON，而本地 v5.3 在空项目及既有契约中使用 JSON 数组；解析器已同时支持两种官方输出形状并新增回归。首次 MySQL/Redis 均曾达到 Healthy，但解析器按 fail-closed 自动停止两项服务；卷内尚无应用表或业务数据，未运行迁移。
 
 ## Release Phase 9.4.2 — Gate A 持久部署拓扑（本地实现，2026-09-02）
 

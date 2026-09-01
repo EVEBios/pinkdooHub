@@ -131,6 +131,22 @@ def _healthy_rows(*services: str) -> list[dict[str, str]]:
     ]
 
 
+def test_parse_compose_status_accepts_array_and_v5_ndjson() -> None:
+    mysql = {"Service": "mysql", "State": "running", "Health": "healthy"}
+    redis = {"Service": "redis", "State": "running", "Health": "healthy"}
+
+    assert gatea._parse_compose_ps_output(json.dumps([mysql, redis])) == [
+        mysql,
+        redis,
+    ]
+    assert gatea._parse_compose_ps_output(
+        f"{json.dumps(mysql)}\n{json.dumps(redis)}\n"
+    ) == [mysql, redis]
+
+    with pytest.raises(GateAError, match="status output is invalid"):
+        gatea._parse_compose_ps_output('{"Service": "mysql"}\nnot-json')
+
+
 def test_validate_app_image_requires_matching_sha_and_non_root_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

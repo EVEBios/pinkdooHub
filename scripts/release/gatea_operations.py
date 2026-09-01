@@ -408,10 +408,28 @@ def _compose_ps(
         arguments=("ps", "--all", "--format", "json", *services),
         capture_output=True,
     )
-    try:
-        payload = json.loads(result.stdout or "[]")
-    except json.JSONDecodeError as error:
-        raise GateAError("Docker Compose status output is invalid") from error
+    payload = _parse_compose_ps_output(result.stdout)
+    return payload
+
+
+def _parse_compose_ps_output(output: str) -> list[dict[str, Any]]:
+    """兼容 Compose v2 JSON 数组与 v5 newline-delimited JSON。"""
+
+    stripped = output.strip()
+    if not stripped:
+        payload: Any = []
+    else:
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            try:
+                payload = [
+                    json.loads(line)
+                    for line in stripped.splitlines()
+                    if line.strip()
+                ]
+            except json.JSONDecodeError as error:
+                raise GateAError("Docker Compose status output is invalid") from error
     if isinstance(payload, dict):
         payload = [payload]
     if not isinstance(payload, list) or not all(
