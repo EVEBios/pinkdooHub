@@ -102,7 +102,6 @@ def _restore_all_services(
     values: Mapping[str, str],
     config_file: Path,
     secret_dir: Path,
-    release_record_dir: Path,
     timeout: int,
 ) -> None:
     gatea._run_compose(
@@ -119,14 +118,20 @@ def _restore_all_services(
             str(timeout),
             "mysql",
             "redis",
+            "app",
+            "nginx",
         ),
     )
-    gatea.app_up(
+    rows = gatea._compose_ps(
+        values=values,
         config_file=config_file,
         secret_dir=secret_dir,
-        record_dir=release_record_dir,
         mode="loopback",
-        wait_timeout=timeout,
+        services=SERVICES,
+    )
+    gatea._ensure_services_healthy(rows, *SERVICES)
+    gatea._validate_loopback_publishers(
+        rows, int(values.get("GATEA_LOOPBACK_PORT", "18080"))
     )
 
 
@@ -474,7 +479,6 @@ def execute(
             values=values,
             config_file=config_file,
             secret_dir=secret_dir,
-            release_record_dir=release_record_dir,
             timeout=wait_timeout,
         )
     except BaseException as error:

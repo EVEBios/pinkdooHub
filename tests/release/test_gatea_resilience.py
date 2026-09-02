@@ -125,6 +125,59 @@ def test_log_rotation_requires_exact_bounded_json_file_contract(
         )
 
 
+def test_restore_all_services_reuses_existing_loopback_publisher(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _values()
+    commands: list[tuple[str, ...]] = []
+    publisher_checks: list[int] = []
+    rows = [
+        {"Service": name, "State": "running", "Health": "healthy"}
+        for name in resilience.SERVICES
+    ]
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess([], 0, stdout=""),
+    )
+    monkeypatch.setattr(gatea, "_compose_ps", lambda **kwargs: rows)
+    monkeypatch.setattr(gatea, "_ensure_services_healthy", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_validate_loopback_publishers",
+        lambda actual_rows, port: publisher_checks.append(port),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "app_up",
+        lambda **kwargs: pytest.fail("first-start app_up must not run during recovery"),
+    )
+
+    resilience._restore_all_services(
+        values=values,
+        config_file=Path("/config"),
+        secret_dir=Path("/secrets"),
+        timeout=180,
+    )
+
+    assert commands == [
+        (
+            "up",
+            "--detach",
+            "--no-build",
+            "--wait",
+            "--wait-timeout",
+            "180",
+            "mysql",
+            "redis",
+            "app",
+            "nginx",
+        )
+    ]
+    assert publisher_checks == [18080]
+
+
 def test_log_scan_records_only_aggregates_and_no_raw_content(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
