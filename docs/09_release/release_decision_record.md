@@ -18,6 +18,17 @@
 
 Yijie Shen 确认：本版唯一发布平台为微信小程序，当前只推进受邀内部测试版 Gate A；支付宝、抖音和 H5 不属于本版范围。Gate A 暂时使用用户名密码和 ADMIN+ 人工 Paid，不接微信登录、微信支付或真实资金。Gate A 使用 production 安全配置语义、真实测试 HTTPS Origin、独立 MySQL 8+、Redis 和持久图片存储，并依次完成 CI、迁移与备份恢复演练以及 iOS/Android 真机验收。所有责任角色均由 Yijie Shen 承担，但实施、复核、风险接受和发布授权分别记录。
 
+### 0.1 Phase 9.4 备案前检查点（2026-09-02）
+
+持久 Gate A 的迁移、Bootstrap、代表性数据、非空恢复、加密异机备份、MySQL/Redis
+故障、App 重启、日志轮转/脱敏/查询，以及不可发布微信预 RC 已完成。结果绑定 Runtime
+`51ad315...`、Operations `c4d27a8...` 和 GitHub Actions Run 33584789525；详细证据见
+[`reports/phase94_pre_icp_completion_2026-09-02.md`](reports/phase94_pre_icp_completion_2026-09-02.md)。
+
+该检查点不是 RC 或 Go 决定。微信开发者工具已完成预 RC 加载/编译并验证域名校验
+fail closed；备案、DNS/HTTPS、微信合法域名、release-eligible artifact、iOS/Android
+真机和独立上传授权仍未完成。Gate A 因此继续为 **No-Go / Not Authorized**。
+
 ## 1. 决策
 
 本版发布目标冻结为微信小程序，不同时发布支付宝、抖音或 H5。发布采用两道门：

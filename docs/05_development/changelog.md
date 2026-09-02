@@ -4,11 +4,16 @@
 
 ---
 
-## Release Phase 9.4.7 — 备案前 Gate A 运维收口（本地实现，2026-09-02）
+## Release Phase 9.4.7 — 备案前 Gate A 运维收口（真实通过，2026-09-02）
 
 - 新增 `gatea_offsite_backup.py` 客户端异机备份工具：只拉取精确 Backup ID 的 MySQL/图片 Artifact 与已经 PASS 的 Backup/Restore Record，重算来源大小/SHA-256 后形成固定成员 Bundle；使用随机 AES-256-GCM 加密并以独立 RSA-3072 OAEP-SHA256 公钥封装数据密钥，私钥与 copy 分离且全部位于仓库外。导出后必须完成 AEAD 解密、Tar 白名单、来源 checksum 和 Restore 证据复核；工具拒绝覆盖且不提供自动删除。
 - 新增 `gatea_resilience.py`：在真实代表性数据和 loopback 边界上依次验证 MySQL/Redis 故障时 readiness 503、liveness 200、依赖恢复和 App 重启；任何失败都先恢复四项服务。成功前比较数据库/图片零漂移，并验证四个长期容器 `json-file 10m × 5`、24 小时 Nginx 请求/4xx/5xx/时延可查询以及日志无四项真实 Secret 或高置信敏感模式。
-- 冻结 Gate A 备份最长 24 小时 RPO、计划停写 RPO 0、30 分钟 RTO、最近 7 个且停用后 30 日保留、Record 90 日、每 RC/月度恢复、精确删除审批和来源恢复授权；冻结初始测试人员、GitHub Issues 非敏感反馈、P0/P1 处置、14 日测试窗口、停用及数据清理流程。本节仍是本地实现，真实异机 copy、持久故障演练、微信预 RC 和 CI 证据完成前不能标记 PASS。
+- 冻结 Gate A 备份最长 24 小时 RPO、计划停写 RPO 0、30 分钟 RTO、最近 7 个且停用后 30 日保留、Record 90 日、每 RC/月度恢复、精确删除审批和来源恢复授权；冻结初始测试人员、GitHub Issues 非敏感反馈、P0/P1 处置、14 日测试窗口、停用及数据清理流程。
+- Backup `20260902t014211z` 已导出为 14,319-byte AES-256-GCM 加密异机副本，RSA-3072 私钥与副本分离，FileVault、目录/文件权限和导出后完整解密/来源 checksum/Restore PASS 均通过；副本 SHA-256 为 `940a543...`。服务器长期服务和同机 Backup 保持不变。
+- 首次真实韧性执行完成依赖故障与 App 重启后，在最终收敛阶段发现恢复函数错误复用“首次启动端口必须空闲”断言；工具 fail closed、未写成功 Record，四项服务与数据独立复核健康。修复为幂等 Compose 恢复并新增已有 loopback publisher 回归；`b69ee74...` Run 33584388085 与 `c4d27a8...` Run 33584789525 均为 8/8 success 后重跑通过。
+- 真实 MySQL/Redis 故障均证明 readiness 503、liveness 200，依赖在约 5.5–5.7 秒恢复；App 重启总计 6.168 秒。数据库摘要和三图片零漂移，四容器 `json-file 10m × 5`，24 小时日志无真实 Secret/高置信敏感模式命中，Nginx 请求/4xx/5xx/median/p95/max 可聚合查询；成功 Record 为 `root:root 0644`。
+- 使用精确 Node 24.13.0/npm 11.6.2 在 `c4d27a8...` 完成备案前微信预 RC：61 suites/387 Jest、类型/样式/代码/OpenAPI/17 项 CI policy 全过；97 文件、603,624 bytes、0 source map，manifest `aeb81ef...` 严格标记 `release_eligible=false` 并使用保留 `.test` Origin。微信开发者工具 Stable 2.02.2608060 成功加载、编译并渲染首页；发现并修正被忽略的本机 `urlCheck=false` 覆盖，重编译后只按预期拒绝未进合法域名列表的保留 Origin。没有执行预览/上传，工具进程和监听已退出。
+- 详细脱敏证据见 `docs/09_release/reports/phase94_pre_icp_completion_2026-09-02.md`。备案、真实 DNS/HTTPS/合法域名、正式 RC、iOS/Android 真机和上传授权仍未完成，Gate A 保持 No-Go；未修改业务 API、数据库 Schema/Aerich、生产依赖、应用版本或 Runtime image。本机私有项目设置不进入 Git。
 
 ## Release Phase 9.4.6 — Gate A 代表性数据与二次恢复（真实通过，2026-09-02）
 

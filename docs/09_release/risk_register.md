@@ -23,8 +23,8 @@
 | R-011 | P1 | dependency-aware readiness 已实现但尚未在生产相似 MySQL/Redis 验证摘流量与恢复 | 中×高 | DR-06 分别中断 MySQL/Redis，Readiness 安全返回 503，恢复后重新 200；Liveness、优雅重启与脱敏均通过 | Yijie Shen | 9.3 | closed |
 | R-012 | P1 | Redis 初始化日志可能泄露连接凭据 | 中×高 | Run 33355935212 的后端契约证明 username、password、query 不输出 | Yijie Shen | Gate A | closed |
 | R-013 | P1 | production fail-fast 与 Secret 隐藏缺少干净 CI 证据 | 中×高 | Run 33355935212 覆盖 debug/MySQL/JWT/Redis/HTTPS 图片配置的接受与拒绝路径 | Yijie Shen | Gate A | closed |
-| R-014 | P1 | 图片依赖本地目录，主机/系统盘故障可能丢失 | 高×高 | Gate A 已用 3 张真实图片完成持久卷、`0600` 归档、checksum、无端口独立恢复和内容 manifest 比较；同机备份尚不覆盖主机故障，仍需加密异机副本，Gate B 需对象存储/CDN 或等价 Review | Yijie Shen | Gate A 保管/Gate B 存储 | mitigating |
-| R-015 | P1 | Secret Manager、轮换、最小权限和泄漏响应未选 | 中×高 | Secret inventory 映射到实际系统、主体、轮换和审计 | Yijie Shen | Gate A（测试）/B（正式） | open |
+| R-014 | P1 | Gate A 图片依赖本地卷，主机/系统盘故障可能同时损坏来源与同机备份 | 高×高 | 3 张真实图片已完成持久卷、`0600` 归档、checksum 和无端口独立恢复；Backup `20260902t014211z` 已生成管理电脑 FileVault 上的 AES-256-GCM/RSA-OAEP-SHA256 异机副本并立即完整解密复核，私钥与副本分离 | Yijie Shen | Gate A 保管 | closed |
+| R-015 | P1 | Gate A Secret 的保管、读取主体、轮换和泄漏响应未落地 | 中×高 | Root 文件型 Secret 的路径、`0700/0400/0440` 权限、容器 UID/GID 读取边界、人工 TTY Bootstrap、轮换/泄漏触发、备份私钥隔离和日志零精确命中均已验证；详细证据见备案前收口报告 | Yijie Shen | Gate A（测试） | closed |
 | R-016 | P1 | Python/Node/npm/pip 固定缺少远端干净 CI 证据 | 高×中 | Run 33355935212 验证版本文件、engines 和 CI 精确版本 | Yijie Shen | 9.2 | closed |
 | R-017 | P1 | pip-audit 修复可升级项后只剩 ecdsa 无修复的 P-256 时序公告 | 中×高 | 固定 pip-audit 2.10.1；production HS256 不可达策略 fail-closed，算法/版本变化重审，2026-11-30 到期 | Yijie Shen | 2026-11-30 | accepted-until |
 | R-018 | P1 | 远端 CI 已证明 production artifact 配置关闭且 0 source map，尚缺真实 RC 证据 | 中×中 | Run 33355935212 已完成 CI 侧；9.4 真实 RC 继续证明无 source map/上传入口 | Yijie Shen | Gate A | mitigating |
@@ -33,6 +33,8 @@
 | R-021 | P2 | OpenAPI CLI UTF-8/CP1252 回归缺少 CI 运行证据 | 高×低 | Run 33355935212 的 OpenAPI Job 完成 `--help`、真实导出、字节比较和类型漂移检查 | Yijie Shen | 9.2 | closed |
 | R-022 | P2 | metadata/README 已收敛，artifact checker 拒绝 H5-only marker；尚缺 RC 复核 | 中×中 | Run 33355935212 已完成 CI 侧；9.4 RC 继续证明发布元数据只声明微信 | Yijie Shen | Gate A | mitigating |
 | R-023 | P2 | Jest 重复提示 ReactDOMTestUtils.act deprecated | 高×低 | Taro 测试依赖升级窗口或有期限 warning 白名单 | Yijie Shen | Gate A 后可排期 | open |
+| R-024 | P1 | Gate B 公开服务仍依赖单主机本地图片卷，缺少高可用存储/CDN | 高×高 | Gate B 前选择对象存储/CDN 或完成等价可用性、备份、权限和恢复 Review | Yijie Shen | Gate B | deferred |
+| R-025 | P1 | Gate B 缺少集中 Secret Manager、访问审计和自动轮换 | 中×高 | Gate B 前选择集中 Secret 系统，验证最小权限、版本、轮换、撤销、审计和泄漏响应 | Yijie Shen | Gate B | deferred |
 
 ## 2. 风险例外规则
 

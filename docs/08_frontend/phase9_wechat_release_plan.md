@@ -62,6 +62,14 @@ Phase 9.1 不实现以下能力：
 
 9.5 和 9.6 可以先做设计审计，但不得与 9.1 混成一个大提交。若最终业务决定只交付内部测试版，Phase 9 可以在 9.4 形成一个明确的内部版本里程碑，9.5–9.7 保持未开始，而不是把它们误标为已完成。
 
+2026-09-02 已完成 9.4 中不依赖备案的服务器、自动化与治理范围：持久代表性数据及
+二次恢复、加密异机备份、MySQL/Redis 故障、App 重启、日志轮转/脱敏/聚合查询、
+Secret/测试人员/反馈/停用/事故规则，以及明确不可发布的微信预 RC 均有脱敏证据。
+微信开发者工具 Stable 2.02.2608060 已加载/编译预 RC，修正本机私有 `urlCheck=false`
+覆盖后按预期拒绝未进入合法域名列表的保留 Origin。真实 DNS/HTTPS、微信合法域名、
+release-eligible RC、iOS/Android 真机和体验版上传仍依赖备案及单独授权，因此 9.4
+与 Gate A 继续保持进行中/No-Go。
+
 ---
 
 ## 3. Phase 9.1 基线审计
@@ -79,15 +87,15 @@ Phase 9.1 不实现以下能力：
 | MySQL-only | PR #2 Run 33355935212 使用固定 MySQL 8.0.46、回环 13306、专用 Schema 真实执行 Aerich 0→1→2 与 9 项门槛，并保存 cleanup artifact | `verified-pr-ci-9.2.6` | 发布演练仍需 9.3 生产相似环境、备份恢复和失败处置 |
 | 迁移 | Phase 9.3 DR-01～DR-03 在 MySQL 8.0.46 完成空库、m0 与 m1→当前，数据/快照/opening balance 保持 | `verified-9.3` | 如未来出现待接管数据库，先只读审计其 Schema/Aerich 状态，再定义升级起点 |
 | 现有生产升级 | 当前没有已发布、由项目确认接管的持久生产 MySQL 基线 | `not-applicable-now` | 不虚构“现有生产升级已通过”；首次上线按空库部署，未来每次发布建立 N-1→N 演练 |
-| 备份与恢复 | DR-04 数据库/图片备份恢复到独立 MySQL/volume，restore-app Ready 与轮换后登录通过；DR-05 部分失败恢复通过 | `verified-9.3` | Gate A RC 继续绑定实际测试环境备份责任；正式生产另行冻结持久备份策略 |
+| 备份与恢复 | DR-04、持久非空 Backup `20260902t014211z`、无端口独立恢复和 AES-256-GCM/RSA-OAEP-SHA256 异机副本均通过 | `verified-gate-a-pre-icp` | 按 24h RPO/30m RTO/最近 7 个/停用后 30 日/每 RC 与月度恢复规则持续执行；来源覆盖仍需单独授权 |
 | API Origin | `.env.production` 仍是 `.example.invalid` 占位 Origin | `blocker` | 冻结测试与正式 HTTPS Origin；构建时显式注入且扫描产物无 localhost/占位域名 |
 | 微信合法域名 | `project.config.json` 开启 `urlCheck` | `gap` | 在微信后台分别配置实际使用的 request/upload/download 域名并真机验证 |
 | HTTPS/DNS | 生产配置要求 HTTPS，但尚无已冻结域名和证书证据 | `blocker` | 冻结 DNS、证书续期和 TLS 检查；发布前从外网与真机验证 |
 | Redis | DR-06 在认证 Redis 8.0.1 验证启动、故障 503、恢复 Ready 和优雅重启 | `verified-9.3` | Phase 9.4 继续使用冻结的测试环境；Gate B 再冻结正式高可用/TLS 策略 |
 | 健康检查 | 9.3.1 契约与 DR-06 真实 MySQL/Redis 故障/恢复均通过，Liveness 与 dependency-aware Readiness 分离 | `verified-9.3` | 9.4 在真实测试 Origin 复核；Gate B 补监控告警 |
 | 图片 | DR-09 三类上传/HTTPS 读取、DR-06 重启保持、DR-04 独立备份恢复均通过 | `verified-gate-a-9.3` | Gate B 冻结对象存储/CDN 或等价高可用方案 |
-| 日志 | Redis 连接日志已在 9.2.2 改为安全目标摘要并通过脱敏测试 | `mitigating` | CI 重跑脱敏契约；继续定义采集、保留、检索和告警 |
-| Secret | 9.2.2 production fail-fast 已覆盖 JWT/Redis/图片地址且错误隐藏输入；`.env` 被忽略 | `mitigating` | CI 重跑配置契约；建立 Secret 清单、注入、轮换、最小权限和 artifact 泄漏扫描 |
+| 日志 | Redis 摘要、四容器 `json-file 10m × 5`、24 小时聚合查询、依赖故障与真实 Secret/高置信模式零命中均在持久 Gate A 通过 | `verified-gate-a-pre-icp` | Gate A 每测试会话复核；Gate B 再建设集中采集、长期保留和主动告警 |
+| Secret | Gate A Root 文件边界、精确权限/读取主体、TTY Bootstrap、轮换/泄漏触发、备份私钥隔离和 artifact/log 扫描已落地 | `verified-gate-a-pre-icp` | Gate B 再选择集中 Secret Manager、访问审计和自动轮换 |
 | 管理员初始化 | DR-07 隔离演练与 2026-09-02 真实 Gate A 均完成首次/严格重放、唯一用户/Audit、登录、凭据轮换、会话撤销和 Secret 清理 | `verified-gate-a-bootstrap` | 保留脱敏 Record；RC 继续验证 SUPER_ADMIN 高权限边界，不复用初始化 Secret |
 | CI | Phase 9.3 最终候选 `136a8bd...` 的 Run 33408135841 在干净 checkout 完成 8/8 Job | `verified-9.3-candidate` | 9.4 RC 需重新绑定真实 Origin/产物，不能复用演练短期证书 |
 | 依赖审计 | `pip-audit==2.10.1` 的 1 条 HS256 不可达例外与 npm 10 包/5 公告精确策略均在 Run 33355935212 通过，策略于 2026-11-30 到期 | `accepted-until` | 到期前升级上游或重新审批，不得破坏性强制降级 |

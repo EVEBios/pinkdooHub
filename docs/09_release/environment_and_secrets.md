@@ -1,6 +1,6 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** 9.1–9.3 Complete; 9.4 Gate A Loopback / Empty Restore / Bootstrap Passed
+> **Status:** 9.1–9.3 Complete; 9.4 Gate A pre-ICP server and governance controls passed
 > **Last Updated:** 2026-09-02
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
@@ -41,7 +41,7 @@
 | `PINKDOOHUB_BOOTSTRAP_PASSWORD` | 是 | 9.3.2 管理命令的非交互 Secret 输入；不进入应用常驻配置、参数或日志 | 只在首次初始化/严格重放命令进程短期注入，完成后撤销 | Yijie Shen |
 | Phase 9.3 rotated bootstrap password | 是 | 仅由主机侧 HTTPS Smoke 读取，用于完成初始凭据轮换并验证独立 Restore App 登录 | 不进入 Compose 参数、应用常驻环境、日志或报告；随演练工作区清理 | Yijie Shen |
 
-9.2.2 已在本地实现上述 production fail-fast 规则，并让 Pydantic 配置错误隐藏原始输入；契约测试已覆盖接受路径、每类拒绝路径和 Secret 不回显。风险关闭仍需要 CI 在干净环境提供同一组证据，不能只依赖本地通过。
+9.2.2 已实现上述 production fail-fast 规则，并让 Pydantic 配置错误隐藏原始输入；契约测试覆盖接受路径、每类拒绝路径和 Secret 不回显，后续干净 PR CI 与当前 Operations CI 均已重复通过。
 
 ### 2.2 微信前端
 
@@ -55,6 +55,11 @@
 | `uploadWithSourceMap` | 否 | 当前为 false；9.2.3 本地 production artifact 扫描为 0 source map | Gate A 禁止上传 source map；远端 CI/真实 RC 重跑 | Yijie Shen |
 
 所有 `TARO_APP_*` 都会进入客户端包，只能承载公开配置。任何 AppSecret、JWT、数据库、Redis、支付密钥或私钥都禁止使用该前缀。
+
+2026-09-02 开发者工具检查发现被 Git 忽略的本机 `project.private.config.json` 曾把
+权威 `urlCheck=true` 覆盖为 `false`；已只将该本机值恢复为 `true`。重新编译后工具
+精确拒绝保留 `.test` Origin，证明合法域名校验 fail closed。该私有设置不进入候选或
+manifest；真实 RC 仍以仓库配置、微信后台域名清单和真机结果三者共同为准。
 
 ## 3. 未来 Secret Inventory
 
@@ -151,6 +156,13 @@ Redis 当前只保存 refresh-token 会话，不保存 Product、Order、Invento
 年度轮换、疑似泄漏或管理电脑更换时生成新 key ID，旧私钥在其加密副本全部超过保留
 期前不得删除。
 
+2026-09-02 已对非空 Backup `20260902t014211z` 实际生成首个加密异机副本并立即完成
+解密、AEAD、Tar 白名单、来源文件 checksum 和 Restore PASS 复核。副本为 `0400`、
+Record 为 `0600`、私钥为 `0600`，密钥目录与副本目录分别为 `0700`；管理电脑
+FileVault 已开启。脱敏 Record 只保存 key ID、算法、大小/checksum、来源文件摘要和
+验证布尔值，不保存私钥、Secret 或 PII。详细证据见
+[`reports/phase94_pre_icp_completion_2026-09-02.md`](reports/phase94_pre_icp_completion_2026-09-02.md)。
+
 ## 4. 微信网络与域名清单
 
 Gate A 前由发布负责人 Yijie Shen 填写实际值并附微信后台截图/导出证据：
@@ -195,7 +207,13 @@ Record 只保留 24 小时总行数、Nginx 请求数、4xx/5xx、median/p95/max
 规则见 [`gatea_test_operations.md`](gatea_test_operations.md)。Gate B 再评估集中采集、
 长期保留和主动告警，不把 Gate A 的单机观察描述为高可用监控。
 
-9.2.2 已将 `app/core/redis.py` 连接成功日志改为 `scheme/host/port/db` 安全目标摘要，不再输出 username、password 或 query，并有专门脱敏测试；CI 证据完成前 R-012 保持 `mitigating`。
+2026-09-02 真实持久主机已验证四个长期容器的上述轮转契约，分别中断 MySQL/Redis
+时 readiness 为 503、liveness 为 200，恢复后 readiness 为 200；App 重启后数据与
+三图片保持。24 小时日志扫描验证四项真实 Secret 精确命中和高置信敏感模式命中均为
+0，并可生成请求数、4xx/5xx 与 median/p95/max request time 聚合。原始日志未写入
+Record；该证据只证明 Gate A 单机查询和响应办法，不替代 Gate B 集中监控与主动告警。
+
+9.2.2 已将 `app/core/redis.py` 连接成功日志改为 `scheme/host/port/db` 安全目标摘要，不再输出 username、password 或 query，并有专门脱敏测试；干净 CI 与 2026-09-02 持久日志扫描均已通过，R-012 已关闭。
 
 ## 6. 配置冻结记录模板
 

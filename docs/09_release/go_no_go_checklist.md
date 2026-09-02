@@ -1,6 +1,6 @@
 # 微信发布 Go/No-Go Checklist
 
-> **Status:** No-Go / Not Authorized — Gate A 持久数据恢复已通过，外部网络与真机仍待完成
+> **Status:** No-Go / Not Authorized — 备案前服务器/自动化/治理已通过，真实域名与真机仍待完成
 > **Last Updated:** 2026-09-02
 > **Current Scope:** 微信小程序内部测试版（Gate A）
 
@@ -19,6 +19,7 @@
 - [ ] 后端与 `weapp` artifact 均来自同一已通过 CI 的 SHA，并记录 checksum；
 - [ ] OpenAPI 摘要、运行时版本、微信开发者工具/上传工具版本已记录；
 - [ ] 体验版名称、界面和测试说明明确标识“内部测试”，无公开承诺。
+- [x] 备案前预 RC 已绑定 `c4d27a8...`、Node 24.13.0/npm 11.6.2、开发者工具 Stable 2.02.2608060、不可发布 `.test` Origin、97 文件/603,624 bytes、0 source map 和 manifest `aeb81ef...`；该项不替代上面的真实 RC；
 
 ### 1.2 CI 与代码质量
 
@@ -37,10 +38,10 @@
 - [ ] 微信后台 request/upload/download 合法域名与实际调用一致；
 - [x] 生产语义演练启动强制 `APP_DEBUG=false`、MySQL、随机 JWT 和必要配置；
 - [x] Phase 9.3 MySQL、Redis 和图片存储均为专用/受控资源；
-- [ ] Secret inventory 已映射到实际保管系统、读取主体、轮换和责任人；
-- [ ] 前端源码、artifact、日志和 source map 无 Secret；
-- [ ] source map 上传、访问和保留策略已批准；
-- [ ] 日志不输出密码、Token、完整 Redis URL、AppSecret、私钥或个人敏感信息。
+- [x] Gate A Secret inventory 已映射到 Root 文件边界、精确权限/读取主体、轮换/泄漏触发和责任人；Gate B 集中 Secret Manager 单独延期；
+- [x] 当前备案前候选的前端源码/artifact 与持久主机 24 小时日志扫描无 Secret 命中；
+- [x] Gate A source map 策略已批准为不生成、不上传；项目配置和当前预 RC 均为 0 source map；
+- [x] 持久主机日志无密码、Token、完整 Redis URL、AppSecret、私钥或高置信敏感模式命中，成功 Record 只保存聚合；
 
 ### 1.4 迁移、备份与恢复
 
@@ -51,7 +52,7 @@
 - [x] 演练未连接共享 3306、开发 SQLite、持久/生产资源或使用 `--fake`；
 - [x] 演练资源、端口、临时目录和合成数据已按记录清理并复核。
 - [x] 持久 Gate A 在代表性用户/Product/图片/订单/库存/Audit 数据上完成非空备份与无端口独立恢复，来源服务恢复健康且临时资源归零；
-- [ ] 同机备份的保留期、删除审批、加密异机副本、恢复授权和周期演练频率已冻结。
+- [x] 保留期、删除审批、恢复授权和周期演练频率已冻结；Backup `20260902t014211z` 的加密异机副本已完成导出后解密/来源 checksum/Restore PASS 复核。
 
 ### 1.5 运行时与运维
 
@@ -60,14 +61,15 @@
 - [x] Redis 认证/网络边界和故障行为验证通过；
 - [x] 图片上传、HTTPS 读取、持久化、备份和恢复通过；
 - [x] SUPER_ADMIN bootstrap 一次性、严格重放、可审计，初始凭据已安全处置；
-- [ ] 日志可查询，错误、延迟和依赖故障至少有 Gate A 观察办法；
-- [ ] 体验版测试人员、反馈入口、停用日期、数据清理和事故联系人明确。
+- [x] 日志可按精确 Compose project 查询；24 小时请求/4xx/5xx/时延聚合、MySQL/Redis 摘流量与恢复、App 重启和敏感扫描已真实通过；
+- [x] 初始测试人员、allowlist、反馈入口、14 日窗口/停用规则、数据清理和事故联系人已冻结。
 
 ### 1.6 微信与业务验收
 
 - [ ] iOS 和 Android 真机记录设备、系统、微信、基础库和网络；
 - [ ] request/upload/download、HTTPS 和合法域名在真机通过；
 - [x] Guest、普通用户、ADMIN、SUPER_ADMIN、禁用用户服务端 HTTPS 纵向链路通过；
+- [x] 当前 Git SHA 的自动化/loopback 证据覆盖 Product、Cart、Order、Product 管理、图片、Inventory、Audit、用户禁用、Token、权限、错误和重复操作；下面的微信 RC 人工/真机项仍不得据此勾选；
 - [ ] Product、Cart、创建订单、用户订单/取消、管理订单通过；
 - [ ] Product 管理、图片、Inventory、Audit、用户禁用通过；
 - [ ] access/refresh 失效、权限、资源隐藏和错误信封通过；
