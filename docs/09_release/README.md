@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 9.4 进行中 — 持久 Bootstrap 已通过，待代表数据恢复/DNS/HTTPS/真机
+> **Current Phase:** 9.4 进行中 — 代表性数据二次恢复已通过，待备份保管/DNS/HTTPS/真机
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-02
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -21,6 +21,7 @@
 | 9.4 Gate A Loopback 报告 | [reports/phase94_gatea_loopback_2026-09-02.md](reports/phase94_gatea_loopback_2026-09-02.md) | Runtime `51ad315...` / Operations `17114d7...` / 持久主机 lifecycle PASS |
 | 9.4 Gate A 备份恢复报告 | [reports/phase94_gatea_backup_restore_2026-09-02.md](reports/phase94_gatea_backup_restore_2026-09-02.md) | Backup `20260901t232740z` / Operations `d1f3379...` / 空数据独立恢复 PASS |
 | 9.4 Gate A Bootstrap 报告 | [reports/phase94_gatea_bootstrap_2026-09-02.md](reports/phase94_gatea_bootstrap_2026-09-02.md) | Runtime `51ad315...` / Operations `0ebe25a...` / 首次、重放、轮换与清理 PASS |
+| 9.4 Gate A 代表性数据二次恢复报告 | [reports/phase94_gatea_representative_restore_2026-09-02.md](reports/phase94_gatea_representative_restore_2026-09-02.md) | Backup `20260902t014211z` / Operations `3511491...` / 非空数据与三图片独立恢复 PASS |
 | Functional/Smoke/E2E Matrix | [wechat_acceptance_matrix.md](wechat_acceptance_matrix.md) | 场景与证据等级已冻结；RC 真机结果待填 |
 | Risk Register | [risk_register.md](risk_register.md) | 已登记并分配责任角色/关闭 Gate |
 | Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | Gate A/Gate B 清单已建立；未授权发布 |
@@ -35,7 +36,7 @@
 - Phase 9.4 持久主机 loopback 首次部署已通过：Runtime `51ad315...` 的 Run 33568184860 与 Operations `17114d7...` 的 Run 33568983950 均为 8/8 success；真实腾讯云主机完成空库 Aerich 0→1→2、10 表核验、持久 MySQL/Redis/图片卷、非 root App、只读根文件系统、Healthy Nginx 和 liveness/readiness。MySQL/Redis/App 不发布宿主端口，唯一边界是 `127.0.0.1:18080`，公网 18080 不可达。完整脱敏证据见 [9.4 Loopback 报告](reports/phase94_gatea_loopback_2026-09-02.md)。DNS/证书、微信合法域名、真实 RC 和 iOS/Android 真机仍未执行，Gate A 保持 No-Go。
 - Phase 9.4 空数据持久备份/隔离恢复已通过：Operations `d1f3379...` 的 Run 33570862787 为 8/8 success；Backup `20260901t232740z` 在停写窗口生成 `0600` MySQL/图片 Artifact，独立无端口 Restore project 完成数据库摘要、图片 manifest、空 Redis 和 Restore App readiness 验证，并删除全部临时容器/网络/卷。当前备份仍在同机，Bootstrap 后含代表性数据的复验、保留期和加密异机副本仍未完成，详见[备份恢复报告](reports/phase94_gatea_backup_restore_2026-09-02.md)。
 - Phase 9.4 持久 Bootstrap 已真实通过：Runtime `51ad315...`、Operations `0ebe25a...` 和 Run 33574718103 绑定；唯一 SUPER_ADMIN 首次创建、严格重放、唯一 Audit、初始/最终登录、密码轮换、旧密码拒绝、两个 Refresh 会话撤销和临时 Secret/容器/投放文件清理均为 PASS。成功 Record 为 `root:root 0644` 且不含 PII、密码、Token 或 hash；完整脱敏证据见 [9.4 Bootstrap 报告](reports/phase94_gatea_bootstrap_2026-09-02.md)。
-- Phase 9.4 代表性数据工具已在本地实现、尚未执行：它只接受 Bootstrap 后的精确空业务基线，经 loopback 正式 API 创建最终禁用的合成 USER、两个 Online Product、三张图片、两种终态订单和完整库存流水；执行人密码只从 TTY 进入内存，合成密码随机生成，成功前注销/撤销两个会话并禁用合成账号。真实写入、二次备份和隔离恢复只有在回归与 CI 通过后才能开始。
+- Phase 9.4 代表性数据与二次隔离恢复已真实通过：Operations `3511491...` 的 Run 33576453364 为 8/8 success；工具经 loopback 正式 API 创建最终禁用的合成 USER、两个 Online Product、三张图片、两种终态订单和完整库存流水，管理员/合成用户 Refresh 均撤销。非空 Backup `20260902t014211z` 在独立无端口 project 中完成数据库、三图片、空 Redis 和 Restore App 验证，临时 Docker 资源归零且来源服务 Healthy。完整脱敏证据见[代表性数据二次恢复报告](reports/phase94_gatea_representative_restore_2026-09-02.md)；备份保留期、加密异机副本、DNS/HTTPS、微信合法域名、真实 RC 和真机仍待完成。
 
 ## 3. 状态词
 

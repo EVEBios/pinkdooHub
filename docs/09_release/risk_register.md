@@ -1,7 +1,7 @@
 # Phase 9 微信发布风险登记
 
 > **Status:** Active
-> **Last Updated:** 2026-08-31
+> **Last Updated:** 2026-09-02
 > **Current Gate:** Gate A — 内部微信测试版
 
 风险状态使用 `open`、`mitigating`、`accepted-until`、`closed`、`deferred`。只有满足“关闭证据”才能标记 `closed`；降低优先级或口头接受不等于关闭。
@@ -23,7 +23,7 @@
 | R-011 | P1 | dependency-aware readiness 已实现但尚未在生产相似 MySQL/Redis 验证摘流量与恢复 | 中×高 | DR-06 分别中断 MySQL/Redis，Readiness 安全返回 503，恢复后重新 200；Liveness、优雅重启与脱敏均通过 | Yijie Shen | 9.3 | closed |
 | R-012 | P1 | Redis 初始化日志可能泄露连接凭据 | 中×高 | Run 33355935212 的后端契约证明 username、password、query 不输出 | Yijie Shen | Gate A | closed |
 | R-013 | P1 | production fail-fast 与 Secret 隐藏缺少干净 CI 证据 | 中×高 | Run 33355935212 覆盖 debug/MySQL/JWT/Redis/HTTPS 图片配置的接受与拒绝路径 | Yijie Shen | Gate A | closed |
-| R-014 | P1 | 图片依赖本地目录，重建/扩缩容可能丢失 | 高×高 | Gate A 的持久卷、三类图片、备份/独立恢复与重启保持已在 DR-04/06 通过；Gate B 仍需对象存储/CDN 或等价 Review | Yijie Shen | Gate B | mitigating |
+| R-014 | P1 | 图片依赖本地目录，主机/系统盘故障可能丢失 | 高×高 | Gate A 已用 3 张真实图片完成持久卷、`0600` 归档、checksum、无端口独立恢复和内容 manifest 比较；同机备份尚不覆盖主机故障，仍需加密异机副本，Gate B 需对象存储/CDN 或等价 Review | Yijie Shen | Gate A 保管/Gate B 存储 | mitigating |
 | R-015 | P1 | Secret Manager、轮换、最小权限和泄漏响应未选 | 中×高 | Secret inventory 映射到实际系统、主体、轮换和审计 | Yijie Shen | Gate A（测试）/B（正式） | open |
 | R-016 | P1 | Python/Node/npm/pip 固定缺少远端干净 CI 证据 | 高×中 | Run 33355935212 验证版本文件、engines 和 CI 精确版本 | Yijie Shen | 9.2 | closed |
 | R-017 | P1 | pip-audit 修复可升级项后只剩 ecdsa 无修复的 P-256 时序公告 | 中×高 | 固定 pip-audit 2.10.1；production HS256 不可达策略 fail-closed，算法/版本变化重审，2026-11-30 到期 | Yijie Shen | 2026-11-30 | accepted-until |

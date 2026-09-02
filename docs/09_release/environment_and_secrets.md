@@ -113,6 +113,12 @@ TTY 隐藏读取并保留在宿主进程内存；合成 USER 密码由进程使�
 只保留在同一进程内存。完成正式 API 数据链后，两个会话均注销并验证 Refresh 撤销，
 合成 USER 固定禁用；成功 Record 不保存任何身份字段、密码、Token 或 hash。
 
+2026-09-02 真实 Gate A 已完成该流程及后续非空备份/隔离恢复：2 个受控用户、2 个
+Product、3 张图片、2 笔终态订单和 3 条库存流水均通过只读摘要；Backup
+`20260902t014211z` 的 MySQL/图片 Artifact 为 `root:root 0600`，独立 Restore 使用
+空 Redis、无宿主端口并在验证后删除全部临时资源。脱敏证据见
+[`reports/phase94_gatea_representative_restore_2026-09-02.md`](reports/phase94_gatea_representative_restore_2026-09-02.md)。
+
 ### 3.2 Gate A 备份保管与 Redis 恢复策略
 
 Gate A 权威备份资产是 MySQL 逻辑备份与商品图片归档。两者固定写入
