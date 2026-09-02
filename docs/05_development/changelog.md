@@ -4,6 +4,14 @@
 
 ---
 
+## Release Phase 9.4.6 — Gate A 代表性数据与二次恢复（本地实现，2026-09-02）
+
+- 新增 `gatea_representative_data.py`，只允许在 Runtime/迁移/Bootstrap Record、四项健康、loopback publisher、Bootstrap 后精确空业务表和空图片卷全部匹配时执行一次；已有成功 Record、任何业务数据或图片都会在读取密码及写入前 fail closed。
+- 当前 SUPER_ADMIN 密码只从交互 TTY 隐藏双输入，不接受参数/环境变量或落盘；合成 USER 密码由进程随机生成并只存在于内存。所有写入经过当前 Nginx 与正式注册、认证、Product、上传、Inventory、Order、管理员状态 API，不直接写 SQL、Model 或卷文件。
+- 冻结最小数据集为一个最终禁用的合成 USER、一个 Online Experience/Option、一个 Online Kit、三张真实 PNG、`+10/-2/+2` 三条库存流水、一个 Cancelled 混合订单和一个 Completed 体验订单。成功前注销并验证撤销合成/管理员 Refresh 会话，禁用合成账号并验证其登录拒绝。
+- 成功 Record 只包含候选、Image ID、前后数据库摘要、业务计数、内部 ID、图片数量和会话/禁用布尔证据，不保存真实管理员身份、合成身份、手机号、密码、Token 或 hash。失败路径不写成功 Record，并尽力撤销会话和禁用已创建的合成账号；部分业务写入保持现场，不提供删除订单或绕过空基线的自动重跑。
+- 7 项定向测试、110 项 Release 工具测试和完整后端 `1650 passed, 9 skipped`；尚未提交 CI 或在真实 Gate A 写入数据、备份与恢复。未修改业务 API、数据库 Schema/Aerich、依赖、应用版本或 Runtime image。
+
 ## Release Phase 9.4.5 — Gate A 持久 SUPER_ADMIN Bootstrap（真实通过，2026-09-02）
 
 - 首次真实交互执行在任何数据库写入前发现 Compose v5 还会把 MySQL/Redis 镜像内部 `EXPOSE` 表示为 `URL=""`、`PublishedPort=0` 的未绑定 publisher；宿主实际监听复核仍只有 SSH 与 `127.0.0.1:18080`。运行时校验现先排除这种无宿主 listener 的元数据，再拒绝任何非 Nginx 的真实发布，并补充 MySQL/Redis Compose v5 回归；首次失败没有创建管理员、临时 Secret 或成功 Record。

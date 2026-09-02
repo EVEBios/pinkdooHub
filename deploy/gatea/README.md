@@ -159,6 +159,34 @@ sudo python -m scripts.release.gatea_bootstrap \
 SUPER_ADMIN。若操作返回失败，先保留数据库与日志现场并确认临时 Secret 已删除，
 再按同一批准身份和已知初始密码决定是否恢复执行，不能改用不同身份绕过严格重放。
 
+## 受控代表性备份数据
+
+`gatea_representative_data.py` 只允许在 Bootstrap 已通过、业务表仍为空且图片卷无文件
+时执行一次。工具先绑定 Runtime image、迁移/Bootstrap Record、四项服务健康和唯一
+loopback publisher，再要求执行人通过 TTY 隐藏输入并确认当前 SUPER_ADMIN 密码；
+密码不接受参数或环境变量，不写文件、日志或 Record。
+
+```bash
+sudo install -d -o root -g root -m 0755 \
+  /srv/pinkdoohub/gatea/records/representative-data
+
+sudo python -m scripts.release.gatea_representative_data \
+  --super-admin-username <approved-username> \
+  --confirm-super-admin-username <approved-username> \
+  --apply
+```
+
+写入全部经过当前 `127.0.0.1` Nginx 和正式 API：一个随机临时密码的合成 USER、一个
+Online Experience/Option、一个 Online Kit、三张真实 PNG、库存调整/订单扣减/取消
+恢复，以及 Cancelled 混合订单和 Completed 体验订单。流程结束前注销并验证撤销
+合成用户会话、禁用合成用户、拒绝其再次登录，并注销/撤销本次 SUPER_ADMIN 会话。
+随机合成密码只存在于进程内存，不返回给调用者。
+
+成功 Record 只保存前后计数、内部 ID、业务断言和清理布尔值，不保存真实管理员
+身份、合成身份、密码、Token、手机号或 hash。任何部分失败都不写成功 Record，并
+尽力注销两个会话、禁用已经创建的合成用户；此时必须保留现场人工审计，不能删除
+订单或绕过空基线重跑。
+
 ## 受控备份与隔离恢复
 
 `gatea_backup.py` 只备份权威 MySQL 与商品图片。Redis 当前只保存 refresh-token

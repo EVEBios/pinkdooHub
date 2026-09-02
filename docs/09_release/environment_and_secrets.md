@@ -108,6 +108,11 @@ Gate A 持久 Bootstrap 只允许 `gatea_bootstrap.py` 从人工 TTY 隐藏读�
 Secret、一次性容器和投放文件已清理。脱敏证据见
 [`reports/phase94_gatea_bootstrap_2026-09-02.md`](reports/phase94_gatea_bootstrap_2026-09-02.md)。
 
+Gate A 代表性备份数据工具不创建新的持久 Secret。执行人当前 SUPER_ADMIN 密码只经
+TTY 隐藏读取并保留在宿主进程内存；合成 USER 密码由进程使用 `secrets` 随机生成，
+只保留在同一进程内存。完成正式 API 数据链后，两个会话均注销并验证 Refresh 撤销，
+合成 USER 固定禁用；成功 Record 不保存任何身份字段、密码、Token 或 hash。
+
 ### 3.2 Gate A 备份保管与 Redis 恢复策略
 
 Gate A 权威备份资产是 MySQL 逻辑备份与商品图片归档。两者固定写入
