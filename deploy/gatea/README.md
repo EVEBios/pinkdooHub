@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** Loopback、空数据备份/恢复已通过；Bootstrap 编排待真实执行
+> **Status:** Loopback、空数据备份/恢复与持久 Bootstrap 已通过；待代表数据恢复、DNS/HTTPS 和真机
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A

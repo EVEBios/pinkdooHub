@@ -30,7 +30,7 @@
 | ID-04 | access 过期、refresh 有效 | single-flight 刷新并安全重放允许的请求 | `A+M` | RC `NOT RUN` |
 | ID-05 | access/refresh 都失效 | 清理 Session、回到登录、不形成刷新循环 | `A+M` | RC `NOT RUN` |
 | ID-06 | ADMIN | 可进入获授权管理能力；普通用户不可调用 | `A+M` | RC `NOT RUN` |
-| ID-07 | SUPER_ADMIN | 首次初始化、登录及高权限边界正确 | `A+M` | bootstrap `BLOCKED` |
+| ID-07 | SUPER_ADMIN | 首次初始化、登录及高权限边界正确 | `A+M` | 持久 bootstrap/login `PASS`；RC 高权限边界 `NOT RUN` |
 | ID-08 | 被禁用用户 | 新登录失败；已有 access/refresh 均不能继续 | `A+M` | RC `NOT RUN` |
 | ID-09 | 资源与权限隐藏 | owner-only、ADMIN+、不存在资源语义符合 API 契约 | `A+M` | RC `NOT RUN` |
 | ID-10 | 微信身份 | Gate A 不启用微信登录，界面明确为内部测试 | `M` | `N/A`（Gate B） |

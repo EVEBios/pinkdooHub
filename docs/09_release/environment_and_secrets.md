@@ -1,6 +1,6 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** 9.1–9.3 Complete; 9.4 Gate A Persistent Topology Implemented Locally
+> **Status:** 9.1–9.3 Complete; 9.4 Gate A Loopback / Empty Restore / Bootstrap Passed
 > **Last Updated:** 2026-09-02
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
@@ -102,6 +102,11 @@ Gate A 持久 Bootstrap 只允许 `gatea_bootstrap.py` 从人工 TTY 隐藏读�
 环境变量。工具在成功和失败路径删除初始 Secret，成功后同时撤销验证期间产生的
 两个 Refresh 会话。脱敏 Bootstrap Record 只包含候选、用户 ID、唯一性/重放/
 登录/轮换/清理布尔值和 UTC 时间，不保存身份字段。
+
+2026-09-02 真实 Gate A 已完成该流程：唯一 SUPER_ADMIN 首次创建与严格重放、初始
+登录、正式密码轮换、旧密码拒绝、正式密码登录和两个 Refresh 会话撤销均通过；临时
+Secret、一次性容器和投放文件已清理。脱敏证据见
+[`reports/phase94_gatea_bootstrap_2026-09-02.md`](reports/phase94_gatea_bootstrap_2026-09-02.md)。
 
 ### 3.2 Gate A 备份保管与 Redis 恢复策略
 
