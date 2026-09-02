@@ -482,8 +482,6 @@ def _validate_loopback_publishers(
         raw_publishers = row.get("Publishers") or []
         if not isinstance(raw_publishers, list):
             raise GateAError("Gate A runtime publisher metadata is invalid")
-        if service != "nginx" and raw_publishers:
-            raise GateAError(f"Gate A service {service} must not publish host ports")
         for publisher in raw_publishers:
             if not isinstance(publisher, dict):
                 raise GateAError("Gate A runtime publisher metadata is invalid")

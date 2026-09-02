@@ -486,6 +486,28 @@ def test_loopback_runtime_accepts_compose_v5_unpublished_exposed_port() -> None:
     gatea._validate_loopback_publishers(
         [
             {
+                "Service": "mysql",
+                "Publishers": [
+                    {
+                        "URL": "",
+                        "TargetPort": 3306,
+                        "PublishedPort": 0,
+                        "Protocol": "tcp",
+                    }
+                ],
+            },
+            {
+                "Service": "redis",
+                "Publishers": [
+                    {
+                        "URL": "",
+                        "TargetPort": 6379,
+                        "PublishedPort": 0,
+                        "Protocol": "tcp",
+                    }
+                ],
+            },
+            {
                 "Service": "nginx",
                 "Publishers": [
                     {

@@ -6,6 +6,7 @@
 
 ## Release Phase 9.4.5 — Gate A 持久 SUPER_ADMIN Bootstrap（本地实现，2026-09-02）
 
+- 首次真实交互执行在任何数据库写入前发现 Compose v5 还会把 MySQL/Redis 镜像内部 `EXPOSE` 表示为 `URL=""`、`PublishedPort=0` 的未绑定 publisher；宿主实际监听复核仍只有 SSH 与 `127.0.0.1:18080`。运行时校验现先排除这种无宿主 listener 的元数据，再拒绝任何非 Nginx 的真实发布，并补充 MySQL/Redis Compose v5 回归；首次失败没有创建管理员、临时 Secret 或成功 Record。
 - 新增 `scripts/release/gatea_bootstrap.py` 作为持久 Gate A 唯一批准的管理员初始化入口。命令要求 Root、`--apply`、批准身份和精确 username 二次确认，不接受任何密码参数/环境变量；初始与最终密码均通过 TTY 隐藏双输入，最终密码必须不同。
 - 初始密码只短暂写入 `/run/pinkdoohub-gatea/bootstrap_password.pending`（`root:10001 0440`），供一次性 Compose Bootstrap 首次执行和严格重放；最终密码只在主机进程内存与 loopback API 请求体中使用。成功、失败和中断路径都删除临时 Secret，一次性容器必须由 `--rm` 清理。
 - 编排器在写入前验证完整 Runtime image、首次迁移 Record、MySQL/Redis/App/Nginx 健康和唯一 `127.0.0.1` publisher；首次/重放间比较唯一 SUPER_ADMIN、自指 Bootstrap Audit、用户 ID 与 `updated_at`，随后经 Nginx 验证初始登录、密码轮换、旧密码拒绝、新密码登录，并注销/验证撤销两个 Refresh 会话。
