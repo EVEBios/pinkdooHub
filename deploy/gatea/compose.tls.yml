@@ -1,0 +1,20 @@
+services:
+  nginx:
+    environment:
+      GATEA_API_HOST: ${GATEA_API_HOST:?Set the approved Gate A API hostname}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./nginx/tls.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${GATEA_LETSENCRYPT_DIR:?Set GATEA_LETSENCRYPT_DIR}:/etc/letsencrypt:ro
+      - ${GATEA_ACME_CHALLENGE_DIR:?Set GATEA_ACME_CHALLENGE_DIR}:/var/www/acme:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget --no-check-certificate --quiet --spider
+          https://127.0.0.1:8443/api/v1/health/live
+      interval: 10s
+      timeout: 3s
+      retries: 12

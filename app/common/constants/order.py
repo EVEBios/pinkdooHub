@@ -1,0 +1,57 @@
+"""Order 模块固定业务边界与展示 Registry。"""
+
+from decimal import Decimal
+
+from app.common.enums.order import OrderStatus
+
+# 创建请求
+ORDER_ITEMS_MIN_COUNT = 1
+ORDER_ITEMS_MAX_COUNT = 10
+ORDER_ITEM_QUANTITY_MIN = 1
+ORDER_ITEM_QUANTITY_MAX = 99
+ORDER_REMARK_MAX_LENGTH = 500
+
+# 金额（数据库 DECIMAL(10,2)，API 固定两位小数字符串）
+ORDER_AMOUNT_DECIMAL_PLACES = 2
+ORDER_AMOUNT_MIN_EXCLUSIVE = Decimal("0.00")
+ORDER_AMOUNT_MIN = Decimal("0.01")
+ORDER_AMOUNT_MAX = Decimal("99999999.99")
+
+# 订单编号：OD + 26 位大写 Crockford Base32 ULID
+ORDER_NO_PREFIX = "OD"
+ORDER_NO_ULID_LENGTH = 26
+ORDER_NO_LENGTH = len(ORDER_NO_PREFIX) + ORDER_NO_ULID_LENGTH
+ORDER_NO_PATTERN = r"^OD[0-9A-HJKMNP-TV-Z]{26}$"
+ORDER_NO_GENERATION_MAX_ATTEMPTS = 3
+ORDER_NO_CROCKFORD_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+ORDER_NO_TIMESTAMP_BITS = 48
+ORDER_NO_RANDOM_BYTES = 10
+
+# API 展示 Registry。OrderStatus.value 是数据库整数，不能直接作为 API value。
+ORDER_STATUS_VALUES = {
+    OrderStatus.PENDING: "pending",
+    OrderStatus.PAID: "paid",
+    OrderStatus.CANCELLED: "cancelled",
+    OrderStatus.COMPLETED: "completed",
+}
+ORDER_STATUS_BY_VALUE = {
+    value: status for status, value in ORDER_STATUS_VALUES.items()
+}
+ORDER_STATUS_LABELS = {
+    OrderStatus.PENDING: "待支付",
+    OrderStatus.PAID: "已支付",
+    OrderStatus.CANCELLED: "已取消",
+    OrderStatus.COMPLETED: "已完成",
+}
+
+# 顺序审计契约
+ORDER_AUDIT_TARGET_TYPE = "order"
+ORDER_AUDIT_ACTION_CREATE = "CREATE_ORDER"
+ORDER_AUDIT_ACTION_CANCEL = "CANCEL_ORDER"
+ORDER_AUDIT_ACTION_MARK_PAID = "MARK_ORDER_PAID"
+ORDER_AUDIT_ACTION_COMPLETE = "COMPLETE_ORDER"
+
+# 状态冲突错误载荷中的稳定用例名
+ORDER_OPERATION_CANCEL = "cancel"
+ORDER_OPERATION_MARK_PAID = "mark_paid"
+ORDER_OPERATION_COMPLETE = "complete"

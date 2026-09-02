@@ -104,6 +104,38 @@ class ProductRepository:
             .first()
         )
 
+    async def get_products_by_ids(
+        self,
+        product_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[Product]:
+        """一次查询加载指定 Product，包含逻辑删除记录供 Service 判定。"""
+
+        if not product_ids:
+            return []
+        query = Product.filter(id__in=product_ids).order_by("id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query
+
+    async def get_kits_by_product_ids(
+        self,
+        product_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[ProductKit]:
+        """一次查询加载指定 Product 的 Kit 扩展，供订单候选快照使用。"""
+
+        if not product_ids:
+            return []
+        query = ProductKit.filter(product_id__in=product_ids).order_by(
+            "product_id"
+        )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query
+
     async def get_product_detail(
         self,
         product_id: int,
@@ -213,6 +245,21 @@ class ProductRepository:
         if not include_deleted:
             query = query.filter(is_deleted=False)
         return await query.first()
+
+    async def get_options_by_ids(
+        self,
+        option_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[ExperienceOption]:
+        """一次查询加载指定 Option，包含逻辑删除记录供 Service 判定。"""
+
+        if not option_ids:
+            return []
+        query = ExperienceOption.filter(id__in=option_ids).order_by("id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query
 
     async def get_option_detail(
         self,

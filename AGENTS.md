@@ -10,14 +10,14 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 - FastAPI 0.139.2 + Uvicorn 0.51.0
 - Tortoise ORM 1.1.7 + Aerich 0.9.3
-- asyncmy 0.2.11（MySQL 异步驱动）
+- asyncmy 0.2.14（MySQL 异步驱动）
 - Pydantic 2.13.4 + pydantic-settings 2.14.2
 - Redis 8.0.1
 - pytest 9.1.1 + pytest-asyncio + httpx
 
 ## 当前 Phase 与范围
 
-当前代码版本候选为 **v0.4.0（尚未发布）**；**Phase 4.1：Product Module 已完成实现与最终 Review**，下一业务阶段尚未开始。
+当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1：Product Module**、**Phase 4.2：Order Module** 与 **Phase 4.3：Inventory Module** 均已完成实现与最终 Review。
 
 已完成：
 
@@ -29,18 +29,31 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 当前实现状态：
 
-- Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator、Service 和 API Mapper 均已完成，跨表写入和审计有真实事务回滚测试，Mapper 有零 SQL、零修改和字段隔离测试。22 个 Product FastAPI 端点已接入，包括 20 个用户/管理 JSON 查询与 mutation（含共享 AuditLog 分页操作历史），以及 Product 公共图/Option 专属图两个 ADMIN+ multipart 上传端点。上传链路已实现 2 MiB、jpg/png/webp、内容/MIME 一致、安全 UUID 路径、原子写入、Service 失败的幂等文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试；逻辑删除图片的本地文件由显式截止时间、命名空间校验、有效引用保护和失败重试语义的独立批处理清理。
-- MySQL 8+ 权威首迁移已离线生成、通过静态契约测试并提交，但尚未应用到任何 MySQL 数据库。SQLite 开发库已在可恢复备份后从当前 Tortoise Models 重建；未应用 MySQL 迁移，也未 fake Aerich 版本。
+- Phase 4.2 Order v1.0 已完成契约冻结、4.2.2–4.2.11 实现与 4.2.12 最终 Review：领域语言、Schema、Model/离线迁移、Repository、标准库 OD+ULID 生成器、查询/Experience 创建/三个状态变迁 Service、API Mapper、组合根，以及用户 4 个/管理 5 个 FastAPI 端点均已实现并有契约测试。创建用例批量校验 Product/Option，在单事务内写 Order、快照 Items、`CREATE_ORDER` 审计并重载聚合；编号冲突通过全新事务最多重试 3 次。状态用例在事务内执行 `SELECT ... FOR UPDATE`、锁后重检并原子提交状态/审计/重载。Mapper 对用户/管理列表、详情和状态响应执行显式字段投影与严格 Out Schema 校验，真实聚合测试固定零 SQL、零修改。路由统一通过认证或 ADMIN+ 依赖、`get_order_service()` 组合根、Mapper 和 `success()` 工作；缺失 Bearer 凭据已统一为 401 错误信封，既有无效 Token `1006` 仍按 User 契约返回 HTTP 400。完整真实 HTTP 矩阵覆盖创建防伪与边界、Product/Option/Kit 拒绝、权限和资源隐藏、组合筛选、全部非法状态前置条件、审计顺序、事务故障回滚及订单号冲突重试；三个无请求体状态 PATCH 会主动拒绝任意 body。最终安全复核同时将共享审计 IP 输入收紧为合法 IPv4/IPv6 字面量，非法、超长或带 scope 的代理头回退到直连地址。MySQL 8+ Order 增量迁移已离线生成、通过最终静态 Review 但尚未应用。
+- Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator、Service 和 API Mapper 均已完成，跨表写入和审计有真实事务回滚测试，Mapper 有零 SQL、零修改和字段隔离测试。Phase 4.3.10 移除旧 stock 写入口后保留 21 个 Product FastAPI 端点，包括 19 个用户/管理 JSON 查询与 mutation（含共享 AuditLog 分页操作历史），以及 Product 公共图/Option 专属图两个 ADMIN+ multipart 上传端点。上传链路已实现 2 MiB、jpg/png/webp、内容/MIME 一致、安全 UUID 路径、原子写入、Service 失败的幂等文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试；逻辑删除图片的本地文件由显式截止时间、命名空间校验、有效引用保护和失败重试语义的独立批处理清理。
+- MySQL 8+ 权威首迁移、Order 增量迁移和 Inventory 增量迁移均已离线生成并通过静态契约测试；完整链已在一次性 MySQL 8.0.46 实例真实执行并在验证后销毁，未应用任何持久、共享或生产数据库，也未 fake Aerich 版本。SQLite 开发库未被本次演练修改。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
-- Phase 4.1 的 Kit 库存采用直接设置最终值模式；库存流水、自动扣减/恢复和并发控制仍属于 Phase 4.3 Inventory。
+- Phase 4.1 曾让 Kit 库存采用直接设置最终值模式；Phase 4.3.10 已完成破坏性切换，当前所有业务库存写入统一经过 Inventory 流水语义。
+- Phase 4.3.1 Inventory 现状审计与业务契约冻结已完成：`product_kits.stock` 保持唯一权威余额；创建 Pending Kit/混合订单时扣减、Pending 取消时幂等恢复、支付/完成不改库存；管理员调整采用 `change + reason + Idempotency-Key` 并允许 Online Kit；多 Kit 按 Product ID 升序加锁，MySQL 真实并发测试是发布硬门槛。运行时实现状态以以下分阶段条目及实际代码为准。
+- Phase 4.3.2 Inventory 领域语言与 Schema 已实现：`app/common/` 中已有流水/source 字符串 Enum、库存/原因/幂等/重试常量和 `40931`–`40933` 命名异常；`app/schemas/inventory*.py` 已实现严格调整/查询输入及响应白名单。
+- Phase 4.3.3 Inventory Model/数据库设计已实现：`InventoryTransaction` 已注册 ORM，关联 Product 与可空 User 的 `RESTRICT` 外键，使用命名幂等 UNIQUE 和 Product/source/type/全局分页索引；`source_id` 保持无 FK 的通用来源标识，Model 不承载跨字段业务判断。
+- Phase 4.3.4 Inventory MySQL 8+ 增量迁移已离线生成并通过静态 Review，新增流水表并为 `stock > 0` 的现有 Kit 写幂等 `opening_balance`；零库存不写，余额不修改。完整链、正/零库存回填和 Phase 4.3.5 Repository smoke 已在一次性 MySQL 8.0.46 通过，但未应用持久环境；DDL 与数据回填因 MySQL 隐式提交不具备整体原子性，正式执行前仍必须停写、扫描库存范围和备份。
+- Phase 4.3.5 `InventoryRepository` 已实现：单/多 Kit `select_for_update()`、按 Product ID 升序的一次集合锁、余额保存、单条/批量流水写入、同连接幂等读取/详情重载，以及 Product/type/source/UTC 时间组合分页；operator 预加载和 Order 编号批量补齐保持 Mapper 零 SQL。Repository 不拥有事务/重试、不判断库存业务规则或抛业务异常。
+- Phase 4.3.6 `InventoryService.adjust_stock()` 已实现管理员调整：Service 自有事务内锁定 Kit，校验 Product 与余额，按 Product/change/规范化 reason/operator 处理严格幂等，并原子提交余额、`admin_adjustment` 流水和 `ADJUST_INVENTORY` Audit；并发 UNIQUE 在退出失败事务后解析。仅 MySQL 1205/1213 对整个用例用全新事务最多尝试 3 次，其他数据库错误不重试；日志不输出 reason/key。不可变结果的 `is_replay` 已由 Phase 4.3.10 Router 用于选择首次 201/重放 200。
+- Phase 4.3.7 Kit/混合订单创建扣减已实现：Order Item 对 Experience 要求有效 Option，对 Kit 接受省略/null 并输出全 null Option 快照；OrderService 直接协调 InventoryRepository，在同一外层事务中先写 Pending Order，再稳定集合锁、锁后重检、批量余额/`order_deduction` 流水、Items、`CREATE_ORDER` Audit 和详情重载。库存不足只返回 Product/requested，不暴露 available；订单号冲突发生在库存写前，MySQL 1205/1213 对完整写事务最多尝试 3 次。阶段门禁 `40922` 已移除，现有 POST 路由可创建纯 Kit/混合订单。
+- Phase 4.3.8 Pending 取消恢复已实现：取消事务先锁用户可见 Order 并重检 Pending，再读取最小 Item 快照、按 Product ID 升序锁定全部 Kit、批量检查服务端 restore 幂等键、恢复余额并写 `order_cancellation_restore` 流水，最后更新 Cancelled、写 `CANCEL_ORDER` Audit 和重载响应。Order 状态机与流水 UNIQUE 形成双层幂等保护；Pending 与已存在 restore 身份矛盾时抛 `40933`，余额越界抛 `40932`，任一步失败完整回滚。MySQL 1205/1213 对完整取消用例使用全新事务最多尝试 3 次；支付与完成不触碰库存。
+- Phase 4.3.9 Inventory 查询 Service/Mapper 已实现：指定 Kit 查询按 Product 不存在、删除、类型、Kit 扩展的稳定优先级校验；全局 Product ID 只作为筛选，未知 ID 返回空 Page。两类查询复用 Repository 组合过滤和稳定分页。Mapper 显式投影流水/分页/调整响应，只消费预加载 operator 与批量 Order 编号，严格 Out Schema 校验，执行期间零 SQL、零 ORM 修改且不输出幂等键或用户隐私字段。
+- Phase 4.3.10 Inventory API 已实现：`get_inventory_service()` 组合根和三个 ADMIN+ 路由已注册；调整要求严格 body 与 `Idempotency-Key`，首次 201、重放 200；指定 Kit/全局流水使用严格 Query、Mapper 和统一 Page 信封。旧 Product `PATCH .../stock`、对应 Schema/Mapper/Service 已移除，Kit 创建不再接受 stock 并固定从 0 开始。
+- Phase 4.3.11 真实发布门槛已通过：隔离 MySQL 8.0.46 真实执行 Aerich 0→1→2 后，9 项测试覆盖同/异 key 调整、最后一件、反向多 Kit、同单取消、调整/下单阻塞、真实 1205 全事务重试、EXPLAIN 和 FastAPI 并发重放；`performance_schema.data_lock_waits` 证实行锁等待，三个关键查询命中预期索引。另有 41 项完整 HTTP 矩阵覆盖三端点认证、权限、资源/业务错误、严格 422、分页/筛选/Order source/UTC 和隐私。测试 fixture 拒绝 3306 与非专用 Schema；临时实例验证后销毁，未接触持久数据库。
+- Phase 4.3.12 最终 Review 已完成：分层、事务所有权、稳定锁序、MySQL 瞬态重试、幂等/隐私、Schema/OpenAPI、Mapper、Model/迁移/索引及文档联动均已复核；Product 用户/管理 Kit 详情响应补齐 `stock <= 999999`，数据库设计与 DBML 的旧“未来 Kit”描述已更新为当前 Kit/混合订单语义。全新隔离 MySQL 8.0.46 再次真实迁移并通过 9 项门禁，SQLite/MySQL 同进程完整套件 1431 项通过。代码候选收口为 v0.6.0；未 push/tag/release，未执行持久数据库迁移。
+- 2026-08-14 真实 MySQL smoke 曾发现 Order `IntEnum` 发布阻断：`OrderStatus` 直接通过普通 `SmallIntField` 会被 asyncmy 编码成 Enum 字符串并报 1366。现已将 Model 默认值及 Repository 更新/筛选边界统一为原生整数，并在 MySQL 8.0.46 通过创建、Pending/Paid 筛选和状态更新回归；物理 Schema 未变化、无需迁移。后续仍不得把 SQLite 通过当作 MySQL 类型兼容证据。
 - 架构文档中出现的 Product、Order、Inventory 文件可能是规划结构，不代表代码已经存在；开始任务前必须检查实际文件树和测试。
 - Product API 文档已完成 Phase 4.1 Review，并标记为 v1.0 Implemented。后续维护仍以 `product_business_rules.md` 和 `product_api.md` 为契约；遇到缺口或冲突先指出，不自行发明业务规则。
 
 后续阶段：
 
-- Phase 4.2：Order。
-- Phase 4.3：Inventory；库存流水/调整模型属于该阶段。
-- 未经当前任务明确要求，不提前实现后续 Phase，不把未来设计误报为已完成能力。
+- Phase 4.3：Inventory；4.3.1–4.3.12 已完成并通过最终 Review。
+- 下一业务 Phase 尚未冻结；未经当前任务明确要求，不提前实现未来能力，不把规划误报为已完成能力。
 
 当前已知限制包括 refresh token 未轮换、登录/注册未限流、未实现邮件验证和 OAuth、管理员启用用户及头像上传仍待实现。不要在无关任务中顺手扩展这些范围。
 
@@ -68,6 +81,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | Product 需求概要 | [`docs/01_requirements/product_module.md`](docs/01_requirements/product_module.md) |
 | Product 权威业务规则 | [`docs/01_requirements/product_business_rules.md`](docs/01_requirements/product_business_rules.md) |
 | Order 需求 | [`docs/01_requirements/order_module.md`](docs/01_requirements/order_module.md) |
+| Inventory 权威需求 | [`docs/01_requirements/inventory_module.md`](docs/01_requirements/inventory_module.md) |
 
 ### API 与数据
 
@@ -77,6 +91,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | 用户 API | [`docs/03_api/user_api.md`](docs/03_api/user_api.md) |
 | Product API | [`docs/03_api/product_api.md`](docs/03_api/product_api.md) |
 | Order API | [`docs/03_api/order_api.md`](docs/03_api/order_api.md) |
+| Inventory API | [`docs/03_api/inventory_api.md`](docs/03_api/inventory_api.md) |
 | 表、字段、约束和索引 | [`docs/02_database/database_design.md`](docs/02_database/database_design.md) |
 | 可维护的 ER 源文件 | [`docs/02_database/er_diagram.dbml`](docs/02_database/er_diagram.dbml) |
 

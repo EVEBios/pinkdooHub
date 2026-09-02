@@ -1,0 +1,54 @@
+/* stylelint-disable-next-line at-rule-no-unknown */
+@use '../../styles/inventory';
+
+.product-inventory-page {
+  min-height: 100vh;
+  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
+  color: #292532;
+  background: #f7f5fb;
+  box-sizing: border-box;
+
+  &__header {
+    margin: 0 -28px;
+    padding: 46px 32px 30px;
+    color: #fff;
+    background: linear-gradient(145deg, #365f68, #65765b);
+  }
+
+  &__eyebrow,
+  &__title,
+  &__subtitle,
+  &__boundary {
+    display: block;
+  }
+
+  &__eyebrow {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+
+  &__title {
+    margin-top: 9px;
+    font-size: 38px;
+    font-weight: 700;
+  }
+
+  &__subtitle {
+    margin-top: 12px;
+    font-size: 22px;
+    line-height: 1.5;
+    opacity: 0.88;
+  }
+
+  &__boundary {
+    margin: 22px 0;
+    padding: 16px;
+    color: #7a2e28;
+    font-size: 22px;
+    background: #fbeceb;
+    border-radius: 12px;
+  }
+
+  &__back { margin-top: 24px; }
+}

@@ -1,8 +1,9 @@
 """User Schema —— 用户模块请求/响应数据结构。"""
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from app.common.constants.validation import (
     NICKNAME_MAX_LENGTH,
@@ -14,6 +15,16 @@ from app.common.constants.validation import (
     USERNAME_MIN_LENGTH,
 )
 from app.common.enums.user import UserRole, UserStatus
+from app.common.pagination import PageParams
+
+
+class AdminUserListQuery(PageParams):
+    """管理端用户列表的严格分页与枚举筛选。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    status: Literal["normal", "disabled", "deleted"] | None = None
+    role: Literal["user", "admin", "super_admin"] | None = None
 
 
 class UserCreate(BaseModel):
@@ -40,6 +51,22 @@ class PasswordChange(BaseModel):
     )
 
 
+class AccountDeletionRequest(BaseModel):
+    """账号注销需显式确认且使用一种现有凭据二次验证。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirmation: Literal["DELETE"]
+    password: str | None = Field(None, min_length=1, max_length=64)
+    wechat_code: str | None = Field(None, min_length=1, max_length=128, pattern=r"^\S+$")
+
+    @model_validator(mode="after")
+    def validate_single_reauthentication_method(self) -> "AccountDeletionRequest":
+        if (self.password is None) == (self.wechat_code is None):
+            raise ValueError("exactly one reauthentication method is required")
+        return self
+
+
 class UserUpdate(BaseModel):
     """修改个人信息请求——所有字段可选，传什么改什么。"""
 
@@ -56,9 +83,27 @@ class _EnumSerializerMixin:
     UserOut 和 UserListItem 共享此逻辑。
     """
 
-    @field_serializer("role", "status")
-    def serialize_enum(self, v: object) -> str:
-        return v.name.lower()  # type: ignore[union-attr]
+    @field_serializer("role")
+    def serialize_role(
+        self,
+        value: UserRole,
+    ) -> Literal["user", "admin", "super_admin"]:
+        return {
+            UserRole.USER: "user",
+            UserRole.ADMIN: "admin",
+            UserRole.SUPER_ADMIN: "super_admin",
+        }[value]
+
+    @field_serializer("status")
+    def serialize_status(
+        self,
+        value: UserStatus,
+    ) -> Literal["normal", "disabled", "deleted"]:
+        return {
+            UserStatus.NORMAL: "normal",
+            UserStatus.DISABLED: "disabled",
+            UserStatus.DELETED: "deleted",
+        }[value]
 
 
 class UserOut(_EnumSerializerMixin, BaseModel):
@@ -67,7 +112,7 @@ class UserOut(_EnumSerializerMixin, BaseModel):
     id: int
     username: str
     nickname: str
-    phone: str
+    phone: str | None
     avatar: str | None
     role: UserRole
     status: UserStatus
@@ -75,7 +120,10 @@ class UserOut(_EnumSerializerMixin, BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_mode_override": "serialization",
+    }
 
 
 class UserListItem(_EnumSerializerMixin, BaseModel):
@@ -92,4 +140,7 @@ class UserListItem(_EnumSerializerMixin, BaseModel):
     last_login_at: datetime | None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_mode_override": "serialization",
+    }

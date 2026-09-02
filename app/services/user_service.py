@@ -13,6 +13,7 @@ import logging
 from app.common.exceptions.user import OldPasswordIncorrect, PhoneAlreadyExists
 from app.core.exceptions import BusinessException
 from app.core.security import hash_password, verify_password
+from app.core.redis import revoke_user_refresh_sessions
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.schemas.user import PasswordChange, UserUpdate
@@ -28,11 +29,16 @@ class UserService:
 
     async def change_password(self, user: User, data: PasswordChange) -> None:
         """修改密码。"""
-        if not verify_password(data.old_password, user.password):
+        if user.password is None or not verify_password(data.old_password, user.password):
             raise OldPasswordIncorrect()
 
         hashed = hash_password(data.new_password)
-        await self.user_repo.update(user, password=hashed)
+        await self.user_repo.update(
+            user,
+            password=hashed,
+            auth_version=user.auth_version + 1,
+        )
+        await revoke_user_refresh_sessions(user.id)
         logger.info("Password changed: user_id=%d", user.id)
 
     async def update_profile(self, user: User, data: UserUpdate) -> User:

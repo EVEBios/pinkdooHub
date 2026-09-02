@@ -1,0 +1,452 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.10.9'
+  NODE_VERSION: '24.13.0'
+  NPM_VERSION: '11.6.2'
+  PIP_VERSION: '26.2.1'
+
+jobs:
+  backend-sqlite:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install locked Python dependencies
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install --requirement requirements.txt
+          python -m pip check
+          python --version
+          python -m pip --version
+
+      - name: Run SQLite backend suite
+        run: |
+          mkdir -p artifacts
+          python -m pytest tests/ --ignore=tests/inventory/mysql -q \
+            --junitxml=artifacts/backend-sqlite.xml
+
+      - name: Save backend test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-sqlite-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/backend-sqlite.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-mysql-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.0.46
+        env:
+          MYSQL_DATABASE: pinkdoohub_inventory_4311_ci
+          MYSQL_ROOT_PASSWORD: ci-only-disposable-password
+        ports:
+          - 13306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      APP_ENV: testing
+      DB_ENGINE: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '13306'
+      DB_NAME: pinkdoohub_inventory_4311_ci
+      DB_USER: root
+      DB_PASSWORD: ci-only-disposable-password
+      INVENTORY_MYSQL_TEST_ENABLED: '1'
+      INVENTORY_MYSQL_TEST_HOST: 127.0.0.1
+      INVENTORY_MYSQL_TEST_PORT: '13306'
+      INVENTORY_MYSQL_TEST_DB: pinkdoohub_inventory_4311_ci
+      INVENTORY_MYSQL_TEST_USER: root
+      INVENTORY_MYSQL_TEST_PASSWORD: ci-only-disposable-password
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install locked Python dependencies
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install --requirement requirements.txt
+          python -m pip check
+
+      - name: Verify isolated MySQL target
+        run: |
+          mkdir -p artifacts
+          python scripts/ci/check_mysql_gate.py preflight \
+            --report artifacts/mysql-preflight.json
+
+      - name: Apply reviewed Aerich migration chain
+        run: |
+          aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log
+          python scripts/ci/check_mysql_gate.py snapshot \
+            --report artifacts/mysql-release.json
+
+      - name: Run nine real MySQL release gates
+        run: |
+          python -m pytest tests/inventory/mysql -q \
+            --junitxml=artifacts/backend-mysql-release.xml
+
+      - name: Destroy isolated MySQL schema and service
+        if: always()
+        env:
+          MYSQL_SERVICE_CONTAINER_ID: ${{ job.services.mysql.id }}
+        run: |
+          python scripts/ci/check_mysql_gate.py cleanup \
+            --report artifacts/mysql-cleanup.json
+
+      - name: Save MySQL release evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-mysql-release-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            artifacts/mysql-preflight.json
+            artifacts/mysql-migration.log
+            artifacts/mysql-release.json
+            artifacts/backend-mysql-release.xml
+            artifacts/mysql-cleanup.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  frontend-quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: miniapp
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install locked frontend dependencies
+        run: |
+          npm install --global "npm@${NPM_VERSION}"
+          node --version
+          npm --version
+          npm ci --legacy-peer-deps
+
+      - name: Run frontend static checks
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run lint:styles
+
+      - name: Run frontend and CI policy tests
+        run: |
+          mkdir -p ../artifacts
+          npm test -- --ci --json \
+            --outputFile=../artifacts/frontend-jest.json \
+            2>&1 | tee ../artifacts/frontend-jest.log
+          npm run ci:test
+
+      - name: Save frontend test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-quality-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            artifacts/frontend-jest.json
+            artifacts/frontend-jest.log
+          if-no-files-found: error
+          retention-days: 14
+
+  openapi-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install locked contract toolchains
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install --requirement requirements.txt
+          npm install --global "npm@${NPM_VERSION}"
+          npm ci --prefix miniapp --legacy-peer-deps
+
+      - name: Verify OpenAPI CLI and committed schema
+        run: |
+          PYTHONIOENCODING=cp1252 PYTHONUTF8=0 \
+            python scripts/export_openapi.py --help > "${RUNNER_TEMP}/openapi-help.txt"
+          python scripts/export_openapi.py \
+            --output "${RUNNER_TEMP}/openapi.json"
+          if ! cmp --silent miniapp/openapi/openapi.json "${RUNNER_TEMP}/openapi.json"; then
+            diff -u miniapp/openapi/openapi.json "${RUNNER_TEMP}/openapi.json"
+            exit 1
+          fi
+          npm --prefix miniapp run api:types:check
+          git diff --exit-code -- \
+            miniapp/openapi/openapi.json \
+            miniapp/src/api/generated/schema.d.ts
+
+  weapp-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: miniapp
+    env:
+      NODE_ENV: production
+      TARO_ENV: weapp
+      TARO_APP_APP_ENV: production
+      TARO_APP_API_ORIGIN: https://api.ci.pinkdoohub.test
+      WEAPP_EXPECTED_ORIGIN: https://api.ci.pinkdoohub.test
+      WEAPP_RELEASE_ELIGIBLE: '0'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install locked frontend dependencies
+        run: |
+          npm install --global "npm@${NPM_VERSION}"
+          npm ci --include=dev --legacy-peer-deps
+
+      - name: Build production WeChat artifact
+        run: |
+          set -o pipefail
+          mkdir -p dist
+          npm run build:weapp 2>&1 | tee dist/weapp-build.log
+          if grep -Eiq '(^|[[:space:]])(warning|warn)(:|[[:space:]])' dist/weapp-build.log; then
+            echo 'Unapproved warning found in the WeChat production build.'
+            exit 1
+          fi
+
+      - name: Verify and fingerprint WeChat artifact
+        run: npm run build:weapp:check
+
+      - name: Read artifact identity
+        id: artifact
+        run: |
+          echo "version=$(node -p "require('./package.json').version")" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${GITHUB_SHA::12}" >> "${GITHUB_OUTPUT}"
+
+      - name: Save non-release WeChat artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: weapp-${{ steps.artifact.outputs.version }}-${{ steps.artifact.outputs.short_sha }}-${{ github.run_id }}
+          path: |
+            miniapp/dist/weapp/
+            miniapp/dist/weapp-manifest.json
+            miniapp/dist/weapp-manifest.sha256
+            miniapp/dist/weapp-build.log
+            miniapp/project.config.json
+          if-no-files-found: error
+          retention-days: 14
+
+  python-dependency-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install locked application and audit dependencies
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install --requirement requirements.txt
+          python -m pip check
+          python -m venv "${RUNNER_TEMP}/pip-audit-venv"
+          "${RUNNER_TEMP}/pip-audit-venv/bin/python" -m pip install \
+            "pip==${PIP_VERSION}" "pip-audit==2.10.1"
+
+      - name: Audit exact Python dependency pins
+        run: |
+          mkdir -p artifacts
+          set +e
+          "${RUNNER_TEMP}/pip-audit-venv/bin/pip-audit" \
+            --requirement requirements.txt \
+            --strict --no-deps --disable-pip --progress-spinner=off \
+            --aliases=on --desc=off --format json \
+            --output artifacts/python-audit.json
+          audit_status=$?
+          set -e
+          if [[ "${audit_status}" -ne 0 && "${audit_status}" -ne 1 ]]; then
+            echo "pip-audit failed with unexpected exit code ${audit_status}."
+            exit "${audit_status}"
+          fi
+          test -s artifacts/python-audit.json
+          python scripts/ci/check_python_audit.py \
+            --report artifacts/python-audit.json \
+            --policy security/dependency_audit/python-policy.json \
+            --summary artifacts/python-audit-policy.json
+
+      - name: Save Python dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-dependency-audit-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            artifacts/python-audit.json
+            artifacts/python-audit-policy.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  npm-dependency-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: miniapp
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install the locked production dependency tree
+        run: |
+          npm install --global "npm@${NPM_VERSION}"
+          npm config set registry=https://registry.npmjs.org/
+          test "$(npm config get registry)" = "https://registry.npmjs.org/"
+          npm ci --legacy-peer-deps
+          npm ls --omit=dev
+
+      - name: Audit npm production dependencies
+        run: |
+          mkdir -p ../artifacts
+          set +e
+          npm audit --omit=dev --json > ../artifacts/npm-audit.json
+          audit_status=$?
+          set -e
+          if [[ "${audit_status}" -ne 0 && "${audit_status}" -ne 1 ]]; then
+            echo "npm audit failed with unexpected exit code ${audit_status}."
+            exit "${audit_status}"
+          fi
+          test -s ../artifacts/npm-audit.json
+          node ../scripts/ci/check_npm_audit.mjs \
+            --report ../artifacts/npm-audit.json \
+            --policy ../security/dependency_audit/npm-policy.json \
+            --lockfile package-lock.json \
+            --summary ../artifacts/npm-audit-policy.json
+
+      - name: Save npm dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-dependency-audit-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            artifacts/npm-audit.json
+            artifacts/npm-audit-policy.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  repository-hygiene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Check tracked files, Secrets, diff and clean tree
+        run: |
+          git diff --check
+          python scripts/ci/check_repository_hygiene.py \
+            --require-clean \
+            --report "${RUNNER_TEMP}/repository-hygiene.json"
+          git diff --exit-code
+
+      - name: Save repository hygiene report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: repository-hygiene-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/repository-hygiene.json
+          if-no-files-found: error
+          retention-days: 14

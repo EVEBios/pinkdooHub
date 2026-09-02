@@ -18,7 +18,6 @@ from app.common.constants.product import (
     MIN_DURATION_MINUTES,
     MIN_IMAGE_SORT,
     MIN_PARTICIPANTS,
-    MIN_STOCK,
     PRODUCT_DESCRIPTION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_NAME_MIN_LENGTH,
@@ -114,7 +113,6 @@ ProductPriceInput = Annotated[
     ),
 ]
 
-StockInput = Annotated[int, Field(strict=True, ge=MIN_STOCK)]
 DurationMinutesInput = Annotated[
     int,
     Field(strict=True, ge=MIN_DURATION_MINUTES),
@@ -172,7 +170,6 @@ class KitProductCreate(_ProductCreateBase):
     """创建套装商品草稿请求。"""
 
     price: ProductPriceInput
-    stock: StockInput = MIN_STOCK
 
 
 class ProductUpdate(_NonEmptyPatchRequest):
@@ -250,12 +247,6 @@ class KitPriceUpdate(_ProductRequest):
     """修改套装商品价格请求。"""
 
     price: ProductPriceInput
-
-
-class KitStockUpdate(_ProductRequest):
-    """直接设置套装商品当前库存请求。"""
-
-    stock: StockInput
 
 
 class ProductListQuery(PageParams):

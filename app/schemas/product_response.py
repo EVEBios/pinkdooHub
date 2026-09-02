@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.common.constants.inventory import INVENTORY_STOCK_MAX
 from app.common.constants.product import (
     MIN_DURATION_MINUTES,
     MIN_IMAGE_SORT,
@@ -223,13 +224,6 @@ class KitPriceOut(_ProductOut):
     price: ProductPriceOut
 
 
-class KitStockOut(_ProductOut):
-    """修改套装商品当前库存响应。"""
-
-    id: int = Field(strict=True, gt=0)
-    stock: int = Field(strict=True, ge=MIN_STOCK)
-
-
 class ProductListItemOut(_ProductIdentityOut):
     """用户端商品列表项——仅用于完整且已上架的商品。"""
 
@@ -281,7 +275,11 @@ class KitProductDetailOut(_UserProductDetailOut):
 
     product_type: LabeledValue[Literal[ProductType.KIT]]
     price: ProductPriceOut
-    stock: int = Field(strict=True, ge=MIN_STOCK)
+    stock: int = Field(
+        strict=True,
+        ge=MIN_STOCK,
+        le=INVENTORY_STOCK_MAX,
+    )
     available: bool = Field(strict=True)
 
     @model_validator(mode="after")
@@ -317,4 +315,8 @@ class AdminKitProductDetailOut(_AdminProductDetailOut):
 
     product_type: LabeledValue[Literal[ProductType.KIT]]
     price: ProductPriceOut
-    stock: int = Field(strict=True, ge=MIN_STOCK)
+    stock: int = Field(
+        strict=True,
+        ge=MIN_STOCK,
+        le=INVENTORY_STOCK_MAX,
+    )

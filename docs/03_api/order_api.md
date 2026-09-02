@@ -1,113 +1,160 @@
 # Order API
 
-> 本文档遵循 [API Design Conventions](api_design_conventions.md) 中定义的通用规范（响应格式、错误码、分页、数据类型等），重复内容不再赘述。
+> **Document Version:** v1.2
+>
+> **Status:** Kit/Mixed Inventory Lifecycle Implemented（Phase 4.2 complete + Phase 4.3.8 complete）
+>
+> **Last Updated:** 2026-08-14
+>
+> 本文遵循 [API Design Conventions](api_design_conventions.md)，业务规则以 [Order Module](../01_requirements/order_module.md) 为准。
 
 ---
 
-## 1. 概述
+## 1. 概述与范围
 
-订单模块负责管理用户购买商品后的整个交易流程，包括订单创建、订单查询、状态管理和订单完成。该模块面向两类用户：
+Order API 提供 Experience、Kit 与混合订单创建，以及用户/管理员查询、取消、人工确认支付、完成和审计历史。Phase 4.3.7–4.3.8 已接入创建 Pending 时的 Kit 库存扣减及 owner cancel 时的幂等恢复；支付与完成不改变库存。
 
-- 普通用户：创建订单、查看自己的订单、取消待支付订单
-- 管理员：查看所有订单、手动完成订单
+Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token。
 
-### Base URL
+角色：
 
-```
-/api/v1
-```
+- 已认证用户：创建订单、访问和取消自己的订单；
+- ADMIN+：`admin` 与 `super_admin`，访问管理端端点。
 
-### 认证方式
+所有成功与错误响应都使用统一信封。创建返回 HTTP 201，其余成功返回 HTTP 200。业务异常由全局中间件转换，路由不得捕获后手写错误信封。
 
-JWT Bearer Token
+---
 
-需要认证的接口在 Header 中携带：
+## 2. 数据契约
 
-```
-Authorization: Bearer <access_token>
-```
+### 2.1 通用表示
 
-### 通用响应格式
+- ID：JSON integer。
+- 时间：UTC ISO 8601，例如 `"2026-08-13T10:30:00Z"`。
+- 金额：固定两位小数的 JSON string，例如 `"99.00"`；后端计算使用 `Decimal`。
+- 状态：展示对象 `{ "value": "pending", "label": "待支付" }`。
+- 未填写备注时返回 `null`，不返回空字符串替代。
+- Request Schema 均使用 `extra="forbid"`；Out Schema 使用字段白名单和 `from_attributes=True`。
 
-所有接口统一返回：
+### 2.2 Order Item 请求
+
+| 字段 | 类型 | 必填 | 规则 |
+|------|------|------|------|
+| `product_id` | integer | 是 | 正整数；必须引用当前可售 Experience 或 Kit Product |
+| `experience_option_id` | integer / null | 条件必填 | Experience 必须为当前有效 Option；Kit 必须省略或为 null |
+| `quantity` | integer | 是 | 1 至 99 |
+
+客户端不得提交名称、配置、价格、小计或库存字段。同一订单中 `(product_id, experience_option_id)` 不得重复；不自动合并重复行。
+
+### 2.3 Order Item 响应
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer | OrderItem ID |
+| `product_id` | integer | 原 Product ID |
+| `experience_option_id` | integer / null | Experience 的原 Option ID；Kit 为 null |
+| `product_name` | string | Product 名称快照 |
+| `option_duration_minutes` | integer / null | Experience 时长快照；Kit 为 null |
+| `option_participants` | integer / null | Experience 人数快照；Kit 为 null |
+| `option_day_type` | object / null | Experience 日期类型 `{value, label}`；Kit 为 null |
+| `product_price` | string | 单价快照，两位小数 |
+| `quantity` | integer | 数量 |
+| `subtotal` | string | 小计，两位小数 |
+
+`experience_option_id` 与三项 Option 快照必须同时完整或同时为 null：前者表示 Experience，后者表示 Kit；不接受部分 Option 快照。
+
+### 2.4 用户端与管理端对象
+
+用户端列表项：
+
+| 字段 | 类型 |
+|------|------|
+| `id` | integer |
+| `order_no` | string |
+| `total_amount` | string |
+| `status` | object |
+| `item_count` | integer，OrderItem 明细行数（不是 quantity 求和） |
+| `created_at` | datetime |
+| `updated_at` | datetime |
+
+用户端详情与列表项共享 `id`、`order_no`、`total_amount`、`status` 和时间字段，并额外返回 `remark` 与 `items`；列表派生字段 `item_count` 不进入详情。详情不返回 `user_id` 或任何用户资料。
+
+管理端列表项额外返回：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `user_id` | integer | 下单用户 ID |
+| `user_nickname` | string | 当前安全展示昵称，不属于订单快照 |
+
+管理端详情与用户端详情相比只增加 `user_id` 和 `user_nickname`；它返回 `remark` 与 `items`，不返回列表派生字段 `item_count`。管理端也不得返回用户名、手机号、密码、Token 等字段。
+
+### 2.5 状态变迁响应
+
+取消、确认支付和完成均返回：
+
+| 字段 | 类型 |
+|------|------|
+| `id` | integer |
+| `order_no` | string |
+| `status` | object |
+| `updated_at` | datetime |
+
+### 2.6 Schema 注册表
+
+后续 Schema 阶段按以下名称和职责实现，不使用一个宽松 `OrderOut` 同时服务所有端点：
+
+| Schema | 方向 | 用途 |
+|--------|------|------|
+| `OrderItemCreate` | Request | 单个 Experience 或 Kit Item |
+| `OrderCreate` | Request | `items` + `remark`，负责非空、上限和重复组合校验 |
+| `OrderListQuery` | Query | 用户端分页与状态筛选 |
+| `AdminOrderListQuery` | Query | 管理端分页、状态、订单号、用户和时间范围筛选 |
+| `OrderItemOut` | Response | 明细快照白名单 |
+| `OrderListItemOut` | Response | 用户端列表项 |
+| `AdminOrderListItemOut` | Response | 管理端列表项 |
+| `OrderDetailOut` | Response | 用户端创建/详情 |
+| `AdminOrderDetailOut` | Response | 管理端详情 |
+| `OrderStatusOut` | Response | 三个状态变迁端点 |
+
+运行时由 Mapper 生成并校验上述 Out Schema，再通过 `success()` 包装；OpenAPI 使用 `SuccessResponse[OrderDetailOut]`、`SuccessResponse[Page[OrderListItemOut]]` 等精确泛型和共享 `ErrorResponse` 声明。Mapper 完成序列化后路由保持 `response_model=None`，避免金额字符串被二次按 Decimal 输入规则校验。
+
+---
+
+## 3. 错误契约
+
+HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Order 命名异常按实际 HTTP 语义直接继承共享异常类型。
+
+| 命名异常 | code | HTTP | message | data |
+|----------|------|------|---------|------|
+| `OrderNotFound` | `40411` | 404 | `Order not found` | `null` |
+| `OrderStatusConflict` | `40921` | 409 | `Order status does not allow this operation` | `operation`, `current_status`, `required_status` |
+| `OrderProductUnavailable` | `42231` | 422 | `Order product is unavailable` | `product_id` |
+| `OrderOptionUnavailable` | `42232` | 422 | `Order experience option is unavailable` | `product_id`, `experience_option_id`（Experience 缺失时为 null） |
+| `InsufficientStock` | `40931` | 409 | `Insufficient stock` | `product_id`, `requested_quantity`；不返回 available |
+| `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 取消恢复越界时包含 Product、before/change 与上下限 |
+| `InventoryTransactionConflict` | `40933` | 409 | `Inventory idempotency key conflicts with another request` | `null` |
+
+请求形状错误使用全局 HTTP 422 / code `422` 参数校验信封，包括：`items` 为空或超过 10 项、ID 非正整数、数量不在 1 至 99、重复 `(product_id, experience_option_id)`、备注超过 500 字符、未知字段、分页/时间格式错误。`OrderItemsRequired` 属于 Schema 约束，不额外发明业务错误码。
+
+用户查询或取消他人订单与订单确实不存在都返回 `40411`，不会对外提供 `OrderDoesNotBelongToUser`，避免资源枚举。管理员端才可按真实 ID 查询任意订单。
+
+`OrderStatusConflict.data.operation` 对三条状态用例分别固定为 `cancel`、`mark_paid`、`complete`；它是稳定的业务操作标识，不等同于大写审计 action。
+
+> **实现状态：** Phase 4.2 Order v1.0 全链及最终 Review 保持完成；Phase 4.3.7–4.3.8 已把既有创建/取消端点升级为完整 Kit 库存生命周期。创建和取消分别写 deduction/restore 流水，均使用稳定集合锁、同事务余额/Order/Audit/重载及 MySQL 1205/1213 有限重试；取消额外使用 Order 状态机和 restore UNIQUE 双层幂等保护。`40922` 阶段门禁已移除，Phase 4.3.11 真实 MySQL 最后一件、反向多 Kit、同单取消和管理调整竞争均已通过。
+
+错误示例：
 
 ```json
 {
-    "code": 0,
-    "message": "success",
-    "data": {}
+    "code": 40921,
+    "message": "Order status does not allow this operation",
+    "data": {
+        "operation": "complete",
+        "current_status": "pending",
+        "required_status": "paid"
+    }
 }
 ```
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| code | int | 业务状态码，`0` 表示成功 |
-| message | string | 状态描述 |
-| data | object / null | 返回数据，无数据时为 `null` |
-
-### 订单对象
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | bigint | 订单 ID |
-| order_no | string | 订单编号，系统自动生成 |
-| user_id | bigint | 下单用户 ID |
-| total_amount | number | 订单总金额，单位：元 |
-| status | string | 状态：`"pending"` 待支付 / `"paid"` 已支付 / `"cancelled"` 已取消 / `"completed"` 已完成 |
-| remark | string | 订单备注 |
-| items | array | 订单明细（[订单明细对象](#订单明细对象)） |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 最近更新时间 |
-
-### 订单明细对象
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | bigint | 明细 ID |
-| product_id | bigint | 关联商品 ID |
-| product_name | string | 下单时商品名称快照 |
-| product_price | number | 下单时商品价格快照，单位：元 |
-| quantity | int | 数量 |
-| subtotal | number | 小计金额，单位：元 |
-
-> **快照设计**：`product_name` 和 `product_price` 在下单时从商品表复制，保证历史订单不受商品后续修改影响。
-
----
-
-## 2. 错误码
-
-### 全局错误码
-
-| code | 说明 |
-|------|------|
-| 0 | 成功 |
-| 401 | 未认证（Token 缺失或无效） |
-| 403 | 无权限 |
-| 404 | 资源不存在 |
-| 422 | 请求参数校验失败 |
-| 500 | 服务器内部错误 |
-
-### 订单模块错误码（3xxx）
-
-| code | 说明 |
-|------|------|
-| 3001 | 订单不存在 |
-| 3002 | 订单状态不允许此操作 |
-| 3003 | 商品不存在或已下架 |
-| 3004 | 库存不足 |
-| 3005 | 订单不属于当前用户 |
-| 3006 | 订单明细不能为空 |
-
----
-
-## 3. 字段校验规则
-
-| 字段 | 规则 |
-|------|------|
-| items | 必填，非空数组 |
-| items[].product_id | 必填，商品必须存在且 `status = "online"` |
-| items[].quantity | 必填，> 0，套装商品不超过当前库存 |
-| remark | 可选，最大 500 字符 |
 
 ---
 
@@ -115,197 +162,113 @@ Authorization: Bearer <access_token>
 
 | Method | URI | 描述 | 认证 | 角色 |
 |--------|-----|------|------|------|
-| POST | /orders | 创建订单 | ✅ | 普通用户 |
-| GET | /orders | 我的订单 | ✅ | 普通用户 |
-| GET | /orders/{id} | 订单详情 | ✅ | 普通用户 |
-| PUT | /orders/{id}/cancel | 取消订单 | ✅ | 普通用户 |
-| GET | /admin/orders | 全部订单 | ✅ | 管理员 |
-| GET | /admin/orders/{id} | 订单详情 | ✅ | 管理员 |
-| PUT | /admin/orders/{id}/complete | 完成订单 | ✅ | 管理员 |
+| POST | `/orders` | 创建 Experience、Kit 或混合订单并扣减 Kit | 是 | 已认证用户 |
+| GET | `/orders` | 我的订单 | 是 | 已认证用户 |
+| GET | `/orders/{order_id}` | 我的订单详情 | 是 | 订单所属用户 |
+| PATCH | `/orders/{order_id}/cancel` | 取消 Pending 订单 | 是 | 订单所属用户 |
+| GET | `/admin/orders` | 管理订单列表 | 是 | ADMIN+ |
+| GET | `/admin/orders/{order_id}` | 管理订单详情 | 是 | ADMIN+ |
+| PATCH | `/admin/orders/{order_id}/paid` | 人工确认已支付 | 是 | ADMIN+ |
+| PATCH | `/admin/orders/{order_id}/complete` | 完成 Paid 订单 | 是 | ADMIN+ |
+| GET | `/admin/orders/{order_id}/audit-logs` | 订单审计历史 | 是 | ADMIN+ |
+
+状态变迁使用 `PATCH`，因为它修改资源局部状态，不是用完整表示替换订单。三个 PATCH 端点都不定义请求体，客户端必须省略 body；服务端会主动拒绝 `{}`、`null` 或其他任意非空 body，并返回统一 HTTP 422 校验错误，且不会执行状态修改或写审计。
 
 ---
 
-## 业务规则
-
-### 状态流转
-
-```
-                    ┌──────────────────┐
-                    │  pending (待支付)  │
-                    └────────┬─────────┘
-                             │
-                  ┌──────────┼──────────┐
-                  │          │          │
-                  ▼          ▼          │
-           paid (已支付)  cancelled     │
-                  │       (已取消)      │
-                  ▼                    │
-           completed                   │
-           (已完成)                    │
-                                       │
-              不允许 paid → cancelled   │
-```
-
-| 流转 | 触发方 | 条件 |
-|------|--------|------|
-| 待支付 → 已支付 | 系统 | 付款成功（支付模块 v0.2） |
-| 待支付 → 已取消 | 用户 | 主动取消，恢复库存 |
-| 已支付 → 已完成 | 管理员 | 服务完成确认 |
-| 已支付 → 已取消 | - | ❌ 当前版本不支持，需退款流程 |
-
-### 约束规则
-
-| 规则 | 说明 |
-|------|------|
-| 订单编号自动生成 | `order_no` 由系统生成，不可由用户指定 |
-| 金额自动计算 | `total_amount` = 所有 `subtotal` 之和，不接受用户传入 |
-| 快照不可变 | 下单后 `product_name` 和 `product_price` 为历史快照，不随商品修改而变动 |
-| 库存扣减 | 创建订单时扣减套装库存（仅 `product_type = "kit"`）；体验商品不扣减 |
-| 库存恢复 | 取消"待支付"订单时恢复已扣减的套装库存 |
-| 仅可取消待支付 | `status != "pending"` 的订单调用取消接口返回 3002 |
-| 仅可操作自己的订单 | 普通用户操作他人订单返回 3005 |
-| 删除订单 | ❌ 当前版本不支持，计划在 v1.0 实现 |
-
----
-
-## 5. 用户接口
+## 5. 用户端接口
 
 ### 5.1 创建订单
 
-```
-POST /api/v1/orders
-```
+`POST /api/v1/orders`
 
-创建新订单，系统自动计算金额、生成订单编号、扣减库存。
+创建 Experience、Kit 或混合订单。系统批量加载 Product/Option/Kit 并读取数据库价格；事务内先创建 Pending Order，再稳定锁定、重检并扣减所有 Kit。余额、`order_deduction` 流水、Items、`CREATE_ORDER` 审计和响应重载共享一个事务。
 
-**Header**
+请求字段：
 
-```
-Authorization: Bearer <access_token>
-```
-
-**请求参数**
-
-| 字段 | 类型 | 必填 | 说明 |
+| 字段 | 类型 | 必填 | 规则 |
 |------|------|------|------|
-| items | array | 是 | 订单明细列表 |
-| items[].product_id | int | 是 | 商品 ID |
-| items[].quantity | int | 是 | 数量，> 0 |
-| remark | string | 否 | 订单备注 |
+| `items` | array | 是 | 1 至 10 项，组合不可重复 |
+| `remark` | string / null | 否 | 最大 500 字符；缺省为 null |
 
-**请求示例**
+请求示例：
 
 ```json
 {
     "items": [
-        { "product_id": 1, "quantity": 1 },
-        { "product_id": 2, "quantity": 2 }
+        {
+            "product_id": 1,
+            "experience_option_id": 10,
+            "quantity": 1
+        },
+        {
+            "product_id": 5,
+            "quantity": 2
+        }
     ],
-    "remark": "工作日晚上来"
+    "remark": "周五晚上到店"
 }
 ```
 
-**成功响应**
-
-HTTP 201
+成功：HTTP 201
 
 ```json
 {
     "code": 0,
-    "message": "success",
+    "message": "Order created",
     "data": {
-        "id": 1,
-        "order_no": "20260723000001",
-        "user_id": 1,
-        "total_amount": 497.00,
-        "status": "pending",
-        "remark": "工作日晚上来",
+        "id": 101,
+        "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
+        "total_amount": "497.00",
+        "status": { "value": "pending", "label": "待支付" },
+        "remark": "周五晚上到店",
         "items": [
             {
-                "id": 1,
+                "id": 1001,
                 "product_id": 1,
-                "product_name": "工作日单人 1 小时体验",
-                "product_price": 99.00,
+                "experience_option_id": 10,
+                "product_name": "拼豆体验",
+                "option_duration_minutes": 60,
+                "option_participants": 1,
+                "option_day_type": { "value": "weekday", "label": "工作日" },
+                "product_price": "99.00",
                 "quantity": 1,
-                "subtotal": 99.00
+                "subtotal": "99.00"
             },
             {
-                "id": 2,
-                "product_id": 2,
-                "product_name": "新手体验套装",
-                "product_price": 199.00,
+                "id": 1002,
+                "product_id": 5,
+                "experience_option_id": null,
+                "product_name": "拼豆材料包",
+                "option_duration_minutes": null,
+                "option_participants": null,
+                "option_day_type": null,
+                "product_price": "199.00",
                 "quantity": 2,
-                "subtotal": 398.00
+                "subtotal": "398.00"
             }
         ],
-        "created_at": "2026-07-23T10:30:00Z",
-        "updated_at": "2026-07-23T10:30:00Z"
+        "created_at": "2026-08-13T10:30:00Z",
+        "updated_at": "2026-08-13T10:30:00Z"
     }
 }
 ```
 
-**失败响应**
-
-商品不存在或已下架：
-
-```json
-{
-    "code": 3003,
-    "message": "Product not found or offline",
-    "data": {
-        "product_id": 2
-    }
-}
-```
-
-库存不足：
-
-```json
-{
-    "code": 3004,
-    "message": "Insufficient stock",
-    "data": {
-        "product_id": 2,
-        "available": 1,
-        "requested": 2
-    }
-}
-```
-
-明细为空：
-
-```json
-{
-    "code": 3006,
-    "message": "Order items cannot be empty"
-}
-```
-
----
+创建响应不返回 `user_id`。可能的业务错误：`40931`、`42231`、`42232`；请求形状错误返回全局参数 422。
 
 ### 5.2 我的订单
 
-```
-GET /api/v1/orders
-```
+`GET /api/v1/orders`
 
-分页查看当前用户的订单列表。
+查询参数：
 
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**查询参数**
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
+| 字段 | 类型 | 必填 | 默认值 | 规则 |
 |------|------|------|--------|------|
-| page | int | 否 | 1 | 页码 |
-| page_size | int | 否 | 20 | 每页数量，最大 100 |
-| status | string | 否 | - | 按状态筛选：`"pending"` 待支付 / `"paid"` 已支付 / `"cancelled"` 已取消 / `"completed"` 已完成 |
+| `page` | integer | 否 | 1 | ≥ 1 |
+| `page_size` | integer | 否 | 20 | 1 至 100 |
+| `status` | string | 否 | - | `pending` / `paid` / `cancelled` / `completed` |
 
-**成功响应**
+稳定排序：`created_at DESC, id DESC`。
 
 ```json
 {
@@ -314,170 +277,72 @@ Authorization: Bearer <access_token>
     "data": {
         "items": [
             {
-                "id": 1,
-                "order_no": "20260723000001",
-                "total_amount": 497.00,
-                "status": "pending",
+                "id": 101,
+                "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
+                "total_amount": "497.00",
+                "status": { "value": "pending", "label": "待支付" },
                 "item_count": 2,
-                "created_at": "2026-07-23T10:30:00Z",
-                "updated_at": "2026-07-23T10:30:00Z"
+                "created_at": "2026-08-13T10:30:00Z",
+                "updated_at": "2026-08-13T10:30:00Z"
             }
         ],
-        "total": 15,
+        "total": 1,
         "page": 1,
-        "page_size": 20
+        "page_size": 20,
+        "pages": 1
     }
 }
 ```
 
-> 列表中不返回 `items` 明细和 `remark`，减少数据传输量。`item_count` 为明细条数。
+### 5.3 我的订单详情
 
----
+`GET /api/v1/orders/{order_id}`
 
-### 5.3 订单详情
-
-```
-GET /api/v1/orders/{id}
-```
-
-获取指定订单的完整信息。
-
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**成功响应**
-
-```json
-{
-    "code": 0,
-    "message": "success",
-    "data": {
-        "id": 1,
-        "order_no": "20260723000001",
-        "user_id": 1,
-        "total_amount": 497.00,
-        "status": "pending",
-        "remark": "工作日晚上来",
-        "items": [
-            {
-                "id": 1,
-                "product_id": 1,
-                "product_name": "工作日单人 1 小时体验",
-                "product_price": 99.00,
-                "quantity": 1,
-                "subtotal": 99.00
-            },
-            {
-                "id": 2,
-                "product_id": 2,
-                "product_name": "新手体验套装",
-                "product_price": 199.00,
-                "quantity": 2,
-                "subtotal": 398.00
-            }
-        ],
-        "created_at": "2026-07-23T10:30:00Z",
-        "updated_at": "2026-07-23T10:30:00Z"
-    }
-}
-```
-
-**失败响应**
-
-订单不存在：
-
-```json
-{
-    "code": 3001,
-    "message": "Order not found"
-}
-```
-
-订单不属于当前用户：
-
-```json
-{
-    "code": 3005,
-    "message": "Order does not belong to current user"
-}
-```
-
----
+返回与创建成功相同的用户端详情结构。不存在或属于其他用户均返回 `40411`；检查必须通过限定 `current_user_id` 的可见查询完成，不先加载他人订单再暴露归属错误。
 
 ### 5.4 取消订单
 
-```
-PUT /api/v1/orders/{id}/cancel
-```
+`PATCH /api/v1/orders/{order_id}/cancel`
 
-取消"待支付"状态的订单，同时恢复已扣减的套装库存。
-
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**成功响应**
+仅允许订单所属用户执行 `pending → cancelled`。事务先锁定 owner 可见 Order 并重检 Pending，再读取最小 Item 快照、按 Product ID 升序锁定全部 Kit、批量确认 restore 幂等身份尚未提交，随后恢复余额并写 `order_cancellation_restore` 流水，最后更新状态、写 `CANCEL_ORDER` 审计并重载响应。纯 Experience 订单跳过 Inventory；重复取消返回 `40921` 且不重复恢复。任何库存、流水、状态、审计或重载失败都会让整个事务回滚。
 
 ```json
 {
     "code": 0,
     "message": "Order cancelled",
     "data": {
-        "id": 1,
-        "order_no": "20260723000001",
-        "status": "cancelled",
-        "updated_at": "2026-07-23T11:00:00Z"
+        "id": 101,
+        "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
+        "status": { "value": "cancelled", "label": "已取消" },
+        "updated_at": "2026-08-13T11:00:00Z"
     }
 }
 ```
 
-**失败响应**
-
-订单状态不允许取消：
-
-```json
-{
-    "code": 3002,
-    "message": "Only pending orders can be cancelled"
-}
-```
+可能的业务错误：`40411`、`40921`。
 
 ---
 
-## 6. 管理接口
+## 6. 管理端接口
 
-> 以下接口需要管理员角色（`role = "admin"`），普通用户调用返回 403。
+### 6.1 管理订单列表
 
-### 6.1 全部订单
+`GET /api/v1/admin/orders`
 
-```
-GET /api/v1/admin/orders
-```
+查询参数：
 
-分页查看所有用户的订单。
-
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**查询参数**
-
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
+| 字段 | 类型 | 必填 | 默认值 | 规则 |
 |------|------|------|--------|------|
-| page | int | 否 | 1 | 页码 |
-| page_size | int | 否 | 20 | 每页数量，最大 100 |
-| status | string | 否 | - | 按状态筛选：`"pending"` / `"paid"` / `"cancelled"` / `"completed"` |
-| order_no | string | 否 | - | 按订单编号精确查找 |
-| user_id | int | 否 | - | 按用户筛选 |
+| `page` | integer | 否 | 1 | ≥ 1 |
+| `page_size` | integer | 否 | 20 | 1 至 100 |
+| `status` | string | 否 | - | OrderStatus value |
+| `order_no` | string | 否 | - | 完整订单号精确匹配 |
+| `product_name` | string | 否 | - | trim 后 1 至 100 字符；按下单时商品名称快照包含匹配 |
+| `user_id` | integer | 否 | - | 正整数 |
+| `created_from` | datetime | 否 | - | UTC ISO 8601，包含下界 |
+| `created_to` | datetime | 否 | - | UTC ISO 8601，不包含上界，必须大于 `created_from` |
 
-**成功响应**
+无筛选及所有筛选组合均使用 `created_at DESC, id DESC` 稳定排序。列表必须数据库分页。`product_name` 查询基于 `order_items.product_name` 历史快照，不读取当前 Product 名称；一张订单即使有多条 Item 命中也只计入一次，且不改变该订单完整的 `item_count`。
 
 ```json
 {
@@ -486,145 +351,116 @@ Authorization: Bearer <access_token>
     "data": {
         "items": [
             {
-                "id": 1,
-                "order_no": "20260723000001",
-                "user_id": 1,
+                "id": 101,
+                "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
+                "user_id": 7,
                 "user_nickname": "Alice",
-                "total_amount": 497.00,
-                "status": "pending",
+                "total_amount": "497.00",
+                "status": { "value": "paid", "label": "已支付" },
                 "item_count": 2,
-                "created_at": "2026-07-23T10:30:00Z",
-                "updated_at": "2026-07-23T10:30:00Z"
+                "created_at": "2026-08-13T10:30:00Z",
+                "updated_at": "2026-08-13T11:20:00Z"
             }
         ],
-        "total": 200,
+        "total": 1,
         "page": 1,
-        "page_size": 20
+        "page_size": 20,
+        "pages": 1
     }
 }
 ```
 
-> 管理端列表额外返回 `user_id` 和 `user_nickname`，便于管理员识别下单用户。
+### 6.2 管理订单详情
 
----
+`GET /api/v1/admin/orders/{order_id}`
 
-### 6.2 订单详情
+返回管理端详情，包含 `user_id`、`user_nickname`、`remark` 和完整 `items`。Order 不存在返回 `40411`。
 
-```
-GET /api/v1/admin/orders/{id}
-```
+### 6.3 人工确认支付
 
-查看任意订单的完整信息，与用户端详情格式相同，但不校验订单归属。
+`PATCH /api/v1/admin/orders/{order_id}/paid`
 
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**成功响应**
+仅允许 `pending → paid`，写入 `MARK_ORDER_PAID`。这是支付模块接入前的临时运营入口；未来支付回调必须复用同一 Service 用例和幂等/状态规则，不得直接更新 Repository。
 
 ```json
 {
     "code": 0,
-    "message": "success",
+    "message": "Order marked as paid",
     "data": {
-        "id": 1,
-        "order_no": "20260723000001",
-        "user_id": 1,
-        "user_nickname": "Alice",
-        "total_amount": 497.00,
-        "status": "pending",
-        "remark": "工作日晚上来",
-        "items": [
-            {
-                "id": 1,
-                "product_id": 1,
-                "product_name": "工作日单人 1 小时体验",
-                "product_price": 99.00,
-                "quantity": 1,
-                "subtotal": 99.00
-            },
-            {
-                "id": 2,
-                "product_id": 2,
-                "product_name": "新手体验套装",
-                "product_price": 199.00,
-                "quantity": 2,
-                "subtotal": 398.00
-            }
-        ],
-        "created_at": "2026-07-23T10:30:00Z",
-        "updated_at": "2026-07-23T10:30:00Z"
+        "id": 101,
+        "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
+        "status": { "value": "paid", "label": "已支付" },
+        "updated_at": "2026-08-13T11:20:00Z"
     }
 }
 ```
 
-> 管理端详情额外返回 `user_id` 和 `user_nickname`。
+可能的业务错误：`40411`、`40921`。
 
----
+### 6.4 完成订单
 
-### 6.3 完成订单
+`PATCH /api/v1/admin/orders/{order_id}/complete`
 
-```
-PUT /api/v1/admin/orders/{id}/complete
-```
-
-将"已支付"状态的订单标记为已完成。
-
-**Header**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**成功响应**
+仅允许 `paid → completed`，状态与 `COMPLETE_ORDER` 审计同事务。
 
 ```json
 {
     "code": 0,
     "message": "Order completed",
     "data": {
-        "id": 1,
-        "order_no": "20260723000001",
-        "status": "completed",
-        "updated_at": "2026-07-23T15:00:00Z"
+        "id": 101,
+        "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
+        "status": { "value": "completed", "label": "已完成" },
+        "updated_at": "2026-08-13T15:00:00Z"
     }
 }
 ```
 
-**失败响应**
+可能的业务错误：`40411`、`40921`。
 
-订单状态不允许：
+### 6.5 订单审计历史
 
-```json
-{
-    "code": 3002,
-    "message": "Only paid orders can be completed"
-}
-```
+`GET /api/v1/admin/orders/{order_id}/audit-logs`
+
+查询参数仅为通用 `page` / `page_size`。先确认 Order 存在，再委托共享 `AuditLogService.list_logs(target_type="order", target_id=order_id, ...)`。响应使用共享 `AuditLogOut` / `Page[AuditLogOut]`，按 `created_at DESC, id DESC` 排序，不在 Order Schema 中复制审计结构。
+
+可能的业务错误：`40411`。
 
 ---
 
-## 7. 附录
+## 7. 状态、审计与事务矩阵
 
-> HTTP 状态码约定、分页参数规范等通用内容请参见 [API Design Conventions](api_design_conventions.md)。
+| 用例 | 前置状态 | 后置状态 | Audit action | 原子范围 |
+|------|----------|----------|--------------|----------|
+| 创建 | - | `pending` | `CREATE_ORDER` | Order + Items + Audit + 响应重载；编号冲突整事务最多尝试 3 次 |
+| 用户取消 | `pending` | `cancelled` | `CANCEL_ORDER` | 锁定 Order + Item 快照 + 稳定 Kit 锁 + restore 幂等检查 + 批量余额/流水 + 状态 + Audit + 响应重载；1205/1213 完整用例最多尝试 3 次 |
+| ADMIN+ 确认支付 | `pending` | `paid` | `MARK_ORDER_PAID` | 锁定 Order + 状态更新 + Audit + 响应重载 |
+| ADMIN+ 完成 | `paid` | `completed` | `COMPLETE_ORDER` | 锁定 Order + 状态更新 + Audit + 响应重载 |
 
-### 订单编号规则
+所有事务内 Repository 方法必须接收并使用 `using_db`。状态变迁在事务内使用 `SELECT ... FOR UPDATE` 锁定订单并重新校验状态，并发请求只有一个可以成功。取消恢复与状态/Audit 使用同一连接，任一失败整体回滚；支付和完成仍不修改 ProductKit.stock。失败的前置检查不写审计。
 
-订单编号格式：`YYYYMMDD` + 6 位自增序号，不足补零。
+---
 
+## 8. 订单号与排序
+
+订单号为 `OD` + 26 位大写 Crockford Base32 ULID，总长 28，并匹配 `^OD[0-9A-HJKMNP-TV-Z]{26}$`，例如：
+
+```text
+OD01K2M7Y0J7A3N5Q8T4V6W9X2BC
 ```
-20260723000001  →  2026年7月23日第1笔订单
-20260723000012  →  2026年7月23日第12笔订单
-```
 
-### v0.2 计划
+生成器使用 UTC 毫秒时间和密码学安全随机源，适用于多实例，无需 Redis，也不为此新增第三方依赖。`UNIQUE(order_no)` 为最终并发兜底；唯一冲突使当前事务回滚，由创建用例重新生成编号，最多尝试 3 次，第三次仍冲突则进入服务器错误兜底。API 不暴露或接受编号组成字段。
 
-以下接口和功能计划在后续版本实现：
+订单号只提供近似时间可排序性。所有列表的权威排序均为 `created_at DESC, id DESC`。
 
-- 在线支付集成（付款成功后自动流转 待支付 → 已支付）
-- 超时未支付自动取消
-- 退款流程（已支付 → 已取消）
-- 订单统计（按日期/状态汇总）
-- 取消原因填写
+---
+
+## 9. 后续能力
+
+下列能力不属于本契约：在线支付、超时自动取消、退款、已支付取消、统计报表、订单删除。接入这些能力时必须先更新 Order 需求、API、数据库设计、ER DBML 和相关架构说明，再开始实现。
+
+### 9.1 Phase 4.3.1 已冻结的 Order API 演进
+
+Phase 4.3.7 已在原 `POST /api/v1/orders` 实现 Experience/Kit/混合创建和 Pending 扣减；Phase 4.3.8 已在原 cancel 端点实现 Kit/混合订单幂等恢复。Kit Item 可省略 `experience_option_id` 或显式提交 `null`；支付与完成不触碰库存。
+
+库存不足使用 `40931 InsufficientStock`，普通用户只收到 `product_id` 和 `requested_quantity`。仅用于阶段门禁的 `40922 KitOrderingRequiresInventory` 已从代码和当前错误注册表移除。具体事务、幂等和并发规则见 [Inventory Module](../01_requirements/inventory_module.md) 与 [Inventory API](inventory_api.md)。

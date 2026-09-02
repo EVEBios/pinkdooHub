@@ -29,7 +29,6 @@ from app.schemas.product_response import (
     KitPriceOut,
     KitProductCreateOut,
     KitProductDetailOut,
-    KitStockOut,
     LabeledValue,
     OptionImageOut,
     ProductBasicInfoOut,
@@ -518,12 +517,4 @@ def map_kit_price(kit: ProductKit) -> KitPriceOut:
 
     return KitPriceOut.model_validate(
         {"id": kit.product_id, "price": kit.price}
-    )
-
-
-def map_kit_stock(kit: ProductKit) -> KitStockOut:
-    """映射 Kit 库存修改响应，响应 ID 使用 Product ID。"""
-
-    return KitStockOut.model_validate(
-        {"id": kit.product_id, "stock": kit.stock}
     )

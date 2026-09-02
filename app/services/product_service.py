@@ -107,7 +107,6 @@ class ProductService:
         name: str,
         description: str | None,
         price: Decimal,
-        stock: int,
         operator_id: int,
         ip_address: str,
     ) -> Product:
@@ -123,7 +122,6 @@ class ProductService:
             await self.product_repository.create_kit(
                 product=product,
                 price=price,
-                stock=stock,
                 using_db=connection,
             )
             await self.audit_log_service.log(
@@ -693,47 +691,6 @@ class ProductService:
 
         logger.info(
             "Kit price updated: operator_id=%d product_id=%d",
-            operator_id,
-            product_id,
-        )
-        return updated
-
-    async def update_kit_stock(
-        self,
-        product_id: int,
-        *,
-        stock: int,
-        operator_id: int,
-        ip_address: str,
-    ) -> ProductKit:
-        """原子设置非 Online Kit Product 的当前库存最终值。"""
-
-        kit = await self._get_mutable_kit(product_id)
-        audit_description = json.dumps(
-            {
-                "before": {"stock": kit.stock},
-                "after": {"stock": stock},
-            },
-            separators=(",", ":"),
-        )
-        async with in_transaction() as connection:
-            updated = await self.product_repository.update_kit(
-                kit,
-                stock=stock,
-                using_db=connection,
-            )
-            await self.audit_log_service.log(
-                operator_id=operator_id,
-                action="UPDATE_STOCK",
-                target_type="product",
-                target_id=product_id,
-                ip_address=ip_address,
-                description=audit_description,
-                using_db=connection,
-            )
-
-        logger.info(
-            "Kit stock updated: operator_id=%d product_id=%d",
             operator_id,
             product_id,
         )

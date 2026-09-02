@@ -1,0 +1,133 @@
+.admin-product-form-page {
+  min-height: 100vh;
+  padding: 32px;
+  color: #292225;
+  background: #fff8fa;
+  box-sizing: border-box;
+
+  &__header {
+    padding: 32px;
+    background: #fff;
+    border: 1px solid #f0dce3;
+    border-radius: 24px;
+  }
+
+  &__eyebrow,
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: #b63860;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  &__title {
+    margin-top: 10px;
+    font-size: 40px;
+    font-weight: 700;
+  }
+
+  &__subtitle {
+    margin-top: 12px;
+    color: #74686c;
+    font-size: 24px;
+    line-height: 1.5;
+  }
+
+  > button {
+    margin-top: 20px;
+  }
+}
+
+.admin-product-form {
+  display: block;
+  margin-top: 24px;
+  padding: 32px;
+  background: #fff;
+  border: 1px solid #f0dce3;
+  border-radius: 24px;
+
+  &__label {
+    display: block;
+    margin: 24px 0 10px;
+    font-size: 25px;
+    font-weight: 600;
+  }
+
+  &__input,
+  &__textarea {
+    width: 100%;
+    padding: 20px 22px;
+    font-size: 27px;
+    background: #fff;
+    border: 2px solid #dfd5d9;
+    border-radius: 14px;
+    box-sizing: border-box;
+  }
+
+  &__input {
+    height: 78px;
+  }
+
+  &__textarea {
+    min-height: 220px;
+  }
+
+  &__error,
+  &__notice {
+    display: block;
+    margin-top: 20px;
+    font-size: 24px;
+    line-height: 1.5;
+  }
+
+  &__error {
+    color: #b42318;
+  }
+
+  &__notice {
+    color: #74686c;
+  }
+
+  &__submit {
+    margin-top: 30px;
+    background: #c5416c;
+    border-radius: 14px;
+  }
+}
+
+.admin-product-form-state {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  background: #fff8fa;
+  box-sizing: border-box;
+
+  &__title,
+  &__description {
+    display: block;
+  }
+
+  &__title {
+    font-size: 38px;
+    font-weight: 700;
+  }
+
+  &__description {
+    margin-top: 16px;
+    color: #74686c;
+    font-size: 25px;
+    line-height: 1.5;
+  }
+
+  &__action {
+    margin-top: 28px;
+  }
+}

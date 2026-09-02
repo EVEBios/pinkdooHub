@@ -73,3 +73,9 @@ backups/
 *.tmp
 *.bak
 *.orig
+
+# 本地生成的 ER 预览；权威源文件为 docs/02_database/er_diagram.dbml
+docs/02_database/er_diagram.png
+
+# ==================== 前端 Spike 实验 ====================
+spikes/

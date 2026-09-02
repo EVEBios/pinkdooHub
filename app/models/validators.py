@@ -24,3 +24,11 @@ class MaxDecimalPlacesValidator:
             raise ValidationError(
                 f"Decimal places should be less or equal to {self.decimal_places}"
             )
+
+
+class NonZeroIntegerValidator:
+    """拒绝零值，供必须表示真实变化量的整数字段使用。"""
+
+    def __call__(self, value: int) -> None:
+        if value == 0:
+            raise ValidationError("Integer value must not be zero")

@@ -1,0 +1,146 @@
+page {
+  min-height: 100%;
+  background: #fff8fb;
+}
+
+.cart-page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 28px 24px 52px;
+  color: #3f3138;
+
+  &--state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  &__notice,
+  &__next-step {
+    padding: 22px 24px;
+    color: #765b68;
+    background: #fff;
+    border: 2px solid #efd3df;
+    border-radius: 18px;
+    font-size: 24px;
+    line-height: 1.6;
+  }
+
+  &__checkout {
+    margin-top: 20px;
+    border-radius: 16px;
+    color: #fff;
+    background: #c5416c;
+    font-weight: 700;
+  }
+}
+
+.cart-state {
+  &__title {
+    display: block;
+    margin-bottom: 14px;
+    font-size: 34px;
+    font-weight: 700;
+  }
+
+  &__description {
+    display: block;
+    max-width: 560px;
+    color: #7d6d75;
+    font-size: 26px;
+    line-height: 1.6;
+  }
+
+  &__action {
+    min-width: 240px;
+    margin-top: 28px;
+    border-radius: 18px;
+    color: #fff;
+    background: #c85f8d;
+  }
+}
+
+.cart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin: 24px 0;
+}
+
+.cart-item {
+  padding: 26px;
+  background: #fff;
+  border: 2px solid #f0dbe4;
+  border-radius: 22px;
+  box-shadow: 0 8px 28px rgb(153 86 115 / 8%);
+
+  &__type,
+  &__name,
+  &__configuration,
+  &__price {
+    display: block;
+  }
+
+  &__type {
+    color: #a34f74;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  &__name {
+    margin-top: 8px;
+    font-size: 32px;
+    font-weight: 700;
+  }
+
+  &__configuration {
+    margin-top: 10px;
+    color: #715f68;
+    font-size: 24px;
+  }
+
+  &__price {
+    margin-top: 14px;
+    color: #c24f80;
+    font-size: 27px;
+    font-weight: 700;
+  }
+
+  &__controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  &__quantity-button,
+  &__remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    height: 64px;
+    margin: 0;
+    padding: 0 18px;
+    color: #8f4767;
+    background: #fff;
+    border: 2px solid #e8c7d5;
+    border-radius: 14px;
+    font-size: 26px;
+    line-height: 1;
+  }
+
+  &__quantity {
+    min-width: 44px;
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  &__remove {
+    margin-left: auto;
+    color: #8b6878;
+  }
+}

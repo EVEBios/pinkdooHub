@@ -5,7 +5,7 @@
 > **迁移工具：** Aerich 0.9.3
 >
 > **生产权威方言：** MySQL；SQLite 仅用于本地快速开发和自动化测试
-> **Last Updated:** 2026-08-10
+> **Last Updated:** 2026-08-14
 
 ---
 
@@ -138,3 +138,93 @@ Product 的正数、金额范围、库存和图片排序规则当前由 Schema �
 - 不删除现有数据库文件来“解决”迁移冲突。
 - 不修改已经在共享环境执行过的迁移文件；新增修正迁移。
 - 迁移失败时保留现场和错误上下文，先确认数据库状态再决定回滚或前滚。
+
+---
+
+## 8. Inventory 期初流水迁移
+
+`2_20260814104655_add_inventory_transactions.py` 是 MySQL 8+ 离线生成并人工 Review 的 Inventory 增量迁移。它先创建 `inventory_transactions`，再为每条正库存 ProductKit 写一条 `opening_balance`；零库存不生成零变化流水。该文件已在一次性 MySQL 8.0.46 实例完成演练，但尚未应用到任何持久、共享或生产数据库。
+
+### 8.1 执行前硬门槛
+
+1. 停止所有会创建 Kit 或调用旧 `PATCH .../stock` 的应用实例/后台任务，直到迁移与核验全部完成；否则建表与回填之间可能遗漏并发余额变化。
+2. 确认目标为 MySQL 8+，Schema 与迁移 0、1 的预期状态一致，且 `inventory_transactions` 不存在。
+3. 创建可验证备份或快照。
+4. 以下库存范围扫描必须返回零行：
+
+```sql
+SELECT product_id, stock
+FROM product_kits
+WHERE stock < 0 OR stock > 999999;
+```
+
+5. 记录正库存 Kit 数量，供执行后比对：
+
+```sql
+SELECT COUNT(*) AS positive_kit_count
+FROM product_kits
+WHERE stock > 0;
+```
+
+### 8.2 非事务性与部分失败
+
+MySQL DDL 会隐式提交，`RUN_IN_TRANSACTION = False` 是真实能力声明：建表成功后，即使期初 `INSERT ... SELECT` 失败，也不能依赖事务自动移除表。迁移刻意不使用 `CREATE TABLE IF NOT EXISTS`、`INSERT IGNORE` 或 `ON DUPLICATE KEY UPDATE`；这些语句会把漂移或幂等冲突伪装成成功。
+
+部分失败时必须停止重试并保留表、Aerich 版本记录和错误现场，先只读确认建表、流水和版本状态，再编写可 Review 的前滚恢复方案。禁止为“方便重跑”直接删除表或 fake 版本。
+
+### 8.3 执行后核验
+
+在恢复库存写入前，确认正库存 Kit 均有且只有一条匹配的期初流水，且不存在零库存期初流水：
+
+```sql
+SELECT pk.product_id
+FROM product_kits AS pk
+LEFT JOIN inventory_transactions AS it
+  ON it.product_id = pk.product_id
+ AND it.transaction_type = 'opening_balance'
+ AND it.idempotency_key = CONCAT('inventory:opening:product:', pk.product_id)
+WHERE (pk.stock > 0 AND (
+         it.id IS NULL
+         OR it.before_quantity <> 0
+         OR it.change_quantity <> pk.stock
+         OR it.after_quantity <> pk.stock
+      ))
+   OR (pk.stock = 0 AND it.id IS NOT NULL);
+```
+
+查询必须返回零行；同时检查期初流水数量等于执行前记录的正库存 Kit 数量，并验证 Aerich 版本已记录为 2。
+
+### 8.4 downgrade 风险
+
+该 downgrade 会删除整个 `inventory_transactions` 表，包括期初流水及启用后产生的调整、扣减和恢复历史，但不会修改 `product_kits.stock`。这不是无损回滚；一旦运行时开始写业务流水，优先前滚修复。只有在明确停机、确认数据影响、完成可验证备份并取得单独授权后，才可考虑执行 downgrade。
+
+### 8.5 一次性 MySQL 演练记录（2026-08-14）
+
+- 环境：MySQL Community Server 8.0.46，独立系统临时数据目录，`127.0.0.1:13306`，空测试 Schema；验证后关闭并删除，未接触现有 `MySQL80` 服务或持久业务库。
+- 完整升级：Aerich 依次执行版本 0、1、2，`inventory_transactions` 为 InnoDB/utf8mb4，字段、五组业务索引/唯一键和两条外键均与迁移契约一致。
+- 数据迁移：将版本 2 降级后插入 stock=7 与 stock=0 的 Kit，再升级版本 2；前者生成唯一 `0 → 7` 期初流水，后者不生成流水，核验查询返回零个 mismatch。
+- Repository smoke：真实 asyncmy/MySQL 上通过升序集合锁查询、余额/流水同事务提交、强制回滚、幂等唯一冲突、批量写入、详情及 Order 来源分页补齐。
+- 当时范围限制：该次 Repository smoke 不是并发竞争测试；后续 Phase 4.3.11 已完成两个独立连接的阻塞、稳定锁序、真实 1205 错误和全新事务重试门槛。
+- 相邻问题及处置：演练发现 `OrderStatus` 写入普通 `SmallIntField` 时会作为 Enum 字符串传给 MySQL，`OrderRepository.create_order()` 默认状态与 `update_status()` 均报 1366。后续修复将 Model 默认值及 Repository 更新/筛选参数统一为原生整数，并在全新 MySQL 8.0.46 上验证创建 `0`、更新 `1` 及两种状态筛选；物理 Schema 未变化，因此没有新增迁移。
+
+### 8.6 Phase 4.3.11 真实并发门槛（2026-08-14）
+
+- 使用新的独立临时数据目录在 `127.0.0.1:13306` 启动 MySQL Community Server 8.0.46，创建专用 `pinkdoohub_inventory_4311` Schema，并通过 Aerich 真实执行 0、1、2 三份迁移；没有 `--fake`、`generate_schemas()` 或连接现有 3306 服务。
+- 9 项真实 MySQL 门槛覆盖不同/相同 key 管理调整、最后一件库存、反向多 Kit 请求、同单取消、管理员调整与下单阻塞、真实 1205 后全新事务重试、迁移版本与 EXPLAIN，以及真实 FastAPI 并发重放/查询。
+- `performance_schema.data_lock_waits` 在管理员持锁时观察到下单事务等待；释放后下单读取已提交余额。真实 `innodb_lock_wait_timeout=1` 产生 1205，第二次事务成功且最终只有一个余额变化、流水和 Audit。
+- 代表性 5,000 条合法流水基数和选择性数据经 `ANALYZE TABLE` 后，锁查询使用 ProductKit `product_id` 唯一索引，指定 Product 与全局分页分别使用 `idx_inventory_product_created_id` 和 `idx_inventory_created_id`。小表或单一 Product 数据下优化器可能合理选择全表扫描，因此 EXPLAIN fixture 必须同时提供足够基数与选择性。
+- 测试连接由安全 fixture 限制为 `127.0.0.1`、非 3306 端口和专用 Schema 前缀；跨 SQLite/MySQL 初始化前后清空 Tortoise 1.1.7 不区分后端的 Executor SQL 缓存，避免占位符污染。实例与 Schema 在验证后销毁。没有应用持久、共享或生产数据库，也没有更改迁移文件。
+
+### 8.7 Phase 4.3.12 最终 Review 复验（2026-08-14）
+
+- 最终 Review 使用新的独立临时数据目录重新启动 MySQL Community Server 8.0.46，只监听 `127.0.0.1:13306`，并在新的专用 Schema 上再次真实执行 Aerich 0 → 1 → 2；三条版本记录完整。
+- 9 项 MySQL 门禁再次全部通过，随后在同一 pytest 进程中与 SQLite 回归共同执行完整 1431 项测试，证明最终 Schema/文档/响应边界修复没有破坏跨后端测试隔离。
+- 复验未连接现有 3306 服务，未使用 `--fake` 或运行时自动建表。完成后通过 13306 正常发送 `SHUTDOWN`，确认端口退出，再删除经过绝对路径与临时目录前缀校验的专用数据目录；`MySQL80` 服务保持运行。
+- 本次最终 Review 没有新增或修改迁移 SQL，也没有对任何持久、共享、开发或生产数据库执行迁移。
+
+### 8.8 Phase 9.2.4 CI 门槛本地演练（2026-08-31）
+
+- `.github/workflows/ci.yml` 的 `backend-mysql-release` 固定 `mysql:8.0.46`、`127.0.0.1:13306` 和 `pinkdoohub_inventory_4311_ci`。Phase 9.5 起真实执行 Aerich 0→1→2→3 后运行现有 9 项 MySQL release gate；禁止 `--fake`、`init-db`、运行时自动建表和默认 3306。Gate A 已部署候选仍停留在 0→2，未获得发布授权前不得套用该 CI 迁移结论更新持久环境。
+- `scripts/ci/check_mysql_gate.py` 在连接前要求 `APP_ENV=testing`，并证明 Aerich `DB_*` 与 pytest `INVENTORY_MYSQL_TEST_*` 完全指向同一个 disposable target；snapshot 只记录安全目标、MySQL 版本、三条 Aerich 版本、Git SHA 和 run ID，不写密码或连接串。
+- 本地使用唯一命名 Docker 容器按同配置真实演练：MySQL 8.0.46、三条迁移和 9 项并发/1205/EXPLAIN/HTTP 门槛全部通过。cleanup 删除专用 Schema、停止容器并确认非运行和 13306 关闭；随后删除容器对象与临时证据目录，未连接 3306 或任何持久/共享数据库。固定 Docker image 只作为共享缓存保留。
+- 9.2.6 已由 Draft PR #2 的 GitHub Actions Run 33355935212 在真实 MySQL 8.0.46 service 上重跑并通过，保存了 preflight、迁移日志、版本快照、JUnit 与 cleanup JSON，Phase 9.2 的 MySQL CI 风险据此关闭。该证据仍不替代 9.3 的生产相似备份恢复和失败处置演练。

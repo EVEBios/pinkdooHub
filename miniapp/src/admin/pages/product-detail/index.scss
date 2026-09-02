@@ -1,0 +1,259 @@
+.admin-product-detail-page {
+  min-height: 100vh;
+  padding: 30px 28px calc(48px + env(safe-area-inset-bottom));
+  color: #292532;
+  background: #f7f5fb;
+  box-sizing: border-box;
+
+  button {
+    margin-top: 22px;
+    border-radius: 999px;
+  }
+
+  &__boundary,
+  &__mutation-error {
+    display: block;
+    margin-top: 18px;
+    padding: 16px;
+    font-size: 21px;
+    line-height: 1.5;
+    border-radius: 14px;
+  }
+
+  &__boundary {
+    color: #895b12;
+    background: #fff7e6;
+  }
+
+  &__mutation-error {
+    color: #b42318;
+    background: #fff0f0;
+  }
+
+  &__verify {
+    color: #5a557f;
+    background: #fff;
+  }
+}
+
+.admin-product-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 20px;
+
+  button {
+    flex: 1 1 30%;
+    margin: 0;
+    font-size: 24px;
+    white-space: nowrap;
+  }
+
+  &__delete {
+    color: #b42318;
+    border-color: #d92d20;
+    background: #fff;
+  }
+
+  &__status {
+    color: #fff;
+    background: #3f6178;
+  }
+}
+
+.admin-product-detail-readiness-issues {
+  margin-top: 12px;
+  padding: 16px;
+  color: #895b12;
+  font-size: 21px;
+  line-height: 1.65;
+  background: #fff7e6;
+  border-radius: 14px;
+
+  text {
+    display: block;
+  }
+}
+
+.admin-product-detail-heading {
+  padding: 29px;
+  color: #fff;
+  background: linear-gradient(145deg, #3f6178, #6c527f);
+  border-radius: 22px;
+
+  &__eyebrow,
+  &__name,
+  &__description {
+    display: block;
+  }
+
+  &__eyebrow {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+
+  &__name {
+    margin-top: 12px;
+    font-size: 37px;
+    font-weight: 700;
+  }
+
+  &__badges {
+    display: flex;
+    gap: 9px;
+    margin-top: 15px;
+    font-size: 20px;
+  }
+
+  &__badges text {
+    padding: 5px 11px;
+    background: rgb(255 255 255 / 18%);
+    border-radius: 999px;
+  }
+
+  &__description {
+    margin-top: 17px;
+    font-size: 22px;
+    line-height: 1.6;
+    opacity: 0.88;
+  }
+}
+
+.admin-product-detail-section-title {
+  display: block;
+  margin-bottom: 15px;
+  font-size: 27px;
+  font-weight: 700;
+}
+
+.admin-product-detail-images,
+.admin-product-detail-options,
+.admin-product-detail-kit,
+.admin-product-detail-meta {
+  margin-top: 19px;
+  padding: 21px;
+  background: #fff;
+  border-radius: 17px;
+}
+
+.admin-product-detail-images {
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 13px;
+  }
+
+  &__item {
+    overflow: hidden;
+    background: #f1edf4;
+    border-radius: 13px;
+  }
+
+  &__item image {
+    display: block;
+    width: 100%;
+    height: 210px;
+  }
+
+  &__item text {
+    display: block;
+    padding: 9px;
+    color: #675d6e;
+    font-size: 19px;
+    text-align: center;
+  }
+}
+
+.admin-product-option {
+  margin-top: 13px;
+  padding: 17px;
+  color: #675d6e;
+  font-size: 21px;
+  line-height: 1.6;
+  background: #f7f5fa;
+  border-radius: 13px;
+
+  text {
+    display: block;
+  }
+
+  &__title {
+    color: #292532;
+    font-weight: 700;
+  }
+
+  &__price {
+    color: #71406a;
+    font-size: 27px;
+    font-weight: 700;
+  }
+}
+
+.admin-product-detail-kit,
+.admin-product-detail-meta {
+  color: #675d6e;
+  font-size: 22px;
+  line-height: 1.75;
+
+  text {
+    display: block;
+  }
+}
+
+.admin-product-detail-kit {
+  &__hint {
+    margin-top: 10px;
+    color: #756b7d;
+    font-size: 20px;
+  }
+}
+
+.admin-product-readiness {
+  display: block;
+  margin-top: 19px;
+  padding: 19px;
+  color: #895b12;
+  font-size: 22px;
+  line-height: 1.5;
+  background: #fff7e6;
+  border-radius: 15px;
+}
+
+.admin-product-detail-state {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  color: #292532;
+  text-align: center;
+  background: #f7f5fb;
+  box-sizing: border-box;
+
+  &__title,
+  &__description {
+    display: block;
+  }
+
+  &__title {
+    font-size: 30px;
+    font-weight: 600;
+  }
+
+  &__description {
+    margin-top: 13px;
+    color: #756b7d;
+    font-size: 23px;
+    line-height: 1.5;
+  }
+
+  &__action {
+    margin-top: 24px;
+    color: #fff;
+    background: #5a557f;
+    border: 0;
+    border-radius: 999px;
+  }
+}

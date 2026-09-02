@@ -1,0 +1,177 @@
+.order-detail-page {
+  min-height: 100vh;
+  padding: 30px 28px calc(48px + env(safe-area-inset-bottom));
+  color: #30252a;
+  background: #fff8f5;
+  box-sizing: border-box;
+
+  &--state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  &__cancel,
+  &__back {
+    margin-top: 24px;
+    border-radius: 999px;
+  }
+
+  &__cancel {
+    color: #a12248;
+    border-color: #d69aac;
+    background: #fff;
+  }
+
+  &__back {
+    color: #fff;
+    background: #a92e51;
+    border: 0;
+  }
+}
+
+.order-detail-heading {
+  padding: 30px;
+  text-align: center;
+  background: linear-gradient(145deg, #ffe7ed, #fff);
+  border: 1px solid #f0d8df;
+  border-radius: 24px;
+
+  text {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: #a92e51;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+
+  &__number {
+    margin-top: 13px;
+    font-size: 24px;
+    font-weight: 600;
+  }
+
+  &__status {
+    margin-top: 16px;
+    color: #8f2948;
+    font-size: 25px;
+  }
+
+  &__total {
+    margin-top: 12px;
+    color: #b4234d;
+    font-size: 42px;
+    font-weight: 700;
+  }
+
+  &__hint {
+    margin-top: 12px;
+    color: #75666b;
+    font-size: 21px;
+  }
+}
+
+.order-detail-list {
+  margin-top: 22px;
+}
+
+.order-detail-item {
+  margin-bottom: 16px;
+  padding: 23px;
+  background: #fff;
+  border: 1px solid #f0dce1;
+  border-radius: 19px;
+
+  &__name,
+  &__configuration {
+    display: block;
+  }
+
+  &__name {
+    font-size: 27px;
+    font-weight: 600;
+  }
+
+  &__configuration {
+    margin-top: 9px;
+    color: #75666b;
+    font-size: 22px;
+  }
+
+  &__summary {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 16px;
+    color: #795d66;
+    font-size: 23px;
+  }
+}
+
+.order-detail-meta {
+  padding: 22px;
+  color: #75666b;
+  font-size: 22px;
+  line-height: 1.7;
+  background: #fff;
+  border-radius: 18px;
+
+  text {
+    display: block;
+  }
+}
+
+.order-cancel-feedback {
+  margin-top: 20px;
+  padding: 20px;
+  font-size: 23px;
+  line-height: 1.5;
+  border-radius: 16px;
+
+  text {
+    display: block;
+  }
+
+  &--failed,
+  &--unknown {
+    color: #912018;
+    background: #fff0ee;
+  }
+
+  &--success {
+    color: #17623a;
+    background: #edf9f1;
+  }
+}
+
+.order-detail-state {
+  &__title,
+  &__description {
+    display: block;
+  }
+
+  &__title {
+    font-size: 31px;
+    font-weight: 600;
+  }
+
+  &__description {
+    max-width: 520px;
+    margin-top: 14px;
+    color: #75666b;
+    font-size: 24px;
+    line-height: 1.5;
+  }
+
+  &__action {
+    margin-top: 28px;
+    color: #fff;
+    background: #a92e51;
+    border: 0;
+    border-radius: 999px;
+  }
+}

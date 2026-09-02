@@ -1,6 +1,6 @@
 # API Design Conventions
 
-> **Document Version:** v2.0
+> **Document Version:** v2.2
 > **Status:** Active
 > **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
 >
@@ -119,12 +119,16 @@ JWT Bearer Token
 Authorization: Bearer <access_token>
 ```
 
+认证依赖统一使用 `HTTPBearer(auto_error=False)`，由共享异常中间件输出项目错误信封：缺失 Bearer 凭据返回 HTTP 401 / code `401` / `Authentication required`，不得暴露 FastAPI 默认 `{"detail": ...}`。当前无效或过期 Token 仍沿用 User 模块既有 `TokenExpired` 契约（code `1006`、HTTP 400）；若后续迁移为 401，必须作为公共认证契约变更同步所有 API 文档和测试。
+
 ### 4.2 Token 机制
 
 | 概念 | 说明 |
 |------|------|
 | access_token | 访问令牌，有效期 2 小时 |
 | refresh_token | 刷新令牌，用于获取新的 access_token |
+
+每次登录创建独立 refresh family。刷新必须原子轮换 access/refresh 双 Token；旧 refresh 重放时撤销该 family。密码修改、外部身份解绑、用户禁用/注销通过 `auth_version` 和 Redis family 撤销使旧会话失效。身份限流使用 Redis 原子计数并 fail closed，客户端不得依据 429/1002/1003 等响应枚举有效账号。
 
 ### 4.3 接口角色标注
 
@@ -278,6 +282,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 413 | Payload Too Large | 上传文件超过大小限制 |
 | 422 | Unprocessable Entity | 参数校验失败，或请求语法正确但当前业务聚合不满足处理条件 |
 | 500 | Internal Server Error | 服务器内部错误 |
+| 503 | Service Unavailable | 实例存活，但数据库或 Redis 等关键依赖暂不可用 |
 
 > 业务状态以响应体中的 `code` 字段为准，HTTP 状态码用于表达请求层面的结果。
 
@@ -287,10 +292,23 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 |----------|-------------|------|
 | `BusinessException` | 400 | 一般业务规则不满足 |
 | `UnprocessableEntityException` | 422 | 请求语法正确，但当前业务数据或聚合状态不满足处理条件 |
+| `ServiceUnavailableException` | 503 | 关键基础设施不可用，实例不得接收业务流量 |
 
 `UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
 
-> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 22 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。
+> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 21 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。Product 原库存直设端点已在 Phase 4.3.10 移除，库存写入统一由 Inventory API 承担。
+
+### 7.1 Liveness 与 Readiness
+
+运行时探针不需要认证，并按职责拆分：
+
+| Method | URI | 外部依赖 | 成功 | 失败语义 |
+|--------|-----|----------|------|----------|
+| GET | `/api/v1/health` | 无 | HTTP 200；保留既有 `app/env/status=ok` 响应 | 仅作兼容入口，不代表依赖可用 |
+| GET | `/api/v1/health/live` | 无 | HTTP 200；`status=alive` | 进程无法响应时由运行平台判定失败 |
+| GET | `/api/v1/health/ready` | MySQL/SQLite 默认连接、Redis | 两项均为 `up` 时 HTTP 200；`status=ready` | 任一失败或超过单项 1 秒时 HTTP 503 / code `503`；`status=not_ready` |
+
+Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败不得跳过另一项。HTTP 只公开 `database` / `redis` 的 `up` / `down`，日志只记录依赖类别和异常类型；响应与日志禁止包含 host、port、数据库名、用户名、密码、URL、驱动异常文本或查询参数。Liveness 不得查询数据库或 Redis，避免依赖故障触发错误的进程重启循环。
 
 ---
 
@@ -302,7 +320,8 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 |------|------|
 | 0 | 成功 |
 | 1xxx | 用户模块业务错误 |
-| 3xxx | 订单模块业务错误 |
+| 4041x / 4092x / 4223x | 订单模块 — 资源不存在 / 状态与阶段冲突 / 聚合不可用 |
+| 4093x | 库存模块 — 余额与幂等冲突 |
 | 40xxx | 商品模块 — 资源不存在 / 类型错误 |
 | 409xx | 商品模块 — 状态冲突 |
 | 422xx | 商品模块 — 业务校验 |
@@ -317,7 +336,9 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 403 | 无权限 |
 | 404 | 资源不存在 |
 | 422 | 请求参数校验失败 |
+| 42901 | 认证请求超过限流阈值（HTTP 429） |
 | 500 | 服务器内部错误 |
+| 503 | 数据库或 Redis 等关键依赖暂不可用 |
 
 ### 8.3 用户模块错误码（1xxx）
 
@@ -330,6 +351,14 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 1005 | 用户已被禁用 |
 | 1006 | Token 已过期 |
 | 1007 | 手机号已被注册 |
+| 1008 | 当前账号没有密码登录能力 |
+| 1009 | 账号已注销 |
+| 1010 | 密码注册已关闭 |
+| 1011 | 外部身份无效 |
+| 1012 | 外部身份绑定冲突 |
+| 1013 | 外部身份未绑定 |
+| 1014 | 解绑会移除唯一登录方式 |
+| 1015 | 活跃订单阻止账号注销 |
 
 ### 8.4 商品模块错误码（40xxx / 409xx / 422xx）
 
@@ -376,12 +405,32 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 
 > Product 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。上架时对已加载聚合快照执行的价格、库存与关联完整性校验使用 `42201`；其精确 message、issues 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。上传文件内容、MIME 和大小校验使用 `42221`。
 
-### 8.5 订单模块错误码（3xxx）
+### 8.5 订单模块错误码（4041x / 4092x / 4223x）
 
-| code | 说明 |
-|------|------|
-| 3001 | 订单不存在 |
-| 3002 | 订单状态不允许此操作 |
+Order 与 Product 一样使用 HTTP 语义化的稳定业务 code；异常必须按语义直接继承 `NotFoundException`、`ConflictException` 或 `UnprocessableEntityException`。HTTP 状态由异常类型映射，不按 code 数字段推断。
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40411 | 404 | `OrderNotFound` | 订单不存在；用户访问他人订单也统一使用该错误，避免资源枚举 |
+| 40921 | 409 | `OrderStatusConflict` | 当前订单状态不允许指定状态变迁 |
+| 42231 | 422 | `OrderProductUnavailable` | Product 不存在、已删除、未上架，或所需 Kit 扩展不可用 |
+| 42232 | 422 | `OrderOptionUnavailable` | Experience Option 缺失/无效/归属错误，或 Kit 错误携带 Option |
+
+`items` 为空/超限、重复 Product/Option 组合、数量范围、备注长度和未知字段属于请求形状校验，使用全局参数错误 code `422`，不再保留旧草案的 `3006`。旧 `3001`—`3006` 从未实现，已由 Order v1.0 冻结契约替换。
+
+> **实现状态：** Order 的 `IntEnum`、API value/label Registry、Schema/应用层及 Phase 4.2 最终 Review 均已完成。Phase 4.3.7–4.3.8 已接入 Kit/混合创建扣减与 Pending 取消恢复；当前会使用 `40931` 库存不足、`40932` 恢复越界和 `40933` restore 幂等矛盾，阶段门禁 `40922` 已移除。
+
+### 8.6 库存模块错误码（4093x）
+
+Phase 4.3.1 已冻结、Phase 4.3.2 已实现以下命名异常；`40931` 已接入 Order 创建，`40932`/`40933` 已由管理员调整 Service 使用，但 Inventory 管理路由尚未注册：
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40931 | 409 | `InsufficientStock` | 下单库存不足；用户数据不披露精确可用量 |
+| 40932 | 409 | `InventoryBalanceExceeded` | 调整后余额超出 `0..999999` |
+| 40933 | 409 | `InventoryTransactionConflict` | 幂等键已绑定到不同请求 |
+
+Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40001`、`40903`。请求体、`Idempotency-Key`、分页和筛选形状错误使用全局 HTTP 422 / code `422`。HTTP 状态仍由异常类型映射，不按 `4093x` 数字判断。
 
 ---
 
@@ -399,10 +448,11 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 
 ### 9.2 金额
 
-所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。JSON 表示以模块 API 契约为准并在模块内保持一致；Product 模块的请求和响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
+所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。Product 与 Order 的请求/响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
 
 ```json
-"price": "199.00"
+"price": "199.00",
+"total_amount": "497.00"
 ```
 
 金额字符串不得使用指数形式，不得超过两位小数；服务端不得静默四舍五入。Order 文档仍处于后续 Phase 设计状态，其 number 表示需在实现前单独确认，不得反向改变已冻结的 Product 契约。
@@ -583,7 +633,7 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `username` (varchar) | `username` | → string |
 | `created_at` (datetime) | `created_at` | → ISO 8601 string |
 | `updated_at` (datetime) | `updated_at` | → ISO 8601 string |
-| `total_amount` (decimal) | `total_amount` | → number/string（以模块契约为准） |
+| `total_amount` (decimal) | `total_amount` | → 两位小数 string |
 | `is_cover` (boolean) | `is_cover` | → boolean |
 
 > - 所有 ID 类型在 API 中统一为 `int` / `bigint`
@@ -614,15 +664,18 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | | | `"offline"` | "已下架" |
 | `ProductType` | VARCHAR | `"experience"` | "拼豆体验" |
 | | | `"kit"` | "拼豆套装" |
-| `UserRole` | TINYINT | 1 → `"user"` | "普通用户" |
+| `UserRole` | SMALLINT | 1 → `"user"` | "普通用户" |
 | | | 2 → `"admin"` | "管理员" |
 | | | 3 → `"super_admin"` | "超级管理员" |
-| `UserStatus` | TINYINT | 1 → `"normal"` | "正常" |
+| `UserStatus` | SMALLINT | 1 → `"normal"` | "正常" |
 | | | 2 → `"disabled"` | "已禁用" |
-| `OrderStatus` | TINYINT | 0 → `"pending"` | "待支付" |
+| | | 3 → `"deleted"` | "已注销" |
+| `OrderStatus` | SMALLINT | 0 → `"pending"` | "待支付" |
 | | | 1 → `"paid"` | "已支付" |
 | | | 2 → `"cancelled"` | "已取消" |
 | | | 3 → `"completed"` | "已完成" |
+
+> Order API 与 Product API 一致，通过 Mapper 输出 `{value, label}`；请求筛选仍只接收 Enum value。Phase 4.2 的唯一状态流为 `pending → cancelled`、`pending → paid`、`paid → completed`。
 
 ### 使用示例
 
@@ -641,7 +694,7 @@ def duration_to_dto(value: int) -> dict:
 添加新的枚举字段时：
 
 - [ ] 在本文档 §14 注册表中新增一行
-- [ ] 数据库使用 `TINYINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
+- [ ] 数据库使用项目 ORM 映射的 `SMALLINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
 - [ ] Python 定义对应的 `Enum` 类（`app/common/enums/`）
 - [ ] API Mapper 实现 `{value, label}` 转换
 - [ ] 更新 `er_diagram.dbml` 和 `database_design.md`
@@ -761,4 +814,4 @@ def duration_to_dto(value: int) -> dict:
 - [ ] 至少提供成功 + 一种失败响应示例
 - [ ] 需要认证的接口标注 Header
 - [ ] 分页接口统一使用 `page` / `page_size`
-- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User 数值 Enum 使用 TINYINT）
+- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User / Order 数值 Enum 使用 SMALLINT）

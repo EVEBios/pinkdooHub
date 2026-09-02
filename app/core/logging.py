@@ -66,3 +66,7 @@ def setup_logging() -> None:
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("dotenv").setLevel(logging.WARNING)
+    # code2Session 按微信协议将 AppSecret 放在 query 中；禁止 httpx
+    # 记录完整 URL，避免凭据进入应用日志。
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

@@ -28,7 +28,6 @@ from app.api.mappers.product import (
     map_experience_product_create,
     map_kit_price,
     map_kit_product_create,
-    map_kit_stock,
     map_product_basic_info,
     map_product_image_by_owner,
     map_product_offline,
@@ -48,7 +47,6 @@ from app.schemas.product import (
     ExperienceProductCreate,
     KitPriceUpdate,
     KitProductCreate,
-    KitStockUpdate,
     ProductImageUpdate,
     ProductUpdate,
 )
@@ -64,7 +62,6 @@ from app.schemas.product_response import (
     ExperienceProductCreateOut,
     KitPriceOut,
     KitProductCreateOut,
-    KitStockOut,
     OptionImageOut,
     ProductBasicInfoOut,
     ProductImageOut,
@@ -72,7 +69,7 @@ from app.schemas.product_response import (
     ProductOnlineOut,
 )
 from app.services.product_service import ProductService
-from app.storage.image import LocalImageStorage
+from app.storage.image import ImageStorage
 from app.utils.request import get_client_ip
 
 router = APIRouter(
@@ -89,7 +86,7 @@ ProductServiceDependency = Annotated[
     Depends(get_product_service),
 ]
 ProductImageStorageDependency = Annotated[
-    LocalImageStorage,
+    ImageStorage,
     Depends(get_product_image_storage),
 ]
 
@@ -229,7 +226,6 @@ async def create_kit_product(
         name=data.name,
         description=data.description,
         price=data.price,
-        stock=data.stock,
         operator_id=current_admin.id,
         ip_address=get_client_ip(request),
     )
@@ -293,29 +289,6 @@ async def update_kit_price(
         ip_address=get_client_ip(request),
     )
     return success(data=map_kit_price(kit).model_dump(mode="json"))
-
-
-@router.patch(
-    "/products/kit/{product_id}/stock",
-    response_model=None,
-    responses=success_responses(KitStockOut),
-)
-async def update_kit_stock(
-    product_id: ProductId,
-    data: KitStockUpdate,
-    request: Request,
-    current_admin: CurrentAdmin,
-    service: ProductServiceDependency,
-) -> dict:
-    """直接设置 Kit 当前库存最终值。"""
-
-    kit = await service.update_kit_stock(
-        product_id,
-        stock=data.stock,
-        operator_id=current_admin.id,
-        ip_address=get_client_ip(request),
-    )
-    return success(data=map_kit_stock(kit).model_dump(mode="json"))
 
 
 @router.patch(

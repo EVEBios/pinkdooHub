@@ -30,6 +30,38 @@ class AuditLogRepository:
             using_db=using_db,
         )
 
+    async def count_by_action(
+        self,
+        action: str,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """统计指定动作的审计数量。"""
+
+        query = AuditLog.filter(action=action)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.count()
+
+    async def count_by_action_target(
+        self,
+        *,
+        action: str,
+        target_type: str,
+        target_id: int,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """统计指定动作与目标的审计数量。"""
+
+        query = AuditLog.filter(
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+        )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.count()
+
     async def list_logs(
         self,
         *,

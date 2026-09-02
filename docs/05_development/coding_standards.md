@@ -928,18 +928,22 @@ main
 
 ## 14. Testing 规范
 
-### 12.1 测试结构
+### 14.1 测试结构
 
 ```
 tests/
-├── conftest.py          # 共享 fixtures：测试 DB、HTTP Client、测试用户
-├── test_auth.py         # 注册、登录、Token 刷新
-├── test_users.py        # 获取/修改个人信息、修改密码、头像上传
-├── test_products.py     # 商品列表、详情、CRUD、上下架
-└── test_orders.py       # 创建订单、列表、详情、取消
+├── conftest.py          # 全局 fixtures：测试 DB、HTTP Client、测试用户
+├── support/             # 跨文件复用的测试数据工厂
+├── common/              # 配置、版本、请求工具、基础迁移
+├── users/               # 认证、用户资料、RBAC、用户 Model
+├── audit/               # 共享审计链路
+├── product/             # 再按 api/schema/model/repository/service 等层分组
+└── order/               # 再按 api/schema/model/repository/service 等层分组
 ```
 
-### 12.2 测试写法
+测试优先按“业务领域 → 被测应用层”归档。不要仅因为使用了 Mock 或真实数据库就把测试机械拆入 `unit/` 与 `integration/`；同一测试同时固定接口契约、事务行为和真实持久化时，应放在其主要被测层。只有跨领域基础能力进入 `common/`，共享 fixture 留在根 `conftest.py`。详细导航见 `tests/README.md`。
+
+### 14.2 测试写法
 
 ```python
 import pytest
@@ -962,7 +966,7 @@ async def test_register_success():
         assert "password" not in data["data"]
 ```
 
-### 12.3 测试覆盖清单
+### 14.3 测试覆盖清单
 
 每个接口的测试必须覆盖以下场景：
 
