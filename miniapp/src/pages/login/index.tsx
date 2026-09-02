@@ -4,13 +4,15 @@ import { useEffect, useState } from 'react'
 
 import { ApiClientError, BusinessError } from '@/api'
 import { buildRegisterUrl, parseLoginRedirect, useAuth } from '@/auth'
+import { resolveEnv } from '@/config/env'
 
 import './index.scss'
 
 export default function LoginPage() {
   const router = useRouter()
   const redirect = parseLoginRedirect(router.params.redirect)
-  const { login, status } = useAuth()
+  const { login, loginWithWechat, status } = useAuth()
+  const { authMode } = resolveEnv()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -41,13 +43,40 @@ export default function LoginPage() {
     }
   }
 
+  async function submitWeChatLogin(): Promise<void> {
+    setSubmitting(true)
+    setErrorMessage('')
+    try {
+      await loginWithWechat()
+    } catch (cause) {
+      setErrorMessage(getLoginErrorMessage(cause))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <View className='login-page'>
       <View className='login-card'>
         <Text className='login-card__eyebrow'>pinkdooHub</Text>
         <Text className='login-card__title'>欢迎回来</Text>
-        <Text className='login-card__subtitle'>学习 / MVP 阶段使用现有账号登录</Text>
+        <Text className='login-card__subtitle'>
+          {authMode === 'wechat' ? '使用微信安全登录' : '内部测试使用现有账号登录'}
+        </Text>
 
+        {authMode === 'wechat' ? (
+          <View className='login-form'>
+            {errorMessage && <Text className='login-form__error'>{errorMessage}</Text>}
+            <Button
+              className='login-form__submit login-form__submit--wechat'
+              disabled={submitting || status === 'initializing'}
+              type='primary'
+              onClick={() => void submitWeChatLogin()}
+            >
+              {status === 'initializing' ? '正在恢复会话…' : submitting ? '登录中…' : '微信一键登录'}
+            </Button>
+          </View>
+        ) : (
         <Form className='login-form' onSubmit={() => void submitLogin()}>
           <Text className='login-form__label'>用户名</Text>
           <Input
@@ -81,15 +110,22 @@ export default function LoginPage() {
             {status === 'initializing' ? '正在恢复会话…' : submitting ? '登录中…' : '登录'}
           </Button>
         </Form>
+        )}
 
+        {authMode === 'password' && (
         <Button
           className='login-card__register'
           onClick={() => void Taro.navigateTo({ url: buildRegisterUrl(redirect) })}
         >
           没有账号？立即注册
         </Button>
+        )}
 
-        <Text className='login-card__notice'>密码只用于本次请求，不会保存在本地。</Text>
+        <Text className='login-card__notice'>
+          {authMode === 'wechat'
+            ? '小程序只向服务端提交一次性 code，不保存 OpenID 或 session_key。'
+            : '密码只用于本次请求，不会保存在本地。'}
+        </Text>
       </View>
     </View>
   )

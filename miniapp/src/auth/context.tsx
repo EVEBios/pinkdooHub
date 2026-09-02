@@ -11,6 +11,7 @@ import {
 
 import { BusinessError, SessionExpiredError } from '@/api'
 import type { RegistrationRequest, UserProfile } from '@/api/endpoints/auth'
+import { requestWeChatLoginCode } from '@/platform/wechat_identity'
 
 import { getDefaultAuthRuntime, type AuthRuntime } from './runtime'
 
@@ -22,6 +23,7 @@ export interface AuthContextValue {
   initializationError?: Error
   register(data: RegistrationRequest): Promise<UserProfile>
   login(username: string, password: string): Promise<void>
+  loginWithWechat(): Promise<void>
   logout(): Promise<void>
   retryInitialization(): void
 }
@@ -98,6 +100,15 @@ export function AuthProvider({ children, runtime: runtimeProp }: AuthProviderPro
     setStatus('authenticated')
   }, [runtime])
 
+  const loginWithWechat = useCallback(async () => {
+    const code = await requestWeChatLoginCode()
+    const result = await runtime.api.loginWithWechat(code)
+    await runtime.session.start(result)
+    setInitializationError(undefined)
+    setUser(result.user)
+    setStatus('authenticated')
+  }, [runtime])
+
   const register = useCallback(async (data: RegistrationRequest) => {
     return runtime.api.register(data)
   }, [runtime])
@@ -120,9 +131,19 @@ export function AuthProvider({ children, runtime: runtimeProp }: AuthProviderPro
     initializationError,
     register,
     login,
+    loginWithWechat,
     logout,
     retryInitialization,
-  }), [initializationError, login, logout, register, retryInitialization, status, user])
+  }), [
+    initializationError,
+    login,
+    loginWithWechat,
+    logout,
+    register,
+    retryInitialization,
+    status,
+    user,
+  ])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

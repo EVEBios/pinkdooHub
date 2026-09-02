@@ -23,6 +23,7 @@ EXPECTED_MIGRATIONS = [
     "0_20260810101218_init.py",
     "1_20260813130455_add_order_tables.py",
     "2_20260814104655_add_inventory_transactions.py",
+    "3_20260902125032_phase95_external_identity.py",
 ]
 MYSQL_VERSION_PREFIX = "8.0.46"
 CONTAINER_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")

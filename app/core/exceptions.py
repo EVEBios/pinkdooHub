@@ -87,6 +87,19 @@ class PermissionException(AppException):
         super().__init__(code=403, message=message, data=data)
 
 
+class TooManyRequestsException(AppException):
+    """请求频率超过安全阈值 → HTTP 429。"""
+
+    def __init__(
+        self,
+        message: str = "Too many requests",
+        data: dict | None = None,
+        *,
+        code: int = 42901,
+    ) -> None:
+        super().__init__(code=code, message=message, data=data)
+
+
 class NotFoundException(AppException):
     """请求的资源不存在 → HTTP 404。
 

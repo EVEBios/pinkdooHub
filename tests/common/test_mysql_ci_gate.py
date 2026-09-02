@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPOSITORY_ROOT / "scripts" / "ci" / "check_mysql_gate.py"
+PHASE95_MIGRATION = "3_20260902125032_phase95_external_identity.py"
 SAFE_ENVIRONMENT = {
     "APP_ENV": "testing",
     "DB_ENGINE": "mysql",
@@ -62,6 +63,12 @@ def test_preflight_accepts_only_the_frozen_disposable_target(tmp_path: Path) -> 
     assert SAFE_ENVIRONMENT["INVENTORY_MYSQL_TEST_PASSWORD"] not in result.stdout
     assert SAFE_ENVIRONMENT["INVENTORY_MYSQL_TEST_PASSWORD"] not in result.stderr
     assert SAFE_ENVIRONMENT["INVENTORY_MYSQL_TEST_PASSWORD"] not in report.values()
+
+
+def test_snapshot_contract_includes_phase95_migration() -> None:
+    checker_source = CHECKER.read_text(encoding="utf-8")
+
+    assert PHASE95_MIGRATION in checker_source
 
 
 def test_preflight_rejects_disabled_default_port_remote_and_wrong_schema(

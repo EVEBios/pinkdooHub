@@ -110,6 +110,61 @@ describe('AuthApi', () => {
       .rejects.toBeInstanceOf(ContractError)
   })
 
+  it('微信登录只向服务端提交一次性 code', async () => {
+    const transport = new FakeTransport({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      token_type: 'Bearer',
+      expires_in: 7200,
+      user,
+    })
+    const api = new AuthApi(new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport,
+    }))
+
+    await expect(api.loginWithWechat('one-time-code')).resolves.toMatchObject({ user })
+    expect(transport.requests[0]).toMatchObject({
+      operation: 'auth.wechatLogin',
+      method: 'POST',
+      url: 'https://api.example.com/api/v1/auth/wechat/login',
+      body: { code: 'one-time-code' },
+    })
+    expect(JSON.stringify(transport.requests[0])).not.toContain('openid')
+    expect(JSON.stringify(transport.requests[0])).not.toContain('session_key')
+  })
+
+  it('刷新响应必须包含轮换后的新 refresh token', async () => {
+    const transport = new FakeTransport({
+      access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
+      token_type: 'Bearer',
+      expires_in: 7200,
+    })
+    const api = new AuthApi(new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport,
+    }))
+
+    await expect(api.refresh('old-refresh-token')).resolves.toEqual({
+      access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
+      token_type: 'Bearer',
+      expires_in: 7200,
+    })
+
+    const invalidApi = new AuthApi(new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport: new FakeTransport({
+        access_token: 'new-access-token',
+        token_type: 'Bearer',
+        expires_in: 7200,
+      }),
+    }))
+    await expect(invalidApi.refresh('old-refresh-token'))
+      .rejects.toBeInstanceOf(ContractError)
+  })
+
   it('GET me 携带 access token，logout 接受 null data', async () => {
     const authSession: AuthSession = {
       getAccessToken: () => 'access-token',

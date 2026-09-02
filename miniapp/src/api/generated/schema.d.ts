@@ -596,6 +596,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/auth/identities": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List External Identities
+         * @description 返回不含 OpenID/UnionID 的当前用户绑定摘要。
+         */
+        readonly get: operations["list_external_identities_api_v1_auth_identities_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/auth/login": {
         readonly parameters: {
             readonly query?: never;
@@ -647,7 +667,7 @@ export interface paths {
         readonly put?: never;
         /**
          * Refresh
-         * @description 用 refresh token 换取新的 access token。
+         * @description 用 refresh token 轮换新的双 Token。
          */
         readonly post: operations["refresh_api_v1_auth_refresh_post"];
         readonly delete?: never;
@@ -670,6 +690,50 @@ export interface paths {
          * @description 用户注册。
          */
         readonly post: operations["register_api_v1_auth_register_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/auth/wechat/bind": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Bind Wechat
+         * @description 把当前普通用户显式绑定到微信身份。
+         */
+        readonly post: operations["bind_wechat_api_v1_auth_wechat_bind_post"];
+        /**
+         * Unbind Wechat
+         * @description 密码二次验证后解绑微信，并撤销已有会话。
+         */
+        readonly delete: operations["unbind_wechat_api_v1_auth_wechat_bind_delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/auth/wechat/login": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Wechat Login
+         * @description 使用 wx.login 一次性 code 登录；首次自动创建普通用户。
+         */
+        readonly post: operations["wechat_login_api_v1_auth_wechat_login_post"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -940,7 +1004,11 @@ export interface paths {
         readonly get: operations["get_me_api_v1_users_me_get"];
         readonly put?: never;
         readonly post?: never;
-        readonly delete?: never;
+        /**
+         * Delete My Account
+         * @description 二次验证后逻辑注销并匿名化当前普通用户。
+         */
+        readonly delete: operations["delete_my_account_api_v1_users_me_delete"];
         readonly options?: never;
         readonly head?: never;
         /**
@@ -1004,6 +1072,21 @@ export interface components {
              * @example 599.00
              */
             readonly price: string;
+        };
+        /**
+         * AccountDeletionRequest
+         * @description 账号注销需显式确认且使用一种现有凭据二次验证。
+         */
+        readonly AccountDeletionRequest: {
+            /**
+             * Confirmation
+             * @constant
+             */
+            readonly confirmation: "DELETE";
+            /** Password */
+            readonly password?: string | null;
+            /** Wechat Code */
+            readonly wechat_code?: string | null;
         };
         /**
          * AdminExperienceProductDetailOut
@@ -1354,6 +1437,27 @@ export interface components {
             /** Options */
             readonly options: readonly components["schemas"]["_OnlineExperienceOptionOut"][];
             readonly product_type: components["schemas"]["LabeledValue_Literal_EXPERIENCE__"];
+        };
+        /** ExternalIdentityListOut */
+        readonly ExternalIdentityListOut: {
+            /** Items */
+            readonly items: readonly components["schemas"]["ExternalIdentityOut"][];
+        };
+        /**
+         * ExternalIdentityOut
+         * @description 对用户可见的绑定摘要，不暴露 OpenID/UnionID。
+         */
+        readonly ExternalIdentityOut: {
+            /**
+             * Bound At
+             * Format: date-time
+             */
+            readonly bound_at: string;
+            /**
+             * Provider
+             * @constant
+             */
+            readonly provider: "wechat_miniprogram";
         };
         /**
          * InventoryAdjustmentCreate
@@ -2082,7 +2186,7 @@ export interface components {
         };
         /**
          * RefreshOut
-         * @description 刷新响应——只返回新的 access token。
+         * @description 刷新响应——返回轮换后的新双 Token。
          */
         readonly RefreshOut: {
             /** Access Token */
@@ -2092,6 +2196,8 @@ export interface components {
              * @default 7200
              */
             readonly expires_in: number;
+            /** Refresh Token */
+            readonly refresh_token: string;
             /**
              * Token Type
              * @default Bearer
@@ -2234,6 +2340,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["ExperienceProductDetailOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[ExternalIdentityListOut] */
+        readonly SuccessResponse_ExternalIdentityListOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["ExternalIdentityListOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[ExternalIdentityOut] */
+        readonly SuccessResponse_ExternalIdentityOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["ExternalIdentityOut"];
             /**
              * Message
              * @default success
@@ -2688,7 +2824,7 @@ export interface components {
             /** @enum {string} */
             readonly role: "user" | "admin" | "super_admin";
             /** @enum {string} */
-            readonly status: "normal" | "disabled";
+            readonly status: "normal" | "disabled" | "deleted";
             /** Username */
             readonly username: string;
         };
@@ -2711,11 +2847,11 @@ export interface components {
             /** Nickname */
             readonly nickname: string;
             /** Phone */
-            readonly phone: string;
+            readonly phone: string | null;
             /** @enum {string} */
             readonly role: "user" | "admin" | "super_admin";
             /** @enum {string} */
-            readonly status: "normal" | "disabled";
+            readonly status: "normal" | "disabled" | "deleted";
             /**
              * Updated At
              * Format: date-time
@@ -2733,7 +2869,7 @@ export interface components {
          * UserStatus
          * @enum {integer}
          */
-        readonly UserStatus: 1 | 2;
+        readonly UserStatus: 1 | 2 | 3;
         /**
          * UserUpdate
          * @description 修改个人信息请求——所有字段可选，传什么改什么。
@@ -2745,6 +2881,22 @@ export interface components {
             readonly nickname?: string | null;
             /** Phone */
             readonly phone?: string | null;
+        };
+        /**
+         * WeChatCodeRequest
+         * @description 微信 wx.login 一次性 code。
+         */
+        readonly WeChatCodeRequest: {
+            /** Code */
+            readonly code: string;
+        };
+        /**
+         * WeChatUnbindRequest
+         * @description 解绑需使用现有密码做二次验证。
+         */
+        readonly WeChatUnbindRequest: {
+            /** Password */
+            readonly password: string;
         };
     };
     responses: never;
@@ -4886,7 +5038,7 @@ export interface operations {
                 readonly page?: number;
                 readonly page_size?: number;
                 readonly role?: ("user" | "admin" | "super_admin") | null;
-                readonly status?: ("normal" | "disabled") | null;
+                readonly status?: ("normal" | "disabled" | "deleted") | null;
             };
             readonly header?: never;
             readonly path?: never;
@@ -5019,6 +5171,80 @@ export interface operations {
             };
         };
     };
+    readonly list_external_identities_api_v1_auth_identities_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ExternalIdentityListOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly login_api_v1_auth_login_post: {
         readonly parameters: {
             readonly query?: never;
@@ -5059,8 +5285,35 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -5106,8 +5359,35 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -5157,8 +5437,35 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -5208,8 +5515,269 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly bind_wechat_api_v1_auth_wechat_bind_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["WeChatCodeRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ExternalIdentityOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly unbind_wechat_api_v1_auth_wechat_bind_delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["WeChatUnbindRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_NoneType_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly wechat_login_api_v1_auth_wechat_login_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["WeChatCodeRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_TokenOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -5781,8 +6349,95 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly delete_my_account_api_v1_users_me_delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AccountDeletionRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_NoneType_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -5832,8 +6487,26 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -5883,8 +6556,26 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

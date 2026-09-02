@@ -34,6 +34,7 @@ AdminUserServiceDependency = Annotated[
 _STATUS_BY_VALUE = {
     "normal": UserStatus.NORMAL,
     "disabled": UserStatus.DISABLED,
+    "deleted": UserStatus.DELETED,
 }
 _ROLE_BY_VALUE = {
     "user": UserRole.USER,

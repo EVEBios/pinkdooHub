@@ -27,5 +27,6 @@ declare namespace NodeJS {
     TARO_APP_APP_ENV?: 'development' | 'testing' | 'production'
     /** 后端 API Origin（生产要求 https://） */
     TARO_APP_API_ORIGIN?: string
+    TARO_APP_AUTH_MODE?: 'password' | 'wechat'
   }
 }

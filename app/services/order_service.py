@@ -39,6 +39,7 @@ from app.common.enums.inventory import (
 )
 from app.common.enums.order import OrderStatus, OrderStatusValue
 from app.common.enums.product import ProductStatus, ProductType
+from app.common.enums.user import UserStatus
 from app.common.exceptions import (
     InsufficientStock,
     InventoryBalanceExceeded,
@@ -47,6 +48,8 @@ from app.common.exceptions import (
     OrderOptionUnavailable,
     OrderProductUnavailable,
     OrderStatusConflict,
+    UserDeleted,
+    UserDisabled,
 )
 from app.common.order_number import generate_order_number
 from app.common.pagination import Page
@@ -63,6 +66,7 @@ from app.repositories.inventory_repo import (
     InventoryTransactionCreateData,
 )
 from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 from app.utils.database import get_database_error_code
 
@@ -87,12 +91,15 @@ class OrderService:
         product_repository: ProductRepository,
         inventory_repository: InventoryRepository,
         audit_log_service: AuditLogService,
+        *,
+        user_repository: UserRepository,
         order_number_generator: Callable[[], str] = generate_order_number,
     ) -> None:
         self.order_repository = order_repository
         self.product_repository = product_repository
         self.inventory_repository = inventory_repository
         self.audit_log_service = audit_log_service
+        self.user_repository = user_repository
         self.order_number_generator = order_number_generator
 
     async def create_order(
@@ -210,6 +217,14 @@ class OrderService:
         """在一条事务中写入 Order、库存、Items、Audit 并重载详情。"""
 
         async with in_transaction() as connection:
+            user = await self.user_repository.get_for_update(
+                user_id,
+                using_db=connection,
+            )
+            if user is None or user.status == UserStatus.DELETED:
+                raise UserDeleted()
+            if user.status == UserStatus.DISABLED:
+                raise UserDisabled()
             order = await self.order_repository.create_order(
                 order_no=order_no,
                 user_id=user_id,

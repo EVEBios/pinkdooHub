@@ -8,6 +8,7 @@ export type RefreshRequest = components['schemas']['RefreshRequest']
 export type LoginResult = components['schemas']['TokenOut']
 export type RefreshResult = components['schemas']['RefreshOut']
 export type UserProfile = components['schemas']['UserOut']
+export type WeChatLoginRequest = components['schemas']['WeChatCodeRequest']
 
 type AuthApiClient = Pick<ApiClient, 'request'>
 
@@ -40,6 +41,22 @@ export class AuthApi {
     const parsed = parseLoginResult(result)
     if (!parsed) {
       throw new ContractError({ operation: 'auth.login' })
+    }
+    return parsed
+  }
+
+  async loginWithWechat(code: string): Promise<LoginResult> {
+    const data: WeChatLoginRequest = { code }
+    const result = await this.client.request<unknown>({
+      operation: 'auth.wechatLogin',
+      path: '/api/v1/auth/wechat/login',
+      method: 'POST',
+      body: data,
+      auth: 'none',
+    })
+    const parsed = parseLoginResult(result)
+    if (!parsed) {
+      throw new ContractError({ operation: 'auth.wechatLogin' })
     }
     return parsed
   }
@@ -94,10 +111,10 @@ export function parseUserProfile(value: unknown): UserProfile | undefined {
     isPositiveInteger(value.id) &&
     isNonEmptyString(value.username) &&
     isNonEmptyString(value.nickname) &&
-    typeof value.phone === 'string' &&
+    (value.phone === null || typeof value.phone === 'string') &&
     (value.avatar === null || typeof value.avatar === 'string') &&
     (value.role === 'user' || value.role === 'admin' || value.role === 'super_admin') &&
-    (value.status === 'normal' || value.status === 'disabled') &&
+    (value.status === 'normal' || value.status === 'disabled' || value.status === 'deleted') &&
     (value.last_login_at === null || typeof value.last_login_at === 'string') &&
     typeof value.created_at === 'string' &&
     typeof value.updated_at === 'string'
@@ -147,6 +164,7 @@ function parseRefreshResult(value: unknown): RefreshResult | undefined {
   }
   if (!(
     isNonEmptyString(value.access_token) &&
+    isNonEmptyString(value.refresh_token) &&
     value.token_type === 'Bearer' &&
     isPositiveInteger(value.expires_in)
   )) {
@@ -154,6 +172,7 @@ function parseRefreshResult(value: unknown): RefreshResult | undefined {
   }
   return {
     access_token: value.access_token,
+    refresh_token: value.refresh_token,
     token_type: value.token_type,
     expires_in: value.expires_in,
   }

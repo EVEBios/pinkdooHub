@@ -16,6 +16,7 @@ LOOPBACK_COMPOSE = GATEA_ROOT / "compose.loopback.yml"
 TLS_COMPOSE = GATEA_ROOT / "compose.tls.yml"
 BOOTSTRAP_COMPOSE = GATEA_ROOT / "compose.bootstrap.yml"
 RUNTIME_DOCKERFILE = ROOT / "deploy" / "runtime" / "Dockerfile"
+RUNTIME_ENTRYPOINT = ROOT / "deploy" / "runtime" / "app-entrypoint.sh"
 
 
 def _render(*overrides: Path, profiles: tuple[str, ...] = ()) -> dict:
@@ -113,6 +114,29 @@ def test_gatea_uses_frozen_images_and_shared_non_root_runtime() -> None:
     assert services["app"]["image"] == "pinkdoohub-gatea:contract-sha"
     assert services["app"]["read_only"] is True
     assert services["app"]["security_opt"] == ["no-new-privileges:true"]
+
+
+def test_phase95_identity_secrets_are_optional_at_runtime_and_absent_from_gatea() -> None:
+    """共享镜像接受 Gate B 文件注入，但不得悄悄扩大 Gate A Secret 集。"""
+
+    result = subprocess.run(
+        ["sh", "-n", str(RUNTIME_ENTRYPOINT)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    entrypoint = RUNTIME_ENTRYPOINT.read_text(encoding="utf-8")
+    assert "/run/secrets/wechat_app_secret" in entrypoint
+    assert "/run/secrets/external_identity_pepper" in entrypoint
+
+    compose = _render(LOOPBACK_COMPOSE)
+    gatea_secret_names = {
+        item if isinstance(item, str) else item["source"]
+        for item in compose["services"]["app"]["secrets"]
+    }
+    assert "wechat_app_secret" not in gatea_secret_names
+    assert "external_identity_pepper" not in gatea_secret_names
 
 
 def test_only_nginx_joins_edge_and_only_loopback_nginx_publishes_a_port() -> None:

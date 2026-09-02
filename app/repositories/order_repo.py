@@ -92,6 +92,22 @@ class OrderRepository:
 
         return await Order.filter(order_no=order_no).exists()
 
+    async def has_non_terminal_orders_for_user(
+        self,
+        user_id: int,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> bool:
+        """判断用户是否仍有 Pending/Paid 订单。"""
+
+        query = Order.filter(
+            user_id=user_id,
+            status__in=[OrderStatus.PENDING.value, OrderStatus.PAID.value],
+        )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.exists()
+
     async def create_order(
         self,
         *,

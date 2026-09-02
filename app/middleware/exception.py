@@ -15,6 +15,7 @@ from app.core.exceptions import (
     NotFoundException,
     PermissionException,
     ServiceUnavailableException,
+    TooManyRequestsException,
     UnprocessableEntityException,
 )
 
@@ -83,6 +84,22 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_permission(request: Request, exc: PermissionException) -> JSONResponse:
         logger.warning("HTTP 403: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
         return JSONResponse(status_code=403, content=error(exc.code, exc.message, exc.data))
+
+    @app.exception_handler(TooManyRequestsException)
+    async def handle_too_many_requests(
+        request: Request,
+        exc: TooManyRequestsException,
+    ) -> JSONResponse:
+        logger.warning(
+            "HTTP 429: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            request.url.path,
+        )
+        return JSONResponse(
+            status_code=429,
+            content=error(exc.code, exc.message, exc.data),
+        )
 
     @app.exception_handler(NotFoundException)
     async def handle_not_found(request: Request, exc: NotFoundException) -> JSONResponse:

@@ -12,6 +12,7 @@ from app.models.order import Order
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.order_service import OrderService
 
@@ -22,6 +23,7 @@ def _service(repository: OrderRepository) -> OrderService:
         AsyncMock(spec=ProductRepository),
         AsyncMock(spec=InventoryRepository),
         AsyncMock(spec=AuditLogService),
+        user_repository=AsyncMock(spec=UserRepository),
     )
 
 

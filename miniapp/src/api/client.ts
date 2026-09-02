@@ -22,6 +22,7 @@ import type {
 const DEFAULT_TIMEOUT_MS = 15_000
 const TOKEN_EXPIRED_CODE = 1006
 const USER_DISABLED_CODE = 1005
+const USER_DELETED_CODE = 1009
 
 export interface ApiClientOptions {
   baseUrl: string
@@ -106,7 +107,7 @@ export class ApiClient {
     }
 
     if (
-      envelope.code === USER_DISABLED_CODE &&
+      (envelope.code === USER_DISABLED_CODE || envelope.code === USER_DELETED_CODE) &&
       options.auth !== 'none' &&
       this.authSession
     ) {
@@ -176,7 +177,7 @@ export class ApiClient {
     }
 
     if (
-      envelope.code === USER_DISABLED_CODE &&
+      (envelope.code === USER_DISABLED_CODE || envelope.code === USER_DELETED_CODE) &&
       options.auth !== 'none' &&
       this.authSession
     ) {

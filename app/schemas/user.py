@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from app.common.constants.validation import (
     NICKNAME_MAX_LENGTH,
@@ -23,7 +23,7 @@ class AdminUserListQuery(PageParams):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    status: Literal["normal", "disabled"] | None = None
+    status: Literal["normal", "disabled", "deleted"] | None = None
     role: Literal["user", "admin", "super_admin"] | None = None
 
 
@@ -49,6 +49,22 @@ class PasswordChange(BaseModel):
     new_password: str = Field(
         ..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH
     )
+
+
+class AccountDeletionRequest(BaseModel):
+    """账号注销需显式确认且使用一种现有凭据二次验证。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirmation: Literal["DELETE"]
+    password: str | None = Field(None, min_length=1, max_length=64)
+    wechat_code: str | None = Field(None, min_length=1, max_length=128, pattern=r"^\S+$")
+
+    @model_validator(mode="after")
+    def validate_single_reauthentication_method(self) -> "AccountDeletionRequest":
+        if (self.password is None) == (self.wechat_code is None):
+            raise ValueError("exactly one reauthentication method is required")
+        return self
 
 
 class UserUpdate(BaseModel):
@@ -82,10 +98,11 @@ class _EnumSerializerMixin:
     def serialize_status(
         self,
         value: UserStatus,
-    ) -> Literal["normal", "disabled"]:
+    ) -> Literal["normal", "disabled", "deleted"]:
         return {
             UserStatus.NORMAL: "normal",
             UserStatus.DISABLED: "disabled",
+            UserStatus.DELETED: "deleted",
         }[value]
 
 
@@ -95,7 +112,7 @@ class UserOut(_EnumSerializerMixin, BaseModel):
     id: int
     username: str
     nickname: str
-    phone: str
+    phone: str | None
     avatar: str | None
     role: UserRole
     status: UserStatus

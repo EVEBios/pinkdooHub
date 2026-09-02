@@ -84,3 +84,33 @@ def test_production_validation_error_does_not_echo_sensitive_input() -> None:
         )
 
     assert sensitive_value not in str(error.value)
+
+
+def test_production_wechat_login_requires_server_only_identity_secrets() -> None:
+    settings = _build_production_settings(
+        wechat_login_enabled=True,
+        wechat_app_id="wx-public-id",
+        wechat_app_secret="server-only-wechat-secret",
+        external_identity_pepper="stable-identity-pepper-with-at-least-32-chars",
+    )
+
+    assert settings.wechat_login_enabled is True
+
+    for overrides, message in [
+        ({"wechat_app_id": ""}, "WECHAT_APP_ID"),
+        ({"wechat_app_secret": ""}, "WECHAT_APP_SECRET"),
+        ({"external_identity_pepper": "short"}, "EXTERNAL_IDENTITY_PEPPER"),
+    ]:
+        with pytest.raises(ValidationError, match=message):
+            values = {
+                "wechat_login_enabled": True,
+                "wechat_app_id": "wx-public-id",
+                "wechat_app_secret": "server-only-wechat-secret",
+                "external_identity_pepper": (
+                    "stable-identity-pepper-with-at-least-32-chars"
+                ),
+                **overrides,
+            }
+            _build_production_settings(
+                **values,
+            )

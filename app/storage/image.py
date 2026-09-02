@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from hashlib import md5
 from hmac import compare_digest
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Protocol
 from uuid import uuid4
 
 from app.common.constants.product import (
@@ -37,7 +37,25 @@ class StoredImage:
     size: int
 
 
-class LocalImageStorage:
+class ImageStorage(Protocol):
+    """上传链路依赖的最小存储端口；实现不得信任客户端文件名。"""
+
+    def save(
+        self,
+        source: BinaryIO,
+        *,
+        declared_media_type: str | None,
+    ) -> StoredImage:
+        """校验并写入图片，返回不可变公开引用。"""
+
+    def key_from_url(self, image_url: str) -> str | None:
+        """仅将当前适配器管理的 URL 解析为内部对象键。"""
+
+    def delete(self, storage_key: str) -> bool:
+        """幂等删除对象并报告是否实际存在。"""
+
+
+class LocalImageStorage(ImageStorage):
     """使用服务端 UUID 文件名的本地 Product 图片存储。"""
 
     def __init__(

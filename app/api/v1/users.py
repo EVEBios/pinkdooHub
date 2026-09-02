@@ -1,19 +1,21 @@
 """用户 API —— 个人信息管理。"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from app.api.deps import get_current_user
+from app.api.deps import get_account_lifecycle_service, get_current_user
 from app.api.responses import error_responses, success_responses
 from app.common.response import success
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.user import PasswordChange, UserOut, UserUpdate
+from app.schemas.user import AccountDeletionRequest, PasswordChange, UserOut, UserUpdate
+from app.services.account_lifecycle_service import AccountLifecycleService
 from app.services.user_service import UserService
+from app.utils.request import get_client_ip
 
 router = APIRouter(
     prefix="/users",
     tags=["users"],
-    responses=error_responses(400, 401, 422),
+    responses=error_responses(400, 401, 403, 422, 503),
 )
 
 
@@ -57,3 +59,24 @@ async def change_password(
     service = UserService(user_repo)
     await service.change_password(current_user, data)
     return success(message="Password changed")
+
+
+@router.delete(
+    "/me",
+    response_model=None,
+    responses=success_responses(type(None)),
+)
+async def delete_my_account(
+    data: AccountDeletionRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: AccountLifecycleService = Depends(get_account_lifecycle_service),
+) -> dict:
+    """二次验证后逻辑注销并匿名化当前普通用户。"""
+
+    await service.delete_account(
+        user=current_user,
+        data=data,
+        ip_address=get_client_ip(request),
+    )
+    return success(message="Account deleted")

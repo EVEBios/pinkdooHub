@@ -17,23 +17,37 @@ from app.common.enums.user import UserStatus
 from app.common.exceptions.user import (
     IncorrectPassword,
     PhoneAlreadyExists,
+    RegistrationDisabled,
     TokenExpired,
     UserDisabled,
+    UserDeleted,
     UsernameAlreadyExists,
-    UserNotFound,
 )
+from app.core.auth_session import issue_token_pair
 from app.core.redis import (
-    delete_refresh_token,
-    save_refresh_token,
-    verify_refresh_token,
+    RefreshRotationResult,
+    RefreshTokenState,
+    get_refresh_token_state,
+    revoke_refresh_family,
+    rotate_refresh_session,
+)
+from app.core.config import settings
+from app.core.rate_limit import (
+    AuthRateLimiter,
+    LOGIN_IP_POLICY,
+    LOGIN_SUBJECT_POLICY,
+    REFRESH_POLICY,
+    REGISTER_IP_POLICY,
 )
 from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    dummy_verify_password,
     hash_password,
     verify_password,
 )
+from app.core.security_events import emit_security_event
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.user_repo import UserRepository
@@ -47,13 +61,21 @@ logger = logging.getLogger(__name__)
 class AuthService:
     """认证业务逻辑。"""
 
-    def __init__(self, user_repo: UserRepository) -> None:
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        rate_limiter: AuthRateLimiter | None = None,
+    ) -> None:
         self.user_repo = user_repo
+        self.rate_limiter = rate_limiter or AuthRateLimiter()
 
     # ── 注册 ────────────────────────────────────
 
     async def register(self, data: UserCreate, ip_address: str = "") -> User:
         """注册新用户。"""
+        await self.rate_limiter.check(REGISTER_IP_POLICY, ip_address or "unknown")
+        if not settings.password_registration_enabled:
+            raise RegistrationDisabled()
         existing = await self.user_repo.get_by_username(data.username)
         if existing:
             raise UsernameAlreadyExists()
@@ -88,25 +110,34 @@ class AuthService:
         Returns:
             {"user": User, "access_token": str, "refresh_token": str}
         """
+        await self.rate_limiter.check(LOGIN_IP_POLICY, ip_address or "unknown")
+        await self.rate_limiter.check(
+            LOGIN_SUBJECT_POLICY,
+            f"{ip_address or 'unknown'}:{data.username.casefold()}",
+        )
         user = await self.user_repo.get_by_username(data.username)
         if not user:
-            raise UserNotFound()
+            dummy_verify_password()
+            raise IncorrectPassword()
 
-        if user.status == UserStatus.DISABLED:
-            raise UserDisabled()
-
+        if user.password is None:
+            dummy_verify_password()
+            raise IncorrectPassword()
         if not verify_password(data.password, user.password):
             raise IncorrectPassword()
+        if user.status == UserStatus.DISABLED:
+            raise UserDisabled()
+        if user.status == UserStatus.DELETED:
+            raise UserDeleted()
 
         # 更新最后登录时间
         user.last_login_at = datetime.now(timezone.utc)
         await user.save(update_fields=["last_login_at"])
 
-        # 签发双 Token（同一次登录共用 jti）
-        jti = uuid.uuid4().hex
-        access_token = create_access_token(user.id, jti)
-        refresh_token = create_refresh_token(user.id, jti)
-        await save_refresh_token(jti, user.id)
+        tokens = await issue_token_pair(
+            user_id=user.id,
+            auth_version=user.auth_version,
+        )
         await AuditLogService(AuditLogRepository()).log(
             operator_id=user.id,
             action="LOGIN",
@@ -118,41 +149,97 @@ class AuthService:
         logger.info("User logged in: user_id=%d username=%s", user.id, user.username)
         return {
             "user": user,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            **tokens,
         }
 
     # ── 刷新 ────────────────────────────────────
 
-    async def refresh(self, refresh_token: str) -> dict:
+    async def refresh(self, refresh_token: str, ip_address: str = "") -> dict:
         """用 refresh token 换取新的 access token。
 
-        Phase 3: 不轮换 refresh token（Phase 4 加入）。
+        成功后旧 refresh token 立即失效，响应返回新双 Token。
         """
+        # Refresh Token 每次成功都会轮换；若以 Token 本身作为 principal，
+        # 正常调用永远落入新桶，无法约束同一来源的高频刷新。
+        await self.rate_limiter.check(REFRESH_POLICY, ip_address or "unknown")
         payload = decode_token(refresh_token, "refresh")
         jti = payload["jti"]
+        session_id = payload["sid"]
         user_id = int(payload["sub"])
 
-        user_id_from_redis = await verify_refresh_token(jti)
-        if not user_id_from_redis or user_id_from_redis != user_id:
+        token_state = await get_refresh_token_state(jti)
+        if token_state == RefreshTokenState.MISSING:
+            raise TokenExpired()
+        if token_state == RefreshTokenState.USED:
+            await rotate_refresh_session(
+                old_jti=jti,
+                new_jti=uuid.uuid4().hex,
+                session_id=session_id,
+                user_id=user_id,
+            )
+            emit_security_event(
+                "refresh_reuse",
+                "family_revoked",
+                level=logging.WARNING,
+                user_id=user_id,
+            )
+            logger.warning("Refresh token reuse detected; family revoked")
             raise TokenExpired()
 
         user = await self.user_repo.get_by_id(user_id)
         if not user:
-            await delete_refresh_token(jti)
+            await revoke_refresh_family(session_id)
             raise TokenExpired()
         if user.status == UserStatus.DISABLED:
-            await delete_refresh_token(jti)
+            await revoke_refresh_family(session_id)
             raise UserDisabled()
+        if user.status == UserStatus.DELETED:
+            await revoke_refresh_family(session_id)
+            raise UserDeleted()
+        if payload["ver"] != user.auth_version:
+            await revoke_refresh_family(session_id)
+            raise TokenExpired()
 
-        access_token = create_access_token(user_id, jti)
-        return {"access_token": access_token}
+        new_jti = uuid.uuid4().hex
+        rotation = await rotate_refresh_session(
+            old_jti=jti,
+            new_jti=new_jti,
+            session_id=session_id,
+            user_id=user_id,
+        )
+        if rotation == RefreshRotationResult.REUSED:
+            emit_security_event(
+                "refresh_reuse",
+                "family_revoked",
+                level=logging.WARNING,
+                user_id=user_id,
+            )
+            logger.warning("Refresh token reuse detected; family revoked")
+            raise TokenExpired()
+        if rotation != RefreshRotationResult.ROTATED:
+            raise TokenExpired()
+
+        access_token = create_access_token(
+            user_id,
+            new_jti,
+            session_id=session_id,
+            auth_version=user.auth_version,
+        )
+        new_refresh_token = create_refresh_token(
+            user_id,
+            new_jti,
+            session_id=session_id,
+            auth_version=user.auth_version,
+        )
+        return {
+            "access_token": access_token,
+            "refresh_token": new_refresh_token,
+        }
 
     # ── 登出 ────────────────────────────────────
 
     async def logout(self, access_token: str) -> None:
         """登出：从 access token 中提取 jti，删除对应的 refresh token。"""
         payload = decode_token(access_token, "access")
-        jti = payload["jti"]
-        await delete_refresh_token(jti)
-        logger.info("User logged out: user_id=%s jti=%s", payload["sub"], jti)
+        await revoke_refresh_family(payload["sid"])
+        logger.info("User logged out: user_id=%s", payload["sub"])

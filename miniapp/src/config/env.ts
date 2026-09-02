@@ -14,11 +14,13 @@
 export type AppEnv = 'development' | 'testing' | 'production'
 
 export type Platform = 'weapp' | 'alipay' | 'tt' | 'h5' | (string & {})
+export type AuthMode = 'password' | 'wechat'
 
 export interface AppEnvironment {
   appEnv: AppEnv
   platform: Platform
   apiOrigin: string
+  authMode: AuthMode
 }
 
 export type EnvSource = Partial<NodeJS.ProcessEnv>
@@ -40,7 +42,17 @@ export function resolveEnv(source?: EnvSource): AppEnvironment {
     appEnv,
     platform: source?.TARO_ENV ?? process.env.TARO_ENV ?? 'unknown',
     apiOrigin: parseApiOrigin(source?.TARO_APP_API_ORIGIN ?? process.env.TARO_APP_API_ORIGIN, appEnv),
+    authMode: parseAuthMode(
+      source?.TARO_APP_AUTH_MODE ?? process.env.TARO_APP_AUTH_MODE,
+    ),
   }
+}
+
+function parseAuthMode(raw: string | undefined): AuthMode {
+  if (raw === 'password' || raw === 'wechat') {
+    return raw
+  }
+  throw new AppConfigError('TARO_APP_AUTH_MODE 必须为 password 或 wechat')
 }
 
 function parseAppEnv(raw: string | undefined): AppEnv {

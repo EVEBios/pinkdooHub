@@ -85,7 +85,7 @@ describe('SessionManager', () => {
     expect(storage.removed).toContain('pinkdoohub.session.v1')
   })
 
-  it('并发刷新只请求一次，并保留原 refresh token', async () => {
+  it('并发刷新只请求一次，并原子替换 refresh token', async () => {
     const storage = new MemoryStorage()
     let refreshCount = 0
     const refresh = async (refreshToken: string): Promise<RefreshResult> => {
@@ -94,6 +94,7 @@ describe('SessionManager', () => {
       await Promise.resolve()
       return {
         access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
         token_type: 'Bearer',
         expires_in: 3600,
       }
@@ -109,7 +110,9 @@ describe('SessionManager', () => {
 
     expect(refreshCount).toBe(1)
     expect(manager.getAccessToken()).toBe('new-access-token')
-    expect(JSON.stringify([...storage.values.values()])).toContain('refresh-token')
+    const storedJson = JSON.stringify([...storage.values.values()])
+    expect(storedJson).toContain('new-refresh-token')
+    expect(storedJson).not.toContain('"refreshToken":"refresh-token"')
   })
 
   it('清除内存与持久化会话并通知订阅者', async () => {

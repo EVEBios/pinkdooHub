@@ -10,6 +10,7 @@ from tortoise.exceptions import OperationalError
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderItemCreateData, OrderRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.order_service import OrderItemInput, OrderService
 
@@ -20,7 +21,8 @@ def _service() -> OrderService:
         AsyncMock(spec=ProductRepository),
         AsyncMock(spec=InventoryRepository),
         AsyncMock(spec=AuditLogService),
-        Mock(return_value="OD00000000000000000000000001"),
+        user_repository=AsyncMock(spec=UserRepository),
+        order_number_generator=Mock(return_value="OD00000000000000000000000001"),
     )
 
 

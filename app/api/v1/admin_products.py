@@ -69,7 +69,7 @@ from app.schemas.product_response import (
     ProductOnlineOut,
 )
 from app.services.product_service import ProductService
-from app.storage.image import LocalImageStorage
+from app.storage.image import ImageStorage
 from app.utils.request import get_client_ip
 
 router = APIRouter(
@@ -86,7 +86,7 @@ ProductServiceDependency = Annotated[
     Depends(get_product_service),
 ]
 ProductImageStorageDependency = Annotated[
-    LocalImageStorage,
+    ImageStorage,
     Depends(get_product_image_storage),
 ]
 

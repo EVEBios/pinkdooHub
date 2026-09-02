@@ -41,6 +41,7 @@ describe('OrdersPage', () => {
       status: 'authenticated',
       register: jest.fn(),
       login: jest.fn(),
+      loginWithWechat: jest.fn(),
       logout: jest.fn(),
       retryInitialization: jest.fn(),
     }

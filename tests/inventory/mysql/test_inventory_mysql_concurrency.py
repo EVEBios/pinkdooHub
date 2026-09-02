@@ -30,6 +30,7 @@ from app.repositories.inventory_repo import (
 )
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.inventory_service import InventoryService
 from app.services.order_service import OrderItemInput, OrderService
@@ -174,6 +175,7 @@ def _order_service(
         ProductRepository(),
         inventory_repository,
         _audit_service(),
+        user_repository=UserRepository(),
         order_number_generator=lambda: f"OD{next(sequence):026d}",
     )
 
@@ -291,7 +293,8 @@ async def test_concurrent_same_adjustment_commits_once_and_replays_once() -> Non
 
 
 async def test_last_item_concurrent_orders_allow_exactly_one_commit() -> None:
-    customer = await _create_user(3)
+    first_customer = await _create_user(3)
+    second_customer = await _create_user(30)
     kit = await _create_online_kit(3, stock=1)
     service = _order_service(
         _BarrierInventoryRepository(_TwoPartyBarrier())
@@ -299,13 +302,13 @@ async def test_last_item_concurrent_orders_allow_exactly_one_commit() -> None:
 
     results = await asyncio.gather(
         service.create_order(
-            user_id=customer.id,
+            user_id=first_customer.id,
             items=[_kit_item(kit)],
             remark="最后一件 A",
             ip_address="127.0.0.1",
         ),
         service.create_order(
-            user_id=customer.id,
+            user_id=second_customer.id,
             items=[_kit_item(kit)],
             remark="最后一件 B",
             ip_address="127.0.0.1",
@@ -332,7 +335,8 @@ async def test_last_item_concurrent_orders_allow_exactly_one_commit() -> None:
 
 
 async def test_reversed_multi_kit_orders_use_stable_lock_order() -> None:
-    customer = await _create_user(4)
+    first_customer = await _create_user(4)
+    second_customer = await _create_user(40)
     first_kit = await _create_online_kit(4, stock=2)
     second_kit = await _create_online_kit(5, stock=2)
     service = _order_service(
@@ -342,13 +346,13 @@ async def test_reversed_multi_kit_orders_use_stable_lock_order() -> None:
     results = await asyncio.wait_for(
         asyncio.gather(
             service.create_order(
-                user_id=customer.id,
+                user_id=first_customer.id,
                 items=[_kit_item(first_kit), _kit_item(second_kit)],
                 remark="正向锁序",
                 ip_address="127.0.0.1",
             ),
             service.create_order(
-                user_id=customer.id,
+                user_id=second_customer.id,
                 items=[_kit_item(second_kit), _kit_item(first_kit)],
                 remark="反向请求顺序",
                 ip_address="127.0.0.1",
@@ -570,6 +574,7 @@ async def test_mysql_version_migrations_and_explain_use_expected_indexes() -> No
         "0_20260810101218_init.py",
         "1_20260813130455_add_order_tables.py",
         "2_20260814104655_add_inventory_transactions.py",
+        "3_20260902125032_phase95_external_identity.py",
     ]
     assert lock_plan[0]["key"] == "product_id"
     assert product_page_plan[0]["key"] == "idx_inventory_product_created_id"

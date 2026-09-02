@@ -16,3 +16,4 @@ class UserRole(IntEnum):
 class UserStatus(IntEnum):
     NORMAL = 1
     DISABLED = 2
+    DELETED = 3

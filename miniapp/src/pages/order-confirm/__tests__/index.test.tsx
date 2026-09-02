@@ -119,6 +119,7 @@ describe('OrderConfirmPage', () => {
       },
       register: jest.fn(),
       login: jest.fn(async () => undefined),
+      loginWithWechat: jest.fn(async () => undefined),
       logout: jest.fn(async () => undefined),
       retryInitialization: jest.fn(),
     }

@@ -147,6 +147,41 @@ class TestDisableUser:
             target_id=user.id,
         ).count() == 1
 
+    async def test_disable_cannot_change_terminal_deleted_status(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """注销状态是终态，管理禁用不能把它改回 disabled。"""
+
+        await _register_admin(client, "deletedadmin", "13800000022")
+        token = await _login(client, "deletedadmin")
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "deletedvictim",
+                "password": "12345678",
+                "nickname": "D",
+                "phone": "13800000023",
+            },
+        )
+        from app.repositories.user_repo import UserRepository
+
+        user = await UserRepository().get_by_username("deletedvictim")
+        assert user is not None
+        user.status = UserStatus.DELETED
+        user.password = None
+        user.phone = None
+        await user.save(update_fields=["status", "password", "phone"])
+
+        response = await client.put(
+            f"/api/v1/admin/users/{user.id}/disable",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (400, 1009)
+        await user.refresh_from_db()
+        assert user.status == UserStatus.DELETED
+
     async def test_disable_immediately_blocks_existing_access_and_refresh_tokens(
         self,
         client: AsyncClient,

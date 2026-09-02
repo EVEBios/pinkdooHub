@@ -12,6 +12,7 @@ from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 
 
@@ -60,18 +61,21 @@ def test_order_composition_root_wires_expected_dependencies() -> None:
     order_repository = OrderRepository()
     product_repository = ProductRepository()
     inventory_repository = InventoryRepository()
+    user_repository = UserRepository()
     audit_repository = AuditLogRepository()
 
     service = get_order_service(
-        order_repository,
-        product_repository,
-        inventory_repository,
-        audit_repository,
+        order_repository=order_repository,
+        product_repository=product_repository,
+        inventory_repository=inventory_repository,
+        user_repository=user_repository,
+        audit_log_repository=audit_repository,
     )
 
     assert service.order_repository is order_repository
     assert service.product_repository is product_repository
     assert service.inventory_repository is inventory_repository
+    assert service.user_repository is user_repository
     assert isinstance(service.audit_log_service, AuditLogService)
     assert service.audit_log_service.audit_repo is audit_repository
 

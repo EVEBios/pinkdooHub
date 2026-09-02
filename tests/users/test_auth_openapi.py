@@ -47,4 +47,4 @@ def test_user_output_enums_match_serialized_http_values() -> None:
     ]
 
     assert user_properties["role"]["enum"] == ["user", "admin", "super_admin"]
-    assert user_properties["status"]["enum"] == ["normal", "disabled"]
+    assert user_properties["status"]["enum"] == ["normal", "disabled", "deleted"]

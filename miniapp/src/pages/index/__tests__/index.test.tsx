@@ -56,6 +56,7 @@ describe('ProductListPage', () => {
       status: 'guest',
       register: jest.fn(),
       login: jest.fn(),
+      loginWithWechat: jest.fn(),
       logout: jest.fn(),
       retryInitialization: jest.fn(),
     }

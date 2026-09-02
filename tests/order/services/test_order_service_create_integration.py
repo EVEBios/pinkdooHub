@@ -9,7 +9,8 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
 
 from app.common.enums.product import DayType, ProductStatus, ProductType
-from app.common.exceptions import InsufficientStock
+from app.common.enums.user import UserStatus
+from app.common.exceptions import InsufficientStock, UserDeleted
 from app.models.audit_log import AuditLog
 from app.models.experience_option import ExperienceOption
 from app.models.inventory_transaction import InventoryTransaction
@@ -21,6 +22,7 @@ from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.order_service import OrderItemInput, OrderService
 
@@ -95,7 +97,8 @@ def _service(
         ProductRepository(),
         InventoryRepository(),
         audit_service or AuditLogService(AuditLogRepository()),
-        lambda: next(order_numbers),
+        user_repository=UserRepository(),
+        order_number_generator=lambda: next(order_numbers),
     )
 
 
@@ -176,6 +179,36 @@ async def test_create_persists_authoritative_immutable_snapshots_and_audit() -> 
     assert reloaded.items[0].product_price == Decimal("99.90")
     assert reloaded.items[0].option_duration_minutes == 60
     assert reloaded.total_amount == Decimal("349.85")
+
+
+async def test_create_rechecks_locked_user_and_rejects_deleted_account() -> None:
+    """订单写事务必须锁后重检用户，不能在注销提交后补写新订单。"""
+
+    user = await _create_user()
+    product, option = await _create_experience(
+        1,
+        name="注销竞态体验",
+        duration=60,
+        participants=1,
+        day_type=DayType.WEEKDAY,
+        price="99.00",
+    )
+    user.status = UserStatus.DELETED
+    user.password = None
+    user.phone = None
+    await user.save(update_fields=["status", "password", "phone"])
+
+    with pytest.raises(UserDeleted):
+        await _service(iter([_order_no(1)])).create_order(
+            user_id=user.id,
+            items=[OrderItemInput(product.id, option.id, 1)],
+            remark=None,
+            ip_address="203.0.113.8",
+        )
+
+    assert await Order.all().count() == 0
+    assert await OrderItem.all().count() == 0
+    assert await AuditLog.all().count() == 0
 
 
 async def test_create_mixed_order_deducts_only_kit_and_persists_null_option_snapshot() -> None:

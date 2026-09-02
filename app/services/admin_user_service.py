@@ -8,6 +8,7 @@ from app.common.enums.user import UserRole, UserStatus
 from app.common.exceptions.user import (
     CannotDisableSelf,
     CannotDisableSuperAdmin,
+    UserDeleted,
     UserNotFound,
 )
 from app.common.pagination import Page, PageParams
@@ -78,6 +79,8 @@ class AdminUserService:
 
             if target.status == UserStatus.DISABLED:
                 return
+            if target.status == UserStatus.DELETED:
+                raise UserDeleted()
 
             await self.user_repo.update(
                 target,

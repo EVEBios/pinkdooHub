@@ -16,6 +16,7 @@ from app.common.exceptions import (
 from app.repositories.order_repo import OrderRepository
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.order_service import OrderItemInput, OrderService
 
@@ -83,6 +84,11 @@ def _service(
     inventory_repository = AsyncMock(spec=InventoryRepository)
     inventory_repository.get_kits_for_update.return_value = kits or []
     audit_service = AsyncMock(spec=AuditLogService)
+    user_repository = AsyncMock(spec=UserRepository)
+    user_repository.get_for_update.return_value = SimpleNamespace(
+        id=7,
+        status=1,
+    )
     generator = order_number_generator or Mock(
         return_value="OD00000000000000000000000001"
     )
@@ -91,7 +97,8 @@ def _service(
         product_repository,
         inventory_repository,
         audit_service,
-        generator,
+        user_repository=user_repository,
+        order_number_generator=generator,
     )
     return service, order_repository, product_repository, audit_service, generator
 

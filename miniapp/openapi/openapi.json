@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "AccountDeletionRequest": {
+        "additionalProperties": false,
+        "description": "账号注销需显式确认且使用一种现有凭据二次验证。",
+        "properties": {
+          "confirmation": {
+            "const": "DELETE",
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "wechat_code": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^\\S+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wechat Code"
+          }
+        },
+        "required": [
+          "confirmation"
+        ],
+        "title": "AccountDeletionRequest",
+        "type": "object"
+      },
       "AdminExperienceProductDetailOut": {
         "description": "管理端体验商品详情。",
         "properties": {
@@ -855,6 +898,43 @@
         "title": "ExperienceProductDetailOut",
         "type": "object"
       },
+      "ExternalIdentityListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalIdentityOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ExternalIdentityListOut",
+        "type": "object"
+      },
+      "ExternalIdentityOut": {
+        "description": "对用户可见的绑定摘要，不暴露 OpenID/UnionID。",
+        "properties": {
+          "bound_at": {
+            "format": "date-time",
+            "title": "Bound At",
+            "type": "string"
+          },
+          "provider": {
+            "const": "wechat_miniprogram",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "bound_at"
+        ],
+        "title": "ExternalIdentityOut",
+        "type": "object"
+      },
       "InventoryAdjustmentCreate": {
         "additionalProperties": false,
         "description": "管理员以变化量和原因调整 Kit 当前库存。",
@@ -1550,14 +1630,17 @@
         "type": "object"
       },
       "LoginRequest": {
+        "additionalProperties": false,
         "description": "登录请求。",
         "properties": {
           "password": {
+            "maxLength": 64,
             "minLength": 1,
             "title": "Password",
             "type": "string"
           },
           "username": {
+            "maxLength": 32,
             "minLength": 1,
             "title": "Username",
             "type": "string"
@@ -2577,7 +2660,7 @@
         "type": "object"
       },
       "RefreshOut": {
-        "description": "刷新响应——只返回新的 access token。",
+        "description": "刷新响应——返回轮换后的新双 Token。",
         "properties": {
           "access_token": {
             "title": "Access Token",
@@ -2588,6 +2671,10 @@
             "title": "Expires In",
             "type": "integer"
           },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
           "token_type": {
             "default": "Bearer",
             "title": "Token Type",
@@ -2595,7 +2682,8 @@
           }
         },
         "required": [
-          "access_token"
+          "access_token",
+          "refresh_token"
         ],
         "title": "RefreshOut",
         "type": "object"
@@ -2834,6 +2922,54 @@
           "data"
         ],
         "title": "SuccessResponse[ExperienceProductDetailOut]",
+        "type": "object"
+      },
+      "SuccessResponse_ExternalIdentityListOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ExternalIdentityListOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ExternalIdentityListOut]",
+        "type": "object"
+      },
+      "SuccessResponse_ExternalIdentityOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ExternalIdentityOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ExternalIdentityOut]",
         "type": "object"
       },
       "SuccessResponse_InventoryAdjustmentOut_": {
@@ -3577,7 +3713,8 @@
           "status": {
             "enum": [
               "normal",
-              "disabled"
+              "disabled",
+              "deleted"
             ],
             "type": "string"
           },
@@ -3638,8 +3775,15 @@
             "type": "string"
           },
           "phone": {
-            "title": "Phone",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
           },
           "role": {
             "enum": [
@@ -3652,7 +3796,8 @@
           "status": {
             "enum": [
               "normal",
-              "disabled"
+              "disabled",
+              "deleted"
             ],
             "type": "string"
           },
@@ -3693,7 +3838,8 @@
       "UserStatus": {
         "enum": [
           1,
-          2
+          2,
+          3
         ],
         "title": "UserStatus",
         "type": "integer"
@@ -3740,6 +3886,41 @@
           }
         },
         "title": "UserUpdate",
+        "type": "object"
+      },
+      "WeChatCodeRequest": {
+        "additionalProperties": false,
+        "description": "微信 wx.login 一次性 code。",
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "WeChatCodeRequest",
+        "type": "object"
+      },
+      "WeChatUnbindRequest": {
+        "additionalProperties": false,
+        "description": "解绑需使用现有密码做二次验证。",
+        "properties": {
+          "password": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "WeChatUnbindRequest",
         "type": "object"
       },
       "_OnlineExperienceDimensionsOut": {
@@ -7070,7 +7251,8 @@
                 {
                   "enum": [
                     "normal",
-                    "disabled"
+                    "disabled",
+                    "deleted"
                   ],
                   "type": "string"
                 },
@@ -7262,6 +7444,93 @@
         "summary": "Auth Required"
       }
     },
+    "/api/v1/auth/identities": {
+      "get": {
+        "description": "返回不含 OpenID/UnionID 的当前用户绑定摘要。",
+        "operationId": "list_external_identities_api_v1_auth_identities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ExternalIdentityListOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List External Identities",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "description": "用户登录——返回 access_token + refresh_token。",
@@ -7307,6 +7576,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7316,6 +7595,26 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Login",
@@ -7359,6 +7658,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7368,6 +7677,26 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -7383,7 +7712,7 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "description": "用 refresh token 换取新的 access token。",
+        "description": "用 refresh token 轮换新的双 Token。",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "requestBody": {
           "content": {
@@ -7426,6 +7755,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7435,6 +7774,26 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Refresh",
@@ -7488,6 +7847,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -7497,9 +7866,313 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/wechat/bind": {
+      "delete": {
+        "description": "密码二次验证后解绑微信，并撤销已有会话。",
+        "operationId": "unbind_wechat_api_v1_auth_wechat_bind_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeChatUnbindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_NoneType_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unbind Wechat",
+        "tags": [
+          "auth"
+        ]
+      },
+      "post": {
+        "description": "把当前普通用户显式绑定到微信身份。",
+        "operationId": "bind_wechat_api_v1_auth_wechat_bind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeChatCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ExternalIdentityOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bind Wechat",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/wechat/login": {
+      "post": {
+        "description": "使用 wx.login 一次性 code 登录；首次自动创建普通用户。",
+        "operationId": "wechat_login_api_v1_auth_wechat_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeChatCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_TokenOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Wechat Login",
         "tags": [
           "auth"
         ]
@@ -8223,6 +8896,91 @@
       }
     },
     "/api/v1/users/me": {
+      "delete": {
+        "description": "二次验证后逻辑注销并匿名化当前普通用户。",
+        "operationId": "delete_my_account_api_v1_users_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_NoneType_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete My Account",
+        "tags": [
+          "users"
+        ]
+      },
       "get": {
         "description": "获取当前登录用户信息。",
         "operationId": "get_me_api_v1_users_me_get",
@@ -8257,6 +9015,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8266,6 +9034,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -8322,6 +9100,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8331,6 +9119,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -8389,6 +9187,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -8398,6 +9206,16 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [

@@ -133,7 +133,7 @@ class TestLogin:
             json={"username": "nobody", "password": "12345678"},
         )
         assert resp.status_code == 400
-        assert resp.json()["code"] == 1002
+        assert resp.json()["code"] == 1003
 
     async def test_disabled_user(self, client: AsyncClient):
         """禁用用户登录返回 1005。"""

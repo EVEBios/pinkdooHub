@@ -128,6 +128,7 @@ export class SessionManager implements AuthSession {
     const session: StoredSession = {
       ...this.session,
       accessToken: result.access_token,
+      refreshToken: result.refresh_token,
       expiresAt: this.calculateExpiresAt(result.expires_in),
     }
     // access token 刷新不改变用户身份，不通知 React 切换认证状态；

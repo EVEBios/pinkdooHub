@@ -29,5 +29,19 @@ if [ -f /run/secrets/bootstrap_password ]; then
     export PINKDOOHUB_BOOTSTRAP_PASSWORD
 fi
 
+# Gate B 可由集中 Secret Manager 以只读文件注入；Gate A 未启用微信时
+# 不挂载这两个文件，因此保持现有运行边界不变。
+if [ -f /run/secrets/wechat_app_secret ]; then
+    WECHAT_APP_SECRET="$(read_secret /run/secrets/wechat_app_secret)"
+    export WECHAT_APP_SECRET
+fi
+
+if [ -f /run/secrets/external_identity_pepper ]; then
+    EXTERNAL_IDENTITY_PEPPER="$(
+        read_secret /run/secrets/external_identity_pepper
+    )"
+    export EXTERNAL_IDENTITY_PEPPER
+fi
+
 unset redis_password
 exec "$@"

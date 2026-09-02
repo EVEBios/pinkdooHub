@@ -25,6 +25,10 @@ jest.mock('@/auth', () => ({
   useAuth: () => mockAuth,
 }))
 
+jest.mock('@/config/env', () => ({
+  resolveEnv: () => ({ authMode: 'password' }),
+}))
+
 describe('登录表单规则', () => {
   it('只做与当前登录契约一致的必填校验', () => {
     expect(validateLogin('', 'secret')).toBe('请输入用户名')
@@ -65,6 +69,7 @@ describe('登录页注册入口', () => {
       status: 'guest',
       register: jest.fn(),
       login: jest.fn(),
+      loginWithWechat: jest.fn(),
       logout: jest.fn(),
       retryInitialization: jest.fn(),
     }

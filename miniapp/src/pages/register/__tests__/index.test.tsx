@@ -55,6 +55,7 @@ describe('注册页面', () => {
       status: 'guest',
       register: jest.fn(async () => user),
       login: jest.fn(),
+      loginWithWechat: jest.fn(),
       logout: jest.fn(),
       retryInitialization: jest.fn(),
     }

@@ -15,6 +15,7 @@ from pydantic_settings import BaseSettings
 
 # 开发环境默认密钥——生产环境必须用环境变量覆盖
 _DEV_JWT_SECRET = "dev-secret-change-in-production"
+_DEV_EXTERNAL_IDENTITY_PEPPER = "dev-external-identity-pepper-change-in-production"
 _UNSAFE_JWT_VALUES = {"", _DEV_JWT_SECRET, "change-me"}
 
 # .env 路径 —— 从 config.py 位置推导项目根目录
@@ -98,6 +99,28 @@ class Settings(BaseSettings):
     jwt_access_token_expire: int = 7200     # 2 小时
     jwt_refresh_token_expire: int = 604800   # 7 天
 
+    # ═══════════════════════
+    # Phase 9.5 公开身份与认证安全
+    # ═══════════════════════
+    password_registration_enabled: bool = True
+    wechat_login_enabled: bool = False
+    wechat_app_id: str = ""
+    wechat_app_secret: str = ""
+    external_identity_pepper: str = _DEV_EXTERNAL_IDENTITY_PEPPER
+    wechat_api_timeout_seconds: float = 5.0
+
+    auth_login_ip_limit: int = 20
+    auth_login_subject_limit: int = 8
+    auth_login_window_seconds: int = 300
+    auth_register_ip_limit: int = 5
+    auth_register_window_seconds: int = 3600
+    auth_refresh_limit: int = 30
+    auth_refresh_window_seconds: int = 60
+    auth_wechat_login_limit: int = 10
+    auth_wechat_login_window_seconds: int = 300
+    auth_wechat_bind_limit: int = 5
+    auth_wechat_bind_window_seconds: int = 600
+
     model_config = {
         "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",
@@ -123,6 +146,45 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"DB_ENGINE must be sqlite or mysql, got '{self.db_engine}'"
             )
+
+        if self.wechat_login_enabled:
+            if not self.wechat_app_id.strip():
+                raise ValueError("WECHAT_APP_ID is required when WeChat login is enabled")
+            if not self.wechat_app_secret.strip():
+                raise ValueError(
+                    "WECHAT_APP_SECRET is required when WeChat login is enabled"
+                )
+            normalized_pepper = self.external_identity_pepper.strip()
+            if (
+                self.app_env == "production"
+                and (
+                    normalized_pepper == _DEV_EXTERNAL_IDENTITY_PEPPER
+                    or len(normalized_pepper) < 32
+                )
+            ):
+                raise ValueError(
+                    "EXTERNAL_IDENTITY_PEPPER must contain at least 32 "
+                    "non-padding characters in production"
+                )
+        if not 0.5 <= self.wechat_api_timeout_seconds <= 30:
+            raise ValueError("WECHAT_API_TIMEOUT_SECONDS must be between 0.5 and 30")
+
+        positive_limits = {
+            "AUTH_LOGIN_IP_LIMIT": self.auth_login_ip_limit,
+            "AUTH_LOGIN_SUBJECT_LIMIT": self.auth_login_subject_limit,
+            "AUTH_LOGIN_WINDOW_SECONDS": self.auth_login_window_seconds,
+            "AUTH_REGISTER_IP_LIMIT": self.auth_register_ip_limit,
+            "AUTH_REGISTER_WINDOW_SECONDS": self.auth_register_window_seconds,
+            "AUTH_REFRESH_LIMIT": self.auth_refresh_limit,
+            "AUTH_REFRESH_WINDOW_SECONDS": self.auth_refresh_window_seconds,
+            "AUTH_WECHAT_LOGIN_LIMIT": self.auth_wechat_login_limit,
+            "AUTH_WECHAT_LOGIN_WINDOW_SECONDS": self.auth_wechat_login_window_seconds,
+            "AUTH_WECHAT_BIND_LIMIT": self.auth_wechat_bind_limit,
+            "AUTH_WECHAT_BIND_WINDOW_SECONDS": self.auth_wechat_bind_window_seconds,
+        }
+        for name, value in positive_limits.items():
+            if value < 1:
+                raise ValueError(f"{name} must be positive")
 
         # ── 生产环境启动契约 ──────────────────
         if self.app_env == "production":

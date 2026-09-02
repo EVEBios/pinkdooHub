@@ -325,29 +325,37 @@ describe('ApiClient', () => {
     expect(uploadTransport.requests).toHaveLength(2)
   })
 
-  it.each(['request', 'upload'] as const)('%s 收到已禁用 1005 时清理本地会话且不 refresh', async (kind) => {
-    const clearSession = jest.fn()
-    const refreshAccessToken = jest.fn(async () => 'new-token')
-    const disabled = response(400, { code: 1005, message: 'User is disabled', data: null })
-    const transport = new FakeTransport(() => disabled)
-    const uploadTransport = new FakeUploadTransport(() => disabled)
-    const client = new ApiClient({
-      baseUrl: 'https://api.example.com',
-      transport,
-      uploadTransport,
-      authSession: { getAccessToken: () => 'disabled-token', refreshAccessToken, clearSession },
-    })
+  it.each([
+    ['request', 1005, 'User is disabled'],
+    ['upload', 1005, 'User is disabled'],
+    ['request', 1009, 'User account has been deleted'],
+    ['upload', 1009, 'User account has been deleted'],
+  ] as const)(
+    '%s 收到终态身份错误 %i 时清理本地会话且不 refresh',
+    async (kind, code, message) => {
+      const clearSession = jest.fn()
+      const refreshAccessToken = jest.fn(async () => 'new-token')
+      const terminal = response(400, { code, message, data: null })
+      const transport = new FakeTransport(() => terminal)
+      const uploadTransport = new FakeUploadTransport(() => terminal)
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.com',
+        transport,
+        uploadTransport,
+        authSession: { getAccessToken: () => 'disabled-token', refreshAccessToken, clearSession },
+      })
 
-    const operation = kind === 'request'
-      ? client.request({ operation: 'getMe', path: '/api/v1/users/me', auth: 'required' })
-      : client.uploadFile({
-          operation: 'uploadProductImage',
-          path: '/api/v1/admin/products/7/images',
-          filePath: 'wxfile://cover.png',
-          auth: 'required',
-        })
-    await expect(operation).rejects.toBeInstanceOf(SessionExpiredError)
-    expect(clearSession).toHaveBeenCalledTimes(1)
-    expect(refreshAccessToken).not.toHaveBeenCalled()
-  })
+      const operation = kind === 'request'
+        ? client.request({ operation: 'getMe', path: '/api/v1/users/me', auth: 'required' })
+        : client.uploadFile({
+            operation: 'uploadProductImage',
+            path: '/api/v1/admin/products/7/images',
+            filePath: 'wxfile://cover.png',
+            auth: 'required',
+          })
+      await expect(operation).rejects.toBeInstanceOf(SessionExpiredError)
+      expect(clearSession).toHaveBeenCalledTimes(1)
+      expect(refreshAccessToken).not.toHaveBeenCalled()
+    },
+  )
 })

@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.common.enums.user import UserRole, UserStatus
-from app.common.exceptions.user import UserDisabled
+from app.common.exceptions.user import TokenExpired, UserDeleted, UserDisabled
 from app.core.config import settings
 from app.core.exceptions import (
     AuthenticationException,
@@ -24,15 +24,19 @@ from app.core.security import decode_token
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.inventory_repo import InventoryRepository
+from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.admin_user_service import AdminUserService
+from app.services.account_lifecycle_service import AccountLifecycleService
 from app.services.inventory_service import InventoryService
+from app.services.external_auth_service import ExternalAuthService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
-from app.storage.image import LocalImageStorage
+from app.storage.image import ImageStorage, LocalImageStorage
+from app.integrations.wechat import WeChatMiniProgramProvider
 
 security = HTTPBearer(auto_error=False)
 
@@ -53,7 +57,7 @@ async def reject_request_body(request: Request) -> None:
         )
 
 
-def get_product_image_storage() -> LocalImageStorage:
+def get_product_image_storage() -> ImageStorage:
     """组装 Product 本地图片存储适配器。"""
 
     return LocalImageStorage(
@@ -78,6 +82,7 @@ def get_order_service(
     order_repository: OrderRepository = Depends(),
     product_repository: ProductRepository = Depends(),
     inventory_repository: InventoryRepository = Depends(),
+    user_repository: UserRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
 ) -> OrderService:
     """组装 OrderService 及其数据访问与共享审计依赖。"""
@@ -87,6 +92,7 @@ def get_order_service(
         product_repository,
         inventory_repository,
         AuditLogService(audit_log_repository),
+        user_repository=user_repository,
     )
 
 
@@ -116,6 +122,38 @@ def get_admin_user_service(
     )
 
 
+def get_external_auth_service(
+    user_repository: UserRepository = Depends(),
+    identity_repository: ExternalIdentityRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> ExternalAuthService:
+    """组装微信登录/绑定及其持久化、审计边界。"""
+
+    return ExternalAuthService(
+        user_repository,
+        identity_repository,
+        AuditLogService(audit_log_repository),
+        WeChatMiniProgramProvider(),
+    )
+
+
+def get_account_lifecycle_service(
+    user_repository: UserRepository = Depends(),
+    order_repository: OrderRepository = Depends(),
+    identity_repository: ExternalIdentityRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> AccountLifecycleService:
+    """组装用户注销所需的订单、身份、审计和微信二次验证边界。"""
+
+    return AccountLifecycleService(
+        user_repository,
+        order_repository,
+        identity_repository,
+        AuditLogService(audit_log_repository),
+        WeChatMiniProgramProvider(),
+    )
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(),
@@ -129,6 +167,10 @@ async def get_current_user(
         raise NotFoundException(message="User not found")
     if user.status == UserStatus.DISABLED:
         raise UserDisabled()
+    if user.status == UserStatus.DELETED:
+        raise UserDeleted()
+    if payload["ver"] != user.auth_version:
+        raise TokenExpired()
     return user
 
 
