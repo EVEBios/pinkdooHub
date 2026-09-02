@@ -70,6 +70,7 @@
 
 ### 2.1 当前 Phase 与实现边界
 
+- Phase 9.5 **不依赖备案的仓库实现已于 2026-09-02 完成**：后端已实现服务端微信 code2Session、微信首次普通用户创建、既有账号显式绑定/冲突/解绑、外部标识独立 Pepper HMAC、Refresh family 原子轮换与重放撤销、认证限流 fail-closed、账号注销匿名化和脱敏安全事件；Order 创建锁后重检 User，封闭注销竞态。小程序新增显式 password/wechat 模式和 refresh 双 Token 替换。MySQL 迁移 3 已离线生成并在可销毁 MySQL 验证，未应用 Gate A。`ImageStorage` 与 Secret 文件注入只完成供应商无关边界；真实 AppID 真机、集中 Secret Manager、告警送达、对象存储和微信隐私材料仍是 Gate B 阻断，未连接微信后台或创建云资源。权威边界见 `docs/09_release/phase95_public_security_baseline.md`。
 - 前端 **Phase 9.1–9.3 已于 2026-08-31 Complete；下一步为 Phase 9.4 微信内部测试版**：Phase 9.3 最终候选 `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success，53 项发布工具契约通过。Run ID `20260831t221625` 在唯一、可销毁的双 MySQL 8.0.46、认证 Redis 8.0.1、短期 CA/Nginx、非 root App 和独立 Source/Restore 图片卷中完成 DR-01～DR-07、DR-09 服务端部分：空库/旧数据迁移、opening balance、数据库与图片独立恢复、MySQL DDL 部分失败恢复、MySQL/Redis Readiness 故障与恢复、Bootstrap 首次/重放/唯一 Audit/凭据轮换、32 请求真实 HTTPS 纵向 Smoke 和优雅重启均通过。演练促成 Python 基础镜像标签、Compose `--env`、合成 Order No、internal/edge 网络四项修复及回归测试；R-004/R-006/R-011 已关闭。Compose containers/networks/volumes、端口、短期 Secret/CA/证据目录和任务 App 镜像已删除，既有开发 Redis 未接管。报告见 `docs/09_release/reports/phase93_rehearsal_2026-08-31.md`。微信合法域名、真实 Origin/证书、iOS/Android 真机 DR-08 与 Gate A 决策仍属于 9.4；未授权上传、分发、提审或发布。
 - 前端完成**阶段 2：四端 Taro Spike**（2026-08-15）：Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict + Webpack 5.91.0 + NutUI 2.7.15 + Jest 29.7.0 在 weapp/alipay/tt/h5 四端生产构建全部通过；`Taro.request`/Storage/上传适配层与 Jest + Taro Test Utils 链路已验证（13 项测试）。产物固定输出 `dist/<TARO_ENV>`，生产包注入 `TARO_APP_APP_ENV`/Origin 且无 localhost 泄漏。关键发现：Taro 只替换字面量 `process.env.TARO_APP_*`；测试工具需 `legacy-peer-deps` 并 mock `@tarojs/router`；NutUI 桶导入会把整库打入包（h5 入口 485 KiB），正式工程必须按需引入；H5 CORS 实测确认后端未配置白名单。Spike 结果已回写架构文档 §4.1、ADR-003/ADR-005、多端与测试策略；ADR-003/ADR-005 已 Accepted。总体架构仍为 Draft（正式工程已落地，待批准），不得把 Spike 与文档规划误报为已交付业务能力。
 - 前端完成**阶段 3：正式 `miniapp/` 工程创建与依赖复核**（2026-08-15 创建，2026-08-20 复核）：Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict 正式工程已落地，包含四端构建、环境配置、Jest/ESLint/Stylelint 与金额格式化测试。官方 npm registry 复核确认 Taro 4.2.1 仍为最新版；16 个 Spike 遗留 extraneous 包已清理，`solid-js@1.9.15` 显式补齐 H5 peer，非目标平台插件、Generator 和未启用 Git Hook 依赖已移除；`npm ls` 零错误。生产 Origin 必须是无路径/凭据的 HTTPS，并拒绝本机地址。正式工程尚未引入 NutUI；基线与认证链路均已提交。
@@ -109,7 +110,7 @@
 | 数据库 | API (string) | Python Enum |
 |--------|--------------|-------------|
 | `users.role` 1/2/3 | `"user"` / `"admin"` / `"super_admin"` | `UserRole` |
-| `users.status` 1/2 | `"normal"` / `"disabled"` | `UserStatus` |
+| `users.status` 1/2/3 | `"normal"` / `"disabled"` / `"deleted"` | `UserStatus` |
 | `products.product_type` VARCHAR | `"experience"` / `"kit"` | `ProductType(str, Enum)` |
 | `products.status` VARCHAR | `"draft"` / `"online"` / `"offline"` | `ProductStatus(str, Enum)` |
 | `experience_options.day_type` VARCHAR | `"weekday"` / `"holiday"` | `DayType(str, Enum)` |
@@ -125,7 +126,7 @@
 
 | 模块 | 号段 | 已用 |
 |------|------|------|
-| 用户 | 1xxx | 1001-1007 |
+| 用户 | 1xxx | 1001-1015；认证限流另用 42901 |
 | 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40404 / 40901-40905, 40911-40912 / 42201, 42221 |
 | 订单 | 4041x / 4092x / 4223x | 40411 / 40921 / 42231-42232（命名异常与 HTTP 映射已实现；40922 已移除） |
 | 库存 | 4093x | 40931-40933（命名异常、HTTP 映射与三个 ADMIN+ Inventory API 均已实现） |

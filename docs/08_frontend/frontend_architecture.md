@@ -142,7 +142,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 
 - 正式 `miniapp/` 已用官方 npm registry 完成依赖收敛：清理 16 个未声明的 NutUI/React Spring 残留包，并显式安装 `solid-js@1.9.15`，补齐 `legacy-peer-deps` 模式跳过的 Taro H5 peer dependency；`npm ls --depth=0` 与生产依赖树均为零错误。
 - 只保留规划中的 weapp/alipay/tt/h5 平台插件；百度、京东、QQ、鸿蒙、RN、已完成使命的 Taro Generator，以及未配置实际 Hook 的 Husky/Commitlint/Lint Staged 均移除，避免扩大安装面和安全审计面。
-- `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。当前 Schema 为 45 条路径、109 个组件 Schema。
+- `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。Phase 9.5 当前 Schema 为 50 条路径、124 个组件 Schema。
 - 正式 HTTP Client 已实现环境 Origin、Query、JSON、Bearer、统一信封 Runtime Guard、Network/Timeout/HTTP/Business/Contract/Session 错误、取消、code `1006` single-flight refresh 以及一次受控重放；普通写请求和超时不自动重试，empty-body PATCH 不设置 data。
 - 官方 registry 的 Gate A production tree 仍报告 10 个受影响包/5 个叶子公告（4 moderate、1 high、5 critical）。9.2.5 已确认其中包含未启用受影响 serve API 的构建链、H5-only 链，以及当前微信源码/产物未使用的 npm swiper 实现，并以 2026-11-30 到期的精确策略跟踪；不能把它们笼统称为已修复或全是 H5-only。Taro 4.2.1 仍为当前版本，`audit fix --force` 会破坏性降级到 Taro 3.x，因此不执行；未来 H5 Gate、新增 Swiper 或上游版本变化必须重新审计。
 - 无 NutUI 的正式 H5 空应用入口仍为 281 KiB，超过 Webpack 244 KiB 建议线；这是当前 Taro H5 基线告警，后续每次引入 UI/业务依赖都必须重新测量，不能以“尚未引入 NutUI”为由忽略。

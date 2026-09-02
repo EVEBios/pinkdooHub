@@ -7,6 +7,7 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 ## 当前能力
 
 - 用户注册、登录、Token 刷新与登出，以及个人资料和密码修改。
+- 微信小程序 `code2Session` 登录、显式绑定/安全解绑、外部身份 HMAC 最小化、refresh family 轮换/重放撤销、Redis 认证限流和账号匿名化注销；正式微信与 Gate B 外部资源尚未启用。
 - RBAC 权限链、管理员用户列表和禁用操作。
 - 敏感操作顺序审计，以及 Product 操作历史分页查询。
 - Product、ExperienceOption、ProductKit 和 ProductImage 的完整业务、持久化与 API 链路。
@@ -17,7 +18,7 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - Order 状态与审计原子事务、订单号冲突重试、分页组合筛选、用户资源隐藏和完整 HTTP 错误/边界矩阵。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
 
-当前完整测试套件包含 **1431 项测试**（包含显式启用的 9 项真实 MySQL 发布门槛）。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
+当前 Phase 9.5 本地基线为 **1693 passed、9 skipped**（普通 SQLite 套件），另有显式启用后 **9 passed** 的真实 MySQL 8.0.46 发布门槛；前端为 **61 套件、392 项 Jest**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
 
 Phase 4.3.1–4.3.12 已完成 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 8+ 增量迁移、Repository、管理员库存调整、Kit/混合订单创建扣减、Pending 取消幂等恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/完整 HTTP 发布门槛和最终 Review。最后一件库存、反向多 Kit、同单取消、同/异 key 调整、管理员调整与下单阻塞、真实 1205 全事务重试和 EXPLAIN 均已在隔离 MySQL 8.0.46 通过；三端点完整权限/错误/边界矩阵与真实 MySQL HTTP 并发重放也已通过。最终 Review 进一步统一了 Product Kit 详情的库存上限响应校验，并清理了数据库文档中的旧 Kit 规划描述。临时实例验证后销毁，未应用持久环境。
 
@@ -237,9 +238,8 @@ docs(readme): document local development workflow
 ## 当前限制与后续工作
 
 - v0.6.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
-- MySQL 首迁移、Order 增量迁移与 Inventory 增量迁移只在一次性 MySQL 8.0.46 完成演练，均尚未应用到持久环境；部署必须遵循迁移流程。
+- Gate A 持久环境当前停留在 Aerich 0→2；Phase 9.5 外部身份迁移 3 只在一次性 MySQL 8.0.46 完成验证，尚未应用到任何持久环境。后续部署必须遵循停写、备份、迁移和核验流程。
 - 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
-- refresh token 尚未轮换；登录/注册尚未限流。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
-- Phase 9.1 基线审计与 Phase 9.2 CI/可重复构建已完成。Draft PR [#2](https://github.com/EVEBios/pinkdooHub/pull/2) 的 [Run 33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212) 在真实干净 checkout 上 8/8 Job 全部通过，覆盖 SQLite、隔离 MySQL 8.0.46、前端质量、OpenAPI、不可发布微信 artifact、双依赖审计和仓库卫生；真实 Runner 发现的 `.venv` 硬编码、Taro 配置平台差异、构建期 devDependencies 缺失与管道吞错均已修复。Python 只剩 ecdsa 在当前 HS256 路径不可达的有期限例外；npm 10 个包/5 个叶子公告已逐项分类，策略均于 2026-11-30 到期并 fail-closed。下一步是 Phase 9.3 隔离发布演练；真实 HTTPS/合法域名、生产相似备份恢复、readiness、管理员初始化和真机 RC 仍是 Gate A 缺口，CI 通过不授权微信上传、提审或发布。
+- Phase 9.1–9.3 已完成；9.4 中不依赖备案的服务器部署、备份恢复与运维治理已完成，真实 HTTPS/合法域名、体验版上传和 iOS/Android 真机仍等待备案与单独授权。Phase 9.5 不依赖外部资源的仓库实现已完成，但真实微信 AppID、集中 Secret Manager、监控告警、对象存储和隐私平台材料仍是 Gate B 阻断项。当前改动只有本地证据，需由当前 SHA 的远端干净 CI 替代后才能进入 RC；CI 通过也不授权微信上传、提审或发布。
 - Phase 4.3.1–4.3.12 已完成并通过最终 Review；持久环境迁移、发布与下一业务 Phase 仍需单独规划和授权。

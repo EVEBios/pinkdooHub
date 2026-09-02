@@ -1,8 +1,8 @@
 # pinkdooHub 前端测试策略
 
-> **Document Version:** v0.9
+> **Document Version:** v0.10
 > **Status:** Draft
-> **Last Updated:** 2026-08-31
+> **Last Updated:** 2026-09-02
 > **Applies To:** 正式 `miniapp/` 与其 FastAPI 集成边界
 
 本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。Spike 已固定：Jest 29.7.0 + `jest-environment-jsdom` 29.7.0 + `@tarojs/test-utils-react` 0.1.1（详见 [ADR-001](adr/ADR-001-use-taro-react-typescript.md) 与架构文档 §4.1）。
@@ -22,6 +22,7 @@
 - 2026-08-31 Phase 9.2.4 最新本地基线：新增 `backend-mysql-release` 与安全/清理脚本后，固定 MySQL 8.0.46 Docker 容器在 `127.0.0.1:13306` 和专用 Schema 上真实执行 Aerich 0→1→2，9 项 MySQL 并发/1205/EXPLAIN/HTTP 门槛全部通过；清理确认 Schema 删除、容器停止/删除、端口关闭和临时目录删除。完整普通套件为 `1502 passed, 9 skipped`，新增 MySQL CI 契约/安全测试 9 项通过；尚无 commit/PR/远端 CI Run，因此状态仍是 `verified-local`。
 - 2026-08-31 Phase 9.2.5 最新本地基线：8 Job workflow、Python/npm 精确策略和依赖升级完成；真实 pip-audit 为 1 包/1 公告，真实 npm production audit 为 10 包/5 公告，均通过 fail-closed 检查。完整后端 `1507 passed, 9 skipped`，前端 61 套件/387 项、CI Node policy 13 项和全静态/OpenAPI 门槛通过；升级后的 asyncmy 0.2.14 再次通过 MySQL 8.0.46 Aerich 0→1→2 与 9 项门槛，Schema/容器/13306/临时目录均已清理。微信 CI production artifact 保持 97 文件/603,619 bytes/0 source map、`release_eligible=false`。尚无真实 PR Run，因此下一步仍是 9.2.6。
 - 2026-08-31 Phase 9.2.6 远端基线：Draft PR #2 的 GitHub Actions Run 33355935212 绑定实现 head `23a0f08...`，8 个 Job 全部 `success`。首轮暴露的 `.venv` 硬编码、Taro 项目配置平台差异、production 安装遗漏构建期 devDependencies 和 `tee` 吞错均已修复并有契约测试。远端微信 artifact 为 97 文件/603,619 bytes、`release_eligible=false`，manifest 与根配置均绑定 SHA-256；7 组证据 artifact 绑定 PR merge-ref 和 Run ID。Phase 9.2 完成，9.3 生产相似演练与 9.4 真机 RC 仍未执行。
+- 2026-09-02 Phase 9.5 未提交本地基线：微信身份、refresh family、Redis 限流、登录反枚举、注销匿名化和终态 Session 清理实现后，后端 `1693 passed, 9 skipped`；一次性 MySQL 8.0.46 真实执行 Aerich 0→1→2→3 并通过 9 项门槛后完整清理。前端 61 套件/392 项、TypeScript/ESLint/Stylelint、50 paths/124 schemas OpenAPI 漂移和 17 项 CI Node 契约通过；微信登录模式构建为 97 文件/605,381 bytes，`release_eligible=false`。这不是远端 CI 或正式微信证据。
 - 2026-08-20 微信开发者工具已连接本地 FastAPI + SQLite + Redis 完成账号密码认证 Functional：错误/正确/禁用账号、`user/admin/super_admin` 展示、Storage 写入、重启 `/users/me` 恢复、登出清理、`expiresAt` 主动 refresh、服务端 `1006` 被动 refresh，以及 access/refresh 同时无效后的 Session 清理全部通过；未记录或传播真实 Token。该结果不替代真机、H5、弱网、HTTPS/合法域名及正式微信登录门槛。
 
 ---

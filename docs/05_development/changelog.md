@@ -4,6 +4,18 @@
 
 ---
 
+## Release Phase 9.5 — 公开身份与安全（仓库实现完成，2026-09-02）
+
+完成不依赖备案、真实微信后台或付费云资源的 Phase 9.5 范围。后端新增微信 `code2Session` 适配、外部身份显式绑定/冲突/解绑、微信首次登录普通用户创建、账号注销匿名化；数据库只保存独立 Pepper HMAC，不保存原始 OpenID/UnionID/session_key。新增 MySQL 迁移 3，让 User 密码/手机号可空并增加 `auth_version/deleted_at` 与外部身份唯一索引。
+
+Refresh 改为每次轮换双 Token，并通过 Redis Lua 原子消费、重放后撤销整个 family；认证限流以 HMAC 后的稳定来源/账号维度计数，Redis 故障 fail closed。密码登录统一无效凭据并执行 bcrypt dummy verify，避免枚举不存在或微信-only 账号。注销与订单创建共享 User 行锁，绑定/解绑/注销锁后重检角色，`deleted` 是管理禁用也不能改写的终态；客户端遇到 disabled/deleted 会立即清除 Session。
+
+本地最终验证为后端 `1693 passed, 9 skipped`、一次性 MySQL 8.0.46 Aerich 0→3 与 9 项 release gate、前端 61 套件/392 项和全部静态/OpenAPI/CI Node 门槛。微信身份模式非发布构建为 97 文件/605,381 bytes；真实微信、备案域名、集中 Secret/监控/对象存储和隐私材料仍是 Gate B blocker。
+
+认证会话改为 Refresh family 原子轮换；已消费 Token 重放撤销 family，密码修改/解绑/注销使旧 access/refresh 失效。密码登录按 IP+账号双限流，注册/refresh/微信登录/绑定使用独立 Redis 原子策略且依赖故障 fail closed。小程序新增显式 password/wechat 模式、`Taro.login` 适配和刷新双 Token 替换。订单创建事务锁后重检 User，封闭与注销的并发竞态。
+
+新增脱敏 `security_event` 基线、Gate B 集中 Secret/对象存储决策门和 `ImageStorage` 端口；Runtime 可选读取微信 AppSecret/身份 Pepper 文件。功能、迁移与自动化提交为 `94325fa...`，发布状态与剩余门槛随独立文档提交记录。没有向 Gate A 应用迁移 3，没有启用微信登录，没有创建或修改集中 Secret、监控或对象存储，也没有连接微信后台、上传、提审、tag 或发布。真实 AppID 真机、告警送达、正式存储/Secret 和微信隐私材料仍是 Gate B 阻断项。
+
 ## Release Phase 9.4.7 — 备案前 Gate A 运维收口（真实通过，2026-09-02）
 
 - 新增 `gatea_offsite_backup.py` 客户端异机备份工具：只拉取精确 Backup ID 的 MySQL/图片 Artifact 与已经 PASS 的 Backup/Restore Record，重算来源大小/SHA-256 后形成固定成员 Bundle；使用随机 AES-256-GCM 加密并以独立 RSA-3072 OAEP-SHA256 公钥封装数据密钥，私钥与 copy 分离且全部位于仓库外。导出后必须完成 AEAD 解密、Tar 白名单、来源 checksum 和 Restore 证据复核；工具拒绝覆盖且不提供自动删除。

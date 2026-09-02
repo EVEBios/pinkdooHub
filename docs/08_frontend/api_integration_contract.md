@@ -1,8 +1,8 @@
 # pinkdooHub 前端 API 集成契约
 
-> **Document Version:** v0.11
+> **Document Version:** v0.12
 > **Status:** Draft
-> **Last Updated:** 2026-08-29
+> **Last Updated:** 2026-09-02
 > **Source of Truth:** 实际 FastAPI OpenAPI、路由/Schema/测试及对应业务/API 文档
 
 本文档是 Taro 客户端与现有 FastAPI 后端之间的适配契约。它不复制各模块完整 API 文档，而是冻结所有前端模块必须共同遵守的解析、认证、类型、错误、上传和幂等规则。
@@ -12,15 +12,15 @@
 基础集成层、账号密码注册/登录、公开 Product、用户侧 Order、ADMIN Order 人工状态，以及 ADMIN Product 与 Kit Inventory 管理纵向链路已落地：
 
 - `scripts/export_openapi.py`：隔离导出当前 FastAPI OpenAPI；
-- `miniapp/openapi/openapi.json`：45 条路径、109 个 Schema 的生成输入；
+- `miniapp/openapi/openapi.json`：50 条路径、124 个 Schema 的生成输入；
 - `miniapp/src/api/generated/schema.d.ts`：`openapi-typescript@7.13.0` 生成的只读、字母序类型；
 - `miniapp/src/api/client.ts`：统一信封、Query、Bearer、错误与 refresh 边界；普通 `request()` 返回 data，Inventory 调整使用窄 `requestWithMeta()` 保留最终 HTTP status；
 - `miniapp/src/api/taro_transport.ts`：`Taro.request` Transport 与取消/网络/超时分类；
 - `miniapp/src/api/taro_upload_transport.ts`：`Taro.uploadFile` multipart、字符串响应信封与取消/网络/超时分类；
 - `miniapp/src/api/factory.ts`：消费严格校验后的 `TARO_APP_API_ORIGIN`；
-- `miniapp/src/api/endpoints/auth.ts`：register/login/refresh/logout/getMe 薄 Endpoint，以及认证数据 Runtime Guard + 白名单投影；
+- `miniapp/src/api/endpoints/auth.ts`：register/password login/WeChat login/refresh/logout/getMe 薄 Endpoint，以及认证数据 Runtime Guard + 白名单投影；
 - `miniapp/src/auth/`：Session Manager、启动恢复、Context 与运行时组合；`miniapp/src/platform/storage.ts` 提供 Taro Storage Adapter；
-- `miniapp/src/pages/login/`、`pages/register/`：账号密码登录/注册受控表单；注册成功不自动建立 Session，登录和注册之间只保留白名单 redirect；公开首页按认证状态显示登录、当前用户或登出，但游客浏览不依赖认证；
+- `miniapp/src/pages/login/`、`pages/register/`：按编译期 `TARO_APP_AUTH_MODE` 选择受控密码入口或 `wx.login` 一次性 code 入口；公开微信模式不显示密码注册链接，Gate A 保留密码链路。注册成功不自动建立 Session，登录和注册之间只保留白名单 redirect；公开首页按认证状态显示登录、当前用户或登出，但游客浏览不依赖认证；
 - `miniapp/src/api/endpoints/products.ts`：公开列表 Query/响应生成类型、运行时 Guard 与白名单投影；
 - `miniapp/src/api/endpoints/admin_products.ts`：认证管理列表/详情、Experience/Kit 创建、基本信息与 Kit 价格 PATCH、Product/Option 逻辑删除、Option 新增/恢复/修改、Product/Option 图片生命周期及上下架，以及对应 Runtime Guard 与白名单投影；
 - `miniapp/src/api/endpoints/audit.ts`、`features/audit/`：Product Audit 分页、目标绑定 Runtime Guard 与只读管理页；

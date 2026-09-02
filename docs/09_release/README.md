@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 9.4 进行中 — 备案前服务器/自动化/治理/开发者工具已通过，待备案/DNS/HTTPS/真机
+> **Current Phase:** 9.4 外部条件阻断中；9.5 仓库可实施范围已完成 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-02
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -15,6 +15,7 @@
 | 当前基线审计 | [baseline_audit_2026-08-29.md](baseline_audit_2026-08-29.md) | 已采集本地证据；MySQL/真机/外部环境未执行 |
 | Environment Matrix + Secret Inventory | [environment_and_secrets.md](environment_and_secrets.md) | Gate A 文件 Secret、轮换、备份密钥和日志策略已落地；真实域名待备案 |
 | CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | Phase 9.2 Complete；PR #2 Run 33355935212 的 8 个 Job 全部通过 |
+| Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
 | Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | DR-01～DR-07、DR-09 服务端部分已执行通过；DR-08 留到 9.4 |
 | 9.3 演练环境 | [rehearsal_environment_2026-08-31.md](rehearsal_environment_2026-08-31.md) | 双 MySQL/Redis/HTTPS/图片恢复拓扑已真实执行并清理 |
 | 9.3 演练报告 | [reports/phase93_rehearsal_2026-08-31.md](reports/phase93_rehearsal_2026-08-31.md) | SHA `136a8bd...` / Run 33408135841 / DR 服务端范围 PASS |
@@ -40,6 +41,7 @@
 - Phase 9.4 持久 Bootstrap 已真实通过：Runtime `51ad315...`、Operations `0ebe25a...` 和 Run 33574718103 绑定；唯一 SUPER_ADMIN 首次创建、严格重放、唯一 Audit、初始/最终登录、密码轮换、旧密码拒绝、两个 Refresh 会话撤销和临时 Secret/容器/投放文件清理均为 PASS。成功 Record 为 `root:root 0644` 且不含 PII、密码、Token 或 hash；完整脱敏证据见 [9.4 Bootstrap 报告](reports/phase94_gatea_bootstrap_2026-09-02.md)。
 - Phase 9.4 代表性数据与二次隔离恢复已真实通过：Operations `3511491...` 的 Run 33576453364 为 8/8 success；工具经 loopback 正式 API 创建最终禁用的合成 USER、两个 Online Product、三张图片、两种终态订单和完整库存流水，管理员/合成用户 Refresh 均撤销。非空 Backup `20260902t014211z` 在独立无端口 project 中完成数据库、三图片、空 Redis 和 Restore App 验证，临时 Docker 资源归零且来源服务 Healthy。完整脱敏证据见[代表性数据二次恢复报告](reports/phase94_gatea_representative_restore_2026-09-02.md)；备份保留期、加密异机副本、DNS/HTTPS、微信合法域名、真实 RC 和真机仍待完成。
 - Phase 9.4 备案前运维和自动化范围已真实通过：Backup `20260902t014211z` 已形成经解密复核的 AES-256-GCM/RSA-OAEP-SHA256 异机副本；MySQL/Redis 故障和 App 重启证明 readiness 摘流量、liveness、数据/三图片保持、四容器日志轮转及 24 小时脱敏聚合查询。实现 `b69ee74...` Run 33584388085 和恢复修复 `c4d27a8...` Run 33584789525 均为 8/8 success；首次演练工具假失败、修复和重跑均留有证据。Node 24.13.0/npm 11.6.2 的备案前微信预 RC 为 97 文件/603,624 bytes/0 source map，manifest `aeb81ef...` 明确不可发布。开发者工具 Stable 2.02.2608060 已加载/编译并修正本机 `urlCheck` 覆盖，域名校验按预期拒绝保留 Origin。完整证据见[备案前收口报告](reports/phase94_pre_icp_completion_2026-09-02.md)。备案/DNS/HTTPS、微信合法域名、真实 RC、iOS/Android 真机和上传授权仍未执行，Gate A 保持 No-Go。
+- Phase 9.5 不依赖备案的仓库实现已完成：微信身份/绑定、Refresh 轮换、认证限流、注销匿名化、HMAC 标识最小化、安全事件、Secret 注入边界、存储端口和迁移均有自动化；真实微信 AppID、集中 Secret Manager、告警送达、对象存储和隐私平台材料仍未执行，Gate B 保持 No-Go。详见 [9.5 基线](phase95_public_security_baseline.md)。
 
 ## 3. 状态词
 

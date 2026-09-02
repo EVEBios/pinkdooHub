@@ -1,13 +1,15 @@
 Table users {
   id bigint [pk, increment]
   username varchar(32) [not null, unique]
-  password varchar(128) [not null]
+  password varchar(128) [note: 'nullable for external-identity-only users; bcrypt hash when present']
   nickname varchar(32) [not null]
-  phone varchar(11) [not null, unique]
+  phone varchar(11) [unique, note: 'nullable for external-identity-only users']
   avatar varchar(256)
   role smallint [not null, note: 'ORM default 1; 1:user 2:admin 3:super_admin']
-  status smallint [not null, note: 'ORM default 1; 1:normal 2:disabled']
+  status smallint [not null, note: 'ORM default 1; 1:normal 2:disabled 3:deleted']
   last_login_at datetime
+  auth_version int [not null, default: 0, note: 'invalidates older access/refresh sessions after credential changes']
+  deleted_at datetime [note: 'UTC account anonymization timestamp']
   created_at datetime
   updated_at datetime
 
@@ -15,6 +17,25 @@ Table users {
     (status, role) [name: 'idx_users_status_role']
   }
 }
+
+Table external_identities {
+  id bigint [pk, increment]
+  provider varchar(32) [not null, note: 'wechat_miniprogram in Phase 9.5']
+  app_id varchar(64) [not null]
+  subject_id varchar(128) [not null, note: 'HMAC-SHA256 hex; never raw OpenID']
+  union_id varchar(128) [note: 'nullable HMAC-SHA256 hex; never raw UnionID']
+  user_id bigint [not null]
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (provider, app_id, subject_id) [unique, name: 'uidx_external_identity_subject']
+    (provider, union_id) [unique, name: 'uidx_external_identity_union']
+    (user_id, provider, created_at) [name: 'idx_external_identity_user_provider']
+  }
+}
+
+Ref: external_identities.user_id > users.id [delete: restrict]
 
 // ── Product ────────────────────────────────────
 

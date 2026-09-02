@@ -82,7 +82,7 @@ pinkdooHub/
 │   │   │   └── product.py      # Product/Option 图片上传表单
 │   │   ├── v1/                 # v1 版本路由
 │   │   │   ├── __init__.py
-│   │   │   ├── auth.py         #   POST /auth/register  /auth/login  /auth/refresh
+│   │   │   ├── auth.py         #   密码/微信登录、refresh、绑定/解绑
 │   │   │   ├── users.py        #   GET/PUT /users/me  /users/me/password  /users/me/avatar
 │   │   │   ├── admin_users.py  #   GET /admin/users  /admin/users/{id}  disable/enable
 │   │   │   ├── products.py     #   GET /products  /products/{id}
@@ -122,6 +122,8 @@ pinkdooHub/
 │   ├── services/               # 业务逻辑层 —— 跨模型、带事务的业务编排
 │   │   ├── __init__.py
 │   │   ├── auth_service.py     #   注册、登录、Token 签发/刷新
+│   │   ├── external_auth_service.py # 微信登录与绑定事务编排
+│   │   ├── account_lifecycle_service.py # 注销、匿名化与会话撤销
 │   │   ├── user_service.py     #   个人资料、密码、头像
 │   │   ├── product_service.py  #   商品 CRUD、上下架、Option 管理
 │   │   ├── order_service.py    #   Experience/Kit/混合下单、库存扣减、查询与状态机
@@ -134,6 +136,8 @@ pinkdooHub/
 │   ├── storage/                # 外部对象存储适配边界
 │   │   ├── __init__.py
 │   │   └── image.py        #   Product 图片校验、本地原子存储与补偿删除
+│   ├── integrations/           # 外部平台协议适配器
+│   │   └── wechat.py           #   服务端 code2Session，最小身份输出
 │   │
 │   ├── tasks/                  # 外部调度器可重复执行的运维任务入口
 │   │   ├── product_image_cleanup.py # ProductImage 延迟文件清理命令
@@ -225,6 +229,8 @@ pinkdooHub/
 ```
 
 > **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 Product 当前保留全部 Model、Repository、Validator、Service、API Mapper、21 个端点、图片存储和清理任务；Phase 4.3.10 已将库存写入口迁到 Inventory。Phase 4.2 Order v1.0 的契约、领域语言、严格 Schema、Model/离线迁移、编号生成器、Repository、创建/状态/查询 Service、API Mapper、`get_order_service()` 组合根、4 个用户端与 5 个 ADMIN+ 端点、完整 HTTP 边界矩阵和最终 Review 均已完成。
+
+Phase 9.5 已增加外部身份和账号生命周期边界，但公开平台仍未启用：`ExternalAuthService` 只消费 `ExternalIdentityProvider` 返回的最小凭据，并通过 User/ExternalIdentity Repository 与共享审计完成事务；微信适配器是基础设施层，不进入 Service/Repository。原始 OpenID/UnionID 进入数据库前使用独立 Pepper HMAC，`session_key` 不越过适配器。`AccountLifecycleService` 锁定 User 后重检二次凭据与活跃订单，删除绑定并匿名化 User；Order 创建锁同一 User 行，封闭注销竞态。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
@@ -1043,11 +1049,11 @@ def create_access_token(user_id: int) -> str:
     )
 
 def create_access_token(user_id: int, jti: str) -> str:
-    # {"sub":"1", "type":"access", "jti":"uuid", "exp":..., "iat":...}
+    # {"sub":"1", "type":"access", "jti":"uuid", "sid":"family", "ver":0, ...}
     ...
 
 def create_refresh_token(user_id: int, jti: str) -> str:
-    # 同一次登录的 access/refresh 共用 jti
+    # 同一轮 access/refresh 共用 jti；refresh 成功后生成新 jti，sid 保持不变
     ...
 
 def decode_token(token: str, expected_type: str) -> dict:
@@ -1090,23 +1096,15 @@ import redis.asyncio as aioredis
 
 redis_client = aioredis.from_url(settings.redis_url)
 
-# Refresh Token 存储：key = rt:{jti}, value = user_id
-async def save_refresh_token(jti: str, user_id: int) -> None:
-    await redis_client.set(f"rt:{jti}", str(user_id), ex=settings.jwt_refresh_token_expire)
+# 每个登录使用独立 session family；Lua 脚本原子轮换并检测重放。
+async def save_refresh_session(jti: str, session_id: str, user_id: int) -> None: ...
+async def rotate_refresh_session(*, old_jti: str, new_jti: str,
+                                 session_id: str, user_id: int) -> RefreshRotationResult: ...
+async def revoke_refresh_family(session_id: str) -> None: ...
+async def revoke_user_refresh_sessions(user_id: int) -> None: ...
 
-async def verify_refresh_token(jti: str) -> int | None:
-    value = await redis_client.get(f"rt:{jti}")
-    return int(value) if value else None
-
-async def delete_refresh_token(jti: str) -> None:
-    await redis_client.delete(f"rt:{jti}")
-
-# 接口限流：key = ip + endpoint
-async def rate_limit(key: str, max_requests: int, window: int) -> bool:
-    current = await redis_client.incr(key)
-    if current == 1:
-        await redis_client.expire(key, window)
-    return current <= max_requests
+# 限流 key 中的 principal 先做 keyed HMAC；Redis 不保存明文 IP/账号/Token。
+async def increment_rate_limit(key: str, window_seconds: int) -> int: ...
 ```
 
 ### 6.6 Liveness / Readiness（app/core/health.py）
@@ -1119,3 +1117,11 @@ async def rate_limit(key: str, max_requests: int, window: int) -> bool:
 - 驱动异常可能携带连接目标或凭据，因此 Core 日志只记录依赖类别和异常类型，HTTP 也不输出连接目标或原始异常。
 
 Readiness 只决定是否接收新业务流量，不负责重启进程；Liveness 失败才属于进程级处置。9.3 仍需在生产相似 MySQL/Redis 环境实际证明依赖故障摘流量与恢复行为，本地自动化不能替代演练证据。
+
+### 6.7 Phase 9.5 身份会话与可观测性
+
+- `auth_session.py` 为每次登录创建独立 `sid` 与首个 `jti`。Redis 同时维护 active、used、family 和 user→families 索引；Lua 脚本原子消费旧 refresh、发布新 refresh，并在已消费 Token 重放时撤销 family。
+- Access/Refresh 都携带 `auth_version`；认证依赖和刷新 Service 与 User 当前版本比较。密码修改、微信解绑和注销递增版本并撤销全部已索引 family。
+- `rate_limit.py` 对身份端点使用独立策略和 HMAC 化 principal 键，Redis 不可用时返回 503，超过阈值返回 429。Redis 中不保存明文账号、IP 或 Token。
+- `security_events.py` 只允许固定事件、结果、内部 user ID 和 scope 维度。日志采集基线可对 `auth_rate_limit`、`refresh_reuse`、`wechat_identity_exchange`、`external_identity_*` 与 `account_deletion` 聚合告警；不得把 code、平台标识或 Secret 添加为日志字段。
+- `ImageStorage` Protocol 是上传链路的最小存储端口，`LocalImageStorage` 是 Gate A/开发适配器。Gate B 对象存储适配器必须保持相同内容校验、不可覆盖 key、补偿删除、命名空间解析和延迟清理语义；选择真实 Bucket/CDN、SDK 和凭据前不伪造已完成的生产存储。

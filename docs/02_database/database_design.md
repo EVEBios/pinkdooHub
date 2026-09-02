@@ -1,6 +1,6 @@
-# pinkdooHub 数据库设计 v1.6
+# pinkdooHub 数据库设计 v1.7
 
-> **Last Updated:** 2026-08-14
+> **Last Updated:** 2026-09-02
 
 ---
 
@@ -21,6 +21,7 @@
 
 ```
 users
+  ├── external_identities
   ├── orders ── order_items
   ├── operated inventory_transactions
   └── products
@@ -56,15 +57,42 @@ Product、Order 与当前冻结的 Inventory 规则由三层共同保证，文�
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | username | VARCHAR(32) | NOT NULL, UNIQUE | 登录账号 |
-| password | VARCHAR(128) | NOT NULL | 加密密码 |
+| password | VARCHAR(128) | nullable | bcrypt 密码哈希；微信首次登录账号可为空 |
 | nickname | VARCHAR(32) | NOT NULL | 用户昵称 |
-| phone | VARCHAR(11) | NOT NULL, UNIQUE | 手机号码；Service 预检查，数据库兜底并发唯一性 |
+| phone | VARCHAR(11) | nullable, UNIQUE | 手机号码；微信首次登录账号可为空；非空值由数据库兜底并发唯一性 |
 | avatar | VARCHAR(256) | nullable | 头像 URL |
 | role | SMALLINT | NOT NULL | 1:普通用户 2:管理员 3:超级管理员；ORM 默认 1 |
-| status | SMALLINT | NOT NULL | 1:正常 2:禁用；ORM 默认 1 |
+| status | SMALLINT | NOT NULL | 1:正常 2:禁用 3:已注销；ORM 默认 1 |
 | last_login_at | DATETIME | - | 最后登录时间 |
+| auth_version | INT | NOT NULL, DEFAULT 0 | 安全凭据版本；密码/绑定/注销变化时使旧 access 失效 |
+| deleted_at | DATETIME(6) | nullable | 完成账号匿名化的 UTC 时间 |
 | created_at | DATETIME | - | 注册时间 |
 | updated_at | DATETIME | - | 最近更新时间 |
+
+---
+
+### 3.1a external_identities（外部身份绑定表，Phase 9.5）
+
+一条记录表示一个用户在一个外部平台应用中的绑定。表名沿用通用 provider 边界，当前只允许 `wechat_miniprogram`。`subject_id` / `union_id` 字段名表示平台主体键，但实际值必须是用独立 `EXTERNAL_IDENTITY_PEPPER` 生成的 HMAC-SHA256 十六进制字符串；禁止写入原始 OpenID/UnionID 或 `session_key`。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 主键 |
+| provider | VARCHAR(32) | NOT NULL | 当前为 `wechat_miniprogram` |
+| app_id | VARCHAR(64) | NOT NULL | 非 Secret 的平台应用 ID |
+| subject_id | VARCHAR(128) | NOT NULL | 原始平台主体标识的稳定 HMAC |
+| union_id | VARCHAR(128) | nullable | 原始 UnionID 的稳定 HMAC；平台不返回时为空 |
+| user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | 绑定用户 |
+| created_at | DATETIME(6) | NOT NULL | 绑定时间 |
+| updated_at | DATETIME(6) | NOT NULL | 技术更新时间 |
+
+唯一性与查询索引：
+
+- `uidx_external_identity_subject(provider, app_id, subject_id)`：同一应用主体只绑定一个账号；
+- `uidx_external_identity_union(provider, union_id)`：非空 UnionID 不允许跨账号冲突；MySQL 允许多行 NULL；
+- `idx_external_identity_user_provider(user_id, provider, created_at)`：用户绑定摘要与解绑查询。
+
+账号注销先删除绑定记录，再匿名化 users 行；Users 受 Order/Inventory/Audit 的历史外键约束，不物理删除。
 
 ---
 
@@ -346,6 +374,14 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 CREATE INDEX idx_users_status_role ON users (status, role);
 ```
 
+#### external_identities
+
+| # | 查询 | 频率 | 索引 |
+|---|------|------|------|
+| 1 | `WHERE provider=? AND app_id=? AND subject_id=?` | 极高（外部登录） | `uidx_external_identity_subject` |
+| 2 | `WHERE provider=? AND union_id=?` | 中（绑定冲突） | `uidx_external_identity_union` |
+| 3 | `WHERE user_id=? AND provider=?` | 中（摘要/解绑） | `idx_external_identity_user_provider` |
+
 #### products
 
 | # | 查询 | 频率 | 索引 |
@@ -464,6 +500,9 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | 表 | 索引名 | 列 | 类型 | 覆盖查询 |
 |----|--------|-----|------|----------|
 | `users` | `idx_users_status_role` | `(status, role)` | 普通 | 管理后台用户列表 |
+| `external_identities` | `uidx_external_identity_subject` | `(provider, app_id, subject_id)` | UNIQUE | 外部身份登录与绑定唯一性 |
+| `external_identities` | `uidx_external_identity_union` | `(provider, union_id)` | UNIQUE | 可选 UnionID 冲突兜底 |
+| `external_identities` | `idx_external_identity_user_provider` | `(user_id, provider, created_at)` | 普通 | 用户绑定摘要与解绑 |
 | `products` | `idx_products_status_deleted` | `(status, is_deleted)` | 普通 | 客户列表、管理后台列表 |
 | `experience_options` | `idx_option_unique` | `(product_id, duration, participants, day_type)` | UNIQUE | 全历史唯一、创建/恢复校验、按 product 查询 |
 | `product_images` | `idx_image_product_sort` | `(product_id, sort)` | 普通 | 图片排序展示 |
@@ -496,4 +535,4 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 |------|----------|
 | v0.2 | 收藏表、评价表、支付记录表 |
 | v0.3 | AI 推荐记录、AI 生成模板表 |
-| v1.0 | 微信登录凭证、退款记录、后台操作日志 |
+| v1.0 | 退款记录、后台操作日志（微信身份表已由 Phase 9.5 实现） |
