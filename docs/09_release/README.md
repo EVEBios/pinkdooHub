@@ -22,6 +22,7 @@
 | 9.4 Gate A 备份恢复报告 | [reports/phase94_gatea_backup_restore_2026-09-02.md](reports/phase94_gatea_backup_restore_2026-09-02.md) | Backup `20260901t232740z` / Operations `d1f3379...` / 空数据独立恢复 PASS |
 | 9.4 Gate A Bootstrap 报告 | [reports/phase94_gatea_bootstrap_2026-09-02.md](reports/phase94_gatea_bootstrap_2026-09-02.md) | Runtime `51ad315...` / Operations `0ebe25a...` / 首次、重放、轮换与清理 PASS |
 | 9.4 Gate A 代表性数据二次恢复报告 | [reports/phase94_gatea_representative_restore_2026-09-02.md](reports/phase94_gatea_representative_restore_2026-09-02.md) | Backup `20260902t014211z` / Operations `3511491...` / 非空数据与三图片独立恢复 PASS |
+| Gate A 内部测试运维规则 | [gatea_test_operations.md](gatea_test_operations.md) | 测试人员、反馈、14 日窗口、停用、数据清理与事故职责已冻结 |
 | Functional/Smoke/E2E Matrix | [wechat_acceptance_matrix.md](wechat_acceptance_matrix.md) | 场景与证据等级已冻结；RC 真机结果待填 |
 | Risk Register | [risk_register.md](risk_register.md) | 已登记并分配责任角色/关闭 Gate |
 | Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | Gate A/Gate B 清单已建立；未授权发布 |

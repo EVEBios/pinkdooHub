@@ -220,6 +220,56 @@ sudo python -m scripts.release.gatea_backup \
 同机备份只能证明流程和恢复能力，不能覆盖服务器或系统盘故障。Gate A Go 前仍需
 定义保留期，并把批准备份加密复制到独立故障域；工具不自动上传或删除备份。
 
+### 客户端加密异机副本
+
+`gatea_offsite_backup.py` 在受控管理电脑执行，不把解密私钥发送到服务器。它通过
+现有只读 SSH 身份下载精确 Backup/Restore Record 与两个 Artifact，在权限为 `0700`
+的本机临时目录重算来源 checksum；随后使用随机 AES-256-GCM 数据密钥加密、用独立
+RSA-3072 OAEP-SHA256 公钥封装数据密钥。成功后必须用私钥完成 AEAD 解密、Bundle
+成员白名单、数据库/图片 SHA-256 和 Restore PASS Record 的再次验证。
+
+```bash
+python -m scripts.release.gatea_offsite_backup keygen \
+  --private-key "$HOME/.config/pinkdoohub/gatea-backup/private.pem" \
+  --public-key "$HOME/.config/pinkdoohub/gatea-backup/public.pem"
+
+python -m scripts.release.gatea_offsite_backup export \
+  --backup-id <YYYYMMDDtHHMMSSz> \
+  --host <gate-a-host> \
+  --user <ssh-user> \
+  --identity-file <ssh-private-key> \
+  --public-key "$HOME/.config/pinkdoohub/gatea-backup/public.pem" \
+  --destination-dir "$HOME/Backups/pinkdoohub/gatea"
+
+python -m scripts.release.gatea_offsite_backup verify \
+  --copy "$HOME/Backups/pinkdoohub/gatea/<backup-id>.pdhb" \
+  --record "$HOME/Backups/pinkdoohub/gatea/<backup-id>.pdhb.json" \
+  --private-key "$HOME/.config/pinkdoohub/gatea-backup/private.pem"
+```
+
+私钥目录固定 `0700`、私钥 `0600`、公钥 `0644`；加密副本 `0400`，脱敏客户端
+Record `0600`。密钥与副本必须位于仓库外且相互分离；脚本拒绝覆盖已有 key/copy，
+不提供自动删除。私钥丢失会使副本不可恢复，因此其离线恢复保管仍由项目负责人负责。
+
+## 依赖故障、应用重启与日志观察
+
+`gatea_resilience.py` 只在代表性数据成功 Record、Runtime/迁移绑定、四项 Healthy 和
+唯一 loopback publisher 全部匹配时执行一次。它依次停止 MySQL、Redis，要求依赖
+故障时 readiness 为 503 而 liveness 保持 200；恢复各依赖并等待 readiness 200 后，
+再重启 App。最终比较完整数据库摘要与图片 manifest，验证四项服务、端口、Docker
+日志轮转、24 小时 Nginx 请求数量/4xx/5xx/时延，并以内存中的四项真实 Secret 扫描
+日志但不记录日志正文或 Secret 值。
+
+```bash
+sudo install -d -o root -g root -m 0755 \
+  /srv/pinkdoohub/gatea/records/resilience
+
+sudo python -m scripts.release.gatea_resilience --apply
+```
+
+任何阶段失败都先尝试恢复 MySQL、Redis、App 和 Nginx，再返回失败且不写成功 Record；
+不得为了得到 PASS 删除代表性数据、Record 或绕过日志匹配。
+
 运维工具仍故意不提供备份删除、来源卷恢复、TLS 切换或公开发布命令；这些步骤
 必须分别实现、测试和 Review，不能用未经审查的现场 Shell 绕过。
 

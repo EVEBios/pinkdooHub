@@ -131,9 +131,25 @@ Redis 当前只保存 refresh-token 会话，不保存 Product、Order、Invento
 并要求用户重新登录；这比恢复可能包含已撤销 Token 的旧 Redis 快照更安全。该策略
 不改变正常重启时现有 Redis named volume 的持久化行为。
 
-同机 `0600` 备份只用于首次流程验证，不是完整灾难恢复保管方案。Gate A 决策前仍需
-冻结保留期、删除审批、加密方式、独立故障域副本、恢复授权和定期演练频率；在这些
-项目完成前不得把“独立恢复验证通过”描述为主机/磁盘故障已覆盖。
+同机 `0600` 备份不能覆盖主机或系统盘故障。Gate A 采用以下冻结策略：
+
+- 每次迁移、配置/Secret 轮换、外部入口切换、体验版上传前，以及测试期内最长每
+  24 小时生成一次一致备份；每个批准 Backup 必须完成隔离 Restore 和客户端加密副本。
+- 来源主机和管理电脑至少保留最近 7 个成功 Backup，且任何体验版停用后至少保留
+  30 日；脱敏审计 Record 至少保留到 Gate A 决策结束后 90 日。两者取较长者。
+- 不自动删除。删除要求精确 Backup ID、存在更新且已恢复/异机验证的 Backup、项目
+  负责人当次批准和删除后清单；当前工具故意不提供 delete 命令。
+- Gate A 测试期 RPO 目标为 24 小时；计划变更的停写窗口 RPO 为 0；从已验证备份
+  恢复到健康应用的 RTO 目标为 30 分钟。每个 RC 前及活跃测试期每月执行一次恢复。
+- 恢复到来源卷、覆盖数据或删除 Schema 仍需单独破坏性操作授权；默认先恢复到隔离
+  project 比较，再决定前滚或来源恢复。
+
+客户端副本使用 AES-256-GCM，数据密钥使用 RSA-OAEP-SHA256 封装。管理电脑私钥位于
+`$HOME/.config/pinkdoohub/gatea-backup/private.pem`（`0600`），公钥同目录 `0644`；
+加密副本位于 `$HOME/Backups/pinkdoohub/gatea/`（目录 `0700`、copy `0400`、Record
+`0600`），均在仓库外。私钥不上传服务器、不进入副本目录、仓库、日志或 Record；
+年度轮换、疑似泄漏或管理电脑更换时生成新 key ID，旧私钥在其加密副本全部超过保留
+期前不得删除。
 
 ## 4. 微信网络与域名清单
 
@@ -167,6 +183,17 @@ Gate A 最低规则：
 - 异常响应不回显原始敏感输入；
 - 日志采集凭据不进入小程序；
 - 保存期限、访问角色、删除方式和事故导出范围在 Gate A 前冻结。
+
+当前 Gate A 使用 Docker `json-file`，每个长期容器固定 `max-size=10m`、`max-file=5`，
+即单容器最多约 50 MiB 的本机轮转窗口；不把大小上限误报为固定天数。活跃测试会话
+前后及事故时用精确 Compose project 查询 App/Nginx/MySQL/Redis 日志。成功的韧性演练
+Record 只保留 24 小时总行数、Nginx 请求数、4xx/5xx、median/p95/max request time、
+轮转配置和零敏感命中，不保存原始日志、IP、User-Agent、URI、身份或 Secret。
+
+普通事故导出只允许上述聚合或人工脱敏片段；原始日志只由服务器 Root 在事件处理中
+短期读取。测试负责人和事故联系人均为 Yijie Shen，具体响应、反馈、停用和数据清理
+规则见 [`gatea_test_operations.md`](gatea_test_operations.md)。Gate B 再评估集中采集、
+长期保留和主动告警，不把 Gate A 的单机观察描述为高可用监控。
 
 9.2.2 已将 `app/core/redis.py` 连接成功日志改为 `scheme/host/port/db` 安全目标摘要，不再输出 username、password 或 query，并有专门脱敏测试；CI 证据完成前 R-012 保持 `mitigating`。
 
