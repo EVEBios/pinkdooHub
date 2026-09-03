@@ -1,147 +1,136 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
 .product-audit-page {
-  min-height: 100vh;
-  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292532;
-  background: #f7f5fb;
-  box-sizing: border-box;
+  @include pd.page-shell;
+  @include pd.content-width;
 
   &__header {
-    margin: 0 -28px 24px;
-    padding: 46px 32px 30px;
-    color: #fff;
-    background: linear-gradient(145deg, #3f6178, #745777);
-  }
-
-  &__eyebrow,
-  &__title,
-  &__subtitle {
-    display: block;
-  }
-
-  &__eyebrow {
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 2px;
+    @include pd.header-band;
   }
 
   &__title {
-    margin-top: 9px;
-    font-size: 38px;
-    font-weight: 700;
+    @include pd.page-title;
   }
 
   &__subtitle {
-    margin-top: 12px;
-    font-size: 22px;
-    opacity: 0.85;
+    @include pd.page-subtitle;
   }
 
   &__back {
+    @include pd.secondary-button;
+
+    width: 100%;
     margin-top: 22px;
-    color: #fff;
-    background: #4d6079;
-    border: 0;
   }
 }
 
 .product-audit-list {
   &__summary {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    color: #756b7d;
-    font-size: 22px;
+    @include pd.list-summary;
   }
 
-  &__error,
-  &__end {
-    display: block;
-    padding: 22px 0;
-    color: #756b7d;
-    font-size: 22px;
-    text-align: center;
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
   }
 
   &__error {
-    color: #b42318;
+    @include pd.feedback-error;
+  }
+
+  &__end {
+    display: block;
+    padding: 24px 0 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    text-align: center;
   }
 }
 
 .product-audit-card {
-  margin-bottom: 17px;
-  padding: 23px;
-  background: #fff;
-  border: 1px solid #e2dce8;
-  border-radius: 18px;
+  @include pd.record-card;
+
+  margin-bottom: 14px;
 
   &__heading {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 14px;
   }
 
   &__action {
-    font-size: 27px;
-    font-weight: 650;
+    color: var(--pd-color-ink);
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
   }
 
   &__id {
     flex: 0 0 auto;
-    color: #796b82;
-    font-size: 20px;
+    padding: 5px 10px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-variant-numeric: tabular-nums;
+    background: var(--pd-color-primary-soft);
+    border-radius: 999px;
   }
 
   &__operator,
   &__time,
   &__ip,
   &__description {
+    @include pd.meta-text;
+
     display: block;
-    margin-top: 11px;
-    color: #675d6e;
-    font-size: 21px;
-    line-height: 1.5;
-    word-break: break-all;
+    margin-top: 9px;
   }
 
   &__description {
-    padding: 13px;
-    color: #4f4555;
-    background: #f7f4f9;
-    border-radius: 10px;
+    padding: 14px;
+    color: var(--pd-color-ink);
+    background: var(--pd-color-surface-muted);
+    border-radius: var(--pd-radius-small);
   }
 }
 
 .product-audit-state {
-  display: flex;
-  min-height: 260px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  text-align: center;
-
-  &__title,
-  &__description {
-    display: block;
-  }
+  @include pd.state-shell;
 
   &__title {
-    font-size: 30px;
-    font-weight: 600;
+    @include pd.state-title;
   }
 
   &__description {
-    margin-top: 13px;
-    color: #756b7d;
-    font-size: 23px;
-    line-height: 1.5;
+    @include pd.state-description;
   }
 
   &__action {
-    margin-top: 24px;
-    color: #fff;
-    background: #4d6079;
-    border: 0;
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}
+
+@media (width >= 768px) {
+  .product-audit-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+
+    &__summary,
+    &__error,
+    &__end,
+    > button {
+      grid-column: 1 / -1;
+    }
+
+    .product-audit-card {
+      margin-bottom: 0;
+    }
   }
 }

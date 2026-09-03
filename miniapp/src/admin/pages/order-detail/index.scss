@@ -1,74 +1,102 @@
-.admin-order-detail-page {
-  min-height: 100vh;
-  padding: 30px 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292532;
-  background: #f7f5fb;
-  box-sizing: border-box;
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
 
-  button {
-    margin-top: 22px;
-    border-radius: 999px;
+.admin-order-detail-page {
+  @include pd.page-shell(24px);
+  @include pd.content-width;
+
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 20px;
   }
 
   &__transition {
-    color: #fff;
-    background: #65487d;
-    border: 0;
+    @include pd.primary-button;
   }
 
   &__terminal {
     display: block;
     margin: 22px 0;
-    color: #756b7d;
-    font-size: 22px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.55;
     text-align: center;
   }
 }
 
+/* stylelint-disable-next-line selector-class-pattern -- 提高直接子按钮的语义色优先级。 */
+.admin-order-detail-page > .admin-order-detail-page__transition {
+  @include pd.primary-button;
+}
+
 .admin-order-detail-heading {
-  padding: 29px;
+  position: relative;
+  overflow: hidden;
+  padding: 30px 28px;
   color: #fff;
-  text-align: center;
-  background: linear-gradient(145deg, #563f78, #8f5276);
-  border-radius: 22px;
+  background: var(--pd-gradient-stock);
+  border-radius: var(--pd-radius-large);
+  box-shadow: var(--pd-shadow-medium);
+
+  &::after {
+    position: absolute;
+    right: -62px;
+    bottom: -108px;
+    width: 230px;
+    height: 230px;
+    background: rgb(255 255 255 / 8%);
+    border-radius: 50%;
+    content: '';
+  }
 
   text {
+    position: relative;
+    z-index: 1;
     display: block;
   }
 
-  &__eyebrow {
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 2px;
+  &__title {
+    max-width: 16ch;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.3;
   }
 
   &__number {
-    margin-top: 13px;
-    font-size: 23px;
-    font-weight: 600;
+    max-width: 100%;
+    margin-top: 10px;
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
   }
 
   &__status {
-    margin-top: 15px;
-    font-size: 25px;
+    margin-top: 16px;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
   }
 
   &__total {
-    margin-top: 12px;
-    font-size: 41px;
-    font-weight: 700;
+    margin-top: 4px;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-display-size);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    line-height: 1.2;
   }
 }
 
 .admin-order-detail-user,
 .admin-order-detail-meta {
-  margin-top: 19px;
-  padding: 20px;
-  color: #675d6e;
-  font-size: 22px;
-  line-height: 1.7;
-  background: #fff;
-  border-radius: 17px;
+  @include pd.section-panel(20px);
+  @include pd.meta-text;
+
+  margin-top: 20px;
 
   text {
     display: block;
@@ -76,95 +104,121 @@
 }
 
 .admin-order-detail-list {
-  margin-top: 19px;
+  margin-top: 20px;
 }
 
 .admin-order-detail-item {
-  margin-bottom: 15px;
-  padding: 22px;
-  background: #fff;
-  border: 1px solid #e6dfed;
-  border-radius: 18px;
+  @include pd.record-card;
+
+  margin-bottom: 14px;
 
   &__name,
-  &__configuration { display: block; }
+  &__configuration {
+    display: block;
+  }
 
   &__name {
-    font-size: 26px;
-    font-weight: 600;
+    max-width: 26ch;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
   }
 
   &__configuration {
-    margin-top: 9px;
-    color: #756b7d;
-    font-size: 21px;
+    margin-top: 8px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.5;
   }
 
   &__summary {
     display: flex;
     justify-content: space-between;
+    gap: 14px;
     margin-top: 15px;
-    color: #675d6e;
-    font-size: 22px;
+    padding-top: 14px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+    border-top: 1px solid var(--pd-color-line);
   }
 }
 
 .admin-transition-feedback {
-  display: block;
-  margin-top: 19px;
-  padding: 19px;
-  font-size: 22px;
-  line-height: 1.5;
-  border-radius: 15px;
-
   text {
     display: block;
   }
 
   &--failed,
   &--unknown {
-    color: #912018;
-    background: #fff0ee;
+    @include pd.feedback-error;
   }
 
   &--success {
-    color: #17623a;
-    background: #edf9f1;
+    @include pd.feedback-success;
   }
 }
 
 .admin-detail-state {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  color: #292532;
-  text-align: center;
-  background: #f7f5fb;
-  box-sizing: border-box;
+  @include pd.page-shell;
+  @include pd.state-shell;
 
-  &__title,
-  &__description { display: block; }
+  min-height: 100vh;
 
   &__title {
-    font-size: 30px;
-    font-weight: 600;
+    @include pd.state-title;
   }
 
   &__description {
-    margin-top: 13px;
-    color: #756b7d;
-    font-size: 23px;
-    line-height: 1.5;
+    @include pd.state-description;
+  }
+
+  button,
+  &__action {
+    @include pd.secondary-button;
+
+    width: min(100%, 360px);
+    margin-top: 18px;
   }
 
   &__action {
-    margin-top: 24px;
-    color: #fff;
-    background: #65487d;
-    border: 0;
-    border-radius: 999px;
+    @include pd.primary-button;
+  }
+
+  & &__action {
+    @include pd.primary-button;
+  }
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-order-detail-user,
+  .admin-order-detail-meta {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-order-detail-page > button {
+    width: min(100%, 420px);
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  /* stylelint-disable-next-line selector-class-pattern -- 与语义主按钮选择器保持同等优先级。 */
+  .admin-order-detail-page > .admin-order-detail-page__transition {
+    width: min(100%, 420px);
+    margin: 20px auto 0;
+  }
+
+  .admin-order-detail-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+
+    .admin-order-detail-item {
+      margin-bottom: 0;
+    }
   }
 }

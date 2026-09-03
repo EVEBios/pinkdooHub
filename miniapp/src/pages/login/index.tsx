@@ -77,7 +77,7 @@ export default function LoginPage() {
             </Button>
           </View>
         ) : (
-        <Form className='login-form' onSubmit={() => void submitLogin()}>
+        <Form className='login-form'>
           <Text className='login-form__label'>用户名</Text>
           <Input
             alwaysEmbed
@@ -104,8 +104,8 @@ export default function LoginPage() {
           <Button
             className='login-form__submit'
             disabled={submitting || status === 'initializing'}
-            formType='submit'
             type='primary'
+            onClick={() => void submitLogin()}
           >
             {status === 'initializing' ? '正在恢复会话…' : submitting ? '登录中…' : '登录'}
           </Button>

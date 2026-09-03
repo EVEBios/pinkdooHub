@@ -48,7 +48,10 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
     return (
       <DetailState title='订单详情加载失败' description={detail.errorMessage}>
         <Button className='order-detail-state__action' onClick={retry}>重新加载</Button>
-        <Button onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}>返回我的订单</Button>
+        <Button
+          className='order-detail-state__back'
+          onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}
+        >返回我的订单</Button>
       </DetailState>
     )
   }
@@ -113,7 +116,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
 function OrderHeading({ order }: { readonly order: OrderDetail }) {
   return (
     <View className='order-detail-heading'>
-      <Text className='order-detail-heading__eyebrow'>订单详情</Text>
+      <Text className='order-detail-heading__title'>订单详情</Text>
       <Text className='order-detail-heading__number'>{order.order_no}</Text>
       <Text className='order-detail-heading__status'>{order.status.label}</Text>
       <Text className='order-detail-heading__total'>¥{formatPrice(order.total_amount)}</Text>

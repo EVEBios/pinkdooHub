@@ -51,6 +51,10 @@ export default function CartPage() {
 
   return (
     <View className='cart-page'>
+      <View className='cart-page__header'>
+        <Text className='cart-page__title'>购物清单</Text>
+        <Text className='cart-page__subtitle'>{cart.items.length} 项待确认，数量与价格将在订单创建时重新校验。</Text>
+      </View>
       <View className='cart-page__notice'>
         <Text>购物车价格仅供预览；创建订单时后端会重新校验商品、配置、库存和金额。</Text>
       </View>

@@ -121,6 +121,9 @@ describe('ProductListPage', () => {
   it('渲染搜索和类型筛选并传递用户操作', async () => {
     await testUtils.mount(ProductListPage)
 
+    const header = testUtils.queries.querySelector('.product-page__header')
+    expect(header?.textContent).toContain('pinkdooHub')
+    expect(header?.textContent).not.toContain('拼豆店')
     expect(testUtils.queries.querySelector('.product-filters__search')).not.toBeNull()
     const buttons = testUtils.queries.querySelectorAll('.product-filters__type')
     expect(buttons).toHaveLength(3)
@@ -128,7 +131,7 @@ describe('ProductListPage', () => {
     expect(mockSetProductType).toHaveBeenCalledWith('kit')
   })
 
-  it('只为 ADMIN+ 展示三类管理入口', async () => {
+  it('只为 ADMIN+ 展示四类管理入口', async () => {
     const baseUser = {
       id: 2,
       username: 'dev_admin',
@@ -145,6 +148,8 @@ describe('ProductListPage', () => {
     await testUtils.mount(ProductListPage)
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理订单')
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理用户')
+    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('店铺管理')
+    expect(testUtils.queries.querySelectorAll('.product-page__account-group')).toHaveLength(1)
     testUtils.unmout()
 
     testUtils = new ReactTestUtil()
@@ -154,7 +159,12 @@ describe('ProductListPage', () => {
     expect(testUtils.queries.querySelector('.product-page__account-user')?.textContent)
       .toContain('你好，开发管理员')
     expect(testUtils.queries.querySelector('.product-page__account-actions')).not.toBeNull()
-    expect(buttons).toHaveLength(6)
+    expect(testUtils.queries.querySelectorAll('.product-page__account-group')).toHaveLength(2)
+    expect(Array.from(testUtils.queries.querySelectorAll('.product-page__account-section'))
+      .map((section) => section.textContent)).toEqual(['我的', '店铺管理'])
+    expect(Array.from(testUtils.queries.querySelectorAll('.product-page__account-action-meta'))
+      .map((meta) => meta.textContent)).toEqual(['查看', '管理', '管理', '管理', '管理'])
+    expect(buttons).toHaveLength(5)
     const inventoryButton = buttons.find((button) => button.textContent.includes('库存流水'))
     const adminButton = buttons.find((button) => button.textContent.includes('管理订单'))
     const productButton = buttons.find((button) => button.textContent.includes('管理商品'))
@@ -171,5 +181,7 @@ describe('ProductListPage', () => {
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/orders/index' })
     testUtils.fireEvent.click(userButton!)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/users/index' })
+    testUtils.fireEvent.click(testUtils.queries.querySelector('.product-page__account-logout')!)
+    expect(mockAuth.logout).toHaveBeenCalledTimes(1)
   })
 })

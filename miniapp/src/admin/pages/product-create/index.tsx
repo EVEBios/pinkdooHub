@@ -93,7 +93,6 @@ export function AuthenticatedAdminProductCreate({ productType }: {
   return (
     <View className='admin-product-form-page'>
       <View className='admin-product-form-page__header'>
-        <Text className='admin-product-form-page__eyebrow'>ADMIN PRODUCT · CREATE</Text>
         <Text className='admin-product-form-page__title'>{title}</Text>
         <Text className='admin-product-form-page__subtitle'>创建后固定为草稿，可继续配置后续能力</Text>
       </View>

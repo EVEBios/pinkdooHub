@@ -79,3 +79,10 @@ docs/02_database/er_diagram.png
 
 # ==================== 前端 Spike 实验 ====================
 spikes/
+
+# ==================== 本地 UI 设计探索 ====================
+# 候选稿、截图与设计 brief 仅用于本地评审；定稿后再按需迁入正式工程。
+.ui-design-explorations/
+
+# Impeccable 的本地验收截图与差异图；方向契约和定稿设计系统仍进入版本控制。
+.impeccable/review/

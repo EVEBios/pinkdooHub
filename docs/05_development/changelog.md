@@ -4,6 +4,17 @@
 
 ---
 
+## Frontend UI Refresh — Ribbon Ledger（完成，2026-09-03）
+
+- 完成小程序全部 20 个注册页面的 “Ribbon Ledger / 丝带账簿” 视觉重构，覆盖用户端登录、注册、首页、商品、购物车和订单流程，以及 ADMIN+ 商品、图片、库存、订单、用户与审计流程；保留现有功能、权限、API 契约和页面路由。
+- 新增共享 `theme.scss` 设计 Token 与 `_patterns.scss` 页面模式，统一暖纸色画布、低跨度莓果渐变、有限透明材质、排版层级、间距、圆角、阴影、状态色和 44px H5 触控目标；移除试验性的卡通图案与冗余“拼豆店”文案，并优化长中文标题、订单号和长标识符的换行行为。
+- 修正按钮和输入框的垂直对齐、字号与尺寸，移除 `size='mini'`，精确处理 Taro H5 的 `disabled='true'` 输出，并为依赖 `formType` 的主要操作补充显式点击处理；同时修复商品加入购物车的伪禁用状态、订单编号截断和管理员账号不可用操作的语义色。
+- 将首页登录后入口从横向滚动按钮托盘收敛为“我的 / 店铺管理”分组账簿列表，并将两个分组拆为带完整四角圆角和克制间距的独立模块：保留订单、库存、商品、订单、用户管理与退出功能，使用整行触控目标、右侧轻量提示和独立弱化退出动作，减少窄屏拥挤与横向滚动。
+- 新增 `PRODUCT.md`、`DESIGN.md`、`.impeccable/design.json`、页面设计说明与 `design-qa.md`，并更新根 README、小程序 README 和前端架构文档，说明设计目标、组件与 Token 用途、实现边界、Taro H5 注意事项和验证基线。
+- 完成全部 20 个注册路由的 390×844 验证，以及 10 个代表性用户端/ADMIN+ 页面在 768×900 下的验证，共 30 次视口检查；最终 Impeccable Review 结论为 `ship`。静态检测器结果为 `[]`，但因本机缺少可选解析依赖处于 degraded 状态，因此只作为辅助证据，不替代浏览器与自动化检查。
+- 最终验证通过：TypeScript、ESLint、Stylelint、OpenAPI 生成类型漂移检查、17 项 Node CI policy、61 个 Jest suite/392 项测试、完整后端 `1693 passed, 9 skipped`、微信生产构建与检查，以及 H5 生产构建。微信产物 97 个文件、总计 696,102 bytes，manifest SHA-256 为 `8bcce4cc0754e5a14ff3245a9c62ee2600874bf131fd862758481622c7fb3a0b`，按现有发布门禁保持 `release_eligible=false`；H5 仍有现存 Webpack 体积建议警告（App JS 284 KiB、入口 374 KiB）。
+- 本次没有修改后端业务行为、公共 API、数据库 Schema/Aerich 迁移、Python/npm 依赖或应用版本，也未提交、推送、上传、提审或发布。
+
 ## Release Phase 9.5 — 公开身份与安全（仓库实现完成，2026-09-02）
 
 完成不依赖备案、真实微信后台或付费云资源的 Phase 9.5 范围。后端新增微信 `code2Session` 适配、外部身份显式绑定/冲突/解绑、微信首次登录普通用户创建、账号注销匿名化；数据库只保存独立 Pepper HMAC，不保存原始 OpenID/UnionID/session_key。新增 MySQL 迁移 3，让 User 密码/手机号可空并增加 `auth_version/deleted_at` 与外部身份唯一索引。

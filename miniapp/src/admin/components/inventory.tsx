@@ -67,7 +67,6 @@ export function InventoryFilterPanel({
             <Button
               key={item.value}
               className={`inventory-filters__choice${draft.transactionType === item.value ? ' inventory-filters__choice--active' : ''}`}
-              size='mini'
               onClick={() => onSelectTransactionType(item.value)}
             >{item.label}</Button>
           ))}
@@ -78,7 +77,6 @@ export function InventoryFilterPanel({
             <Button
               key={item.value}
               className={`inventory-filters__choice${draft.sourceType === item.value ? ' inventory-filters__choice--active' : ''}`}
-              size='mini'
               onClick={() => onSelectSourceType(item.value)}
             >{item.label}</Button>
           ))}
@@ -117,7 +115,7 @@ export function InventoryFilterPanel({
           <Text className='inventory-filters__pending'>输入条件尚未应用，点击「查询」后生效</Text>
         )}
         <View className='inventory-filters__actions'>
-          <Button formType='submit' type='primary'>查询</Button>
+          <Button className='inventory-filters__submit' onClick={onSubmit}>查询</Button>
           <Button className='inventory-filters__reset' onClick={onReset}>清空</Button>
         </View>
         <Text className='inventory-filters__hint'>日期按 UTC 解释；结束日期会转换为次日零点的排他上界。</Text>
@@ -155,7 +153,7 @@ export function InventoryTransactionList({ loadNextPage, retry, state }: {
       ))}
       {state.errorMessage && <Text className='inventory-list__error'>{state.errorMessage}</Text>}
       {state.page < state.pages ? (
-        <Button disabled={state.loadingMore} onClick={loadNextPage}>
+        <Button className='inventory-list__load-more' disabled={state.loadingMore} onClick={loadNextPage}>
           {state.loadingMore ? '正在加载…' : state.errorMessage ? '重试加载更多' : '加载更多'}
         </Button>
       ) : <Text className='inventory-list__end'>已经到底了</Text>}
@@ -186,7 +184,6 @@ export function InventoryTransactionCard({ transaction }: {
       {sourceOrderId && transaction.source_order_no && (
         <Button
           className='inventory-card__order'
-          size='mini'
           onClick={() => void Taro.navigateTo({ url: buildAdminOrderDetailUrl(sourceOrderId) })}
         >订单 {transaction.source_order_no}</Button>
       )}

@@ -82,7 +82,6 @@ export function AuthenticatedAdminUsers({ currentRole, currentUserId }: {
   return (
     <View className='admin-users-page'>
       <View className='admin-users-page__header'>
-        <Text className='admin-users-page__eyebrow'>ADMIN USERS</Text>
         <Text className='admin-users-page__title'>管理用户</Text>
         <Text className='admin-users-page__subtitle'>仅展示安全摘要；支持角色、状态筛选与幂等禁用</Text>
       </View>
@@ -94,7 +93,6 @@ export function AuthenticatedAdminUsers({ currentRole, currentUserId }: {
             <Button
               key={filter.value}
               className={`admin-user-filters__choice${list.filters.status === filter.value ? ' admin-user-filters__active' : ''}`}
-              size='mini'
               onClick={() => list.applyFilters({ ...list.filters, status: filter.value })}
             >{filter.label}</Button>
           ))}
@@ -105,7 +103,6 @@ export function AuthenticatedAdminUsers({ currentRole, currentUserId }: {
             <Button
               key={filter.value}
               className={`admin-user-filters__choice${list.filters.role === filter.value ? ' admin-user-filters__active' : ''}`}
-              size='mini'
               onClick={() => list.applyFilters({ ...list.filters, role: filter.value })}
             >{filter.label}</Button>
           ))}
@@ -175,7 +172,7 @@ function UserCard({ currentRole, currentUserId, mutationState, onDisable, user }
       <Text className='admin-user-card__time'>创建时间：{user.created_at}</Text>
       <Text className='admin-user-card__time'>最近登录：{user.last_login_at ?? '从未登录'}</Text>
       <Button
-        className='admin-user-card__disable'
+        className={`admin-user-card__disable${allowed ? '' : ' admin-user-card__disable--unavailable'}`}
         disabled={!allowed || mutationState.status === 'submitting'}
         onClick={onDisable}
       >{submittingThis ? '正在禁用…' : getDisableLabel(user, currentUserId, currentRole)}</Button>

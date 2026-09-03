@@ -76,6 +76,10 @@ export default function OrderConfirmPage() {
 
   return (
     <View className='order-confirm-page'>
+      <View className='order-confirm-page__header'>
+        <Text className='order-confirm-page__title'>确认订单</Text>
+        <Text className='order-confirm-page__subtitle'>{cart.items.length} 项商品，提交前请核对配置、数量与备注。</Text>
+      </View>
       <View className='order-confirm-page__notice'>
         <Text>这里展示的是本地预览。商品、配置、库存和金额会在创建订单时由后端重新校验并生成快照。</Text>
       </View>

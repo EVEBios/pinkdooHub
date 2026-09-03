@@ -1,145 +1,129 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
 .admin-orders-page {
-  min-height: 100vh;
-  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292532;
-  background: #f7f5fb;
-  box-sizing: border-box;
+  @include pd.page-shell;
+  @include pd.content-width;
 
   &__header {
-    margin: 0 -28px;
-    padding: 46px 32px 30px;
-    color: #fff;
-    background: linear-gradient(145deg, #563f78, #8f5276);
-  }
-
-  &__eyebrow,
-  &__title,
-  &__subtitle,
-  &__active-filter { display: block; }
-
-  &__eyebrow {
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 2px;
+    @include pd.header-band;
   }
 
   &__title {
-    margin-top: 9px;
-    font-size: 40px;
-    font-weight: 700;
+    @include pd.page-title;
   }
 
   &__subtitle {
-    margin-top: 12px;
-    font-size: 22px;
-    opacity: 0.85;
+    @include pd.page-subtitle;
   }
 
   &__active-filter {
+    display: block;
     margin-top: 20px;
-    color: #6b5c75;
-    font-size: 21px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
     text-align: center;
   }
 }
 
 .admin-order-filters {
-  margin: 24px 0;
-  padding: 22px;
-  background: #fff;
-  border-radius: 18px;
+  @include pd.section-panel;
 
-  &__statuses,
-  &__dates,
-  &__actions {
-    display: flex;
-    gap: 12px;
-  }
+  margin: 24px 0;
 
   &__statuses {
+    display: flex;
     overflow-x: auto;
-    margin-bottom: 14px;
+    gap: 9px;
+    margin-bottom: 16px;
+    padding-bottom: 2px;
   }
 
   &__status {
-    flex: 0 0 auto;
-    margin: 0;
+    @include pd.chip;
   }
 
   &__status--active {
-    color: #fff;
-    border-color: #65487d;
-    background: #65487d;
-  }
-
-  &__dates {
-    flex-direction: column;
+    @include pd.chip-active;
   }
 
   &__input {
+    @include pd.field;
+
     margin-top: 12px;
-    padding: 16px;
-    background: #f7f5fa;
-    border-radius: 12px;
   }
 
-  &__error,
-  &__pending,
-  &__hint {
-    display: block;
-    margin-top: 14px;
-    font-size: 21px;
+  &__dates {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    margin-top: 12px;
   }
 
   &__error {
-    color: #b42318;
+    @include pd.feedback-error;
   }
 
   &__pending {
-    color: #8a7555;
+    @include pd.feedback-warning;
   }
 
   &__hint {
-    color: #756b7d;
-    line-height: 1.5;
+    display: block;
+    margin-top: 14px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
   }
 
   &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
     margin-top: 18px;
   }
 
   &__actions button {
-    flex: 1;
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__actions button:first-child {
+    @include pd.primary-button;
   }
 }
 
 .admin-orders-content {
   &__summary {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    color: #756b7d;
-    font-size: 22px;
+    @include pd.list-summary;
   }
 
-  &__error,
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
   &__end {
     display: block;
-    padding: 22px 0;
-    color: #756b7d;
-    font-size: 22px;
+    padding: 24px 0 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
     text-align: center;
   }
-
-  &__error { color: #b42318; }
 }
 
 .admin-order-card {
-  margin-bottom: 17px;
-  padding: 23px;
-  background: #fff;
-  border: 1px solid #e6dfed;
-  border-radius: 18px;
+  @include pd.record-card;
+  @include pd.tappable-card;
+
+  margin-bottom: 14px;
 
   &__heading,
   &__summary {
@@ -150,71 +134,108 @@
   }
 
   &__number {
-    overflow: hidden;
-    font-size: 22px;
-    font-weight: 600;
-    text-overflow: ellipsis;
+    min-width: 0;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-label);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
   }
 
   &__status {
     flex: 0 0 auto;
-    padding: 5px 11px;
-    color: #65487d;
-    font-size: 20px;
-    background: #f1eaf7;
+    padding: 6px 11px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    background: var(--pd-color-primary-soft);
     border-radius: 999px;
+  }
+
+  &__status--paid,
+  &__status--completed {
+    color: var(--pd-color-success);
+    background: var(--pd-color-success-soft);
+  }
+
+  &__status--cancelled {
+    color: var(--pd-color-ink-faint);
+    background: var(--pd-color-surface-muted);
   }
 
   &__user,
   &__time {
+    @include pd.meta-text;
+
     display: block;
-    margin-top: 13px;
-    color: #756b7d;
-    font-size: 21px;
+    margin-top: 11px;
   }
 
   &__summary {
-    margin-top: 17px;
-    color: #675d6e;
-    font-size: 22px;
+    margin-top: 16px;
+    padding-top: 15px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    border-top: 1px solid var(--pd-color-line);
   }
 
   &__total {
-    color: #71406a;
-    font-size: 29px;
-    font-weight: 700;
+    flex: 0 0 auto;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
   }
 }
 
 .admin-orders-state {
-  display: flex;
-  min-height: 260px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  text-align: center;
-
-  &__title,
-  &__description { display: block; }
+  @include pd.state-shell;
 
   &__title {
-    font-size: 30px;
-    font-weight: 600;
+    @include pd.state-title;
   }
 
   &__description {
-    margin-top: 13px;
-    color: #756b7d;
-    font-size: 23px;
-    line-height: 1.5;
+    @include pd.state-description;
   }
 
   &__action {
-    margin-top: 24px;
-    color: #fff;
-    background: #65487d;
-    border: 0;
-    border-radius: 999px;
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-order-filters {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-order-filters {
+    &__dates {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .admin-orders-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+
+    &__summary,
+    &__error,
+    &__end,
+    > button {
+      grid-column: 1 / -1;
+    }
+
+    .admin-order-card {
+      margin-bottom: 0;
+    }
   }
 }

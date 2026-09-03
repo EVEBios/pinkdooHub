@@ -16,6 +16,7 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - Order 的 Experience、Kit 与混合下单、不可变 Product/Option/Kit 价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
 - Pending 创建时的稳定多 Kit 行锁、库存扣减、不可变 Order 来源流水和全写集原子回滚。
 - Order 状态与审计原子事务、订单号冲突重试、分页组合筛选、用户资源隐藏和完整 HTTP 错误/边界矩阵。
+- 微信小程序客户与 ADMIN+ 共 20 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory 与 User 管理流程。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
 
 当前 Phase 9.5 本地基线为 **1693 passed、9 skipped**（普通 SQLite 套件），另有显式启用后 **9 passed** 的真实 MySQL 8.0.46 发布门槛；前端为 **61 套件、392 项 Jest**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
@@ -202,6 +203,9 @@ MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化�
 | 数据库设计 | [Database Design](docs/02_database/database_design.md) |
 | 分层与目录 | [Architecture](docs/04_architecture/architecture.md) |
 | 前端架构（Draft） | [Frontend Architecture](docs/08_frontend/frontend_architecture.md) |
+| 稳定产品与视觉边界 | [Product Context](PRODUCT.md) |
+| 已实现设计系统 | [Design System](DESIGN.md) |
+| UI 视觉与交互验收 | [Design QA](design-qa.md) |
 | 前端多端/API/测试/学习策略 | [Frontend Documents](docs/08_frontend/) |
 | Phase 9 微信发布规划 | [WeChat Release Plan](docs/08_frontend/phase9_wechat_release_plan.md) |
 | Phase 9 发布审计与清单 | [Release Audit & Checklists](docs/09_release/README.md) |

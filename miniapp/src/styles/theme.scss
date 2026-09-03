@@ -1,0 +1,120 @@
+/* stylelint-disable selector-class-pattern -- Taro H5 的运行时页面根类名由框架固定。 */
+page,
+.taro_page {
+  --pd-color-canvas: #fff8fa;
+  --pd-color-canvas-deep: #f8edf1;
+  --pd-color-surface: #fffdfd;
+  --pd-color-surface-glass: rgb(255 253 253 / 84%);
+  --pd-color-surface-muted: #f8eef2;
+  --pd-color-ink: #2d2429;
+  --pd-color-ink-soft: #67575f;
+  --pd-color-ink-faint: #806b74;
+  --pd-color-primary: #b7355d;
+  --pd-color-primary-strong: #8f2346;
+  --pd-color-primary-soft: #fae7ed;
+  --pd-color-line: #ead8df;
+  --pd-color-line-strong: #d9b9c5;
+  --pd-color-success: #196244;
+  --pd-color-success-soft: #e8f4ed;
+  --pd-color-danger: #a92f38;
+  --pd-color-danger-soft: #fbeaec;
+  --pd-color-warning: #76531c;
+  --pd-color-warning-soft: #f8f0dd;
+  --pd-gradient-canvas: linear-gradient(160deg, #fff8fa 0%, #fdf5f7 48%, #f8edf1 100%);
+  --pd-gradient-primary: linear-gradient(135deg, #a92d55 0%, #b4345a 54%, #ba3c61 100%);
+  --pd-gradient-soft: linear-gradient(150deg, #fde9ef 0%, #faeff2 58%, #fff8fa 100%);
+  --pd-gradient-stock: linear-gradient(145deg, #8e2448 0%, #a62f54 52%, #b83f61 100%);
+  --pd-shadow-small: 0 8px 22px rgb(83 31 49 / 8%);
+  --pd-shadow-medium: 0 18px 48px rgb(83 31 49 / 12%);
+  --pd-radius-small: 14px;
+  --pd-radius-medium: 22px;
+  --pd-radius-large: 30px;
+  --pd-control-height: 88px;
+  --pd-control-min-inline: 120px;
+  --pd-font-caption: 22px;
+  --pd-font-label: 23px;
+  --pd-font-body-size: 25px;
+  --pd-font-input: 27px;
+  --pd-font-title: 30px;
+  --pd-font-heading: 42px;
+  --pd-font-display-size: 48px;
+  --pd-font-price: 36px;
+  --pd-font-button: 27px;
+  --pd-font-button-compact: 25px;
+  --pd-font-body: -apple-system, "BlinkMacSystemFont", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+  --pd-font-display: -apple-system, "BlinkMacSystemFont", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+
+  min-height: 100%;
+  color: var(--pd-color-ink);
+  font-family: var(--pd-font-body);
+  text-rendering: optimizelegibility;
+  background: var(--pd-gradient-canvas);
+}
+/* stylelint-enable selector-class-pattern */
+
+/* H5 使用固定 CSS px，避免 Taro 的最小根字号把 88rpx 触控高度放大成约 71px。 */
+/* stylelint-disable-next-line selector-class-pattern */
+.taro_page {
+  --pd-control-height: 44PX;
+  --pd-control-min-inline: 60PX;
+  --pd-font-caption: 12PX;
+  --pd-font-label: 13PX;
+  --pd-font-body-size: 14PX;
+  --pd-font-input: 14PX;
+  --pd-font-title: 18PX;
+  --pd-font-heading: 24PX;
+  --pd-font-display-size: 28PX;
+  --pd-font-price: 21PX;
+  --pd-font-button: 14PX;
+  --pd-font-button-compact: 13PX;
+}
+
+/* H5 文本选择沿用品牌色；小程序端不支持时会安全忽略。 */
+::selection {
+  color: var(--pd-color-ink);
+  background: var(--pd-color-primary-soft);
+}
+
+button,
+input,
+textarea {
+  color: inherit;
+  font-family: inherit;
+}
+
+input,
+textarea {
+  caret-color: var(--pd-color-primary);
+}
+
+button {
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease,
+    box-shadow 160ms ease, transform 160ms ease;
+}
+
+button::after {
+  border: 0;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgb(183 53 93 / 28%);
+  outline-offset: 3px;
+}
+
+button:active:not([disabled='true']) {
+  transform: translateY(1px);
+}
+
+button[disabled='true'] {
+  opacity: 0.62;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+}

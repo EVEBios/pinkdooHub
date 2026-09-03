@@ -125,7 +125,6 @@ function AdminProductEditFormView({ product, productType }: {
   return (
     <View className='admin-product-form-page'>
       <View className='admin-product-form-page__header'>
-        <Text className='admin-product-form-page__eyebrow'>ADMIN PRODUCT · EDIT</Text>
         <Text className='admin-product-form-page__title'>编辑基本信息</Text>
         <Text className='admin-product-form-page__subtitle'>{product.product_type.label} #{product.id}</Text>
       </View>

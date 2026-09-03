@@ -1,80 +1,93 @@
-page {
-  min-height: 100%;
-  background: #fff8fb;
-}
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
 
 .cart-page {
-  box-sizing: border-box;
-  min-height: 100vh;
-  padding: 28px 24px 52px;
-  color: #3f3138;
+  @include pd.page-shell(28px);
+  @include pd.content-width;
 
   &--state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+    @include pd.state-shell;
+
+    min-height: 100vh;
   }
 
-  &__notice,
+  &__header {
+    padding: 12px 4px 24px;
+  }
+
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__title {
+    @include pd.page-title;
+  }
+
+  &__subtitle {
+    @include pd.page-subtitle;
+  }
+
+  &__notice {
+    max-width: 36em;
+    padding: 17px 19px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.58;
+    background: var(--pd-color-surface-muted);
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-small);
+  }
+
   &__next-step {
-    padding: 22px 24px;
-    color: #765b68;
-    background: #fff;
-    border: 2px solid #efd3df;
+    position: sticky;
+    z-index: 3;
+    bottom: 12px;
+    padding: 18px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+    background: var(--pd-color-surface);
+    border: 1px solid var(--pd-color-line);
     border-radius: 18px;
-    font-size: 24px;
-    line-height: 1.6;
+    box-shadow: var(--pd-shadow-medium);
   }
 
   &__checkout {
-    margin-top: 20px;
-    border-radius: 16px;
-    color: #fff;
-    background: #c5416c;
-    font-weight: 700;
+    @include pd.primary-button(14px);
+
+    width: 100%;
+    margin-top: 15px;
   }
 }
 
 .cart-state {
   &__title {
-    display: block;
-    margin-bottom: 14px;
-    font-size: 34px;
-    font-weight: 700;
+    @include pd.state-title;
   }
 
   &__description {
-    display: block;
-    max-width: 560px;
-    color: #7d6d75;
-    font-size: 26px;
-    line-height: 1.6;
+    @include pd.state-description;
   }
 
   &__action {
+    @include pd.primary-button(18px);
+
+    width: min(100%, 420px);
     min-width: 240px;
-    margin-top: 28px;
-    border-radius: 18px;
-    color: #fff;
-    background: #c85f8d;
+    margin-top: 26px;
   }
 }
 
 .cart-list {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  margin: 24px 0;
+  gap: 16px;
+  margin: 20px 0;
 }
 
 .cart-item {
-  padding: 26px;
-  background: #fff;
-  border: 2px solid #f0dbe4;
-  border-radius: 22px;
-  box-shadow: 0 8px 28px rgb(153 86 115 / 8%);
+  @include pd.record-card(23px);
 
   &__type,
   &__name,
@@ -84,63 +97,85 @@ page {
   }
 
   &__type {
-    color: #a34f74;
-    font-size: 22px;
+    width: fit-content;
+    padding: 4px 10px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
     font-weight: 700;
+    background: var(--pd-color-primary-soft);
+    border-radius: 999px;
   }
 
   &__name {
-    margin-top: 8px;
-    font-size: 32px;
+    margin-top: 11px;
+    font-size: var(--pd-font-title);
     font-weight: 700;
+    line-height: 1.38;
+    overflow-wrap: break-word;
   }
 
   &__configuration {
-    margin-top: 10px;
-    color: #715f68;
-    font-size: 24px;
+    margin-top: 9px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.5;
   }
 
   &__price {
-    margin-top: 14px;
-    color: #c24f80;
-    font-size: 27px;
-    font-weight: 700;
+    margin-top: 13px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
   }
 
   &__controls {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto auto auto minmax(0, 1fr);
     align-items: center;
-    gap: 12px;
-    margin-top: 24px;
+    gap: 10px;
+    margin-top: 20px;
   }
 
-  &__quantity-button,
-  &__remove {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 64px;
-    height: 64px;
-    margin: 0;
-    padding: 0 18px;
-    color: #8f4767;
-    background: #fff;
-    border: 2px solid #e8c7d5;
-    border-radius: 14px;
-    font-size: 26px;
-    line-height: 1;
+  &__quantity-button {
+    @include pd.quiet-button(13px);
+
+    min-width: var(--pd-control-height);
+    padding: 0 12px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-title);
   }
 
   &__quantity {
-    min-width: 44px;
+    min-width: 40px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
     text-align: center;
-    font-size: 28px;
-    font-weight: 700;
   }
 
   &__remove {
-    margin-left: auto;
-    color: #8b6878;
+    @include pd.danger-button(13px);
+
+    width: auto;
+    min-width: 0;
+    justify-self: end;
+  }
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .cart-page {
+    &__next-step {
+      background: rgb(255 253 253 / 84%);
+      backdrop-filter: blur(20px) saturate(120%);
+    }
+  }
+}
+
+@media (width >= 768px) {
+  .cart-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

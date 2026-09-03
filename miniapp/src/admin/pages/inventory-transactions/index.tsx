@@ -101,9 +101,8 @@ export function AuthenticatedInventoryTransactions() {
   return (
     <View className='inventory-transactions-page'>
       <View className='inventory-transactions-page__header'>
-        <Text className='inventory-transactions-page__eyebrow'>INVENTORY LEDGER</Text>
         <Text className='inventory-transactions-page__title'>库存流水</Text>
-        <Text className='inventory-transactions-page__subtitle'>查询管理员调整、订单扣减、取消恢复与期初余额</Text>
+        <Text className='inventory-transactions-page__subtitle'>统一追溯调整、扣减、取消恢复和期初余额。</Text>
       </View>
       <InventoryFilterPanel
         allowProductId

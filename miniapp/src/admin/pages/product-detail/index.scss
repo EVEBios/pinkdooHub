@@ -1,140 +1,163 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
 .admin-product-detail-page {
-  min-height: 100vh;
-  padding: 30px 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292532;
-  background: #f7f5fb;
-  box-sizing: border-box;
+  @include pd.page-shell(24px);
+  @include pd.content-width;
 
-  button {
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
     margin-top: 22px;
-    border-radius: 999px;
-  }
-
-  &__boundary,
-  &__mutation-error {
-    display: block;
-    margin-top: 18px;
-    padding: 16px;
-    font-size: 21px;
-    line-height: 1.5;
-    border-radius: 14px;
   }
 
   &__boundary {
-    color: #895b12;
-    background: #fff7e6;
+    @include pd.feedback-warning;
   }
 
   &__mutation-error {
-    color: #b42318;
-    background: #fff0f0;
+    @include pd.feedback-error;
   }
 
   &__verify {
-    color: #5a557f;
-    background: #fff;
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 14px;
+  }
+}
+
+.admin-product-detail-heading {
+  position: relative;
+  overflow: hidden;
+  padding: 30px 28px;
+  color: #fff;
+  background: var(--pd-gradient-stock);
+  border-radius: var(--pd-radius-large);
+  box-shadow: var(--pd-shadow-medium);
+
+  &::after {
+    position: absolute;
+    right: -74px;
+    bottom: -92px;
+    width: 220px;
+    height: 220px;
+    background: rgb(255 255 255 / 8%);
+    border-radius: 50%;
+    content: '';
+  }
+
+  &__eyebrow,
+  &__name,
+  &__description {
+    position: relative;
+    z-index: 1;
+    display: block;
+  }
+
+  &__eyebrow {
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+    opacity: 0.82;
+  }
+
+  &__name {
+    max-width: 18ch;
+    margin-top: 10px;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-heading);
+    font-weight: 750;
+    letter-spacing: -0.7px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+
+  &__badges {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-top: 16px;
+  }
+
+  &__badges text {
+    padding: 6px 12px;
+    font-size: var(--pd-font-caption);
+    font-weight: 650;
+    background: rgb(255 255 255 / 14%);
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 999px;
+  }
+
+  &__description {
+    max-width: 34em;
+    margin-top: 18px;
+    font-size: var(--pd-font-body-size);
+    line-height: 1.6;
+    opacity: 0.88;
   }
 }
 
 .admin-product-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   margin-top: 20px;
 
   button {
-    flex: 1 1 30%;
-    margin: 0;
-    font-size: 24px;
+    @include pd.secondary-button;
+
+    width: 100%;
+    padding-right: 12px;
+    padding-left: 12px;
     white-space: nowrap;
   }
 
-  &__delete {
-    color: #b42318;
-    border-color: #d92d20;
-    background: #fff;
+  &__status {
+    @include pd.primary-button;
   }
 
-  &__status {
-    color: #fff;
-    background: #3f6178;
+  &__delete {
+    @include pd.danger-button;
+  }
+
+  & &__status {
+    @include pd.primary-button;
+  }
+
+  & &__delete {
+    @include pd.danger-button;
   }
 }
 
 .admin-product-detail-readiness-issues {
-  margin-top: 12px;
-  padding: 16px;
-  color: #895b12;
-  font-size: 21px;
-  line-height: 1.65;
-  background: #fff7e6;
-  border-radius: 14px;
+  @include pd.feedback-warning;
 
   text {
     display: block;
   }
 }
 
-.admin-product-detail-heading {
-  padding: 29px;
-  color: #fff;
-  background: linear-gradient(145deg, #3f6178, #6c527f);
-  border-radius: 22px;
-
-  &__eyebrow,
-  &__name,
-  &__description {
-    display: block;
-  }
-
-  &__eyebrow {
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 2px;
-  }
-
-  &__name {
-    margin-top: 12px;
-    font-size: 37px;
-    font-weight: 700;
-  }
-
-  &__badges {
-    display: flex;
-    gap: 9px;
-    margin-top: 15px;
-    font-size: 20px;
-  }
-
-  &__badges text {
-    padding: 5px 11px;
-    background: rgb(255 255 255 / 18%);
-    border-radius: 999px;
-  }
-
-  &__description {
-    margin-top: 17px;
-    font-size: 22px;
-    line-height: 1.6;
-    opacity: 0.88;
-  }
-}
-
 .admin-product-detail-section-title {
   display: block;
-  margin-bottom: 15px;
-  font-size: 27px;
-  font-weight: 700;
+  margin-bottom: 17px;
+  font-family: var(--pd-font-display);
+  font-size: var(--pd-font-title);
+  font-weight: 750;
+  line-height: 1.35;
 }
 
 .admin-product-detail-images,
 .admin-product-detail-options,
 .admin-product-detail-kit,
 .admin-product-detail-meta {
-  margin-top: 19px;
-  padding: 21px;
-  background: #fff;
-  border-radius: 17px;
+  @include pd.section-panel;
+
+  margin-top: 20px;
 }
 
 .admin-product-detail-images {
@@ -146,8 +169,9 @@
 
   &__item {
     overflow: hidden;
-    background: #f1edf4;
-    border-radius: 13px;
+    background: var(--pd-color-surface-muted);
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-small);
   }
 
   &__item image {
@@ -158,43 +182,44 @@
 
   &__item text {
     display: block;
-    padding: 9px;
-    color: #675d6e;
-    font-size: 19px;
+    padding: 10px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    font-weight: 650;
     text-align: center;
   }
 }
 
 .admin-product-option {
-  margin-top: 13px;
-  padding: 17px;
-  color: #675d6e;
-  font-size: 21px;
-  line-height: 1.6;
-  background: #f7f5fa;
-  border-radius: 13px;
+  margin-top: 12px;
+  padding: 18px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.65;
+  background: var(--pd-color-surface-muted);
+  border-radius: var(--pd-radius-small);
 
   text {
     display: block;
   }
 
   &__title {
-    color: #292532;
-    font-weight: 700;
+    color: var(--pd-color-ink);
+    font-weight: 750;
   }
 
   &__price {
-    color: #71406a;
-    font-size: 27px;
-    font-weight: 700;
+    margin-top: 4px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
   }
 }
 
 .admin-product-detail-kit,
 .admin-product-detail-meta {
-  color: #675d6e;
-  font-size: 22px;
-  line-height: 1.75;
+  @include pd.meta-text;
 
   text {
     display: block;
@@ -203,57 +228,81 @@
 
 .admin-product-detail-kit {
   &__hint {
-    margin-top: 10px;
-    color: #756b7d;
-    font-size: 20px;
+    margin-top: 12px;
+    padding-top: 12px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    border-top: 1px solid var(--pd-color-line);
   }
 }
 
 .admin-product-readiness {
-  display: block;
-  margin-top: 19px;
-  padding: 19px;
-  color: #895b12;
-  font-size: 22px;
-  line-height: 1.5;
-  background: #fff7e6;
-  border-radius: 15px;
+  @include pd.feedback-warning;
 }
 
 .admin-product-detail-state {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  color: #292532;
-  text-align: center;
-  background: #f7f5fb;
-  box-sizing: border-box;
+  @include pd.page-shell;
+  @include pd.state-shell;
 
-  &__title,
-  &__description {
-    display: block;
-  }
+  min-height: 100vh;
 
   &__title {
-    font-size: 30px;
-    font-weight: 600;
+    @include pd.state-title;
   }
 
   &__description {
-    margin-top: 13px;
-    color: #756b7d;
-    font-size: 23px;
-    line-height: 1.5;
+    @include pd.state-description;
+  }
+
+  button,
+  &__action {
+    @include pd.secondary-button;
+
+    width: min(100%, 360px);
+    margin-top: 18px;
   }
 
   &__action {
-    margin-top: 24px;
-    color: #fff;
-    background: #5a557f;
-    border: 0;
-    border-radius: 999px;
+    @include pd.primary-button;
+  }
+
+  & &__action {
+    @include pd.primary-button;
+  }
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-product-detail-images,
+  .admin-product-detail-options,
+  .admin-product-detail-kit,
+  .admin-product-detail-meta {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-product-detail-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-product-detail-images {
+    &__grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  .admin-product-detail-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+
+    .admin-product-detail-section-title {
+      grid-column: 1 / -1;
+    }
+
+    .admin-product-option {
+      margin-top: 0;
+    }
   }
 }

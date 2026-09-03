@@ -188,9 +188,19 @@ function KitInventoryWorkspace({ product, refreshProduct }: {
   return (
     <View className='product-inventory-page'>
       <View className='product-inventory-page__header'>
-        <Text className='product-inventory-page__eyebrow'>KIT INVENTORY</Text>
-        <Text className='product-inventory-page__title'>{product.name}</Text>
-        <Text className='product-inventory-page__subtitle'>Product #{product.id} · {product.status.label} · 当前权威库存 {visibleStock}</Text>
+        <View className='product-inventory-page__header-topline'>
+          <Text className='product-inventory-page__title'>{product.name}</Text>
+          <Text className='product-inventory-page__status'>{product.status.label}</Text>
+        </View>
+        <Text className='product-inventory-page__subtitle'>Kit 商品 · Product #{product.id}</Text>
+        <View className='product-inventory-page__stock-panel'>
+          <Text className='product-inventory-page__stock-label'>当前权威库存</Text>
+          <View className='product-inventory-page__stock-value-row'>
+            <Text className='product-inventory-page__stock-value'>{visibleStock}</Text>
+            <Text className='product-inventory-page__stock-unit'>件</Text>
+          </View>
+          <Text className='product-inventory-page__stock-note'>每次变化都会留下可追溯流水</Text>
+        </View>
       </View>
 
       <View className='inventory-adjustment'>
@@ -221,10 +231,15 @@ function KitInventoryWorkspace({ product, refreshProduct }: {
               adjustment.reset()
             }}
           />
-          <Text className='inventory-adjustment__hint'>提交变化量而不是最终余额；每个新意图生成新 key，结果未知时安全重试复用原 key。</Text>
+          <Text className='inventory-adjustment__hint'>填写变化量，不是最终余额。结果未知时请使用下方安全重试，系统会复用原意图。</Text>
           {(adjustmentError || mutationError) && <Text className='inventory-adjustment__error'>{adjustmentError || mutationError}</Text>}
           {resultMessage && <Text className='inventory-adjustment__success'>{resultMessage}</Text>}
-          <Button disabled={blocked} formType='submit' type='primary'>
+          <Button
+            className='inventory-adjustment__submit'
+            disabled={blocked}
+            type='primary'
+            onClick={() => void submitAdjustment()}
+          >
             {adjustment.state.status === 'submitting' ? '正在提交…' : '提交库存调整'}
           </Button>
           {adjustment.state.status === 'unknown' && (

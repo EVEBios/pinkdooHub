@@ -1,68 +1,67 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
 .admin-product-images-page {
-  min-height: 100vh;
-  padding: 30px 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292225;
-  background: #fff8fa;
-  box-sizing: border-box;
+  @include pd.page-shell(24px);
+  @include pd.content-width;
 
   > button {
+    @include pd.secondary-button;
+
+    width: 100%;
     margin-top: 20px;
   }
 }
 
 .admin-product-images-summary,
 .admin-product-images-section {
-  margin-top: 22px;
-  padding: 28px;
-  background: #fff;
-  border: 1px solid #f0dce3;
-  border-radius: 22px;
+  @include pd.section-panel;
+
+  margin-top: 20px;
 }
 
 .admin-product-images-summary {
+  margin-top: 0;
+  background: var(--pd-gradient-soft);
+
   text {
     display: block;
   }
 
-  &__eyebrow {
-    color: #b63860;
-    font-size: 21px;
-    font-weight: 700;
-  }
-
   &__title {
-    margin-top: 8px;
-    font-size: 34px;
-    font-weight: 700;
+    max-width: 18ch;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-heading);
+    font-weight: 750;
+    letter-spacing: -0.7px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    word-break: keep-all;
   }
 
   &__meta,
-  &__notice,
-  &__boundary {
+  &__notice {
+    @include pd.meta-text;
+
     margin-top: 10px;
-    color: #74686c;
-    font-size: 22px;
-    line-height: 1.55;
+  }
+
+  &__notice {
+    max-width: 38em;
   }
 
   &__boundary {
-    padding: 14px;
-    color: #895b12;
-    background: #fff7e6;
-    border-radius: 12px;
+    @include pd.feedback-warning;
   }
 }
 
-.admin-product-images-feedback,
+.admin-product-images-feedback {
+  @include pd.feedback-error;
+}
+
 .admin-product-images-empty {
-  display: block;
-  margin-top: 18px;
-  padding: 14px;
-  color: #b42318;
-  font-size: 22px;
-  line-height: 1.5;
-  background: #fff0f0;
-  border-radius: 12px;
+  @include pd.feedback-warning;
 }
 
 .admin-product-images-section {
@@ -72,32 +71,48 @@
   }
 
   &__title {
-    font-size: 28px;
-    font-weight: 700;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
   }
 
   &__hint {
-    margin-top: 10px;
-    color: #74686c;
-    font-size: 21px;
-    line-height: 1.5;
+    max-width: 38em;
+    margin-top: 9px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.55;
   }
 
   &__upload-actions {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     margin-top: 18px;
   }
 
-  &__upload-actions button {
-    flex: 1;
-    margin: 0;
-    font-size: 22px;
-    white-space: nowrap;
+  &__upload-actions button,
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  &__upload-actions &__upload-cover {
+    @include pd.primary-button;
   }
 
   > button {
     margin-top: 18px;
+  }
+}
+
+.admin-product-images-option {
+  > button {
+    @include pd.primary-button;
   }
 }
 
@@ -107,14 +122,15 @@
   gap: 18px;
   margin-top: 18px;
   padding: 18px;
-  background: #f9f6f8;
-  border-radius: 16px;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: var(--pd-radius-medium);
 
   > image {
     width: 210px;
     height: 210px;
-    background: #eee8ec;
-    border-radius: 13px;
+    background: var(--pd-color-canvas-deep);
+    border-radius: var(--pd-radius-small);
   }
 
   &__identity,
@@ -124,80 +140,108 @@
   }
 
   &__identity {
-    font-size: 23px;
-    font-weight: 700;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
   }
 
   &__label {
-    margin-top: 10px;
-    color: #74686c;
-    font-size: 20px;
+    margin-top: 12px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
   }
 
   &__sort {
-    margin-top: 7px;
-    padding: 10px 12px;
-    font-size: 22px;
-    background: #fff;
-    border: 1px solid #dbcbd1;
-    border-radius: 10px;
+    @include pd.field;
+
+    margin-top: 8px;
   }
 
   &__validation {
     margin-top: 8px;
-    color: #b42318;
-    font-size: 19px;
+    color: var(--pd-color-danger);
+    font-size: var(--pd-font-caption);
+    line-height: 1.45;
   }
 
   &__actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 9px;
-    margin-top: 12px;
+    margin-top: 13px;
   }
 
   &__actions button {
-    flex: 1 1 42%;
-    margin: 0;
-    padding: 0 12px;
-    font-size: 20px;
+    @include pd.secondary-button;
+
+    width: 100%;
+    min-width: 0;
+    padding-right: 10px;
+    padding-left: 10px;
+    font-size: var(--pd-font-button-compact);
     white-space: nowrap;
   }
 
-  &__delete {
-    color: #b42318;
+  &__actions &__delete {
+    @include pd.danger-button;
+
+    min-width: 0;
+    font-size: var(--pd-font-button-compact);
   }
 }
 
 .admin-product-images-state {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  text-align: center;
-  background: #fff8fa;
-  box-sizing: border-box;
+  @include pd.page-shell;
+  @include pd.state-shell;
 
-  &__title,
-  &__description {
-    display: block;
-  }
+  min-height: 100vh;
 
   &__title {
-    font-size: 30px;
-    font-weight: 700;
+    @include pd.state-title;
   }
 
   &__description {
-    margin-top: 13px;
-    color: #74686c;
-    font-size: 23px;
-    line-height: 1.5;
+    @include pd.state-description;
   }
 
   button {
-    margin-top: 22px;
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-product-images-section {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-product-images-section {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+
+    &__title,
+    &__hint,
+    &__upload-actions,
+    > .admin-product-images-empty,
+    > button {
+      grid-column: 1 / -1;
+    }
+
+    .admin-product-image-card {
+      grid-template-columns: 170px minmax(0, 1fr);
+
+      > image {
+        width: 170px;
+        height: 170px;
+      }
+    }
   }
 }

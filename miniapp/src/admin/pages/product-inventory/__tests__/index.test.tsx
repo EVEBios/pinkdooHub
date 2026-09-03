@@ -112,7 +112,8 @@ describe('ProductInventoryPage', () => {
   it('Online Kit 仍可进入库存调整并挂载指定商品流水', async () => {
     await testUtils.mount(AuthenticatedProductInventory, { props: { productId: 7 } })
     expect(testUtils.queries.querySelector('.product-inventory-page')?.textContent).toContain('已上架')
-    expect(testUtils.queries.querySelector('.product-inventory-page')?.textContent).toContain('当前权威库存 10')
+    expect(testUtils.queries.querySelector('.product-inventory-page__stock-label')?.textContent).toBe('当前权威库存')
+    expect(testUtils.queries.querySelector('.product-inventory-page__stock-value')?.textContent).toBe('10')
     expect(mockUseInventoryAdjustment).toHaveBeenCalledTimes(1)
     expect(mockUseInventoryTransactionList).toHaveBeenCalledWith({ kind: 'product', productId: 7 })
     expect(testUtils.queries.querySelectorAll('.masked-date-input')).toHaveLength(2)

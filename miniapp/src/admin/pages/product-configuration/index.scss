@@ -1,14 +1,15 @@
-/* stylelint-disable-next-line at-rule-no-unknown */
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
 @use '../../styles/product-form';
 
 .admin-product-configuration-page {
-  min-height: 100vh;
-  padding: 30px 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292225;
-  background: #fff8fa;
-  box-sizing: border-box;
+  @include pd.page-shell(24px);
+  @include pd.content-width;
 
   > button {
+    @include pd.secondary-button;
+
+    width: 100%;
     margin-top: 20px;
   }
 }
@@ -17,146 +18,177 @@
 .admin-product-option-editor,
 .admin-product-option-list,
 .admin-product-kit-price {
-  margin-top: 22px;
-  padding: 28px;
-  background: #fff;
-  border: 1px solid #f0dce3;
-  border-radius: 22px;
+  @include pd.section-panel;
+
+  margin-top: 20px;
 }
 
 .admin-product-configuration-summary {
+  margin-top: 0;
+  background: var(--pd-gradient-soft);
+
   text {
     display: block;
   }
 
-  &__eyebrow {
-    color: #b63860;
-    font-size: 21px;
-    font-weight: 700;
-  }
-
   &__title {
-    margin-top: 8px;
-    font-size: 34px;
-    font-weight: 700;
+    max-width: 18ch;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-heading);
+    font-weight: 750;
+    letter-spacing: -0.7px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    word-break: keep-all;
   }
 
   &__meta,
-  &__boundary,
   &__history {
+    @include pd.meta-text;
+
     margin-top: 10px;
-    color: #74686c;
-    font-size: 22px;
-    line-height: 1.55;
   }
 
   &__boundary {
-    padding: 14px;
-    color: #895b12;
-    background: #fff7e6;
-    border-radius: 12px;
+    @include pd.feedback-warning;
+  }
+}
+
+.admin-product-option-editor,
+.admin-product-option-list,
+.admin-product-kit-price {
+  &__title {
+    display: block;
+    margin-bottom: 4px;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
   }
 }
 
 .admin-product-option-editor {
-  &__title {
-    display: block;
-    font-size: 28px;
-    font-weight: 700;
-  }
-
   &__day-types {
     display: flex;
-    gap: 12px;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 2px;
   }
 
   &__day-types button {
-    flex: 1;
-    margin: 0;
-    color: #6e4c59;
-    background: #fff;
-    border: 1px solid #dbcbd1;
-    border-radius: 12px;
+    @include pd.chip;
+
+    flex: 1 0 auto;
   }
 
   &__day-types .is-selected {
-    color: #fff;
-    background: #b63860;
-    border-color: #b63860;
+    @include pd.chip-active;
   }
 
   &__actions {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     margin-top: 22px;
   }
 
   &__actions button {
-    flex: 1;
-    margin: 0;
-    font-size: 23px;
+    @include pd.secondary-button;
+
+    width: 100%;
+    padding-right: 12px;
+    padding-left: 12px;
     white-space: nowrap;
   }
-}
 
-.admin-product-option-list,
-.admin-product-kit-price {
-  &__title {
-    display: block;
-    font-size: 28px;
-    font-weight: 700;
+  &__actions &__submit {
+    @include pd.primary-button;
   }
 }
 
 .admin-product-option-card {
-  margin-top: 16px;
-  padding: 20px;
-  color: #675d6e;
-  font-size: 22px;
+  margin-top: 14px;
+  padding: 18px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+  font-variant-numeric: tabular-nums;
   line-height: 1.65;
-  background: #f9f6f8;
-  border-radius: 15px;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: var(--pd-radius-small);
 
   text {
     display: block;
   }
 
   &__identity {
-    color: #292225;
-    font-weight: 700;
+    color: var(--pd-color-ink);
+    font-weight: 750;
   }
 
   &__price {
-    color: #9f3155;
-    font-size: 27px;
-    font-weight: 700;
-  }
-
-  &__delete {
-    color: #b42318;
+    margin-top: 4px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
   }
 
   &__actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 22px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
   }
 
   &__actions button {
-    flex: 1;
-    margin: 0;
-    font-size: 23px;
-    white-space: nowrap;
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__actions &__delete {
+    @include pd.danger-button;
   }
 }
 
+.admin-product-kit-price {
+  > button {
+    width: 100%;
+  }
+}
+
+/* stylelint-disable-next-line selector-class-pattern -- 单一主操作占满动作区。 */
+.admin-product-option-editor__actions button:only-child {
+  grid-column: 1 / -1;
+}
+
 .admin-product-configuration-feedback {
-  display: block;
-  margin-top: 18px;
-  padding: 14px;
-  color: #b42318;
-  font-size: 23px;
-  line-height: 1.5;
-  background: #fff0f0;
-  border-radius: 12px;
+  @include pd.feedback-error;
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-product-option-editor,
+  .admin-product-option-list,
+  .admin-product-kit-price {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-product-option-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+
+    &__title,
+    > text {
+      grid-column: 1 / -1;
+    }
+
+    .admin-product-option-card {
+      margin-top: 0;
+    }
+  }
 }

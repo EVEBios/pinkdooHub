@@ -122,6 +122,10 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `app.tasks
 
 ## 目录约定（随阶段逐步落地）
 
+- `../PRODUCT.md`：跨迭代稳定的产品目标、用户、能力边界与品牌承诺。
+- `../DESIGN.md`：从已实现界面提炼的设计 Token、组件规则与复用约束；只在视觉 Review 通过后更新。
+- `../.impeccable/surfaces/`：页面或关联页面组的视觉方向契约，不替代业务需求文档。
+- `../design-qa.md`：最近一次参考稿与真实页面的视觉、交互和可访问性验收记录。
 - `src/pages/`：页面（TSX + 页面配置）。
 - `src/admin/pages/`：`admin` 分包的 ADMIN+ 页面。
 - `src/components/`：项目共享组件。
@@ -130,7 +134,11 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `app.tasks
 - `src/features/`：页面业务用例和服务端状态，例如 Product 分页与请求竞态。
 - `src/platform/`：Taro Storage 等平台能力适配。
 - `src/config/`：环境与运行配置。
+- `src/styles/theme.scss`：Ribbon Ledger 的颜色、字号、圆角、阴影、邻近色渐变、动效及 H5 固定像素映射；是视觉 primitive 的权威代码来源。
+- `src/styles/_patterns.scss`：页面壳、标题、面板、卡片、按钮、反馈和空状态等共享 Sass mixin，不承载业务状态。
 - `src/utils/`：无状态纯函数。
+
+当前主题已覆盖 20 条已注册页面路由，包括客户侧登录、注册、商品、购物车与订单，以及 ADMIN+ 商品、配置、图片、库存、订单和用户管理。页面继续使用各自业务语义类名；新增界面应优先复用上述 Token 与模式，并对 390 px 移动视口和关键 768 px 宽屏状态做视觉检查。
 
 依赖方向：Page → Component/Feature → Service → HTTP Client → JSON/Upload Transport → Taro 平台 API。
 页面禁止直接调用 `Taro.request`、`Taro.uploadFile` 或平台原生选图 API。

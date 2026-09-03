@@ -270,7 +270,6 @@ function ConfigurationSummary({ product }: {
       : ''
   return (
     <View className='admin-product-configuration-summary'>
-      <Text className='admin-product-configuration-summary__eyebrow'>ADMIN PRODUCT · CONFIGURATION</Text>
       <Text className='admin-product-configuration-summary__title'>{product.name}</Text>
       <Text className='admin-product-configuration-summary__meta'>{product.product_type.label} #{product.id} · {product.status.label}</Text>
       <Text className='admin-product-configuration-summary__history'>价格变更只影响未来下单；历史订单继续使用服务端快照。</Text>

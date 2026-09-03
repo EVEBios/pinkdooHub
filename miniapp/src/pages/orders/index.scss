@@ -1,186 +1,178 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+
 .orders-page {
-  min-height: 100vh;
-  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
-  color: #30252a;
-  background: #fff8f5;
-  box-sizing: border-box;
+  @include pd.page-shell;
 
   &--state {
-    display: flex;
+    @include pd.state-shell;
+
     min-height: 100vh;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
   }
 
   &__header {
-    margin: 0 -28px;
-    padding: 46px 32px 30px;
-    background: linear-gradient(145deg, #ffe8ed, #fff7f1);
-  }
-
-  &__eyebrow,
-  &__title,
-  &__subtitle {
-    display: block;
-  }
-
-  &__eyebrow {
-    color: #a92e51;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 2px;
+    @include pd.header-band;
   }
 
   &__title {
-    margin-top: 10px;
-    font-size: 42px;
-    font-weight: 700;
+    @include pd.page-title;
   }
 
   &__subtitle {
-    margin-top: 12px;
-    color: #75666b;
-    font-size: 23px;
+    @include pd.page-subtitle;
   }
 }
 
 .orders-filters {
   display: flex;
+  gap: 10px;
+  margin: 22px 0;
+  padding: 10px;
   overflow-x: auto;
-  gap: 12px;
-  padding: 24px 0;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: 18px;
+  box-shadow: var(--pd-shadow-small);
 
   &__item {
-    flex: 0 0 auto;
-    margin: 0;
-    color: #795d66;
-    border-color: #ead5dc;
-    background: #fff;
+    @include pd.chip;
 
     &--active {
-      color: #fff;
-      border-color: #a92e51;
-      background: #a92e51;
+      @include pd.chip-active;
     }
   }
 }
 
 .orders-content {
   &__summary {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 18px;
-    color: #75666b;
-    font-size: 22px;
+    @include pd.list-summary;
   }
 
   &__error,
   &__end {
     display: block;
     padding: 24px 0;
-    color: #99878c;
-    font-size: 22px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-body-size);
     text-align: center;
   }
 
   &__error {
-    color: #b42318;
+    color: var(--pd-color-danger);
   }
 
   &__load-more {
-    width: 280px;
-    margin-top: 26px;
-    color: #fff;
-    background: #a92e51;
-    border: 0;
-    border-radius: 999px;
+    @include pd.primary-button(999px);
+
+    width: 300px;
+    margin: 26px auto 0;
   }
 }
 
 .order-card {
-  margin-bottom: 18px;
-  padding: 24px;
-  background: #fff;
-  border: 1px solid #f0dce1;
-  border-radius: 20px;
-  box-shadow: 0 8px 24px rgb(111 52 70 / 7%);
+  @include pd.record-card;
+  @include pd.tappable-card;
+
+  margin-bottom: 15px;
 
   &__heading,
   &__summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 14px;
   }
 
   &__number {
-    overflow: hidden;
-    font-size: 23px;
-    font-weight: 600;
-    text-overflow: ellipsis;
+    min-width: 0;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
   }
 
   &__status {
     flex: 0 0 auto;
-    padding: 5px 12px;
-    color: #8f2948;
-    font-size: 20px;
-    background: #fff0f3;
+    padding: 5px 11px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    background: var(--pd-color-primary-soft);
     border-radius: 999px;
 
     &--cancelled,
     &--completed {
-      color: #61545a;
-      background: #f2edef;
+      color: var(--pd-color-ink-soft);
+      background: var(--pd-color-surface-muted);
     }
   }
 
   &__summary {
-    margin-top: 20px;
-    color: #75666b;
-    font-size: 23px;
+    margin-top: 18px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
   }
 
   &__total {
-    color: #b4234d;
-    font-size: 30px;
-    font-weight: 700;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   &__time {
     display: block;
-    margin-top: 15px;
-    color: #99878c;
-    font-size: 21px;
+    margin-top: 13px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
   }
 }
 
 .orders-state {
-  &__title,
-  &__description {
-    display: block;
-  }
-
   &__title {
-    font-size: 31px;
-    font-weight: 600;
+    @include pd.state-title;
   }
 
   &__description {
-    max-width: 520px;
-    margin-top: 14px;
-    color: #75666b;
-    font-size: 24px;
-    line-height: 1.5;
+    @include pd.state-description;
   }
 
   &__action {
-    margin-top: 28px;
-    color: #fff;
-    background: #a92e51;
-    border: 0;
-    border-radius: 999px;
+    @include pd.primary-button(999px);
+
+    margin-top: 26px;
+  }
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .orders-filters {
+    background: rgb(255 253 253 / 82%);
+    backdrop-filter: blur(18px) saturate(120%);
+  }
+}
+
+@media (width >= 768px) {
+  .orders-page {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .orders-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+
+    &__summary,
+    &__error,
+    &__end,
+    &__load-more {
+      grid-column: 1 / -1;
+    }
   }
 }

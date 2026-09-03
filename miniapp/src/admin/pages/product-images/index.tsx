@@ -112,7 +112,6 @@ export function AdminProductImageManager({
   return (
     <View className='admin-product-images-page'>
       <View className='admin-product-images-summary'>
-        <Text className='admin-product-images-summary__eyebrow'>ADMIN PRODUCT · IMAGES</Text>
         <Text className='admin-product-images-summary__title'>{product.name}</Text>
         <Text className='admin-product-images-summary__meta'>#{product.id} · {product.product_type.label} · {product.status.label}</Text>
         <Text className='admin-product-images-summary__notice'>仅支持 jpg/png/webp，最大 2 MiB；客户端检查用于提前反馈，服务端仍会验证真实内容与 MIME。</Text>

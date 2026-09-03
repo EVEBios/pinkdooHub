@@ -93,7 +93,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | UI 框架 | React 18.3.1（react-dom 同版本） | Accepted |
 | 语言 | TypeScript strict | Accepted |
 | 编译器 | Webpack 5.91.0 | Accepted（Spike 四端通过） |
-| 样式 | SCSS（sass 1.102.0）+ 项目 Design Tokens | Accepted（工具链已验证；Tokens 待正式工程） |
+| 样式 | SCSS（sass 1.102.0）+ 项目 Design Tokens | Accepted / Implemented（Ribbon Ledger 主题与共享模式已落地） |
 | 基础组件 | `@tarojs/components` | Accepted |
 | 增强组件 | `@nutui/nutui-react-taro` 2.7.15 候选，经项目组件层封装 | Deferred（Spike 通过但正式工程未安装；真实组件需要时再按 ADR-005 受控引入） |
 | 网络 | `Taro.request` / `Taro.uploadFile` 的项目适配层 | Accepted |
@@ -206,6 +206,12 @@ FastAPI OpenAPI ─→ Generated TypeScript Types ─→ Endpoint API
 
 ```text
 pinkdooHub/
+├── PRODUCT.md                       # 稳定的产品目标、用户、能力边界与品牌承诺
+├── DESIGN.md                        # 已实现并通过评审的设计系统事实与复用规则
+├── design-qa.md                     # 最近一次视觉对照、交互与可访问性验收记录
+├── .impeccable/
+│   ├── config.json                  # UI 工作流的实现路径选择
+│   └── surfaces/                    # 单个页面或关联页面组的视觉方向契约
 ├── app/                              # 现有 FastAPI 后端
 ├── tests/                            # 现有后端测试
 ├── scripts/
@@ -229,7 +235,9 @@ pinkdooHub/
     │   ├── admin/pages/              # ADMIN 分包页面
     │   ├── platform/                 # 跨端 Port 与 Adapter
     │   ├── shared/                   # 常量、Guard、Formatter、类型与存储
-    │   ├── styles/                   # Token、Mixin、全局样式
+    │   ├── styles/
+    │   │   ├── theme.scss            # Ribbon Ledger 颜色、字号、圆角、阴影、渐变、动效与 H5 映射
+    │   │   └── _patterns.scss        # 页面壳、面板、按钮、反馈、空状态等共享 Sass mixin
     │   ├── app.config.ts
     │   ├── app.scss
     │   └── app.tsx
@@ -241,6 +249,12 @@ pinkdooHub/
 ```
 
 目录按职责划分，不要求为空目录占位。只有某层出现第一份真实代码时才创建相应目录。
+
+其中 `PRODUCT.md` 只记录跨迭代稳定的产品事实，不保存某一页的临时视觉参数；
+`DESIGN.md` 在界面完成实现并通过视觉 Review 后，从实际代码提炼可复用的设计规则；
+`.impeccable/surfaces/` 保存本次改版这类页面级方向契约，避免把探索过程混入产品事实；
+`design-qa.md` 保存参考稿与真实页面的同屏对照结论以及最终验收状态。四类文件均属于
+正式工程治理资料，与 `.ui-design-explorations/` 中被忽略的本地候选稿职责不同。
 
 ---
 
@@ -566,10 +580,14 @@ business page
 ### 12.2 样式规则
 
 - 使用 SCSS Token 管理颜色、间距、字号、圆角和层级；
+- `src/styles/theme.scss` 是视觉 primitive 的权威代码来源，`src/styles/_patterns.scss` 只组合可复用模式；页面保留业务语义类名，不复制一套局部主题；
+- 设计稿源值按 Taro `designWidth: 750` 使用 rpx 语义；H5 在明确媒体条件下把正文、输入、按钮和 88 rpx 控件高度映射为固定 CSS `PX`，避免根字号与屏宽把桌面控件异常放大；
 - 避免依赖只在浏览器成立的 DOM/CSS 行为；
 - 不在业务逻辑中读取布局结果来决定权威业务状态；
 - 样式类遵循简单稳定的命名，不首发 CSS-in-JS；
 - 响应式以移动端为基线，H5 明确最大内容宽度和安全区；
+- Taro H5 会把布尔属性渲染为字符串，禁用态选择器必须匹配 `[disabled='true']`，不得用会误伤 `disabled='false'` 的宽泛 `[disabled]`；
+- 需要提交语义的表单同时保留 `Form.onSubmit` 和按钮的显式 `onClick` 入口；不得依赖 H5 上不稳定的 `formType` 转发来触发关键操作；
 - 平台差异样式使用受控的平台文件或构建条件，不复制整页。
 
 NutUI 的使用是否扩大，取决于 [ADR-005](adr/ADR-005-cross-platform-ui-strategy.md) 定义的 Spike。

@@ -1,67 +1,49 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
 .admin-products-page {
-  min-height: 100vh;
-  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292532;
-  background: #f7f5fb;
-  box-sizing: border-box;
+  @include pd.page-shell;
+  @include pd.content-width;
 
   &__header {
-    margin: 0 -28px;
-    padding: 46px 32px 30px;
-    color: #fff;
-    background: linear-gradient(145deg, #3f6178, #6c527f);
-  }
-
-  &__eyebrow,
-  &__title,
-  &__subtitle {
-    display: block;
-  }
-
-  &__eyebrow {
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 2px;
+    @include pd.header-band;
   }
 
   &__title {
-    margin-top: 9px;
-    font-size: 40px;
-    font-weight: 700;
+    @include pd.page-title;
   }
 
   &__subtitle {
-    margin-top: 12px;
-    font-size: 22px;
-    opacity: 0.85;
+    @include pd.page-subtitle;
   }
 }
 
 .admin-products-create {
-  display: flex;
-  gap: 14px;
-  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
 
-  button {
-    flex: 1;
-    margin: 0;
-    font-size: 24px;
-    white-space: nowrap;
-    border-radius: 14px;
+  &__experience {
+    @include pd.primary-button(14px);
+  }
+
+  &__kit {
+    @include pd.secondary-button(14px);
   }
 }
 
 .admin-product-filters {
-  margin: 24px 0;
-  padding: 22px;
-  background: #fff;
-  border-radius: 18px;
+  @include pd.section-panel(22px);
+
+  margin: 20px 0 24px;
 
   &__label {
-    display: block;
-    margin: 12px 0 9px;
-    color: #756b7d;
-    font-size: 21px;
+    @include pd.field-label;
+
+    &:first-child {
+      margin-top: 4px;
+    }
   }
 
   &__buttons,
@@ -74,86 +56,83 @@
     overflow-x: auto;
   }
 
-  &__button {
-    flex: 0 0 auto;
-    margin: 0;
+  &__button,
+  &__deleted {
+    @include pd.chip;
   }
 
-  &__button--active {
-    color: #fff;
-    border-color: #5a557f;
-    background: #5a557f;
+  &__button--active,
+  &__deleted--active {
+    @include pd.chip-active;
   }
 
   &__input {
-    margin-top: 16px;
-    padding: 16px;
-    background: #f7f5fa;
-    border-radius: 12px;
+    @include pd.field;
+
+    margin-top: 18px;
   }
 
   &__pending {
     display: block;
     margin-top: 14px;
-    color: #8a7555;
-    font-size: 20px;
+    color: var(--pd-color-warning);
+    font-size: var(--pd-font-caption);
     line-height: 1.5;
   }
 
-  &__deleted {
-    flex: 0 0 auto;
-    margin: 0;
-    color: #675d6e;
-  }
-
-  &__deleted--active {
-    color: #fff;
-    background: #7b596f;
-  }
-
   &__actions {
-    margin-top: 18px;
-  }
+    margin-top: 20px;
 
-  &__actions button {
-    flex: 1;
+    button {
+      flex: 1;
+
+      &:first-child {
+        @include pd.primary-button(14px);
+      }
+
+      &:last-child {
+        @include pd.quiet-button(14px);
+      }
+    }
   }
 }
 
 .admin-products-content {
   &__summary {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    color: #756b7d;
-    font-size: 22px;
+    @include pd.list-summary;
   }
 
   &__error,
   &__end {
     display: block;
     padding: 22px 0;
-    color: #756b7d;
-    font-size: 22px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-body-size);
     text-align: center;
   }
 
   &__error {
-    color: #b42318;
+    color: var(--pd-color-danger);
+  }
+
+  > button {
+    @include pd.primary-button(999px);
+
+    width: 300px;
+    margin: 24px auto 0;
   }
 }
 
 .admin-product-card {
+  @include pd.record-card(18px);
+  @include pd.tappable-card;
+
   display: flex;
-  gap: 18px;
-  margin-bottom: 17px;
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #e6dfed;
-  border-radius: 18px;
+  gap: 17px;
+  margin-bottom: 15px;
 
   &--deleted {
-    opacity: 0.68;
+    opacity: 0.66;
   }
 
   &__image {
@@ -163,13 +142,10 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    background: #ece8f0;
-    border-radius: 14px;
-  }
-
-  &__image--empty {
-    color: #756b7d;
-    font-size: 20px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    background: var(--pd-gradient-soft);
+    border-radius: var(--pd-radius-small);
   }
 
   &__body {
@@ -180,14 +156,15 @@
   &__badges {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    color: #604b71;
-    font-size: 19px;
+    gap: 7px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 650;
   }
 
   &__badges text {
     padding: 4px 9px;
-    background: #f1eaf7;
+    background: var(--pd-color-primary-soft);
     border-radius: 999px;
   }
 
@@ -198,59 +175,66 @@
   }
 
   &__name {
+    margin-top: 10px;
     overflow: hidden;
-    margin-top: 11px;
-    font-size: 26px;
-    font-weight: 600;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.38;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   &__price {
-    margin-top: 10px;
-    color: #71406a;
-    font-size: 27px;
-    font-weight: 700;
+    margin-top: 9px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
   }
 
   &__time {
-    margin-top: 10px;
-    color: #756b7d;
-    font-size: 19px;
+    margin-top: 9px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
   }
 }
 
 .admin-products-state {
-  display: flex;
-  min-height: 260px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  text-align: center;
-
-  &__title,
-  &__description {
-    display: block;
-  }
+  @include pd.state-shell;
 
   &__title {
-    font-size: 30px;
-    font-weight: 600;
+    @include pd.state-title;
   }
 
   &__description {
-    margin-top: 13px;
-    color: #756b7d;
-    font-size: 23px;
-    line-height: 1.5;
+    @include pd.state-description;
   }
 
   &__action {
+    @include pd.primary-button(999px);
+
     margin-top: 24px;
-    color: #fff;
-    background: #5a557f;
-    border: 0;
-    border-radius: 999px;
+  }
+}
+
+@media (width >= 768px) {
+  .admin-products-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+
+    &__summary,
+    &__error,
+    &__end,
+    > button {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .admin-product-card {
+    margin-bottom: 0;
   }
 }

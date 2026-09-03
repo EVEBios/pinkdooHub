@@ -93,7 +93,6 @@ export function AuthenticatedAdminProducts() {
   return (
     <View className='admin-products-page'>
       <View className='admin-products-page__header'>
-        <Text className='admin-products-page__eyebrow'>ADMIN PRODUCTS</Text>
         <Text className='admin-products-page__title'>管理商品</Text>
         <Text className='admin-products-page__subtitle'>查看全部状态商品、草稿配置与逻辑删除记录</Text>
       </View>
@@ -135,12 +134,10 @@ export function AuthenticatedAdminProducts() {
           <View className='admin-product-filters__buttons'>
             <Button
               className={`admin-product-filters__deleted${!draft.includeDeleted ? ' admin-product-filters__deleted--active' : ''}`}
-              size='mini'
               onClick={() => selectButtonFilter({ includeDeleted: false })}
             >不含删除记录</Button>
             <Button
               className={`admin-product-filters__deleted${draft.includeDeleted ? ' admin-product-filters__deleted--active' : ''}`}
-              size='mini'
               onClick={() => selectButtonFilter({ includeDeleted: true })}
             >包含删除记录</Button>
           </View>
@@ -148,7 +145,7 @@ export function AuthenticatedAdminProducts() {
             <Text className='admin-product-filters__pending'>输入条件尚未应用，点击「查询」后生效</Text>
           )}
           <View className='admin-product-filters__actions'>
-            <Button formType='submit' type='primary'>查询</Button>
+            <Button type='primary' onClick={submitFilters}>查询</Button>
             <Button onClick={resetFilters}>清空</Button>
           </View>
         </Form>
@@ -191,7 +188,6 @@ function FilterButtons<T extends string>({ filters, onSelect, selected }: {
         <Button
           key={filter.value}
           className={`admin-product-filters__button${selected === filter.value ? ' admin-product-filters__button--active' : ''}`}
-          size='mini'
           onClick={() => onSelect(filter.value)}
         >{filter.label}</Button>
       ))}

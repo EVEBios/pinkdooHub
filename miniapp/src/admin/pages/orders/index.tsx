@@ -98,7 +98,6 @@ export function AuthenticatedAdminOrders() {
   return (
     <View className='admin-orders-page'>
       <View className='admin-orders-page__header'>
-        <Text className='admin-orders-page__eyebrow'>ADMIN ORDERS</Text>
         <Text className='admin-orders-page__title'>管理订单</Text>
         <Text className='admin-orders-page__subtitle'>查询全部用户订单，并执行契约允许的状态变迁</Text>
       </View>
@@ -110,7 +109,6 @@ export function AuthenticatedAdminOrders() {
               <Button
                 key={filter.value}
                 className={`admin-order-filters__status${draft.status === filter.value ? ' admin-order-filters__status--active' : ''}`}
-                size='mini'
                 onClick={() => selectStatus(filter.value)}
               >
                 {filter.label}
@@ -156,7 +154,7 @@ export function AuthenticatedAdminOrders() {
             <Text className='admin-order-filters__pending'>输入条件尚未应用，点击「查询」后生效</Text>
           )}
           <View className='admin-order-filters__actions'>
-            <Button formType='submit' type='primary'>查询</Button>
+            <Button type='primary' onClick={submitFilters}>查询</Button>
             <Button onClick={resetFilters}>清空</Button>
           </View>
           <Text className='admin-order-filters__hint'>结束日期按当日包含处理，客户端会转为 API 要求的次日排他上界。</Text>

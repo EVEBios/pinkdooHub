@@ -52,7 +52,6 @@ export function AuthenticatedOrders() {
   return (
     <View className='orders-page'>
       <View className='orders-page__header'>
-        <Text className='orders-page__eyebrow'>MY ORDERS</Text>
         <Text className='orders-page__title'>我的订单</Text>
         <Text className='orders-page__subtitle'>状态、金额和数量均来自服务端</Text>
       </View>
@@ -61,7 +60,6 @@ export function AuthenticatedOrders() {
           <Button
             key={filter.value}
             className={`orders-filters__item${statusFilter === filter.value ? ' orders-filters__item--active' : ''}`}
-            size='mini'
             onClick={() => setStatusFilter(filter.value)}
           >
             {filter.label}

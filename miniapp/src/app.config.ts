@@ -28,7 +28,7 @@ export default defineAppConfig({
   }],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#fff',
+    navigationBarBackgroundColor: '#fff8fa',
     navigationBarTitleText: 'pinkdooHub',
     navigationBarTextStyle: 'black'
   }

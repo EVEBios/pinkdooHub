@@ -46,7 +46,7 @@ export function MaskedDateInput({ label, onChange, value }: {
               event.stopPropagation()
               onChange('')
             }}
-          >×</Text>
+          >清除</Text>
         )}
       </View>
     </View>

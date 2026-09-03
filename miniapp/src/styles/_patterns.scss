@@ -1,0 +1,293 @@
+/* stylelint-disable at-rule-no-unknown -- 本文件只提供 Sass mixin，由页面样式按需编译。 */
+
+@mixin page-shell($top-padding: 0) {
+  min-height: 100vh;
+  padding: $top-padding 24px calc(52px + env(safe-area-inset-bottom));
+  color: var(--pd-color-ink);
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
+}
+
+@mixin content-width {
+  width: 100%;
+  max-width: 960px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+@mixin header-band {
+  margin: 0 -24px 28px;
+  padding: 38px 28px 32px;
+  background: var(--pd-gradient-soft);
+  border-bottom: 1px solid rgb(185 119 143 / 18%);
+}
+
+@mixin page-title {
+  display: block;
+  max-width: 16ch;
+  font-family: var(--pd-font-display);
+  font-size: var(--pd-font-heading);
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  word-break: keep-all;
+}
+
+@mixin page-subtitle {
+  display: block;
+  max-width: 30em;
+  margin-top: 11px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+  line-height: 1.58;
+}
+
+@mixin section-panel($padding: 24px, $radius: var(--pd-radius-medium)) {
+  padding: $padding;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: $radius;
+  box-shadow: var(--pd-shadow-small);
+  box-sizing: border-box;
+}
+
+@mixin record-card($padding: 23px) {
+  padding: $padding;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-medium);
+  box-shadow: 0 9px 26px rgb(83 31 49 / 7%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+@mixin tappable-card {
+  &:active {
+    border-color: var(--pd-color-line-strong);
+    box-shadow: 0 5px 16px rgb(83 31 49 / 8%);
+    transform: translateY(1px);
+  }
+}
+
+@mixin button-base($radius: 14px) {
+  display: flex;
+  min-height: var(--pd-control-height);
+  min-width: var(--pd-control-min-inline);
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 18px;
+  font-size: var(--pd-font-button);
+  font-weight: 700;
+  line-height: 1.2;
+  border-radius: $radius;
+  box-sizing: border-box;
+}
+
+@mixin primary-button($radius: 14px) {
+  @include button-base($radius);
+
+  color: #fff;
+  background: var(--pd-gradient-primary);
+  border: 0;
+  box-shadow: 0 9px 22px rgb(143 35 70 / 17%);
+
+  &[disabled] {
+    color: #fff;
+  }
+}
+
+@mixin secondary-button($radius: 14px) {
+  @include button-base($radius);
+
+  color: var(--pd-color-primary-strong);
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line-strong);
+
+  &[disabled] {
+    color: var(--pd-color-primary-strong);
+  }
+}
+
+@mixin quiet-button($radius: 14px) {
+  @include button-base($radius);
+
+  color: var(--pd-color-ink-soft);
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+
+  &[disabled] {
+    color: var(--pd-color-ink-soft);
+  }
+}
+
+@mixin danger-button($radius: 14px) {
+  @include button-base($radius);
+
+  color: var(--pd-color-danger);
+  background: var(--pd-color-danger-soft);
+  border: 1px solid rgb(169 47 56 / 22%);
+
+  &[disabled] {
+    color: var(--pd-color-danger);
+  }
+}
+
+@mixin chip {
+  display: inline-flex;
+  width: fit-content;
+  min-height: var(--pd-control-height);
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 18px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-button-compact);
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  box-sizing: border-box;
+}
+
+@mixin chip-active {
+  color: #fff;
+  background: var(--pd-gradient-primary);
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgb(143 35 70 / 14%);
+}
+
+@mixin field {
+  display: flex;
+  width: 100%;
+  min-height: var(--pd-control-height);
+  align-items: center;
+  padding: 0 20px;
+  color: var(--pd-color-ink);
+  font-size: var(--pd-font-input);
+  line-height: 1.4;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: 13px;
+  box-sizing: border-box;
+
+  &:focus {
+    background: #fff;
+    border-color: var(--pd-color-line-strong);
+  }
+}
+
+@mixin textarea-field {
+  width: 100%;
+  min-height: 210px;
+  padding: 18px 20px;
+  color: var(--pd-color-ink);
+  font-size: var(--pd-font-input);
+  line-height: 1.55;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: 13px;
+  box-sizing: border-box;
+
+  &:focus {
+    background: #fff;
+    border-color: var(--pd-color-line-strong);
+  }
+}
+
+@mixin field-label {
+  display: block;
+  margin: 22px 0 10px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-label);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+@mixin list-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 26px 4px 16px;
+  color: var(--pd-color-ink-faint);
+  font-size: var(--pd-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+@mixin state-shell {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 34px 28px;
+  color: var(--pd-color-ink);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+@mixin state-title {
+  display: block;
+  max-width: 18ch;
+  font-family: var(--pd-font-display);
+  font-size: var(--pd-font-title);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+@mixin state-description {
+  display: block;
+  max-width: 28em;
+  margin-top: 12px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+  line-height: 1.6;
+}
+
+@mixin feedback-base {
+  display: block;
+  margin-top: 18px;
+  padding: 16px 18px;
+  font-size: var(--pd-font-body-size);
+  line-height: 1.55;
+  border-radius: var(--pd-radius-small);
+}
+
+@mixin feedback-error {
+  @include feedback-base;
+
+  color: var(--pd-color-danger);
+  background: var(--pd-color-danger-soft);
+  border: 1px solid rgb(169 47 56 / 18%);
+}
+
+@mixin feedback-warning {
+  @include feedback-base;
+
+  color: var(--pd-color-warning);
+  background: var(--pd-color-warning-soft);
+  border: 1px solid rgb(118 83 28 / 18%);
+}
+
+@mixin feedback-success {
+  @include feedback-base;
+
+  color: var(--pd-color-success);
+  background: var(--pd-color-success-soft);
+  border: 1px solid rgb(25 98 68 / 18%);
+}
+
+@mixin meta-text {
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* stylelint-enable at-rule-no-unknown */

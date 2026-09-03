@@ -1,22 +1,21 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+
 .login-page {
-  min-height: 100vh;
   display: flex;
+  min-height: 100vh;
   align-items: center;
   justify-content: center;
-  box-sizing: border-box;
   padding: 48px 32px;
-  background: linear-gradient(160deg, #fff5f8 0%, #f7f8fa 58%, #eef4ff 100%);
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
 }
 
 .login-card {
+  @include pd.section-panel(40px, var(--pd-radius-large));
+
   width: 100%;
   max-width: 640px;
-  box-sizing: border-box;
-  padding: 48px 40px;
-  border: 1px solid #f0dfe5;
-  border-radius: 28px;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 18px 60px rgb(80 42 58 / 10%);
 
   &__eyebrow,
   &__title,
@@ -26,84 +25,81 @@
   }
 
   &__eyebrow {
-    color: #c5416c;
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: 2px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-label);
+    font-weight: 750;
+    letter-spacing: -0.4px;
   }
 
   &__title {
-    margin-top: 10px;
-    color: #2a2024;
-    font-size: 48px;
+    max-width: 10ch;
+    margin-top: 28px;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-display-size);
     font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.22;
   }
 
   &__subtitle {
+    max-width: 24em;
     margin-top: 12px;
-    color: #71676b;
-    font-size: 26px;
-  }
-
-  &__notice {
-    margin-top: 28px;
-    color: #8a7f83;
-    font-size: 22px;
-    text-align: center;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.55;
   }
 
   &__register {
-    margin-top: 24px;
-    color: #a92e51;
-    font-size: 25px;
-    background: transparent;
-    border: 0;
+    @include pd.quiet-button;
 
-    &::after {
-      border: 0;
-    }
+    width: 100%;
+    margin-top: 16px;
+    color: var(--pd-color-primary-strong);
+    background: transparent;
+  }
+
+  &__notice {
+    max-width: 34em;
+    margin: 22px auto 0;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+    text-align: center;
   }
 }
 
 .login-form {
   display: block;
-  margin-top: 42px;
+  margin-top: 30px;
 
   &__label {
-    display: block;
-    margin: 24px 0 12px;
-    color: #43393d;
-    font-size: 26px;
-    font-weight: 600;
+    @include pd.field-label;
   }
 
   &__input {
-    height: 88px;
-    box-sizing: border-box;
-    padding: 0 24px;
-    border: 2px solid #ded7da;
-    border-radius: 16px;
-    background: #fff;
-    color: #282125;
-    font-size: 28px;
+    @include pd.field;
   }
 
   &__error {
-    display: block;
-    margin-top: 20px;
-    color: #b42318;
-    font-size: 24px;
+    @include pd.feedback-error;
   }
 
   &__submit {
-    margin-top: 36px;
-    border-radius: 16px;
-    background: #c5416c;
-    font-size: 30px;
-    font-weight: 600;
+    @include pd.primary-button(16px);
+
+    width: 100%;
+    margin-top: 30px;
 
     &--wechat {
-      background: #07c160;
+      background: linear-gradient(135deg, #087e50 0%, #0a8d59 100%);
+      box-shadow: 0 9px 22px rgb(8 126 80 / 17%);
     }
+  }
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .login-card {
+    background: rgb(255 253 253 / 82%);
+    backdrop-filter: blur(22px) saturate(118%);
   }
 }

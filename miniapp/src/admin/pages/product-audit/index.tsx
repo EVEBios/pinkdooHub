@@ -73,7 +73,6 @@ export function AuthenticatedProductAudit({ productId, productType }: {
   return (
     <View className='product-audit-page'>
       <View className='product-audit-page__header'>
-        <Text className='product-audit-page__eyebrow'>PRODUCT AUDIT</Text>
         <Text className='product-audit-page__title'>商品 #{productId} 操作历史</Text>
         <Text className='product-audit-page__subtitle'>只读记录，按发生时间倒序展示</Text>
       </View>

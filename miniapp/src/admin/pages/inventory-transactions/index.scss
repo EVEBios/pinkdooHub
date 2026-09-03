@@ -3,40 +3,36 @@
 
 .inventory-transactions-page {
   min-height: 100vh;
-  padding: 0 28px calc(48px + env(safe-area-inset-bottom));
-  color: #292532;
-  background: #f7f5fb;
+  padding: 0 24px calc(52px + env(safe-area-inset-bottom));
+  color: var(--pd-color-ink);
+  background: var(--pd-gradient-canvas);
   box-sizing: border-box;
 
   &__header {
-    margin: 0 -28px;
-    padding: 46px 32px 30px;
-    color: #fff;
-    background: linear-gradient(145deg, #365f68, #6d5877);
+    margin: 0 -24px 30px;
+    padding: 38px 28px 34px;
+    background: var(--pd-gradient-soft);
+    border-bottom: 1px solid rgb(185 119 143 / 18%);
   }
 
-  &__eyebrow,
   &__title,
   &__subtitle {
     display: block;
   }
 
-  &__eyebrow {
-    font-size: 21px;
-    font-weight: 700;
-    letter-spacing: 2px;
-  }
-
   &__title {
-    margin-top: 9px;
-    font-size: 40px;
+    font-family: var(--pd-font-display);
+    font-size: 42px;
     font-weight: 700;
+    letter-spacing: -0.8px;
+    line-height: 1.25;
   }
 
   &__subtitle {
     margin-top: 12px;
-    font-size: 22px;
-    line-height: 1.5;
-    opacity: 0.88;
+    max-width: 28em;
+    color: var(--pd-color-ink-soft);
+    font-size: 21px;
+    line-height: 1.58;
   }
 }

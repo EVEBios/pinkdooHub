@@ -127,7 +127,7 @@ export function AuthenticatedAdminOrderDetail({ orderId }: { readonly orderId: n
 function AdminOrderHeading({ order }: { readonly order: AdminOrderDetail }) {
   return (
     <View className='admin-order-detail-heading'>
-      <Text className='admin-order-detail-heading__eyebrow'>管理订单详情</Text>
+      <Text className='admin-order-detail-heading__title'>管理订单详情</Text>
       <Text className='admin-order-detail-heading__number'>{order.order_no}</Text>
       <Text className='admin-order-detail-heading__status'>{order.status.label}</Text>
       <Text className='admin-order-detail-heading__total'>¥{formatPrice(order.total_amount)}</Text>

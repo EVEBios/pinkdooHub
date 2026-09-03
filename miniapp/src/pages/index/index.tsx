@@ -42,18 +42,20 @@ export default function ProductListPage() {
   return (
     <View className='product-page'>
       <View className='product-page__header'>
-        <View>
-          <Text className='product-page__eyebrow'>pinkdooHub</Text>
-          <Text className='product-page__title'>发现你的下一幅拼豆作品</Text>
-          <Text className='product-page__subtitle'>体验课程与材料套装均以服务端最新信息为准</Text>
+        <View className='product-page__header-inner'>
+          <Text className='product-page__brand'>pinkdooHub</Text>
+          <View className='product-page__intro'>
+            <Text className='product-page__title'>发现下一幅拼豆作品</Text>
+            <Text className='product-page__subtitle'>选一场体验，或带一套材料回家。</Text>
+          </View>
+          <AccountActions
+            onLogout={() => void handleLogout()}
+            status={status}
+            userNickname={user?.nickname}
+            userRole={user?.role}
+          />
+          {logoutError && <Text className='product-page__account-error'>{logoutError}</Text>}
         </View>
-        <AccountActions
-          onLogout={() => void handleLogout()}
-          status={status}
-          userNickname={user?.nickname}
-          userRole={user?.role}
-        />
-        {logoutError && <Text className='product-page__account-error'>{logoutError}</Text>}
       </View>
 
       <View className='product-page__content'>
@@ -81,8 +83,8 @@ export default function ProductListPage() {
         {state.status === 'content' && (
           <>
             <View className='product-page__summary'>
-              <Text>当前已加载 {state.items.length} 件</Text>
-              <Text>共 {state.total} 件</Text>
+              <Text>本页 {state.items.length} 件</Text>
+              <Text>全部 {state.total} 件</Text>
             </View>
             <View className='product-grid'>
               {state.items.map((product) => (
@@ -130,6 +132,7 @@ function ProductFilters({ keyword, onKeywordChange, onProductTypeChange, product
         className='product-filters__search'
         maxlength={100}
         placeholder='搜索商品名称'
+        placeholderClass='product-filters__search-placeholder'
         value={keyword}
         onInput={(event) => onKeywordChange(event.detail.value)}
       />
@@ -138,7 +141,6 @@ function ProductFilters({ keyword, onKeywordChange, onProductTypeChange, product
           <Button
             key={filter.value}
             className={`product-filters__type${productType === filter.value ? ' product-filters__type--active' : ''}`}
-            size='mini'
             onClick={() => onProductTypeChange(filter.value)}
           >
             {filter.label}
@@ -158,55 +160,45 @@ interface AccountActionsProps {
 
 function AccountActions({ onLogout, status, userNickname, userRole }: AccountActionsProps) {
   if (status === 'authenticated' && userNickname) {
+    const isAdmin = userRole === 'admin' || userRole === 'super_admin'
+    const adminActions = [
+      { label: '库存流水', url: ADMIN_INVENTORY_LIST_PATH },
+      { label: '管理商品', url: ADMIN_PRODUCT_LIST_PATH },
+      { label: '管理订单', url: ADMIN_ORDER_LIST_PATH },
+      { label: '管理用户', url: ADMIN_USER_LIST_PATH },
+    ] as const
+
     return (
       <View className='product-page__account'>
         <Text className='product-page__account-user'>你好，{userNickname}</Text>
         <View className='product-page__account-actions'>
-          <Button
-            className='product-page__account-action'
-            size='mini'
-            onClick={() => void Taro.navigateTo({ url: '/pages/orders/index' })}
-          >
-            我的订单
-          </Button>
-          {(userRole === 'admin' || userRole === 'super_admin') && (
+          <View className='product-page__account-group'>
+            <Text className='product-page__account-section'>我的</Text>
             <Button
               className='product-page__account-action'
-              size='mini'
-              onClick={() => void Taro.navigateTo({ url: ADMIN_INVENTORY_LIST_PATH })}
+              onClick={() => void Taro.navigateTo({ url: '/pages/orders/index' })}
             >
-              库存流水
+              <Text className='product-page__account-action-label'>我的订单</Text>
+              <Text className='product-page__account-action-meta'>查看</Text>
             </Button>
+          </View>
+          {isAdmin && (
+            <View className='product-page__account-group'>
+              <Text className='product-page__account-section'>店铺管理</Text>
+              {adminActions.map((action) => (
+                <Button
+                  key={action.url}
+                  className='product-page__account-action'
+                  onClick={() => void Taro.navigateTo({ url: action.url })}
+                >
+                  <Text className='product-page__account-action-label'>{action.label}</Text>
+                  <Text className='product-page__account-action-meta'>管理</Text>
+                </Button>
+              ))}
+            </View>
           )}
-          {(userRole === 'admin' || userRole === 'super_admin') && (
-            <Button
-              className='product-page__account-action'
-              size='mini'
-              onClick={() => void Taro.navigateTo({ url: ADMIN_PRODUCT_LIST_PATH })}
-            >
-              管理商品
-            </Button>
-          )}
-          {(userRole === 'admin' || userRole === 'super_admin') && (
-            <Button
-              className='product-page__account-action'
-              size='mini'
-              onClick={() => void Taro.navigateTo({ url: ADMIN_ORDER_LIST_PATH })}
-            >
-              管理订单
-            </Button>
-          )}
-          {(userRole === 'admin' || userRole === 'super_admin') && (
-            <Button
-              className='product-page__account-action'
-              size='mini'
-              onClick={() => void Taro.navigateTo({ url: ADMIN_USER_LIST_PATH })}
-            >
-              管理用户
-            </Button>
-          )}
-          <Button className='product-page__account-action' size='mini' onClick={onLogout}>退出</Button>
         </View>
+        <Button className='product-page__account-logout' onClick={onLogout}>退出</Button>
       </View>
     )
   }
@@ -217,8 +209,7 @@ function AccountActions({ onLogout, status, userNickname, userRole }: AccountAct
     <View className='product-page__account'>
       {status === 'error' && <Text className='product-page__account-hint'>登录状态暂不可用，不影响浏览</Text>}
       <Button
-        className='product-page__account-action'
-        size='mini'
+        className='product-page__account-login'
         onClick={() => void Taro.navigateTo({ url: '/pages/login/index' })}
       >
         登录
