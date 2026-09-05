@@ -1,16 +1,16 @@
 # 库存模块（Inventory Module）
 
-> **Contract Version:** v0.6
+> **Contract Version:** v0.7
 >
-> **Status:** Implemented and Final-Review Complete（Phase 4.3.12；v0.6.0 未发布候选；未应用持久环境）
+> **Status:** Phase 4.3.12 implemented and Final-Review Complete；Wallet/Payment/Refund v1 adds assisted Paid deduction and PAID refund restore in repository M4（not applied to persistent databases）
 >
-> **Last Updated:** 2026-08-14
+> **Last Updated:** 2026-09-05
 
 ---
 
 ## 1. 模块目标与当前边界
 
-Inventory 负责 Kit 当前可售库存、不可变库存流水、管理员调整，以及 Order 创建/取消引发的自动扣减与恢复。本文是库存业务行为的权威来源；HTTP 草案见 [Inventory API](../03_api/inventory_api.md)。
+Inventory 负责 Kit 当前可售库存、不可变库存流水、管理员调整，以及 Order 创建、Pending 取消和 PAID 全额退款引发的自动扣减/恢复。本文是库存业务行为的权威来源；HTTP 契约见 [Inventory API](../03_api/inventory_api.md)，退款资金规则见 [Wallet Module](wallet_module.md)。
 
 Phase 4.3.1–4.3.12 已完成契约、领域/Schema、Model/数据库设计、离线 MySQL 迁移、Repository、管理员调整、Kit/混合订单创建扣减、Pending 取消恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/HTTP 发布门槛和最终 Review。Order Service 现在拥有创建和取消的库存外层事务：创建写 `order_deduction`，取消按 OrderItem 快照恢复并写 `order_cancellation_restore`；余额、流水、Order、Audit 与响应重载原子提交。Inventory Router 已接入调整、指定 Kit 流水和全局流水，统一使用严格 Schema、Mapper、成功/错误信封和 JWT ADMIN+ 权限。旧直接设置库存端点与 Kit 创建请求中的 `stock` 已按冻结破坏性契约移除，新 Kit 固定从 0 开始并经 adjustment 入库。完整迁移链、正/零库存回填、Repository smoke、真实竞争与查询计划已在隔离 MySQL 8.0.46 实例通过；最终 Review 同步收紧 Product Kit 详情响应的库存上限并清理数据库文档的旧规划描述。代码已收口为 v0.6.0 未发布候选，但未应用任何持久、共享或生产数据库。
 
@@ -23,7 +23,9 @@ Phase 4.3.1–4.3.12 已完成契约、领域/Schema、Model/数据库设计、�
 | Order Item | 已支持 Experience 必填 Option、Kit 省略/null Option，以及混合请求 | 保持当前已实现语义 |
 | 创建订单 | 已在 Pending 创建事务中原子扣减全部 Kit Item，最后一件与交叉多 Kit 真实竞争通过 | 保持当前已实现语义 |
 | 取消订单 | Pending 取消已原子、幂等恢复全部 Kit Item，同单真实取消竞争通过 | 保持当前已实现语义 |
-| 支付/完成 | 只修改 Order + Audit | 保持现状，不再改变库存 |
+| 支付/完成 | 对已存在订单只修改 Order/资金事实/Audit | 保持现状，不再改变库存 |
+| ADMIN+ 代客钱包订单 | 新订单在单事务内扣减 Kit 并直接提交为 Paid | 视为创建扣减，不是既有 Pending 支付再次扣减 |
+| 全额退款 | Wallet/Payment/Refund v1 对 PAID Kit 按快照恢复；COMPLETED 不恢复 | 可销毁 MySQL 0→4 原子闭环已通过；M4 尚未应用持久库 |
 | 流水/幂等 | 管理调整、Order 扣减/恢复均写不可变流水并由数据库唯一键兜底 | 保持当前已实现语义 |
 | 并发 | 管理调整、创建和取消均已使用行锁、锁后校验和有限重试；真实 MySQL 竞争、1205 重试和 EXPLAIN 已通过 | 稳定顺序锁、锁后校验、同事务余额/流水/Order/Audit |
 
@@ -59,18 +61,23 @@ Inventory 接入后，新建 Kit 的初始 `stock` 固定为 `0`；首次入库�
 
 ## 4. 库存发生时点与 Order 矩阵
 
-创建 Pending 订单时把 Kit 数量视为实际扣减，不再建立独立“预占库存”字段。未来超时取消复用相同恢复用例；未来支付接入只推进订单状态。
+普通用户创建 Pending 订单、ADMIN+ 创建直接 Paid 的代客钱包订单时，都把 Kit 数量视为实际扣减，不再建立独立“预占库存”字段。未来超时取消复用相同恢复用例；对已存在 Pending 订单进行余额支付或人工结算只推进订单状态，不再次扣库存。全额退款是独立 Refund 事实，只有 PAID Kit 恢复库存，COMPLETED 不恢复。
 
 | Order 操作 | Order 状态变化 | Inventory 行为 |
 |------------|----------------|----------------|
 | 创建纯 Experience 订单 | 新建 `pending` | 不操作库存 |
 | 创建纯 Kit 订单 | 新建 `pending` | 扣减全部 Kit Item |
 | 创建混合订单 | 新建 `pending` | 只扣减 Kit Item |
+| ADMIN+ 创建 Kit/混合代客钱包订单 | 新建并直接提交为 `paid` | 按 Product ID 升序锁定并扣减全部 Kit Item，仅扣一次 |
 | 用户取消 Pending | `pending -> cancelled` | 恢复全部 Kit Item |
 | ADMIN+ 确认支付 | `pending -> paid` | 不改变库存 |
 | ADMIN+ 完成订单 | `paid -> completed` | 不改变库存 |
 | 已支付订单取消 | 不允许 | 不恢复库存 |
+| ADMIN+ 全额退款 PAID Kit/混合订单 | Order 保持 `paid`，Refund → `succeeded` | 按 OrderItem 快照恢复全部 Kit Item |
+| ADMIN+ 全额退款 PAID Experience | Order 保持 `paid`，Refund → `succeeded` | 不操作库存 |
+| ADMIN+ 全额退款 COMPLETED | Order 保持 `completed`，Refund → `succeeded` | 不恢复库存 |
 | 重复取消 | 状态冲突 | 不产生第二次恢复或流水 |
+| 重复退款 | 幂等重放或退款状态冲突 | 不产生第二次恢复或流水 |
 
 纯 Experience、纯 Kit、Experience + Kit 混合订单均允许。任一 Kit 不可售或库存不足时整单失败：所有 Kit 扣减、Order、OrderItem、InventoryTransaction 与 `CREATE_ORDER` 审计必须全部回滚。
 
@@ -116,16 +123,17 @@ ADMIN+（`admin`、`super_admin`）可以增加或减少 Draft、Online、Offlin
 
 ## 7. 流水类型、来源与操作人
 
-第一版冻结四个稳定英文字符串 value：
+当前冻结五个稳定英文字符串 value：
 
 | transaction type | change 符号 | source | operator |
 |------------------|-------------|--------|----------|
 | `opening_balance` | 正数 | `migration` | `null` |
 | `admin_adjustment` | 正或负 | `admin` | 当前管理员 |
-| `order_deduction` | 负数 | `order` | 下单用户 |
+| `order_deduction` | 负数 | `order` | 普通自助订单为下单用户；代客钱包订单为 ADMIN+ 操作者 |
 | `order_cancellation_restore` | 正数 | `order` | 取消用户（订单所属用户） |
+| `order_refund_restore` | 正数 | `order` | 发起全额退款的 ADMIN+ |
 
-系统自动订单事件仍记录触发该事件的已认证用户，而不是伪造管理员。未来无用户参与的定时取消可以令 operator 为空，但必须保留 Order source 与幂等键。
+系统自动订单事件记录触发该事件的已认证操作者：普通自助下单/取消为订单用户，ADMIN+ 代客钱包下单和退款恢复为管理员；不得把实际管理员操作伪装成客户操作。未来无用户参与的定时取消可以令 operator 为空，但必须保留 Order source 与幂等键。
 
 管理员原因使用调用方提交并规范化后的文本；订单与迁移事件使用服务端稳定原因，不接受客户端伪造。流水 API 不输出内部幂等键，也不输出操作者手机号、用户名、Token 或订单备注。
 
@@ -140,6 +148,7 @@ Phase 4.3.3 持久化字段冻结为：`product_id` 关联 `products.id`、可�
 ```text
 inventory:order:{order_id}:deduct:product:{product_id}
 inventory:order:{order_id}:restore:product:{product_id}
+inventory:refund:{refund_id}:restore:product:{product_id}
 inventory:opening:product:{product_id}
 ```
 
@@ -162,7 +171,7 @@ inventory:opening:product:{product_id}
 6. 在同一事务中完成 Order/Items/Audit 或管理员 Audit；
 7. 使用同一连接重载响应后提交。
 
-Order 创建与取消 Service 拥有包含 Inventory 写入在内的外层事务；它们直接协调 Inventory Repository，不调用 Inventory Service。管理员调整事务由 Inventory Service 拥有。Repository 只执行锁、查询和持久化，不判断业务状态或抛业务异常。
+Order 创建、ADMIN+ 代客钱包订单与取消 Service 拥有包含 Inventory 写入在内的外层事务；Refund Service 拥有全额退款及 PAID Kit 恢复事务；它们都直接协调 Inventory Repository，不调用 Inventory Service。管理员调整事务由 Inventory Service 拥有。Repository 只执行锁、查询和持久化，不判断业务状态或抛业务异常。
 
 ### 9.1 Order 创建事务顺序
 
@@ -218,6 +227,8 @@ Phase 4.3.7 已将 Order 创建切换到库存感知实现：
 
 Order Request/Response Schema、Mapper、组合根和既有 POST 路由已经同步支持 Kit null Option 快照；阶段门禁 `40922 KitOrderingRequiresInventory` 已移除。真实 MySQL 最后一件库存、交叉锁序及管理调整竞争已由 Phase 4.3.11 验证通过。
 
+Wallet/Payment/Refund v1 还复用相同快照和扣减算法实现 ADMIN+ 代客钱包订单。该路径先锁并重检目标普通 USER，创建真实 Order 并锁定 WalletAccount，再按 Product ID 升序锁定 Kit、扣减并写同样的 `order_deduction`；operator 是发起操作的 ADMIN+。随后在同一事务中写 Items、钱包扣款、Payment/Settlement、直接 Paid 和两条 Order Audit。余额不足、disabled/deleted 目标或任何资金/库存写入失败时全部回滚。该路径已在可销毁 MySQL 8 的真实 Aerich 0→4 Schema 上通过“调账 → 代客 Kit 扣减 → PAID 全额退款恢复 → 幂等重放”闭环；仍需在生产启用前补齐新增路径的并发、1205/1213 与 EXPLAIN 扩展门槛。
+
 ### 9.6 Pending 取消恢复实现边界
 
 Phase 4.3.8 已将现有 owner cancel 用例切换为库存感知事务：
@@ -232,7 +243,13 @@ Phase 4.3.8 已将现有 owner cancel 用例切换为库存感知事务：
 
 Order 状态机是正常重复请求的第一道保护，Inventory restore UNIQUE 是事务重放与未来自动取消的数据库兜底；两者共同构成纵深防御。真实 MySQL 同单取消竞争已由 Phase 4.3.11 验证只恢复一次。
 
-### 9.7 查询 Service 与 Mapper 实现边界
+### 9.7 PAID 全额退款恢复实现边界
+
+Wallet/Payment/Refund v1 新增独立退款恢复路径：Refund Service 在同一事务内锁定普通 USER、Order、PaymentSettlement 与 Payment，并确认订单是 PAID 后读取不可变 OrderItem 快照。只聚合 Kit Item，按 Product ID 升序一次锁定全部 ProductKit，使用 `inventory:refund:{refund_id}:restore:product:{product_id}` 检查唯一业务身份，再批量更新余额并写 `order_refund_restore` 流水。
+
+恢复使用下单数量快照，不重新要求 Product Online，也不读取当前价格。恢复后库存仍必须位于 `0..999999`；任一 Kit 缺失、幂等身份冲突、余额越界、钱包退款、Refund 状态或 Audit 写入失败时整笔事务回滚。COMPLETED 退款和纯 Experience 退款零 Inventory 写入。该路径属于 M4 仓库实现，已通过可销毁 MySQL 8 的单链路原子闭环，但 M4 尚未应用持久库，且既有 Phase 4.3.11 证据不能替代新增资金路径的完整并发/查询计划门槛。
+
+### 9.8 查询 Service 与 Mapper 实现边界
 
 Phase 4.3.9 已完成两类只读用例与 Inventory API 映射边界：
 
@@ -245,7 +262,7 @@ Phase 4.3.9 已完成两类只读用例与 Inventory API 映射边界：
 
 该阶段尚未注册 Inventory 组合根或管理路由，也未移除 Product 旧库存端点；这些边界现已由 Phase 4.3.10 完成。真实 MySQL 查询计划和完整 HTTP/并发矩阵仍属于 4.3.11 发布门槛。
 
-### 9.8 Inventory API 实现边界
+### 9.9 Inventory API 实现边界
 
 Phase 4.3.10 已将现有领域能力接入 HTTP：
 
@@ -258,7 +275,7 @@ Phase 4.3.10 已将现有领域能力接入 HTTP：
 
 本阶段没有修改物理 Schema 或迁移，也没有执行持久环境数据库操作。真实 MySQL 竞争、EXPLAIN 与完整权限/异常/边界矩阵已由 4.3.11 收口。
 
-### 9.9 真实 MySQL 与 HTTP 发布门槛
+### 9.10 真实 MySQL 与 HTTP 发布门槛
 
 Phase 4.3.11 在独立临时数据目录、`127.0.0.1:13306` 的 MySQL Community Server 8.0.46 上执行真实 Aerich 0 → 1 → 2 迁移链，并运行可重复的 `tests/inventory/mysql/` 门槛：
 
@@ -278,7 +295,7 @@ Inventory 特有错误：
 | 命名异常 | code | HTTP | message | data |
 |----------|------|------|---------|------|
 | `InsufficientStock` | `40931` | 409 | `Insufficient stock` | 用户下单仅含 `product_id`, `requested_quantity` |
-| `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 管理调整或取消恢复含 `product_id`, `before_quantity`, `change_quantity`, `minimum`, `maximum` |
+| `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 管理调整、取消或 PAID 退款恢复含 `product_id`, `before_quantity`, `change_quantity`, `minimum`, `maximum` |
 | `InventoryTransactionConflict` | `40933` | 409 | `Inventory idempotency key conflicts with another request` | `null` |
 
 Product 不存在/删除/类型/Kit 扩展缺失复用 Product 的 `40401`、`40903`、`40001`、`40404`；Order 状态错误继续复用 `40921`。`change`、reason、Idempotency-Key 和查询形状错误使用全局 HTTP 422 / code `422`。

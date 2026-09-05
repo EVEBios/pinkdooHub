@@ -121,6 +121,18 @@ class Settings(BaseSettings):
     auth_wechat_bind_limit: int = 5
     auth_wechat_bind_window_seconds: int = 600
 
+    # ═══════════════════════
+    # Wallet / Payment v1
+    # ═══════════════════════
+    # Development/testing can exercise the internal wallet flows without
+    # weakening production defaults. Real top-up stays unavailable until the
+    # supervised payment channel and WeChat merchant prerequisites are ready.
+    wallet_admin_write_enabled: bool = False
+    wallet_order_payment_enabled: bool = False
+    wallet_refund_enabled: bool = False
+    wallet_topup_enabled: bool = False
+    payment_provider: str = "disabled"
+
     model_config = {
         "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",
@@ -149,7 +161,9 @@ class Settings(BaseSettings):
 
         if self.wechat_login_enabled:
             if not self.wechat_app_id.strip():
-                raise ValueError("WECHAT_APP_ID is required when WeChat login is enabled")
+                raise ValueError(
+                    "WECHAT_APP_ID is required when WeChat login is enabled"
+                )
             if not self.wechat_app_secret.strip():
                 raise ValueError(
                     "WECHAT_APP_SECRET is required when WeChat login is enabled"
@@ -185,6 +199,17 @@ class Settings(BaseSettings):
         for name, value in positive_limits.items():
             if value < 1:
                 raise ValueError(f"{name} must be positive")
+
+        if self.payment_provider != "disabled":
+            raise ValueError(
+                "PAYMENT_PROVIDER must remain disabled until a reviewed payment "
+                "provider adapter is implemented"
+            )
+        if self.wallet_topup_enabled:
+            raise ValueError(
+                "WALLET_TOPUP_ENABLED cannot be enabled while PAYMENT_PROVIDER "
+                "is disabled"
+            )
 
         # ── 生产环境启动契约 ──────────────────
         if self.app_env == "production":
@@ -233,6 +258,36 @@ class Settings(BaseSettings):
                 )
 
         return self
+
+    @property
+    def wallet_admin_write_available(self) -> bool:
+        """内部环境默认可演练调账；生产必须显式开启。"""
+
+        return (
+            self.app_env in ("development", "testing")
+            or self.wallet_admin_write_enabled
+        )
+
+    @property
+    def wallet_order_payment_available(self) -> bool:
+        """内部环境默认可演练余额支付；生产必须显式开启。"""
+
+        return (
+            self.app_env in ("development", "testing")
+            or self.wallet_order_payment_enabled
+        )
+
+    @property
+    def wallet_refund_available(self) -> bool:
+        """内部环境默认可演练钱包退款；生产必须显式开启。"""
+
+        return self.app_env in ("development", "testing") or self.wallet_refund_enabled
+
+    @property
+    def wallet_topup_available(self) -> bool:
+        """只有真实 Provider 与充值开关同时就绪时才允许创建充值。"""
+
+        return self.wallet_topup_enabled and self.payment_provider != "disabled"
 
 
 settings = Settings()

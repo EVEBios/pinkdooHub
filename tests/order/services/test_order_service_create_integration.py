@@ -9,8 +9,9 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
 
 from app.common.enums.product import DayType, ProductStatus, ProductType
-from app.common.enums.user import UserStatus
-from app.common.exceptions import InsufficientStock, UserDeleted
+from app.common.enums.user import UserRole, UserStatus
+from app.common.exceptions import InsufficientStock, UserDeleted, UserDisabled
+from app.core.exceptions import PermissionException
 from app.models.audit_log import AuditLog
 from app.models.experience_option import ExperienceOption
 from app.models.inventory_transaction import InventoryTransaction
@@ -199,6 +200,44 @@ async def test_create_rechecks_locked_user_and_rejects_deleted_account() -> None
     await user.save(update_fields=["status", "password", "phone"])
 
     with pytest.raises(UserDeleted):
+        await _service(iter([_order_no(1)])).create_order(
+            user_id=user.id,
+            items=[OrderItemInput(product.id, option.id, 1)],
+            remark=None,
+            ip_address="203.0.113.8",
+        )
+
+    assert await Order.all().count() == 0
+    assert await OrderItem.all().count() == 0
+    assert await AuditLog.all().count() == 0
+
+
+@pytest.mark.parametrize(
+    ("role", "status", "expected_exception"),
+    [
+        (UserRole.USER, UserStatus.DISABLED, UserDisabled),
+        (UserRole.ADMIN, UserStatus.NORMAL, PermissionException),
+    ],
+)
+async def test_create_rejects_non_normal_customer_after_user_lock(
+    role: UserRole,
+    status: UserStatus,
+    expected_exception: type[Exception],
+) -> None:
+    user = await _create_user()
+    product, option = await _create_experience(
+        1,
+        name="账户状态校验体验",
+        duration=60,
+        participants=1,
+        day_type=DayType.WEEKDAY,
+        price="99.00",
+    )
+    user.role = role
+    user.status = status
+    await user.save(update_fields=["role", "status", "updated_at"])
+
+    with pytest.raises(expected_exception):
         await _service(iter([_order_no(1)])).create_order(
             user_id=user.id,
             items=[OrderItemInput(product.id, option.id, 1)],

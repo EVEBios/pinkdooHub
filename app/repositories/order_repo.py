@@ -108,6 +108,46 @@ class OrderRepository:
             query = query.using_db(using_db)
         return await query.exists()
 
+    async def get_latest_order_id(
+        self,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """读取当前最大 Order ID，供受控游标任务冻结扫描上界。"""
+
+        query = Order.all().order_by("-id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        order = await query.first()
+        return 0 if order is None else order.id
+
+    async def list_orders_by_status_cursor(
+        self,
+        *,
+        statuses: tuple[OrderStatus, ...],
+        after_order_id: int,
+        through_order_id: int,
+        limit: int,
+        for_update: bool = False,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[Order]:
+        """按稳定 ID 游标读取指定状态订单，可加入调用方行锁事务。"""
+
+        query = (
+            Order.filter(
+                id__gt=after_order_id,
+                id__lte=through_order_id,
+                status__in=[status.value for status in statuses],
+            )
+            .order_by("id")
+            .limit(limit)
+        )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        if for_update:
+            query = query.select_for_update()
+        return list(await query)
+
     async def create_order(
         self,
         *,

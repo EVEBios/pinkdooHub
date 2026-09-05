@@ -10,6 +10,7 @@ class InventoryTransactionType(str, Enum):
     ADMIN_ADJUSTMENT = "admin_adjustment"
     ORDER_DEDUCTION = "order_deduction"
     ORDER_CANCELLATION_RESTORE = "order_cancellation_restore"
+    ORDER_REFUND_RESTORE = "order_refund_restore"
 
 
 class InventorySourceType(str, Enum):

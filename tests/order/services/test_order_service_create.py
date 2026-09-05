@@ -8,6 +8,7 @@ import pytest
 from tortoise.exceptions import IntegrityError
 
 from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.enums.user import UserRole, UserStatus
 from app.common.exceptions import (
     InsufficientStock,
     OrderOptionUnavailable,
@@ -87,7 +88,8 @@ def _service(
     user_repository = AsyncMock(spec=UserRepository)
     user_repository.get_for_update.return_value = SimpleNamespace(
         id=7,
-        status=1,
+        role=UserRole.USER,
+        status=UserStatus.NORMAL,
     )
     generator = order_number_generator or Mock(
         return_value="OD00000000000000000000000001"

@@ -45,6 +45,7 @@ def test_inventory_string_enums_match_frozen_values() -> None:
         "admin_adjustment",
         "order_deduction",
         "order_cancellation_restore",
+        "order_refund_restore",
     ]
     assert [item.value for item in InventorySourceType] == [
         "migration",

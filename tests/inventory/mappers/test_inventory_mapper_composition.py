@@ -51,7 +51,10 @@ def _transaction(
         change = (
             2
             if transaction_type
-            is InventoryTransactionType.ORDER_CANCELLATION_RESTORE
+            in (
+                InventoryTransactionType.ORDER_CANCELLATION_RESTORE,
+                InventoryTransactionType.ORDER_REFUND_RESTORE,
+            )
             else -2
         )
         source_type = InventorySourceType.ORDER

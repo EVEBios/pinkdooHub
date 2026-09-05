@@ -21,6 +21,10 @@ INVENTORY_ORDER_RESTORE_IDEMPOTENCY_KEY = (
     "inventory:order:{order_id}:restore:product:{product_id}"
 )
 INVENTORY_ORDER_RESTORE_REASON = "Order cancellation stock restore"
+INVENTORY_ORDER_REFUND_RESTORE_IDEMPOTENCY_KEY = (
+    "inventory:refund:{refund_id}:restore:product:{product_id}"
+)
+INVENTORY_ORDER_REFUND_RESTORE_REASON = "Paid order refund stock restore"
 
 # 数据库与 API 字符串字段容量候选；Model 阶段必须沿用或显式修订契约。
 INVENTORY_TRANSACTION_TYPE_MAX_LENGTH = 40

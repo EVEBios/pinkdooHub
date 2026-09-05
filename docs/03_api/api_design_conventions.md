@@ -282,7 +282,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 413 | Payload Too Large | 上传文件超过大小限制 |
 | 422 | Unprocessable Entity | 参数校验失败，或请求语法正确但当前业务聚合不满足处理条件 |
 | 500 | Internal Server Error | 服务器内部错误 |
-| 503 | Service Unavailable | 实例存活，但数据库或 Redis 等关键依赖暂不可用 |
+| 503 | Service Unavailable | 实例存活，但关键依赖暂不可用，或受控业务能力/支付 Provider 尚未开放 |
 
 > 业务状态以响应体中的 `code` 字段为准，HTTP 状态码用于表达请求层面的结果。
 
@@ -292,7 +292,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 |----------|-------------|------|
 | `BusinessException` | 400 | 一般业务规则不满足 |
 | `UnprocessableEntityException` | 422 | 请求语法正确，但当前业务数据或聚合状态不满足处理条件 |
-| `ServiceUnavailableException` | 503 | 关键基础设施不可用，实例不得接收业务流量 |
+| `ServiceUnavailableException` | 503 | 关键基础设施不可用，或受控资金能力 fail closed；失败路径不得产生业务写入 |
 
 `UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
 
@@ -322,6 +322,7 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 1xxx | 用户模块业务错误 |
 | 4041x / 4092x / 4223x | 订单模块 — 资源不存在 / 状态与阶段冲突 / 聚合不可用 |
 | 4093x | 库存模块 — 余额与幂等冲突 |
+| 4044x / 4094x / 4224x | Wallet/Payment/Refund — 资源不存在 / 余额、结算、退款与幂等冲突 / 充值范围 |
 | 40xxx | 商品模块 — 资源不存在 / 类型错误 |
 | 409xx | 商品模块 — 状态冲突 |
 | 422xx | 商品模块 — 业务校验 |
@@ -338,7 +339,7 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 422 | 请求参数校验失败 |
 | 42901 | 认证请求超过限流阈值（HTTP 429） |
 | 500 | 服务器内部错误 |
-| 503 | 数据库或 Redis 等关键依赖暂不可用 |
+| 503 | 关键依赖暂不可用，或受控资金/支付能力尚未开放 |
 
 ### 8.3 用户模块错误码（1xxx）
 
@@ -358,7 +359,7 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 1012 | 外部身份绑定冲突 |
 | 1013 | 外部身份未绑定 |
 | 1014 | 解绑会移除唯一登录方式 |
-| 1015 | 活跃订单阻止账号注销 |
+| 1015 | 活跃订单、处理中资金、可退款钱包结算敞口或非零钱包余额阻止账号注销 |
 
 ### 8.4 商品模块错误码（40xxx / 409xx / 422xx）
 
@@ -422,7 +423,7 @@ Order 与 Product 一样使用 HTTP 语义化的稳定业务 code；异常必须
 
 ### 8.6 库存模块错误码（4093x）
 
-Phase 4.3.1 已冻结、Phase 4.3.2 已实现以下命名异常；`40931` 已接入 Order 创建，`40932`/`40933` 已由管理员调整 Service 使用，但 Inventory 管理路由尚未注册：
+以下命名异常及三个 Inventory 管理路由均已实现；Wallet/Payment/Refund M4 另在 PAID Kit 全额退款中复用 `40932`/`40933`：
 
 | code | HTTP | 命名异常 | 说明 |
 |------|------|----------|------|
@@ -431,6 +432,26 @@ Phase 4.3.1 已冻结、Phase 4.3.2 已实现以下命名异常；`40931` 已接
 | 40933 | 409 | `InventoryTransactionConflict` | 幂等键已绑定到不同请求 |
 
 Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40001`、`40903`。请求体、`Idempotency-Key`、分页和筛选形状错误使用全局 HTTP 422 / code `422`。HTTP 状态仍由异常类型映射，不按 `4093x` 数字判断。
+
+### 8.7 Wallet / Payment / Refund 错误码（4044x / 4094x / 4224x）
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40441 | 404 | `WalletNotFound` | 钱包不存在或不可见；历史 NORMAL/DISABLED USER 尚未 backfill 也使用该错误 |
+| 40442 | 404 | `RechargeOrderNotFound` | 充值单不存在或不可见 |
+| 40443 | 404 | `PaymentNotFound` | 支付或成功结算不存在/不可见 |
+| 40444 | 404 | `RefundNotFound` | 退款不存在 |
+| 40941 | 409 | `WalletBalanceExceeded` | 变化后余额超出 `0.00..1000.00` |
+| 40942 | 409 | `InsufficientWalletBalance` | 钱包余额不足；响应不披露当前余额 |
+| 40943 | 409 | `WalletTransactionConflict` | 幂等键绑定到不同资金意图 |
+| 40944 | 409 | `PaymentStatusConflict` | Payment 状态不允许操作或重放事实不完整 |
+| 40945 | 409 | `PaymentSettlementConflict` | Order/Payment 已有冲突结算 |
+| 40946 | 409 | `RefundStatusConflict` | 订单/Refund 状态不允许退款或已退款 |
+| 40947 | 409 | `WalletRefundCapacityExceeded` | 正向入账会侵占尚可全额退款的钱包支付预留空间 |
+| 40948 | 409 | `RefundWindowExpired` | Completed 订单超过 30 天退款窗口 |
+| 42241 | 422 | `RechargeAmountOutOfRange` | 单笔充值额超出 `1.00..1000.00` |
+
+钱包余额硬上限为 `1000.00`。ADMIN 正向调账还必须满足 `调整后余额 + 尚可退款的钱包支付敞口 ≤ 1000.00`；PAID 钱包订单和完成未满 30 天的钱包订单在 Refund succeeded 前占用敞口。未来真实充值成功也必须复用该预留校验。真实微信 Provider 当前关闭，充值、微信订单支付及微信退款使用 HTTP 503 / code `503`，且必须在任何数据库写入前失败。完整端点与字段见 [Wallet API](wallet_api.md)。
 
 ---
 
@@ -448,14 +469,14 @@ Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40001`、`40
 
 ### 9.2 金额
 
-所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。Product 与 Order 的请求/响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
+所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。Product、Order 与资金响应使用普通十进制字符串，以避免浮点精度和尾随零歧义：
 
 ```json
 "price": "199.00",
 "total_amount": "497.00"
 ```
 
-金额字符串不得使用指数形式，不得超过两位小数；服务端不得静默四舍五入。Order 文档仍处于后续 Phase 设计状态，其 number 表示需在实现前单独确认，不得反向改变已冻结的 Product 契约。
+金额字符串不得使用指数形式，服务端不得静默四舍五入。Wallet 调账与充值等资金写请求进一步要求固定两位小数字符串，例如 `"-20.00"`；拒绝 JSON number、正负零、科学计数、NaN、Infinity 和三位以上小数。单笔充值冻结为 `1.00..1000.00`，Wallet 余额冻结为 `0.00..1000.00`；这些是领域常量，不由客户端能力提示或普通环境配置放宽。
 
 ### 9.3 布尔值
 
@@ -674,8 +695,17 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | | | 1 → `"paid"` | "已支付" |
 | | | 2 → `"cancelled"` | "已取消" |
 | | | 3 → `"completed"` | "已完成" |
+| `WalletStatus` | VARCHAR | `"active"` | 活跃钱包 |
+| | | `"closed"` | 已注销关闭 |
+| `WalletTransactionType` | VARCHAR | `"recharge"` / `"order_payment"` / `"admin_adjustment"` / `"refund"` | 充值 / 订单消费 / 管理调账 / 退款 |
+| `WalletTransactionSourceType` | VARCHAR | `"recharge_order"` / `"order"` / `"admin"` / `"refund"` | 流水业务来源 |
+| `PaymentPurpose` | VARCHAR | `"order"` / `"recharge"` | 订单支付 / 钱包充值 |
+| `PaymentMethod` | VARCHAR | `"wallet"` / `"wechat"` / `"manual"` | 钱包 / 微信 / 人工线下 |
+| `PaymentStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` / `"closed"` | 支付状态 |
+| `RechargeOrderStatus` | VARCHAR | `"pending"` / `"paid"` / `"failed"` / `"closed"` | 充值单状态 |
+| `RefundStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` | 退款状态 |
 
-> Order API 与 Product API 一致，通过 Mapper 输出 `{value, label}`；请求筛选仍只接收 Enum value。Phase 4.2 的唯一状态流为 `pending → cancelled`、`pending → paid`、`paid → completed`。
+> Order/DayType 等面向页面展示的字段通过 Mapper 输出 `{value, label}`；Wallet/Payment/Refund 的机器状态当前直接输出稳定字符串 Enum。退款状态独立于 OrderStatus，成功退款不会把 Order 改成 Cancelled。
 
 ### 使用示例
 

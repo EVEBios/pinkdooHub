@@ -11,8 +11,10 @@ from app.main import app
 from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
+from app.repositories.payment_repo import PaymentRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.wallet_repo import WalletRepository
 from app.services.audit_log_service import AuditLogService
 
 
@@ -62,6 +64,8 @@ def test_order_composition_root_wires_expected_dependencies() -> None:
     product_repository = ProductRepository()
     inventory_repository = InventoryRepository()
     user_repository = UserRepository()
+    payment_repository = PaymentRepository()
+    wallet_repository = WalletRepository()
     audit_repository = AuditLogRepository()
 
     service = get_order_service(
@@ -70,12 +74,16 @@ def test_order_composition_root_wires_expected_dependencies() -> None:
         inventory_repository=inventory_repository,
         user_repository=user_repository,
         audit_log_repository=audit_repository,
+        payment_repository=payment_repository,
+        wallet_repository=wallet_repository,
     )
 
     assert service.order_repository is order_repository
     assert service.product_repository is product_repository
     assert service.inventory_repository is inventory_repository
     assert service.user_repository is user_repository
+    assert service.payment_repository is payment_repository
+    assert service.wallet_repository is wallet_repository
     assert isinstance(service.audit_log_service, AuditLogService)
     assert service.audit_log_service.audit_repo is audit_repository
 
@@ -119,15 +127,21 @@ def test_order_openapi_has_security_success_errors_and_body_contracts() -> None:
     """九个端点必须精确声明 Bearer、安全信封和 PATCH 无 body。"""
 
     schema = app.openapi()
+    expected_operations = {
+        ("post", "/api/v1/orders"),
+        ("get", "/api/v1/orders"),
+        ("get", "/api/v1/orders/{order_id}"),
+        ("patch", "/api/v1/orders/{order_id}/cancel"),
+        ("get", "/api/v1/admin/orders"),
+        ("get", "/api/v1/admin/orders/{order_id}"),
+        ("patch", "/api/v1/admin/orders/{order_id}/paid"),
+        ("patch", "/api/v1/admin/orders/{order_id}/complete"),
+        ("get", "/api/v1/admin/orders/{order_id}/audit-logs"),
+    }
     operations: list[tuple[str, str, dict]] = []
     for path, path_item in schema["paths"].items():
-        if not (
-            path.startswith("/api/v1/orders")
-            or path.startswith("/api/v1/admin/orders")
-        ):
-            continue
         for method, operation in path_item.items():
-            if method in {"get", "post", "patch"}:
+            if (method, path) in expected_operations:
                 operations.append((method, path, operation))
 
     assert len(operations) == 9

@@ -89,7 +89,13 @@ class ExternalIdentityUnlinkUnsafe(UserException):
 
 class AccountDeletionBlocked(UserException):
     def __init__(self) -> None:
-        super().__init__(code=1015, message="Account deletion is blocked by active orders")
+        super().__init__(
+            code=1015,
+            message=(
+                "Account deletion is blocked by active orders, wallet balance, "
+                "refundable wallet payments, or in-flight financial records"
+            ),
+        )
 
 
 class CannotDisableSelf(UserException):

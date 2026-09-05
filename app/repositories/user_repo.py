@@ -24,6 +24,19 @@ class UserRepository:
             query = query.using_db(using_db)
         return await query.first()
 
+    async def get_latest_user_id(
+        self,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """读取当前最大 User ID，供受控游标任务冻结扫描范围。"""
+
+        query = User.all().order_by("-id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        user = await query.first()
+        return 0 if user is None else user.id
+
     async def get_for_update(
         self,
         user_id: int,
@@ -37,6 +50,38 @@ class UserRepository:
             .using_db(using_db)
             .select_for_update()
             .first()
+        )
+
+    async def list_by_ids(
+        self,
+        user_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[User]:
+        """按主键批量读取用户，并保持稳定 ID 顺序。"""
+
+        if not user_ids:
+            return []
+        query = User.filter(id__in=user_ids).order_by("id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return list(await query)
+
+    async def list_by_ids_for_update(
+        self,
+        user_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[User]:
+        """按主键升序锁定一组用户，供跨域批处理遵守全局锁序。"""
+
+        if not user_ids:
+            return []
+        return list(
+            await User.filter(id__in=user_ids)
+            .using_db(using_db)
+            .order_by("id")
+            .select_for_update()
         )
 
     async def get_by_username(
@@ -126,6 +171,13 @@ class UserRepository:
         using_db: BaseDBAsyncClient | None = None,
         **kwargs,
     ) -> User:
-        """部分更新用户字段，自动保存。"""
-        await user.update_from_dict(kwargs).save(using_db=using_db)
+        """只持久化显式传入的字段，避免旧对象覆盖并发状态变化。"""
+
+        update_fields = list(kwargs)
+        if "updated_at" not in update_fields:
+            update_fields.append("updated_at")
+        await user.update_from_dict(kwargs).save(
+            using_db=using_db,
+            update_fields=update_fields,
+        )
         return user

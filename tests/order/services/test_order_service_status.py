@@ -15,6 +15,7 @@ from app.common.constants.order import (
     ORDER_OPERATION_MARK_PAID,
 )
 from app.common.enums.order import OrderStatus
+from app.common.enums.user import UserRole, UserStatus
 from app.common.exceptions import (
     InventoryBalanceExceeded,
     InventoryTransactionConflict,
@@ -23,6 +24,7 @@ from app.common.exceptions import (
 )
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderCancellationItemData, OrderRepository
+from app.repositories.payment_repo import PaymentRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.services.audit_log_service import AuditLogService
@@ -34,12 +36,22 @@ def _service() -> tuple[OrderService, AsyncMock, AsyncMock, AsyncMock]:
     order_repository.get_order_items.return_value = []
     inventory_repository = AsyncMock(spec=InventoryRepository)
     audit_service = AsyncMock(spec=AuditLogService)
+    user_repository = AsyncMock(spec=UserRepository)
+    user_repository.get_for_update.return_value = SimpleNamespace(
+        id=7,
+        role=UserRole.USER,
+        status=UserStatus.NORMAL,
+    )
+    payment_repository = AsyncMock(spec=PaymentRepository)
+    payment_repository.get_settlement_by_order_id.return_value = None
+    payment_repository.create_payment.return_value = SimpleNamespace(id=31)
     service = OrderService(
         order_repository,
         AsyncMock(spec=ProductRepository),
         inventory_repository,
         audit_service,
-        user_repository=AsyncMock(spec=UserRepository),
+        user_repository=user_repository,
+        payment_repository=payment_repository,
     )
     return service, order_repository, inventory_repository, audit_service
 
@@ -96,10 +108,21 @@ async def test_status_use_cases_lock_validate_update_audit_and_reload(
     """每条公开用例固定目标状态，并在同一事务连接内完成全部步骤。"""
 
     service, repository, inventory_repository, audit_service = _service()
-    locked = SimpleNamespace(id=11, status=required_status)
+    locked = SimpleNamespace(
+        id=11,
+        user_id=7,
+        total_amount=1,
+        status=required_status,
+    )
     loaded = SimpleNamespace(id=11, status=target_status)
     repository.get_order_for_update.return_value = locked
-    repository.get_order_by_id.return_value = loaded
+    if method_name == "mark_order_paid":
+        repository.get_order_by_id.side_effect = [
+            SimpleNamespace(id=11, user_id=7),
+            loaded,
+        ]
+    else:
+        repository.get_order_by_id.return_value = loaded
 
     result = await getattr(service, method_name)(
         11,
@@ -134,10 +157,14 @@ async def test_status_use_cases_lock_validate_update_audit_and_reload(
         ),
         using_db=connection,
     )
-    repository.get_order_by_id.assert_awaited_once_with(
-        11,
-        using_db=connection,
-    )
+    if method_name == "mark_order_paid":
+        assert repository.get_order_by_id.await_count == 2
+        repository.get_order_by_id.assert_awaited_with(11, using_db=connection)
+    else:
+        repository.get_order_by_id.assert_awaited_once_with(
+            11,
+            using_db=connection,
+        )
     if method_name == "cancel_order":
         repository.get_order_items.assert_awaited_once_with(
             11,
@@ -192,8 +219,15 @@ async def test_status_conflict_is_decided_after_lock_and_writes_nothing(
     service, repository, inventory_repository, audit_service = _service()
     repository.get_order_for_update.return_value = SimpleNamespace(
         id=11,
+        user_id=7,
+        total_amount=1,
         status=current_status,
     )
+    if method_name == "mark_order_paid":
+        repository.get_order_by_id.return_value = SimpleNamespace(
+            id=11,
+            user_id=7,
+        )
 
     with pytest.raises(OrderStatusConflict) as caught:
         await getattr(service, method_name)(
@@ -207,7 +241,10 @@ async def test_status_conflict_is_decided_after_lock_and_writes_nothing(
         "required_status": required_status.name.lower(),
     }
     repository.update_status.assert_not_awaited()
-    repository.get_order_by_id.assert_not_awaited()
+    if method_name == "mark_order_paid":
+        repository.get_order_by_id.assert_awaited_once_with(11)
+    else:
+        repository.get_order_by_id.assert_not_awaited()
     audit_service.log.assert_not_awaited()
     inventory_repository.get_kits_for_update.assert_not_awaited()
 
@@ -229,6 +266,11 @@ async def test_missing_or_hidden_order_raises_before_any_write(
 
     service, repository, inventory_repository, audit_service = _service()
     repository.get_order_for_update.return_value = None
+    if method_name == "mark_order_paid":
+        repository.get_order_by_id.return_value = SimpleNamespace(
+            id=404,
+            user_id=7,
+        )
 
     with pytest.raises(OrderNotFound):
         await getattr(service, method_name)(
@@ -240,7 +282,10 @@ async def test_missing_or_hidden_order_raises_before_any_write(
         expected_user_id
     )
     repository.update_status.assert_not_awaited()
-    repository.get_order_by_id.assert_not_awaited()
+    if method_name == "mark_order_paid":
+        repository.get_order_by_id.assert_awaited_once_with(404)
+    else:
+        repository.get_order_by_id.assert_not_awaited()
     audit_service.log.assert_not_awaited()
     inventory_repository.get_kits_for_update.assert_not_awaited()
 
@@ -369,3 +414,26 @@ def test_no_public_generic_status_mutator_or_target_status_parameter() -> None:
         parameters = inspect.signature(getattr(OrderService, method_name)).parameters
         assert "status" not in parameters
         assert "target_status" not in parameters
+
+
+@pytest.mark.parametrize("method_name", ["mark_order_paid", "complete_order"])
+async def test_financial_transition_fails_closed_without_payment_repository(
+    method_name: str,
+) -> None:
+    service, repository, _, audit_service = _service()
+    service.payment_repository = None
+
+    with pytest.raises(
+        RuntimeError,
+        match="PaymentRepository is required for financial order transitions",
+    ):
+        await getattr(service, method_name)(
+            11,
+            operator_id=7,
+            ip_address="127.0.0.1",
+        )
+
+    repository.get_order_by_id.assert_not_awaited()
+    repository.get_order_for_update.assert_not_awaited()
+    repository.update_status.assert_not_awaited()
+    audit_service.log.assert_not_awaited()

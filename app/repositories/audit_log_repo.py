@@ -62,6 +62,27 @@ class AuditLogRepository:
             query = query.using_db(using_db)
         return await query.count()
 
+    async def list_by_action_targets(
+        self,
+        *,
+        action: str,
+        target_type: str,
+        target_ids: set[int],
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[AuditLog]:
+        """批量读取一组目标的同类审计，供受控事实核验任务使用。"""
+
+        if not target_ids:
+            return []
+        query = AuditLog.filter(
+            action=action,
+            target_type=target_type,
+            target_id__in=target_ids,
+        ).order_by("target_id", "created_at", "id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return list(await query)
+
     async def list_logs(
         self,
         *,

@@ -90,7 +90,7 @@ Authorization: Bearer <access_token>
 | 1012 | 外部身份已绑定到其他账号或发生冲突 |
 | 1013 | 当前账号未绑定该外部身份 |
 | 1014 | 解绑会移除唯一登录方式 |
-| 1015 | 存在 Pending/Paid 订单，暂不可注销 |
+| 1015 | 存在 Pending/Paid 订单、处理中资金事实、可退款钱包结算敞口或非零钱包余额，暂不可注销 |
 | 42901 | 身份请求超过限流阈值（HTTP 429） |
 | 503 | 身份依赖暂不可用；限流不可用时 fail closed |
 
@@ -139,7 +139,7 @@ Authorization: Bearer <access_token>
 | 修改密码需旧密码 | 修改密码时必须验证当前密码 |
 | 不能禁用自己 | 管理员不可通过 `/admin/users/{id}/disable` 禁用自己的账号 |
 | 禁用即时生效 | 登录、旧 access 鉴权和旧 refresh 换取新 access 均返回 1005；首次 refresh 拒绝同时撤销该 refresh |
-| 注销账号 | 保留业务外键并匿名化，不物理删除订单/库存/审计；Pending/Paid 订单时拒绝 |
+| 注销账号 | 保留业务外键并匿名化，不物理删除订单/资金/库存/审计；Pending/Paid 订单、处理中资金事实、可退款钱包结算敞口或非零钱包余额时拒绝 |
 | 微信身份 | 不自动按手机号等资料合并；不向客户端返回 OpenID/UnionID/session_key |
 
 ---
@@ -556,9 +556,11 @@ Authorization: Bearer <access_token>
 
 ### 6.4 注销并匿名化账号
 
-`DELETE /api/v1/users/me` 仅允许普通用户。请求必须包含 `confirmation: "DELETE"`，并且在 `password` 与 `wechat_code` 中恰好选择一种二次验证方式。存在 Pending/Paid 订单时返回 1015；完成/取消订单不阻塞。
+`DELETE /api/v1/users/me` 仅允许普通用户。请求必须包含 `confirmation: "DELETE"`，并且在 `password` 与 `wechat_code` 中恰好选择一种二次验证方式。存在 Pending/Paid 订单、Pending Payment/RechargeOrder/Refund、尚可全额退款的钱包结算敞口或非 `0.00` 钱包余额时返回 1015。可退款敞口包括未成功退款的 PAID 钱包结算，以及完成未满 30 天的 COMPLETED 钱包结算；因此余额为零也不代表可以注销。已完成/取消订单本身不阻塞，但其独立资金事实仍按上述条件检查。
 
-成功返回 `{"code":0,"message":"Account deleted","data":null}`。提交后删除全部外部身份、撤销全部 refresh family、递增 `auth_version`，并将用户状态改为 deleted；用户主键和历史订单/库存/审计保留。接口不返回匿名化后的 username，也不支持 ADMIN/SUPER_ADMIN 自助注销。
+成功返回 `{"code":0,"message":"Account deleted","data":null}`。数据库事务的 commit 是注销的权威成功点：事务内删除全部外部身份、递增 `auth_version`，将用户匿名化并改为 deleted，同时把已有 WalletAccount 改为 `closed` 并写入 `DELETE_ACCOUNT` Audit；用户主键和历史钱包流水、Payment、Refund、订单、库存及审计保留。
+
+commit 后服务端会 best-effort 清理该 User 的全部 Redis refresh family。若清理失败，请求仍返回上述成功响应；已提交的 `status=deleted` 和新 `auth_version` 会使旧 access/refresh 在后续使用时失效。服务端仅以内部 user ID 记录不含 Token/JTI 的高优先级 `account_deletion/post_commit_session_cleanup_failed` 安全事件；运维应根据该事件重试 refresh-family 清理。接口不返回匿名化后的 username，也不支持 ADMIN/SUPER_ADMIN 自助注销。
 
 ### 6.5 头像文件上传（未实现）
 

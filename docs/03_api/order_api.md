@@ -1,10 +1,10 @@
 # Order API
 
-> **Document Version:** v1.2
+> **Document Version:** v1.3
 >
-> **Status:** Kit/Mixed Inventory Lifecycle Implemented（Phase 4.2 complete + Phase 4.3.8 complete）
+> **Status:** Kit/Mixed Inventory + Wallet Settlement integration implemented in repository；M4 not applied to persistent databases
 >
-> **Last Updated:** 2026-08-14
+> **Last Updated:** 2026-09-05
 >
 > 本文遵循 [API Design Conventions](api_design_conventions.md)，业务规则以 [Order Module](../01_requirements/order_module.md) 为准。
 
@@ -12,7 +12,7 @@
 
 ## 1. 概述与范围
 
-Order API 提供 Experience、Kit 与混合订单创建，以及用户/管理员查询、取消、人工确认支付、完成和审计历史。Phase 4.3.7–4.3.8 已接入创建 Pending 时的 Kit 库存扣减及 owner cancel 时的幂等恢复；支付与完成不改变库存。
+Order API 提供 Experience、Kit 与混合订单创建，以及用户/管理员查询、取消、代客钱包下单、人工付款登记、完成和审计历史。Phase 4.3.7–4.3.8 已接入创建 Pending 时的 Kit 库存扣减及 owner cancel 时的幂等恢复；Wallet/Payment/Refund v1 另提供余额支付、ADMIN+ 代客钱包订单、订单资金查询和全额退款端点，详见 [Wallet API](wallet_api.md)。对既有订单的支付与完成不改变库存；代客订单在创建时扣减 Kit 并直接 Paid，仅 PAID Kit 全额退款恢复库存。
 
 Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token。
 
@@ -134,6 +134,8 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 | `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 取消恢复越界时包含 Product、before/change 与上下限 |
 | `InventoryTransactionConflict` | `40933` | 409 | `Inventory idempotency key conflicts with another request` | `null` |
 
+余额支付、PaymentSettlement 与全额退款还可能返回 Wallet/Payment/Refund 的 `40441–40444`、`40941–40948`、`42241` 或受控能力 HTTP 503；完整契约见 [Wallet API §8](wallet_api.md#8-错误契约)。
+
 请求形状错误使用全局 HTTP 422 / code `422` 参数校验信封，包括：`items` 为空或超过 10 项、ID 非正整数、数量不在 1 至 99、重复 `(product_id, experience_option_id)`、备注超过 500 字符、未知字段、分页/时间格式错误。`OrderItemsRequired` 属于 Schema 约束，不额外发明业务错误码。
 
 用户查询或取消他人订单与订单确实不存在都返回 `40411`，不会对外提供 `OrderDoesNotBelongToUser`，避免资源枚举。管理员端才可按真实 ID 查询任意订单。
@@ -166,11 +168,17 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 | GET | `/orders` | 我的订单 | 是 | 已认证用户 |
 | GET | `/orders/{order_id}` | 我的订单详情 | 是 | 订单所属用户 |
 | PATCH | `/orders/{order_id}/cancel` | 取消 Pending 订单 | 是 | 订单所属用户 |
+| GET | `/orders/{order_id}/financials` | 我的订单支付/退款事实 | 是 | 订单所属用户 |
+| POST | `/orders/{order_id}/payments/wallet` | 使用余额支付 Pending 订单 | 是 | 订单所属 USER |
+| POST | `/orders/{order_id}/payments/wechat` | 创建微信支付 | 是 | 当前固定 503、零写入 |
+| POST | `/admin/users/{user_id}/wallet-orders` | 为普通客户按商品创建直接 Paid 的钱包订单 | 是 | ADMIN+；正常普通 USER 目标 |
 | GET | `/admin/orders` | 管理订单列表 | 是 | ADMIN+ |
 | GET | `/admin/orders/{order_id}` | 管理订单详情 | 是 | ADMIN+ |
-| PATCH | `/admin/orders/{order_id}/paid` | 人工确认已支付 | 是 | ADMIN+ |
+| PATCH | `/admin/orders/{order_id}/paid` | 登记人工线下付款并创建结算事实 | 是 | ADMIN+ |
 | PATCH | `/admin/orders/{order_id}/complete` | 完成 Paid 订单 | 是 | ADMIN+ |
 | GET | `/admin/orders/{order_id}/audit-logs` | 订单审计历史 | 是 | ADMIN+ |
+| GET | `/admin/orders/{order_id}/financials` | 管理端支付/退款事实 | 是 | ADMIN+ |
+| POST | `/admin/orders/{order_id}/refunds` | PAID/COMPLETED 全额退款 | 是 | ADMIN+；仅普通 USER 订单 |
 
 状态变迁使用 `PATCH`，因为它修改资源局部状态，不是用完整表示替换订单。三个 PATCH 端点都不定义请求体，客户端必须省略 body；服务端会主动拒绝 `{}`、`null` 或其他任意非空 body，并返回统一 HTTP 422 校验错误，且不会执行状态修改或写审计。
 
@@ -376,11 +384,21 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 
 返回管理端详情，包含 `user_id`、`user_nickname`、`remark` 和完整 `items`。Order 不存在返回 `40411`。
 
-### 6.3 人工确认支付
+### 6.3 代客钱包订单
+
+`POST /api/v1/admin/users/{user_id}/wallet-orders`
+
+请求体复用 §5.1 的 `OrderCreate`，并要求 `Idempotency-Key`。ADMIN/SUPER_ADMIN 只能为状态正常的普通 USER 创建；disabled 目标因属于消费而拒绝，deleted 目标禁止资金写入，管理员自身及其他管理员也不能成为目标。
+
+服务端在一个事务中创建真实订单和快照、扣减 Kit 库存、扣减客户钱包、写 WalletTransaction、创建 succeeded wallet Payment 与唯一 PaymentSettlement、将订单直接提交为 Paid，并顺序写 `CREATE_ORDER` 和 `PAY_ORDER`。任一步失败全部回滚；相同 key 仅在操作者、目标客户、Item 顺序/内容和 remark 全部一致时以 HTTP 200 重放，首次成功 HTTP 201。完整请求、响应、功能开关和错误契约见 [Wallet API §6.4](wallet_api.md#64-按商品创建代客钱包订单)。
+
+### 6.4 人工确认支付
 
 `PATCH /api/v1/admin/orders/{order_id}/paid`
 
-仅允许 `pending → paid`，写入 `MARK_ORDER_PAID`。这是支付模块接入前的临时运营入口；未来支付回调必须复用同一 Service 用例和幂等/状态规则，不得直接更新 Repository。
+仅允许状态正常的普通 USER 所属订单执行 `pending → paid` 并写入 `MARK_ORDER_PAID`。M4 接入后，Service 先只读定位 owner，再按 `User → Order` 锁序锁定复验，并在同一事务创建 `method=manual`、`status=succeeded` 的 Payment 和唯一 PaymentSettlement；staff owner 返回 403，disabled/deleted owner 分别返回 `1005`/`1009`，所有拒绝路径保持 Order/Payment/Settlement/Audit 零写入。它表示受控线下付款登记，不是微信支付；`complete` 仍沿用原 ADMIN+ 状态语义。已存在 Settlement 时返回 `40945`，不得产生第二个结算事实。
+
+M4 前已有的 PAID/COMPLETED 旧单若没有 Settlement，必须在停写窗口通过默认 preview 的 `python -m app.tasks.legacy_manual_settlement_backfill` 核验；只有唯一 `MARK_ORDER_PAID` Audit 能证明人工付款。apply 必须复用 preview 的固定 `through_order_id`，冲突进入人工清单。该命令不是 HTTP API，完整顺序见 [数据库迁移流程 §9.3](../07_process/database_migration_workflow.md#93-普通-user-钱包与历史人工结算-backfill)。
 
 ```json
 {
@@ -395,13 +413,13 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 }
 ```
 
-可能的业务错误：`40411`、`40921`。
+可能的业务错误：HTTP 403、`1005`、`1009`、`40411`、`40921`、`40945`。
 
-### 6.4 完成订单
+### 6.5 完成订单
 
 `PATCH /api/v1/admin/orders/{order_id}/complete`
 
-仅允许 `paid → completed`，状态与 `COMPLETE_ORDER` 审计同事务。
+仅允许 `paid → completed`，状态与 `COMPLETE_ORDER` 审计同事务。若成功结算已有关联 `pending` 或 `succeeded` Refund，则返回 `40946`，不得完成。
 
 ```json
 {
@@ -416,9 +434,9 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 }
 ```
 
-可能的业务错误：`40411`、`40921`。
+可能的业务错误：`40411`、`40921`、`40946`。
 
-### 6.5 订单审计历史
+### 6.6 订单审计历史
 
 `GET /api/v1/admin/orders/{order_id}/audit-logs`
 
@@ -433,11 +451,14 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 | 用例 | 前置状态 | 后置状态 | Audit action | 原子范围 |
 |------|----------|----------|--------------|----------|
 | 创建 | - | `pending` | `CREATE_ORDER` | Order + Items + Audit + 响应重载；编号冲突整事务最多尝试 3 次 |
+| ADMIN+ 代客钱包订单 | - | 新建并直接 `paid` | `CREATE_ORDER` + `PAY_ORDER` | User + 新 Order + Wallet + 稳定 Kit 锁；Items + 库存/钱包流水 + Payment/Settlement + 直接 Paid + 双 Audit 原子提交 |
 | 用户取消 | `pending` | `cancelled` | `CANCEL_ORDER` | 锁定 Order + Item 快照 + 稳定 Kit 锁 + restore 幂等检查 + 批量余额/流水 + 状态 + Audit + 响应重载；1205/1213 完整用例最多尝试 3 次 |
-| ADMIN+ 确认支付 | `pending` | `paid` | `MARK_ORDER_PAID` | 锁定 Order + 状态更新 + Audit + 响应重载 |
-| ADMIN+ 完成 | `paid` | `completed` | `COMPLETE_ORDER` | 锁定 Order + 状态更新 + Audit + 响应重载 |
+| ADMIN+ 人工付款登记 | `pending` | `paid` | `MARK_ORDER_PAID` | 锁定 Order + manual Payment + 唯一 Settlement + 状态 + Audit + 响应重载 |
+| USER 余额支付 | `pending` | `paid` | `PAY_ORDER` | User + Order + Wallet 行锁；Payment + 钱包扣款/流水 + Settlement + 状态 + Audit 原子提交 |
+| ADMIN+ 完成 | `paid` | `completed` | `COMPLETE_ORDER` | 锁定 Order + Refund 冲突检查 + 状态更新 + Audit + 响应重载 |
+| ADMIN+ 全额退款 | `paid` / `completed` | Order 状态不变 | `REFUND_ORDER` | 先验证 Settlement/Payment 的用户、订单、金额、purpose/status/充值关联一致性，再将 Refund + 钱包退款 + PAID Kit 恢复（如有）+ Audit 原子提交 |
 
-所有事务内 Repository 方法必须接收并使用 `using_db`。状态变迁在事务内使用 `SELECT ... FOR UPDATE` 锁定订单并重新校验状态，并发请求只有一个可以成功。取消恢复与状态/Audit 使用同一连接，任一失败整体回滚；支付和完成仍不修改 ProductKit.stock。失败的前置检查不写审计。
+所有事务内 Repository 方法必须接收并使用 `using_db`。状态变迁在事务内使用 `SELECT ... FOR UPDATE` 锁定订单并重新校验状态，并发请求只有一个可以成功。取消恢复、支付结算、代客订单、退款与状态/Audit 使用同一连接，任一失败整体回滚；对既有订单的支付和完成仍不修改 ProductKit.stock。失败的前置检查不写审计。
 
 ---
 
@@ -457,10 +478,10 @@ OD01K2M7Y0J7A3N5Q8T4V6W9X2BC
 
 ## 9. 后续能力
 
-下列能力不属于本契约：在线支付、超时自动取消、退款、已支付取消、统计报表、订单删除。接入这些能力时必须先更新 Order 需求、API、数据库设计、ER DBML 和相关架构说明，再开始实现。
+下列能力不属于本契约：真实微信支付/退款、超时自动取消、部分退款、用户自助退款、已支付取消、统计报表和订单删除。接入这些能力时必须先更新 Order 需求、API、数据库设计、ER DBML 和相关架构说明，再开始实现。
 
 ### 9.1 Phase 4.3.1 已冻结的 Order API 演进
 
-Phase 4.3.7 已在原 `POST /api/v1/orders` 实现 Experience/Kit/混合创建和 Pending 扣减；Phase 4.3.8 已在原 cancel 端点实现 Kit/混合订单幂等恢复。Kit Item 可省略 `experience_option_id` 或显式提交 `null`；支付与完成不触碰库存。
+Phase 4.3.7 已在原 `POST /api/v1/orders` 实现 Experience/Kit/混合创建和 Pending 扣减；Phase 4.3.8 已在原 cancel 端点实现 Kit/混合订单幂等恢复。Kit Item 可省略 `experience_option_id` 或显式提交 `null`；对既有订单的支付与完成不触碰库存。Wallet/Payment/Refund v1 另增加 ADMIN+ 代客钱包订单创建扣减，并为 PAID Kit 全额退款新增 `order_refund_restore`。
 
 库存不足使用 `40931 InsufficientStock`，普通用户只收到 `product_id` 和 `requested_quantity`。仅用于阶段门禁的 `40922 KitOrderingRequiresInventory` 已从代码和当前错误注册表移除。具体事务、幂等和并发规则见 [Inventory Module](../01_requirements/inventory_module.md) 与 [Inventory API](inventory_api.md)。

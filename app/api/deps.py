@@ -28,6 +28,8 @@ from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.wallet_repo import WalletRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.admin_user_service import AdminUserService
 from app.services.account_lifecycle_service import AccountLifecycleService
@@ -35,6 +37,9 @@ from app.services.inventory_service import InventoryService
 from app.services.external_auth_service import ExternalAuthService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
+from app.services.payment_service import PaymentService
+from app.services.refund_service import RefundService
+from app.services.wallet_service import WalletService
 from app.storage.image import ImageStorage, LocalImageStorage
 from app.integrations.wechat import WeChatMiniProgramProvider
 
@@ -84,6 +89,8 @@ def get_order_service(
     inventory_repository: InventoryRepository = Depends(),
     user_repository: UserRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
 ) -> OrderService:
     """组装 OrderService 及其数据访问与共享审计依赖。"""
 
@@ -93,6 +100,62 @@ def get_order_service(
         inventory_repository,
         AuditLogService(audit_log_repository),
         user_repository=user_repository,
+        payment_repository=payment_repository,
+        wallet_repository=wallet_repository,
+    )
+
+
+def get_wallet_service(
+    wallet_repository: WalletRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> WalletService:
+    """组装 Wallet 查询与管理调账用例。"""
+
+    return WalletService(
+        wallet_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
+        payment_repository,
+    )
+
+
+def get_payment_service(
+    order_repository: OrderRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> PaymentService:
+    """组装订单结算与资金状态查询用例。"""
+
+    return PaymentService(
+        order_repository,
+        payment_repository,
+        wallet_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
+def get_refund_service(
+    order_repository: OrderRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
+    inventory_repository: InventoryRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> RefundService:
+    """组装全额退款及 PAID Kit 库存恢复用例。"""
+
+    return RefundService(
+        order_repository,
+        payment_repository,
+        wallet_repository,
+        inventory_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
     )
 
 
@@ -140,6 +203,8 @@ def get_external_auth_service(
 def get_account_lifecycle_service(
     user_repository: UserRepository = Depends(),
     order_repository: OrderRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
     identity_repository: ExternalIdentityRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
 ) -> AccountLifecycleService:
@@ -151,6 +216,8 @@ def get_account_lifecycle_service(
         identity_repository,
         AuditLogService(audit_log_repository),
         WeChatMiniProgramProvider(),
+        wallet_repository,
+        payment_repository,
     )
 
 
@@ -165,13 +232,23 @@ async def get_current_user(
     user = await user_repo.get_by_id(int(payload["sub"]))
     if not user:
         raise NotFoundException(message="User not found")
-    if user.status == UserStatus.DISABLED:
-        raise UserDisabled()
     if user.status == UserStatus.DELETED:
         raise UserDeleted()
+    if user.status != UserStatus.NORMAL:
+        raise UserDisabled()
     if payload["ver"] != user.auth_version:
         raise TokenExpired()
     return user
+
+
+async def get_current_customer(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """要求明确的普通客户角色，供会员与用户资金端点复用。"""
+
+    if current_user.role != UserRole.USER:
+        raise PermissionException(message="Customer access required")
+    return current_user
 
 
 async def get_current_admin(

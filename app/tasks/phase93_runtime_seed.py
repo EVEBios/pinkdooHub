@@ -17,6 +17,7 @@ from app.core.security import hash_password
 from app.db.database import TORTOISE_ORM
 from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.wallet_repo import WalletRepository
 from app.services.audit_log_service import AuditLogService
 
 
@@ -72,6 +73,7 @@ async def seed(password: str) -> dict[str, int]:
     await Tortoise.init(config=TORTOISE_ORM)
     try:
         user_repository = UserRepository()
+        wallet_repository = WalletRepository()
         audit_service = AuditLogService(AuditLogRepository())
         async with in_transaction() as connection:
             super_admins = await user_repository.list_by_role_for_update(
@@ -111,6 +113,11 @@ async def seed(password: str) -> dict[str, int]:
                     status=status.value,
                     using_db=connection,
                 )
+                if role is UserRole.USER:
+                    await wallet_repository.create_account(
+                        user_id=user.id,
+                        using_db=connection,
+                    )
                 await audit_service.log(
                     operator_id=operator.id,
                     action=PHASE93_RUNTIME_SEED_ACTION,

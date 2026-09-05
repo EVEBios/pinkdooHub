@@ -113,8 +113,8 @@ Ref: product_images.experience_option_id > experience_options.id [delete: set nu
 Table audit_logs {
   id bigint [pk, increment]
   operator_id bigint [not null, note: 'who performed the action']
-  action varchar(50) [not null, note: 'CREATE_PRODUCT | UPDATE_PRICE | ONLINE_PRODUCT | ...']
-  target_type varchar(50) [not null, note: 'product | user']
+  action varchar(50) [not null, note: 'CREATE_PRODUCT | CREATE_ORDER | PAY_ORDER | ADJUST_WALLET | REFUND_ORDER | ...']
+  target_type varchar(50) [not null, note: 'product | user | order | wallet']
   target_id bigint [not null]
   description varchar(256) [note: 'e.g. price changed: 299 → 399']
   ip_address varchar(45) [not null]
@@ -148,9 +148,10 @@ Table orders {
 }
 
 // Lifecycle: pending -> cancelled | paid; paid -> completed.
-// Phase 4.2 payment entry is ADMIN+ manual confirmation until Payment integration.
-// Phase 4.3 accepts Experience, Kit, and mixed orders. Pending Kit items
-// deduct ProductKit.stock atomically and Pending cancellation restores it.
+// Payment integration records a unique successful settlement for wallet/manual Paid transitions.
+// Phase 4.3 accepts Experience, Kit, and mixed orders. Pending Kit items deduct
+// ProductKit.stock atomically; Pending cancellation and PAID full refund restore it.
+// ADMIN+ assisted wallet orders deduct once at creation and are committed directly as Paid.
 
 Table order_items {
   id bigint [pk, increment]
@@ -181,12 +182,139 @@ Ref: order_items.order_id > orders.id [delete: restrict]
 Ref: order_items.product_id > products.id [delete: restrict]
 Ref: order_items.experience_option_id > experience_options.id [delete: restrict]
 
+// ── Wallet / Payment / Refund (M4 offline migration generated; not applied) ──
+
+Table wallet_accounts {
+  id bigint [pk, increment]
+  user_id bigint [not null, unique, note: 'ordinary USER only; runtime NORMAL/DISABLED users have one; legacy DELETED users may have none; ADMIN/SUPER_ADMIN do not own wallets']
+  balance decimal(10,2) [not null, default: 0.00, note: 'authoritative balance; application range 0.00..1000.00; positive credits also preserve derived refundable wallet exposure']
+  status varchar(32) [not null, default: 'active', note: 'active | closed']
+  created_at datetime
+  updated_at datetime
+}
+
+Table wallet_transactions {
+  id bigint [pk, increment]
+  wallet_account_id bigint [not null]
+  transaction_type varchar(32) [not null, note: 'recharge | order_payment | admin_adjustment | refund']
+  change_amount decimal(10,2) [not null, note: 'application range -1000.00..1000.00, non-zero']
+  before_balance decimal(10,2) [not null, note: 'application range 0.00..1000.00']
+  after_balance decimal(10,2) [not null, note: 'equals before_balance + change_amount; range 0.00..1000.00']
+  source_type varchar(32) [not null, note: 'recharge_order | order | admin | refund']
+  source_id bigint [note: 'polymorphic business source; deliberately no FK']
+  operator_id bigint
+  reason varchar(256) [not null]
+  idempotency_key varchar(256) [not null, note: 'internal namespaced identity; MySQL ascii_bin bytewise comparison; never exposed by API']
+  created_at datetime
+  updated_at datetime [note: 'BaseModel technical field; ledger has no business update path']
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_wallet_transaction_idempotency']
+    (wallet_account_id, created_at, id) [name: 'idx_wallet_transaction_wallet_created_id']
+    (source_type, source_id, created_at, id) [name: 'idx_wallet_transaction_source_created_id']
+    (transaction_type, created_at, id) [name: 'idx_wallet_transaction_type_created_id']
+    (created_at, id) [name: 'idx_wallet_transaction_created_id']
+  }
+}
+
+Table recharge_orders {
+  id bigint [pk, increment]
+  recharge_no varchar(28) [not null, unique, note: 'RC + 26-char uppercase Crockford Base32 ULID']
+  user_id bigint [not null]
+  wallet_account_id bigint [not null]
+  amount decimal(10,2) [not null, note: 'application range 1.00..1000.00 inclusive']
+  status varchar(32) [not null, default: 'pending', note: 'pending | paid | failed | closed']
+  idempotency_key varchar(256) [not null, note: 'MySQL ascii_bin bytewise comparison']
+  succeeded_at datetime
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_recharge_order_idempotency']
+    (user_id, created_at, id) [name: 'idx_recharge_order_user_created_id']
+    (status, created_at, id) [name: 'idx_recharge_order_status_created_id']
+  }
+}
+
+Table payments {
+  id bigint [pk, increment]
+  payment_no varchar(28) [not null, unique, note: 'PY + 26-char uppercase Crockford Base32 ULID']
+  user_id bigint [not null]
+  purpose varchar(32) [not null, note: 'order | recharge']
+  method varchar(32) [not null, note: 'wallet | wechat | manual']
+  amount decimal(10,2) [not null]
+  status varchar(32) [not null, default: 'pending', note: 'pending | succeeded | failed | closed']
+  order_id bigint
+  recharge_order_id bigint
+  idempotency_key varchar(256) [not null, note: 'MySQL ascii_bin bytewise comparison']
+  provider_transaction_id varchar(128)
+  succeeded_at datetime
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_payment_idempotency']
+    (provider_transaction_id) [unique, name: 'uidx_payment_provider_transaction']
+    (user_id, created_at, id) [name: 'idx_payment_user_created_id']
+    (order_id, created_at, id) [name: 'idx_payment_order_created_id']
+    (recharge_order_id, created_at, id) [name: 'idx_payment_recharge_created_id']
+    (status, created_at, id) [name: 'idx_payment_status_created_id']
+  }
+}
+
+Table payment_settlements {
+  id bigint [pk, increment]
+  payment_id bigint [not null, unique]
+  order_id bigint [not null, unique]
+  amount decimal(10,2) [not null, note: 'must equal successful Payment and Order total; refundable wallet exposure is derived from settlement/payment/order/refund state, not stored']
+  created_at datetime
+  updated_at datetime
+}
+
+Table refunds {
+  id bigint [pk, increment]
+  refund_no varchar(28) [not null, unique, note: 'RF + 26-char uppercase Crockford Base32 ULID']
+  settlement_id bigint [not null, unique]
+  order_id bigint [not null, unique]
+  operator_id bigint [not null]
+  amount decimal(10,2) [not null, note: 'v1 full settlement amount only']
+  status varchar(32) [not null, default: 'pending', note: 'pending | succeeded | failed; succeeded releases refundable wallet exposure']
+  inventory_restored boolean [not null, default: false, note: 'true only for restored PAID Kit/mixed orders']
+  reason varchar(256) [not null]
+  idempotency_key varchar(256) [not null, note: 'MySQL ascii_bin bytewise comparison']
+  provider_refund_id varchar(128)
+  succeeded_at datetime
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_refund_idempotency']
+    (provider_refund_id) [unique, name: 'uidx_refund_provider_reference']
+    (order_id, created_at, id) [name: 'idx_refund_order_created_id']
+    (status, created_at, id) [name: 'idx_refund_status_created_id']
+  }
+}
+
+Ref: wallet_accounts.user_id > users.id [delete: restrict]
+Ref: wallet_transactions.wallet_account_id > wallet_accounts.id [delete: restrict]
+Ref: wallet_transactions.operator_id > users.id [delete: restrict]
+Ref: recharge_orders.user_id > users.id [delete: restrict]
+Ref: recharge_orders.wallet_account_id > wallet_accounts.id [delete: restrict]
+Ref: payments.user_id > users.id [delete: restrict]
+Ref: payments.order_id > orders.id [delete: restrict]
+Ref: payments.recharge_order_id > recharge_orders.id [delete: restrict]
+Ref: payment_settlements.payment_id > payments.id [delete: restrict]
+Ref: payment_settlements.order_id > orders.id [delete: restrict]
+Ref: refunds.settlement_id > payment_settlements.id [delete: restrict]
+Ref: refunds.order_id > orders.id [delete: restrict]
+Ref: refunds.operator_id > users.id [delete: restrict]
+
 // ── Inventory (Phase 4.3.4 MySQL migration generated offline; not applied) ──
 
 Table inventory_transactions {
   id bigint [pk, increment]
   product_id bigint [not null, note: 'public Kit Product ID; balance row is product_kits']
-  transaction_type varchar(40) [not null, note: 'opening_balance | admin_adjustment | order_deduction | order_cancellation_restore']
+  transaction_type varchar(40) [not null, note: 'opening_balance | admin_adjustment | order_deduction | order_cancellation_restore | order_refund_restore']
   change_quantity int [not null, note: 'application range -999999..999999, non-zero']
   before_quantity int [not null, note: 'application range 0..999999']
   after_quantity int [not null, note: 'application range 0..999999; equals before_quantity + change_quantity']

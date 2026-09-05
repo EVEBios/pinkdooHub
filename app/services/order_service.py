@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from tortoise.backends.base.client import BaseDBAsyncClient
@@ -33,13 +33,29 @@ from app.common.constants.inventory import (
     INVENTORY_STOCK_MAX,
     INVENTORY_TRANSACTION_MAX_ATTEMPTS,
 )
+from app.common.constants.wallet import (
+    ASSISTED_WALLET_ORDER_IDEMPOTENCY_PREFIX,
+    ASSISTED_WALLET_ORDER_PAYMENT_REASON,
+    ASSISTED_WALLET_ORDER_TRANSACTION_KEY,
+    MANUAL_PAYMENT_IDEMPOTENCY_KEY,
+    PAYMENT_AUDIT_ACTION_PAY_ORDER,
+)
 from app.common.enums.inventory import (
     InventorySourceType,
     InventoryTransactionType,
 )
 from app.common.enums.order import OrderStatus, OrderStatusValue
 from app.common.enums.product import ProductStatus, ProductType
-from app.common.enums.user import UserStatus
+from app.common.enums.user import UserRole, UserStatus
+from app.common.enums.wallet import (
+    PaymentMethod,
+    PaymentPurpose,
+    PaymentStatus,
+    RefundStatus,
+    WalletStatus,
+    WalletTransactionSourceType,
+    WalletTransactionType,
+)
 from app.common.exceptions import (
     InsufficientStock,
     InventoryBalanceExceeded,
@@ -51,10 +67,22 @@ from app.common.exceptions import (
     UserDeleted,
     UserDisabled,
 )
+from app.common.exceptions.wallet import (
+    InsufficientWalletBalance,
+    PaymentSettlementConflict,
+    RefundStatusConflict,
+    WalletNotFound,
+    WalletTransactionConflict,
+)
+from app.common.financial_number import generate_payment_number
 from app.common.order_number import generate_order_number
 from app.common.pagination import Page
+from app.core.config import settings
+from app.core.exceptions import PermissionException, ServiceUnavailableException
 from app.models.audit_log import AuditLog
 from app.models.order import Order
+from app.models.payment import Payment
+from app.models.user import User
 from app.repositories.order_repo import (
     OrderCancellationItemData,
     OrderItemCreateData,
@@ -66,7 +94,12 @@ from app.repositories.inventory_repo import (
     InventoryTransactionCreateData,
 )
 from app.repositories.product_repo import ProductRepository
+from app.repositories.payment_repo import PaymentCreateData, PaymentRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.wallet_repo import (
+    WalletRepository,
+    WalletTransactionCreateData,
+)
 from app.services.audit_log_service import AuditLogService
 from app.utils.database import get_database_error_code
 
@@ -82,6 +115,16 @@ class OrderItemInput:
     quantity: int
 
 
+@dataclass(frozen=True, slots=True)
+class AssistedWalletOrderResult:
+    """管理员代客商品扣款的不可变结果。"""
+
+    order: Order
+    payment: Payment
+    post_payment_balance: Decimal
+    is_replay: bool
+
+
 class OrderService:
     """Order 创建、状态变迁与查询用例的业务编排层。"""
 
@@ -94,6 +137,9 @@ class OrderService:
         *,
         user_repository: UserRepository,
         order_number_generator: Callable[[], str] = generate_order_number,
+        payment_repository: PaymentRepository | None = None,
+        payment_number_generator: Callable[[], str] = generate_payment_number,
+        wallet_repository: WalletRepository | None = None,
     ) -> None:
         self.order_repository = order_repository
         self.product_repository = product_repository
@@ -101,6 +147,402 @@ class OrderService:
         self.audit_log_service = audit_log_service
         self.user_repository = user_repository
         self.order_number_generator = order_number_generator
+        self.payment_repository = payment_repository
+        self.payment_number_generator = payment_number_generator
+        self.wallet_repository = wallet_repository
+
+    async def create_assisted_wallet_order(
+        self,
+        *,
+        operator: User,
+        user_id: int,
+        items: list[OrderItemInput],
+        remark: str | None,
+        idempotency_key: str,
+        ip_address: str,
+    ) -> AssistedWalletOrderResult:
+        """原子创建真实订单、扣库存、扣钱包并生成成功结算。"""
+
+        self._ensure_assisted_order_operator(operator, user_id=user_id)
+        payment_repository, _ = self._require_assisted_order_dependencies()
+        internal_key = f"{ASSISTED_WALLET_ORDER_IDEMPOTENCY_PREFIX}{idempotency_key}"
+
+        replay = await self._resolve_assisted_wallet_order_replay(
+            operator=operator,
+            user_id=user_id,
+            items=items,
+            remark=remark,
+            internal_key=internal_key,
+        )
+        if replay is not None:
+            return replay
+        if not settings.wallet_admin_write_available:
+            raise ServiceUnavailableException(
+                message="Wallet administration is temporarily disabled"
+            )
+
+        snapshots, total_amount, kit_items = await self._build_order_snapshots(items)
+        for attempt in range(ORDER_NO_GENERATION_MAX_ATTEMPTS):
+            order_no = self.order_number_generator()
+            payment_no = self.payment_number_generator()
+            try:
+                result = await self._create_assisted_wallet_order_with_retry(
+                    operator=operator,
+                    user_id=user_id,
+                    snapshots=snapshots,
+                    kit_items=kit_items,
+                    total_amount=total_amount,
+                    remark=remark,
+                    internal_key=internal_key,
+                    order_no=order_no,
+                    payment_no=payment_no,
+                    ip_address=ip_address,
+                )
+            except IntegrityError:
+                replay = await self._resolve_assisted_wallet_order_replay(
+                    operator=operator,
+                    user_id=user_id,
+                    items=items,
+                    remark=remark,
+                    internal_key=internal_key,
+                )
+                if replay is not None:
+                    return replay
+                collision = await self.order_repository.order_number_exists(order_no)
+                collision = collision or (
+                    await payment_repository.payment_number_exists(payment_no)
+                )
+                if collision and attempt + 1 < ORDER_NO_GENERATION_MAX_ATTEMPTS:
+                    continue
+                raise
+
+            logger.info(
+                "Assisted wallet order created: operator_id=%d user_id=%d "
+                "order_id=%d payment_id=%d",
+                operator.id,
+                user_id,
+                result.order.id,
+                result.payment.id,
+            )
+            return result
+
+        raise RuntimeError("Assisted wallet order number retry loop exhausted")
+
+    async def _create_assisted_wallet_order_with_retry(
+        self,
+        *,
+        operator: User,
+        user_id: int,
+        snapshots: list[OrderItemCreateData],
+        kit_items: list[OrderItemInput],
+        total_amount: Decimal,
+        remark: str | None,
+        internal_key: str,
+        order_no: str,
+        payment_no: str,
+        ip_address: str,
+    ) -> AssistedWalletOrderResult:
+        """对 MySQL 锁超时/死锁以全新事务重试整个代客扣款用例。"""
+
+        for attempt in range(1, INVENTORY_TRANSACTION_MAX_ATTEMPTS + 1):
+            try:
+                return await self._create_assisted_wallet_order_once(
+                    operator=operator,
+                    user_id=user_id,
+                    snapshots=snapshots,
+                    kit_items=kit_items,
+                    total_amount=total_amount,
+                    remark=remark,
+                    internal_key=internal_key,
+                    order_no=order_no,
+                    payment_no=payment_no,
+                    ip_address=ip_address,
+                )
+            except IntegrityError:
+                raise
+            except OperationalError as exc:
+                error_code = get_database_error_code(exc)
+                if (
+                    error_code not in INVENTORY_RETRYABLE_MYSQL_ERROR_CODES
+                    or attempt >= INVENTORY_TRANSACTION_MAX_ATTEMPTS
+                ):
+                    raise
+                logger.warning(
+                    "Retrying assisted wallet order after MySQL transient error: "
+                    "operator_id=%d user_id=%d error_code=%d attempt=%d",
+                    operator.id,
+                    user_id,
+                    error_code,
+                    attempt,
+                )
+        raise RuntimeError("Assisted wallet order retry loop exhausted")
+
+    async def _create_assisted_wallet_order_once(
+        self,
+        *,
+        operator: User,
+        user_id: int,
+        snapshots: list[OrderItemCreateData],
+        kit_items: list[OrderItemInput],
+        total_amount: Decimal,
+        remark: str | None,
+        internal_key: str,
+        order_no: str,
+        payment_no: str,
+        ip_address: str,
+    ) -> AssistedWalletOrderResult:
+        payment_repository, wallet_repository = (
+            self._require_assisted_order_dependencies()
+        )
+        async with in_transaction() as connection:
+            target = await self.user_repository.get_for_update(
+                user_id,
+                using_db=connection,
+            )
+            if target is None or target.status == UserStatus.DELETED:
+                raise UserDeleted()
+            self._ensure_assisted_order_operator(operator, user_id=target.id)
+            if target.role != UserRole.USER:
+                raise PermissionException(
+                    message="Administrators can charge customer wallets only"
+                )
+            if target.status == UserStatus.DISABLED:
+                raise UserDisabled()
+            if target.status != UserStatus.NORMAL:
+                raise PermissionException(
+                    message="Customer account status does not allow assisted purchase"
+                )
+
+            order = await self.order_repository.create_order(
+                order_no=order_no,
+                user_id=target.id,
+                total_amount=total_amount,
+                remark=remark,
+                using_db=connection,
+            )
+            account = await wallet_repository.get_account_for_update(
+                target.id,
+                using_db=connection,
+            )
+            if account is None:
+                raise WalletNotFound()
+            if account.status is not WalletStatus.ACTIVE:
+                raise PermissionException(message="Wallet account is closed")
+            if account.balance < total_amount:
+                raise InsufficientWalletBalance(
+                    user_id=target.id,
+                    requested_amount=total_amount,
+                )
+
+            await self._deduct_kit_stock(
+                order_id=order.id,
+                user_id=operator.id,
+                kit_items=kit_items,
+                using_db=connection,
+            )
+            await self.order_repository.bulk_create_items(
+                order=order,
+                items=snapshots,
+                using_db=connection,
+            )
+            payment = await payment_repository.create_payment(
+                data=PaymentCreateData(
+                    payment_no=payment_no,
+                    user_id=target.id,
+                    purpose=PaymentPurpose.ORDER,
+                    method=PaymentMethod.WALLET,
+                    amount=total_amount,
+                    order_id=order.id,
+                    recharge_order_id=None,
+                    idempotency_key=internal_key,
+                ),
+                using_db=connection,
+            )
+            await payment_repository.update_payment_status(
+                payment,
+                status=PaymentStatus.SUCCEEDED,
+                provider_transaction_id=None,
+                succeeded_at=datetime.now(timezone.utc),
+                using_db=connection,
+            )
+
+            before_balance = account.balance
+            after_balance = before_balance - total_amount
+            await wallet_repository.update_balance(
+                account,
+                balance=after_balance,
+                using_db=connection,
+            )
+            await wallet_repository.create_transaction(
+                data=WalletTransactionCreateData(
+                    wallet_account_id=account.id,
+                    transaction_type=WalletTransactionType.ORDER_PAYMENT,
+                    change_amount=-total_amount,
+                    before_balance=before_balance,
+                    after_balance=after_balance,
+                    source_type=WalletTransactionSourceType.ORDER,
+                    source_id=order.id,
+                    operator_id=operator.id,
+                    reason=ASSISTED_WALLET_ORDER_PAYMENT_REASON,
+                    idempotency_key=ASSISTED_WALLET_ORDER_TRANSACTION_KEY.format(
+                        payment_id=payment.id,
+                        order_id=order.id,
+                    ),
+                ),
+                using_db=connection,
+            )
+            await payment_repository.create_settlement(
+                payment_id=payment.id,
+                order_id=order.id,
+                amount=total_amount,
+                using_db=connection,
+            )
+            await self.order_repository.update_status(
+                order,
+                status=OrderStatus.PAID,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator.id,
+                action=ORDER_AUDIT_ACTION_CREATE,
+                target_type=ORDER_AUDIT_TARGET_TYPE,
+                target_id=order.id,
+                ip_address=ip_address,
+                description=json.dumps(
+                    {
+                        "assisted_for_user_id": target.id,
+                        "item_count": len(snapshots),
+                        "total_amount": f"{total_amount:.2f}",
+                    },
+                    separators=(",", ":"),
+                ),
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator.id,
+                action=PAYMENT_AUDIT_ACTION_PAY_ORDER,
+                target_type=ORDER_AUDIT_TARGET_TYPE,
+                target_id=order.id,
+                ip_address=ip_address,
+                description=json.dumps(
+                    {
+                        "payment_id": payment.id,
+                        "method": PaymentMethod.WALLET.value,
+                        "amount": f"{total_amount:.2f}",
+                    },
+                    separators=(",", ":"),
+                ),
+                using_db=connection,
+            )
+            loaded = await self.order_repository.get_order_detail(
+                order.id,
+                using_db=connection,
+            )
+            if loaded is None:
+                raise RuntimeError("Persisted assisted order not found")
+            return AssistedWalletOrderResult(
+                order=loaded,
+                payment=payment,
+                post_payment_balance=after_balance,
+                is_replay=False,
+            )
+
+    async def _resolve_assisted_wallet_order_replay(
+        self,
+        *,
+        operator: User,
+        user_id: int,
+        items: list[OrderItemInput],
+        remark: str | None,
+        internal_key: str,
+    ) -> AssistedWalletOrderResult | None:
+        payment_repository, wallet_repository = (
+            self._require_assisted_order_dependencies()
+        )
+        payment = await payment_repository.get_payment_by_idempotency_key(
+            internal_key
+        )
+        if payment is None:
+            return None
+        if payment.order_id is None:
+            raise WalletTransactionConflict()
+        order = await self.order_repository.get_order_detail(payment.order_id)
+        if order is None:
+            raise WalletTransactionConflict()
+        expected_items = [
+            (item.product_id, item.experience_option_id, item.quantity)
+            for item in items
+        ]
+        actual_items = [
+            (item.product_id, item.experience_option_id, item.quantity)
+            for item in order.items
+        ]
+        if (
+            payment.user_id != user_id
+            or order.user_id != user_id
+            or payment.purpose is not PaymentPurpose.ORDER
+            or payment.method is not PaymentMethod.WALLET
+            or payment.status is not PaymentStatus.SUCCEEDED
+            or payment.recharge_order_id is not None
+            or payment.provider_transaction_id is not None
+            or payment.succeeded_at is None
+            or payment.amount != order.total_amount
+            or OrderStatus(order.status) is not OrderStatus.PAID
+            or order.remark != remark
+            or actual_items != expected_items
+        ):
+            raise WalletTransactionConflict()
+        settlement = await payment_repository.get_settlement_by_order_id(order.id)
+        if (
+            settlement is None
+            or settlement.payment_id != payment.id
+            or settlement.order_id != order.id
+            or settlement.amount != order.total_amount
+            or settlement.amount != payment.amount
+        ):
+            raise PaymentSettlementConflict()
+        account = await wallet_repository.get_account_by_user_id(user_id)
+        if account is None:
+            raise WalletTransactionConflict()
+        transaction = await wallet_repository.get_transaction_by_idempotency_key(
+            ASSISTED_WALLET_ORDER_TRANSACTION_KEY.format(
+                payment_id=payment.id,
+                order_id=order.id,
+            )
+        )
+        if (
+            transaction is None
+            or transaction.wallet_account_id != account.id
+            or transaction.transaction_type is not WalletTransactionType.ORDER_PAYMENT
+            or transaction.change_amount != -order.total_amount
+            or transaction.after_balance
+            != transaction.before_balance + transaction.change_amount
+            or transaction.source_type is not WalletTransactionSourceType.ORDER
+            or transaction.source_id != order.id
+            or transaction.operator_id != operator.id
+            or transaction.reason != ASSISTED_WALLET_ORDER_PAYMENT_REASON
+        ):
+            raise WalletTransactionConflict()
+        return AssistedWalletOrderResult(
+            order=order,
+            payment=payment,
+            post_payment_balance=transaction.after_balance,
+            is_replay=True,
+        )
+
+    def _require_assisted_order_dependencies(
+        self,
+    ) -> tuple[PaymentRepository, WalletRepository]:
+        if self.payment_repository is None or self.wallet_repository is None:
+            raise RuntimeError("Assisted wallet order dependencies are unavailable")
+        return self.payment_repository, self.wallet_repository
+
+    @staticmethod
+    def _ensure_assisted_order_operator(operator: User, *, user_id: int) -> None:
+        if operator.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+            raise PermissionException(message="Admin access required")
+        if operator.id == user_id:
+            raise PermissionException(message="Administrators cannot charge themselves")
 
     async def create_order(
         self,
@@ -223,8 +665,14 @@ class OrderService:
             )
             if user is None or user.status == UserStatus.DELETED:
                 raise UserDeleted()
+            if user.role != UserRole.USER:
+                raise PermissionException(message="Customer account required")
             if user.status == UserStatus.DISABLED:
                 raise UserDisabled()
+            if user.status != UserStatus.NORMAL:
+                raise PermissionException(
+                    message="Customer account status does not allow order creation"
+                )
             order = await self.order_repository.create_order(
                 order_no=order_no,
                 user_id=user_id,
@@ -612,6 +1060,21 @@ class OrderService:
     ) -> Order:
         """在行锁保护下执行一条由公开用例固定的状态变迁。"""
 
+        if (
+            operation in (ORDER_OPERATION_MARK_PAID, ORDER_OPERATION_COMPLETE)
+            and self.payment_repository is None
+        ):
+            raise RuntimeError(
+                "PaymentRepository is required for financial order transitions"
+            )
+
+        financial_target_user_id: int | None = None
+        if operation == ORDER_OPERATION_MARK_PAID:
+            visible_order = await self.order_repository.get_order_by_id(order_id)
+            if visible_order is None:
+                raise OrderNotFound()
+            financial_target_user_id = visible_order.user_id
+
         audit_description = json.dumps(
             {
                 "before_status": ORDER_STATUS_VALUES[required_status],
@@ -620,12 +1083,38 @@ class OrderService:
             separators=(",", ":"),
         )
         async with in_transaction() as connection:
+            if financial_target_user_id is not None:
+                financial_target = await self.user_repository.get_for_update(
+                    financial_target_user_id,
+                    using_db=connection,
+                )
+                if (
+                    financial_target is None
+                    or financial_target.status == UserStatus.DELETED
+                ):
+                    raise UserDeleted()
+                if financial_target.role != UserRole.USER:
+                    raise PermissionException(
+                        message="Manual payment can target customers only"
+                    )
+                if financial_target.status == UserStatus.DISABLED:
+                    raise UserDisabled()
+                if financial_target.status != UserStatus.NORMAL:
+                    raise PermissionException(
+                        message="Customer account status does not allow manual payment"
+                    )
+
             order = await self.order_repository.get_order_for_update(
                 order_id,
                 user_id=visible_user_id,
                 using_db=connection,
             )
             if order is None:
+                raise OrderNotFound()
+            if (
+                financial_target_user_id is not None
+                and order.user_id != financial_target_user_id
+            ):
                 raise OrderNotFound()
 
             current_status = OrderStatus(order.status)
@@ -635,6 +1124,59 @@ class OrderService:
                     current_status=current_status,
                     required_status=required_status,
                 )
+
+            if self.payment_repository is not None:
+                settlement = (
+                    await self.payment_repository.get_settlement_by_order_id(
+                        order.id,
+                        using_db=connection,
+                    )
+                )
+                if operation == ORDER_OPERATION_MARK_PAID:
+                    if settlement is not None:
+                        raise PaymentSettlementConflict()
+                    payment = await self.payment_repository.create_payment(
+                        data=PaymentCreateData(
+                            payment_no=self.payment_number_generator(),
+                            user_id=order.user_id,
+                            purpose=PaymentPurpose.ORDER,
+                            method=PaymentMethod.MANUAL,
+                            amount=order.total_amount,
+                            order_id=order.id,
+                            recharge_order_id=None,
+                            idempotency_key=(
+                                MANUAL_PAYMENT_IDEMPOTENCY_KEY.format(
+                                    order_id=order.id
+                                )
+                            ),
+                        ),
+                        using_db=connection,
+                    )
+                    await self.payment_repository.update_payment_status(
+                        payment,
+                        status=PaymentStatus.SUCCEEDED,
+                        provider_transaction_id=None,
+                        succeeded_at=datetime.now(timezone.utc),
+                        using_db=connection,
+                    )
+                    await self.payment_repository.create_settlement(
+                        payment_id=payment.id,
+                        order_id=order.id,
+                        amount=order.total_amount,
+                        using_db=connection,
+                    )
+                elif operation == ORDER_OPERATION_COMPLETE and settlement is not None:
+                    refund = (
+                        await self.payment_repository.get_refund_by_settlement_id(
+                            settlement.id,
+                            using_db=connection,
+                        )
+                    )
+                    if refund is not None and refund.status in (
+                        RefundStatus.PENDING,
+                        RefundStatus.SUCCEEDED,
+                    ):
+                        raise RefundStatusConflict()
 
             await self.order_repository.update_status(
                 order,

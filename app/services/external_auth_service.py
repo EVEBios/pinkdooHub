@@ -13,10 +13,11 @@ from app.common.exceptions.user import (
     ExternalIdentityNotBound,
     ExternalIdentityUnlinkUnsafe,
     IncorrectPassword,
+    TokenExpired,
     UserDeleted,
     UserDisabled,
 )
-from app.core.auth_session import issue_token_pair
+from app.core.auth_session import issue_token_pair, revoke_issued_token_pair
 from app.core.exceptions import PermissionException
 from app.core.external_identity import external_identity_key
 from app.core.rate_limit import (
@@ -27,11 +28,15 @@ from app.core.rate_limit import (
 from app.core.redis import revoke_user_refresh_sessions
 from app.core.security import verify_password
 from app.core.security_events import emit_security_event
-from app.integrations.wechat import ExternalIdentityCredentials, ExternalIdentityProvider
+from app.integrations.wechat import (
+    ExternalIdentityCredentials,
+    ExternalIdentityProvider,
+)
 from app.models.external_identity import ExternalIdentity
 from app.models.user import User
 from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.wallet_repo import WalletRepository
 from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
@@ -47,12 +52,14 @@ class ExternalAuthService:
         audit_log_service: AuditLogService,
         provider: ExternalIdentityProvider,
         rate_limiter: AuthRateLimiter | None = None,
+        wallet_repository: WalletRepository | None = None,
     ) -> None:
         self.user_repository = user_repository
         self.identity_repository = identity_repository
         self.audit_log_service = audit_log_service
         self.provider = provider
         self.rate_limiter = rate_limiter or AuthRateLimiter()
+        self.wallet_repository = wallet_repository or WalletRepository()
 
     async def login(
         self,
@@ -73,24 +80,12 @@ class ExternalAuthService:
         if identity is None:
             user = await self._create_user_and_identity(credentials, ip_address)
         else:
-            user = identity.user
-            self._ensure_user_can_login(user)
-            await self.user_repository.update(
-                user,
-                last_login_at=datetime.now(timezone.utc),
-            )
-            await self.audit_log_service.log(
-                operator_id=user.id,
-                action="WECHAT_LOGIN",
-                target_type="user",
-                target_id=user.id,
+            user = await self._record_existing_login(
+                identity.user_id,
                 ip_address=ip_address,
             )
 
-        tokens = await issue_token_pair(
-            user_id=user.id,
-            auth_version=user.auth_version,
-        )
+        user, tokens = await self._issue_confirmed_token_pair(user)
         logger.info("External identity login succeeded: user_id=%d", user.id)
         emit_security_event(
             "external_identity_login",
@@ -252,6 +247,11 @@ class ExternalAuthService:
                     password=None,
                     nickname="微信用户",
                     phone=None,
+                    last_login_at=datetime.now(timezone.utc),
+                    using_db=connection,
+                )
+                await self.wallet_repository.create_account(
+                    user_id=user.id,
                     using_db=connection,
                 )
                 await self.identity_repository.create(
@@ -278,13 +278,69 @@ class ExternalAuthService:
             )
             if identity is None:
                 raise ExternalIdentityConflict()
-            user = identity.user
-        self._ensure_user_can_login(user)
-        await self.user_repository.update(
-            user,
-            last_login_at=datetime.now(timezone.utc),
-        )
+            return await self._record_existing_login(
+                identity.user_id,
+                ip_address=ip_address,
+            )
         return user
+
+    async def _record_existing_login(
+        self,
+        user_id: int,
+        *,
+        ip_address: str,
+    ) -> User:
+        """锁定并复验既有身份所属用户，再原子记录登录事实。"""
+
+        async with in_transaction() as connection:
+            user = await self.user_repository.get_for_update(
+                user_id,
+                using_db=connection,
+            )
+            if user is None:
+                raise UserDeleted()
+            self._ensure_user_can_login(user)
+            await self.user_repository.update(
+                user,
+                last_login_at=datetime.now(timezone.utc),
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=user.id,
+                action="WECHAT_LOGIN",
+                target_type="user",
+                target_id=user.id,
+                ip_address=ip_address,
+                using_db=connection,
+            )
+        return user
+
+    async def _issue_confirmed_token_pair(
+        self,
+        user: User,
+    ) -> tuple[User, dict[str, str]]:
+        """签发后重新锁定 User；不一致时只撤销本次新会话。"""
+
+        expected_auth_version = int(user.auth_version)
+        tokens = await issue_token_pair(
+            user_id=user.id,
+            auth_version=expected_auth_version,
+        )
+        try:
+            async with in_transaction() as connection:
+                confirmed_user = await self.user_repository.get_for_update(
+                    user.id,
+                    using_db=connection,
+                )
+                if confirmed_user is None:
+                    raise UserDeleted()
+                self._ensure_user_can_login(confirmed_user)
+                if int(confirmed_user.auth_version) != expected_auth_version:
+                    raise TokenExpired()
+        except BaseException:
+            await revoke_issued_token_pair(tokens)
+            raise
+        return confirmed_user, tokens
 
     async def _ensure_union_available(
         self,
@@ -305,10 +361,10 @@ class ExternalAuthService:
 
     @staticmethod
     def _ensure_user_can_login(user: User) -> None:
-        if user.status == UserStatus.DISABLED:
-            raise UserDisabled()
         if user.status == UserStatus.DELETED:
             raise UserDeleted()
+        if user.status != UserStatus.NORMAL:
+            raise UserDisabled()
 
     @staticmethod
     def _ensure_standard_user(user: User, *, operation: str) -> None:

@@ -8,6 +8,21 @@ from tortoise import fields
 from app.models.validators import MaxDecimalPlacesValidator
 
 
+class AsciiBinaryCharField(fields.CharField):
+    """为 ASCII 业务标识提供跨方言大小写敏感的逐字节比较。"""
+
+    class _db_mysql:
+        def __init__(self, field: "AsciiBinaryCharField") -> None:
+            self.field = field
+
+        @property
+        def SQL_TYPE(self) -> str:
+            return (
+                f"VARCHAR({self.field.max_length}) "
+                "CHARACTER SET ascii COLLATE ascii_bin"
+            )
+
+
 class StrictDecimalField(fields.DecimalField):
     """在 Tortoise 量化 Decimal 之前拒绝多余小数位。
 

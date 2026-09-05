@@ -6,11 +6,21 @@ from decimal import Decimal
 import pytest
 from httpx import AsyncClient
 
+import app.services.auth_service as auth_service_module
+import app.services.account_lifecycle_service as account_lifecycle_service_module
+import app.services.external_auth_service as external_auth_service_module
 from app.api.deps import get_account_lifecycle_service, get_external_auth_service
+from app.common.enums.user import UserStatus
+from app.core.auth_session import issue_token_pair as issue_token_pair_core
+from app.core.redis import RefreshTokenState, get_refresh_token_state
+from app.core.security import decode_token
 from app.integrations.wechat import ExternalIdentityCredentials
 from app.main import app
+from app.models.audit_log import AuditLog
 from app.models.external_identity import ExternalIdentity
 from app.models.order import Order
+from app.models.user import User
+from app.models.wallet import WalletAccount
 from app.repositories.audit_log_repo import AuditLogRepository
 from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.order_repo import OrderRepository
@@ -40,6 +50,28 @@ class FakeWeChatProvider:
             subject_id=self.subject_id,
             union_id=self.union_id,
         )
+
+
+class FirstSubjectLookupMissRepository(ExternalIdentityRepository):
+    """模拟并发首次登录：预查未命中，唯一键冲突后身份已可见。"""
+
+    def __init__(self) -> None:
+        self.subject_lookup_count = 0
+
+    async def get_by_subject(self, **kwargs) -> ExternalIdentity | None:
+        self.subject_lookup_count += 1
+        if self.subject_lookup_count == 1:
+            return None
+        return await super().get_by_subject(**kwargs)
+
+
+class CountingUserRepository(UserRepository):
+    def __init__(self) -> None:
+        self.lock_count = 0
+
+    async def get_for_update(self, user_id: int, *, using_db):
+        self.lock_count += 1
+        return await super().get_for_update(user_id, using_db=using_db)
 
 
 def _external_service(provider: FakeWeChatProvider) -> ExternalAuthService:
@@ -215,6 +247,58 @@ async def test_password_login_does_not_enumerate_missing_or_wechat_only_users(
         assert response.json()["message"] == "Incorrect password"
 
 
+async def test_password_login_revokes_only_new_family_when_auth_version_changes_after_issue(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "password-race",
+            "password": "12345678",
+            "nickname": "Password Race",
+            "phone": "13800000971",
+        },
+    )
+    captured_tokens: dict[str, str] = {}
+
+    async def issue_then_change_auth_version(
+        *,
+        user_id: int,
+        auth_version: int,
+    ) -> dict[str, str]:
+        # LOGIN Audit 与 last_login 必须先在同一 DB 事务提交，再触碰 Redis。
+        assert await AuditLog.filter(
+            action="LOGIN",
+            target_type="user",
+            target_id=user_id,
+        ).count() == 1
+        stored = await User.get(id=user_id)
+        assert stored.last_login_at is not None
+
+        tokens = await issue_token_pair_core(
+            user_id=user_id,
+            auth_version=auth_version,
+        )
+        captured_tokens.update(tokens)
+        await User.filter(id=user_id).update(auth_version=auth_version + 1)
+        return tokens
+
+    monkeypatch.setattr(
+        auth_service_module,
+        "issue_token_pair",
+        issue_then_change_auth_version,
+    )
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "password-race", "password": "12345678"},
+    )
+
+    assert (response.status_code, response.json()["code"]) == (400, 1006)
+    payload = decode_token(captured_tokens["refresh_token"], "refresh")
+    assert await get_refresh_token_state(payload["jti"]) == RefreshTokenState.MISSING
+
+
 async def test_wechat_first_login_auto_creates_passwordless_user_and_reuses_binding(
     client: AsyncClient,
 ) -> None:
@@ -249,6 +333,83 @@ async def test_wechat_first_login_auto_creates_passwordless_user_and_reuses_bind
     assert identity.subject_id != provider.subject_id
     assert identity.union_id != provider.union_id
     assert len(identity.subject_id) == len(identity.union_id or "") == 64
+
+
+async def test_wechat_integrity_fallback_locks_twice_and_revokes_raced_family(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = FakeWeChatProvider(
+        subject_id="openid-integrity-race",
+        union_id=None,
+    )
+    credentials = await provider.exchange_code("setup-code")
+    identity_repository = FirstSubjectLookupMissRepository()
+    user_repository = CountingUserRepository()
+    service = ExternalAuthService(
+        user_repository,
+        identity_repository,
+        AuditLogService(AuditLogRepository()),
+        provider,
+    )
+    existing_user = await User.create(
+        username=service._system_username(credentials),
+        password=None,
+        nickname="微信用户",
+        phone=None,
+    )
+    await ExternalIdentity.create(
+        provider=credentials.provider,
+        app_id=credentials.app_id,
+        subject_id=service._subject_key(credentials),
+        union_id=None,
+        user_id=existing_user.id,
+    )
+    captured_tokens: dict[str, str] = {}
+
+    async def issue_then_delete(
+        *,
+        user_id: int,
+        auth_version: int,
+    ) -> dict[str, str]:
+        # IntegrityError 收敛必须先走锁后复验并记录既有身份登录。
+        assert await AuditLog.filter(
+            action="WECHAT_LOGIN",
+            target_type="user",
+            target_id=user_id,
+        ).count() == 1
+        assert await AuditLog.filter(action="WECHAT_REGISTER").count() == 0
+        tokens = await issue_token_pair_core(
+            user_id=user_id,
+            auth_version=auth_version,
+        )
+        captured_tokens.update(tokens)
+        await User.filter(id=user_id).update(
+            status=int(UserStatus.DELETED),
+            auth_version=auth_version + 1,
+        )
+        return tokens
+
+    monkeypatch.setattr(
+        external_auth_service_module,
+        "issue_token_pair",
+        issue_then_delete,
+    )
+    app.dependency_overrides[get_external_auth_service] = lambda: service
+    try:
+        response = await client.post(
+            "/api/v1/auth/wechat/login",
+            json={"code": "racing-code"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_external_auth_service, None)
+
+    assert (response.status_code, response.json()["code"]) == (400, 1009)
+    assert identity_repository.subject_lookup_count == 2
+    # 一次用于 IntegrityError 后既有用户登录，一次用于签发后的最终确认。
+    assert user_repository.lock_count == 2
+    payload = decode_token(captured_tokens["refresh_token"], "refresh")
+    assert await get_refresh_token_state(payload["jti"]) == RefreshTokenState.MISSING
 
 
 async def test_existing_user_can_bind_list_and_password_unbind(
@@ -375,6 +536,49 @@ async def test_account_deletion_anonymizes_user_and_preserves_row(
     assert user.nickname == "已注销用户"
     assert user.password is user.phone is user.avatar is None
     assert user.deleted_at is not None
+
+
+async def test_account_deletion_remains_successful_when_post_commit_session_cleanup_fails(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    login = await _register_and_login(
+        client,
+        username="delete-session-cleanup-failure",
+        phone="13800000961",
+    )
+    user_id = login["user"]["id"]
+
+    async def fail_session_cleanup(_user_id: int) -> None:
+        raise RuntimeError("simulated redis outage")
+
+    monkeypatch.setattr(
+        account_lifecycle_service_module,
+        "revoke_user_refresh_sessions",
+        fail_session_cleanup,
+    )
+    app.dependency_overrides[get_account_lifecycle_service] = lambda: _account_service(
+        FakeWeChatProvider()
+    )
+    try:
+        response = await client.request(
+            "DELETE",
+            "/api/v1/users/me",
+            json={"confirmation": "DELETE", "password": "12345678"},
+            headers={"Authorization": f"Bearer {login['access_token']}"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_account_lifecycle_service, None)
+
+    assert response.status_code == 200
+    user = await User.get(id=user_id)
+    wallet = await WalletAccount.get(user_id=user_id)
+    assert user.status == UserStatus.DELETED
+    assert wallet.status == "closed"
+    assert await AuditLog.filter(
+        action="DELETE_ACCOUNT",
+        target_id=user_id,
+    ).count() == 1
 
 
 async def test_account_deletion_is_blocked_by_non_terminal_order(

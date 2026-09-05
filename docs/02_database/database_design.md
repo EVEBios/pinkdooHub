@@ -1,6 +1,6 @@
-# pinkdooHub 数据库设计 v1.7
+# pinkdooHub 数据库设计 v1.8
 
-> **Last Updated:** 2026-09-02
+> **Last Updated:** 2026-09-06
 
 ---
 
@@ -23,27 +23,34 @@
 users
   ├── external_identities
   ├── orders ── order_items
+  │     ├── payments ── payment_settlements ── refunds
+  │     └── inventory_transactions
+  ├── wallet_accounts
+  │     ├── wallet_transactions
+  │     └── recharge_orders ── payments
   ├── operated inventory_transactions
-  └── products
-        ├── experience_options
-        ├── product_kits
-        ├── product_images
-        └── inventory_transactions
+  └── operated wallet_transactions / refunds
+
+products
+  ├── experience_options
+  ├── product_kits
+  ├── product_images
+  └── inventory_transactions
 
 audit_logs
 ```
 
 ### 2.1 数据完整性约束边界
 
-Product、Order 与当前冻结的 Inventory 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成：
+Product、Order、Inventory 与 Wallet/Payment/Refund 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成：
 
 | 层级 | 当前保证 |
 |------|----------|
-| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit 一对一唯一性、Option 全历史联合唯一性、Order 编号唯一性、Inventory 幂等键唯一性和命名索引 |
-| Schema / Model | 文本长度、正整数、金额范围与小数位、库存 `0..999999`、流水单字段数量边界、非零变化量、Enum 合法性、Order Item 数量/项数/重复组合边界 |
-| Service / Validator | Product 类型与扩展表匹配、图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转和上架完整性；Order 聚合可售性、快照金额与状态机；Inventory before/change/after 等式、类型/来源组合、锁后余额判断和余额/流水同事务 |
+| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit/Wallet/Settlement/Refund 一对一唯一性、Option 全历史联合唯一性、业务编号唯一性、Inventory/Wallet/Payment/Refund 幂等键唯一性和命名索引；四类资金幂等键在 MySQL 使用 `ascii_bin` 逐字节区分大小写 |
+| Schema / Model | 文本长度、正整数、金额范围与两位小数、库存 `0..999999`、钱包余额 `0.00..1000.00`、流水单字段边界、非零变化量、Enum 合法性、Order Item 数量/项数/重复组合边界 |
+| Service / Validator | Product 类型与扩展表匹配、图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转和上架完整性；Order 聚合可售性、快照金额与状态机；Inventory/Wallet before/change/after 等式、类型/来源组合、锁后余额判断和余额/流水同事务；Payment/Settlement/Refund 金额、状态、权限和幂等一致性 |
 
-当前 Product、Order 与 Inventory Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围、流水算术等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，必须作为独立设计变更统一评估，不能只改某一数据库。
+当前 Product、Order、Inventory 与 Wallet/Payment/Refund Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围、流水算术等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，必须作为独立设计变更统一评估，不能只改某一数据库。
 
 ---
 
@@ -241,7 +248,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 流水 ID |
 | product_id | BIGINT | FK → products.id, NOT NULL, ON DELETE RESTRICT | Kit 的对外 Product ID；余额写入仍锁定 `product_kits` 行 |
-| transaction_type | VARCHAR(40) | NOT NULL | `opening_balance` / `admin_adjustment` / `order_deduction` / `order_cancellation_restore` |
+| transaction_type | VARCHAR(40) | NOT NULL | `opening_balance` / `admin_adjustment` / `order_deduction` / `order_cancellation_restore` / `order_refund_restore` |
 | change_quantity | INT | NOT NULL | 真实非零变化量，应用范围 `-999999..999999` |
 | before_quantity | INT | NOT NULL | 变化前余额，应用范围 `0..999999` |
 | after_quantity | INT | NOT NULL | 变化后余额，应用范围 `0..999999`，且必须等于 `before_quantity + change_quantity` |
@@ -269,12 +276,125 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 主键 |
 | operator_id | BIGINT | NOT NULL | 操作人 ID |
-| action | VARCHAR(50) | NOT NULL | 操作类型（如 `CREATE_PRODUCT`、`CREATE_ORDER`、`MARK_ORDER_PAID`） |
-| target_type | VARCHAR(50) | NOT NULL | 目标类型（`product` / `user` / `order`） |
+| action | VARCHAR(50) | NOT NULL | 操作类型（如 `CREATE_PRODUCT`、`CREATE_ORDER`、`PAY_ORDER`、`ADJUST_WALLET`、`REFUND_ORDER`） |
+| target_type | VARCHAR(50) | NOT NULL | 目标类型（`product` / `user` / `order` / `wallet`） |
 | target_id | BIGINT | NOT NULL | 目标 ID |
 | description | VARCHAR(256) | nullable | 附加描述（如价格变更前后值） |
 | ip_address | VARCHAR(45) | NOT NULL | 操作人 IP（支持 IPv6） |
 | created_at | DATETIME | - | 操作时间 |
+
+---
+
+### 3.10 wallet_accounts（会员钱包余额表，M4 离线迁移未应用）
+
+为可用普通客户保存权威钱包余额；新建 USER 原子创建，历史 backfill 只覆盖 NORMAL/DISABLED USER。历史 DELETED USER 可没有钱包且禁止补建；ADMIN/SUPER_ADMIN 不创建钱包。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 钱包 ID |
+| user_id | BIGINT | FK → users.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 每个已建钱包的普通 USER 至多一个；正常运行时 NORMAL/DISABLED USER 应恰好一个 |
+| balance | DECIMAL(10,2) | NOT NULL, DEFAULT 0.00 | 权威余额；应用闭区间 `0.00..1000.00` |
+| status | VARCHAR(32) | NOT NULL, DEFAULT `active` | `active` / `closed`；用户禁用仍以 users.status 为权威 |
+| created_at | DATETIME | - | 创建时间 |
+| updated_at | DATETIME | - | 余额或状态最近更新时间 |
+
+新普通用户由注册/首次微信登录事务创建零余额钱包。M4 不回填历史用户；历史 `role=user AND status IN (normal, disabled)` 需在启用钱包能力前先运行 `python -m app.tasks.wallet_account_backfill` 预览，再显式使用 `--apply` 补齐。该命令不为历史 DELETED USER 或 ADMIN/SUPER_ADMIN 建钱包，也不创建零元 WalletTransaction；既有历史 deleted 钱包如已存在仍保留。完成 NORMAL/DISABLED 普通 USER wallet backfill 与 legacy manual settlement backfill 后运行只读 `python -m app.tasks.wallet_reconcile`，稳定核验权威余额、流水净额、单行算术/范围、相邻余额链、末条余额和无流水零余额规则；任一违规以非零状态退出，绝不自动改账。
+
+余额硬上限为 `1000.00`，但不新增“预留余额”列。尚可全额退款的钱包支付敞口由 `payment_settlements`、`payments`、`orders` 和 `refunds` 的权威状态在锁内查询派生：PAID wallet Settlement，以及完成未满 30 天的 COMPLETED wallet Settlement，在 Refund succeeded 前占用敞口。ADMIN 正向调账及未来真实充值成功必须保持 `调整后余额 + 派生敞口 ≤ 1000.00`；退款成功与同额钱包入账原子提交后，该 Settlement 自然退出敞口集合。
+
+### 3.11 wallet_transactions（钱包流水表，M4 离线迁移未应用）
+
+记录每次已提交余额变化；WalletAccount.balance 仍是当前余额，不通过实时 SUM 流水提供在线余额。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 流水 ID |
+| wallet_account_id | BIGINT | FK → wallet_accounts.id, NOT NULL, ON DELETE RESTRICT | 目标钱包 |
+| transaction_type | VARCHAR(32) | NOT NULL | `recharge` / `order_payment` / `admin_adjustment` / `refund` |
+| change_amount | DECIMAL(10,2) | NOT NULL | 非零变化量；应用范围 `-1000.00..1000.00` |
+| before_balance | DECIMAL(10,2) | NOT NULL | 变化前余额，`0.00..1000.00` |
+| after_balance | DECIMAL(10,2) | NOT NULL | 变化后余额，等于 before + change |
+| source_type | VARCHAR(32) | NOT NULL | `recharge_order` / `order` / `admin` / `refund` |
+| source_id | BIGINT | nullable | 通用业务来源 ID；故意不建多态 FK |
+| operator_id | BIGINT | FK → users.id, nullable, ON DELETE RESTRICT | 用户自身或管理操作者 |
+| reason | VARCHAR(256) | NOT NULL | 规范化管理原因或服务端稳定原因 |
+| idempotency_key | VARCHAR(256) | NOT NULL, UNIQUE；MySQL `ascii_bin` | 内部命名空间业务身份，逐字节区分大小写，不向 API/日志输出 |
+| created_at | DATETIME | - | 权威分页时间 |
+| updated_at | DATETIME | - | BaseModel 技术字段；无业务修改入口 |
+
+同一钱包的流水以 `(created_at ASC, id ASC)` 形成确定的余额链：每条记录变化量非零且满足 `after = before + change`，前后余额均在 `0.00..1000.00`，相邻记录的前后余额衔接，末条 `after_balance` 等于 WalletAccount.balance。没有流水是合法的零余额初始状态，但此时权威余额必须为 `0.00`；发布前由只读 `wallet_reconcile` 同时核验这些不变量和流水净额。
+
+### 3.12 recharge_orders（充值业务单，M4 离线迁移未应用）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 充值单 ID |
+| recharge_no | VARCHAR(28) | NOT NULL, UNIQUE | `RC` + 26 位 Crockford Base32 ULID |
+| user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | 充值普通 USER |
+| wallet_account_id | BIGINT | FK → wallet_accounts.id, NOT NULL, ON DELETE RESTRICT | 目标钱包 |
+| amount | DECIMAL(10,2) | NOT NULL | 单笔闭区间 `1.00..1000.00` |
+| status | VARCHAR(32) | NOT NULL, DEFAULT `pending` | `pending` / `paid` / `failed` / `closed` |
+| idempotency_key | VARCHAR(256) | NOT NULL, UNIQUE；MySQL `ascii_bin` | 创建意图内部幂等身份，逐字节区分大小写 |
+| succeeded_at | DATETIME | nullable | 可信 Provider 成功时间 |
+| created_at / updated_at | DATETIME | - | 技术时间 |
+
+真实 Provider 当前关闭，运行时不会创建充值单；该表仅建立未来可信支付的结构边界。
+
+### 3.13 payments（支付记录，M4 离线迁移未应用）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | Payment ID |
+| payment_no | VARCHAR(28) | NOT NULL, UNIQUE | `PY` + 26 位 Crockford Base32 ULID |
+| user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | 付款普通 USER |
+| purpose | VARCHAR(32) | NOT NULL | `order` / `recharge` |
+| method | VARCHAR(32) | NOT NULL | `wallet` / `wechat` / `manual` |
+| amount | DECIMAL(10,2) | NOT NULL | 正金额，订单支付必须等于 Order.total_amount |
+| status | VARCHAR(32) | NOT NULL, DEFAULT `pending` | `pending` / `succeeded` / `failed` / `closed` |
+| order_id | BIGINT | FK → orders.id, nullable, ON DELETE RESTRICT | Order purpose 关联 |
+| recharge_order_id | BIGINT | FK → recharge_orders.id, nullable, ON DELETE RESTRICT | Recharge purpose 关联 |
+| idempotency_key | VARCHAR(256) | NOT NULL, UNIQUE；MySQL `ascii_bin` | 支付意图内部幂等身份，逐字节区分大小写 |
+| provider_transaction_id | VARCHAR(128) | nullable, UNIQUE | Provider 交易号；当前 wallet/manual 为 NULL |
+| succeeded_at | DATETIME | nullable | 成功时间 |
+| created_at / updated_at | DATETIME | - | 技术时间 |
+
+purpose 与可空业务外键的组合由 Service 校验；数据库不使用当前跨方言策略之外的 CHECK。
+
+ADMIN+ 代客钱包订单同样写 `purpose=order`、`method=wallet`、`status=succeeded`；其 Payment 幂等身份绑定管理员、目标普通 USER、Item 与 remark，Order/Items、Kit 库存扣减、钱包扣减、Payment/Settlement、直接 Paid 与双审计在一个事务中提交。该能力不增加专用订单或扣款表。
+
+### 3.14 payment_settlements（成功订单结算，M4 离线迁移未应用）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | Settlement ID |
+| payment_id | BIGINT | FK → payments.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 唯一成功 Payment |
+| order_id | BIGINT | FK → orders.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一个 Order 最多一个成功结算 |
+| amount | DECIMAL(10,2) | NOT NULL | 必须与 Payment 和 Order 金额一致 |
+| created_at / updated_at | DATETIME | - | 技术时间 |
+
+M4 前经人工入口进入 PAID/COMPLETED 的历史 Order 尚无 Payment/Settlement。正式发布在钱包 backfill 收敛后运行 `legacy_manual_settlement_backfill`：只有唯一 `MARK_ORDER_PAID` Audit 且无矛盾资金事实的冻结范围旧单，才补一条同 User/Order/amount、`purpose=order`、`method=manual`、`status=succeeded` 的 Payment 与唯一 Settlement；成功时间取历史 Audit.created_at。命令默认 preview，apply 强制复用 preview 的 `through_order_id`，不新增或改写 Order/Audit，冲突阻断并人工裁决。
+
+### 3.15 refunds（全额退款，M4 离线迁移未应用）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | Refund ID |
+| refund_no | VARCHAR(28) | NOT NULL, UNIQUE | `RF` + 26 位 Crockford Base32 ULID |
+| settlement_id | BIGINT | FK → payment_settlements.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一个 Settlement 最多一次退款 |
+| order_id | BIGINT | FK → orders.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一个 Order 最多一次退款 |
+| operator_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | 发起退款的 ADMIN+ |
+| amount | DECIMAL(10,2) | NOT NULL | 固定等于 Settlement 全额 |
+| status | VARCHAR(32) | NOT NULL, DEFAULT `pending` | `pending` / `succeeded` / `failed` |
+| inventory_restored | BOOL | NOT NULL, DEFAULT false | 仅 PAID Kit/混合订单成功恢复时 true |
+| reason | VARCHAR(256) | NOT NULL | 规范化管理原因 |
+| idempotency_key | VARCHAR(256) | NOT NULL, UNIQUE；MySQL `ascii_bin` | 退款意图内部幂等身份，逐字节区分大小写 |
+| provider_refund_id | VARCHAR(128) | nullable, UNIQUE | Provider 退款号；当前为 NULL |
+| succeeded_at | DATETIME | nullable | 成功时间 |
+| created_at / updated_at | DATETIME | - | 技术时间 |
+
+Refund 状态独立于 OrderStatus；成功退款不修改 Paid/Completed。PAID Kit 恢复通过 InventoryTransaction `order_refund_restore` 追溯，COMPLETED 不恢复。
+
+Refund `succeeded` 同时表示对应 wallet Settlement 的退款预留敞口已释放；`pending`、`failed` 或没有 Refund 的可退款 Settlement 仍占用敞口。退款窗口由当前业务规则在查询中使用 UTC 时间计算，不在 Settlement/Refund 表冗余保存动态布尔标记。
 
 ---
 
@@ -291,8 +411,16 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | products → product_images | 一对多 | 一个商品有多张图片 |
 | products → inventory_transactions | 一对多 | 一个 Kit Product 可以有多条不可变库存流水 |
 | users → inventory_transactions | 一对多（可空） | 用户可作为流水触发者；迁移/系统事件允许无用户 |
+| users → wallet_accounts | 一对一（仅 USER） | NORMAL/DISABLED 普通客户应有一个权威钱包；历史 DELETED 可无，ADMIN/SUPER_ADMIN 不建 |
+| wallet_accounts → wallet_transactions | 一对多 | 一个钱包有多条不可变资金流水 |
+| users / wallet_accounts → recharge_orders | 一对多 | 普通客户为自己的钱包创建充值意图 |
+| users → payments | 一对多 | 用户的订单或充值支付记录 |
+| orders / recharge_orders → payments | 一对多（可空分支） | Payment purpose 决定且仅决定一个业务归属 |
+| orders / payments → payment_settlements | 一对一 | 一个订单最多一个成功 Payment 结算 |
+| orders / payment_settlements → refunds | 一对一 | v1 一个订单/结算最多一次全额退款 |
+| users → refunds | 一对多 | ADMIN+ 作为退款操作者 |
 
-**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。订单历史链 `orders.user_id`、`order_items.order_id/product_id/experience_option_id` 全部使用 `ON DELETE RESTRICT`；Inventory 的 `product_id` 与可空 `operator_id` 同样使用 `RESTRICT` 保存追溯链。`inventory_transactions.source_id` 是通用来源标识，不建立多态外键。
+**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。订单、Inventory、Wallet、Payment、Settlement 与 Refund 的历史 FK 全部使用 `ON DELETE RESTRICT` 保存追溯链。Inventory/Wallet 的 `source_id` 是通用来源标识，不建立多态外键。
 
 ---
 
@@ -305,7 +433,7 @@ DB 使用 VARCHAR 存储 `product_type` 和 `status`，代码层 **必须** 使�
 | 所有主键 | `id BIGINT AUTO_INCREMENT` |
 | 所有时间 | `created_at` / `updated_at` |
 | 所有金额 | `DECIMAL(10,2)`，单位：元 |
-| 状态/类型字段 | 按模块权威设计：User / Order 使用 `SMALLINT`，Product 使用 `VARCHAR(20)` 字符串 Enum，Inventory 使用容量明确的 VARCHAR 字符串 Enum |
+| 状态/类型字段 | 按模块权威设计：User / Order 使用 `SMALLINT`；Product、Inventory、Wallet、Payment、RechargeOrder 与 Refund 使用容量明确的 VARCHAR 字符串 Enum |
 | 所有外键 | `xxx_id BIGINT` |
 
 ### 时间字段策略
@@ -495,6 +623,46 @@ CREATE INDEX idx_audit_target_created ON audit_logs (target_type, target_id, cre
 CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 ```
 
+#### wallet_transactions
+
+| # | 查询 | 索引 |
+|---|------|------|
+| 1 | `WHERE idempotency_key = ?` | `UNIQUE(idempotency_key)` |
+| 2 | `WHERE wallet_account_id = ? ORDER BY created_at DESC, id DESC` | `(wallet_account_id, created_at, id)` |
+| 3 | `WHERE source_type = ? AND source_id = ? ORDER BY created_at DESC, id DESC` | `(source_type, source_id, created_at, id)` |
+| 4 | `WHERE transaction_type = ? ORDER BY created_at DESC, id DESC` | `(transaction_type, created_at, id)` |
+| 5 | 全局稳定分页 | `(created_at, id)` |
+
+#### recharge_orders
+
+| # | 查询 | 索引 |
+|---|------|------|
+| 1 | `WHERE idempotency_key = ?` | `UNIQUE(idempotency_key)` |
+| 2 | 用户充值单稳定分页 | `(user_id, created_at, id)` |
+| 3 | 按状态扫描未完成充值 | `(status, created_at, id)` |
+
+#### payments
+
+| # | 查询 | 索引 |
+|---|------|------|
+| 1 | 幂等支付意图 | `UNIQUE(idempotency_key)` |
+| 2 | Provider 通知定位 | `UNIQUE(provider_transaction_id)` |
+| 3 | 用户支付稳定分页 | `(user_id, created_at, id)` |
+| 4 | 订单支付追溯 | `(order_id, created_at, id)` |
+| 5 | 充值支付追溯 | `(recharge_order_id, created_at, id)` |
+| 6 | 按状态扫描未完成支付 | `(status, created_at, id)` |
+
+#### refunds
+
+| # | 查询 | 索引 |
+|---|------|------|
+| 1 | 幂等退款意图 | `UNIQUE(idempotency_key)` |
+| 2 | Provider 退款通知定位 | `UNIQUE(provider_refund_id)` |
+| 3 | 订单退款追溯 | `(order_id, created_at, id)` |
+| 4 | 按状态扫描未完成退款 | `(status, created_at, id)` |
+
+`wallet_accounts.user_id`、`payment_settlements.payment_id/order_id` 与 `refunds.order_id/settlement_id` 已由 UNIQUE 约束提供索引，不重复创建普通索引。
+
 ### 7.3 索引汇总
 
 | 表 | 索引名 | 列 | 类型 | 覆盖查询 |
@@ -518,6 +686,24 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | `inventory_transactions` | `idx_inventory_source_created_id` | `(source_type, source_id, created_at, id)` | 普通 | Order 来源追溯 |
 | `inventory_transactions` | `idx_inventory_type_created_id` | `(transaction_type, created_at, id)` | 普通 | 类型筛选稳定分页 |
 | `inventory_transactions` | `idx_inventory_created_id` | `(created_at, id)` | 普通 | 全局流水与时间范围 |
+| `wallet_transactions` | `uidx_wallet_transaction_idempotency` | `(idempotency_key)` | UNIQUE | 资金事件幂等兜底 |
+| `wallet_transactions` | `idx_wallet_transaction_wallet_created_id` | `(wallet_account_id, created_at, id)` | 普通 | 用户钱包流水 |
+| `wallet_transactions` | `idx_wallet_transaction_source_created_id` | `(source_type, source_id, created_at, id)` | 普通 | 业务来源追溯 |
+| `wallet_transactions` | `idx_wallet_transaction_type_created_id` | `(transaction_type, created_at, id)` | 普通 | 类型筛选 |
+| `wallet_transactions` | `idx_wallet_transaction_created_id` | `(created_at, id)` | 普通 | 全局稳定分页 |
+| `recharge_orders` | `uidx_recharge_order_idempotency` | `(idempotency_key)` | UNIQUE | 充值创建幂等 |
+| `recharge_orders` | `idx_recharge_order_user_created_id` | `(user_id, created_at, id)` | 普通 | 用户充值单 |
+| `recharge_orders` | `idx_recharge_order_status_created_id` | `(status, created_at, id)` | 普通 | 未完成状态扫描 |
+| `payments` | `uidx_payment_idempotency` | `(idempotency_key)` | UNIQUE | 支付意图幂等 |
+| `payments` | `uidx_payment_provider_transaction` | `(provider_transaction_id)` | UNIQUE | Provider 交易号定位 |
+| `payments` | `idx_payment_user_created_id` | `(user_id, created_at, id)` | 普通 | 用户支付历史 |
+| `payments` | `idx_payment_order_created_id` | `(order_id, created_at, id)` | 普通 | 订单支付追溯 |
+| `payments` | `idx_payment_recharge_created_id` | `(recharge_order_id, created_at, id)` | 普通 | 充值支付追溯 |
+| `payments` | `idx_payment_status_created_id` | `(status, created_at, id)` | 普通 | 未完成状态扫描 |
+| `refunds` | `uidx_refund_idempotency` | `(idempotency_key)` | UNIQUE | 退款意图幂等 |
+| `refunds` | `uidx_refund_provider_reference` | `(provider_refund_id)` | UNIQUE | Provider 退款号定位 |
+| `refunds` | `idx_refund_order_created_id` | `(order_id, created_at, id)` | 普通 | 订单退款追溯 |
+| `refunds` | `idx_refund_status_created_id` | `(status, created_at, id)` | 普通 | 未完成状态扫描 |
 | `audit_logs` | `idx_audit_target_created` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
 | `audit_logs` | `idx_audit_operator_created` | `(operator_id, created_at)` | 普通 | 操作人行为审计 |
 
@@ -526,6 +712,8 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | 表 | 原因 |
 |----|------|
 | `product_kits` | 仅通过 `product_id`（已有 UNIQUE 约束及其索引）查询，无需额外索引 |
+| `wallet_accounts` | 仅通过 `user_id`（已有 UNIQUE 约束及其索引）锁定/查询 |
+| `payment_settlements` | `payment_id`、`order_id` 均已有 UNIQUE 约束及其索引 |
 
 ---
 
@@ -533,6 +721,6 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 
 | 版本 | 新增内容 |
 |------|----------|
-| v0.2 | 收藏表、评价表、支付记录表 |
+| v0.2 | 收藏表、评价表（Wallet/Payment/Refund 表已由 M4 仓库实现） |
 | v0.3 | AI 推荐记录、AI 生成模板表 |
-| v1.0 | 退款记录、后台操作日志（微信身份表已由 Phase 9.5 实现） |
+| v1.0 | 真实微信 Provider 通知/对账扩展、后台操作日志（微信身份表已由 Phase 9.5 实现） |

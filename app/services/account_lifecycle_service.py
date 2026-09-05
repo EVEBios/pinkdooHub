@@ -26,7 +26,9 @@ from app.integrations.wechat import (
 from app.models.user import User
 from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.order_repo import OrderRepository
+from app.repositories.payment_repo import PaymentRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.wallet_repo import WalletRepository
 from app.schemas.user import AccountDeletionRequest
 from app.services.audit_log_service import AuditLogService
 
@@ -43,12 +45,16 @@ class AccountLifecycleService:
         identity_repository: ExternalIdentityRepository,
         audit_log_service: AuditLogService,
         provider: ExternalIdentityProvider,
+        wallet_repository: WalletRepository | None = None,
+        payment_repository: PaymentRepository | None = None,
     ) -> None:
         self.user_repository = user_repository
         self.order_repository = order_repository
         self.identity_repository = identity_repository
         self.audit_log_service = audit_log_service
         self.provider = provider
+        self.wallet_repository = wallet_repository or WalletRepository()
+        self.payment_repository = payment_repository or PaymentRepository()
 
     async def delete_account(
         self,
@@ -94,6 +100,46 @@ class AccountLifecycleService:
                 )
                 raise AccountDeletionBlocked()
 
+            if await self.payment_repository.has_in_flight_for_user(
+                locked_user.id,
+                using_db=connection,
+            ):
+                emit_security_event(
+                    "account_deletion",
+                    "blocked_in_flight_financial_record",
+                    level=logging.WARNING,
+                    user_id=locked_user.id,
+                )
+                raise AccountDeletionBlocked()
+
+            refundable_wallet_exposure = (
+                await self.payment_repository.get_refundable_wallet_exposure(
+                    locked_user.id,
+                    using_db=connection,
+                )
+            )
+            if refundable_wallet_exposure > 0:
+                emit_security_event(
+                    "account_deletion",
+                    "blocked_refundable_wallet_payment",
+                    level=logging.WARNING,
+                    user_id=locked_user.id,
+                )
+                raise AccountDeletionBlocked()
+
+            wallet = await self.wallet_repository.get_account_for_update(
+                locked_user.id,
+                using_db=connection,
+            )
+            if wallet is not None and wallet.balance != 0:
+                emit_security_event(
+                    "account_deletion",
+                    "blocked_wallet_balance",
+                    level=logging.WARNING,
+                    user_id=locked_user.id,
+                )
+                raise AccountDeletionBlocked()
+
             await self.audit_log_service.log(
                 operator_id=locked_user.id,
                 action="DELETE_ACCOUNT",
@@ -106,6 +152,11 @@ class AccountLifecycleService:
                 locked_user.id,
                 using_db=connection,
             )
+            if wallet is not None:
+                await self.wallet_repository.close_account(
+                    wallet,
+                    using_db=connection,
+                )
             await self.user_repository.update(
                 locked_user,
                 username=f"deleted_{secrets.token_hex(12)}",
@@ -120,7 +171,22 @@ class AccountLifecycleService:
                 using_db=connection,
             )
 
-        await revoke_user_refresh_sessions(user.id)
+        try:
+            await revoke_user_refresh_sessions(user.id)
+        except Exception:
+            # 数据库提交是注销的权威成功点。此处 Redis 仅是纵深撤销；
+            # User.status/auth_version 已阻断旧会话，不能向客户端谎报注销失败。
+            logger.error(
+                "Refresh session cleanup failed after account deletion: user_id=%d",
+                user.id,
+                exc_info=True,
+            )
+            emit_security_event(
+                "account_deletion",
+                "post_commit_session_cleanup_failed",
+                level=logging.ERROR,
+                user_id=user.id,
+            )
         logger.info("User account anonymized: user_id=%d", user.id)
         emit_security_event(
             "account_deletion",
@@ -137,7 +203,10 @@ class AccountLifecycleService:
         using_db: BaseDBAsyncClient,
     ) -> None:
         if data.password is not None:
-            if user.password is None or not verify_password(data.password, user.password):
+            if user.password is None or not verify_password(
+                data.password,
+                user.password,
+            ):
                 raise IncorrectPassword()
             return
 

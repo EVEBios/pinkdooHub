@@ -132,9 +132,9 @@ class InventoryTransactionOut(_InventoryOut):
             ):
                 raise ValueError("Admin adjustment transaction metadata is invalid")
         else:
-            expected_positive = (
-                self.transaction_type
-                is InventoryTransactionType.ORDER_CANCELLATION_RESTORE
+            expected_positive = self.transaction_type in (
+                InventoryTransactionType.ORDER_CANCELLATION_RESTORE,
+                InventoryTransactionType.ORDER_REFUND_RESTORE,
             )
             if (
                 self.source_type is not InventorySourceType.ORDER

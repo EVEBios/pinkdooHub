@@ -168,11 +168,15 @@ Phase 4.3.9 已实现指定 Kit 与全局查询 Service，以及流水/分页/�
 
 ## 8. Order API 联动
 
-现有 `POST /api/v1/orders` 路径不变，Phase 4.3.7 已允许 Kit Item 省略 `experience_option_id` 或显式提交 `null`，并拒绝 Kit 携带正整数 Option ID。Kit 或混合订单创建扣减 Kit；Phase 4.3.8 已让现有 owner cancel 在 Pending 状态恢复全部 Kit，确认支付和完成继续不改变库存。完整矩阵以 [Inventory Module §4](../01_requirements/inventory_module.md#4-库存发生时点与-order-矩阵) 为准。
+现有 `POST /api/v1/orders` 路径不变，Phase 4.3.7 已允许 Kit Item 省略 `experience_option_id` 或显式提交 `null`，并拒绝 Kit 携带正整数 Option ID。Kit 或混合订单创建扣减 Kit；Phase 4.3.8 已让现有 owner cancel 在 Pending 状态恢复全部 Kit。对已存在订单的确认支付和完成继续不改变库存。完整矩阵以 [Inventory Module §4](../01_requirements/inventory_module.md#4-库存发生时点与-order-矩阵) 为准。
 
 创建事务已按冻结顺序先写 Pending Order 取得 `Order.id`，再锁定和扣减 Kit，使流水 source 与幂等键引用稳定数据库 ID；任一步失败时该 Order 同样回滚。订单号唯一冲突发生在库存写之前，并沿用全新事务最多 3 次的既有重试契约。
 
 取消事务先锁 owner 可见 Order，再读取 Item 数量快照并稳定锁定 Kit；每个 Product 使用 `inventory:order:{order_id}:restore:product:{product_id}`，写正数 `order_cancellation_restore` 流水。Pending 与已存在 restore 身份矛盾返回 `40933`，恢复余额越界返回 `40932`；重复取消由状态机返回 `40921`。余额、流水、Cancelled、Audit 和响应重载全事务原子，MySQL 1205/1213 对完整取消用例最多尝试 3 次。
+
+`POST /api/v1/admin/users/{user_id}/wallet-orders` 为状态正常的普通 USER 创建真实代客钱包订单。它复用相同 Item/快照规则，并在单事务内创建 Order、扣减 Kit 和钱包、写 `order_deduction`（operator 为 ADMIN+）及钱包流水、创建成功 Payment/唯一 Settlement、直接提交 Paid 和双审计；余额不足、库存不足、disabled/deleted 目标或任一步失败时全部回滚。该路由、`Idempotency-Key` 与响应详见 [Wallet API §6.4](wallet_api.md#64-按商品创建代客钱包订单)。
+
+ADMIN+ 全额退款是独立资金端点：PAID Kit/混合订单按 OrderItem 数量快照恢复全部 Kit 并写 `order_refund_restore`，COMPLETED 或纯 Experience 不写库存。退款、钱包返还、库存恢复和 `REFUND_ORDER` Audit 原子提交；恢复越界返回 `40932`，恢复幂等矛盾返回 `40933`。该 M4 新路径已在一次性 MySQL 8.0.46 的真实 Aerich 0→4 Schema 通过一条调账→代客 Kit 订单→PAID 退款/幂等闭环；M4 尚未应用持久数据库，且该 smoke 不能替代新增资金路径的并发、1205/1213 与 EXPLAIN 扩展门槛。
 
 库存不足响应示例：
 
