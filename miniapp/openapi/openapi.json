@@ -428,6 +428,47 @@
         "title": "AdminProductListItemOut",
         "type": "object"
       },
+      "AdminUserWalletOut": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserListItem"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/WalletSummaryOut"
+          }
+        },
+        "required": [
+          "user",
+          "wallet"
+        ],
+        "title": "AdminUserWalletOut",
+        "type": "object"
+      },
+      "AssistedWalletOrderOut": {
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/AdminOrderDetailOut"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentOut"
+          },
+          "post_payment_balance": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Post Payment Balance",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order",
+          "payment",
+          "post_payment_balance"
+        ],
+        "title": "AssistedWalletOrderOut",
+        "type": "object"
+      },
       "AuditLogOut": {
         "description": "审计日志公开字段白名单。",
         "properties": {
@@ -1225,7 +1266,8 @@
           "opening_balance",
           "admin_adjustment",
           "order_deduction",
-          "order_cancellation_restore"
+          "order_cancellation_restore",
+          "order_refund_restore"
         ],
         "title": "InventoryTransactionType",
         "type": "string"
@@ -1653,6 +1695,22 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MemberOut": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/WalletSummaryOut"
+          }
+        },
+        "required": [
+          "user",
+          "wallet"
+        ],
+        "title": "MemberOut",
+        "type": "object"
+      },
       "OptionImageOut": {
         "description": "Experience Option 专属图片响应，不包含封面标记。",
         "properties": {
@@ -1822,6 +1880,44 @@
           "updated_at"
         ],
         "title": "OrderDetailOut",
+        "type": "object"
+      },
+      "OrderFinancialOut": {
+        "properties": {
+          "order_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "order_status": {
+            "$ref": "#/components/schemas/OrderStatusValueOut"
+          },
+          "payment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refund": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefundOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "order_id",
+          "order_status"
+        ],
+        "title": "OrderFinancialOut",
         "type": "object"
       },
       "OrderItemCreate": {
@@ -2323,6 +2419,42 @@
         "title": "Page[UserListItem]",
         "type": "object"
       },
+      "Page_WalletTransactionOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WalletTransactionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[WalletTransactionOut]",
+        "type": "object"
+      },
       "PasswordChange": {
         "description": "修改密码请求。",
         "properties": {
@@ -2344,6 +2476,125 @@
         ],
         "title": "PasswordChange",
         "type": "object"
+      },
+      "PaymentMethod": {
+        "description": "Payment 的资金渠道。",
+        "enum": [
+          "wallet",
+          "wechat",
+          "manual"
+        ],
+        "title": "PaymentMethod",
+        "type": "string"
+      },
+      "PaymentOut": {
+        "properties": {
+          "amount": {
+            "examples": [
+              "100.00"
+            ],
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "payment_no": {
+            "pattern": "^PY[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Payment No",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/PaymentPurpose"
+          },
+          "recharge_order_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recharge Order Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "succeeded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Succeeded At"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "payment_no",
+          "purpose",
+          "method",
+          "amount",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PaymentOut",
+        "type": "object"
+      },
+      "PaymentPurpose": {
+        "description": "Payment 所服务的业务目的。",
+        "enum": [
+          "order",
+          "recharge"
+        ],
+        "title": "PaymentPurpose",
+        "type": "string"
+      },
+      "PaymentStatus": {
+        "description": "Payment 独立状态机。",
+        "enum": [
+          "pending",
+          "succeeded",
+          "failed",
+          "closed"
+        ],
+        "title": "PaymentStatus",
+        "type": "string"
       },
       "ProductBasicInfoOut": {
         "description": "修改商品名称或描述后的轻量响应。",
@@ -2659,6 +2910,25 @@
         "title": "ReadinessOut",
         "type": "object"
       },
+      "RechargeCreate": {
+        "additionalProperties": false,
+        "description": "创建单笔充值意图；当前真实 Provider 默认关闭。",
+        "properties": {
+          "amount": {
+            "examples": [
+              "100.00"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d{0,7})\\.\\d{2}$",
+            "title": "Amount",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ],
+        "title": "RechargeCreate",
+        "type": "object"
+      },
       "RefreshOut": {
         "description": "刷新响应——返回轮换后的新双 Token。",
         "properties": {
@@ -2702,6 +2972,118 @@
         ],
         "title": "RefreshRequest",
         "type": "object"
+      },
+      "RefundCreate": {
+        "additionalProperties": false,
+        "description": "ADMIN+ 对已结算订单执行一次全额退款。",
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RefundCreate",
+        "type": "object"
+      },
+      "RefundOut": {
+        "properties": {
+          "amount": {
+            "examples": [
+              "100.00"
+            ],
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "inventory_restored": {
+            "title": "Inventory Restored",
+            "type": "boolean"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "operator_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Operator Id",
+            "type": "integer"
+          },
+          "order_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "refund_no": {
+            "pattern": "^RF[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Refund No",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RefundStatus"
+          },
+          "succeeded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Succeeded At"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "refund_no",
+          "order_id",
+          "method",
+          "amount",
+          "status",
+          "reason",
+          "operator_id",
+          "inventory_restored",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RefundOut",
+        "type": "object"
+      },
+      "RefundStatus": {
+        "description": "退款独立状态机，不反向修改 Order 主状态。",
+        "enum": [
+          "pending",
+          "succeeded",
+          "failed"
+        ],
+        "title": "RefundStatus",
+        "type": "string"
       },
       "RootResponse": {
         "description": "GET / 根路由响应。",
@@ -2802,6 +3184,54 @@
           "data"
         ],
         "title": "SuccessResponse[AdminOrderDetailOut]",
+        "type": "object"
+      },
+      "SuccessResponse_AdminUserWalletOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminUserWalletOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[AdminUserWalletOut]",
+        "type": "object"
+      },
+      "SuccessResponse_AssistedWalletOrderOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AssistedWalletOrderOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[AssistedWalletOrderOut]",
         "type": "object"
       },
       "SuccessResponse_DeletedResourceOut_": {
@@ -3116,6 +3546,30 @@
         "title": "SuccessResponse[LivenessOut]",
         "type": "object"
       },
+      "SuccessResponse_MemberOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MemberOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[MemberOut]",
+        "type": "object"
+      },
       "SuccessResponse_NoneType_": {
         "additionalProperties": false,
         "properties": {
@@ -3187,6 +3641,30 @@
           "data"
         ],
         "title": "SuccessResponse[OrderDetailOut]",
+        "type": "object"
+      },
+      "SuccessResponse_OrderFinancialOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderFinancialOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[OrderFinancialOut]",
         "type": "object"
       },
       "SuccessResponse_OrderStatusOut_": {
@@ -3381,6 +3859,30 @@
         "title": "SuccessResponse[Page[UserListItem]]",
         "type": "object"
       },
+      "SuccessResponse_Page_WalletTransactionOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_WalletTransactionOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[WalletTransactionOut]]",
+        "type": "object"
+      },
       "SuccessResponse_ProductBasicInfoOut_": {
         "additionalProperties": false,
         "properties": {
@@ -3525,6 +4027,30 @@
         "title": "SuccessResponse[RefreshOut]",
         "type": "object"
       },
+      "SuccessResponse_RefundOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/RefundOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[RefundOut]",
+        "type": "object"
+      },
       "SuccessResponse_TokenOut_": {
         "additionalProperties": false,
         "properties": {
@@ -3603,6 +4129,54 @@
           "data"
         ],
         "title": "SuccessResponse[UserOut]",
+        "type": "object"
+      },
+      "SuccessResponse_WalletAdjustmentOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WalletAdjustmentOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[WalletAdjustmentOut]",
+        "type": "object"
+      },
+      "SuccessResponse_WalletPaymentOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WalletPaymentOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[WalletPaymentOut]",
         "type": "object"
       },
       "TokenOut": {
@@ -3887,6 +4461,316 @@
         },
         "title": "UserUpdate",
         "type": "object"
+      },
+      "WalletAdjustmentCreate": {
+        "additionalProperties": false,
+        "description": "ADMIN+ 以变化额调整普通用户钱包。",
+        "properties": {
+          "change": {
+            "examples": [
+              "100.00"
+            ],
+            "pattern": "^-?(?:0|[1-9]\\d{0,7})\\.\\d{2}$",
+            "title": "Change",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "change",
+          "reason"
+        ],
+        "title": "WalletAdjustmentCreate",
+        "type": "object"
+      },
+      "WalletAdjustmentOut": {
+        "properties": {
+          "transaction": {
+            "$ref": "#/components/schemas/WalletTransactionOut"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/WalletSummaryOut"
+          }
+        },
+        "required": [
+          "wallet",
+          "transaction"
+        ],
+        "title": "WalletAdjustmentOut",
+        "type": "object"
+      },
+      "WalletCapabilitiesOut": {
+        "properties": {
+          "refund_enabled": {
+            "title": "Refund Enabled",
+            "type": "boolean"
+          },
+          "topup_enabled": {
+            "title": "Topup Enabled",
+            "type": "boolean"
+          },
+          "wallet_payment_enabled": {
+            "title": "Wallet Payment Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "topup_enabled",
+          "wallet_payment_enabled",
+          "refund_enabled"
+        ],
+        "title": "WalletCapabilitiesOut",
+        "type": "object"
+      },
+      "WalletPaymentOut": {
+        "properties": {
+          "order_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "order_no": {
+            "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Order No",
+            "type": "string"
+          },
+          "order_status": {
+            "$ref": "#/components/schemas/OrderStatusValueOut"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentOut"
+          },
+          "post_payment_balance": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Post Payment Balance",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "order_no",
+          "order_status",
+          "payment",
+          "post_payment_balance"
+        ],
+        "title": "WalletPaymentOut",
+        "type": "object"
+      },
+      "WalletStatus": {
+        "description": "钱包生命周期；用户禁用状态仍以 User.status 为唯一事实。",
+        "enum": [
+          "active",
+          "closed"
+        ],
+        "title": "WalletStatus",
+        "type": "string"
+      },
+      "WalletSummaryOut": {
+        "properties": {
+          "balance": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Balance",
+            "type": "string"
+          },
+          "balance_limit": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Balance Limit",
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/WalletCapabilitiesOut"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WalletStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          },
+          "wallet_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Wallet Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "wallet_id",
+          "user_id",
+          "balance",
+          "balance_limit",
+          "status",
+          "capabilities",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WalletSummaryOut",
+        "type": "object"
+      },
+      "WalletTransactionOut": {
+        "properties": {
+          "after_balance": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "After Balance",
+            "type": "string"
+          },
+          "before_balance": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Before Balance",
+            "type": "string"
+          },
+          "change_amount": {
+            "examples": [
+              "100.00"
+            ],
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "title": "Change Amount",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "income",
+              "expense"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "operator_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Id"
+          },
+          "operator_nickname": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Nickname"
+          },
+          "reason": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_order_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Order No"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/WalletTransactionSourceType"
+          },
+          "transaction_type": {
+            "$ref": "#/components/schemas/WalletTransactionType"
+          }
+        },
+        "required": [
+          "id",
+          "transaction_type",
+          "direction",
+          "change_amount",
+          "before_balance",
+          "after_balance",
+          "source_type",
+          "reason",
+          "created_at"
+        ],
+        "title": "WalletTransactionOut",
+        "type": "object"
+      },
+      "WalletTransactionSourceType": {
+        "description": "钱包流水的来源聚合类型。",
+        "enum": [
+          "recharge_order",
+          "order",
+          "admin",
+          "refund"
+        ],
+        "title": "WalletTransactionSourceType",
+        "type": "string"
+      },
+      "WalletTransactionType": {
+        "description": "已提交钱包余额变化的业务类型。",
+        "enum": [
+          "recharge",
+          "order_payment",
+          "admin_adjustment",
+          "refund"
+        ],
+        "title": "WalletTransactionType",
+        "type": "string"
       },
       "WeChatCodeRequest": {
         "additionalProperties": false,
@@ -5148,6 +6032,114 @@
         ]
       }
     },
+    "/api/v1/admin/orders/{order_id}/financials": {
+      "get": {
+        "operationId": "get_admin_order_financials_api_v1_admin_orders__order_id__financials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Order Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrderFinancialOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Admin Order Financials",
+        "tags": [
+          "admin-refunds"
+        ]
+      }
+    },
     "/api/v1/admin/orders/{order_id}/paid": {
       "patch": {
         "description": "由 ADMIN+ 人工确认 Pending Order 已支付。",
@@ -5244,6 +6236,145 @@
         "summary": "Mark Order Paid",
         "tags": [
           "admin-orders"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{order_id}/refunds": {
+      "post": {
+        "operationId": "refund_admin_order_api_v1_admin_orders__order_id__refunds_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Order Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_RefundOut_"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_RefundOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Refund Admin Order",
+        "tags": [
+          "admin-refunds"
         ]
       }
     },
@@ -7427,6 +8558,524 @@
         ]
       }
     },
+    "/api/v1/admin/users/{user_id}/wallet": {
+      "get": {
+        "operationId": "get_admin_user_wallet_api_v1_admin_users__user_id__wallet_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AdminUserWalletOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Admin User Wallet",
+        "tags": [
+          "admin-wallet"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/wallet-adjustments": {
+      "post": {
+        "operationId": "adjust_admin_user_wallet_api_v1_admin_users__user_id__wallet_adjustments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletAdjustmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_WalletAdjustmentOut_"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_WalletAdjustmentOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Adjust Admin User Wallet",
+        "tags": [
+          "admin-wallet"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/wallet-orders": {
+      "post": {
+        "description": "为普通客户创建真实商品订单，并在同一事务中扣减钱包。",
+        "operationId": "create_assisted_wallet_order_api_v1_admin_users__user_id__wallet_orders_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AssistedWalletOrderOut_"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AssistedWalletOrderOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Assisted Wallet Order",
+        "tags": [
+          "admin-wallet"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/wallet-transactions": {
+      "get": {
+        "operationId": "list_admin_user_wallet_transactions_api_v1_admin_users__user_id__wallet_transactions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_WalletTransactionOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Admin User Wallet Transactions",
+        "tags": [
+          "admin-wallet"
+        ]
+      }
+    },
     "/api/v1/auth-required": {
       "get": {
         "description": "演示 401 —— 未登录或 Token 失效。",
@@ -8666,6 +10315,362 @@
         ]
       }
     },
+    "/api/v1/orders/{order_id}/financials": {
+      "get": {
+        "operationId": "get_order_financials_api_v1_orders__order_id__financials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Order Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrderFinancialOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Order Financials",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/orders/{order_id}/payments/wallet": {
+      "post": {
+        "operationId": "pay_order_with_wallet_api_v1_orders__order_id__payments_wallet_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Order Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_WalletPaymentOut_"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_WalletPaymentOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pay Order With Wallet",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/orders/{order_id}/payments/wechat": {
+      "post": {
+        "operationId": "create_wechat_order_payment_api_v1_orders__order_id__payments_wechat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Order Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_NoneType_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Wechat Order Payment",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
     "/api/v1/ping": {
       "get": {
         "description": "连通性检查 —— success() 无参数，data 为 null",
@@ -9226,6 +11231,345 @@
         "summary": "Change Password",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/wallet": {
+      "get": {
+        "description": "返回当前普通用户资料、权威余额、上限与能力开关。",
+        "operationId": "get_member_wallet_api_v1_wallet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_MemberOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Member Wallet",
+        "tags": [
+          "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/recharges": {
+      "post": {
+        "description": "创建真实充值意图；Provider 未就绪时稳定返回 503 且零写入。",
+        "operationId": "create_wallet_recharge_api_v1_wallet_recharges_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_NoneType_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Wallet Recharge",
+        "tags": [
+          "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/transactions": {
+      "get": {
+        "description": "分页查询当前普通用户自己的不可变钱包流水。",
+        "operationId": "list_wallet_transactions_api_v1_wallet_transactions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_WalletTransactionOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Wallet Transactions",
+        "tags": [
+          "wallet"
         ]
       }
     }

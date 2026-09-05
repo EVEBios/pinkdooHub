@@ -1,0 +1,167 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as patterns;
+
+.recharge-page {
+  @include patterns.page-shell;
+
+  &__header {
+    @include patterns.header-band;
+  }
+
+  &__eyebrow,
+  &__title,
+  &__subtitle,
+  &__footnote {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 750;
+    letter-spacing: 1.3px;
+  }
+
+  &__title {
+    @include patterns.page-title;
+
+    margin-top: 25px;
+  }
+
+  &__subtitle {
+    @include patterns.page-subtitle;
+
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__footnote {
+    max-width: 680px;
+    margin: 20px auto 0;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  &--state {
+    @include patterns.state-shell;
+  }
+}
+
+.recharge-form {
+  @include patterns.section-panel(26px, var(--pd-radius-large));
+
+  max-width: 680px;
+  margin: 0 auto;
+
+  &__label,
+  &__validation,
+  &__warning,
+  &__error,
+  &__success {
+    display: block;
+  }
+
+  &__label {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+  }
+
+  &__money {
+    display: flex;
+    align-items: center;
+    margin-top: 14px;
+    padding: 12px 18px;
+    background: var(--pd-color-surface-muted);
+    border: 1px solid transparent;
+    border-radius: 16px;
+  }
+
+  &__currency {
+    color: var(--pd-color-primary-strong);
+    font-family: var(--pd-font-display);
+    font-size: 32px;
+    font-weight: 700;
+  }
+
+  &__input {
+    width: 100%;
+    min-height: 52px;
+    margin-left: 10px;
+    font-family: var(--pd-font-display);
+    font-size: 34px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__validation {
+    margin-top: 10px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__warning,
+  &__error {
+    @include patterns.feedback-warning;
+  }
+
+  &__error {
+    @include patterns.feedback-error;
+  }
+
+  &__success {
+    @include patterns.feedback-success;
+  }
+
+  &__submit {
+    @include patterns.primary-button;
+
+    width: 100%;
+    margin-top: 22px;
+  }
+}
+
+.recharge-provider {
+  margin-top: 22px;
+  padding: 18px;
+  background: var(--pd-color-warning-soft);
+  border: 1px solid rgb(118 83 28 / 18%);
+  border-radius: var(--pd-radius-small);
+
+  &__status,
+  &__detail {
+    display: block;
+  }
+
+  &__status {
+    color: var(--pd-color-warning);
+    font-size: var(--pd-font-label);
+    font-weight: 750;
+  }
+
+  &__detail {
+    margin-top: 8px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.6;
+  }
+}
+
+.recharge-state {
+  &__title {
+    @include patterns.state-title;
+  }
+
+  &__description {
+    @include patterns.state-description;
+  }
+
+  &__action {
+    @include patterns.primary-button;
+
+    margin-top: 24px;
+  }
+}
+
+/* stylelint-enable at-rule-no-unknown */

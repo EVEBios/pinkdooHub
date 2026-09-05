@@ -30,6 +30,7 @@ jest.mock('@/auth', () => ({
   ADMIN_ORDER_LIST_PATH: '/admin/pages/orders/index',
   ADMIN_PRODUCT_LIST_PATH: '/admin/pages/products/index',
   ADMIN_USER_LIST_PATH: '/admin/pages/users/index',
+  MEMBER_PATH: '/pages/member/index',
   useAuth: () => mockAuth,
 }))
 
@@ -149,7 +150,12 @@ describe('ProductListPage', () => {
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理订单')
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理用户')
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('店铺管理')
+    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).toContain('会员中心')
     expect(testUtils.queries.querySelectorAll('.product-page__account-group')).toHaveLength(1)
+    const memberButton = Array.from(testUtils.queries.querySelectorAll('.product-page__account-action'))
+      .find((button) => button.textContent.includes('会员中心'))
+    testUtils.fireEvent.click(memberButton!)
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/member/index' })
     testUtils.unmout()
 
     testUtils = new ReactTestUtil()

@@ -7,7 +7,10 @@ export default defineAppConfig({
     'pages/cart/index',
     'pages/order-confirm/index',
     'pages/orders/index',
-    'pages/order-detail/index'
+    'pages/order-detail/index',
+    'pages/member/index',
+    'pages/wallet-recharge/index',
+    'pages/wallet-transactions/index'
   ],
   subPackages: [{
     root: 'admin',
@@ -23,6 +26,8 @@ export default defineAppConfig({
       'pages/orders/index',
       'pages/order-detail/index',
       'pages/users/index',
+      'pages/user-wallet/index',
+      'pages/wallet-order/index',
       'pages/inventory-transactions/index'
     ]
   }],

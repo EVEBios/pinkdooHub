@@ -1,0 +1,447 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
+.wallet-order-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__header {
+    @include pd.header-band;
+  }
+
+  &__eyebrow,
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 750;
+  }
+
+  &__title {
+    @include pd.page-title;
+
+    margin-top: 22px;
+  }
+
+  &__subtitle {
+    @include pd.page-subtitle;
+  }
+
+  &__back {
+    @include pd.quiet-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+}
+
+.wallet-order-catalog,
+.wallet-order-form {
+  @include pd.section-panel(24px, var(--pd-radius-large));
+}
+
+.wallet-order-catalog {
+  &__title,
+  &__hint,
+  &__state,
+  &__end {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__hint,
+  &__state,
+  &__end {
+    margin-top: 10px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+
+  &__search {
+    @include pd.field;
+
+    margin-top: 20px;
+  }
+
+  &__filters {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    overflow-x: auto;
+  }
+
+  &__filter {
+    @include pd.chip;
+  }
+
+  &__filter--active {
+    @include pd.chip-active;
+  }
+
+  &__list {
+    display: grid;
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  &__retry,
+  &__more {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 14px;
+  }
+
+  &__end {
+    text-align: center;
+  }
+}
+
+.wallet-order-product {
+  @include pd.record-card(18px);
+  @include pd.tappable-card;
+
+  display: flex;
+  width: 100%;
+  min-height: var(--pd-control-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0;
+  text-align: left;
+
+  &__type,
+  &__name {
+    display: block;
+  }
+
+  &__type {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+  }
+
+  &__name {
+    margin-top: 5px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+  }
+
+  &__price {
+    flex: 0 0 auto;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-label);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+  }
+}
+
+.wallet-order-form {
+  &__heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+  }
+
+  &__type,
+  &__title,
+  &__label,
+  &__stock,
+  &__error,
+  &__feedback {
+    display: block;
+  }
+
+  &__type {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+  }
+
+  &__title {
+    margin-top: 6px;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    overflow-wrap: anywhere;
+  }
+
+  &__change,
+  &__secondary {
+    @include pd.secondary-button;
+  }
+
+  &__change {
+    flex: 0 0 auto;
+  }
+
+  &__secondary {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  &__label {
+    @include pd.field-label;
+  }
+
+  &__price {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 20px;
+    padding: 17px 18px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    background: var(--pd-color-surface-muted);
+    border-radius: var(--pd-radius-field);
+
+    &-value {
+      color: var(--pd-color-primary-strong);
+      font-size: var(--pd-font-price);
+      font-variant-numeric: tabular-nums;
+      font-weight: 750;
+    }
+  }
+
+  &__stock {
+    margin-top: 10px;
+    color: var(--pd-color-success);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__remark {
+    @include pd.textarea-field;
+  }
+
+  &__summary {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: 7px 18px;
+    margin-top: 18px;
+    padding: 19px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    background: var(--pd-color-surface-muted);
+    border-radius: var(--pd-radius-medium);
+
+    &-balance {
+      grid-column: 1 / -1;
+      font-size: var(--pd-font-caption);
+    }
+  }
+
+  &__total {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+  }
+
+  &__error,
+  &__feedback--failed {
+    @include pd.feedback-error;
+  }
+
+  &__feedback--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &__submit {
+    @include pd.primary-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+
+  &__retry {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 18px;
+    color: var(--pd-color-warning);
+    background: var(--pd-color-warning-soft);
+  }
+}
+
+.wallet-order-options {
+  margin-top: 18px;
+}
+
+.wallet-order-option {
+  @include pd.record-card(16px);
+
+  display: flex;
+  width: 100%;
+  min-height: var(--pd-control-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 9px 0 0;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-label);
+  text-align: left;
+
+  &--active {
+    color: var(--pd-color-primary-strong);
+    background: var(--pd-color-primary-soft);
+    border-color: var(--pd-color-line-strong);
+  }
+}
+
+.wallet-order-quantity {
+  display: grid;
+  grid-template-columns: var(--pd-control-height) 1fr var(--pd-control-height);
+  align-items: center;
+  gap: 10px;
+  max-width: 360px;
+
+  &__decrease,
+  &__increase {
+    @include pd.secondary-button;
+
+    width: var(--pd-control-height);
+    padding: 0;
+  }
+
+  &__value {
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-title);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    text-align: center;
+  }
+}
+
+.wallet-order-result {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__hero {
+    padding: 28px;
+    color: #fff;
+    background: var(--pd-gradient-primary);
+    border-radius: var(--pd-radius-large);
+    box-shadow: var(--pd-shadow-medium);
+  }
+
+  &__label,
+  &__number,
+  &__amount,
+  &__balance {
+    display: block;
+  }
+
+  &__label {
+    font-size: var(--pd-font-label);
+    font-weight: 750;
+  }
+
+  &__number {
+    margin-top: 17px;
+    font-size: var(--pd-font-caption);
+    overflow-wrap: anywhere;
+  }
+
+  &__amount {
+    margin-top: 10px;
+    font-family: var(--pd-font-display);
+    font-size: 44px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+  }
+
+  &__balance {
+    margin-top: 8px;
+    font-size: var(--pd-font-label);
+  }
+
+  &__facts,
+  &__items {
+    @include pd.section-panel(22px, var(--pd-radius-medium));
+
+    display: grid;
+    gap: 9px;
+    margin-top: 18px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  &__item {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--pd-color-line);
+
+    &:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+  }
+
+  &__primary {
+    @include pd.primary-button;
+
+    width: 100%;
+    margin-top: 20px;
+  }
+
+  &__secondary {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 10px;
+  }
+
+  &__quiet {
+    @include pd.quiet-button;
+
+    width: 100%;
+    margin-top: 10px;
+  }
+}
+
+.wallet-order-state {
+  @include pd.page-shell;
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    margin-top: 22px;
+  }
+}
+
+@media (width >= 768px) {
+  .wallet-order-catalog {
+    &__list {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+}
+
+/* stylelint-enable at-rule-no-unknown */

@@ -154,10 +154,18 @@ describe('InventoryApi', () => {
         after_quantity: 10,
         private_note: 'drop-me',
       },
+      {
+        ...orderBase,
+        id: 5,
+        transaction_type: 'order_refund_restore',
+        change_quantity: 2,
+        before_quantity: 8,
+        after_quantity: 10,
+      },
     ]
     const api = new InventoryApi(new FakeClient({
       items,
-      total: 4,
+      total: 5,
       page: 1,
       page_size: 20,
       pages: 1,
@@ -169,6 +177,7 @@ describe('InventoryApi', () => {
       'admin_adjustment',
       'order_deduction',
       'order_cancellation_restore',
+      'order_refund_restore',
     ])
     expect(result.items[3]).not.toHaveProperty('private_note')
   })

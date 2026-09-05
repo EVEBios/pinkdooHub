@@ -7,6 +7,9 @@ import {
   buildRegisterUrl,
   ORDER_CONFIRM_PATH,
   ORDER_LIST_PATH,
+  MEMBER_PATH,
+  WALLET_RECHARGE_PATH,
+  WALLET_TRANSACTION_LIST_PATH,
   parseLoginRedirect,
 } from '../login_route'
 
@@ -37,6 +40,9 @@ describe('登录安全返回路由', () => {
       '/pages/login/index?redirect=%2Fadmin%2Fpages%2Finventory-transactions%2Findex',
     )
     expect(parseLoginRedirect(ADMIN_INVENTORY_LIST_PATH)).toBe(ADMIN_INVENTORY_LIST_PATH)
+    expect(parseLoginRedirect(MEMBER_PATH)).toBe(MEMBER_PATH)
+    expect(parseLoginRedirect(WALLET_RECHARGE_PATH)).toBe(WALLET_RECHARGE_PATH)
+    expect(parseLoginRedirect(WALLET_TRANSACTION_LIST_PATH)).toBe(WALLET_TRANSACTION_LIST_PATH)
     expect(buildLoginUrl()).toBe('/pages/login/index')
     expect(buildRegisterUrl()).toBe('/pages/register/index')
     expect(buildRegisterUrl(ORDER_CONFIRM_PATH)).toBe(

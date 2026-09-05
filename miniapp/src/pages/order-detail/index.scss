@@ -193,3 +193,111 @@
     margin-bottom: 0;
   }
 }
+
+.order-payment {
+  @include pd.section-panel(22px, var(--pd-radius-large));
+
+  margin-top: 18px;
+
+  &__heading,
+  &__method {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  &__title,
+  &__amount,
+  &__method-name,
+  &__method-meta,
+  &__method-state,
+  &__hint,
+  &__feedback,
+  &__footnote {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__amount {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-body-size);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__method {
+    width: 100%;
+    min-height: 76px;
+    margin: 12px 0 0;
+    padding: 13px 16px;
+    color: var(--pd-color-ink);
+    text-align: left;
+    background: var(--pd-color-surface-muted);
+    border: 1px solid transparent;
+    border-radius: 14px;
+    box-sizing: border-box;
+
+    &--active {
+      background: var(--pd-color-primary-soft);
+      border-color: var(--pd-color-line-strong);
+    }
+
+    &--unavailable {
+      opacity: 0.68;
+    }
+  }
+
+  &__method-name {
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+  }
+
+  &__method-meta {
+    margin-top: 5px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__method-state {
+    flex: 0 0 auto;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+  }
+
+  &__hint,
+  &__footnote {
+    margin-top: 14px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+
+  &__feedback--error,
+  &__feedback--failed {
+    @include pd.feedback-error;
+  }
+
+  &__feedback--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &__retry {
+    @include pd.secondary-button;
+
+    margin-top: 12px;
+  }
+
+  &__submit {
+    @include pd.primary-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+}

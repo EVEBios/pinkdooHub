@@ -18,6 +18,7 @@ const TRANSACTION_TYPES: ReadonlyArray<{ value: InventoryTransactionTypeFilter; 
   { value: 'admin_adjustment', label: '管理员调整' },
   { value: 'order_deduction', label: '订单扣减' },
   { value: 'order_cancellation_restore', label: '取消恢复' },
+  { value: 'order_refund_restore', label: '退款恢复' },
 ]
 const SOURCE_TYPES: ReadonlyArray<{ value: InventorySourceTypeFilter; label: string }> = [
   { value: 'all', label: '全部来源' },
@@ -30,6 +31,7 @@ const TRANSACTION_LABELS: Readonly<Record<Exclude<InventoryTransactionTypeFilter
   admin_adjustment: '管理员调整',
   order_deduction: '订单扣减',
   order_cancellation_restore: '取消恢复',
+  order_refund_restore: '退款恢复',
 }
 const SOURCE_LABELS: Readonly<Record<Exclude<InventorySourceTypeFilter, 'all'>, string>> = {
   migration: '迁移',

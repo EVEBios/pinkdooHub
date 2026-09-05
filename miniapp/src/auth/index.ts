@@ -10,6 +10,9 @@ export {
   ORDER_CONFIRM_PATH,
   ORDER_LIST_PATH,
   REGISTER_PATH,
+  MEMBER_PATH,
+  WALLET_RECHARGE_PATH,
+  WALLET_TRANSACTION_LIST_PATH,
   parseLoginRedirect,
 } from './login_route'
 export type { LoginRedirect } from './login_route'

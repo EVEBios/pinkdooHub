@@ -10,6 +10,7 @@ import {
   useAdminUserDisable,
   useAdminUserList,
 } from '@/features/admin_user'
+import { buildAdminUserWalletUrl } from '@/features/wallet'
 
 import './index.scss'
 
@@ -171,11 +172,18 @@ function UserCard({ currentRole, currentUserId, mutationState, onDisable, user }
       <Text className='admin-user-card__role'>角色：{ROLE_LABELS[user.role]}</Text>
       <Text className='admin-user-card__time'>创建时间：{user.created_at}</Text>
       <Text className='admin-user-card__time'>最近登录：{user.last_login_at ?? '从未登录'}</Text>
-      <Button
-        className={`admin-user-card__disable${allowed ? '' : ' admin-user-card__disable--unavailable'}`}
-        disabled={!allowed || mutationState.status === 'submitting'}
-        onClick={onDisable}
-      >{submittingThis ? '正在禁用…' : getDisableLabel(user, currentUserId, currentRole)}</Button>
+      <View className='admin-user-card__actions'>
+        <Button
+          className={`admin-user-card__funds${user.role === 'user' ? '' : ' admin-user-card__funds--unavailable'}`}
+          disabled={user.role !== 'user'}
+          onClick={() => void Taro.navigateTo({ url: buildAdminUserWalletUrl(user.id) })}
+        >{user.role === 'user' ? '资金账户' : '员工不可调账'}</Button>
+        <Button
+          className={`admin-user-card__disable${allowed ? '' : ' admin-user-card__disable--unavailable'}`}
+          disabled={!allowed || mutationState.status === 'submitting'}
+          onClick={onDisable}
+        >{submittingThis ? '正在禁用…' : getDisableLabel(user, currentUserId, currentRole)}</Button>
+      </View>
     </View>
   )
 }

@@ -208,6 +208,23 @@ export interface paths {
         readonly patch: operations["complete_order_api_v1_admin_orders__order_id__complete_patch"];
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/orders/{order_id}/financials": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Admin Order Financials */
+        readonly get: operations["get_admin_order_financials_api_v1_admin_orders__order_id__financials_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/orders/{order_id}/paid": {
         readonly parameters: {
             readonly query?: never;
@@ -226,6 +243,23 @@ export interface paths {
          * @description 由 ADMIN+ 人工确认 Pending Order 已支付。
          */
         readonly patch: operations["mark_order_paid_api_v1_admin_orders__order_id__paid_patch"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/orders/{order_id}/refunds": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Refund Admin Order */
+        readonly post: operations["refund_admin_order_api_v1_admin_orders__order_id__refunds_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
         readonly trace?: never;
     };
     readonly "/api/v1/admin/product-images/{image_id}": {
@@ -576,6 +610,77 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/users/{user_id}/wallet": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Admin User Wallet */
+        readonly get: operations["get_admin_user_wallet_api_v1_admin_users__user_id__wallet_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/users/{user_id}/wallet-adjustments": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Adjust Admin User Wallet */
+        readonly post: operations["adjust_admin_user_wallet_api_v1_admin_users__user_id__wallet_adjustments_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/users/{user_id}/wallet-orders": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Create Assisted Wallet Order
+         * @description 为普通客户创建真实商品订单，并在同一事务中扣减钱包。
+         */
+        readonly post: operations["create_assisted_wallet_order_api_v1_admin_users__user_id__wallet_orders_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/users/{user_id}/wallet-transactions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Admin User Wallet Transactions */
+        readonly get: operations["list_admin_user_wallet_transactions_api_v1_admin_users__user_id__wallet_transactions_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/auth-required": {
         readonly parameters: {
             readonly query?: never;
@@ -910,6 +1015,57 @@ export interface paths {
         readonly patch: operations["cancel_order_api_v1_orders__order_id__cancel_patch"];
         readonly trace?: never;
     };
+    readonly "/api/v1/orders/{order_id}/financials": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Order Financials */
+        readonly get: operations["get_order_financials_api_v1_orders__order_id__financials_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/orders/{order_id}/payments/wallet": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Pay Order With Wallet */
+        readonly post: operations["pay_order_with_wallet_api_v1_orders__order_id__payments_wallet_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/orders/{order_id}/payments/wechat": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Wechat Order Payment */
+        readonly post: operations["create_wechat_order_payment_api_v1_orders__order_id__payments_wechat_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/ping": {
         readonly parameters: {
             readonly query?: never;
@@ -1031,6 +1187,66 @@ export interface paths {
          * @description 修改密码。
          */
         readonly put: operations["change_password_api_v1_users_me_password_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/wallet": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Member Wallet
+         * @description 返回当前普通用户资料、权威余额、上限与能力开关。
+         */
+        readonly get: operations["get_member_wallet_api_v1_wallet_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/wallet/recharges": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Create Wallet Recharge
+         * @description 创建真实充值意图；Provider 未就绪时稳定返回 503 且零写入。
+         */
+        readonly post: operations["create_wallet_recharge_api_v1_wallet_recharges_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/wallet/transactions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Wallet Transactions
+         * @description 分页查询当前普通用户自己的不可变钱包流水。
+         */
+        readonly get: operations["list_wallet_transactions_api_v1_wallet_transactions_get"];
+        readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
@@ -1245,6 +1461,21 @@ export interface components {
              * Format: date-time
              */
             readonly updated_at: string;
+        };
+        /** AdminUserWalletOut */
+        readonly AdminUserWalletOut: {
+            readonly user: components["schemas"]["UserListItem"];
+            readonly wallet: components["schemas"]["WalletSummaryOut"];
+        };
+        /** AssistedWalletOrderOut */
+        readonly AssistedWalletOrderOut: {
+            readonly order: components["schemas"]["AdminOrderDetailOut"];
+            readonly payment: components["schemas"]["PaymentOut"];
+            /**
+             * Post Payment Balance
+             * @example 80.00
+             */
+            readonly post_payment_balance: string;
         };
         /**
          * AuditLogOut
@@ -1557,7 +1788,7 @@ export interface components {
          * @description 库存余额变化的稳定业务类型。
          * @enum {string}
          */
-        readonly InventoryTransactionType: "opening_balance" | "admin_adjustment" | "order_deduction" | "order_cancellation_restore";
+        readonly InventoryTransactionType: "opening_balance" | "admin_adjustment" | "order_deduction" | "order_cancellation_restore" | "order_refund_restore";
         /**
          * KitPriceOut
          * @description 修改套装商品价格响应。
@@ -1750,6 +1981,11 @@ export interface components {
             /** Username */
             readonly username: string;
         };
+        /** MemberOut */
+        readonly MemberOut: {
+            readonly user: components["schemas"]["UserOut"];
+            readonly wallet: components["schemas"]["WalletSummaryOut"];
+        };
         /**
          * OptionImageOut
          * @description Experience Option 专属图片响应，不包含封面标记。
@@ -1827,6 +2063,14 @@ export interface components {
              * Format: date-time
              */
             readonly updated_at: string;
+        };
+        /** OrderFinancialOut */
+        readonly OrderFinancialOut: {
+            /** Order Id */
+            readonly order_id: number;
+            readonly order_status: components["schemas"]["OrderStatusValueOut"];
+            readonly payment?: components["schemas"]["PaymentOut"] | null;
+            readonly refund?: components["schemas"]["RefundOut"] | null;
         };
         /**
          * OrderItemCreate
@@ -2022,6 +2266,19 @@ export interface components {
             /** Total */
             readonly total: number;
         };
+        /** Page[WalletTransactionOut] */
+        readonly Page_WalletTransactionOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["WalletTransactionOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
         /**
          * PasswordChange
          * @description 修改密码请求。
@@ -2032,6 +2289,55 @@ export interface components {
             /** Old Password */
             readonly old_password: string;
         };
+        /**
+         * PaymentMethod
+         * @description Payment 的资金渠道。
+         * @enum {string}
+         */
+        readonly PaymentMethod: "wallet" | "wechat" | "manual";
+        /** PaymentOut */
+        readonly PaymentOut: {
+            /**
+             * Amount
+             * @example 100.00
+             */
+            readonly amount: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            readonly method: components["schemas"]["PaymentMethod"];
+            /** Order Id */
+            readonly order_id?: number | null;
+            /** Payment No */
+            readonly payment_no: string;
+            readonly purpose: components["schemas"]["PaymentPurpose"];
+            /** Recharge Order Id */
+            readonly recharge_order_id?: number | null;
+            readonly status: components["schemas"]["PaymentStatus"];
+            /** Succeeded At */
+            readonly succeeded_at?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * PaymentPurpose
+         * @description Payment 所服务的业务目的。
+         * @enum {string}
+         */
+        readonly PaymentPurpose: "order" | "recharge";
+        /**
+         * PaymentStatus
+         * @description Payment 独立状态机。
+         * @enum {string}
+         */
+        readonly PaymentStatus: "pending" | "succeeded" | "failed" | "closed";
         /**
          * ProductBasicInfoOut
          * @description 修改商品名称或描述后的轻量响应。
@@ -2185,6 +2491,17 @@ export interface components {
             readonly status: "ready" | "not_ready";
         };
         /**
+         * RechargeCreate
+         * @description 创建单笔充值意图；当前真实 Provider 默认关闭。
+         */
+        readonly RechargeCreate: {
+            /**
+             * Amount
+             * @example 100.00
+             */
+            readonly amount: string;
+        };
+        /**
          * RefreshOut
          * @description 刷新响应——返回轮换后的新双 Token。
          */
@@ -2212,6 +2529,54 @@ export interface components {
             /** Refresh Token */
             readonly refresh_token: string;
         };
+        /**
+         * RefundCreate
+         * @description ADMIN+ 对已结算订单执行一次全额退款。
+         */
+        readonly RefundCreate: {
+            /** Reason */
+            readonly reason: string;
+        };
+        /** RefundOut */
+        readonly RefundOut: {
+            /**
+             * Amount
+             * @example 100.00
+             */
+            readonly amount: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Inventory Restored */
+            readonly inventory_restored: boolean;
+            readonly method: components["schemas"]["PaymentMethod"];
+            /** Operator Id */
+            readonly operator_id: number;
+            /** Order Id */
+            readonly order_id: number;
+            /** Reason */
+            readonly reason: string;
+            /** Refund No */
+            readonly refund_no: string;
+            readonly status: components["schemas"]["RefundStatus"];
+            /** Succeeded At */
+            readonly succeeded_at?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * RefundStatus
+         * @description 退款独立状态机，不反向修改 Order 主状态。
+         * @enum {string}
+         */
+        readonly RefundStatus: "pending" | "succeeded" | "failed";
         /**
          * RootResponse
          * @description GET / 根路由响应。
@@ -2265,6 +2630,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["AdminOrderDetailOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[AdminUserWalletOut] */
+        readonly SuccessResponse_AdminUserWalletOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["AdminUserWalletOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[AssistedWalletOrderOut] */
+        readonly SuccessResponse_AssistedWalletOrderOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["AssistedWalletOrderOut"];
             /**
              * Message
              * @default success
@@ -2466,6 +2861,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[MemberOut] */
+        readonly SuccessResponse_MemberOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["MemberOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[NoneType] */
         readonly SuccessResponse_NoneType_: {
             /**
@@ -2506,6 +2916,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["OrderDetailOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[OrderFinancialOut] */
+        readonly SuccessResponse_OrderFinancialOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["OrderFinancialOut"];
             /**
              * Message
              * @default success
@@ -2632,6 +3057,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[Page[WalletTransactionOut]] */
+        readonly SuccessResponse_Page_WalletTransactionOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_WalletTransactionOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[ProductBasicInfoOut] */
         readonly SuccessResponse_ProductBasicInfoOut_: {
             /**
@@ -2722,6 +3162,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[RefundOut] */
+        readonly SuccessResponse_RefundOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["RefundOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[TokenOut] */
         readonly SuccessResponse_TokenOut_: {
             /**
@@ -2762,6 +3217,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["UserOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[WalletAdjustmentOut] */
+        readonly SuccessResponse_WalletAdjustmentOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["WalletAdjustmentOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[WalletPaymentOut] */
+        readonly SuccessResponse_WalletPaymentOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["WalletPaymentOut"];
             /**
              * Message
              * @default success
@@ -2882,6 +3367,136 @@ export interface components {
             /** Phone */
             readonly phone?: string | null;
         };
+        /**
+         * WalletAdjustmentCreate
+         * @description ADMIN+ 以变化额调整普通用户钱包。
+         */
+        readonly WalletAdjustmentCreate: {
+            /**
+             * Change
+             * @example 100.00
+             */
+            readonly change: string;
+            /** Reason */
+            readonly reason: string;
+        };
+        /** WalletAdjustmentOut */
+        readonly WalletAdjustmentOut: {
+            readonly transaction: components["schemas"]["WalletTransactionOut"];
+            readonly wallet: components["schemas"]["WalletSummaryOut"];
+        };
+        /** WalletCapabilitiesOut */
+        readonly WalletCapabilitiesOut: {
+            /** Refund Enabled */
+            readonly refund_enabled: boolean;
+            /** Topup Enabled */
+            readonly topup_enabled: boolean;
+            /** Wallet Payment Enabled */
+            readonly wallet_payment_enabled: boolean;
+        };
+        /** WalletPaymentOut */
+        readonly WalletPaymentOut: {
+            /** Order Id */
+            readonly order_id: number;
+            /** Order No */
+            readonly order_no: string;
+            readonly order_status: components["schemas"]["OrderStatusValueOut"];
+            readonly payment: components["schemas"]["PaymentOut"];
+            /**
+             * Post Payment Balance
+             * @example 80.00
+             */
+            readonly post_payment_balance: string;
+        };
+        /**
+         * WalletStatus
+         * @description 钱包生命周期；用户禁用状态仍以 User.status 为唯一事实。
+         * @enum {string}
+         */
+        readonly WalletStatus: "active" | "closed";
+        /** WalletSummaryOut */
+        readonly WalletSummaryOut: {
+            /**
+             * Balance
+             * @example 80.00
+             */
+            readonly balance: string;
+            /**
+             * Balance Limit
+             * @example 80.00
+             */
+            readonly balance_limit: string;
+            readonly capabilities: components["schemas"]["WalletCapabilitiesOut"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            readonly status: components["schemas"]["WalletStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            /** User Id */
+            readonly user_id: number;
+            /** Wallet Id */
+            readonly wallet_id: number;
+        };
+        /** WalletTransactionOut */
+        readonly WalletTransactionOut: {
+            /**
+             * After Balance
+             * @example 80.00
+             */
+            readonly after_balance: string;
+            /**
+             * Before Balance
+             * @example 80.00
+             */
+            readonly before_balance: string;
+            /**
+             * Change Amount
+             * @example 100.00
+             */
+            readonly change_amount: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            readonly direction: "income" | "expense";
+            /** Id */
+            readonly id: number;
+            /** Operator Id */
+            readonly operator_id?: number | null;
+            /** Operator Nickname */
+            readonly operator_nickname?: string | null;
+            /** Reason */
+            readonly reason: string;
+            /** Source Id */
+            readonly source_id?: number | null;
+            /** Source Order No */
+            readonly source_order_no?: string | null;
+            readonly source_type: components["schemas"]["WalletTransactionSourceType"];
+            readonly transaction_type: components["schemas"]["WalletTransactionType"];
+        };
+        /**
+         * WalletTransactionSourceType
+         * @description 钱包流水的来源聚合类型。
+         * @enum {string}
+         */
+        readonly WalletTransactionSourceType: "recharge_order" | "order" | "admin" | "refund";
+        /**
+         * WalletTransactionType
+         * @description 已提交钱包余额变化的业务类型。
+         * @enum {string}
+         */
+        readonly WalletTransactionType: "recharge" | "order_payment" | "admin_adjustment" | "refund";
         /**
          * WeChatCodeRequest
          * @description 微信 wx.login 一次性 code。
@@ -3600,6 +4215,91 @@ export interface operations {
             };
         };
     };
+    readonly get_admin_order_financials_api_v1_admin_orders__order_id__financials_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly order_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_OrderFinancialOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly mark_order_paid_api_v1_admin_orders__order_id__paid_patch: {
         readonly parameters: {
             readonly query?: never;
@@ -3667,6 +4367,106 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly refund_admin_order_api_v1_admin_orders__order_id__refunds_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path: {
+                readonly order_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RefundCreate"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_RefundOut_"];
+                };
+            };
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_RefundOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -5151,6 +5951,379 @@ export interface operations {
             };
         };
     };
+    readonly get_admin_user_wallet_api_v1_admin_users__user_id__wallet_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly user_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AdminUserWalletOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly adjust_admin_user_wallet_api_v1_admin_users__user_id__wallet_adjustments_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path: {
+                readonly user_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["WalletAdjustmentCreate"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_WalletAdjustmentOut_"];
+                };
+            };
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_WalletAdjustmentOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_assisted_wallet_order_api_v1_admin_users__user_id__wallet_orders_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path: {
+                readonly user_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["OrderCreate"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AssistedWalletOrderOut_"];
+                };
+            };
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AssistedWalletOrderOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_admin_user_wallet_transactions_api_v1_admin_users__user_id__wallet_transactions_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly user_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_WalletTransactionOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly auth_required_api_v1_auth_required_get: {
         readonly parameters: {
             readonly query?: never;
@@ -6168,6 +7341,274 @@ export interface operations {
             };
         };
     };
+    readonly get_order_financials_api_v1_orders__order_id__financials_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly order_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_OrderFinancialOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly pay_order_with_wallet_api_v1_orders__order_id__payments_wallet_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path: {
+                readonly order_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_WalletPaymentOut_"];
+                };
+            };
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_WalletPaymentOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_wechat_order_payment_api_v1_orders__order_id__payments_wechat_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path: {
+                readonly order_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_NoneType_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly ping_api_v1_ping_get: {
         readonly parameters: {
             readonly query?: never;
@@ -6558,6 +7999,264 @@ export interface operations {
             };
             /** @description Forbidden */
             readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_member_wallet_api_v1_wallet_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_MemberOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_wallet_recharge_api_v1_wallet_recharges_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RechargeCreate"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_NoneType_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_wallet_transactions_api_v1_wallet_transactions_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_WalletTransactionOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

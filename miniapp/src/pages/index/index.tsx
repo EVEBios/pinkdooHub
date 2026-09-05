@@ -8,6 +8,7 @@ import {
   ADMIN_INVENTORY_LIST_PATH,
   ADMIN_PRODUCT_LIST_PATH,
   ADMIN_USER_LIST_PATH,
+  MEMBER_PATH,
   useAuth,
 } from '@/auth'
 import { type ProductTypeFilter, useProductList } from '@/features/product/use_product_list'
@@ -174,6 +175,15 @@ function AccountActions({ onLogout, status, userNickname, userRole }: AccountAct
         <View className='product-page__account-actions'>
           <View className='product-page__account-group'>
             <Text className='product-page__account-section'>我的</Text>
+            {!isAdmin && (
+              <Button
+                className='product-page__account-action'
+                onClick={() => void Taro.navigateTo({ url: MEMBER_PATH })}
+              >
+                <Text className='product-page__account-action-label'>会员中心</Text>
+                <Text className='product-page__account-action-meta'>余额与资金</Text>
+              </Button>
+            )}
             <Button
               className='product-page__account-action'
               onClick={() => void Taro.navigateTo({ url: '/pages/orders/index' })}

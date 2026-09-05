@@ -30,6 +30,10 @@ jest.mock('@/features/admin_user', () => ({
   useAdminUserDisable: () => mockUseAdminUserDisable(),
 }))
 
+jest.mock('@/features/wallet', () => ({
+  buildAdminUserWalletUrl: (userId: number) => `/admin/pages/user-wallet/index?id=${userId}`,
+}))
+
 describe('AdminUsersPage', () => {
   let testUtils: ReactTestUtil
   beforeEach(() => {
@@ -97,6 +101,8 @@ describe('AdminUsersPage', () => {
     const card = requireElement(testUtils, '.admin-user-card')
     expect(card.textContent).toContain('@normal_user · ID 5')
     expect(card.textContent).not.toContain('13800000000')
+    testUtils.fireEvent.click(requireElement(testUtils, '.admin-user-card__funds'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/user-wallet/index?id=5' })
     testUtils.fireEvent.click(requireElement(testUtils, '.admin-user-card__disable'))
     await flush(testUtils)
     expect(mockDisableUser).toHaveBeenCalledWith(5)

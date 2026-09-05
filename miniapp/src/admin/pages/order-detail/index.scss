@@ -222,3 +222,127 @@
     }
   }
 }
+
+.admin-order-financial {
+  @include pd.section-panel(22px, var(--pd-radius-large));
+
+  margin-top: 18px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+
+  &__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  &__title,
+  &__order-state,
+  &__empty,
+  &__label,
+  &__error,
+  &__success,
+  &__hint {
+    display: block;
+  }
+
+  &__title {
+    color: var(--pd-color-ink);
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__order-state {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+  }
+
+  &__record {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 10px 16px;
+    margin-top: 20px;
+    padding: 17px;
+    font-size: var(--pd-font-caption);
+    font-variant-numeric: tabular-nums;
+    background: var(--pd-color-surface-muted);
+    border-radius: var(--pd-radius-small);
+
+    text:nth-child(even) {
+      color: var(--pd-color-ink);
+      font-weight: 650;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__empty,
+  &__hint {
+    margin-top: 18px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+
+  &__refund-record {
+    margin-top: 17px;
+    padding: 16px;
+    color: var(--pd-color-success);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+    background: var(--pd-color-success-soft);
+    border-radius: var(--pd-radius-small);
+
+    /* stylelint-disable-next-line no-descending-specificity -- 退款摘要统一块级排列。 */
+    text {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__refund-form {
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid var(--pd-color-line);
+  }
+
+  &__label {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+  }
+
+  &__reason {
+    @include pd.textarea-field;
+
+    margin-top: 10px;
+  }
+
+  &__refund {
+    @include pd.danger-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+
+  &__retry {
+    @include pd.secondary-button;
+
+    margin-top: 14px;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__error--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &__success {
+    @include pd.feedback-success;
+  }
+}

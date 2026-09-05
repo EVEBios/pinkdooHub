@@ -1,0 +1,222 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as patterns;
+
+.member-page {
+  @include patterns.page-shell;
+
+  &__header {
+    @include patterns.header-band;
+  }
+
+  &__eyebrow,
+  &__title,
+  &__identity {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 750;
+    letter-spacing: 1px;
+  }
+
+  &__title {
+    @include patterns.page-title;
+
+    margin-top: 28px;
+  }
+
+  &__identity {
+    margin-top: 10px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+  }
+
+  &--state {
+    @include patterns.state-shell;
+  }
+}
+
+.member-balance {
+  max-width: 720px;
+  margin: -2px auto 0;
+  overflow: hidden;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-large);
+  box-shadow: var(--pd-shadow-medium);
+
+  &__ribbon {
+    padding: 28px 26px 25px;
+    color: #fff;
+    background: var(--pd-gradient-primary);
+  }
+
+  &__label,
+  &__amount,
+  &__note {
+    display: block;
+  }
+
+  &__label {
+    font-size: var(--pd-font-label);
+    font-weight: 650;
+  }
+
+  &__amount {
+    margin-top: 9px;
+    font-family: var(--pd-font-display);
+    font-size: 44px;
+    font-weight: 720;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1.5px;
+  }
+
+  &__rule {
+    display: flex;
+    justify-content: space-between;
+    padding: 18px 26px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--pd-color-line);
+  }
+
+  &__note {
+    padding: 19px 26px 23px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.6;
+  }
+}
+
+.member-profile {
+  @include patterns.section-panel(22px, var(--pd-radius-medium));
+
+  max-width: 720px;
+  margin: -2px auto 18px;
+
+  &__heading {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+  }
+
+  &__avatar {
+    width: 76px;
+    height: 76px;
+    flex: 0 0 76px;
+    overflow: hidden;
+    background: var(--pd-color-primary-soft);
+    border: 1px solid var(--pd-color-line);
+    border-radius: 50%;
+  }
+
+  &__avatar--fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__title,
+  &__hint {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__hint {
+    margin-top: 5px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px 18px;
+    margin-top: 20px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+
+    text:nth-child(even) {
+      color: var(--pd-color-ink);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+  }
+}
+
+.member-actions {
+  display: grid;
+  max-width: 720px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 18px auto 0;
+
+  &__primary {
+    @include patterns.primary-button;
+  }
+
+  &__secondary {
+    @include patterns.secondary-button;
+  }
+}
+
+.member-notice {
+  @include patterns.section-panel(22px);
+
+  max-width: 720px;
+  margin: 28px auto 0;
+
+  &__title,
+  &__body {
+    display: block;
+  }
+
+  &__title {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-label);
+    font-weight: 750;
+  }
+
+  &__body {
+    margin-top: 10px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.65;
+  }
+}
+
+.member-state {
+  &__title {
+    @include patterns.state-title;
+  }
+
+  &__description {
+    @include patterns.state-description;
+  }
+
+  &__action {
+    @include patterns.primary-button;
+
+    margin-top: 24px;
+  }
+}
+
+@media (width <= 520px) {
+  .member-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* stylelint-enable at-rule-no-unknown */

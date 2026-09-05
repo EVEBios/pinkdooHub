@@ -222,7 +222,8 @@ function hasConsistentMetadata(value: Record<string, unknown>): boolean {
       value.source_id === null && value.source_order_no === null &&
       isPositiveSafeInteger(value.operator_id) && isBoundedString(value.operator_nickname, 1, 32)
   }
-  const positive = value.transaction_type === 'order_cancellation_restore'
+  const positive = value.transaction_type === 'order_cancellation_restore' ||
+    value.transaction_type === 'order_refund_restore'
   return value.source_type === 'order' && isPositiveSafeInteger(value.source_id) &&
     isOrderNo(value.source_order_no) && typeof value.change_quantity === 'number' &&
     (positive ? value.change_quantity > 0 : value.change_quantity < 0) &&
@@ -269,7 +270,8 @@ function isUtcDatetime(value: unknown): value is string {
 
 function isTransactionType(value: unknown): value is InventoryTransactionType {
   return value === 'opening_balance' || value === 'admin_adjustment' ||
-    value === 'order_deduction' || value === 'order_cancellation_restore'
+    value === 'order_deduction' || value === 'order_cancellation_restore' ||
+    value === 'order_refund_restore'
 }
 
 function isSourceType(value: unknown): value is InventorySourceType {

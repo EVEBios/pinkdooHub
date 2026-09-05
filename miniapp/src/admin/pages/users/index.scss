@@ -138,11 +138,32 @@
     background: var(--pd-color-danger-soft);
   }
 
+  &__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 32px;
+  }
+
+  &__funds {
+    @include pd.primary-button;
+  }
+
+  &__funds--unavailable {
+    @include pd.quiet-button;
+
+    color: var(--pd-color-ink-faint);
+    border-color: var(--pd-color-line);
+
+    &[disabled] {
+      color: var(--pd-color-ink-faint);
+    }
+  }
+
   &__disable {
     @include pd.danger-button;
 
     width: 100%;
-    margin-top: 32px;
   }
 
   &__disable--unavailable {
@@ -150,9 +171,6 @@
 
     color: var(--pd-color-ink-faint);
     border-color: var(--pd-color-line);
-
-    /* quiet-button 会把 margin 重置为 0，这里恢复与普通禁用操作一致的区块留白。 */
-    margin-top: 32px;
 
     &[disabled] {
       color: var(--pd-color-ink-faint);
