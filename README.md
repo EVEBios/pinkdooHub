@@ -2,7 +2,7 @@
 
 pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、Tortoise ORM、Pydantic 和 Redis 构建。开发环境使用 SQLite，生产数据库设计面向 MySQL 8+。
 
-当前代码版本候选为 **v0.6.0（尚未发布）**。Phase 4.1 Product、Phase 4.2 Order 与 Phase 4.3 Inventory 均已完成实现和最终 Review。
+当前代码版本候选为 **v0.6.0（尚未发布）**。Phase 4.1 Product、Phase 4.2 Order 与 Phase 4.3 Inventory 均已完成实现和最终 Review；Wallet/Payment/Refund v1 已完成仓库实现，但 M4 尚未通过 Aerich 应用到持久 MySQL、共享、预发布或生产环境，生产资金能力仍关闭。开发 SQLite 可能由 `generate_schemas` 自动补建缺失表；这种状态不会产生 Aerich 版本记录，不能作为发布迁移证据。
 
 ## 当前能力
 
@@ -16,10 +16,12 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - Order 的 Experience、Kit 与混合下单、不可变 Product/Option/Kit 价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
 - Pending 创建时的稳定多 Kit 行锁、库存扣减、不可变 Order 来源流水和全写集原子回滚。
 - Order 状态与审计原子事务、订单号冲突重试、分页组合筛选、用户资源隐藏和完整 HTTP 错误/边界矩阵。
-- 微信小程序客户与 ADMIN+ 共 20 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory 与 User 管理流程。
+- 普通会员的钱包摘要与不可变流水、ADMIN+ 调账和代客钱包订单、订单余额支付与资金事实查询，以及 PAID/COMPLETED 一次全额退款；PAID Kit 退款恢复库存，COMPLETED 不恢复。
+- 钱包余额和单笔充值上限均为 `1000.00`（充值下限 `1.00`）；真实微信充值、支付和退款 Provider 当前关闭并返回 503 零写入。
+- 微信小程序客户与 ADMIN+ 共 25 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory、Wallet/Payment 与 User 管理流程。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
 
-当前 Phase 9.5 本地基线为 **1693 passed、9 skipped**（普通 SQLite 套件），另有显式启用后 **9 passed** 的真实 MySQL 8.0.46 发布门槛；前端为 **61 套件、392 项 Jest**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
+当前包含 Wallet/Payment/Refund 的本地基线为 **1847 passed、11 skipped**（完整后端套件；唯一受沙箱限制的回环端口项已在本机权限下单独复验通过），另有 Wallet 专项 **2 passed** 和既有 Inventory **9 passed** 的一次性 MySQL 8.0.46 验证；前端为 **71 套件、447 项 Jest**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
 
 Phase 4.3.1–4.3.12 已完成 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 8+ 增量迁移、Repository、管理员库存调整、Kit/混合订单创建扣减、Pending 取消幂等恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/完整 HTTP 发布门槛和最终 Review。最后一件库存、反向多 Kit、同单取消、同/异 key 调整、管理员调整与下单阻塞、真实 1205 全事务重试和 EXPLAIN 均已在隔离 MySQL 8.0.46 通过；三端点完整权限/错误/边界矩阵与真实 MySQL HTTP 并发重放也已通过。最终 Review 进一步统一了 Product Kit 详情的库存上限响应校验，并清理了数据库文档中的旧 Kit 规划描述。临时实例验证后销毁，未应用持久环境。
 
@@ -247,3 +249,4 @@ docs(readme): document local development workflow
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
 - Phase 9.1–9.3 已完成；9.4 中不依赖备案的服务器部署、备份恢复与运维治理已完成，真实 HTTPS/合法域名、体验版上传和 iOS/Android 真机仍等待备案与单独授权。Phase 9.5 不依赖外部资源的仓库实现已完成，但真实微信 AppID、集中 Secret Manager、监控告警、对象存储和隐私平台材料仍是 Gate B 阻断项。当前改动只有本地证据，需由当前 SHA 的远端干净 CI 替代后才能进入 RC；CI 通过也不授权微信上传、提审或发布。
 - Phase 4.3.1–4.3.12 已完成并通过最终 Review；持久环境迁移、发布与下一业务 Phase 仍需单独规划和授权。
+- Wallet/Payment/Refund v1 已完成仓库实现；M4、历史 NORMAL/DISABLED 普通 USER wallet backfill、legacy manual settlement backfill、只读 reconcile 和扩展 MySQL 发布门槛尚未应用/完成于持久环境，必须按此顺序收敛后才能启用。历史 DELETED USER 与 ADMIN/SUPER_ADMIN 不补建钱包。

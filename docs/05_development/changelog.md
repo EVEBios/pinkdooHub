@@ -4,6 +4,27 @@
 
 ---
 
+## Wallet / Payment / Refund v1 — 仓库实现（2026-09-05）
+
+- 新增封闭式会员钱包：新建普通 `USER` 创建一个 `0.00–1000.00` 权威余额账户，历史 backfill 仅补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补；ADMIN/SUPER_ADMIN 始终不建钱包，均只能查询和调整普通客户。单笔充值金额冻结为 `1.00–1000.00`，资金写请求只接受固定两位小数字符串。
+- 密码注册和微信首次登录现将 `User + WalletAccount(0.00) + Audit/ExternalIdentity` 放在同一事务；runtime seed 只给合成 USER 建钱包。账号注销新增处理中资金、可退款钱包结算敞口和非零余额检查并关闭已有钱包；即使余额为零，未成功退款的 PAID 或 30 天内 COMPLETED 钱包结算仍阻断注销，历史资金事实继续由 RESTRICT 外键保留。注销以 DB commit 为权威成功点；提交后 Redis refresh-family 清理改为 best-effort，失败仍返回成功，依靠 `status/auth_version` 阻断会话，并记录不含 Token/JTI 的高优先级安全事件供运维重试清理。
+- 新增用户会员/流水、ADMIN+ 客户钱包/流水/余额调整 API；调整使用 `change + reason + Idempotency-Key`，首次 201、完全一致重放 200，同 key 不同意图 409。disabled 客户不能主动消费/充值，但 ADMIN+ 人工余额纠错和法定义务退款仍允许；deleted 客户禁止资金写入。
+- 收紧全部已实现资金重放：调账必须复验 WalletTransaction 的账户、类型、金额、余额算术、来源、操作者和原因；余额支付及代客钱包订单必须复验 Order、成功 Payment、唯一 Settlement 与扣款流水；退款必须复验 Settlement、成功 Payment、Refund 及钱包渠道入账流水。任何部分事实、跨字段矛盾或篡改均拒绝重放，不会只凭 key 返回成功。
+- 新增 `POST /api/v1/admin/users/{user_id}/wallet-orders`：ADMIN+ 复用 `OrderCreate` 为正常普通 USER 按商品下单，在一个事务中创建真实 Order/Items、扣减 Kit 与钱包、写两类流水、创建成功 Payment/唯一 Settlement、直接 Paid 并顺序写 `CREATE_ORDER` + `PAY_ORDER`。余额不足或任一步失败全部回滚；disabled 目标因属于消费而拒绝；同 key 完全一致重放为 200。
+- ADMIN 正向调账新增全额退款预留不变量：`调整后余额 + 尚可退款的钱包支付敞口 ≤ 1000.00`。PAID 与完成未满 30 天的钱包订单在 Refund succeeded 前占用敞口；退款成功释放并原子退回同额。新增 `40947 WalletRefundCapacityExceeded`，既有超 30 天退款窗口错误顺延为 `40948 RefundWindowExpired`；未来真实充值成功也必须复用预留校验。
+- 新增余额支付与订单资金查询：Payment、PaymentSettlement、钱包扣款/流水、Order `pending → paid` 与 `PAY_ORDER` Audit 原子提交，Settlement 一对一唯一约束防止双结算。现有人工 Paid 在写入前先定位 owner，再按 `User → Order` 锁序复验；仅 NORMAL 普通 USER 订单可同事务登记 `method=manual` 的成功 Payment/Settlement，staff/disabled/deleted owner 均零写入拒绝。complete 在锁内拒绝 pending/succeeded Refund。
+- 新增 ADMIN+ 一次全额退款：只允许普通 USER 的 PAID/COMPLETED 已结算订单，Completed 窗口 30 天；退款前锁定并验证 Settlement 绑定 Payment 的用户、订单、金额、purpose、成功状态及空充值关联，矛盾事实零写入拒绝；退款不回退 OrderStatus。钱包渠道原子退回余额，人工渠道登记线下全额退款完成；PAID Kit/混合订单按 OrderItem 快照恢复并写 `order_refund_restore`，COMPLETED 不恢复。
+- 新增 Wallet/Payment/Refund 领域枚举、固定金额/编号/幂等常量、命名错误 `40441–40444`、`40941–40948`、`42241`，以及纯 Mapper、Repository、Service 和组合根。跨域写统一遵循 `User → Order/Recharge → Payment/Settlement/Refund → Wallet → sorted ProductKit` 锁序；仅 MySQL 1205/1213 对完整内部事务使用全新事务有限重试。六个用户侧 wallet/payment 路由共享 customer 依赖强制 NORMAL USER；资金 Out Schema 对 finite Decimal/UTC、Payment 用途与互斥关联、Payment/Refund 成功时间及 OrderFinancial/WalletPayment/AssistedWalletOrder 的订单、渠道、金额、成功状态做交叉校验，矛盾事实不输出为成功响应。
+- 新增 MySQL M4 离线迁移，创建 `wallet_accounts`、`wallet_transactions`、`recharge_orders`、`payments`、`payment_settlements`、`refunds` 并扩展 Inventory 退款恢复枚举。M4 未通过 Aerich 应用到本地持久 `db.sqlite3`、Gate A、共享或生产数据库；development 的 `generate_schemas` 可能在启动或热重载时为 SQLite 自动补建缺失表，但不会 ALTER 既有表或产生 Aerich 版本记录，也不构成发布迁移证据。`python -m app.tasks.wallet_account_backfill` 默认 preview 输出冻结的 `through_user_id=N`，apply 必须显式复用 `--through-user-id N --apply`。每批事务按 User ID 升序锁定并复验 USER + NORMAL/DISABLED，再重查钱包存在性，DELETED/staff/已有钱包均跳过；只创建 `0.00` 钱包且不造零流水。apply 后必须以同一上界 preview 至 `would_create=0`；`python -m app.tasks.wallet_reconcile` 全程只读，稳定核验余额净额、非零变化、单行算术/范围、余额链、末条余额及无流水零余额规则，任一违规退出非零且绝不自动改账。
+- M4 不在非事务 DDL 中猜测既有 PAID/COMPLETED 的支付渠道；新增 `legacy_manual_settlement_backfill` 受控命令，按固定 Order ID 上界、User→Order 锁序、普通 USER owner、唯一 `MARK_ORDER_PAID` Audit 和独立内部幂等键，默认 dry-run；deleted owner 永不新增事实，disabled owner 只允许补录停写前已经发生的历史人工收款。`--apply` 必须复用预览上界，并在全量零 blocker 预检后才分批原子补建 manual succeeded Payment/Settlement。完整事实可重放，非客户 owner、缺失/重复审计及部分或矛盾资金事实逐单阻断并以非零状态退出。正式启用顺序固定为 M4 → NORMAL/DISABLED USER wallet backfill → legacy manual settlement backfill → reconcile/发布门槛 → 启用。
+- 在一次性 `mysql:8.0.46` 容器真实执行完整 Aerich 0→4，`tests/wallet/mysql/test_wallet_mysql_flow.py` 以 `2 passed` 验证“ADMIN 调账 → 代客钱包 Kit 订单 → PAID 全额退款 → 幂等重放”闭环，以及四个资金 `idempotency_key` 列均使用 ASCII / `ascii_bin`、`Case-Sensitive-Key` 与 `case-sensitive-key` 分别提交。安全 fixture 拒绝非回环、默认 3306 和非 `pinkdoohub_wallet_` 专用 Schema；容器停止后由 `--rm` 删除，`docker ps` 复核无匹配，未触碰任何持久库。钱包专项并发、1205/1213 和 EXPLAIN 扩展门槛仍待完成。
+- 收紧密码与微信登录的注销竞态：密码凭据首次校验后锁定 User 并重验，微信既有身份和首次注册 `IntegrityError` 收敛分支也统一锁后复验；`last_login_at` 与登录 Audit 同事务先提交，Token 签发后再次锁定核对 `auth_version/status`，不一致时只撤销本次新 refresh family，不遗留可用 Redis 会话。
+- 小程序新增会员中心、个人资料与余额摘要、资金流水、充值准备页、订单余额支付，以及 ADMIN+ 用户钱包、增减余额、按商品代客扣款和全额退款界面。所有资金响应都在客户端再次白名单投影并绑定请求 URL、目标用户、原始金额/原因或代客订单的商品、配置、数量和备注；成功 mutation 还必须满足服务端定义的支付/退款终态，矛盾响应按契约错误处理，不清除原资金意图。
+- 小程序资金写入冻结完整请求与 `Idempotency-Key`；network/timeout/HTTP 5xx 的结果未知态不生成新意图，人工调账只能显式原样安全重放。用户端“取消/余额支付”和管理端“完成/退款”从确认弹窗开始使用同步互斥锁，结果未知时保持冻结并重读订单与资金事实；管理员切换目标用户时资金流水按 scope 立即清空，迟到响应不能写回另一客户页面。
+- 真实微信 Provider 保持强制 `disabled`；充值、微信订单支付和微信退款均返回 503 且零写入。商户号、AppID 关联、HTTPS notify、证书/密钥和经营进件资料均未填入仓库，待正式接入时通过受控 Secret 和发布记录配置。本阶段没有钱包提现/转账、混合支付、部分退款或用户自助退款。
+- 最终本地验证：后端完整套件的业务与契约测试 `1847 passed, 11 skipped`，唯一受沙箱限制的回环端口绑定项在本机权限下单独复验 `1 passed`；前端 `71 suites / 447 tests`、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移和 17 项 Node CI policy 全部通过。为避开用户既有 Taro watcher，微信登录模式在一次性隔离副本构建并校验为 117 个文件、主包 528,227 bytes、分包 302,591 bytes、总计 830,818 bytes，manifest SHA-256 为 `4df7b025afec4f1880f67de0c1559e9ac72c712183a0ec6b0d1b7e7c2e7d1a93`，明确 `release_eligible=false`；Taro test-utils 仍只有既有 React `act` 弃用警告。
+- 本条只记录仓库实现、一次性 MySQL 0→4、关键资金闭环、`ascii_bin` 幂等回归和迁移状态，不代表 M4 已通过 Aerich 应用到持久 MySQL/共享/生产库、钱包专项并发/1205/EXPLAIN 门槛已通过、微信支付已开通、版本已发布或任何线上资金能力已启用。development SQLite 由 `generate_schemas` 自动出现新表时同样不改变这一结论。
+
 ## Frontend UI Refresh — Ribbon Ledger（完成，2026-09-03）
 
 - 完成小程序全部 20 个注册页面的 “Ribbon Ledger / 丝带账簿” 视觉重构，覆盖用户端登录、注册、首页、商品、购物车和订单流程，以及 ADMIN+ 商品、图片、库存、订单、用户与审计流程；保留现有功能、权限、API 契约和页面路由。

@@ -77,7 +77,9 @@ pinkdooHub/
 │   │   │   ├── audit.py        # AuditLog 分页响应映射
 │   │   │   ├── product.py      # Product 列表、详情与 mutation 响应映射
 │   │   │   ├── order.py        # Order 用户/管理列表、详情与状态响应映射
-│   │   │   └── inventory.py    # Inventory 流水、分页与调整响应映射
+│   │   │   ├── inventory.py    # Inventory 流水、分页与调整响应映射
+│   │   │   ├── wallet.py       # Wallet 摘要、流水与调账响应映射
+│   │   │   └── payment.py      # Payment/Refund/代客钱包订单响应映射
 │   │   ├── forms/              # multipart/form-data Pydantic 请求模型
 │   │   │   └── product.py      # Product/Option 图片上传表单
 │   │   ├── v1/                 # v1 版本路由
@@ -89,9 +91,13 @@ pinkdooHub/
 │   │   │   ├── admin_products.py#  Product 管理与 Kit 价格；库存写入已迁至 Inventory
 │   │   │   ├── admin_inventory.py# Inventory 调整、指定 Kit/全局流水查询
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
-│   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  paid/complete/audit-logs
+│   │   │   ├── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  paid/complete/audit-logs
+│   │   │   ├── wallet.py       #   会员钱包、流水与关闭的充值边界
+│   │   │   ├── payments.py     #   余额/微信支付边界与订单资金事实
+│   │   │   ├── admin_wallet.py #   客户钱包、调账与代客钱包订单
+│   │   │   └── admin_refunds.py#   管理资金事实与全额退款
 │   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)
-│   │   ├── deps.py             # 公共依赖与 Product/Order/Inventory 组合根
+│   │   ├── deps.py             # 公共依赖与 Product/Order/Inventory/Wallet/Payment/Refund 组合根
 │   │   ├── uploads.py          # 文件存储 → Service → 失败补偿
 │   │   └── static.py           # 本地上传目录的延迟静态挂载
 │   │
@@ -107,7 +113,9 @@ pinkdooHub/
 │   │   ├── product_image.py    #   ProductImage
 │   │   ├── audit_log.py        #   AuditLog
 │   │   ├── order.py            #   Order, OrderItem
-│   │   └── inventory_transaction.py # InventoryTransaction（Phase 4.3.3）
+│   │   ├── inventory_transaction.py # InventoryTransaction（Phase 4.3.3）
+│   │   ├── wallet.py           #   WalletAccount, WalletTransaction
+│   │   └── payment.py          #   RechargeOrder, Payment, Settlement, Refund
 │   │
 │   ├── schemas/                # Pydantic Schema —— 请求/响应数据结构
 │   │   ├── __init__.py
@@ -117,7 +125,9 @@ pinkdooHub/
 │   │   ├── order.py            #   Order 请求体与列表查询参数（Phase 4.2）
 │   │   ├── order_response.py   #   Order 用户端/管理端响应白名单（Phase 4.2）
 │   │   ├── inventory.py        #   Inventory 调整与查询契约（Phase 4.3.2）
-│   │   └── inventory_response.py # Inventory 响应白名单（Phase 4.3.2）
+│   │   ├── inventory_response.py # Inventory 响应白名单（Phase 4.3.2）
+│   │   ├── wallet.py           #   金额、查询与幂等请求契约
+│   │   └── wallet_response.py  #   Wallet/Payment/Refund 响应白名单
 │   │
 │   ├── services/               # 业务逻辑层 —— 跨模型、带事务的业务编排
 │   │   ├── __init__.py
@@ -126,8 +136,11 @@ pinkdooHub/
 │   │   ├── account_lifecycle_service.py # 注销、匿名化与会话撤销
 │   │   ├── user_service.py     #   个人资料、密码、头像
 │   │   ├── product_service.py  #   商品 CRUD、上下架、Option 管理
-│   │   ├── order_service.py    #   Experience/Kit/混合下单、库存扣减、查询与状态机
-│   │   └── inventory_service.py#   流水查询、管理员调整、幂等与事务重试
+│   │   ├── order_service.py    #   自助/代客订单、库存扣减、查询与状态机
+│   │   ├── inventory_service.py#   流水查询、管理员调整、幂等与事务重试
+│   │   ├── wallet_service.py   #   会员/流水、ADMIN+ 调账与退款预留校验
+│   │   ├── payment_service.py  #   余额支付、微信关闭边界与资金查询
+│   │   └── refund_service.py   #   全额退款、钱包返还与 PAID Kit 恢复
 │   │
 │   ├── validators/             # 业务校验层 —— 状态变迁前的完整性校验
 │   │   ├── __init__.py
@@ -137,21 +150,27 @@ pinkdooHub/
 │   │   ├── __init__.py
 │   │   └── image.py        #   Product 图片校验、本地原子存储与补偿删除
 │   ├── integrations/           # 外部平台协议适配器
-│   │   └── wechat.py           #   服务端 code2Session，最小身份输出
+│   │   ├── wechat.py           #   服务端 code2Session，最小身份输出
+│   │   └── payment.py          #   Payment Provider 接口；当前仅 disabled 实现
 │   │
 │   ├── tasks/                  # 外部调度器可重复执行的运维任务入口
 │   │   ├── product_image_cleanup.py # ProductImage 延迟文件清理命令
 │   │   ├── super_admin_bootstrap.py # 受控首个 SUPER_ADMIN 初始化
 │   │   ├── phase93_legacy_seed.py   # 仅限冻结旧迁移 Schema 的合成 fixture
 │   │   ├── phase93_runtime_seed.py  # 仅限隔离 Source 的角色 Smoke fixture
-│   │   └── phase93_restore_smoke.py # Restore App readiness/login 验证
+│   │   ├── phase93_restore_smoke.py # Restore App readiness/login 验证
+│   │   ├── wallet_account_backfill.py # 历史 NORMAL/DISABLED USER 钱包预览/显式补齐
+│   │   ├── legacy_manual_settlement_backfill.py # 历史人工结算预览/显式补齐
+│   │   └── wallet_reconcile.py # 只读余额/流水一致性核验
 │   │
 │   ├── repositories/           # 数据访问层 —— 封装数据库查询
 │   │   ├── __init__.py
 │   │   ├── user_repo.py        #   User 查询/创建/更新
 │   │   ├── product_repo.py     #   Product + 扩展表查询/创建/更新
 │   │   ├── order_repo.py       #   Order + OrderItem 查询/创建/更新
-│   │   └── inventory_repo.py   #   Inventory 锁、余额、流水与分页（Phase 4.3.5）
+│   │   ├── inventory_repo.py   #   Inventory 锁、余额、流水与分页（Phase 4.3.5）
+│   │   ├── wallet_repo.py      #   Wallet 锁、余额、不可变流水与分页
+│   │   └── payment_repo.py     #   Payment/Settlement/Refund 与退款敞口查询
 │   │
 │   ├── common/                  # 公共模块 —— 跨领域共享的类型与常量
 │   │   ├── __init__.py
@@ -162,7 +181,9 @@ pinkdooHub/
 │   │   │   ├── __init__.py
 │   │   │   ├── user.py         #     UserRole, UserStatus
 │   │   │   ├── product.py      #     ProductType, ProductStatus, DayType
-│   │   │   └── order.py        #     OrderStatus (Phase 4.2)
+│   │   │   ├── order.py        #     OrderStatus (Phase 4.2)
+│   │   │   ├── inventory.py    #     Inventory transaction/source types
+│   │   │   └── wallet.py       #     Wallet/Payment/Recharge/Refund states and types
 │   │   ├── constants/          #   全局常量 —— 消除 Magic Number
 │   │       ├── __init__.py
 │   │       ├── pagination.py  #     MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE
@@ -170,8 +191,11 @@ pinkdooHub/
 │   │       ├── validation.py  #     USERNAME_MIN_LEN, PASSWORD_MAX_LEN, ...
 │   │       ├── product.py     #     Product 字段长度、金额、库存与图片排序边界
 │   │       ├── order.py       #     Order Item/备注/编号/状态展示边界（Phase 4.2）
+│   │       ├── inventory.py   #     Inventory 余额、原因、幂等与重试边界
+│   │       ├── wallet.py      #     Wallet 金额、编号、原因、幂等与退款窗口边界
 │   │       └── defaults.py    #     DEFAULT_AVATAR
-│   │   └── order_number.py    #   标准库 OD + Crockford Base32 ULID 生成器
+│   │   ├── order_number.py    #   标准库 OD + Crockford Base32 ULID 生成器
+│   │   └── financial_number.py#   RC/PY/RF + Crockford Base32 ULID 生成器
 │   │
 │   ├── core/                   # 核心基础设施 —— 与领域和 HTTP 无关的底层能力
 │   │   ├── __init__.py
@@ -211,7 +235,9 @@ pinkdooHub/
 │   ├── users/                  #   认证、用户与 RBAC
 │   ├── audit/                  #   共享审计链路
 │   ├── product/                #   按 api/schema/model/repository/service 等层分组
-│   └── order/                  #   按 api/schema/model/repository/service 等层分组
+│   ├── order/                  #   按 api/schema/model/repository/service 等层分组
+│   ├── inventory/              #   Inventory 契约、事务、API 与 MySQL 门槛
+│   └── wallet/                 #   Wallet/Payment/Refund 契约、闭环与 MySQL smoke
 │
 ├── migrations/                 # Aerich 数据库迁移文件
 │   └── models/
@@ -230,7 +256,7 @@ pinkdooHub/
 
 > **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 Product 当前保留全部 Model、Repository、Validator、Service、API Mapper、21 个端点、图片存储和清理任务；Phase 4.3.10 已将库存写入口迁到 Inventory。Phase 4.2 Order v1.0 的契约、领域语言、严格 Schema、Model/离线迁移、编号生成器、Repository、创建/状态/查询 Service、API Mapper、`get_order_service()` 组合根、4 个用户端与 5 个 ADMIN+ 端点、完整 HTTP 边界矩阵和最终 Review 均已完成。
 
-Phase 9.5 已增加外部身份和账号生命周期边界，但公开平台仍未启用：`ExternalAuthService` 只消费 `ExternalIdentityProvider` 返回的最小凭据，并通过 User/ExternalIdentity Repository 与共享审计完成事务；微信适配器是基础设施层，不进入 Service/Repository。原始 OpenID/UnionID 进入数据库前使用独立 Pepper HMAC，`session_key` 不越过适配器。`AccountLifecycleService` 锁定 User 后重检二次凭据与活跃订单，删除绑定并匿名化 User；Order 创建锁同一 User 行，封闭注销竞态。
+Phase 9.5 已增加外部身份和账号生命周期边界，但公开平台仍未启用：`ExternalAuthService` 只消费 `ExternalIdentityProvider` 返回的最小凭据，并通过 User/ExternalIdentity Repository 与共享审计完成事务；微信适配器是基础设施层，不进入 Service/Repository。原始 OpenID/UnionID 进入数据库前使用独立 Pepper HMAC，`session_key` 不越过适配器。`AccountLifecycleService` 锁定 User 后重检二次凭据、活跃订单、处理中资金、可退款钱包结算敞口和余额；余额即使为零，只要 PAID 或完成未满 30 天的 COMPLETED 钱包结算尚未成功退款，仍拒绝注销。通过后删除绑定、关闭钱包并匿名化 User；Order 创建锁同一 User 行，封闭注销竞态。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
@@ -444,7 +470,7 @@ Order v1.0 架构边界、实现与最终 Review 均已完成。Order Model 只�
 
 创建用例接收不含客户端快照的 `OrderItemInput`，分别用集合查询批量加载 Product、非空 ExperienceOption ID 与 ProductKit，再按请求 Item 顺序执行 Product 可售性、类型/Option 形状、Option 归属及 Kit 扩展判断。Service 以数据库 Product 名称、Option/Kit `Decimal` 价格构造不可变候选快照及总额；事务内 Order、Kit 余额与流水、批量 Items、紧凑非敏感 `CREATE_ORDER` 审计和详情重载共享连接。任一步异常整体回滚。订单号 UNIQUE 冲突发生在任何库存锁/写之前；退出失败事务并确认编号已持久化后才用新编号重试，最多 3 次。其他 `IntegrityError` 不重试；MySQL 1205/1213 对完整写事务使用同一候选快照和编号最多尝试 3 次。
 
-状态变迁只通过 `cancel_order()`、`mark_order_paid()` 和 `complete_order()` 三个公开用例暴露，不提供接受任意目标状态的公共方法。每次用例开启事务后调用 `get_order_for_update()`：用户取消在 SQL 锁查询中附带 `user_id`，不存在与他人订单均映射为 `OrderNotFound`；管理用例按 ID 锁定。Service 只对锁后最新状态执行 `pending → cancelled`、`pending → paid` 或 `paid → completed`，冲突时抛出包含稳定 operation/current/required 的 `OrderStatusConflict`，不写任何库存、状态或审计。取消成功前会恢复 Kit；支付/完成只更新状态。所有成功路径的紧凑 before/after 审计和轻量响应重载共享事务连接，任一步失败整体回滚。
+状态变迁只通过 `cancel_order()`、`mark_order_paid()` 和 `complete_order()` 三个公开用例暴露，不提供接受任意目标状态的公共方法。每次用例开启事务后调用 `get_order_for_update()`：用户取消在 SQL 锁查询中附带 `user_id`，不存在与他人订单均映射为 `OrderNotFound`；管理用例按 ID 锁定。Service 只对锁后最新状态执行 `pending → cancelled`、`pending → paid` 或 `paid → completed`，冲突时抛出包含稳定 operation/current/required 的 `OrderStatusConflict`，不写任何库存、状态或审计。取消成功前会恢复 Kit；Wallet/Payment M4 接入后，人工 Paid 先只读定位 owner，再按 `User → Order` 锁序复验，仅 NORMAL USER 订单可同事务创建 manual Payment/Settlement，staff/disabled/deleted owner 零写入拒绝；complete 会拒绝已有 pending/succeeded Refund，但不受人工 Paid 的目标限制变化影响。支付和完成本身仍不修改库存。所有成功路径的紧凑审计和轻量响应重载共享事务连接，任一步失败整体回滚。
 
 Phase 4.2 的历史边界曾禁止 OrderService/OrderRepository 读取或修改 `ProductKit.stock`。Phase 4.3.7–4.3.8 已按冻结契约完成创建扣减和取消恢复：OrderRepository 只提供最小 Item 快照，不感知余额计算；OrderService 通过明确注入的 InventoryRepository 协调行锁、余额和流水，不采用半套语义。
 
@@ -458,7 +484,31 @@ Phase 4.3.6 已实现 `InventoryService.adjust_stock()`。Service 通过构造�
 
 Phase 4.3.7 已把 `InventoryRepository` 注入 Order 组合根。Order 创建事务外通过 ProductRepository 三次集合读取构造 Product/Option/Kit 候选快照；事务内先创建 Pending Order，再用一次稳定排序锁查询取得全部 Kit，锁后重读 Product 并校验可售性/余额，随后分别批量更新余额和批量写 `order_deduction` 流水，再写 Items、Audit 和响应聚合。纯 Experience 请求不调用 InventoryRepository。OrderService 拥有事务和 MySQL 1205/1213 完整写集重试，但不调用 InventoryService；Repository 仍不包含余额计算或业务异常。Order Request/Response Schema 和 Mapper 已允许完整 Option 快照或全 null Kit 快照，既有 POST 路由已可调用。
 
-Phase 4.3.8 在同一 OrderService 中增加取消专用事务，不把库存钩子塞进通用状态更新器。取消先锁 owner 可见 Order 并重检 Pending，再由 OrderRepository 只投影 Item 的 Product/Option ID/数量；Service 跳过 Experience、聚合 Kit 数量，以一次稳定集合锁取得余额，并批量读取 restore 幂等身份。缺失 Kit、Pending 与已存在 restore 身份矛盾、余额越界或任何后置失败都会回滚；成功时批量保存余额/`order_cancellation_restore` 流水，再提交 Cancelled、Audit 与重载。支付和完成仍走纯状态事务。Order 状态机与 Inventory UNIQUE 构成双层幂等保护，MySQL 1205/1213 重试完整取消用例而不是局部 SQL。
+Phase 4.3.8 在同一 OrderService 中增加取消专用事务，不把库存钩子塞进通用状态更新器。取消先锁 owner 可见 Order 并重检 Pending，再由 OrderRepository 只投影 Item 的 Product/Option ID/数量；Service 跳过 Experience、聚合 Kit 数量，以一次稳定集合锁取得余额，并批量读取 restore 幂等身份。缺失 Kit、Pending 与已存在 restore 身份矛盾、余额越界或任何后置失败都会回滚；成功时批量保存余额/`order_cancellation_restore` 流水，再提交 Cancelled、Audit 与重载。Order 状态机与 Inventory UNIQUE 构成双层幂等保护，MySQL 1205/1213 重试完整取消用例而不是局部 SQL。
+
+Wallet/Payment/Refund v1 沿用相同分层，不把资金字段塞进 User，也不允许业务 Service 相互调用：`WalletService` 负责会员钱包查询、流水、ADMIN+ 调账及退款预留容量校验；`PaymentService` 直接协调 User/Order/Wallet/Payment Repository 完成余额支付与资金事实查询；`RefundService` 直接协调 User/Order/Payment/Wallet/Inventory Repository 完成全额退款；`OrderService` 直接协调相同 Repository 完成 ADMIN+ 代客钱包订单，而不调用 WalletService/PaymentService。共享 `AuditLogService` 仍是唯一明确的 Service-to-Service 例外。API Mapper 显式投影白名单并保持零 SQL。
+
+资金模型采用 `WalletAccount.balance + WalletTransaction`，PaymentSettlement 以 `order_id UNIQUE` 和 `payment_id UNIQUE` 保存成功结算事实，Refund 与 Order/Settlement 一对一。OrderStatus 继续表达履约生命周期，PaymentStatus/RefundStatus 独立；成功退款不把 Paid/Completed 改为 Cancelled。
+
+所有资金写遵循同一锁序的有效子序列：
+
+```text
+User
+  → Order / RechargeOrder
+  → Payment / PaymentSettlement / Refund
+  → WalletAccount
+  → ProductKit（按 Product ID 升序）
+```
+
+ADMIN 调账使用 `User → WalletAccount`；余额支付使用 `User → Order → Payment/Settlement → WalletAccount`；退款使用 `User → Order → Settlement → Payment/Refund → WalletAccount → sorted ProductKit`；ADMIN+ 代客钱包订单使用 `User → 新建 Order → WalletAccount → sorted ProductKit`，随后创建新的 Payment/Settlement 并直接 Paid。Service 必须在行锁后重新校验角色、用户状态、订单/支付状态、金额、余额和幂等事实。新建普通 USER 原子建钱包，历史 backfill 仅补 NORMAL/DISABLED USER；历史 DELETED USER 可无钱包且不得补建，ADMIN/SUPER_ADMIN 始终不建钱包。ADMIN/SUPER_ADMIN 的钱包账户查询和资金写入只能操作普通客户且不能以自身为目标；管理端订单资金事实只读查询仍沿用任意订单的既有权限。disabled USER 禁止主动充值/消费，但 ADMIN+ 对其执行人工余额纠错和法定义务退款仍允许；deleted USER 禁止资金写入。ADMIN+ 代客钱包订单属于消费，因此必须拒绝 disabled USER。
+
+正向资金写入还必须维护全额退款预留不变量：`WalletAccount.balance + refundable wallet exposure ≤ 1000.00`。PaymentRepository 在同一 User/Wallet 锁和事务连接内汇总未成功退款的 PAID wallet Settlement，以及完成未满 30 天的 COMPLETED wallet Settlement；WalletService 正向调账和未来真实充值成功路径必须据此拒绝侵占预留容量。退款事务将 Refund succeeded 与同额钱包入账一起提交，从敞口查询中原子释放该结算。
+
+客户端 `Idempotency-Key` 经规范化后进入服务端业务命名空间，数据库 UNIQUE 是最终兜底。完全相同意图重放历史结果，不能用当前余额覆盖首次 `after_balance`；同 key 不同目标、金额、原因或操作者返回冲突。唯一冲突处理必须先退出失败事务再读已提交事实。仅 MySQL 1205/1213 可让无外部副作用的完整用例以全新事务最多尝试 3 次。
+
+真实 Provider 调用是事务外基础设施边界。当前 `PAYMENT_PROVIDER=disabled`，充值、微信订单支付和微信退款在任何写入前返回 503；不得为演示创建假 Payment/Refund。正式接入时采用“事务创建意图 → 提交 → 事务外调用 Provider → 可信通知/主动查单在新事务收敛”的结构，客户端收银台回调不能直接驱动 Order Paid。商户号、AppID 关联、HTTPS notify URL、证书和密钥只在正式进件阶段进入受控配置/Secret，不写源代码或普通文档示例。
+
+历史数据处理位于独立运维任务边界，正式顺序固定为 M4 → wallet backfill → legacy manual settlement backfill → reconcile/gates → 启用。`wallet_account_backfill` 默认只读预览，显式 `--apply` 才为缺少钱包的 NORMAL/DISABLED 普通 USER 批量创建 `0.00` WalletAccount；历史 DELETED 和 ADMIN/SUPER_ADMIN 不补钱包，也不创建零元流水。`legacy_manual_settlement_backfill` 同样默认 preview；只对唯一 `MARK_ORDER_PAID` Audit 证明的 PAID/COMPLETED 旧单补齐 manual Payment/Settlement，apply 强制复用预览的 `through_order_id`，任何冲突阻断而不猜测修复。`wallet_reconcile` 最后通过 WalletRepository 复合游标只读扫描，按钱包 ID、流水时间和 ID 稳定核验余额净额、非零变化、单行算术/范围、余额链、末条余额及无流水零余额规则；任一违规以非零状态退出并绝不自动改账。三者都不替代停写、备份、执行后核验或真实 MySQL 门槛。
 
 Phase 4.3.9 已在 `InventoryService` 增加指定 Kit 与全局流水查询。前者校验 Product/Kit 聚合身份，后者只转发筛选条件；两者都复用 Repository 的稳定分页和批量展示字段加载，不拥有只读事务或重复查询规则。`app/api/mappers/inventory.py` 只同步读取预加载 operator 与批量补齐的 Order 编号，通过显式字典构造严格流水、分页和调整 Out Schema；Mapper 不查询数据库、不修改 ORM，也不导入 Repository 或 Service DTO。
 
@@ -846,6 +896,13 @@ JWT_SECRET_KEY=your-secret-key-change-in-production
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE=7200    # 2 小时
 JWT_REFRESH_TOKEN_EXPIRE=604800 # 7 天
+
+# Wallet / Payment（production 默认关闭）
+WALLET_ADMIN_WRITE_ENABLED=false
+WALLET_ORDER_PAYMENT_ENABLED=false
+WALLET_REFUND_ENABLED=false
+WALLET_TOPUP_ENABLED=false
+PAYMENT_PROVIDER=disabled
 ```
 
 ### 5.2 配置类（app/core/config.py）
@@ -912,6 +969,8 @@ trim 后至少 32 字符且非已知弱值的 JWT Secret、`redis`/`rediss` 非�
 Redis host，以及无凭据的绝对 HTTPS 图片地址缺一不可。校验错误隐藏原始输入，
 避免把 Secret 或带凭据 URL 回显到启动日志；development/testing 继续保留本地
 SQLite、localhost Redis 和相对图片路径的开发默认值。
+
+Wallet 管理调账/ADMIN+ 代客钱包订单、余额支付和退款在 development/testing 默认可供内部演练，production 必须分别显式开启；代客订单与调账共用管理写开关。充值不使用该便利规则：当前配置只接受 `PAYMENT_PROVIDER=disabled`，并拒绝 `WALLET_TOPUP_ENABLED=true`，因此充值和微信支付/退款稳定 503 且零写入。充值 `1.00..1000.00`、余额 `0.00..1000.00` 及退款预留不变量都是代码领域常量，不通过环境变量调高。
 
 ### 5.3 环境切换
 

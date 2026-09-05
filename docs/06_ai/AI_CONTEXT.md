@@ -19,6 +19,8 @@
 | 商品 API | [product_api.md](../03_api/product_api.md) |
 | 商品业务规则 | [product_business_rules.md](../01_requirements/product_business_rules.md) |
 | 订单 API | [order_api.md](../03_api/order_api.md) |
+| 会员钱包/支付/退款业务规则 | [wallet_module.md](../01_requirements/wallet_module.md) |
+| 会员钱包/支付/退款 API | [wallet_api.md](../03_api/wallet_api.md) |
 | 库存业务规则 | [inventory_module.md](../01_requirements/inventory_module.md) |
 | 库存 API 草案 | [inventory_api.md](../03_api/inventory_api.md) |
 | 数据库设计 | [database_design.md](../02_database/database_design.md) |
@@ -70,7 +72,8 @@
 
 ### 2.1 当前 Phase 与实现边界
 
-- Phase 9.5 **不依赖备案的仓库实现已于 2026-09-02 完成**：后端已实现服务端微信 code2Session、微信首次普通用户创建、既有账号显式绑定/冲突/解绑、外部标识独立 Pepper HMAC、Refresh family 原子轮换与重放撤销、认证限流 fail-closed、账号注销匿名化和脱敏安全事件；Order 创建锁后重检 User，封闭注销竞态。小程序新增显式 password/wechat 模式和 refresh 双 Token 替换。MySQL 迁移 3 已离线生成并在可销毁 MySQL 验证，未应用 Gate A。`ImageStorage` 与 Secret 文件注入只完成供应商无关边界；真实 AppID 真机、集中 Secret Manager、告警送达、对象存储和微信隐私材料仍是 Gate B 阻断，未连接微信后台或创建云资源。权威边界见 `docs/09_release/phase95_public_security_baseline.md`。
+- Wallet/Payment/Refund v1 **已于 2026-09-05 完成仓库实现，尚未应用持久数据库**：新建普通 USER 创建一个 `0.00..1000.00` WalletAccount；历史 backfill 只补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补，ADMIN/SUPER_ADMIN 始终不建钱包且只能操作普通客户。单笔充值冻结为 `1.00..1000.00`。已实现会员/流水查询、ADMIN+ 增减余额与按商品代客钱包订单、余额支付、manual PaymentSettlement、订单资金查询，以及 PAID/COMPLETED 一次全额退款；PAID Kit 恢复、COMPLETED 不恢复。正向入账还保留尚可全额退款的钱包支付敞口。四类持久资金幂等键在 MySQL 使用 ASCII / `ascii_bin`，大小写敏感逐字节比较；支付、退款和调账重放均复验完整关联、金额、状态、来源、算术和业务意图，矛盾事实不返回成功。M4 已在一次性 `mysql:8.0.46` 容器真实执行 Aerich 0→4，MySQL 钱包专项 `2 passed`，覆盖资金闭环、幂等及大小写 key 独立提交；容器已停止并由 `--rm` 删除，未触碰持久库。钱包专项并发、1205/1213 和 EXPLAIN 扩展门槛仍未覆盖。M4 未应用本地持久 `db.sqlite3`；development 的 `generate_schemas` 可能补建缺表但不 ALTER 既有表、不写 Aerich。正式顺序固定为 M4 → NORMAL/DISABLED USER wallet backfill → legacy manual settlement backfill → reconcile/发布门槛 → 启用；reconcile 全程只读并稳定检查余额净额、逐行算术/范围、余额链、末条余额和无流水零余额规则，任一违规非零退出且不自动修账。真实微信 Provider、充值和微信支付/退款均关闭并以 503 零写入；商户号、AppID 关联、HTTPS notify、证书/密钥和经营进件资料待正式接入时填入受控 Secret/发布记录。
+- Phase 9.5 **不依赖备案的仓库实现已于 2026-09-02 完成**：后端已实现服务端微信 code2Session、微信首次普通用户创建、既有账号显式绑定/冲突/解绑、外部标识独立 Pepper HMAC、Refresh family 原子轮换与重放撤销、认证限流 fail-closed、账号注销匿名化和脱敏安全事件；密码/微信既有身份登录及微信首次注册唯一冲突收敛均锁定并复验 User，`last_login_at` 与登录 Audit 同事务，签发后再锁定确认 `auth_version/status`，不一致时只撤销本次新 family。注销以数据库 commit 为权威成功点，commit 后 Redis family 清理为 best-effort；失败仍返回成功，`status/auth_version` 保持会话失效，并记录不含 Token/JTI 的高优先级安全事件供运维重试清理。Order 创建也先锁后复验 NORMAL 普通 USER，封闭注销竞态。小程序新增显式 password/wechat 模式和 refresh 双 Token 替换。MySQL 迁移 3 已离线生成并在可销毁 MySQL 验证，未应用 Gate A。`ImageStorage` 与 Secret 文件注入只完成供应商无关边界；真实 AppID 真机、集中 Secret Manager、告警送达、对象存储和微信隐私材料仍是 Gate B 阻断，未连接微信后台或创建云资源。权威边界见 `docs/09_release/phase95_public_security_baseline.md`。
 - 前端 **Phase 9.1–9.3 已于 2026-08-31 Complete；下一步为 Phase 9.4 微信内部测试版**：Phase 9.3 最终候选 `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success，53 项发布工具契约通过。Run ID `20260831t221625` 在唯一、可销毁的双 MySQL 8.0.46、认证 Redis 8.0.1、短期 CA/Nginx、非 root App 和独立 Source/Restore 图片卷中完成 DR-01～DR-07、DR-09 服务端部分：空库/旧数据迁移、opening balance、数据库与图片独立恢复、MySQL DDL 部分失败恢复、MySQL/Redis Readiness 故障与恢复、Bootstrap 首次/重放/唯一 Audit/凭据轮换、32 请求真实 HTTPS 纵向 Smoke 和优雅重启均通过。演练促成 Python 基础镜像标签、Compose `--env`、合成 Order No、internal/edge 网络四项修复及回归测试；R-004/R-006/R-011 已关闭。Compose containers/networks/volumes、端口、短期 Secret/CA/证据目录和任务 App 镜像已删除，既有开发 Redis 未接管。报告见 `docs/09_release/reports/phase93_rehearsal_2026-08-31.md`。微信合法域名、真实 Origin/证书、iOS/Android 真机 DR-08 与 Gate A 决策仍属于 9.4；未授权上传、分发、提审或发布。
 - 前端完成**阶段 2：四端 Taro Spike**（2026-08-15）：Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict + Webpack 5.91.0 + NutUI 2.7.15 + Jest 29.7.0 在 weapp/alipay/tt/h5 四端生产构建全部通过；`Taro.request`/Storage/上传适配层与 Jest + Taro Test Utils 链路已验证（13 项测试）。产物固定输出 `dist/<TARO_ENV>`，生产包注入 `TARO_APP_APP_ENV`/Origin 且无 localhost 泄漏。关键发现：Taro 只替换字面量 `process.env.TARO_APP_*`；测试工具需 `legacy-peer-deps` 并 mock `@tarojs/router`；NutUI 桶导入会把整库打入包（h5 入口 485 KiB），正式工程必须按需引入；H5 CORS 实测确认后端未配置白名单。Spike 结果已回写架构文档 §4.1、ADR-003/ADR-005、多端与测试策略；ADR-003/ADR-005 已 Accepted。总体架构仍为 Draft（正式工程已落地，待批准），不得把 Spike 与文档规划误报为已交付业务能力。
 - 前端完成**阶段 3：正式 `miniapp/` 工程创建与依赖复核**（2026-08-15 创建，2026-08-20 复核）：Taro 4.2.1 + React 18.3.1 + TS 5.9.3 strict 正式工程已落地，包含四端构建、环境配置、Jest/ESLint/Stylelint 与金额格式化测试。官方 npm registry 复核确认 Taro 4.2.1 仍为最新版；16 个 Spike 遗留 extraneous 包已清理，`solid-js@1.9.15` 显式补齐 H5 peer，非目标平台插件、Generator 和未启用 Git Hook 依赖已移除；`npm ls` 零错误。生产 Origin 必须是无路径/凭据的 HTTPS，并拒绝本机地址。正式工程尚未引入 NutUI；基线与认证链路均已提交。
@@ -92,8 +95,8 @@
 - 前端 **Phase 8 延期视觉兼容问题已关闭**（2026-08-29）：管理页白色图案最终定位为白色卡片样式直接挂在原生 `Form` 上引发的微信渲染异常。库存流水、管理商品、Kit 管理库存和管理订单改为外层 `View` 绘制卡片、内层透明 `Form` 只处理提交；无提交语义的商品创建、编辑、Experience Option 与 Kit 价格配置容器直接使用 `View`。全项目审计确认登录/注册卡片原本已由外层 `View` 绘制，其余管理页没有同类结构风险。登录 `_` 闪烁后续无法复现并由用户确认消失，不把早期 `alwaysEmbed` 尝试单独表述为确定根因。Taro 微信 development build、局域网 API 产物检查及用户微信/真机复测通过；没有后端/API/OpenAPI、数据库、迁移、依赖或版本变化。
 - **Product JPEG 导出尾部兼容已实现**（2026-08-27）：真实微信导出 JPEG 在标准 `FF D9` 后统一附加 `17 4D A1 01 00 00 00 00 + JPEG 本体 16-byte MD5`，旧存储层强制 `endswith(FF D9)` 导致 19/19 可解码样本误报 `42221 invalid_image_content`。`LocalImageStorage` 现仅在 JPEG 头尾、固定前缀和摘要全部匹配时剥离 24 字节并保存规范化 JPEG；任意尾随、错误摘要、伪造前缀和 MIME 不匹配继续拒绝，原始文件仍受 2 MiB 限制。MD5 只识别导出格式，不作为安全摘要。存储与真实 multipart API 定向 28 项、`D:\pinkdooPics` 真实样本 19/19 和完整后端 1450 项均通过，9 项 MySQL-only 跳过；临时输出已清理。无 API Schema、错误码、数据库、迁移、依赖或版本候选变化。
 - 前端 **账号密码注册补漏工程与微信 Functional 已完成**（2026-08-25）：`AuthApi/AuthContext` 接入现有无认证 `POST /auth/register`，注册页实现 username/password/confirm/nickname/phone 受控校验、同步 ref 防双击、1001/1007 提示、POST unknown 不重试及成功后主动登录；登录/注册双向保留固定白名单 redirect，密码不进入 URL/Storage，注册成功不伪造 Session。完整前端现为 38 套件/255 项；用户已确认普通注册、字段/唯一性、快速连点、结果未知、密码隔离及订单列表 redirect 全链路通过。审阅发现 username 字符集旧文档与实际 Pydantic/OpenAPI 不一致，API 文档已同步当前无 pattern 的事实，客户端不额外限制。
-- Phase 7.1–7.4 已收口。H5 等后端 CORS allowlist 后验证。Order create 仍无客户端幂等键；微信登录/微信支付未实现、refresh 不轮换及登录/注册不限流均是明确集成/发布缺口。
-- 当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1 Product Module**、**Phase 4.2 Order Module** 与 **Phase 4.3 Inventory Module** 均已完成实现和最终 Review。Order v1.0 基线保持 release-ready，Phase 4.3.7–4.3.8 已在原 POST/cancel 上增加纯 Kit/混合创建扣减及 Pending 取消恢复。九个 Order 端点、查询、Mapper 和资源隐藏边界保持不变；Phase 4.3.11 真实 MySQL 库存竞争与 Phase 4.3.12 最终 Review 均已通过。
+- Phase 7.1–7.4 已收口。H5 等后端 CORS allowlist 后验证。Order create 仍无客户端幂等键；真实微信支付 Provider 仍未实现，是明确集成/发布缺口。微信登录、refresh 轮换及登录/注册限流已由 Phase 9.5 仓库实现，但真实 AppID/域名/真机与持久环境启用仍受 Gate B 控制。
+- 当前代码版本候选仍为 **v0.6.0（尚未发布）**；**Phase 4.1 Product Module**、**Phase 4.2 Order Module** 与 **Phase 4.3 Inventory Module** 均已完成实现和最终 Review。Wallet/Payment/Refund v1 是其后的未发布仓库增量，新增资金端点和 M4；一次性 MySQL 8.0.46 已通过 0→4，钱包专项 `2 passed` 覆盖关键资金闭环及 `ascii_bin` 大小写敏感幂等回归，但 M4 尚未应用持久库，钱包专项并发/1205/EXPLAIN 门槛仍待完成。不得用 Phase 4.3.11 旧证据或这次专项 smoke 代替未执行的扩展门槛。
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约均已完成；Product API 文档已通过 Phase 4.1 最终 Review，并收口为 v1.0 Implemented。
 - 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
@@ -115,8 +118,14 @@
 | `products.status` VARCHAR | `"draft"` / `"online"` / `"offline"` | `ProductStatus(str, Enum)` |
 | `experience_options.day_type` VARCHAR | `"weekday"` / `"holiday"` | `DayType(str, Enum)` |
 | `orders.status` 0/1/2/3 | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |
-| `inventory_transactions.transaction_type` VARCHAR(40)（Model/迁移已实现；一次性 MySQL 演练通过，未应用持久环境） | `"opening_balance"` / `"admin_adjustment"` / `"order_deduction"` / `"order_cancellation_restore"` | `InventoryTransactionType(str, Enum)` |
+| `inventory_transactions.transaction_type` VARCHAR(40)（M4 增加退款恢复；未应用持久环境） | `"opening_balance"` / `"admin_adjustment"` / `"order_deduction"` / `"order_cancellation_restore"` / `"order_refund_restore"` | `InventoryTransactionType(str, Enum)` |
 | `inventory_transactions.source_type` VARCHAR(30)（Model/迁移已实现；一次性 MySQL 演练通过，未应用持久环境） | `"migration"` / `"admin"` / `"order"` | `InventorySourceType(str, Enum)` |
+| `wallet_accounts.status` VARCHAR(32)（M4 未应用） | `"active"` / `"closed"` | `WalletStatus(str, Enum)` |
+| `wallet_transactions.transaction_type` VARCHAR(32)（M4 未应用） | `"recharge"` / `"order_payment"` / `"admin_adjustment"` / `"refund"` | `WalletTransactionType(str, Enum)` |
+| `payments.purpose` VARCHAR(32)（M4 未应用） | `"order"` / `"recharge"` | `PaymentPurpose(str, Enum)` |
+| `payments.method` VARCHAR(32)（M4 未应用） | `"wallet"` / `"wechat"` / `"manual"` | `PaymentMethod(str, Enum)` |
+| `payments.status` VARCHAR(32)（M4 未应用） | `"pending"` / `"succeeded"` / `"failed"` / `"closed"` | `PaymentStatus(str, Enum)` |
+| `refunds.status` VARCHAR(32)（M4 未应用） | `"pending"` / `"succeeded"` / `"failed"` | `RefundStatus(str, Enum)` |
 
 > `duration_minutes` 和 `participants` 是开放正整数，不是 Enum。当前常用值不构成允许值白名单。
 
@@ -130,6 +139,7 @@
 | 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40404 / 40901-40905, 40911-40912 / 42201, 42221 |
 | 订单 | 4041x / 4092x / 4223x | 40411 / 40921 / 42231-42232（命名异常与 HTTP 映射已实现；40922 已移除） |
 | 库存 | 4093x | 40931-40933（命名异常、HTTP 映射与三个 ADMIN+ Inventory API 均已实现） |
+| Wallet/Payment/Refund | 4044x / 4094x / 4224x | 40441-40444 / 40941-40948 / 42241（40947 退款预留容量、40948 超退款窗口；M4 仓库实现，未应用持久库） |
 
 Inventory Phase 4.3.1 契约速查：
 
@@ -138,13 +148,13 @@ Inventory Phase 4.3.1 契约速查：
 - 支持纯 Experience、纯 Kit 和混合订单；多 Kit 按 Product ID 升序加行锁，Order 创建/取消 Service 拥有外层事务并协调 Inventory Repository。
 - 管理员调整为 ADMIN+ 的 `change + reason + Idempotency-Key`，允许未删除 Online Kit；余额范围 `0..999999`，reason trim 后 `1..256`。
 - 旧 `PATCH .../stock` 与 Kit 创建 `stock` 输入已在 Phase 4.3.10 移除；当前库存写入统一经过 Inventory 流水语义。
-- 流水类型冻结为 `opening_balance`、`admin_adjustment`、`order_deduction`、`order_cancellation_restore`；现有正库存生成期初流水，零库存不生成零变化流水。
+- 流水类型冻结为 `opening_balance`、`admin_adjustment`、`order_deduction`、`order_cancellation_restore`、`order_refund_restore`；现有正库存生成期初流水，零库存不生成零变化流水。
 - 用户库存不足不披露精确 available；自动事件和管理员重试均由 UNIQUE 幂等身份保护。
 - MySQL 8+ 真实并发验证是 v0.6.0 发布硬门槛；Phase 4.3.11 已在隔离实例通过，但未执行持久环境迁移或版本发布。
 
 Inventory Phase 4.3.2 实现速查：
 
-- `app/common/enums/inventory.py` 定义四种流水类型和三种 source 类型，均为稳定字符串 Enum；常量集中在 `app/common/constants/inventory.py`。
+- `app/common/enums/inventory.py` 现定义五种流水类型（含 `order_refund_restore`）和三种 source 类型，均为稳定字符串 Enum；常量集中在 `app/common/constants/inventory.py`。
 - `InsufficientStock(40931)` 不包含 available；`InventoryBalanceExceeded(40932)` 只接受确实越界的调整上下文；`InventoryTransactionConflict(40933)` 不输出 data。三者均继承 `ConflictException` 并由全局中间件映射 HTTP 409。
 - `app/schemas/inventory.py` 实现 `InventoryIdempotencyKey`、`InventoryAdjustmentCreate`、`InventoryProductTransactionQuery` 与 `InventoryTransactionQuery`。写整数 strict；HTTP Query ID 接受十进制字符串；时间只接受 UTC；`source_id` 要求 `source_type=order`。
 - `app/schemas/inventory_response.py` 实现余额、流水列表/详情和调整响应白名单，拒绝内部幂等键与隐私字段，并校验 before/change/after、流水方向和 source/operator 元数据一致性。
@@ -178,7 +188,7 @@ Inventory Phase 4.3.6 管理调整 Service 速查：
 Inventory Phase 4.3.7–4.3.8 Order 库存生命周期速查：
 
 - `OrderItemCreate.experience_option_id` 现为可省略/null；Service 对 Experience 要求有效 Option，对 Kit 要求 null。`OrderItemOut` 只接受完整 Option 快照或四项全 null Kit 快照，既有 POST 路由已可创建纯 Kit/混合订单。
-- ProductRepository 批量读取 Product、非空 Option ID 和 Kit 候选价格；事务内先创建 Pending Order，再由 InventoryRepository 一次按 Product ID 升序锁定全部 Kit，并用同一连接重读 Product 状态。
+- ProductRepository 批量读取 Product、非空 Option ID 和 Kit 候选价格；事务内先锁定 User 并复验仍为 NORMAL 普通 USER，再创建 Pending Order，随后由 InventoryRepository 一次按 Product ID 升序锁定全部 Kit，并用同一连接重读 Product 状态。
 - 锁后按请求顺序检查 Kit 扩展和余额；多 Kit 余额用一次 `bulk_update`、流水用一次 `bulk_create`。流水固定为 `order_deduction` / Order source / 下单用户 operator / `Order stock deduction`，key 为 `inventory:order:{order_id}:deduct:product:{product_id}`。
 - Order、库存、流水、Items、`CREATE_ORDER` Audit 和详情重载原子提交；库存不足、审计或重载失败全部回滚。`40931` 不包含 available。纯 Experience 创建零 Inventory Repository 调用。
 - 订单号 UNIQUE 冲突在任何库存锁/写之前发生并沿用新编号事务重试；MySQL 1205/1213 对完整写事务以同一候选快照/编号和全新事务最多尝试 3 次。`IntegrityError` 必须先于其父类 OperationalError 处理。
@@ -193,6 +203,17 @@ Inventory Phase 4.3.9–4.3.11 查询、API 与发布门槛速查：
 - Phase 4.3.11 在隔离 MySQL 8.0.46、真实 Aerich 0→1→2 上通过 9 项门槛：同/异 key、最后一件、反向多 Kit、同单取消、调整/下单真实等待、真实 1205 全事务重试、三类 EXPLAIN 和 MySQL HTTP 并发重放/查询。
 - 完整 HTTP 矩阵另有 41 项，覆盖三端点 401/1006/403、资源/业务异常、严格 422、分页/筛选/Order source/UTC 与隐私。测试 fixture 强制回环、非 3306 和专用 Schema 前缀；实例销毁且未修改持久数据库。
 
+Wallet/Payment/Refund v1 速查：
+
+- 金额：单笔充值 `1.00..1000.00`，钱包余额 `0.00..1000.00`；资金写入只接受固定两位小数字符串，所有余额由 `WalletAccount.balance` 权威保存并配套不可变 WalletTransaction。ADMIN 正向调账必须保持 `调整后余额 + 尚可退款的钱包 Payment 敞口 ≤ 1000.00`；PAID 和完成未满 30 天的 wallet Payment 在 Refund succeeded 前占用敞口，未来真实充值也必须复用该校验。相同敞口也阻断账号注销，即使当前余额为零。
+- 身份：新建普通 USER 建钱包；历史 backfill 仅补 NORMAL/DISABLED 普通 USER，历史 DELETED 可无钱包且不得补建。ADMIN/SUPER_ADMIN 不建钱包，调账、代客扣款和退款资金写入只能操作普通客户。六个用户侧 wallet/payment 端点共享 `get_current_customer`，在实时状态与 `auth_version` 校验后强制 `role=user`，staff 统一 403；管理端订单资金事实只读查询仍可查看任意管理端可见订单。disabled USER 禁止主动充值/消费，但 ADMIN+ 人工纠错和法定义务退款仍允许；deleted USER 禁止资金写入。
+- 支付：余额支付以 `User → Order → Payment/Settlement → Wallet` 锁序把扣款、流水、成功 Payment、唯一 Settlement、Order Paid 与 Audit 原子提交。ADMIN+ 代客钱包订单为正常普通 USER 原子创建真实 Order/Items、扣 Kit/钱包、创建 Payment/Settlement、直接 Paid 并写 `CREATE_ORDER` + `PAY_ORDER`；disabled 目标因属于消费而拒绝。人工 Paid 先只读定位 owner，再按 `User → Order` 锁序复验；只有 NORMAL 普通 USER 订单可同事务创建 `method=manual` Settlement，staff/disabled/deleted owner 均零写入拒绝。
+- 退款：仅 ADMIN+、仅普通 USER 的 PAID/COMPLETED 已结算订单、一次全额；Completed 窗口 30 天。退款前验证 Settlement 与成功 order-purpose Payment 的用户、订单、金额及空充值关联一致性，矛盾事实零写入拒绝。PAID Kit 按 OrderItem 快照恢复并写 `order_refund_restore`，COMPLETED 不恢复；退款不改 OrderStatus。
+- 幂等：ADMIN 调账、代客钱包订单、余额支付、充值/微信支付意图和退款要求 `Idempotency-Key`；四个持久 key 列在 MySQL 使用 ASCII / `ascii_bin`，按大小写敏感逐字节语义比较。首次 201、完全一致重放 200、不同意图 409；调账复验完整流水身份与余额算术，余额/代客支付复验 Order、Payment、Settlement 和扣款流水，退款复验 Settlement、Payment、Refund 及钱包渠道入账流水，任一缺失或矛盾都拒绝重放。只在退出失败事务后解析 UNIQUE；MySQL 1205/1213 可对完整内部事务最多尝试 3 次。
+- 开关：development/testing 默认允许调账、余额支付和内部退款演练；production 分别显式开启。真实充值/微信订单支付/微信退款固定 503 且零写入；当前配置拒绝非 disabled Provider 与 topup enabled。
+- 数据：迁移 `4_20260905162243_add_wallet_payment_refund.py` 已离线生成，并在一次性 MySQL 8.0.46 完成 0→4，钱包专项 `2 passed`；未通过 Aerich 应用到持久 MySQL、共享或生产环境。本地 development SQLite 的 `generate_schemas` 可能补建缺失表，但不会 ALTER 既有表或写入 Aerich 版本，不能作为发布迁移证据。钱包专项并发/1205/EXPLAIN 扩展门槛仍待完成。新注册/首次微信 USER 同事务建钱包；历史 NORMAL/DISABLED 普通 USER 的 `wallet_account_backfill` 默认 preview 输出 `through_user_id=N`，apply 必须显式复用 `--through-user-id N --apply`。写批次按 User ID 升序锁定，事务内复验 USER + NORMAL/DISABLED 并重查钱包存在性，DELETED/staff/已有钱包均跳过且不造零流水。随后用各自固定预览上界运行 wallet 复查和 `legacy_manual_settlement_backfill`，最后执行只读 `wallet_reconcile`，核验余额净额、非零变化、单行算术/范围、余额链、末条余额和无流水零余额规则；任一差异或 blocker 均非零退出且不自动改账。完整发布顺序是 M4 → wallet backfill → legacy settlement backfill → reconcile/发布门槛 → 启用。
+- API：用户 `/wallet`、`/wallet/transactions`、`/wallet/recharges`、`/orders/{id}/financials`、余额/微信支付六个端点统一要求 customer 身份；管理端 `/admin/users/{id}/wallet*`（含 `POST /admin/users/{id}/wallet-orders`）、`/admin/orders/{id}/financials` 与全额退款。资金 Mapper 后的严格 Out Schema 校验 finite Decimal/UTC，Payment 用途的 Order/Recharge 互斥关联、Payment/Refund 成功时间，以及 OrderFinancial/WalletPayment/AssistedWalletOrder 中 Order、Payment、Refund 的订单、渠道、金额与成功状态；矛盾事实不序列化为成功响应。完整契约见 `wallet_api.md`。
+
 Order v1.0 契约速查：
 
 - `app/common/enums/order.py` 使用 `OrderStatus(IntEnum)` 保存 0/1/2/3；`app/common/constants/order.py` 显式注册 API value/label，禁止把 IntEnum 整数直接输出为 API status。
@@ -200,13 +221,13 @@ Order v1.0 契约速查：
 - `app/schemas/order.py` 固定创建请求、重复 Product/Option 拒绝、用户/管理分页筛选和 UTC 时间范围；`app/schemas/order_response.py` 固定金额 Decimal→两位字符串、status/day_type 配对、快照金额一致性以及用户/管理字段隔离。详情不返回列表派生 `item_count`。
 - `app/models/order.py` 已实现 `Order` / `OrderItem`、`SmallIntField` 状态、订单号唯一约束、Decimal 快照、四条 `RESTRICT` 历史外键和五组稳定查询索引；MySQL 8+ 增量迁移已离线生成并静态 Review，尚未应用。
 - `app/common/order_number.py` 只用标准库生成 OD+ULID；`app/repositories/order_repo.py` 已实现 Order/Item 事务写入、详情、用户可见限定、行锁、状态持久化和用户/管理分页，列表使用数据库 `COUNT(items)` 生成 `item_count`。ProductRepository 已提供包含逻辑删除记录的 Product/Option 集合读取，供创建 Service 一次批量校验。
-- `app/services/order_service.py` 已实现 Experience/Kit/混合创建、三个独立状态变迁及五个只读用例。创建批量读取 Product/Option/Kit 候选快照；事务内先写 Pending Order，再稳定锁定并扣减 Kit，批量写余额/流水/Items，最后写 `CREATE_ORDER` Audit 和重载聚合。取消使用独立库存感知事务，在 Order 锁后读取最小 Item 快照、稳定锁定并恢复 Kit，再提交 Cancelled/Audit/重载；支付和完成仍是纯状态事务。创建和取消的 MySQL 1205/1213 都重试完整用例最多 3 次。用户查询与取消使用 `(order_id, user_id)` 可见限定统一隐藏不存在/他人资源；管理端审计先确认 Order 存在再委托共享 AuditLogService。`OrderStatusValue` 定义在 common Enum 模块，Service 使用完整 `ORDER_STATUS_BY_VALUE` Registry 将 API 字符串翻译为数据库 IntEnum。
+- `app/services/order_service.py` 已实现 Experience/Kit/混合创建、ADMIN+ 代客钱包订单、三个独立状态变迁及五个只读用例。普通创建批量读取 Product/Option/Kit 候选快照；事务内先锁定 User 并复验仍为 NORMAL 普通 USER，再写 Pending Order、稳定锁定并扣减 Kit，批量写余额/流水/Items，最后写 `CREATE_ORDER` Audit 和重载聚合。代客钱包订单锁目标 USER、新 Order、Wallet 与稳定 Kit 集合，把真实 Items、库存/钱包扣减、Payment/Settlement、直接 Paid 和双审计原子提交。取消使用独立库存感知事务，在 Order 锁后读取最小 Item 快照、稳定锁定并恢复 Kit，再提交 Cancelled/Audit/重载；Wallet/Payment M4 接入后，人工 Paid 先定位 owner，再按 `User → Order` 锁序复验，仅允许 NORMAL 普通 USER 并同事务创建 manual Payment/Settlement，staff/disabled/deleted 拒绝且零写入；complete 会检查 Refund 冲突。创建和取消的 MySQL 1205/1213 都重试完整用例最多 3 次。用户查询与取消使用 `(order_id, user_id)` 可见限定统一隐藏不存在/他人资源；管理端审计先确认 Order 存在再委托共享 AuditLogService。`OrderStatusValue` 定义在 common Enum 模块，Service 使用完整 `ORDER_STATUS_BY_VALUE` Registry 将 API 字符串翻译为数据库 IntEnum。
 - `app/api/mappers/order.py` 已实现 OrderStatus/DayType、OrderItem 快照、用户/管理列表与分页、用户/管理详情和轻量状态响应。Mapper 只消费 Repository 已注解或预加载的数据，用户端不读取 User 关系，管理端只输出 `user_id/user_nickname`；严格 Schema 负责 Decimal 两位小数与聚合金额一致性。真实 SQLite 聚合测试固定零 SQL、零 ORM 对象/关系列表修改。
 - `app/api/deps.py:get_order_service()` 组装 OrderRepository、ProductRepository 和共享 AuditLogService；`app/api/v1/orders.py` 已注册创建、我的列表、我的详情和取消，`app/api/v1/admin_orders.py` 已注册管理列表/详情、确认支付、完成和审计历史。九个端点均使用精确 `SuccessResponse[T]` / `ErrorResponse` OpenAPI、统一 `success()` 与全局异常中间件；真实 JWT + SQLite 测试已贯通核心生命周期。缺失 Token 为统一 401，现有无效 Token `1006` 仍为 User 契约的 HTTP 400。
 - 创建 Item 必须提供 `product_id + quantity`；Experience 还必须提供有效且属于该 Product 的 `experience_option_id`，Kit 则必须省略或提交 `null`。同一 Product/Option 组合不得重复。
 - 金额由当前 Option 价格用 `Decimal` 计算，API 固定输出两位小数字符串；OrderItem 保存名称、Option 配置和价格快照。
 - 订单号使用 `OD` + 26 位大写 Crockford Base32 ULID（总长 28），数据库 UNIQUE 兜底；列表权威排序为 `created_at DESC, id DESC`。
-- 状态流仅为 `pending → cancelled`、`pending → paid`、`paid → completed`；ADMIN+ `/paid` 是支付集成前临时人工入口。
+- 状态流仍仅为 `pending → cancelled`、`pending → paid`、`paid → completed`；ADMIN+ `/paid` 登记 manual Payment/Settlement，USER 余额支付也驱动 `pending → paid`。Refund 独立，不回退 OrderStatus。
 - 创建、取消、确认支付和完成分别写 `CREATE_ORDER`、`CANCEL_ORDER`、`MARK_ORDER_PAID`、`COMPLETE_ORDER`，与业务写入同事务；`target_type=order`。
 - 用户访问不存在或他人订单统一返回 `40411 OrderNotFound`；用户端不返回 user 字段，管理端仅增加 `user_id` 与 `user_nickname`。
 
