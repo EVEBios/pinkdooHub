@@ -136,6 +136,18 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
 将完整 JSON 作为升级前证据保存到仓库外受控位置。该命令只解决只读起点确认，仍不
 构成非空库升级授权。
 
+候选镜像内另有两个只供受控非空升级编排调用的执行原语：
+
+- `python -m app.tasks.gatea_migrate_step --target-version <3..7>` 在容器 `/tmp`
+  生成只含目标及更早迁移的短期目录，通过 Aerich 公开接口一次只应用一条迁移；当前
+  链必须精确等于目标前一版本或目标版本，未知起点、跳级、M7 以后文件均拒绝。
+- `python -m app.tasks.gatea_wallet_prepare` 只允许 production MySQL；先执行 Wallet 与
+  legacy settlement 双 preview，存在 blocker 时保持零写入，再冻结 ID 上界 apply、
+  二次 preview 并执行全量 reconcile。输出仅含聚合计数。
+
+这两个模块不自行验证目标主机、停写、Backup/Restore Record 或候选镜像身份，因此
+不得脱离尚待完成的 Gate A 非空升级编排单独在持久环境运行。
+
 ## 受控 SUPER_ADMIN Bootstrap
 
 `gatea_bootstrap.py` 是持久 Gate A 唯一批准的 Bootstrap 编排入口。它要求 Root、

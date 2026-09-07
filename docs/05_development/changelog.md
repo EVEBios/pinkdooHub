@@ -4,6 +4,19 @@
 
 ---
 
+## Gate A 单步迁移与 Wallet 准备原语（本地候选，2026-09-07）
+
+- 新增 `gatea_migrate_step`，冻结 M0–M7 文件清单，只接受 M3–M7 目标；通过容器 `/tmp`
+  中的最小迁移目录和 Aerich 公开接口一次只前进一条，精确目标重放为 no-op，未知链、
+  跳级、未来迁移或非 production MySQL 均拒绝，且不使用 fake/downgrade。
+- 新增 `gatea_wallet_prepare`：先完成 Wallet account 与 legacy settlement 双 preview，
+  blocker 路径保持零写入；通过后复用冻结 ID 上界 apply、二次 preview，并要求全量
+  reconcile 的 mismatch/violation 均为 0。输出只包含聚合计数。
+- 一次性 MySQL 8.0.46 从真实 M0→M2 起点依次执行 M3、M4、M4 no-op 重放和空历史
+  Wallet 闭环，最终 Aerich 精确停在 M4；7 项编排测试通过，临时容器和 13318 端口已
+  清理。两个任务尚不构成持久操作入口，必须由后续验证停写、新 Backup/Restore、目标
+  与 Record 的 Gate A 编排调用。
+
 ## Gate A 只读数据库起点采样（本地候选，2026-09-07）
 
 - 持久运维新增只读 `database-status`：在健康 MySQL 上输出当前候选、精确 Aerich 链、

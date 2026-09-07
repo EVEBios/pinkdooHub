@@ -189,6 +189,11 @@ python -m scripts.release.phase93_operations cleanup \
 本 Runbook 只冻结上述门槛，不授权用临时 SQL、删除旧迁移 Record、伪造 Record 或
 绕过 `initial-migrate` 的保护逻辑。
 
+候选镜像已提供 `app.tasks.gatea_migrate_step` 与 `app.tasks.gatea_wallet_prepare` 两个
+内部执行原语：前者将 Aerich 限制为 M3–M7 单步前进，后者完成 M4 后双 preview、冻结
+上界 apply、重放与 reconcile。它们不拥有主机/备份/停写/Record 验证，只有后续受控
+非空升级入口可以调用；当前仍不得直接用于持久 Gate A。
+
 ### 4.1 预检（只读）
 
 1. 两名人员核对目标主机、端口、数据库名、环境标识和资源所有者。
