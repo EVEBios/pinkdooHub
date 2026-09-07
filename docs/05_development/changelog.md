@@ -4,6 +4,20 @@
 
 ---
 
+## Gate A MARD 221 持久发布入口（本地候选，2026-09-07）
+
+- 把清单、稳定文件名和确定性 PNG 提取到镜像内共享 `mard_catalog`，抓取与本地 SQLite
+  导入继续复用同一契约；新生成公开图片统一为 `0644`，保证 Nginx 只读挂载可读取。
+- 新增 `gatea_mard_publish`：固定 production MySQL、`/data/images` 和无凭据 HTTPS
+  `/uploads/products`，默认 preview，apply 必须精确确认 manifest SHA-256；拒绝非 221
+  槽、部分冲突、异常文件权限/内容和 Online 已启用颜色。
+- apply 先原子发布确定性图片，再在单事务内锁定 221 槽、复查销售引用、批量更新并
+  回读；数据库失败只删除本轮新文件，已有文件保留，完全相同重放零写入。任务不创建
+  ProductKitColor、不启用颜色、不写库存，也不替代升级编排的停写与 Backup/Restore。
+- 9 项共享/发布单元测试与 14 项相关 Product/Model 回归通过；一次性 MySQL 8.0.46
+  完成 221 行/221 文件真实 apply 和 no-op 重放（`1 passed in 0.92s`），容器及 13319
+  端口已清理。R-030 转为 mitigating，但 Gate A 尚未应用，仍为 **No-Go**。
+
 ## Gate A 单步迁移与 Wallet 准备原语（本地候选，2026-09-07）
 
 - 新增 `gatea_migrate_step`，冻结 M0–M7 文件清单，只接受 M3–M7 目标；通过容器 `/tmp`

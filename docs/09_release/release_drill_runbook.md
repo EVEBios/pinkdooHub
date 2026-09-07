@@ -170,9 +170,9 @@ python -m scripts.release.phase93_operations cleanup \
   initial migration Record。
 - `scripts.release.gatea_operations database-status` 已可对健康 MySQL 只读输出精确
   Aerich 链、Schema 数量/指纹和 M2 关键业务聚合，但不会迁移或批准未知起点。
-- `scripts/local/import_mard_bead_colors.py` 明确只操作项目内 SQLite，且 apply 要求
-  `--confirm-local-only`；不得连接 Gate A MySQL，也不得把开发图片路径直接复制为
-  持久 HTTPS URL。
+- `scripts/local/import_mard_bead_colors.py` 仍只操作项目内 SQLite；Gate A 候选已经有
+  独立 `app.tasks.gatea_mard_publish` 原语，但只能由完成主机/停写/备份验证的升级入口
+  在 M6 后调用，不能把本地开发图片复制为持久发布证据。
 
 因此在下列能力实现、测试并 Review 前，执行到持久写入步骤必须停止：
 
@@ -182,8 +182,8 @@ python -m scripts.release.phase93_operations cleanup \
    一次性 MySQL 的 M0–M6 矩阵自动推导；
 2. 入口按真实 Aerich 版本逐步升级，保存每步 Schema/数据摘要，失败时保留现场，并在
    全部核验通过后生成新的 candidate upgrade Record 供 `app-up` 使用；
-3. Gate A 专用 221 色发布入口支持默认 preview、显式 apply、来源 manifest/checksum、
-   MySQL 事务、持久图片原子发布/补偿、幂等重放和 HTTPS URL 核验；
+3. 已实现的 Gate A 221 色发布原语须接入非空升级入口：默认 preview、显式 checksum
+   apply、MySQL 事务、持久图片原子发布/补偿、幂等重放和 HTTPS URL 核验均由编排留证；
 4. 两类入口都有失败/重放/资源清理测试，且不会输出 Secret、PII 或幂等键。
 
 本 Runbook 只冻结上述门槛，不授权用临时 SQL、删除旧迁移 Record、伪造 Record 或
@@ -193,6 +193,10 @@ python -m scripts.release.phase93_operations cleanup \
 内部执行原语：前者将 Aerich 限制为 M3–M7 单步前进，后者完成 M4 后双 preview、冻结
 上界 apply、重放与 reconcile。它们不拥有主机/备份/停写/Record 验证，只有后续受控
 非空升级入口可以调用；当前仍不得直接用于持久 Gate A。
+
+M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 production MySQL、
+`/data/images`、HTTPS URL、manifest SHA-256 和 `0644` 图片，事务失败补偿本轮文件，
+精确重放零写入。它同样不拥有停写/Backup/Restore 授权，必须由升级编排调用。
 
 ### 4.1 预检（只读）
 

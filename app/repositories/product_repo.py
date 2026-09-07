@@ -455,6 +455,62 @@ class ProductRepository:
             .order_by("slot_no")
         )
 
+    async def list_bead_colors_for_update(
+        self,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[BeadColor]:
+        """按槽位锁定全局颜色目录，供受控批量发布使用。"""
+
+        return await (
+            BeadColor.all()
+            .using_db(using_db)
+            .order_by("slot_no")
+            .select_for_update()
+        )
+
+    async def list_all_bead_colors(self) -> list[BeadColor]:
+        """按槽位只读加载完整颜色目录，供离线发布预检使用。"""
+
+        return await BeadColor.all().order_by("slot_no")
+
+    async def bulk_update_bead_colors(
+        self,
+        bead_colors: list[BeadColor],
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> None:
+        """在调用方事务中批量保存颜色目录展示字段。"""
+
+        await BeadColor.bulk_update(
+            bead_colors,
+            fields=(
+                "color_code",
+                "name",
+                "swatch_image_url",
+                "sort",
+                "is_active",
+                "updated_at",
+            ),
+            using_db=using_db,
+        )
+
+    async def has_online_product_with_enabled_colors(
+        self,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> bool:
+        """判断是否已有销售中的商品启用颜色，不加载业务明细。"""
+
+        query = ProductKitColor.filter(
+            is_enabled=True,
+            product__status=ProductStatus.ONLINE,
+            product__is_deleted=False,
+        )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.exists()
+
     async def list_bead_colors(
         self,
         *,

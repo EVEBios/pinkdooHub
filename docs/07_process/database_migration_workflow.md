@@ -555,6 +555,29 @@ python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
 
 2026-09-07 本地执行结果：221 槽全部写入 code/name/URL/sort 并激活，生成 221 张 PNG，内容总计 128,325 bytes；备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-mard-221-20260907-024129-065769.bak`。再次 preview 为 `database_changes=0 / images_reused=221 / already_current=true`，`PRAGMA foreign_key_check` 无结果。该操作本身不创建商品颜色映射、不启用销售、不调整库存、不写 Aerich，也未连接或修改任何 MySQL/发布环境；本地此前已有的草稿 Product `14` 保留其 221 条关联，当前全部禁用且库存为 0。
 
+### 11.6 Gate A MARD 221 持久发布候选
+
+候选镜像包含 `app.tasks.gatea_mard_publish`，只允许 production MySQL、固定
+`/data/images` 和无凭据 HTTPS `/uploads/products` URL。默认 preview 会只读核验
+221 个 M6 占位槽、版本化 manifest SHA-256、全部目标图片内容、现有元数据冲突与
+Online 已启用颜色；apply 必须复用 preview 的精确 manifest SHA-256：
+
+```bash
+python -m app.tasks.gatea_mard_publish
+python -m app.tasks.gatea_mard_publish \
+  --apply \
+  --confirm-manifest-sha256 <preview-manifest-sha256>
+```
+
+新 PNG 通过同目录 hard-link 原子发布并固定为公开只读 `0644`；数据库在一个事务中
+锁定 221 槽、复查销售引用、批量更新并回读核验。数据库失败删除本轮新图片，已有
+文件不删除；完全相同重放为零写入。任务不创建 ProductKitColor、不启用商品颜色、
+不写库存，也不自行证明 App/Nginx 已停写或 Backup/Restore 已通过，因此只能由受控
+Gate A 非空升级入口在 M6 后调用，不能独立执行到持久环境。
+
+该路径已在一次性 MySQL 8.0.46 完成 221 行真实事务更新、221 文件发布及 no-op 重放，
+未修改 Gate A；Gate B 公开环境仍须使用经批准的对象存储/CDN，而不是沿用单主机卷。
+
 ---
 
 ## 12. Reservation Settings M7 发布流程与证据

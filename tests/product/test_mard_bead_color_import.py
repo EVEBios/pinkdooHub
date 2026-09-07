@@ -159,6 +159,10 @@ def test_import_preview_apply_and_replay_are_safe(tmp_path: Path) -> None:
     assert result.backup is not None and result.backup.is_file()
     assert result.created_images == EXPECTED_COLOR_COUNT
     assert len(list(storage_root.glob("*.png"))) == EXPECTED_COLOR_COUNT
+    assert all(
+        path.stat().st_mode & 0o777 == 0o644
+        for path in storage_root.glob("*.png")
+    )
     with sqlite3.connect(database) as connection:
         assert connection.execute(
             "SELECT COUNT(*), SUM(is_active), COUNT(DISTINCT color_code), "

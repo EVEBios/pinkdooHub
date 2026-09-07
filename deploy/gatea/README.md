@@ -144,8 +144,11 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
 - `python -m app.tasks.gatea_wallet_prepare` 只允许 production MySQL；先执行 Wallet 与
   legacy settlement 双 preview，存在 blocker 时保持零写入，再冻结 ID 上界 apply、
   二次 preview 并执行全量 reconcile。输出仅含聚合计数。
+- `python -m app.tasks.gatea_mard_publish` 默认 preview；M6 后以精确 manifest SHA-256
+  确认 apply，将 221 槽事务更新并把 221 张 `0644` PNG 原子写入持久图片卷，失败只
+  补偿本轮新文件，完全相同重放零写入。
 
-这两个模块不自行验证目标主机、停写、Backup/Restore Record 或候选镜像身份，因此
+这些模块不自行验证目标主机、停写、Backup/Restore Record 或候选镜像身份，因此
 不得脱离尚待完成的 Gate A 非空升级编排单独在持久环境运行。
 
 ## 受控 SUPER_ADMIN Bootstrap

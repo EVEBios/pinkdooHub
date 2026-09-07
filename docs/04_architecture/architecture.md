@@ -165,6 +165,10 @@ pinkdooHub/
 │   │
 │   ├── tasks/                  # 外部调度器可重复执行的运维任务入口
 │   │   ├── manifests/mard_221.json # MARD 221 来源、HEX/RGB 与确定性色板文件名
+│   │   ├── mard_catalog.py     # 清单验证、稳定命名与确定性 PNG 共享契约
+│   │   ├── gatea_migrate_step.py # Gate A M3–M7 单步 Aerich 原语
+│   │   ├── gatea_wallet_prepare.py # Gate A M4 历史资金准备与对账
+│   │   ├── gatea_mard_publish.py # Gate A M6 MySQL/持久图片色卡发布
 │   │   ├── product_image_cleanup.py # ProductImage 延迟文件清理命令
 │   │   ├── super_admin_bootstrap.py # 受控首个 SUPER_ADMIN 初始化
 │   │   ├── phase93_legacy_seed.py   # 仅限冻结旧迁移 Schema 的合成 fixture

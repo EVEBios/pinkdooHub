@@ -152,6 +152,9 @@ M6 候选在上述安全边界上追加以下 fail-closed 门槛：
 - M5 的 Reservation、StoreBusinessDay 与 legacy fixed 样本在 M7 后行数/关键字段不漂移；
 - M7 固定店休更换至少覆盖 settings 行锁、Reservation ID 稳定锁序、未来 30 天
   pending/confirmed 批量取消、单日店休保持、事务回滚和 MySQL 1205/1213；
+- `tests/inventory/mysql/test_gatea_mard_publish_mysql.py` 在同一真实 M7 Schema 中将
+  221 占位槽事务更新为冻结目录，原子发布 221 张 `0644` PNG，并验证完整 no-op 重放；
+  测试结束恢复 M6 占位槽，不污染后续迁移证据；
 - workflow 保存可区分 M6 seed、M7 snapshot、联合 JUnit 与 cleanup 的 artifact。
 
 审计起点 Run 34104680282 已真实暴露 M7 漂移并失败；随后本地 dirty-tree 一次性

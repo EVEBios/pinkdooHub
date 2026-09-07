@@ -21,24 +21,18 @@ from pathlib import Path
 from typing import Final
 from urllib.parse import urlparse
 
-
-SOURCE_URL: Final = "https://peiseka.com/pindouseka.html"
-EXPECTED_COLOR_COUNT: Final = 221
-MAX_SOURCE_BYTES: Final = 2 * 1024 * 1024
-SERIES_COUNTS: Final[tuple[tuple[str, int], ...]] = (
-    ("A", 26),
-    ("B", 32),
-    ("C", 29),
-    ("D", 26),
-    ("E", 24),
-    ("F", 25),
-    ("G", 21),
-    ("H", 23),
-    ("M", 15),
+from app.tasks.mard_catalog import (
+    EXPECTED_COLOR_COUNT,
+    SOURCE_URL,
+    SWATCH_HEIGHT,
+    SWATCH_WIDTH,
+    expected_codes,
+    image_filename,
 )
+
+
+MAX_SOURCE_BYTES: Final = 2 * 1024 * 1024
 DEFAULT_OUTPUT: Final = Path("app/tasks/manifests/mard_221.json")
-SWATCH_WIDTH: Final = 256
-SWATCH_HEIGHT: Final = 256
 
 _COLOR_CARD_PATTERN = re.compile(
     r'class="color-block"\s+style="background-color:\s*rgb\('
@@ -62,27 +56,6 @@ class SourceColor:
     color_code: str
     hex: str
     rgb: tuple[int, int, int]
-
-
-def expected_codes() -> tuple[str, ...]:
-    """Return the authoritative source ordering frozen by the page."""
-
-    return tuple(
-        f"{series}{number}"
-        for series, count in SERIES_COUNTS
-        for number in range(1, count + 1)
-    )
-
-
-def image_filename(*, color_code: str, hex_value: str) -> str:
-    """Build a deterministic LocalImageStorage-compatible PNG key."""
-
-    identity = (
-        f"pinkdoohub:mard-221:{color_code}:{hex_value}:"
-        f"{SWATCH_WIDTH}x{SWATCH_HEIGHT}:png"
-    )
-    digest = hashlib.sha256(identity.encode("ascii")).hexdigest()
-    return f"{digest[:32]}.png"
 
 
 def extract_colors(source_html: str) -> tuple[SourceColor, ...]:

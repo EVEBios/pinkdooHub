@@ -10,13 +10,10 @@ created files if the database transaction fails.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sqlite3
-import struct
 import sys
 import tempfile
-import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,13 +22,14 @@ from typing import Final
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.local.fetch_mard_bead_colors import (
+from app.tasks.mard_catalog import (
     EXPECTED_COLOR_COUNT,
-    SOURCE_URL,
-    SWATCH_HEIGHT,
-    SWATCH_WIDTH,
-    expected_codes,
-    image_filename,
+    PNG_END,
+    PNG_SIGNATURE,
+    ManifestColor,
+    MardCatalogError,
+    build_swatch_png,
+    load_manifest as load_catalog_manifest,
 )
 
 
@@ -40,24 +38,10 @@ DEFAULT_MANIFEST: Final = Path("app/tasks/manifests/mard_221.json")
 DEFAULT_STORAGE_ROOT: Final = Path("uploads/products")
 DEFAULT_BASE_URL: Final = "/uploads/products"
 DEFAULT_BACKUP_DIR: Final = Path("backups/local-sqlite-migrations")
-PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
-PNG_END: Final = b"\x00\x00\x00\x00IEND\xaeB`\x82"
 
 
 class BeadColorImportError(RuntimeError):
     """Raised when the manifest or local import target is unsafe."""
-
-
-@dataclass(frozen=True, slots=True)
-class ManifestColor:
-    slot_no: int
-    color_code: str
-    name: str
-    sort: int
-    is_active: bool
-    hex: str
-    rgb: tuple[int, int, int]
-    image_filename: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,142 +62,11 @@ class ImportResult:
 
 
 def load_manifest(path: Path) -> tuple[ManifestColor, ...]:
-    """Load and strictly validate the committed MARD 221 manifest."""
-
+    """保留本地工具原有异常类型的共享清单读取适配。"""
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise BeadColorImportError(f"cannot read manifest: {error}") from error
-
-    if not isinstance(document, dict) or document.get("schema_version") != 1:
-        raise BeadColorImportError("manifest schema_version must be 1")
-    source = document.get("source")
-    if not isinstance(source, dict) or source.get("url") != SOURCE_URL:
-        raise BeadColorImportError("manifest source URL does not match MARD 221")
-    if source.get("representation") != "css_rgb_swatch":
-        raise BeadColorImportError("manifest source representation is unsupported")
-    if source.get("individual_image_files") is not False:
-        raise BeadColorImportError("manifest must describe CSS-rendered swatches")
-    swatch = document.get("swatch")
-    expected_swatch = {
-        "format": "png",
-        "width": SWATCH_WIDTH,
-        "height": SWATCH_HEIGHT,
-        "color_space": "sRGB",
-        "representation": "solid_color_generated_from_source_rgb",
-    }
-    if swatch != expected_swatch:
-        raise BeadColorImportError("manifest swatch contract changed")
-
-    raw_colors = document.get("colors")
-    if not isinstance(raw_colors, list) or len(raw_colors) != EXPECTED_COLOR_COUNT:
-        raise BeadColorImportError(
-            f"manifest must contain exactly {EXPECTED_COLOR_COUNT} colors"
-        )
-
-    colors: list[ManifestColor] = []
-    for expected_slot, raw in enumerate(raw_colors, start=1):
-        if not isinstance(raw, dict):
-            raise BeadColorImportError(f"slot {expected_slot} is not an object")
-        try:
-            rgb_raw = raw["rgb"]
-            if (
-                not isinstance(rgb_raw, list)
-                or len(rgb_raw) != 3
-                or any(type(channel) is not int for channel in rgb_raw)
-            ):
-                raise ValueError("rgb must contain three integers")
-            color = ManifestColor(
-                slot_no=raw["slot_no"],
-                color_code=raw["color_code"],
-                name=raw["name"],
-                sort=raw["sort"],
-                is_active=raw["is_active"],
-                hex=raw["hex"],
-                rgb=tuple(rgb_raw),
-                image_filename=raw["image_filename"],
-            )
-        except (KeyError, TypeError, ValueError) as error:
-            raise BeadColorImportError(
-                f"slot {expected_slot} has an invalid shape: {error}"
-            ) from error
-
-        if type(color.slot_no) is not int or color.slot_no != expected_slot:
-            raise BeadColorImportError("manifest slots must be the ordered range 1..221")
-        if color.color_code != expected_codes()[expected_slot - 1]:
-            raise BeadColorImportError(
-                f"unexpected color code at slot {expected_slot}: {color.color_code}"
-            )
-        if color.name != color.color_code:
-            raise BeadColorImportError(
-                f"source exposes no separate name; name must equal code for {color.color_code}"
-            )
-        if type(color.sort) is not int or color.sort != expected_slot:
-            raise BeadColorImportError("manifest sort must match the frozen source order")
-        if color.is_active is not True:
-            raise BeadColorImportError("all validated manifest colors must be active")
-        if not re_full_hex(color.hex):
-            raise BeadColorImportError(f"invalid HEX value for {color.color_code}")
-        if any(channel < 0 or channel > 255 for channel in color.rgb):
-            raise BeadColorImportError(f"invalid RGB value for {color.color_code}")
-        derived_hex = "#" + "".join(f"{channel:02X}" for channel in color.rgb)
-        if derived_hex != color.hex:
-            raise BeadColorImportError(
-                f"HEX and RGB differ for {color.color_code}"
-            )
-        expected_filename = image_filename(
-            color_code=color.color_code,
-            hex_value=color.hex,
-        )
-        if color.image_filename != expected_filename:
-            raise BeadColorImportError(
-                f"image filename is not deterministic for {color.color_code}"
-            )
-        colors.append(color)
-
-    if len({color.color_code for color in colors}) != EXPECTED_COLOR_COUNT:
-        raise BeadColorImportError("manifest contains duplicate color codes")
-    if len({color.hex for color in colors}) != EXPECTED_COLOR_COUNT:
-        raise BeadColorImportError("manifest contains duplicate HEX values")
-    if len({color.image_filename for color in colors}) != EXPECTED_COLOR_COUNT:
-        raise BeadColorImportError("manifest contains duplicate image filenames")
-    return tuple(colors)
-
-
-def re_full_hex(value: object) -> bool:
-    """Validate an uppercase six-digit HEX color without a regex dependency."""
-
-    if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
-        return False
-    return all(character in "0123456789ABCDEF" for character in value[1:])
-
-
-def _png_chunk(kind: bytes, payload: bytes) -> bytes:
-    return (
-        struct.pack(">I", len(payload))
-        + kind
-        + payload
-        + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
-    )
-
-
-def build_swatch_png(rgb: tuple[int, int, int]) -> bytes:
-    """Create a deterministic 256×256 RGB PNG with an explicit sRGB chunk."""
-
-    pixel_row = bytes(rgb) * SWATCH_WIDTH
-    scanlines = b"".join(
-        b"\x00" + pixel_row for _ in range(SWATCH_HEIGHT)
-    )
-    header = struct.pack(">IIBBBBB", SWATCH_WIDTH, SWATCH_HEIGHT, 8, 2, 0, 0, 0)
-    return b"".join(
-        (
-            PNG_SIGNATURE,
-            _png_chunk(b"IHDR", header),
-            _png_chunk(b"sRGB", b"\x00"),
-            _png_chunk(b"IDAT", zlib.compress(scanlines, level=9)),
-            _png_chunk(b"IEND", b""),
-        )
-    )
+        return load_catalog_manifest(path)
+    except MardCatalogError as error:
+        raise BeadColorImportError(str(error)) from error
 
 
 def create_backup(database: Path, backup_dir: Path) -> Path:
@@ -401,6 +254,7 @@ def _publish_images(
             temporary = Path(temporary_name)
             try:
                 with os.fdopen(descriptor, "wb") as output:
+                    os.fchmod(output.fileno(), 0o644)
                     output.write(content)
                     output.flush()
                     os.fsync(output.fileno())

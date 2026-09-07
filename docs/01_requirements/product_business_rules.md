@@ -126,6 +126,12 @@ Kit 继续是 `product_type=kit`，一个 Product 对应一条 ProductKit。M6 �
 
 2026-09-07 指定的 MARD 221 来源页只公开 A1–M15 的 HEX/RGB CSS 色块，没有逐色原图。仓库因此冻结 `app/tasks/manifests/mard_221.json`，以来源顺序映射 `slot_no/sort=1..221`，并令 `color_code=name=页面色号`；清单保存来源 URL、抓取时间、HTML SHA-256、HEX/RGB 和确定性图片名。`scripts/local/import_mard_bead_colors.py` 用标准库生成 256×256 sRGB PNG，默认 dry-run，只有 `--apply --confirm-local-only` 才写本地 M6 SQLite 和忽略目录；冲突元数据、Online 商品引用、非 221 槽或异常图片均拒绝，数据库写前备份，事务失败补偿本轮文件，完全相同重放零写入。该本地导入不创建 ProductKitColor、不启用商品颜色、不写库存，也不构成 MySQL/对象存储发布证据。
 
+Gate A 内部测试候选另提供 `app.tasks.gatea_mard_publish`：只在停写且新 Backup/Restore
+已验证的 M6 持久 MySQL 上，以 preview 的 manifest SHA-256 显式确认 apply；221 张
+确定性 PNG 原子写入受 Nginx 只读挂载的持久卷并使用 `0644`，BeadColor 元数据在单
+事务中锁定、批量更新和回读，失败补偿本轮新文件，重放零写入。它仍不创建或启用
+商品颜色、不调整库存；Gate B 正式公开环境继续要求对象存储/CDN 选型和独立验收。
+
 ---
 
 ## 3. Product Basic Rules
