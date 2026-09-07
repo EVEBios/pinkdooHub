@@ -58,6 +58,15 @@ RESTORE_TRUE_FIELDS = (
     "temporary_resources_removed",
     "passed",
 )
+RUNTIME_PREFLIGHT_COMMAND = """import json
+from app.core.config import settings
+print(json.dumps({
+    "app_env": settings.app_env,
+    "db_engine": settings.db_engine,
+    "jwt_algorithm": settings.jwt_algorithm,
+    "validated": True,
+}, sort_keys=True))
+"""
 
 FINAL_DATABASE_STATUS_COMMAND = r"""MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
 export MYSQL_PWD
@@ -395,9 +404,8 @@ def _run_task(
             "run",
             "--rm",
             "--no-deps",
-            "--entrypoint",
-            "python",
             service,
+            "python",
             "-m",
             module,
             *arguments,
@@ -408,6 +416,50 @@ def _run_task(
     if result.returncode != 0:
         raise GateAUpgradeError(f"Gate A {description} task failed")
     return _parse_json_object(result.stdout, description)
+
+
+def _run_runtime_preflight(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    """通过镜像默认入口加载 Secret，并在停业务入口前校验生产配置。"""
+
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        profiles=("operations",),
+        arguments=(
+            "run",
+            "--rm",
+            "--no-deps",
+            "migrate",
+            "python",
+            "-c",
+            RUNTIME_PREFLIGHT_COMMAND,
+        ),
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise GateAUpgradeError(
+            "Gate A candidate runtime configuration preflight failed"
+        )
+    payload = _parse_json_object(result.stdout, "runtime-preflight")
+    if payload != {
+        "app_env": "production",
+        "db_engine": "mysql",
+        "jwt_algorithm": "HS256",
+        "validated": True,
+    }:
+        raise GateAUpgradeError(
+            "Gate A candidate runtime configuration preflight is invalid"
+        )
+    return payload
 
 
 def _read_final_snapshot(
@@ -689,6 +741,12 @@ def upgrade_existing_database(
         confirm_backup_id=confirm_backup_id,
         confirm_manifest_sha256=confirm_manifest_sha256,
     )
+    runtime_preflight = _run_runtime_preflight(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+    )
 
     started_at = _iso_now()
     evidence: dict[str, Any] = {
@@ -698,6 +756,7 @@ def upgrade_existing_database(
         "image_id": image_id,
         "manifest_sha256": manifest_sha256,
         "record_type": "existing-database-upgrade-evidence",
+        "runtime_preflight": runtime_preflight,
         "schema_version": 1,
         "source_candidate_sha": source_candidate_sha,
         "source_database_status": source_status,
@@ -898,6 +957,7 @@ def upgrade_existing_database(
             "manifest_sha256": manifest_sha256,
             "passed": True,
             "record_type": "existing-database-upgrade",
+            "runtime_preflight": runtime_preflight,
             "schema_version": 1,
             "source_aerich_versions": _expected_versions(SUPPORTED_SOURCE_VERSION),
             "source_candidate_sha": source_candidate_sha,

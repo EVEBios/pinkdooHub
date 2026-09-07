@@ -4,6 +4,20 @@
 
 ---
 
+## Gate A 升级 Runtime Secret 注入修复（真实主机发现，2026-09-08）
+
+- `b358ecc` 的 Gate A 正式 apply 在停写并证明数据库/图片与新 Backup 完全一致后，M3
+  一次性容器于应用配置导入阶段失败；数据库仍为精确 M2，Schema/聚合零漂移，M4–M7
+  未执行，App/Nginx 按失败契约保持停止。使用同一 Backup 的无宿主端口隔离 Restore
+  复现确认，M3 DDL 尚未开始，失败来自 `docker compose run --entrypoint python` 绕过
+  Runtime Entrypoint，导致挂载的 JWT Secret 没有导出为 `JWT_SECRET_KEY`。
+- 升级编排的 Migration、Wallet 和 MARD 子任务改为保留镜像默认 Entrypoint，再以
+  `python -m` 覆盖 service command；新增 apply 确认后、停止业务入口前的 Runtime
+  Settings 预检，使用同一 Secret 注入链验证 production/MySQL/HS256，失败不写升级
+  Evidence、不停 App/Nginx，且不回显子进程 stdout/stderr 或 Secret。真实 Secret 文件
+  本身权限和长度合规，无需轮换；修复必须形成新 SHA、通过完整 CI 并重新生成匹配镜像
+  后，才能使用新的 Backup/Restore Record 重启持久升级，禁止重跑已有失败 Evidence。
+
 ## Gate A 升级宿主依赖收口（真实主机发现，2026-09-08）
 
 - 真实 Gate A 在成功完成 M2 只读采样、新 Backup 与独立 Restore 后，upgrade plan 于

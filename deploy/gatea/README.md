@@ -90,7 +90,10 @@ sudo python -m scripts.release.gatea_operations \
 
 生命周期脚本支持空库首次部署与经批准的既有 M2→M7 升级。所有写操作都会再次验证
 Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 和 CMD；TLS
-写操作仍被拒绝。
+写操作仍被拒绝。既有库 upgrade apply 还会在停止 App/Nginx 前，以镜像默认 Entrypoint
+挂载并加载 Runtime Secret，执行一次不连接数据库的 production Settings 预检。迁移、
+Wallet 和 MARD 一次性任务同样保留该 Entrypoint，禁止用 `--entrypoint python` 绕过
+Secret 注入。
 
 ```bash
 # 只读输出精确 Aerich 链、Schema 数量/指纹和 M2 关键业务聚合。

@@ -155,6 +155,16 @@ def _patch_plan(
             MANIFEST_SHA,
         ),
     )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_runtime_preflight",
+        lambda **kwargs: {
+            "app_env": "production",
+            "db_engine": "mysql",
+            "jwt_algorithm": "HS256",
+            "validated": True,
+        },
+    )
 
 
 def test_plan_is_read_only_and_rejects_apply_confirmations(
@@ -202,6 +212,31 @@ def test_apply_requires_all_four_exact_confirmations_before_stopping(
 
     with pytest.raises(upgrade.GateAUpgradeError, match="confirmations"):
         upgrade.upgrade_existing_database(**arguments)
+
+    assert stopped is False
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_runtime_preflight_failure_happens_before_stopping_or_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_plan(monkeypatch, tmp_path)
+    stopped = False
+
+    def fail_preflight(**kwargs: object) -> dict[str, object]:
+        raise upgrade.GateAUpgradeError("runtime configuration preflight failed")
+
+    def unexpected_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal stopped
+        stopped = True
+        return subprocess.CompletedProcess([], 0)
+
+    monkeypatch.setattr(upgrade, "_run_runtime_preflight", fail_preflight)
+    monkeypatch.setattr(gatea, "_run_compose", unexpected_compose)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="runtime configuration"):
+        upgrade.upgrade_existing_database(**_common_arguments(tmp_path, apply=True))
 
     assert stopped is False
     assert not list(tmp_path.glob("*.json"))
@@ -576,6 +611,103 @@ def test_task_failure_does_not_echo_raw_output(
             description="migration",
         )
 
+    assert "must-not-appear" not in str(captured.value)
+
+
+def test_runtime_tasks_keep_the_image_entrypoint_for_secret_loading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(
+            [],
+            0,
+            stdout='{"applied": true}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(gatea, "_run_compose", fake_compose)
+
+    result = upgrade._run_task(
+        values={},
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+        service="migrate",
+        module="app.tasks.gatea_migrate_step",
+        arguments=("--target-version", "3"),
+        operations_profile=True,
+        description="migration",
+    )
+
+    assert result == {"applied": True}
+    assert calls[0]["arguments"] == (
+        "run",
+        "--rm",
+        "--no-deps",
+        "migrate",
+        "python",
+        "-m",
+        "app.tasks.gatea_migrate_step",
+        "--target-version",
+        "3",
+    )
+    assert "--entrypoint" not in calls[0]["arguments"]
+
+
+def test_runtime_preflight_uses_entrypoint_and_rejects_raw_failure_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                '{"app_env":"production","db_engine":"mysql",'
+                '"jwt_algorithm":"HS256","validated":true}'
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(gatea, "_run_compose", fake_compose)
+
+    result = upgrade._run_runtime_preflight(
+        values={},
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+    )
+
+    assert result["validated"] is True
+    assert calls[0]["arguments"][:6] == (
+        "run",
+        "--rm",
+        "--no-deps",
+        "migrate",
+        "python",
+        "-c",
+    )
+    assert "--entrypoint" not in calls[0]["arguments"]
+
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: subprocess.CompletedProcess(
+            [], 1, stdout="must-not-appear", stderr="secret-must-not-appear"
+        ),
+    )
+    with pytest.raises(upgrade.GateAUpgradeError) as captured:
+        upgrade._run_runtime_preflight(
+            values={},
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+        )
     assert "must-not-appear" not in str(captured.value)
 
 
