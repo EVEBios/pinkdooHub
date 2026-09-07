@@ -11,9 +11,10 @@ from app.common.enums.reservation import (
     ReservationCancellationReason,
     ReservationRejectionReason,
     ReservationStatus,
+    ReservationWeekday,
 )
 from app.common.pagination import Page
-from app.models.reservation import Reservation, StoreBusinessDay
+from app.models.reservation import Reservation, ReservationSettings, StoreBusinessDay
 
 
 class ReservationRepository:
@@ -299,6 +300,29 @@ class ReservationRepository:
             .select_for_update()
         )
 
+    async def list_active_for_business_dates_for_update(
+        self,
+        *,
+        business_dates: list[date],
+        scheduled_after: datetime,
+        using_db: BaseDBAsyncClient,
+    ) -> list[Reservation]:
+        if not business_dates:
+            return []
+        return list(
+            await Reservation.filter(
+                business_day__business_date__in=business_dates,
+                status__in=[
+                    ReservationStatus.PENDING.value,
+                    ReservationStatus.CONFIRMED.value,
+                ],
+                scheduled_start_at__gt=scheduled_after,
+            )
+            .using_db(using_db)
+            .order_by("id")
+            .select_for_update()
+        )
+
     async def bulk_cancel_for_store_closure(
         self,
         reservations: list[Reservation],
@@ -346,3 +370,44 @@ class ReservationRepository:
         if using_db is not None:
             query = query.using_db(using_db)
         return await query.exists()
+
+    async def get_settings(
+        self,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> ReservationSettings:
+        """读取单例设置；开发库首次使用时补建默认值。"""
+
+        settings, _ = await ReservationSettings.get_or_create(
+            singleton_key=True,
+            defaults={"weekly_closed_weekday": ReservationWeekday.MONDAY},
+            using_db=using_db,
+        )
+        return settings
+
+    async def get_settings_for_update(
+        self,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> ReservationSettings:
+        await self.get_settings(using_db=using_db)
+        return await (
+            ReservationSettings.filter(singleton_key=True)
+            .using_db(using_db)
+            .select_for_update()
+            .get()
+        )
+
+    async def update_weekly_closed_weekday(
+        self,
+        settings: ReservationSettings,
+        *,
+        weekly_closed_weekday: ReservationWeekday,
+        using_db: BaseDBAsyncClient,
+    ) -> ReservationSettings:
+        settings.weekly_closed_weekday = weekly_closed_weekday
+        await settings.save(
+            using_db=using_db,
+            update_fields=["weekly_closed_weekday", "updated_at"],
+        )
+        return settings

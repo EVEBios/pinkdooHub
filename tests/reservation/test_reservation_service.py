@@ -19,6 +19,7 @@ from app.common.enums.reservation import (
     ReservationRejectionReason,
     ReservationScheduleUnavailableReason,
     ReservationStatus,
+    ReservationWeekday,
 )
 from app.common.enums.user import UserStatus
 from app.common.exceptions.reservation import (
@@ -34,7 +35,7 @@ from app.common.exceptions.reservation import (
 from app.common.exceptions.user import AccountDeletionBlocked
 from app.core.security import hash_password
 from app.models.audit_log import AuditLog
-from app.models.reservation import Reservation, StoreBusinessDay
+from app.models.reservation import Reservation, ReservationSettings, StoreBusinessDay
 from app.repositories.audit_log_repo import AuditLogCreateData, AuditLogRepository
 from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.order_repo import OrderRepository
@@ -552,6 +553,54 @@ async def test_store_closure_is_selective_idempotent_and_reopen_does_not_revive(
         is ReservationStatus.CANCELLED
     )
     assert await AuditLog.filter(action="REOPEN_STORE_BUSINESS_DAY").count() == 1
+
+
+async def test_change_weekly_closed_day_cancels_new_weekday_and_keeps_custom_days() -> None:
+    now = datetime(2026, 9, 8, 0, 0, tzinfo=timezone.utc)
+    owner = await create_user("weekly-owner")
+    admin = await create_user("weekly-admin", phone="13900139001")
+    product, option = await create_option("weekly")
+    new_closed_day = await create_reservation_record(
+        user=owner,
+        product=product,
+        option=option,
+        business_date=date(2026, 9, 9),
+        local_start=time(11, 30),
+    )
+    old_closed_day = await StoreBusinessDay.create(
+        business_date=date(2026, 9, 14),
+        is_closed=True,
+    )
+
+    result = await make_service(now=now).update_weekly_closed_day(
+        weekly_closed_weekday=ReservationWeekday.WEDNESDAY,
+        operator_id=admin.id,
+        ip_address="198.51.100.10",
+    )
+
+    assert result.previous_weekly_closed_weekday is ReservationWeekday.MONDAY
+    assert result.newly_cancelled_count == 1
+    assert result.cancelled_pending_count == 1
+    assert result.cancelled_confirmed_count == 0
+    assert result.is_replay is False
+    settings = await ReservationSettings.get(singleton_key=True)
+    assert settings.weekly_closed_weekday == ReservationWeekday.WEDNESDAY
+    stored = await Reservation.get(id=new_closed_day.id)
+    assert stored.status == ReservationStatus.CANCELLED
+    assert stored.cancellation_reason == ReservationCancellationReason.STORE_CLOSED
+    assert (await StoreBusinessDay.get(id=old_closed_day.id)).is_closed is True
+
+    replay = await make_service(now=now).update_weekly_closed_day(
+        weekly_closed_weekday=ReservationWeekday.WEDNESDAY,
+        operator_id=admin.id,
+        ip_address="198.51.100.10",
+    )
+    assert replay.is_replay is True
+    assert replay.newly_cancelled_count == 0
+    assert await AuditLog.filter(
+        action="UPDATE_WEEKLY_CLOSED_DAY",
+        target_type="reservation_settings",
+    ).count() == 1
 
 
 class _FailAfterBatchAudit(AuditLogService):

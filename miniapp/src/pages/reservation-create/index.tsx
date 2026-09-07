@@ -206,7 +206,9 @@ export function AuthenticatedReservationCreate({
             <Text className='reservation-create-field__affordance'>更换</Text>
           </View>
         </Picker>
-        <Text className='reservation-create-schedule__business'>营业时间 11:00–20:00 · 周一固定店休</Text>
+        <Text className='reservation-create-schedule__business'>
+          营业时间 11:00–20:00 · 每{options.weekly_closed_weekday.label}固定店休
+        </Text>
       </View>
 
       <View className='reservation-create-contact'>

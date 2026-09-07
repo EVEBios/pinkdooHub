@@ -3,6 +3,18 @@
 from enum import Enum
 
 
+class ReservationWeekday(str, Enum):
+    """可配置的每周固定店休日。"""
+
+    MONDAY = "monday"
+    TUESDAY = "tuesday"
+    WEDNESDAY = "wednesday"
+    THURSDAY = "thursday"
+    FRIDAY = "friday"
+    SATURDAY = "saturday"
+    SUNDAY = "sunday"
+
+
 class ReservationStatus(str, Enum):
     """预约排期状态；与订单支付状态相互独立。"""
 

@@ -670,6 +670,40 @@ export interface paths {
         readonly patch: operations["update_kit_price_api_v1_admin_products_kit__product_id__price_patch"];
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/reservation-settings": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Reservation Settings */
+        readonly get: operations["get_reservation_settings_api_v1_admin_reservation_settings_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservation-settings/weekly-closed-day": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Update Weekly Closed Day */
+        readonly put: operations["update_weekly_closed_day_api_v1_admin_reservation_settings_weekly_closed_day_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/reservations": {
         readonly parameters: {
             readonly query?: never;
@@ -3349,6 +3383,7 @@ export interface components {
             readonly slot_interval_minutes: number;
             /** Timezone */
             readonly timezone: string;
+            readonly weekly_closed_weekday: components["schemas"]["ReservationWeekdayOut"];
         };
         /**
          * ReservationCancellationReason
@@ -3465,6 +3500,15 @@ export interface components {
             readonly label: string;
             readonly value: components["schemas"]["ReservationRejectionReason"];
         };
+        /** ReservationSettingsOut */
+        readonly ReservationSettingsOut: {
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            readonly weekly_closed_weekday: components["schemas"]["ReservationWeekdayOut"];
+        };
         /**
          * ReservationStatus
          * @description 预约排期状态；与订单支付状态相互独立。
@@ -3476,6 +3520,18 @@ export interface components {
             /** Label */
             readonly label: string;
             readonly value: components["schemas"]["ReservationStatus"];
+        };
+        /**
+         * ReservationWeekday
+         * @description 可配置的每周固定店休日。
+         * @enum {string}
+         */
+        readonly ReservationWeekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+        /** ReservationWeekdayOut */
+        readonly ReservationWeekdayOut: {
+            /** Label */
+            readonly label: string;
+            readonly value: components["schemas"]["ReservationWeekday"];
         };
         /**
          * RootResponse
@@ -4279,6 +4335,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[ReservationSettingsOut] */
+        readonly SuccessResponse_ReservationSettingsOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["ReservationSettingsOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[StoreClosureMutationOut] */
         readonly SuccessResponse_StoreClosureMutationOut_: {
             /**
@@ -4364,6 +4435,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["WalletPaymentOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[WeeklyClosureMutationOut] */
+        readonly SuccessResponse_WeeklyClosureMutationOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["WeeklyClosureMutationOut"];
             /**
              * Message
              * @default success
@@ -4629,6 +4715,31 @@ export interface components {
         readonly WeChatUnbindRequest: {
             /** Password */
             readonly password: string;
+        };
+        /** WeeklyClosureMutationOut */
+        readonly WeeklyClosureMutationOut: {
+            /** Cancelled Confirmed Count */
+            readonly cancelled_confirmed_count: number;
+            /** Cancelled Pending Count */
+            readonly cancelled_pending_count: number;
+            /** Is Replay */
+            readonly is_replay: boolean;
+            /** Newly Cancelled Count */
+            readonly newly_cancelled_count: number;
+            readonly previous_weekly_closed_weekday: components["schemas"]["ReservationWeekdayOut"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            readonly weekly_closed_weekday: components["schemas"]["ReservationWeekdayOut"];
+        };
+        /**
+         * WeeklyClosureUpdateRequest
+         * @description 更换全店每周固定店休日。
+         */
+        readonly WeeklyClosureUpdateRequest: {
+            readonly weekly_closed_weekday: components["schemas"]["ReservationWeekday"];
         };
     };
     responses: never;
@@ -7306,6 +7417,158 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["SuccessResponse_KitPriceOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_reservation_settings_api_v1_admin_reservation_settings_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationSettingsOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly update_weekly_closed_day_api_v1_admin_reservation_settings_weekly_closed_day_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["WeeklyClosureUpdateRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_WeeklyClosureMutationOut_"];
                 };
             };
             /** @description Bad Request */

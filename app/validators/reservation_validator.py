@@ -4,16 +4,20 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.common.constants.reservation import (
+    DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY,
     RESERVATION_BOOKING_WINDOW_DAYS,
     RESERVATION_CLOSE_TIME,
     RESERVATION_MINIMUM_LEAD_HOURS,
     RESERVATION_OPEN_TIME,
     RESERVATION_SLOT_INTERVAL_MINUTES,
     RESERVATION_TIMEZONE,
-    RESERVATION_WEEKLY_CLOSED_WEEKDAY,
+    RESERVATION_WEEKDAY_NUMBERS,
 )
 from app.common.enums.product import DayType
-from app.common.enums.reservation import ReservationScheduleUnavailableReason
+from app.common.enums.reservation import (
+    ReservationScheduleUnavailableReason,
+    ReservationWeekday,
+)
 from app.common.exceptions.reservation import ReservationScheduleUnavailable
 
 STORE_TIMEZONE = ZoneInfo(RESERVATION_TIMEZONE)
@@ -56,6 +60,9 @@ class ReservationValidator:
         option_day_type: DayType,
         now_utc: datetime,
         is_store_closed: bool,
+        weekly_closed_weekday: ReservationWeekday = (
+            DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY
+        ),
     ) -> tuple[datetime, datetime]:
         """校验完整预约窗口并返回 UTC 起止时间。"""
 
@@ -68,7 +75,7 @@ class ReservationValidator:
                 ReservationScheduleUnavailableReason.OUTSIDE_BOOKING_WINDOW
             )
 
-        if business_date.weekday() == RESERVATION_WEEKLY_CLOSED_WEEKDAY:
+        if business_date.weekday() == RESERVATION_WEEKDAY_NUMBERS[weekly_closed_weekday]:
             self._raise(ReservationScheduleUnavailableReason.WEEKLY_CLOSED)
 
         if (
@@ -132,6 +139,9 @@ class ReservationValidator:
         option_day_type: DayType,
         now_utc: datetime,
         is_store_closed: bool,
+        weekly_closed_weekday: ReservationWeekday = (
+            DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY
+        ),
     ) -> tuple[str, ...]:
         """生成指定日期当前仍合法的半小时时段。"""
 
@@ -155,6 +165,7 @@ class ReservationValidator:
                     option_day_type=option_day_type,
                     now_utc=now_utc,
                     is_store_closed=is_store_closed,
+                    weekly_closed_weekday=weekly_closed_weekday,
                 )
             except ReservationScheduleUnavailable:
                 pass

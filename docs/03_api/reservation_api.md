@@ -220,7 +220,7 @@ Query：
 }
 ```
 
-`dates` 一次覆盖上海当地今天到第 30 日；只保留至少一个合法时段的日期，允许返回空数组。该接口排除周一、自定义店休、不匹配 Option `day_type`、不满 3 小时和无法在 20:00 前完成的时段，但不检查空位。
+`dates` 一次覆盖上海当地今天到第 30 日；只保留至少一个合法时段的日期，允许返回空数组。响应以 `weekly_closed_weekday: {value,label}` 返回当前固定店休日。该接口排除当前固定店休日、单日店休、不匹配 Option `day_type`、不满 3 小时和无法在 20:00 前完成的时段，但不检查空位。
 
 业务错误：`42251` / `42252`。页面停留后创建仍会重新校验，不能把此响应当作预留座位。
 
@@ -429,7 +429,13 @@ GET /api/v1/admin/store-closures?page=1&page_size=20&date_from=2026-09-06&date_t
 PUT /api/v1/admin/store-closures/2026-09-12
 ```
 
-请求无 body。路径日期按上海当地日期解释，仅允许今天或未来、且不能是周一。
+请求无 body。路径日期按上海当地日期解释，仅允许今天或未来、且不能是当前每周固定店休日。
+
+### 管理每周固定店休
+
+- `GET /api/v1/admin/reservation-settings`：返回当前 `weekly_closed_weekday` 与更新时间。
+- `PUT /api/v1/admin/reservation-settings/weekly-closed-day`：严格请求体 `{"weekly_closed_weekday":"tuesday"}`，仅 ADMIN+ 可用。
+- 更换立即生效，并原子取消未来 30 天内命中新星期、尚未开始的 pending/confirmed 预约；响应返回旧/新星期、分状态取消数与 `is_replay`。同值重放不写审计、不重复取消。旧星期恢复可预约，单日店休和历史预约不改写。
 
 首次成功 HTTP 201：
 

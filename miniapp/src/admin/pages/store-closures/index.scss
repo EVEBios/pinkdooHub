@@ -40,6 +40,23 @@
 }
 
 .store-closure-editor {
+  &--weekly {
+    border-top: 5px solid var(--pd-color-primary-strong);
+  }
+
+  &--single {
+    border-top: 5px solid var(--pd-color-line-strong);
+  }
+
+  &__eyebrow {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
   &__hint {
     display: block;
     margin-top: 9px;
@@ -87,6 +104,50 @@
     @include pd.feedback-warning;
   }
 
+  &__neutral,
+  &__status {
+    display: block;
+    margin-top: 12px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+
+  &__current-rule {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    min-height: var(--pd-control-height);
+    margin-top: 17px;
+    padding: 12px 18px;
+    border: 1px solid var(--pd-color-line);
+    border-radius: 13px;
+    box-sizing: border-box;
+
+  }
+
+  &__current-label {
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__current-value {
+    font-size: var(--pd-font-input);
+    font-weight: 750;
+  }
+
+  &__inline-error {
+    @include pd.feedback-error;
+
+    button {
+      @include pd.secondary-button;
+
+      width: 100%;
+      margin-top: 12px;
+    }
+  }
+
   &__success {
     @include pd.feedback-success;
   }
@@ -96,6 +157,10 @@
 
     width: 100%;
     margin-top: 18px;
+
+    &--weekly {
+      @include pd.primary-button;
+    }
   }
 }
 

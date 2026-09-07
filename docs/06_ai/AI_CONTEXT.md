@@ -154,10 +154,10 @@
 Reservation N1 速查：
 
 - POST 只接受 `experience_option_id + reservation_date(YYYY-MM-DD) + start_time(HH:00/HH:30)`；手机号来自锁后的当前 User，缺失为 42254，且不快照。
-- 上海当地今天至第 30 日、至少提前 3 小时、11:00–20:00、完整体验、周一固定店休；周二至周五 weekday、周末 holiday，不处理法定节假日/调休。`booking-options` 一次返回全部仍合法日期/时段，不表达空位。
+- 上海当地今天至第 30 日、至少提前 3 小时、11:00–20:00、完整体验；每周固定店休默认周一并可由 ADMIN+ 更换，周一至周五仍按 weekday、周末按 holiday，不处理法定节假日/调休。`booking-options` 返回当前固定店休日及全部合法日期/时段，不表达空位。
 - 同一用户/Option/开始时段可创建多条 Reservation；没有容量表、占座或同槽 UNIQUE，店员逐条人工确认/拒绝。POST 结果未知时先查列表，不自动重发。
 - 四状态 pending/confirmed/rejected/cancelled；拒绝只允许 no_capacity，取消只允许 customer_request/store_closed。管理员在开始时刻及之后不能确认/拒绝，顾客 `now == start-3h` 仍可取消。
-- 自定义店休只允许今天或未来且不能周一；首次 PUT 201、重放 200。首次关闭锁营业日后按 Reservation ID 升序批量取消 `scheduled_start_at > now` 的 pending/confirmed，并与逐预约 Audit/店休 Audit 原子提交；DELETE 不恢复预约，无店休时 40452。
+- 单日店休只允许今天或未来且不能是当前固定店休日；首次 PUT 201、重放 200。固定店休更换与命中新星期的未来活跃预约取消原子提交，旧星期立即恢复、单日店休不变、历史不复活。单日 DELETE 不恢复预约，无店休时 40452。
 - 管理列表只返回服务端掩码当前手机号，详情才返回当前完整手机号；User 注销时未来 pending/confirmed 且 `scheduled_end_at > now` 使用现有 1015 阻断。
 - M5 两表为 `store_business_days` 与 `reservations`；四个历史 FK 全 RESTRICT，排期存 UTC，完整 Option 值存快照。N2 主动通知保持 Deferred。
 

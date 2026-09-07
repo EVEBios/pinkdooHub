@@ -23,8 +23,10 @@ from app.api.mappers.reservation import (
     map_admin_reservation_detail,
     map_admin_reservation_page,
     map_reservation,
+    map_reservation_settings,
     map_store_business_day_page,
     map_store_closure_mutation,
+    map_weekly_closure_mutation,
 )
 from app.api.responses import error_responses, success_responses
 from app.common.pagination import Page
@@ -34,6 +36,7 @@ from app.schemas.audit import AuditLogListQuery, AuditLogOut
 from app.schemas.reservation import (
     AdminReservationListQuery,
     StoreClosureListQuery,
+    WeeklyClosureUpdateRequest,
 )
 from app.schemas.reservation_response import (
     AdminReservationDetailOut,
@@ -41,6 +44,8 @@ from app.schemas.reservation_response import (
     ReservationOut,
     StoreBusinessDayOut,
     StoreClosureMutationOut,
+    ReservationSettingsOut,
+    WeeklyClosureMutationOut,
 )
 from app.services.reservation_service import ReservationService
 from app.utils.request import get_client_ip
@@ -57,6 +62,41 @@ ReservationServiceDependency = Annotated[
     ReservationService,
     Depends(get_reservation_service),
 ]
+
+
+@router.get(
+    "/reservation-settings",
+    response_model=None,
+    responses=success_responses(ReservationSettingsOut),
+)
+async def get_reservation_settings(
+    current_admin: CurrentAdmin,
+    service: ReservationServiceDependency,
+) -> dict:
+    settings = await service.get_reservation_settings()
+    return success(data=map_reservation_settings(settings).model_dump(mode="json"))
+
+
+@router.put(
+    "/reservation-settings/weekly-closed-day",
+    response_model=None,
+    responses=success_responses(WeeklyClosureMutationOut),
+)
+async def update_weekly_closed_day(
+    data: WeeklyClosureUpdateRequest,
+    request: Request,
+    current_admin: CurrentAdmin,
+    service: ReservationServiceDependency,
+) -> dict:
+    result = await service.update_weekly_closed_day(
+        weekly_closed_weekday=data.weekly_closed_weekday,
+        operator_id=current_admin.id,
+        ip_address=get_client_ip(request),
+    )
+    return success(
+        data=map_weekly_closure_mutation(result).model_dump(mode="json"),
+        message="Weekly store closure updated",
+    )
 
 
 @router.get(

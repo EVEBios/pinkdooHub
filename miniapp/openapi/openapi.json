@@ -4564,6 +4564,9 @@
             "pattern": "^Asia/Shanghai$",
             "title": "Timezone",
             "type": "string"
+          },
+          "weekly_closed_weekday": {
+            "$ref": "#/components/schemas/ReservationWeekdayOut"
           }
         },
         "required": [
@@ -4577,6 +4580,7 @@
           "timezone",
           "server_now",
           "booking_window_end_date",
+          "weekly_closed_weekday",
           "dates"
         ],
         "title": "ReservationBookingOptionsOut",
@@ -4855,6 +4859,24 @@
         "title": "ReservationRejectionReasonOut",
         "type": "object"
       },
+      "ReservationSettingsOut": {
+        "properties": {
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "weekly_closed_weekday": {
+            "$ref": "#/components/schemas/ReservationWeekdayOut"
+          }
+        },
+        "required": [
+          "weekly_closed_weekday",
+          "updated_at"
+        ],
+        "title": "ReservationSettingsOut",
+        "type": "object"
+      },
       "ReservationStatus": {
         "description": "预约排期状态；与订单支付状态相互独立。",
         "enum": [
@@ -4882,6 +4904,38 @@
           "label"
         ],
         "title": "ReservationStatusOut",
+        "type": "object"
+      },
+      "ReservationWeekday": {
+        "description": "可配置的每周固定店休日。",
+        "enum": [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+          "sunday"
+        ],
+        "title": "ReservationWeekday",
+        "type": "string"
+      },
+      "ReservationWeekdayOut": {
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ReservationWeekday"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ReservationWeekdayOut",
         "type": "object"
       },
       "RootResponse": {
@@ -6187,6 +6241,30 @@
         "title": "SuccessResponse[ReservationOut]",
         "type": "object"
       },
+      "SuccessResponse_ReservationSettingsOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReservationSettingsOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ReservationSettingsOut]",
+        "type": "object"
+      },
       "SuccessResponse_StoreClosureMutationOut_": {
         "additionalProperties": false,
         "properties": {
@@ -6337,6 +6415,30 @@
           "data"
         ],
         "title": "SuccessResponse[WalletPaymentOut]",
+        "type": "object"
+      },
+      "SuccessResponse_WeeklyClosureMutationOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WeeklyClosureMutationOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[WeeklyClosureMutationOut]",
         "type": "object"
       },
       "TokenOut": {
@@ -6965,6 +7067,65 @@
           "password"
         ],
         "title": "WeChatUnbindRequest",
+        "type": "object"
+      },
+      "WeeklyClosureMutationOut": {
+        "properties": {
+          "cancelled_confirmed_count": {
+            "minimum": 0.0,
+            "title": "Cancelled Confirmed Count",
+            "type": "integer"
+          },
+          "cancelled_pending_count": {
+            "minimum": 0.0,
+            "title": "Cancelled Pending Count",
+            "type": "integer"
+          },
+          "is_replay": {
+            "title": "Is Replay",
+            "type": "boolean"
+          },
+          "newly_cancelled_count": {
+            "minimum": 0.0,
+            "title": "Newly Cancelled Count",
+            "type": "integer"
+          },
+          "previous_weekly_closed_weekday": {
+            "$ref": "#/components/schemas/ReservationWeekdayOut"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "weekly_closed_weekday": {
+            "$ref": "#/components/schemas/ReservationWeekdayOut"
+          }
+        },
+        "required": [
+          "weekly_closed_weekday",
+          "updated_at",
+          "previous_weekly_closed_weekday",
+          "newly_cancelled_count",
+          "cancelled_pending_count",
+          "cancelled_confirmed_count",
+          "is_replay"
+        ],
+        "title": "WeeklyClosureMutationOut",
+        "type": "object"
+      },
+      "WeeklyClosureUpdateRequest": {
+        "additionalProperties": false,
+        "description": "更换全店每周固定店休日。",
+        "properties": {
+          "weekly_closed_weekday": {
+            "$ref": "#/components/schemas/ReservationWeekday"
+          }
+        },
+        "required": [
+          "weekly_closed_weekday"
+        ],
+        "title": "WeeklyClosureUpdateRequest",
         "type": "object"
       },
       "_OnlineExperienceDimensionsOut": {
@@ -11204,6 +11365,188 @@
         "summary": "Online Product",
         "tags": [
           "admin-products"
+        ]
+      }
+    },
+    "/api/v1/admin/reservation-settings": {
+      "get": {
+        "operationId": "get_reservation_settings_api_v1_admin_reservation_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationSettingsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Reservation Settings",
+        "tags": [
+          "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/reservation-settings/weekly-closed-day": {
+      "put": {
+        "operationId": "update_weekly_closed_day_api_v1_admin_reservation_settings_weekly_closed_day_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeeklyClosureUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_WeeklyClosureMutationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Weekly Closed Day",
+        "tags": [
+          "admin-reservations"
         ]
       }
     },

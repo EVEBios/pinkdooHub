@@ -6,6 +6,7 @@ from app.common.enums.reservation import (
     ReservationCancellationReason,
     ReservationRejectionReason,
     ReservationStatus,
+    ReservationWeekday,
 )
 
 # 门店营业日历
@@ -14,7 +15,25 @@ RESERVATION_OPEN_TIME = time(hour=11)
 RESERVATION_CLOSE_TIME = time(hour=20)
 RESERVATION_OPEN_TIME_VALUE = "11:00"
 RESERVATION_CLOSE_TIME_VALUE = "20:00"
-RESERVATION_WEEKLY_CLOSED_WEEKDAY = 0  # datetime.weekday(): Monday
+DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY = ReservationWeekday.MONDAY
+RESERVATION_WEEKDAY_NUMBERS = {
+    ReservationWeekday.MONDAY: 0,
+    ReservationWeekday.TUESDAY: 1,
+    ReservationWeekday.WEDNESDAY: 2,
+    ReservationWeekday.THURSDAY: 3,
+    ReservationWeekday.FRIDAY: 4,
+    ReservationWeekday.SATURDAY: 5,
+    ReservationWeekday.SUNDAY: 6,
+}
+RESERVATION_WEEKDAY_LABELS = {
+    ReservationWeekday.MONDAY: "周一",
+    ReservationWeekday.TUESDAY: "周二",
+    ReservationWeekday.WEDNESDAY: "周三",
+    ReservationWeekday.THURSDAY: "周四",
+    ReservationWeekday.FRIDAY: "周五",
+    ReservationWeekday.SATURDAY: "周六",
+    ReservationWeekday.SUNDAY: "周日",
+}
 RESERVATION_MINIMUM_LEAD_HOURS = 3
 RESERVATION_SLOT_INTERVAL_MINUTES = 30
 RESERVATION_BOOKING_WINDOW_DAYS = 30
@@ -60,12 +79,16 @@ RESERVATION_CUSTOMER_MESSAGES = {
 # 顺序审计契约
 RESERVATION_AUDIT_TARGET_TYPE = "reservation"
 STORE_BUSINESS_DAY_AUDIT_TARGET_TYPE = "store_business_day"
+RESERVATION_SETTINGS_AUDIT_TARGET_TYPE = "reservation_settings"
 RESERVATION_AUDIT_ACTION_CREATE = "CREATE_RESERVATION"
 RESERVATION_AUDIT_ACTION_CONFIRM = "CONFIRM_RESERVATION"
 RESERVATION_AUDIT_ACTION_REJECT = "REJECT_RESERVATION"
 RESERVATION_AUDIT_ACTION_CANCEL = "CANCEL_RESERVATION"
 STORE_BUSINESS_DAY_AUDIT_ACTION_CLOSE = "CLOSE_STORE_BUSINESS_DAY"
 STORE_BUSINESS_DAY_AUDIT_ACTION_REOPEN = "REOPEN_STORE_BUSINESS_DAY"
+RESERVATION_SETTINGS_AUDIT_ACTION_UPDATE_WEEKLY_CLOSED_DAY = (
+    "UPDATE_WEEKLY_CLOSED_DAY"
+)
 
 # 状态冲突载荷中的稳定操作名
 RESERVATION_OPERATION_CONFIRM = "confirm"

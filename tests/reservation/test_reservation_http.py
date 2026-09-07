@@ -157,6 +157,54 @@ async def test_http_create_query_review_and_customer_cancel_flow(
     ]
 
 
+async def test_http_admin_can_read_and_change_weekly_closed_day(
+    client: AsyncClient,
+    fixed_reservation_service: None,
+) -> None:
+    customer = await create_user("settings-http-customer")
+    admin = await create_user(
+        "settings-http-admin",
+        phone="13900139001",
+        role=UserRole.ADMIN,
+    )
+    customer_headers = _headers(customer.id)
+    admin_headers = _headers(admin.id)
+
+    initial = await client.get(
+        "/api/v1/admin/reservation-settings",
+        headers=admin_headers,
+    )
+    assert initial.status_code == 200
+    assert initial.json()["data"]["weekly_closed_weekday"] == {
+        "value": "monday",
+        "label": "周一",
+    }
+
+    changed = await client.put(
+        "/api/v1/admin/reservation-settings/weekly-closed-day",
+        headers=admin_headers,
+        json={"weekly_closed_weekday": "tuesday"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["data"]["previous_weekly_closed_weekday"]["value"] == "monday"
+    assert changed.json()["data"]["weekly_closed_weekday"] == {
+        "value": "tuesday",
+        "label": "周二",
+    }
+
+    forbidden = await client.get(
+        "/api/v1/admin/reservation-settings",
+        headers=customer_headers,
+    )
+    invalid = await client.put(
+        "/api/v1/admin/reservation-settings/weekly-closed-day",
+        headers=admin_headers,
+        json={"weekly_closed_weekday": "funday", "extra": True},
+    )
+    assert forbidden.status_code == 403
+    assert invalid.status_code == 422
+
+
 async def test_http_store_closure_first_apply_replay_and_reopen_do_not_revive(
     client: AsyncClient,
     fixed_reservation_service: None,

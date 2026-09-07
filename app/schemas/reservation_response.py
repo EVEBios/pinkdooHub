@@ -29,6 +29,7 @@ from app.common.constants.reservation import (
     RESERVATION_SLOT_INTERVAL_MINUTES,
     RESERVATION_STATUS_LABELS,
     RESERVATION_TIMEZONE,
+    RESERVATION_WEEKDAY_LABELS,
 )
 from app.common.constants.validation import (
     NICKNAME_MAX_LENGTH,
@@ -40,6 +41,7 @@ from app.common.enums.reservation import (
     ReservationCancellationReason,
     ReservationRejectionReason,
     ReservationStatus,
+    ReservationWeekday,
 )
 from app.schemas.product_response import ProductPriceOut
 
@@ -86,6 +88,17 @@ class ReservationDayTypeOut(_ReservationOut):
     def validate_pair(self) -> "ReservationDayTypeOut":
         if self.label != DAY_TYPE_LABELS[self.value]:
             raise ValueError("Reservation day type label does not match value")
+        return self
+
+
+class ReservationWeekdayOut(_ReservationOut):
+    value: ReservationWeekday
+    label: str = Field(strict=True, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_pair(self) -> "ReservationWeekdayOut":
+        if self.label != RESERVATION_WEEKDAY_LABELS[self.value]:
+            raise ValueError("Reservation weekday label does not match value")
         return self
 
 
@@ -256,6 +269,7 @@ class ReservationBookingOptionsOut(_ReservationOut):
     timezone: str = Field(strict=True, pattern=rf"^{RESERVATION_TIMEZONE}$")
     server_now: ReservationUtcDatetimeOut
     booking_window_end_date: date
+    weekly_closed_weekday: ReservationWeekdayOut
     minimum_lead_hours: int = Field(
         default=RESERVATION_MINIMUM_LEAD_HOURS,
         strict=True,
@@ -301,4 +315,27 @@ class StoreClosureMutationOut(StoreBusinessDayOut):
             raise ValueError("Store closure cancellation counts do not add up")
         if self.is_replay and self.newly_cancelled_count != 0:
             raise ValueError("Store closure replay cannot cancel reservations")
+        return self
+
+
+class ReservationSettingsOut(_ReservationOut):
+    weekly_closed_weekday: ReservationWeekdayOut
+    updated_at: ReservationUtcDatetimeOut
+
+
+class WeeklyClosureMutationOut(ReservationSettingsOut):
+    previous_weekly_closed_weekday: ReservationWeekdayOut
+    newly_cancelled_count: int = Field(strict=True, ge=0)
+    cancelled_pending_count: int = Field(strict=True, ge=0)
+    cancelled_confirmed_count: int = Field(strict=True, ge=0)
+    is_replay: bool = Field(strict=True)
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> "WeeklyClosureMutationOut":
+        if self.newly_cancelled_count != (
+            self.cancelled_pending_count + self.cancelled_confirmed_count
+        ):
+            raise ValueError("Weekly closure cancellation counts do not add up")
+        if self.is_replay and self.newly_cancelled_count != 0:
+            raise ValueError("Weekly closure replay cannot cancel reservations")
         return self

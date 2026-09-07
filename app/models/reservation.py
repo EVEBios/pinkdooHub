@@ -18,12 +18,16 @@ from app.common.constants.product import (
     PRODUCT_PRICE_MAX,
     PRODUCT_PRICE_MIN,
 )
-from app.common.constants.reservation import RESERVATION_ENUM_MAX_LENGTH
+from app.common.constants.reservation import (
+    DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY,
+    RESERVATION_ENUM_MAX_LENGTH,
+)
 from app.common.enums.product import DayType
 from app.common.enums.reservation import (
     ReservationCancellationReason,
     ReservationRejectionReason,
     ReservationStatus,
+    ReservationWeekday,
 )
 from app.db.indexes import UniqueIndex
 from app.models.base import BaseModel
@@ -42,6 +46,27 @@ class StoreBusinessDay(BaseModel):
             UniqueIndex(
                 fields=("business_date",),
                 name="uidx_store_business_day_date",
+            ),
+        ]
+
+
+class ReservationSettings(BaseModel):
+    """预约日历的全店单例设置。"""
+
+    singleton_key = fields.BooleanField(default=True, db_default=True)
+    weekly_closed_weekday = fields.CharEnumField(
+        ReservationWeekday,
+        max_length=RESERVATION_ENUM_MAX_LENGTH,
+        default=DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY,
+        db_default=DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY.value,
+    )
+
+    class Meta:
+        table = "reservation_settings"
+        indexes = [
+            UniqueIndex(
+                fields=("singleton_key",),
+                name="uidx_reservation_settings_singleton",
             ),
         ]
 

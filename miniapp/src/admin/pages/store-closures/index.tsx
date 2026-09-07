@@ -1,8 +1,13 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import type { StoreBusinessDay, StoreClosureMutation } from '@/api/endpoints/reservations'
+import type {
+  ReservationWeekday,
+  StoreBusinessDay,
+  StoreClosureMutation,
+  WeeklyClosureMutation,
+} from '@/api/endpoints/reservations'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
   ADMIN_RESERVATION_LIST_PATH,
@@ -45,19 +50,41 @@ export function AuthenticatedStoreClosures() {
   const closures = useStoreClosures()
   const today = shanghaiToday()
   const [selectedDate, setSelectedDate] = useState(today)
-  const isMonday = weekday(selectedDate) === 1
+  const [selectedWeekday, setSelectedWeekday] = useState<ReservationWeekday>('monday')
+  const currentWeekday = closures.settings.status === 'content'
+    ? closures.settings.value.weekly_closed_weekday
+    : undefined
+  const currentWeekdayValue = currentWeekday?.value
+  useEffect(() => {
+    if (currentWeekdayValue) setSelectedWeekday(currentWeekdayValue)
+  }, [currentWeekdayValue])
+  const selectedDateWeekday = weekdayValue(selectedDate)
+  const isWeeklyClosedDate = currentWeekday?.value === selectedDateWeekday
   const selectedIsClosed = closures.list.status === 'content' &&
     closures.list.items.some((item) => item.business_date === selectedDate) ||
     closures.mutation.status === 'reconciled' &&
       closures.mutation.businessDate === selectedDate && closures.mutation.isClosed
-  const locked = closures.mutation.status === 'submitting' || closures.mutation.status === 'unknown'
+  const locked = closures.mutation.status === 'submitting' || closures.mutation.status === 'unknown' ||
+    closures.weeklyMutation.status === 'submitting' || closures.weeklyMutation.status === 'unknown'
+
+  async function changeWeeklyClosedDay(): Promise<void> {
+    if (!currentWeekday || selectedWeekday === currentWeekday.value || locked) return
+    const nextLabel = weekdayLabel(selectedWeekday)
+    const confirmation = await Taro.showModal({
+      title: `更换为每${nextLabel}固定店休？`,
+      content: `更换后，每${currentWeekday.label}立即恢复可预约；未来 30 天内每${nextLabel}尚未开始的待确认和已确认预约会统一取消。已添加的单日店休不受影响，历史预约不会恢复。`,
+      confirmText: '确认更换',
+      confirmColor: '#a92f38',
+    })
+    if (confirmation.confirm) await closures.changeWeeklyClosedDay(selectedWeekday)
+  }
 
   async function closeSelectedDate(): Promise<void> {
-    if (!selectedDate || isMonday || selectedIsClosed || locked) return
+    if (!selectedDate || isWeeklyClosedDate || selectedIsClosed || locked) return
     const confirmation = await Taro.showModal({
-      title: `将 ${selectedDate} 设为店休？`,
-      content: '该日已有的待确认和已确认预约会在同一事务中批量取消，原因统一为“门店店休”。顾客可在“我的预约”查看结果；N1 暂不发送微信主动通知。',
-      confirmText: '设为店休',
+      title: `添加 ${formatReservationDate(selectedDate)} 为单日店休？`,
+      content: '只关闭这一天，不改变每周固定店休。该日尚未开始的待确认和已确认预约会统一取消，顾客可在“我的预约”查看结果；首版暂不发送微信主动通知。',
+      confirmText: '确认添加',
       confirmColor: '#a92f38',
     })
     if (confirmation.confirm) await closures.close(selectedDate)
@@ -66,7 +93,7 @@ export function AuthenticatedStoreClosures() {
   async function reopen(day: StoreBusinessDay): Promise<void> {
     if (locked) return
     const confirmation = await Taro.showModal({
-      title: `恢复 ${day.business_date} 营业？`,
+      title: `恢复 ${formatReservationDate(day.business_date)} 营业？`,
       content: '恢复营业只移除自定义店休，不会恢复或改写此前被取消的预约历史。',
       confirmText: '恢复营业',
       confirmColor: '#196244',
@@ -78,16 +105,61 @@ export function AuthenticatedStoreClosures() {
     <View className='store-closures-page'>
       <View className='store-closures-page__header'>
         <Text className='store-closures-page__title'>店休设置</Text>
-        <Text className='store-closures-page__subtitle'>为某个日期暂停预约，并批量取消当日尚未开始的待确认或已确认预约</Text>
+        <Text className='store-closures-page__subtitle'>管理每周固定店休日，也可以临时关闭某一个日期</Text>
         <Button
           className='store-closures-page__reservations'
           onClick={() => void Taro.navigateTo({ url: ADMIN_RESERVATION_LIST_PATH })}
         >返回管理预约</Button>
       </View>
 
-      <View className='store-closure-editor'>
-        <Text className='store-closure-editor__title'>新增店休日期</Text>
-        <Text className='store-closure-editor__hint'>周一固定店休；这里用于临时休息、包场或其他额外闭店日期。</Text>
+      <View className='store-closure-editor store-closure-editor--weekly'>
+        <Text className='store-closure-editor__eyebrow'>长期排班</Text>
+        <Text className='store-closure-editor__title'>每周固定店休</Text>
+        <Text className='store-closure-editor__hint'>每周重复生效，适合门店的长期固定休息日。</Text>
+        {closures.settings.status === 'loading' && <Text className='store-closure-editor__status'>正在读取当前设置…</Text>}
+        {closures.settings.status === 'error' && (
+          <View className='store-closure-editor__inline-error'>
+            <Text>{closures.settings.errorMessage}</Text>
+            <Button onClick={closures.retrySettings}>重新加载</Button>
+          </View>
+        )}
+        {currentWeekday && (
+          <>
+            <View className='store-closure-editor__current-rule'>
+              <Text className='store-closure-editor__current-label'>当前固定店休日</Text>
+              <Text className='store-closure-editor__current-value'>每{currentWeekday.label}</Text>
+            </View>
+            <Picker
+              mode='selector'
+              range={WEEKDAYS.map((item) => item.label)}
+              value={Math.max(0, WEEKDAYS.findIndex((item) => item.value === selectedWeekday))}
+              onChange={(event) => setSelectedWeekday(WEEKDAYS[Number(event.detail.value)]?.value ?? currentWeekday.value)}
+            >
+              <View className='store-closure-editor__date-field'>
+                <Text className='store-closure-editor__date-label'>新的固定店休日</Text>
+                <Text className='store-closure-editor__date-value'>每{weekdayLabel(selectedWeekday)}</Text>
+                <Text className='store-closure-editor__date-action'>选择星期</Text>
+              </View>
+            </Picker>
+            {selectedWeekday === currentWeekday.value && (
+              <Text className='store-closure-editor__neutral'>请选择与当前设置不同的星期。</Text>
+            )}
+            <Button
+              className='store-closure-editor__submit store-closure-editor__submit--weekly'
+              disabled={selectedWeekday === currentWeekday.value || locked}
+              loading={closures.weeklyMutation.status === 'submitting'}
+              onClick={() => void changeWeeklyClosedDay()}
+            >{closures.weeklyMutation.status === 'submitting' ? '正在更换…' : '更换固定店休日'}</Button>
+          </>
+        )}
+      </View>
+
+      <WeeklyClosureFeedback mutation={closures.weeklyMutation} reconcile={closures.reconcileWeekly} />
+
+      <View className='store-closure-editor store-closure-editor--single'>
+        <Text className='store-closure-editor__eyebrow'>临时安排</Text>
+        <Text className='store-closure-editor__title'>添加单日店休</Text>
+        <Text className='store-closure-editor__hint'>只关闭所选日期，不改变每周固定店休日。</Text>
         <Picker
           end='2099-12-31'
           mode='date'
@@ -98,24 +170,24 @@ export function AuthenticatedStoreClosures() {
           <View className='store-closure-editor__date-field'>
             <Text className='store-closure-editor__date-label'>店休日期</Text>
             <Text className='store-closure-editor__date-value'>{formatReservationDate(selectedDate)}</Text>
-            <Text className='store-closure-editor__date-action'>更换</Text>
+            <Text className='store-closure-editor__date-action'>选择日期</Text>
           </View>
         </Picker>
-        {isMonday && <Text className='store-closure-editor__warning'>周一已经固定店休，无需重复设置。</Text>}
-        {selectedIsClosed && <Text className='store-closure-editor__success'>该日期已在自定义店休列表中。</Text>}
+        {isWeeklyClosedDate && <Text className='store-closure-editor__warning'>该日期已是每周固定店休日，无需重复添加。</Text>}
+        {selectedIsClosed && <Text className='store-closure-editor__success'>该日期已添加为单日店休。</Text>}
         <Button
           className='store-closure-editor__submit'
-          disabled={isMonday || selectedIsClosed || locked}
+          disabled={!currentWeekday || isWeeklyClosedDate || selectedIsClosed || locked}
           loading={closures.mutation.status === 'submitting' && closures.mutation.action === 'close'}
           onClick={() => void closeSelectedDate()}
-        >{closures.mutation.status === 'submitting' && closures.mutation.action === 'close' ? '正在批量处理…' : '设为店休并取消已有预约'}</Button>
+        >{closures.mutation.status === 'submitting' && closures.mutation.action === 'close' ? '正在添加…' : '添加单日店休'}</Button>
       </View>
 
       <ClosureMutationFeedback mutation={closures.mutation} reconcile={closures.reconcile} />
 
       <View className='store-closures-list'>
         <View className='store-closures-list__heading'>
-          <Text className='store-closures-list__title'>自定义店休</Text>
+          <Text className='store-closures-list__title'>已添加的单日店休</Text>
           <Text className='store-closures-list__count'>
             {closures.list.status === 'content' ? `共 ${closures.list.total} 天` : '服务端记录'}
           </Text>
@@ -127,7 +199,7 @@ export function AuthenticatedStoreClosures() {
           </StoreClosuresState>
         )}
         {closures.list.status === 'content' && closures.list.items.length === 0 && (
-          <StoreClosuresState title='暂无自定义店休' description='周一固定店休仍然有效，不会列在这里' />
+          <StoreClosuresState title='暂无单日店休' description={`每${currentWeekday?.label ?? '周一'}固定店休仍然有效，不会列在这里`} />
         )}
         {closures.list.status === 'content' && closures.list.items.map((day) => (
           <View className='store-closure-row' key={day.id}>
@@ -139,7 +211,7 @@ export function AuthenticatedStoreClosures() {
               className='store-closure-row__reopen'
               disabled={locked}
               onClick={() => void reopen(day)}
-            >恢复营业</Button>
+            >恢复当天营业</Button>
           </View>
         ))}
         {closures.list.status === 'content' && closures.list.errorMessage && (
@@ -155,6 +227,36 @@ export function AuthenticatedStoreClosures() {
       </View>
     </View>
   )
+}
+
+function WeeklyClosureFeedback({ mutation, reconcile }: {
+  readonly mutation: ReturnType<typeof useStoreClosures>['weeklyMutation']
+  readonly reconcile: () => Promise<WeeklyClosureMutation | undefined>
+}) {
+  if (mutation.status === 'failed' || mutation.status === 'unknown') {
+    return (
+      <View className={`store-closure-feedback store-closure-feedback--${mutation.status}`}>
+        <Text>{mutation.errorMessage}</Text>
+        {mutation.status === 'unknown' && <Button onClick={reconcile}>核对当前固定店休日</Button>}
+      </View>
+    )
+  }
+  if (mutation.status === 'succeeded') {
+    const result = mutation.result
+    return (
+      <View className='store-closure-feedback store-closure-feedback--success'>
+        <Text>固定店休日已从每{result.previous_weekly_closed_weekday.label}更换为每{result.weekly_closed_weekday.label}。</Text>
+        <Text>本次取消 {result.newly_cancelled_count} 条预约：待确认 {result.cancelled_pending_count} 条，已确认 {result.cancelled_confirmed_count} 条。</Text>
+        {result.newly_cancelled_count > 0 && <Text>首版不会主动发送微信通知，请按需人工联系顾客。</Text>}
+      </View>
+    )
+  }
+  if (mutation.status === 'reconciled') {
+    return <Text className='store-closure-feedback store-closure-feedback--success'>
+      {mutation.applied ? `已核对：每${weekdayLabel(mutation.weekday)}为当前固定店休日。` : '已核对：上次更换未生效，可重新提交。'}
+    </Text>
+  }
+  return null
 }
 
 function ClosureMutationFeedback({ mutation, reconcile }: {
@@ -213,8 +315,23 @@ function shanghaiToday(): string {
   return new Date(Date.now() + 8 * 60 * 60 * 1_000).toISOString().slice(0, 10)
 }
 
-function weekday(value: string): number | undefined {
+const WEEKDAYS: ReadonlyArray<{ readonly value: ReservationWeekday; readonly label: string }> = [
+  { value: 'monday', label: '周一' },
+  { value: 'tuesday', label: '周二' },
+  { value: 'wednesday', label: '周三' },
+  { value: 'thursday', label: '周四' },
+  { value: 'friday', label: '周五' },
+  { value: 'saturday', label: '周六' },
+  { value: 'sunday', label: '周日' },
+]
+
+function weekdayLabel(value: ReservationWeekday): string {
+  return WEEKDAYS.find((item) => item.value === value)?.label ?? '周一'
+}
+
+function weekdayValue(value: string): ReservationWeekday | undefined {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return undefined
-  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay()
+  const index = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay()
+  return (['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const)[index]
 }

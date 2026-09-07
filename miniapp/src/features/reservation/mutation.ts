@@ -41,7 +41,7 @@ function getScheduleErrorMessage(data: unknown): string {
     outside_booking_window: '该日期超出未来 30 天预约范围',
     invalid_slot_increment: '开始时间必须为整点或半点',
     outside_business_hours: '体验必须完整安排在 11:00–20:00 营业时间内',
-    weekly_closed: '周一为固定店休日，不能预约',
+    weekly_closed: '该日期为每周固定店休日，不能预约',
     store_closed: '门店已将该日期设为店休，请选择其他日期',
     option_day_type_mismatch: '所选日期与体验配置的工作日/节假日类型不一致',
   }
@@ -51,7 +51,7 @@ function getScheduleErrorMessage(data: unknown): string {
 function getClosureDateErrorMessage(data: unknown): string {
   const reason = readReason(data)
   if (reason === 'past_date') return '不能设置或恢复过去日期的营业状态'
-  if (reason === 'weekly_closed') return '周一固定店休，无需设置自定义店休'
+  if (reason === 'weekly_closed') return '该日期已是每周固定店休日，无需重复添加'
   return '该日期当前不能设置或恢复营业状态'
 }
 

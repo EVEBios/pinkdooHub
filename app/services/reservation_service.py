@@ -22,7 +22,10 @@ from app.common.constants.reservation import (
     RESERVATION_OPERATION_CONFIRM,
     RESERVATION_OPERATION_REJECT,
     RESERVATION_RETRYABLE_MYSQL_ERROR_CODES,
+    RESERVATION_SETTINGS_AUDIT_ACTION_UPDATE_WEEKLY_CLOSED_DAY,
+    RESERVATION_SETTINGS_AUDIT_TARGET_TYPE,
     RESERVATION_TRANSACTION_MAX_ATTEMPTS,
+    RESERVATION_WEEKDAY_NUMBERS,
     STORE_BUSINESS_DAY_AUDIT_ACTION_CLOSE,
     STORE_BUSINESS_DAY_AUDIT_ACTION_REOPEN,
     STORE_BUSINESS_DAY_AUDIT_TARGET_TYPE,
@@ -32,6 +35,7 @@ from app.common.enums.reservation import (
     ReservationCancellationReason,
     ReservationRejectionReason,
     ReservationStatus,
+    ReservationWeekday,
     StoreClosureDateUnavailableReason,
 )
 from app.common.enums.user import UserRole, UserStatus
@@ -50,7 +54,7 @@ from app.common.pagination import Page
 from app.models.experience_option import ExperienceOption
 from app.models.audit_log import AuditLog
 from app.models.product import Product
-from app.models.reservation import Reservation, StoreBusinessDay
+from app.models.reservation import Reservation, ReservationSettings, StoreBusinessDay
 from app.repositories.audit_log_repo import AuditLogCreateData
 from app.repositories.product_repo import ProductRepository
 from app.repositories.reservation_repo import ReservationRepository
@@ -85,6 +89,7 @@ class ReservationBookingOptions:
     server_now: datetime
     booking_window_end_date: date
     dates: tuple[ReservationBookingDate, ...]
+    weekly_closed_weekday: ReservationWeekday = ReservationWeekday.MONDAY
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +97,16 @@ class StoreClosureMutationResult:
     """店休或恢复营业命令的确定性结果。"""
 
     business_day: StoreBusinessDay
+    newly_cancelled_count: int
+    cancelled_pending_count: int
+    cancelled_confirmed_count: int
+    is_replay: bool
+
+
+@dataclass(frozen=True, slots=True)
+class WeeklyClosureMutationResult:
+    settings: ReservationSettings
+    previous_weekly_closed_weekday: ReservationWeekday
     newly_cancelled_count: int
     cancelled_pending_count: int
     cancelled_confirmed_count: int
@@ -136,6 +151,8 @@ class ReservationService:
         )
         assert option is not None
         local_today = now_utc.astimezone(STORE_TIMEZONE).date()
+        settings = await self.reservation_repository.get_settings()
+        weekly_closed_weekday = ReservationWeekday(settings.weekly_closed_weekday)
         last_date = local_today + timedelta(days=RESERVATION_BOOKING_WINDOW_DAYS)
         closed_dates = await self.reservation_repository.list_closed_dates(
             date_from=local_today,
@@ -150,6 +167,7 @@ class ReservationService:
                 option_day_type=DayType(option.day_type),
                 now_utc=now_utc,
                 is_store_closed=business_date in closed_dates,
+                weekly_closed_weekday=weekly_closed_weekday,
             )
             if start_times:
                 dates.append(
@@ -169,6 +187,7 @@ class ReservationService:
             price=option.price,
             server_now=now_utc,
             booking_window_end_date=last_date,
+            weekly_closed_weekday=weekly_closed_weekday,
             dates=tuple(dates),
         )
 
@@ -209,6 +228,10 @@ class ReservationService:
                 if locked_user.phone is None:
                     raise ReservationPhoneRequired()
 
+                settings = await self.reservation_repository.get_settings_for_update(
+                    using_db=connection,
+                )
+
                 business_day = (
                     await self.reservation_repository.ensure_business_day_for_update(
                         reservation_date,
@@ -237,6 +260,9 @@ class ReservationService:
                         option_day_type=DayType(option.day_type),
                         now_utc=now_utc,
                         is_store_closed=business_day.is_closed,
+                        weekly_closed_weekday=ReservationWeekday(
+                            settings.weekly_closed_weekday
+                        ),
                     )
                 )
                 reservation = (
@@ -501,10 +527,18 @@ class ReservationService:
         """设置自定义店休并原子批量取消尚未开始的活跃预约。"""
 
         now_utc = self._now()
-        self._validate_store_closure_date(business_date, now_utc=now_utc)
-
         async def operation() -> StoreClosureMutationResult:
             async with in_transaction() as connection:
+                settings = await self.reservation_repository.get_settings_for_update(
+                    using_db=connection,
+                )
+                self._validate_store_closure_date(
+                    business_date,
+                    now_utc=now_utc,
+                    weekly_closed_weekday=ReservationWeekday(
+                        settings.weekly_closed_weekday
+                    ),
+                )
                 business_day = (
                     await self.reservation_repository.ensure_business_day_for_update(
                         business_date,
@@ -594,10 +628,18 @@ class ReservationService:
         """恢复自定义营业日，但绝不恢复历史已取消预约。"""
 
         now_utc = self._now()
-        self._validate_store_closure_date(business_date, now_utc=now_utc)
-
         async def operation() -> StoreClosureMutationResult:
             async with in_transaction() as connection:
+                settings = await self.reservation_repository.get_settings_for_update(
+                    using_db=connection,
+                )
+                self._validate_store_closure_date(
+                    business_date,
+                    now_utc=now_utc,
+                    weekly_closed_weekday=ReservationWeekday(
+                        settings.weekly_closed_weekday
+                    ),
+                )
                 business_day = (
                     await self.reservation_repository.get_business_day_for_update(
                         business_date,
@@ -645,6 +687,106 @@ class ReservationService:
             date_to=date_to,
             is_closed=is_closed,
         )
+
+    async def get_reservation_settings(self) -> ReservationSettings:
+        return await self.reservation_repository.get_settings()
+
+    async def update_weekly_closed_day(
+        self,
+        *,
+        weekly_closed_weekday: ReservationWeekday,
+        operator_id: int,
+        ip_address: str,
+    ) -> WeeklyClosureMutationResult:
+        """更换每周固定店休日，并原子取消新规则命中的有效预约。"""
+
+        now_utc = self._now()
+        local_today = now_utc.astimezone(STORE_TIMEZONE).date()
+        matching_dates = [
+            local_today + timedelta(days=offset)
+            for offset in range(RESERVATION_BOOKING_WINDOW_DAYS + 1)
+            if (local_today + timedelta(days=offset)).weekday()
+            == RESERVATION_WEEKDAY_NUMBERS[weekly_closed_weekday]
+        ]
+
+        async def operation() -> WeeklyClosureMutationResult:
+            async with in_transaction() as connection:
+                settings = await self.reservation_repository.get_settings_for_update(
+                    using_db=connection,
+                )
+                previous = ReservationWeekday(settings.weekly_closed_weekday)
+                if previous is weekly_closed_weekday:
+                    return WeeklyClosureMutationResult(
+                        settings=settings,
+                        previous_weekly_closed_weekday=previous,
+                        newly_cancelled_count=0,
+                        cancelled_pending_count=0,
+                        cancelled_confirmed_count=0,
+                        is_replay=True,
+                    )
+                await self.reservation_repository.update_weekly_closed_weekday(
+                    settings,
+                    weekly_closed_weekday=weekly_closed_weekday,
+                    using_db=connection,
+                )
+                reservations = await (
+                    self.reservation_repository
+                    .list_active_for_business_dates_for_update(
+                        business_dates=matching_dates,
+                        scheduled_after=now_utc,
+                        using_db=connection,
+                    )
+                )
+                pending_count = sum(
+                    ReservationStatus(item.status) is ReservationStatus.PENDING
+                    for item in reservations
+                )
+                confirmed_count = sum(
+                    ReservationStatus(item.status) is ReservationStatus.CONFIRMED
+                    for item in reservations
+                )
+                await self.reservation_repository.bulk_cancel_for_store_closure(
+                    reservations,
+                    cancelled_at=now_utc,
+                    using_db=connection,
+                )
+                entries = [
+                    AuditLogCreateData(
+                        operator_id=operator_id,
+                        action=RESERVATION_AUDIT_ACTION_CANCEL,
+                        target_type=RESERVATION_AUDIT_TARGET_TYPE,
+                        target_id=item.id,
+                        ip_address=ip_address,
+                        description="reason=store_closed",
+                    )
+                    for item in reservations
+                ]
+                entries.append(
+                    AuditLogCreateData(
+                        operator_id=operator_id,
+                        action=(
+                            RESERVATION_SETTINGS_AUDIT_ACTION_UPDATE_WEEKLY_CLOSED_DAY
+                        ),
+                        target_type=RESERVATION_SETTINGS_AUDIT_TARGET_TYPE,
+                        target_id=settings.id,
+                        ip_address=ip_address,
+                        description=(
+                            f"from={previous.value};to={weekly_closed_weekday.value};"
+                            f"cancelled_count={len(reservations)}"
+                        ),
+                    )
+                )
+                await self.audit_log_service.log_many(entries, using_db=connection)
+                return WeeklyClosureMutationResult(
+                    settings=settings,
+                    previous_weekly_closed_weekday=previous,
+                    newly_cancelled_count=len(reservations),
+                    cancelled_pending_count=pending_count,
+                    cancelled_confirmed_count=confirmed_count,
+                    is_replay=False,
+                )
+
+        return await self._run_transaction_with_retry(operation)
 
     async def list_reservation_audit_logs(
         self,
@@ -706,13 +848,14 @@ class ReservationService:
         business_date: date,
         *,
         now_utc: datetime,
+        weekly_closed_weekday: ReservationWeekday = ReservationWeekday.MONDAY,
     ) -> None:
         local_today = now_utc.astimezone(STORE_TIMEZONE).date()
         if business_date < local_today:
             raise StoreClosureDateUnavailable(
                 reason=StoreClosureDateUnavailableReason.PAST_DATE
             )
-        if business_date.weekday() == 0:
+        if business_date.weekday() == RESERVATION_WEEKDAY_NUMBERS[weekly_closed_weekday]:
             raise StoreClosureDateUnavailable(
                 reason=StoreClosureDateUnavailableReason.WEEKLY_CLOSED
             )

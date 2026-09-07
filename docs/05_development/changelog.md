@@ -4,6 +4,12 @@
 
 ---
 
+## Reservation 可配置固定店休（仓库实现候选，2026-09-07）
+
+- 管理端店休页拆分为“每周固定店休”和“添加单日店休”两个独立操作，按钮、说明、确认弹窗和恢复动作均明确表达作用范围；顾客预约页动态展示当前固定店休日。
+- 新增 `ReservationSettings` 单例、星期枚举、管理查询/更换 API 与 M7 候选迁移。固定店休默认周一；更换后旧星期立即恢复可预约，未来 30 天内命中新星期且尚未开始的 pending/confirmed 预约原子取消为 `store_closed`，单日店休与历史取消记录不变。
+- 本条为仓库候选：M7 未应用持久环境，真实 MySQL 0→7 与部署验收尚未执行；N2 微信主动通知仍未实现。
+
 ## M6 Color-selectable Kit — 仓库实现与本地验证完成 / 真实 MySQL 待验（2026-09-06–07）
 
 - 冻结 `KitKind = fixed | color_selectable`。省略仍创建既有 fixed Kit，历史 ProductKit 迁移时保持 fixed 与原 `stock` 语义；自选颜色 Kit 使用 `stock=NULL`、`sale_unit_grams=10`，`price` 表示每 10g 单价，KitKind 创建后不可修改。

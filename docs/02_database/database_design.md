@@ -445,7 +445,18 @@ Refund `succeeded` 同时表示对应 wallet Settlement 的退款预留敞口已
 
 ### 3.16 store_business_days（门店营业日锁点，M5 离线迁移未应用）
 
-为预约创建与管理员设置店休提供“一日一行”的权威状态和共同并发锁点。行按需创建，不是预生成的完整日历；预约创建过但没有自定义店休的日期也会保留 `is_closed=false` 行。周一固定店休由 Reservation Validator 决定，不依赖这里存在一行。
+为预约创建与管理员设置单日店休提供“一日一行”的权威状态和共同并发锁点。行按需创建，不是预生成的完整日历；预约创建过但没有单日店休的日期也会保留 `is_closed=false` 行。每周固定店休由 `reservation_settings` 配置，不依赖这里存在一行。
+
+### 3.16.1 reservation_settings（预约日历单例设置，M7 候选）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| id | BIGINT | PK, AUTO_INCREMENT | 内部标识 |
+| singleton_key | BOOL | NOT NULL, DEFAULT true, UNIQUE, CHECK=true | 数据库层保证最多一行 |
+| weekly_closed_weekday | VARCHAR(32) | NOT NULL, DEFAULT `monday` | 每周固定店休日 |
+| created_at / updated_at | DATETIME(6) | NOT NULL | 创建与更新时间 |
+
+M7 建表并写入默认周一单例；更换固定店休与命中预约的 `store_closed` 批量取消在同一业务事务中提交。M7 尚未应用任何持久数据库，也尚未完成真实 MySQL 0→7 门槛。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|

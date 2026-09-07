@@ -15,6 +15,7 @@ from app.common.constants.reservation import (
     RESERVATION_SLOT_INTERVAL_MINUTES,
     RESERVATION_STATUS_LABELS,
     RESERVATION_TIMEZONE,
+    RESERVATION_WEEKDAY_LABELS,
 )
 from app.common.constants.validation import PHONE_PATTERN
 from app.common.enums.product import DayType
@@ -22,9 +23,10 @@ from app.common.enums.reservation import (
     ReservationCancellationReason,
     ReservationRejectionReason,
     ReservationStatus,
+    ReservationWeekday,
 )
 from app.common.pagination import Page
-from app.models.reservation import Reservation, StoreBusinessDay
+from app.models.reservation import Reservation, ReservationSettings, StoreBusinessDay
 from app.schemas.reservation_response import (
     AdminReservationDetailOut,
     AdminReservationListItemOut,
@@ -35,12 +37,16 @@ from app.schemas.reservation_response import (
     ReservationOut,
     ReservationRejectionReasonOut,
     ReservationStatusOut,
+    ReservationSettingsOut,
+    ReservationWeekdayOut,
     StoreBusinessDayOut,
     StoreClosureMutationOut,
+    WeeklyClosureMutationOut,
 )
 from app.services.reservation_service import (
     ReservationBookingOptions,
     StoreClosureMutationResult,
+    WeeklyClosureMutationResult,
 )
 from app.validators.reservation_validator import STORE_TIMEZONE
 
@@ -56,6 +62,15 @@ def map_reservation_day_type(value: DayType | str) -> ReservationDayTypeOut:
     normalized = DayType(value)
     return ReservationDayTypeOut.model_validate(
         {"value": normalized, "label": DAY_TYPE_LABELS[normalized]}
+    )
+
+
+def map_reservation_weekday(
+    value: ReservationWeekday | str,
+) -> ReservationWeekdayOut:
+    normalized = ReservationWeekday(value)
+    return ReservationWeekdayOut.model_validate(
+        {"value": normalized, "label": RESERVATION_WEEKDAY_LABELS[normalized]}
     )
 
 
@@ -210,6 +225,9 @@ def map_booking_options(
             "timezone": RESERVATION_TIMEZONE,
             "server_now": options.server_now,
             "booking_window_end_date": options.booking_window_end_date,
+            "weekly_closed_weekday": map_reservation_weekday(
+                options.weekly_closed_weekday
+            ),
             "minimum_lead_hours": RESERVATION_MINIMUM_LEAD_HOURS,
             "slot_interval_minutes": RESERVATION_SLOT_INTERVAL_MINUTES,
             "booking_window_days": RESERVATION_BOOKING_WINDOW_DAYS,
@@ -264,6 +282,39 @@ def map_store_closure_mutation(
             "is_closed": day.is_closed,
             "created_at": day.created_at,
             "updated_at": day.updated_at,
+            "newly_cancelled_count": result.newly_cancelled_count,
+            "cancelled_pending_count": result.cancelled_pending_count,
+            "cancelled_confirmed_count": result.cancelled_confirmed_count,
+            "is_replay": result.is_replay,
+        }
+    )
+
+
+def map_reservation_settings(
+    settings: ReservationSettings,
+) -> ReservationSettingsOut:
+    return ReservationSettingsOut.model_validate(
+        {
+            "weekly_closed_weekday": map_reservation_weekday(
+                settings.weekly_closed_weekday
+            ),
+            "updated_at": settings.updated_at,
+        }
+    )
+
+
+def map_weekly_closure_mutation(
+    result: WeeklyClosureMutationResult,
+) -> WeeklyClosureMutationOut:
+    return WeeklyClosureMutationOut.model_validate(
+        {
+            "weekly_closed_weekday": map_reservation_weekday(
+                result.settings.weekly_closed_weekday
+            ),
+            "previous_weekly_closed_weekday": map_reservation_weekday(
+                result.previous_weekly_closed_weekday
+            ),
+            "updated_at": result.settings.updated_at,
             "newly_cancelled_count": result.newly_cancelled_count,
             "cancelled_pending_count": result.cancelled_pending_count,
             "cancelled_confirmed_count": result.cancelled_confirmed_count,

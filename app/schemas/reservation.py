@@ -14,7 +14,7 @@ from pydantic import (
 
 from app.common.constants.product import PRODUCT_NAME_MAX_LENGTH
 from app.common.constants.reservation import RESERVATION_LOCAL_TIME_PATTERN
-from app.common.enums.reservation import ReservationStatus
+from app.common.enums.reservation import ReservationStatus, ReservationWeekday
 from app.common.pagination import PageParams
 
 
@@ -66,6 +66,12 @@ class ReservationCreate(_ReservationRequest):
     experience_option_id: PositiveReservationResourceId
     reservation_date: ReservationBusinessDate
     start_time: ReservationLocalTime
+
+
+class WeeklyClosureUpdateRequest(_ReservationRequest):
+    """更换全店每周固定店休日。"""
+
+    weekly_closed_weekday: ReservationWeekday
 
 
 class ReservationBookingOptionsQuery(_ReservationRequest):

@@ -155,8 +155,11 @@ describe('Reservation N1 页面集成', () => {
     }
     mockClosureState = {
       list: { status: 'content', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
-      mutation: { status: 'idle' }, retry: jest.fn(), loadNextPage: jest.fn(), close: mockClose,
-      reopen: mockReopen, reconcile: jest.fn(),
+      mutation: { status: 'idle' },
+      settings: { status: 'content', value: { weekly_closed_weekday: { value: 'monday', label: '周一' }, updated_at: '2026-09-06T02:00:00Z' } },
+      weeklyMutation: { status: 'idle' },
+      retry: jest.fn(), retrySettings: jest.fn(), loadNextPage: jest.fn(), close: mockClose,
+      reopen: mockReopen, reconcile: jest.fn(), changeWeeklyClosedDay: jest.fn(), reconcileWeekly: jest.fn(),
     }
     mockUseReservationList.mockImplementation(() => mockReservationListState)
     mockUseReservationDetail.mockImplementation(() => mockReservationDetailState)
@@ -252,10 +255,10 @@ describe('Reservation N1 页面集成', () => {
     mockAuth = authenticated('admin')
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-06T02:00:00Z'))
     await testUtils.mount(AuthenticatedStoreClosures)
-    testUtils.fireEvent.click(required(testUtils, '.store-closure-editor__submit'))
+    testUtils.fireEvent.click(required(testUtils, '.store-closure-editor--single .store-closure-editor__submit'))
     await flush(testUtils)
     expect(Taro.showModal).toHaveBeenCalledWith(expect.objectContaining({
-      content: expect.stringContaining('原因统一为“门店店休”'),
+      content: expect.stringContaining('只关闭这一天'),
     }))
     expect(Taro.showModal).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.stringContaining('暂不发送微信主动通知'),

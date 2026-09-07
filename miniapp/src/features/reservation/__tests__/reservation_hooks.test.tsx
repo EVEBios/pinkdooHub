@@ -53,6 +53,7 @@ const bookingOptions: ReservationBookingOptions = {
   timezone: 'Asia/Shanghai',
   server_now: '2026-09-06T02:00:00Z',
   booking_window_end_date: '2026-10-06',
+  weekly_closed_weekday: { value: 'monday', label: '周一' },
   minimum_lead_hours: 3,
   slot_interval_minutes: 30,
   booking_window_days: 30,
@@ -345,6 +346,8 @@ describe('预约 hooks', () => {
       listStoreClosures: jest.fn(async () => page),
       closeStoreDay: jest.fn(async () => result),
       reopenStoreDay: jest.fn(),
+      getReservationSettings: jest.fn(async () => ({ weekly_closed_weekday: { value: 'monday' as const, label: '周一' }, updated_at: '2026-09-06T03:00:00Z' })),
+      updateWeeklyClosedDay: jest.fn(),
     }
     await testUtils.mount(ClosuresHarness, { props: { source } })
     await flush(testUtils)
@@ -363,6 +366,8 @@ describe('预约 hooks', () => {
         throw new TimeoutError({ operation: 'reservations.admin.storeClosures.close' }, new Error('timeout'))
       }),
       reopenStoreDay: jest.fn(),
+      getReservationSettings: jest.fn(async () => ({ weekly_closed_weekday: { value: 'monday' as const, label: '周一' }, updated_at: '2026-09-06T03:00:00Z' })),
+      updateWeeklyClosedDay: jest.fn(),
     }
     await testUtils.mount(ClosuresHarness, { props: { source: timeoutSource } })
     await flush(testUtils)
@@ -417,6 +422,8 @@ describe('预约 hooks', () => {
         .mockImplementationOnce(() => secondPage.promise),
       closeStoreDay: jest.fn(),
       reopenStoreDay: jest.fn(),
+      getReservationSettings: jest.fn(async () => ({ weekly_closed_weekday: { value: 'monday' as const, label: '周一' }, updated_at: '2026-09-06T03:00:00Z' })),
+      updateWeeklyClosedDay: jest.fn(),
     }
     await testUtils.mount(ClosuresHarness, { props: { source } })
     await flush(testUtils)

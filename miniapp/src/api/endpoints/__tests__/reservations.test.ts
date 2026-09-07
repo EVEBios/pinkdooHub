@@ -50,6 +50,7 @@ const bookingOptions: ReservationBookingOptions = {
   timezone: 'Asia/Shanghai',
   server_now: '2026-09-06T03:05:00Z',
   booking_window_end_date: '2026-10-06',
+  weekly_closed_weekday: { value: 'monday', label: '周一' },
   minimum_lead_hours: 3,
   slot_interval_minutes: 30,
   booking_window_days: 30,

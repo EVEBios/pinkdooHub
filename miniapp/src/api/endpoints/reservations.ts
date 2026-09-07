@@ -7,6 +7,7 @@ export type ReservationStatusFilter = ReservationStatus | null
 export type ReservationDayType = components['schemas']['DayType']
 export type ReservationRejectionReason = components['schemas']['ReservationRejectionReason']
 export type ReservationCancellationReason = components['schemas']['ReservationCancellationReason']
+export type ReservationWeekday = components['schemas']['ReservationWeekday']
 
 export interface LabeledValue<Value extends string> {
   readonly value: Value
@@ -35,6 +36,8 @@ export type ReservationBookingOptions = components['schemas']['ReservationBookin
 export type StoreBusinessDay = components['schemas']['StoreBusinessDayOut']
 export type StoreClosureMutation = components['schemas']['StoreClosureMutationOut']
 export type StoreClosurePage = components['schemas']['Page_StoreBusinessDayOut_']
+export type ReservationSettings = components['schemas']['ReservationSettingsOut']
+export type WeeklyClosureMutation = components['schemas']['WeeklyClosureMutationOut']
 
 type ReservationApiClient = Pick<ApiClient, 'request' | 'requestWithMeta'>
 
@@ -178,6 +181,36 @@ export class ReservationApi {
       (request.date_to !== undefined && request.date_to !== null && item.business_date > request.date_to) ||
       (index > 0 && item.business_date <= parsed.items[index - 1].business_date)) ||
       (isExactDateRequest && (parsed.total > 1 || parsed.items.length !== parsed.total))) {
+      throw new ContractError({ operation })
+    }
+    return parsed
+  }
+
+  async getReservationSettings(): Promise<ReservationSettings> {
+    const operation = 'reservations.admin.settings.get'
+    const data = await this.client.request<unknown>({
+      operation,
+      path: '/api/v1/admin/reservation-settings',
+      auth: 'required',
+    })
+    const parsed = parseReservationSettings(data)
+    if (!parsed) throw new ContractError({ operation })
+    return parsed
+  }
+
+  async updateWeeklyClosedDay(
+    weeklyClosedWeekday: ReservationWeekday,
+  ): Promise<WeeklyClosureMutation> {
+    const operation = 'reservations.admin.settings.weeklyClosedDay.update'
+    const data = await this.client.request<unknown>({
+      operation,
+      path: '/api/v1/admin/reservation-settings/weekly-closed-day',
+      method: 'PUT',
+      auth: 'required',
+      body: { weekly_closed_weekday: weeklyClosedWeekday },
+    })
+    const parsed = parseWeeklyClosureMutation(data)
+    if (!parsed || parsed.weekly_closed_weekday.value !== weeklyClosedWeekday) {
       throw new ContractError({ operation })
     }
     return parsed
@@ -395,8 +428,9 @@ export function parseReservationBookingOptions(value: unknown): ReservationBooki
     Array.isArray(value.dates)
   )) return undefined
   const dayType = parseDayType(value.day_type)
+  const weeklyClosedWeekday = parseWeekday(value.weekly_closed_weekday)
   const dates = value.dates.map(parseBookingDate)
-  if (!dayType || dates.some((item) => item === undefined)) return undefined
+  if (!dayType || !weeklyClosedWeekday || dates.some((item) => item === undefined)) return undefined
   const parsedDates = dates as ReservationBookingDate[]
   const bookingWindowEndDate = value.booking_window_end_date as string
   const durationMinutes = value.duration_minutes as number
@@ -420,6 +454,7 @@ export function parseReservationBookingOptions(value: unknown): ReservationBooki
     timezone: 'Asia/Shanghai',
     server_now: value.server_now,
     booking_window_end_date: bookingWindowEndDate,
+    weekly_closed_weekday: weeklyClosedWeekday,
     minimum_lead_hours: 3,
     slot_interval_minutes: 30,
     booking_window_days: 30,
@@ -500,6 +535,37 @@ function parseStoreClosureMutation(value: unknown): StoreClosureMutation | undef
   }
 }
 
+function parseReservationSettings(value: unknown): ReservationSettings | undefined {
+  if (!isRecord(value) || !isUtcDatetime(value.updated_at)) return undefined
+  const weeklyClosedWeekday = parseWeekday(value.weekly_closed_weekday)
+  if (!weeklyClosedWeekday) return undefined
+  return {
+    weekly_closed_weekday: weeklyClosedWeekday,
+    updated_at: value.updated_at,
+  }
+}
+
+function parseWeeklyClosureMutation(value: unknown): WeeklyClosureMutation | undefined {
+  const settings = parseReservationSettings(value)
+  if (!settings || !isRecord(value) ||
+    !isNonNegativeInteger(value.newly_cancelled_count) ||
+    !isNonNegativeInteger(value.cancelled_pending_count) ||
+    !isNonNegativeInteger(value.cancelled_confirmed_count) ||
+    typeof value.is_replay !== 'boolean' ||
+    value.newly_cancelled_count !== value.cancelled_pending_count + value.cancelled_confirmed_count ||
+    (value.is_replay && value.newly_cancelled_count !== 0)) return undefined
+  const previous = parseWeekday(value.previous_weekly_closed_weekday)
+  if (!previous) return undefined
+  return {
+    ...settings,
+    previous_weekly_closed_weekday: previous,
+    newly_cancelled_count: value.newly_cancelled_count,
+    cancelled_pending_count: value.cancelled_pending_count,
+    cancelled_confirmed_count: value.cancelled_confirmed_count,
+    is_replay: value.is_replay,
+  }
+}
+
 function parsePage<T>(
   value: unknown,
   parser: (item: unknown) => T | undefined,
@@ -535,6 +601,13 @@ function parseStatus(value: unknown): LabeledValue<ReservationStatus> | undefine
 
 function parseDayType(value: unknown): LabeledValue<ReservationDayType> | undefined {
   return parseLabeled(value, { weekday: '工作日', holiday: '节假日' })
+}
+
+function parseWeekday(value: unknown): LabeledValue<ReservationWeekday> | undefined {
+  return parseLabeled(value, {
+    monday: '周一', tuesday: '周二', wednesday: '周三', thursday: '周四',
+    friday: '周五', saturday: '周六', sunday: '周日',
+  })
 }
 
 function parseRejectionReason(

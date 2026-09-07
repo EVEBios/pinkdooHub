@@ -14,6 +14,10 @@ from app.models.product import Product  # noqa: F401
 from app.models.product_image import ProductImage  # noqa: F401
 from app.models.product_kit import ProductKit  # noqa: F401
 from app.models.product_kit_color import ProductKitColor  # noqa: F401
-from app.models.reservation import Reservation, StoreBusinessDay  # noqa: F401
+from app.models.reservation import (  # noqa: F401
+    Reservation,
+    ReservationSettings,
+    StoreBusinessDay,
+)
 from app.models.user import User  # noqa: F401
 from app.models.wallet import WalletAccount, WalletTransaction  # noqa: F401

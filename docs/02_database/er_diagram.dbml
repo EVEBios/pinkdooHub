@@ -230,6 +230,14 @@ Ref: order_items.kit_color_id > product_kit_colors.id [delete: restrict]
 
 // ── Reservation N1 (M5 offline migration generated; not applied) ──
 
+Table reservation_settings {
+  id bigint [pk, increment]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  singleton_key boolean [not null, default: true, unique, note: 'CHECK true; 全店单例']
+  weekly_closed_weekday varchar(32) [not null, default: 'monday']
+}
+
 Table store_business_days {
   id bigint [pk, increment]
   business_date date [not null, note: 'Asia/Shanghai local date; one row per date; Monday fixed closure is enforced by Validator']
