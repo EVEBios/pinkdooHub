@@ -54,6 +54,7 @@ async def create_order(
                 product_id=item.product_id,
                 experience_option_id=item.experience_option_id,
                 quantity=item.quantity,
+                kit_color_id=item.kit_color_id,
             )
             for item in data.items
         ],

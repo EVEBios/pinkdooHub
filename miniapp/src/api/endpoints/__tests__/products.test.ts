@@ -17,6 +17,8 @@ const productPage: ProductListPage = {
       product_type: { value: 'experience', label: '拼豆体验' },
       cover_image: '/uploads/products/experience.webp',
       display_price: '299.00',
+      kit_kind: null,
+      sale_unit_grams: null,
     },
     {
       id: 2,
@@ -24,6 +26,8 @@ const productPage: ProductListPage = {
       product_type: { value: 'kit', label: '拼豆套装' },
       cover_image: 'https://cdn.example.com/kit.webp',
       display_price: '599.00',
+      kit_kind: { value: 'fixed', label: '固定套装' },
+      sale_unit_grams: null,
     },
   ],
   total: 12,
@@ -59,9 +63,34 @@ const kitDetail: KitProductDetail = {
   product_type: { value: 'kit', label: '拼豆套装' },
   description: '新手套装',
   images: [{ id: 22, image_url: '/uploads/products/kit.png', is_cover: true, sort: 0 }],
+  kit_kind: { value: 'fixed', label: '固定套装' },
+  sale_unit_grams: null,
   price: '599.00',
   stock: 3,
   available: true,
+  colors: [],
+}
+
+const colorSelectableKitDetail: KitProductDetail = {
+  id: 3,
+  name: '自选颜色拼豆',
+  product_type: { value: 'kit', label: '拼豆套装' },
+  description: '每色按 10g 选择',
+  images: [{ id: 23, image_url: '/uploads/products/colors.png', is_cover: true, sort: 0 }],
+  kit_kind: { value: 'color_selectable', label: '自选颜色' },
+  sale_unit_grams: 10,
+  price: '9.90',
+  stock: null,
+  available: true,
+  colors: [{
+    id: 301,
+    bead_color_id: 1,
+    slot_no: 1,
+    color_code: 'A01',
+    name: '正红',
+    swatch_image_url: '/uploads/bead-colors/a01.webp',
+    available: true,
+  }],
 }
 
 class FakeTransport implements HttpTransport {
@@ -108,6 +137,15 @@ describe('ProductApi', () => {
     [{ ...productPage, items: [{ ...productPage.items[0], display_price: '299' }] }],
     [{ ...productPage, items: [{ ...productPage.items[0], cover_image: 'uploads/file.webp' }] }],
     [{ ...productPage, items: [{ ...productPage.items[0], product_type: { value: 'unknown', label: '未知' } }] }],
+    [{ ...productPage, items: [{
+      ...productPage.items[0],
+      kit_kind: { value: 'fixed', label: '固定套装' },
+    }] }],
+    [{ ...productPage, items: [{
+      ...productPage.items[1],
+      kit_kind: { value: 'color_selectable', label: '自选颜色' },
+      sale_unit_grams: null,
+    }] }],
   ])('拒绝不符合 Product 列表契约的数据：%p', async (data) => {
     const api = new ProductApi(new ApiClient({
       baseUrl: 'https://api.example.com',
@@ -159,6 +197,21 @@ describe('ProductApi', () => {
     expect(transport.requests[0].headers).not.toHaveProperty('Authorization')
   })
 
+  it('解析自选颜色 Kit 的 10g 单位和可售颜色，但不透出精确颜色库存', async () => {
+    const response = {
+      ...colorSelectableKitDetail,
+      colors: [{ ...colorSelectableKitDetail.colors[0], stock_units: 17 }],
+    }
+    const transport = new FakeTransport(response)
+    const api = new ProductApi(new ApiClient({ baseUrl: 'https://api.example.com', transport }))
+
+    await expect(api.getKitProduct({ productId: 3 })).resolves.toEqual(colorSelectableKitDetail)
+    expect(transport.requests[0]).toMatchObject({
+      operation: 'products.kit.detail',
+      url: 'https://api.example.com/api/v1/products/kit/3',
+    })
+  })
+
   it.each<[unknown, 'experience' | 'kit']>([
     [{ ...experienceDetail, product_type: { value: 'kit', label: '拼豆套装' } }, 'experience'],
     [{ ...experienceDetail, options: [{ ...experienceDetail.options[0], images: [] }] }, 'experience'],
@@ -167,6 +220,17 @@ describe('ProductApi', () => {
     [{ ...kitDetail, price: '599' }, 'kit'],
     [{ ...kitDetail, available: false }, 'kit'],
     [{ ...kitDetail, stock: -1 }, 'kit'],
+    [{ ...kitDetail, stock: 1_000_000 }, 'kit'],
+    [{ ...kitDetail, sale_unit_grams: 10 }, 'kit'],
+    [{ ...kitDetail, colors: colorSelectableKitDetail.colors }, 'kit'],
+    [{ ...colorSelectableKitDetail, stock: 0 }, 'kit'],
+    [{ ...colorSelectableKitDetail, sale_unit_grams: null }, 'kit'],
+    [{ ...colorSelectableKitDetail, colors: [] }, 'kit'],
+    [{ ...colorSelectableKitDetail, available: false }, 'kit'],
+    [{
+      ...colorSelectableKitDetail,
+      colors: [{ ...colorSelectableKitDetail.colors[0], slot_no: 222 }],
+    }, 'kit'],
   ])('拒绝不符合 Product 详情契约的数据：%p', async (data, type) => {
     const api = new ProductApi(new ApiClient({
       baseUrl: 'https://api.example.com',

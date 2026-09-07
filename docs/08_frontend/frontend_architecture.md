@@ -1,9 +1,9 @@
 # pinkdooHub 前端架构
 
-> **Document Version:** v0.9
+> **Document Version:** v0.10
 > **Status:** Draft
-> **Last Updated:** 2026-08-29
-> **Scope:** 正式 `miniapp/` 架构；四端 Spike、工程基础、HTTP Client、公开 Product、Order 与 ADMIN Order/Product/Inventory 链路已落地
+> **Last Updated:** 2026-09-06
+> **Scope:** 正式 `miniapp/` 架构；既有前端链路已落地；Reservation N1 前端工程已形成候选，真实环境 Functional 状态仍以测试证据与 changelog 为准
 > **Decision Owners:** pinkdooHub
 
 本文档定义 pinkdooHub 跨端客户端的目标架构、依赖方向、职责边界和实施门槛。首发目标为微信小程序，并要求同一套核心代码在 6–12 个月内扩展到 H5、支付宝小程序和抖音小程序。
@@ -19,7 +19,7 @@
 
 ## 1. 背景与当前边界
 
-pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Order 与 Inventory 的核心契约和 FastAPI 端点。客户端必须与现有 `/api/v1`、Bearer JWT、统一响应信封、Product/Order/Inventory 业务边界配合，不得在前端重新定义权威价格、库存、权限或状态机。
+pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Order 与 Inventory 的核心契约和 FastAPI 端点；Reservation N1 后端仓库实现已完成，M5 已在一次性 MySQL 8.0.46 完成 0→5 与核心并发/重试/索引验证，但尚未应用持久库。Reservation 前端已有创建、我的预约、顾客详情、管理列表、管理详情和店休设置六个页面的工程候选；真实环境 Functional 状态仍以测试证据与 changelog 为准。客户端必须与现有 `/api/v1`、Bearer JWT、统一响应信封和各模块业务边界配合，不得在前端重新定义权威价格、库存、预约时间、权限或状态机。
 
 已冻结的产品决策：
 
@@ -29,14 +29,16 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | 6–12 个月目标 | H5、支付宝小程序、抖音小程序 |
 | 跨端框架 | Taro 4 + React + TypeScript |
 | MVP 登录 | 复用现有用户名与密码 |
-| 正式公开发布前 | 增加微信登录 |
+| 正式公开发布前 | 使用真实 AppID/受控 Secret 启用并完成微信登录真机验收 |
 | MVP 支付 | ADMIN+ 人工确认订单已支付 |
 | 正式商业发布前 | 增加服务端闭环的微信支付 |
 | 首版管理端 | 同一 Taro 应用的 `admin` 分包 |
 | 未来复杂管理端 | 同仓库增加独立 `admin-web/` |
 | GitHub | 继续使用当前仓库，不嵌套第二个 Git 仓库 |
 
-当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础、账号密码注册/登录、公开 Product 列表/详情、Phase 7.1–7.4 的 Cart/Order，以及 Phase 8.1–8.6 ADMIN Product/Inventory 和 8.8–8.9 Product Audit/ADMIN User 工程；当前后端能力范围均已通过微信开发者工具 Functional。Phase 8.2 延期的管理页白色图案和登录 `_` 闪烁已于 2026-08-29 完成专项复测并关闭。H5 继续等待严格 CORS allowlist。
+当前已完成最小技术 Spike、正式工程、OpenAPI/HTTP Client 基础、账号密码注册/登录、公开 Product 列表/详情、Phase 7.1–7.4 的 Cart/Order，以及 Phase 8.1–8.6 ADMIN Product/Inventory 和 8.8–8.9 Product Audit/ADMIN User 工程；这些 Reservation 之前的既有纵向链路均已通过微信开发者工具 Functional。Phase 8.2 延期的管理页白色图案和登录 `_` 闪烁已于 2026-08-29 完成专项复测并关闭。Reservation N1 与真实微信身份的目标环境 Functional 仍分别待验收，H5 继续等待严格 CORS allowlist。
+
+Reservation 的前端范围是顾客预约选项/创建/列表/详情/取消和 ADMIN 预约审核/店休管理。本节同时记录已落地的六个页面、Feature 与入口边界；是否完成真实环境 Functional 必须由测试证据与 changelog 共同证明。N1 不包含微信订阅消息；N2 仍为 Deferred。
 
 ---
 
@@ -142,7 +144,7 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 
 - 正式 `miniapp/` 已用官方 npm registry 完成依赖收敛：清理 16 个未声明的 NutUI/React Spring 残留包，并显式安装 `solid-js@1.9.15`，补齐 `legacy-peer-deps` 模式跳过的 Taro H5 peer dependency；`npm ls --depth=0` 与生产依赖树均为零错误。
 - 只保留规划中的 weapp/alipay/tt/h5 平台插件；百度、京东、QQ、鸿蒙、RN、已完成使命的 Taro Generator，以及未配置实际 Hook 的 Husky/Commitlint/Lint Staged 均移除，避免扩大安装面和安全审计面。
-- `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。Phase 9.5 当前 Schema 为 50 条路径、124 个组件 Schema。
+- `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。Phase 9.5 历史基线为 50 条路径、124 个组件 Schema；Reservation N1 后当前生成输入为 73 条路径、179 个组件 Schema。
 - 正式 HTTP Client 已实现环境 Origin、Query、JSON、Bearer、统一信封 Runtime Guard、Network/Timeout/HTTP/Business/Contract/Session 错误、取消、code `1006` single-flight refresh 以及一次受控重放；普通写请求和超时不自动重试，empty-body PATCH 不设置 data。
 - 官方 registry 的 Gate A production tree 仍报告 10 个受影响包/5 个叶子公告（4 moderate、1 high、5 critical）。9.2.5 已确认其中包含未启用受影响 serve API 的构建链、H5-only 链，以及当前微信源码/产物未使用的 npm swiper 实现，并以 2026-11-30 到期的精确策略跟踪；不能把它们笼统称为已修复或全是 H5-only。Taro 4.2.1 仍为当前版本，`audit fix --force` 会破坏性降级到 Taro 3.x，因此不执行；未来 H5 Gate、新增 Swiper 或上游版本变化必须重新审计。
 - 无 NutUI 的正式 H5 空应用入口仍为 281 KiB，超过 Webpack 244 KiB 建议线；这是当前 Taro H5 基线告警，后续每次引入 UI/业务依赖都必须重新测量，不能以“尚未引入 NutUI”为由忽略。
@@ -229,7 +231,7 @@ pinkdooHub/
     │   │   └── upload.ts
     │   ├── auth/                     # AuthContext、Session、Token Manager
     │   ├── components/               # 项目稳定组件边界
-    │   ├── features/                 # auth/product/order/inventory/admin
+    │   ├── features/                 # auth/product/order/inventory/reservation/admin
     │   ├── hooks/                    # 经真实复用证明的通用 Hook
     │   ├── pages/                    # 主包页面
     │   ├── admin/pages/              # ADMIN 分包页面
@@ -300,6 +302,7 @@ Feature 负责客户端用例编排，例如：
 - 把登录结果交给 Session；
 - 构造严格 OrderCreate 输入；
 - 为同一次 Inventory 调整保存稳定 Idempotency-Key。
+- 组合服务端返回的 Reservation 可选日期/时段，并收敛创建、取消、审核和店休命令结果。
 
 Feature 可以做用户体验级前置校验，但服务端仍是最终权威。Feature 不得定义后端没有的状态迁移，也不得把前端缓存价格作为订单金额。
 
@@ -314,6 +317,10 @@ getExperienceProduct(productId)
 createOrder(request)
 cancelOrder(orderId)
 adjustInventory(productId, request, idempotencyKey)
+getReservationBookingOptions(experienceOptionId)
+createReservation(request)
+cancelReservation(reservationId)
+closeStoreDay(businessDate)
 ```
 
 Endpoint 依赖生成类型和 HTTP Client，不依赖 React、页面或组件。
@@ -333,7 +340,7 @@ Endpoint 依赖生成类型和 HTTP Client，不依赖 React、页面或组件�
 - 可取消请求；
 - 安全、受控的诊断上下文。
 
-不默认重试写请求。尤其 `POST /orders` 当前没有客户端幂等键，超时不能自动再发一遍。
+不默认重试写请求。尤其 `POST /orders` 和 `POST /reservations` 当前没有客户端幂等键，超时不能自动再发一遍。Reservation 店休 PUT 是显式服务端幂等例外，首次 201、重放 200；也应先查询权威状态再由用户确认重试。
 
 ### 7.6 Platform
 
@@ -359,6 +366,9 @@ Endpoint 依赖生成类型和 HTTP Client，不依赖 React、页面或组件�
 | Order 创建提交 | Order Feature | 判别状态机 + 不可变提交快照 |
 | Order 列表/详情 | Order Feature | 请求 Hook + sequence 迟到响应隔离 |
 | Order 取消命令 | Order Feature | 判别状态机 + 进行中 Promise 合并 + 服务端重拉 |
+| Reservation 选项/列表/详情 | Reservation Feature | 服务端日历 + 请求 Hook + sequence 迟到响应隔离 |
+| Reservation 创建/取消/审核 | Reservation Feature | 判别状态机 + 进行中 Promise 合并 + 服务端重拉 |
+| Store closure | Admin Reservation Feature | PUT 201/200 metadata + 批量计数 + 权威列表核对 |
 | 平台信息 | Platform Adapter | 只读查询或小范围缓存 |
 
 ### 8.1 本地购物车已实现边界
@@ -479,6 +489,22 @@ Phase 8.6 在 Product 管理读模型和既有后端 Inventory 契约之上增�
 - Draft、Offline、Online Kit 都允许管理员调整，客户端不把 Product 可编辑状态误当 Inventory 规则。逻辑删除、类型、余额上下限、权限、事务、行锁、流水和 Audit 继续由后端权威裁决；
 - 本阶段工程门槛为前端 60 套件/375 项、后端 1465 项通过（9 项 MySQL-only 跳过）、静态检查和四端生产构建。三端 `admin` 分包约 167 KiB；H5 主 JS 283 KiB、入口 370 KiB。2026-08-28 用户确认微信开发者工具 Functional 全部通过。
 
+### 8.11 Reservation N1 边界
+
+Reservation 作为独立 Feature，不复用 OrderSubmissionStore、Cart 或 Payment 状态：
+
+- `ReservationApi` 从生成类型出发，但对 booking options、四状态、原因/label、Option 快照、UTC/上海当地双表示、Page、管理员联系字段和店休计数执行独立 Runtime Guard 与白名单投影；
+- 顾客创建页面先按真实 ExperienceOption 拉取服务端 `booking-options`，只允许选择返回的日期/时段；创建只发送 Option ID、本地日期和开始值。列表/详情以 `customer_message` 与快照为权威；
+- 同一用户/Option/时段允许多条独立记录；Feature 只合并一次点击的进行中 Promise，不能跨意图去重。N1 不占座、不自动防超额，由 ADMIN+ 对每条 pending 预约人工判断容量；
+- 创建和 cancel 使用 `idle/submitting/succeeded/failed/unknown`，进行中 Promise 合并。创建 unknown 导航到“我的预约”核对；cancel 的 40951/40952 与 unknown 通过 GET 详情收敛；
+- pending/confirmed 详情始终展示服务端 `cancellation_deadline_at` 与取消按钮；客户端不从设备时钟派生 `can_cancel`，取消窗口完全由服务端 40952 裁决；
+- ADMIN 列表/详情在角色确认后才挂载请求。列表只持有后端掩码手机号，详情完整手机号只在当前页面按需存在，退出后不写 Storage；confirm/reject 在 40951/40953 或 unknown 后重拉；
+- 店休 PUT 用 `requestWithMeta()` 区分首次 201 与重放 200并验证 `is_replay`/取消计数；DELETE 不具备 replay 成功语义。恢复营业后不本地复活任何 cancelled Reservation；
+- 页面不复制周一、法定节假日、营业时间、至少三小时、Option day_type 或容量算法作为权威；只可依据响应提供即时禁用，并保留服务端 42253/42255 原因；
+- N1 不调用 `requestSubscribeMessage`，不新增平台 Adapter、通知 Store 或“已发送”状态。N2 必须另行批准、设计和验收。
+
+2026-09-06 Reservation N1 前端工程门槛为完整 77 套件/488 项、Reservation 专项 7 套件/46 项、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移检查、17 项 CI policy 测试和微信/支付宝/抖音/H5 四端 production build 全部通过；微信端另以 CI 固定 HTTPS Origin 重建并通过产物扫描（141 个文件、总计 968,329 bytes、`release_eligible=false`），H5 仅保留既有 bundle-size 建议警告。该微信产物不是正式 RC；微信开发者工具中的真实 API、角色、弱网和营业边界 Functional 仍需单独验收。
+
 后端提供 Order create 客户端幂等键之前，UI 防抖和 Promise 合并都不能替代服务端幂等。首版仍不引入 Redux、Zustand 或服务端缓存框架。出现以下证据之一时再写 ADR：
 
 - 多个非父子页面频繁修改同一复杂状态；
@@ -498,7 +524,8 @@ Phase 8.6 在 Product 管理读模型和既有后端 Inventory 契约之上增�
 4. `{value, label}` 中业务判断使用 `value`，展示优先使用 `label`。
 5. 用户端 Product 库存只用于展示；下单结果以服务端锁后校验为准。
 6. 写接口失败不得无条件乐观成功；未知执行结果必须保守处理。
-7. Product/Order/Inventory 的业务错误结构不得被通用错误层抹平。
+7. Product/Order/Inventory/Reservation 的业务错误结构不得被通用错误层抹平。
+8. Reservation 的本地日期/时间按 `Asia/Shanghai`，不得使用设备时区覆盖后端返回的 `reservation_date/start_time/end_time`。
 
 ---
 
@@ -517,7 +544,7 @@ Token Manager 必须处理当前后端的特殊契约：无凭据为 HTTP 401；
 
 ### 10.2 平台登录
 
-正式公开发布前增加微信登录。平台临时 code 只传后端，AppSecret 只存在后端。考虑未来支付宝与抖音身份，后端应评估通用 `ExternalIdentity`，而不是不断向 User 添加平台专属字段。
+微信登录的仓库链已经通过通用 `ExternalIdentity`、服务端 `code2Session`、外部标识 HMAC 和小程序 password/wechat 模式落地。平台临时 code 只传后端，AppSecret 只存在后端；正式公开发布前仍须使用真实 AppID 与受控 Secret 在目标环境和真机完成启用/验收。未来支付宝与抖音身份继续复用通用外部身份边界，不向 User 追加平台专属字段。
 
 ### 10.3 授权
 
@@ -600,7 +627,7 @@ NutUI 的使用是否扩大，取决于 [ADR-005](adr/ADR-005-cross-platform-ui-
 
 首版要求：
 
-- Product/Order/Inventory 列表保持后端分页；
+- Product/Order/Inventory/Reservation 列表保持后端分页；booking-options 一次返回固定 0–30 日窗口，不再逐日 N+1 请求；
 - 搜索防抖并防止旧响应覆盖新查询；
 - Order 与 Admin 使用分包；H5 接受 Taro 将分包合并的行为；
 - 第三方组件按需引入；
@@ -622,6 +649,7 @@ NutUI 的使用是否扩大，取决于 [ADR-005](adr/ADR-005-cross-platform-ui-
 6. 前端角色入口不是安全边界，后端权限不可绕过。
 7. 微信登录临时 code 和支付结果不能由客户端自证；服务端负责换取身份、签名、验签和回调幂等。
 8. Store 中的外部数据在使用前运行最低必要 Guard。
+9. Reservation 管理列表只保存掩码手机号；完整手机号仅详情按需读取，不进 Storage、日志、错误监控或页面快照。顾客响应不得出现手机号。
 
 ---
 

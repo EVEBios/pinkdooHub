@@ -1,9 +1,23 @@
 """AuditLog Repository。"""
 
+from dataclasses import dataclass
+
 from tortoise.backends.base.client import BaseDBAsyncClient
 
 from app.common.pagination import Page
 from app.models.audit_log import AuditLog
+
+
+@dataclass(frozen=True, slots=True)
+class AuditLogCreateData:
+    """批量审计写入的最小字段集合。"""
+
+    operator_id: int
+    action: str
+    target_type: str
+    target_id: int
+    ip_address: str
+    description: str | None = None
 
 
 class AuditLogRepository:
@@ -27,6 +41,31 @@ class AuditLogRepository:
             target_id=target_id,
             ip_address=ip_address,
             description=description,
+            using_db=using_db,
+        )
+
+    async def bulk_create(
+        self,
+        entries: list[AuditLogCreateData],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> None:
+        """一次写入一组已由调用方准备的审计事实。"""
+
+        if not entries:
+            return
+        await AuditLog.bulk_create(
+            [
+                AuditLog(
+                    operator_id=entry.operator_id,
+                    action=entry.action,
+                    target_type=entry.target_type,
+                    target_id=entry.target_id,
+                    ip_address=entry.ip_address,
+                    description=entry.description,
+                )
+                for entry in entries
+            ],
             using_db=using_db,
         )
 

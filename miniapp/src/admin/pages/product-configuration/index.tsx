@@ -212,9 +212,15 @@ function ExperienceOptionManager({ product }: { readonly product: AdminExperienc
 function KitPriceManager({ product }: { readonly product: AdminKitProductDetail }) {
   const mutation = useAdminProductConfigurationMutation()
   const [price, setPrice] = useState(product.price)
+  const [colorQuery, setColorQuery] = useState('')
   const [validationMessage, setValidationMessage] = useState('')
   const editable = !product.is_deleted && product.status.value !== 'online'
   const configurationUrl = buildAdminProductConfigurationUrl(product.id, 'kit')
+  const normalizedColorQuery = colorQuery.trim().toLocaleLowerCase()
+  const visibleColors = product.colors.filter((color) => normalizedColorQuery.length === 0 ||
+    String(color.slot_no).includes(normalizedColorQuery) ||
+    color.color_code?.toLocaleLowerCase().includes(normalizedColorQuery) ||
+    color.name?.toLocaleLowerCase().includes(normalizedColorQuery))
 
   async function submit(): Promise<void> {
     if (!editable || isMutationBlocked(mutation.state.status)) return
@@ -232,12 +238,20 @@ function KitPriceManager({ product }: { readonly product: AdminKitProductDetail 
     if (result) void Taro.redirectTo({ url: configurationUrl })
   }
 
+  async function toggleColor(color: AdminKitProductDetail['colors'][number]): Promise<void> {
+    if (!editable || isMutationBlocked(mutation.state.status)) return
+    const result = await mutation.updateKitColor(color.id, !color.is_enabled)
+    if (result) void Taro.redirectTo({ url: configurationUrl })
+  }
+
   const feedback = validationMessage || mutationMessage(mutation.state)
   return (
     <View className='admin-product-configuration-page'>
       <ConfigurationSummary product={product} />
       <View className='admin-product-kit-price'>
-        <Text className='admin-product-kit-price__title'>修改套装价格</Text>
+        <Text className='admin-product-kit-price__title'>
+          {product.kit_kind.value === 'color_selectable' ? '修改每 10g 价格' : '修改套装价格'}
+        </Text>
         <ConfigurationInput
           label='当前售价'
           value={price}
@@ -248,12 +262,52 @@ function KitPriceManager({ product }: { readonly product: AdminKitProductDetail 
           }}
           disabled={!editable}
         />
-        <Text className='admin-product-form__notice'>库存余额 {product.stock} 只读；本页请求只发送 price，库存调整留给 Phase 8.6 Inventory。</Text>
+        <Text className='admin-product-form__notice'>
+          {product.kit_kind.value === 'color_selectable'
+            ? '价格对所有颜色一致；每个颜色的 10g 单位库存需从“管理库存”单独调整。'
+            : `库存余额 ${product.stock} 只读；本页请求只发送 price，库存调整由 Inventory 管理。`}
+        </Text>
         {feedback && <Text className='admin-product-configuration-feedback'>{feedback}</Text>}
         <Button className='admin-product-form__submit' type='primary' disabled={!editable || isMutationBlocked(mutation.state.status)} onClick={() => void submit()}>
           {mutation.state.status === 'submitting' ? '正在保存…' : '保存价格'}
         </Button>
       </View>
+      {product.kit_kind.value === 'color_selectable' && (
+        <View className='admin-product-kit-colors'>
+          <Text className='admin-product-kit-colors__title'>商品颜色（{product.colors.length}/221）</Text>
+          <Text className='admin-product-kit-colors__hint'>全局颜色资料完整并启用后，才能为当前草稿开启销售；库存为 0 的颜色即使开启也不会对顾客显示为可买。</Text>
+          <Input
+            className='admin-product-kit-colors__search'
+            disabled={!editable || isMutationBlocked(mutation.state.status)}
+            maxlength={100}
+            placeholder='搜索槽位、色号或名称'
+            value={colorQuery}
+            onInput={(event) => setColorQuery(event.detail.value)}
+          />
+          <View className='admin-product-kit-colors__list'>
+            {visibleColors.map((color) => {
+              const ready = color.is_configured && color.is_active
+              return (
+                <View className='admin-product-kit-color' key={color.id}>
+                  <View className='admin-product-kit-color__copy'>
+                    <Text className='admin-product-kit-color__identity'>
+                      槽位 {color.slot_no} · {color.color_code ?? '待填写色号'}
+                    </Text>
+                    <Text className='admin-product-kit-color__name'>{color.name ?? '待填写名称'}</Text>
+                    <Text className='admin-product-kit-color__stock'>库存 {color.stock_units * 10}g · {ready ? '全局可用' : '全局资料未就绪'}</Text>
+                  </View>
+                  <Button
+                    className={`admin-product-kit-color__toggle${color.is_enabled ? ' admin-product-kit-color__toggle--enabled' : ''}`}
+                    disabled={!editable || isMutationBlocked(mutation.state.status) || (!color.is_enabled && !ready)}
+                    onClick={() => void toggleColor(color)}
+                  >{color.is_enabled ? '关闭' : '启用'}</Button>
+                </View>
+              )
+            })}
+          </View>
+          {visibleColors.length === 0 && <Text className='admin-product-kit-colors__empty'>没有匹配的颜色槽位</Text>}
+        </View>
+      )}
       {mutation.state.status === 'unknown' && <Button onClick={() => void Taro.redirectTo({ url: configurationUrl })}>重新加载详情核对</Button>}
       <Button onClick={() => void Taro.redirectTo({ url: buildAdminProductDetailUrl(product.id, 'kit') })}>返回商品详情</Button>
     </View>

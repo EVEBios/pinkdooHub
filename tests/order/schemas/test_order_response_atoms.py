@@ -150,6 +150,7 @@ def test_order_item_out_serializes_snapshot_and_filters_internal_fields() -> Non
         "id": 1001,
         "product_id": 1,
         "experience_option_id": 10,
+        "kit_color_id": None,
         "product_name": "拼豆体验",
         "option_duration_minutes": 60,
         "option_participants": 1,
@@ -157,6 +158,11 @@ def test_order_item_out_serializes_snapshot_and_filters_internal_fields() -> Non
             "value": "weekday",
             "label": "工作日",
         },
+        "kit_color_code": None,
+        "kit_color_name": None,
+        "kit_color_slot_no": None,
+        "sale_unit_grams": None,
+        "total_weight_grams": None,
         "product_price": "99.00",
         "quantity": 2,
         "subtotal": "198.00",
@@ -215,6 +221,30 @@ def test_order_item_out_accepts_complete_kit_snapshot() -> None:
     assert result["option_duration_minutes"] is None
     assert result["option_participants"] is None
     assert result["option_day_type"] is None
+
+
+def test_order_item_out_accepts_complete_color_snapshot_and_weight() -> None:
+    payload = order_item()
+    payload.update(
+        {
+            "experience_option_id": None,
+            "option_duration_minutes": None,
+            "option_participants": None,
+            "option_day_type": None,
+            "kit_color_id": 9,
+            "kit_color_slot_no": 2,
+            "kit_color_code": "A002",
+            "kit_color_name": "海盐蓝",
+            "sale_unit_grams": 10,
+            "total_weight_grams": 20,
+        }
+    )
+
+    result = OrderItemOut.model_validate(payload).model_dump(mode="json")
+
+    assert result["kit_color_id"] == 9
+    assert result["kit_color_slot_no"] == 2
+    assert result["total_weight_grams"] == 20
 
 
 @pytest.mark.parametrize(

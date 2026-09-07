@@ -47,7 +47,7 @@ describe('AdminUserWalletPage', () => {
         role: 'admin', status: 'normal', last_login_at: null,
         created_at: '2026-09-05T08:00:00Z', updated_at: '2026-09-05T08:00:00Z',
       },
-      register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+      register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
     }
     mockUseDetail.mockReturnValue({
       state: {

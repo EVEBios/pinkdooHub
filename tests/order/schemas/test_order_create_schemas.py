@@ -4,8 +4,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.common.constants.order import (
+    ORDER_COLOR_ITEMS_MAX_COUNT,
     ORDER_ITEM_QUANTITY_MAX,
     ORDER_ITEMS_MAX_COUNT,
+    ORDER_NON_COLOR_ITEMS_MAX_COUNT,
     ORDER_REMARK_MAX_LENGTH,
 )
 from app.schemas.order import OrderCreate, OrderItemCreate
@@ -16,10 +18,11 @@ def _item(
     product_id: int = 1,
     option_id: int = 10,
     quantity: int = 1,
-) -> dict[str, int]:
+) -> dict[str, object]:
     return {
         "product_id": product_id,
         "experience_option_id": option_id,
+        "kit_color_id": None,
         "quantity": quantity,
     }
 
@@ -46,6 +49,7 @@ def test_order_item_create_normalizes_kit_option_to_none(
     assert schema.model_dump() == {
         "product_id": 1,
         "experience_option_id": None,
+        "kit_color_id": None,
         "quantity": 2,
     }
 
@@ -153,6 +157,26 @@ def test_order_create_rejects_duplicate_product_option_combination() -> None:
     error = exc_info.value.errors()[0]
     assert error["loc"] == ()
     assert "Duplicate product and experience option" in error["msg"]
+
+
+def test_order_create_enforces_independent_color_and_non_color_limits() -> None:
+    non_color_items = [
+        _item(product_id=index + 1, option_id=index + 1)
+        for index in range(ORDER_NON_COLOR_ITEMS_MAX_COUNT + 1)
+    ]
+    color_items = [
+        {
+            "product_id": 1,
+            "kit_color_id": index + 1,
+            "quantity": 1,
+        }
+        for index in range(ORDER_COLOR_ITEMS_MAX_COUNT + 1)
+    ]
+
+    with pytest.raises(ValidationError, match="non-color items"):
+        OrderCreate.model_validate({"items": non_color_items})
+    with pytest.raises(ValidationError, match="kit color items"):
+        OrderCreate.model_validate({"items": color_items})
 
 
 def test_order_create_rejects_duplicate_kit_product() -> None:

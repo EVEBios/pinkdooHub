@@ -62,6 +62,8 @@ describe('AdminProductCreatePage', () => {
         id: 22, name: '新套装',
         product_type: { value: 'kit', label: '拼豆套装' },
         status: { value: 'draft', label: '草稿' },
+        kit_kind: { value: 'fixed', label: '固定套装' },
+        sale_unit_grams: null,
       },
     })
   })
@@ -98,8 +100,29 @@ describe('AdminProductCreatePage', () => {
     input(testUtils, inputs[1], '99.00')
     testUtils.fireEvent.click(requireElement(testUtils, '.admin-product-form__submit'))
     await flush(testUtils)
-    expect(mockCreateKit).toHaveBeenCalledWith({ name: '新套装', price: '99.00' })
+    expect(mockCreateKit).toHaveBeenCalledWith({
+      name: '新套装',
+      price: '99.00',
+      kit_kind: 'fixed',
+    })
     expect(requireElement(testUtils, '.admin-product-form-page').textContent).toContain('库存固定从 0 开始')
+  })
+
+  it('自选颜色 Kit 明确提交销售形态并展示 10g 计价说明', async () => {
+    await testUtils.mount(AuthenticatedAdminProductCreate, { props: { productType: 'kit' } })
+    const kindButtons = testUtils.queries.querySelectorAll('.admin-product-form__kind')
+    testUtils.fireEvent.click(kindButtons[1])
+    const inputs = testUtils.queries.querySelectorAll('.admin-product-form__input')
+    input(testUtils, inputs[0], '自选拼豆')
+    input(testUtils, inputs[1], '2.50')
+    expect(requireElement(testUtils, '.admin-product-form-page').textContent).toContain('每 10g 价格')
+    testUtils.fireEvent.click(requireElement(testUtils, '.admin-product-form__submit'))
+    await flush(testUtils)
+    expect(mockCreateKit).toHaveBeenCalledWith({
+      name: '自选拼豆',
+      price: '2.50',
+      kit_kind: 'color_selectable',
+    })
   })
 
   it('unknown 禁止再次创建并提供列表核对入口', async () => {
@@ -116,18 +139,20 @@ describe('AdminProductCreatePage', () => {
 describe('创建表单规则', () => {
   it('只规范化文本，不把 Experience 强行要求价格', () => {
     const form = normalizeAdminProductCreateForm({
-      name: ' 商品 ', description: ' 描述 ', price: ' 99.00 ',
+      name: ' 商品 ', description: ' 描述 ', price: ' 99.00 ', kitKind: 'fixed',
     })
-    expect(form).toEqual({ name: '商品', description: '描述', price: '99.00' })
+    expect(form).toEqual({
+      name: '商品', description: '描述', price: '99.00', kitKind: 'fixed',
+    })
     expect(validateAdminProductCreateForm('experience', { ...form, price: '' })).toBe('')
   })
 
   it.each([
-    [{ name: '', description: '', price: '99.00' }, '请输入商品名称'],
-    [{ name: '套装', description: '', price: '' }, '请输入套装价格'],
-    [{ name: '套装', description: '', price: '1.234' }, '最多两位小数'],
-    [{ name: '套装', description: '', price: '0' }, '必须大于 0'],
-    [{ name: '套装', description: '', price: '99999.01' }, '不超过 99999'],
+    [{ name: '', description: '', price: '99.00', kitKind: 'fixed' as const }, '请输入商品名称'],
+    [{ name: '套装', description: '', price: '', kitKind: 'fixed' as const }, '请输入套装价格'],
+    [{ name: '套装', description: '', price: '1.234', kitKind: 'fixed' as const }, '最多两位小数'],
+    [{ name: '套装', description: '', price: '0', kitKind: 'fixed' as const }, '必须大于 0'],
+    [{ name: '套装', description: '', price: '99999.01', kitKind: 'fixed' as const }, '不超过 99999'],
   ])('拒绝非法 Kit 表单 %#', (form, message) => {
     expect(validateAdminProductCreateForm('kit', form)).toContain(message)
   })
@@ -141,7 +166,7 @@ function authenticatedAdmin(): AuthContextValue {
       role: 'admin', status: 'normal', last_login_at: null,
       created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
     },
-    register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+    register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
   }
 }
 

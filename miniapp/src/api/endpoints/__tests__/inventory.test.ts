@@ -6,6 +6,12 @@ import { InventoryApi, type InventoryTransaction } from '../inventory'
 const transaction: InventoryTransaction = {
   id: 31,
   product_id: 7,
+  kit_color_id: null,
+  bead_color_id: null,
+  bead_color_slot_no: null,
+  color_code: null,
+  color_name: null,
+  sale_unit_grams: null,
   transaction_type: 'admin_adjustment',
   change_quantity: 5,
   before_quantity: 10,
@@ -17,6 +23,20 @@ const transaction: InventoryTransaction = {
   operator_id: 2,
   operator_nickname: '管理员',
   created_at: '2026-08-28T08:00:00Z',
+}
+
+const colorTransaction: InventoryTransaction = {
+  ...transaction,
+  id: 32,
+  kit_color_id: 701,
+  bead_color_id: 21,
+  bead_color_slot_no: 21,
+  color_code: 'A21',
+  color_name: '樱桃红',
+  sale_unit_grams: 10,
+  change_quantity: 3,
+  before_quantity: 2,
+  after_quantity: 5,
 }
 
 class FakeClient {
@@ -81,6 +101,75 @@ describe('InventoryApi', () => {
       .rejects.toBeInstanceOf(ContractError)
   })
 
+  it.each([
+    [201, 'created'],
+    [200, 'replayed'],
+  ] as const)('颜色调整按 HTTP %i 区分首次与重放并绑定路径身份', async (statusCode, disposition) => {
+    const client = new FakeClient({
+      product_id: 7,
+      kit_color_id: 701,
+      bead_color_id: 21,
+      bead_color_slot_no: 21,
+      color_code: 'A21',
+      color_name: '樱桃红',
+      sale_unit_grams: 10,
+      stock_units: 5,
+      transaction: { ...colorTransaction, internal: 'drop-me' },
+      idempotency_key: 'must-not-leak',
+    }, statusCode)
+    const api = new InventoryApi(client)
+
+    await expect(api.adjustColorStock(
+      7,
+      701,
+      { change: 3, reason: '  颜色补货  ' },
+      'color-key-1',
+    )).resolves.toEqual({
+      disposition,
+      adjustment: {
+        product_id: 7,
+        kit_color_id: 701,
+        bead_color_id: 21,
+        bead_color_slot_no: 21,
+        color_code: 'A21',
+        color_name: '樱桃红',
+        sale_unit_grams: 10,
+        stock_units: 5,
+        transaction: colorTransaction,
+      },
+    })
+    expect(client.requests[0]).toEqual({
+      operation: 'inventory.admin.color.adjust',
+      path: '/api/v1/admin/products/kit/7/colors/701/inventory-adjustments',
+      method: 'POST',
+      auth: 'required',
+      headers: { 'Idempotency-Key': 'color-key-1' },
+      body: { change: 3, reason: '颜色补货' },
+    })
+  })
+
+  it('颜色调整拒绝路径身份或颜色元数据与流水不一致的响应', async () => {
+    const body = {
+      product_id: 7,
+      kit_color_id: 701,
+      bead_color_id: 21,
+      bead_color_slot_no: 21,
+      color_code: 'A21',
+      color_name: '樱桃红',
+      sale_unit_grams: 10,
+      stock_units: 5,
+      transaction: colorTransaction,
+    }
+    await expect(new InventoryApi(new FakeClient({ ...body, kit_color_id: 702 }, 201))
+      .adjustColorStock(7, 701, { change: 3, reason: '补货' }, 'key-1'))
+      .rejects.toBeInstanceOf(ContractError)
+    await expect(new InventoryApi(new FakeClient({
+      ...body,
+      transaction: { ...colorTransaction, bead_color_id: 22 },
+    }, 201)).adjustColorStock(7, 701, { change: 3, reason: '补货' }, 'key-1'))
+      .rejects.toBeInstanceOf(ContractError)
+  })
+
   it('Kit 与全局流水查询只投影契约字段', async () => {
     const page = { items: [transaction], total: 1, page: 1, page_size: 20, pages: 1 }
     const client = new FakeClient(page)
@@ -99,6 +188,7 @@ describe('InventoryApi', () => {
       page: 1,
       page_size: 20,
       product_id: 7,
+      kit_color_id: 701,
       unexpected: 'drop-me',
     } as never)
 
@@ -110,10 +200,42 @@ describe('InventoryApi', () => {
       created_from: '2026-08-01T00:00:00Z',
       created_to: '2026-09-01T00:00:00Z',
     })
-    expect(client.requests[1].query).toEqual({ page: 1, page_size: 20, product_id: 7 })
+    expect(client.requests[1].query).toEqual({
+      page: 1,
+      page_size: 20,
+      product_id: 7,
+      kit_color_id: 701,
+    })
   })
 
-  it('接受四类合法流水，并丢弃服务端额外字段', async () => {
+  it('指定颜色流水绑定 Product 与 ProductKitColor 路径且拒绝串色响应', async () => {
+    const page = { items: [colorTransaction], total: 1, page: 1, page_size: 20, pages: 1 }
+    const client = new FakeClient(page)
+    const api = new InventoryApi(client)
+
+    await expect(api.listProductColorTransactions(7, 701, {
+      page: 1,
+      page_size: 20,
+      type: 'admin_adjustment',
+    })).resolves.toEqual(page)
+    expect(client.requests[0]).toEqual({
+      operation: 'inventory.admin.product_color_transactions.list',
+      path: '/api/v1/admin/products/kit/7/colors/701/inventory-transactions',
+      method: 'GET',
+      auth: 'required',
+      query: { page: 1, page_size: 20, type: 'admin_adjustment' },
+    })
+
+    const wrongColorPage = {
+      ...page,
+      items: [{ ...colorTransaction, kit_color_id: 702 }],
+    }
+    await expect(new InventoryApi(new FakeClient(wrongColorPage))
+      .listProductColorTransactions(7, 701))
+      .rejects.toBeInstanceOf(ContractError)
+  })
+
+  it('接受五类合法流水，并丢弃服务端额外字段', async () => {
     const orderBase = {
       ...transaction,
       source_type: 'order' as const,

@@ -1,10 +1,10 @@
 # 库存模块（Inventory Module）
 
-> **Contract Version:** v0.7
+> **Contract Version:** v0.8
 >
-> **Status:** Phase 4.3.12 implemented and Final-Review Complete；Wallet/Payment/Refund v1 adds assisted Paid deduction and PAID refund restore in repository M4（not applied to persistent databases）
+> **Status:** Phase 4.3.12 fixed-Kit inventory implemented and Final-Review Complete；M6 repository implementation and local regression complete, real MySQL verification/deployment pending
 >
-> **Last Updated:** 2026-09-05
+> **Last Updated:** 2026-09-06
 
 ---
 
@@ -12,41 +12,44 @@
 
 Inventory 负责 Kit 当前可售库存、不可变库存流水、管理员调整，以及 Order 创建、Pending 取消和 PAID 全额退款引发的自动扣减/恢复。本文是库存业务行为的权威来源；HTTP 契约见 [Inventory API](../03_api/inventory_api.md)，退款资金规则见 [Wallet Module](wallet_module.md)。
 
-Phase 4.3.1–4.3.12 已完成契约、领域/Schema、Model/数据库设计、离线 MySQL 迁移、Repository、管理员调整、Kit/混合订单创建扣减、Pending 取消恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/HTTP 发布门槛和最终 Review。Order Service 现在拥有创建和取消的库存外层事务：创建写 `order_deduction`，取消按 OrderItem 快照恢复并写 `order_cancellation_restore`；余额、流水、Order、Audit 与响应重载原子提交。Inventory Router 已接入调整、指定 Kit 流水和全局流水，统一使用严格 Schema、Mapper、成功/错误信封和 JWT ADMIN+ 权限。旧直接设置库存端点与 Kit 创建请求中的 `stock` 已按冻结破坏性契约移除，新 Kit 固定从 0 开始并经 adjustment 入库。完整迁移链、正/零库存回填、Repository smoke、真实竞争与查询计划已在隔离 MySQL 8.0.46 实例通过；最终 Review 同步收紧 Product Kit 详情响应的库存上限并清理数据库文档的旧规划描述。代码已收口为 v0.6.0 未发布候选，但未应用任何持久、共享或生产数据库。
+M6 增加 `color_selectable` Kit 的商品级颜色库存：每条 ProductKitColor 拥有独立 `stock_units`，一个单位固定为 10g。全局 BeadColor 只定义颜色身份，绝不保存或共享库存。既有 `fixed` Kit 的 `product_kits.stock`、API 与历史流水语义保持兼容。M6 仓库实现、本地回归和迁移 6 已完成，真实 MySQL 门槛与部署尚未完成。
+
+Phase 4.3.1–4.3.12 已完成契约、领域/Schema、Model/数据库设计、离线 MySQL 迁移、Repository、管理员调整、Kit/混合订单创建扣减、Pending 取消恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/HTTP 发布门槛和最终 Review。Order Service 现在拥有创建和取消的库存外层事务：创建写 `order_deduction`，取消按 OrderItem 快照恢复并写 `order_cancellation_restore`；余额、流水、Order、Audit 与响应重载原子提交。Inventory Router 已接入调整、指定 Kit 流水和全局流水，统一使用严格 Schema、Mapper、成功/错误信封和 JWT ADMIN+ 权限。旧直接设置库存端点与 Kit 创建请求中的 `stock` 已按冻结破坏性契约移除；fixed Kit 从 0 开始并经 adjustment 入库。完整迁移链、正/零库存回填、Repository smoke、真实竞争与查询计划已在隔离 MySQL 8.0.46 实例通过；最终 Review 同步收紧 Product Kit 详情响应的库存上限并清理数据库文档的旧规划描述。M6 在此基线上为每个 color_selectable 商品的 221 个颜色余额分别从 0 开始；仓库实现、本地 SQLite/HTTP/跨模块回归与迁移候选已完成，但 M6 真实 MySQL 迁移、锁等待/查询计划门槛尚未执行，也未应用持久环境。
 
 ## 2. 现状审计
 
-| 边界 | 当前已实现 | Phase 4.3 冻结目标 |
-|------|------------|--------------------|
-| 权威余额 | `product_kits.stock` | 继续作为唯一当前可售余额 |
-| 管理维护 | ADMIN+ adjustment API 已接入；允许任意未删除 Kit，旧直接设置端点已移除；完整 HTTP/MySQL 门槛已通过 | 保持当前已实现语义 |
-| Order Item | 已支持 Experience 必填 Option、Kit 省略/null Option，以及混合请求 | 保持当前已实现语义 |
-| 创建订单 | 已在 Pending 创建事务中原子扣减全部 Kit Item，最后一件与交叉多 Kit 真实竞争通过 | 保持当前已实现语义 |
-| 取消订单 | Pending 取消已原子、幂等恢复全部 Kit Item，同单真实取消竞争通过 | 保持当前已实现语义 |
-| 支付/完成 | 对已存在订单只修改 Order/资金事实/Audit | 保持现状，不再改变库存 |
-| ADMIN+ 代客钱包订单 | 新订单在单事务内扣减 Kit 并直接提交为 Paid | 视为创建扣减，不是既有 Pending 支付再次扣减 |
-| 全额退款 | Wallet/Payment/Refund v1 对 PAID Kit 按快照恢复；COMPLETED 不恢复 | 可销毁 MySQL 0→4 原子闭环已通过；M4 尚未应用持久库 |
-| 流水/幂等 | 管理调整、Order 扣减/恢复均写不可变流水并由数据库唯一键兜底 | 保持当前已实现语义 |
-| 并发 | 管理调整、创建和取消均已使用行锁、锁后校验和有限重试；真实 MySQL 竞争、1205 重试和 EXPLAIN 已通过 | 稳定顺序锁、锁后校验、同事务余额/流水/Order/Audit |
+| 边界 | Phase 4.3 fixed-Kit 基线 | M6 color-selectable 仓库候选 |
+|------|---------------------------|-------------------------------|
+| 权威余额 | `product_kits.stock` 是 fixed Kit 的唯一当前可售余额 | `product_kit_colors.stock_units` 是商品颜色的唯一当前可售余额；全局 BeadColor 不保存库存 |
+| 管理维护 | ADMIN+ fixed adjustment API 已接入；旧直接设置端点已移除；完整 HTTP/MySQL 门槛已通过 | 颜色 adjustment/指定颜色流水端点与本地回归已完成；真实 MySQL 门槛待执行 |
+| Order Item | Experience 必填 Option；fixed Kit 省略/null Option；支持混合请求 | 增加 nullable `kit_color_id` 与颜色快照，并严格区分 Experience/fixed/color 三态 |
+| 创建订单 | Pending 创建事务原子扣减全部 fixed Kit Item，最后一件与交叉多 Kit 真实竞争通过 | 同一外层事务按稳定 Product/颜色顺序扣减 ProductKitColor；本地门槛通过，真实 MySQL 门槛待执行 |
+| 取消订单 | Pending 取消原子、幂等恢复全部 fixed Kit Item，同单真实取消竞争通过 | 按 OrderItem 颜色快照幂等恢复相应 ProductKitColor |
+| 支付/完成 | 对已存在订单只修改 Order/资金事实/Audit | 保持相同规则，不再次扣减 fixed 或颜色库存 |
+| ADMIN+ 代客钱包订单 | 新订单在单事务内扣减 fixed Kit 并直接提交为 Paid | 颜色 Kit 同样视为创建扣减，不是既有 Pending 支付再次扣减 |
+| 全额退款 | Wallet/Payment/Refund v1 对 PAID fixed Kit 按快照恢复；COMPLETED 不恢复 | PAID 颜色 Kit 按颜色快照恢复；COMPLETED 不恢复 |
+| 流水/幂等 | 管理调整、Order 扣减/恢复均写不可变流水并由数据库唯一键兜底 | 流水增加 `kit_color_id`；自动幂等身份增加颜色维度 |
+| 并发 | 管理调整、创建和取消均使用行锁、锁后校验和有限重试；真实 MySQL 竞争、1205 重试和 EXPLAIN 已通过 | 延续稳定顺序锁、锁后校验及同事务余额/流水/Order/Audit；真实门槛待完成 |
 
-现有 `OrderItem` 已把 Experience Option 外键及三项 Option 快照声明为 nullable，因此持久化形状可以承载 Kit；当前限制来自 Schema 与 Service，而不是必须重建 OrderItem 表。
+现有 `fixed` Kit 使用 nullable Experience Option 字段。M6 为颜色订单新增 ProductKitColor 外键和颜色/销售单位快照，属于明确的表结构增量；不能仅依赖现有 nullable Option 字段区分颜色。
 
 ## 3. 权威余额与流水
 
 采用 **余额表 + 流水表（balance + ledger）**：
 
 ```text
-ProductKit.stock = 唯一的当前可售库存
+ProductKit.stock = 唯一的当前可售库存（仅指 fixed Kit）
+ProductKitColor.stock_units = color_selectable 商品某一颜色的唯一当前可售库存
 InventoryTransaction = 每一次已提交库存变化的不可变历史
 ```
 
 规则：
 
-- 商品详情直接读取 `ProductKit.stock`，不得通过实时汇总流水计算当前库存。
+- `fixed` 商品详情读取 `ProductKit.stock`；`color_selectable` 的每个颜色读取对应 `ProductKitColor.stock_units`，不得通过实时汇总流水计算当前库存。
 - 余额变化和对应流水必须使用同一数据库连接、同一事务提交。
 - 除 Kit 创建的零初始值和 Inventory 迁移基线外，余额不得脱离流水单独改变。
 - 已提交流水不得修改或删除；纠错通过新的反向调整流水完成。
-- 所有库存必须满足 `0 <= stock <= 999999`。
+- fixed 余额必须满足 `0 <= stock <= 999999`，颜色余额必须满足 `0 <= stock_units <= 999999`；fixed 的单位为套，color_selectable 的单位为 10g。
 - 流水必须满足 `after_quantity = before_quantity + change_quantity`；常规变化的 `change_quantity != 0`。
 
 ### 3.1 期初余额
@@ -57,11 +60,13 @@ Phase 4.3.4 已在 `2_20260814104655_add_inventory_transactions.py` 中实现该
 
 MySQL DDL 会隐式提交，因此“建表 + 期初数据”不能被宣称为一个可回滚事务。执行前必须暂停 Product 旧库存写入，确认所有现存 stock 位于 `0..999999`，完成备份并在临时 MySQL 8+ 演练；如果建表成功但期初插入失败，保留现场并人工制定前滚恢复，不能直接重跑或删除表。显式 downgrade 会删除全部 Inventory 流水且不会反向修改当前余额，只能在停机、备份和单独授权后执行。
 
-Inventory 接入后，新建 Kit 的初始 `stock` 固定为 `0`；首次入库通过管理员调整完成。Product 创建请求中的 `stock` 字段已在 v0.6.0 候选中移除。这避免绕过流水创建非零余额。
+Inventory 接入后，新建 fixed Kit 的初始 `stock` 固定为 `0`；首次入库通过管理员调整完成。Product 创建请求中的 `stock` 字段已在 v0.6.0 候选中移除。这避免绕过流水创建非零余额。
+
+M6 创建 `color_selectable` Product 时同步创建 221 条 ProductKitColor，全部 `stock_units=0`，因此不生成零变化 opening balance。第一次每色入库必须走颜色库存 adjustment；迁移把历史 ProductKit 的 `kit_kind` 设为 `fixed`，不得将既有 `product_kits.stock` 拆分或复制到颜色余额。
 
 ## 4. 库存发生时点与 Order 矩阵
 
-普通用户创建 Pending 订单、ADMIN+ 创建直接 Paid 的代客钱包订单时，都把 Kit 数量视为实际扣减，不再建立独立“预占库存”字段。未来超时取消复用相同恢复用例；对已存在 Pending 订单进行余额支付或人工结算只推进订单状态，不再次扣库存。全额退款是独立 Refund 事实，只有 PAID Kit 恢复库存，COMPLETED 不恢复。
+普通用户创建 Pending 订单、ADMIN+ 创建直接 Paid 的代客钱包订单时，都把 Kit 数量视为实际扣减，不再建立独立“预占库存”字段。`fixed` 数量单位为套；`color_selectable` 每个颜色 OrderItem 的数量单位为 10g。未来超时取消复用相同恢复用例；对已存在 Pending 订单进行余额支付或人工结算只推进订单状态，不再次扣库存。全额退款是独立 Refund 事实，只有 PAID Kit/颜色恢复库存，COMPLETED 不恢复。
 
 | Order 操作 | Order 状态变化 | Inventory 行为 |
 |------------|----------------|----------------|
@@ -79,7 +84,7 @@ Inventory 接入后，新建 Kit 的初始 `stock` 固定为 `0`；首次入库�
 | 重复取消 | 状态冲突 | 不产生第二次恢复或流水 |
 | 重复退款 | 幂等重放或退款状态冲突 | 不产生第二次恢复或流水 |
 
-纯 Experience、纯 Kit、Experience + Kit 混合订单均允许。任一 Kit 不可售或库存不足时整单失败：所有 Kit 扣减、Order、OrderItem、InventoryTransaction 与 `CREATE_ORDER` 审计必须全部回滚。
+纯 Experience、纯 Kit、Experience + Kit 混合订单均允许。一个订单可同时包含 Experience、fixed Kit 和多个 color_selectable 颜色行。任一 Kit/颜色不可售或库存不足时整单失败：所有 Kit 扣减、Order、OrderItem、InventoryTransaction 与 `CREATE_ORDER` 审计必须全部回滚；这里的 Kit 扣减同时包括 fixed 聚合余额和 color_selectable 商品颜色余额。
 
 ## 5. Item 与快照规则
 
@@ -93,15 +98,24 @@ Phase 4.3 的创建 Item 形状：
 {"product_id": 5, "quantity": 2}
 ```
 
+M6 颜色行形状：
+
+```json
+{"product_id": 9, "kit_color_id": 701, "quantity": 3}
+```
+
+该例表示 Product 9 的颜色关联 701，共 30g。
+
 - Experience 必须提交有效且属于该 Product 的 `experience_option_id`。
 - Kit 的 `experience_option_id` 可以省略或显式为 `null`，两者都规范化为无 Option；提交正整数 Option ID 则拒绝。
-- 同一请求按 `(product_id, experience_option_id)` 判重；因此同一 Kit Product 最多出现一行。
-- Kit 的名称、价格、数量和小计使用 OrderItem 现有公共快照字段；Option ID 与三项 Option 快照为 `null`。
+- 同一请求按 `(product_id, experience_option_id, kit_color_id)` 判重；同一 fixed Kit 最多一行，同一 color_selectable Product 可以包含多个不同颜色行，但同色最多一行。
+- 每色 `quantity=1..99`，颜色行最多 20；Experience/fixed 非颜色行最多 10；总行数最多 30。
+- fixed Kit 的名称、价格、数量和小计使用既有快照字段；颜色行还必须快照 ProductKitColor ID、颜色编码、名称与 `sale_unit_grams=10`。Option ID 与三项 Option 快照为 `null`。
 - 客户端不得提交价格、名称、before/after、库存余额或流水类型。
 
 ## 6. 管理员库存调整
 
-ADMIN+（`admin`、`super_admin`）可以增加或减少 Draft、Online、Offline 的未删除 Kit 库存。Online Kit 允许补货和盘点；Product 内容、图片和价格的 Online 修改限制不变。
+ADMIN+（`admin`、`super_admin`）可以增加或减少 Draft、Online、Offline 的未删除 Kit 库存。fixed 调整 ProductKit；color_selectable 调整指定 ProductKitColor。Online Kit 允许补货和盘点；Product 内容、颜色启用、图片和价格的 Online 修改限制不变。
 
 请求语义为：
 
@@ -119,7 +133,7 @@ ADMIN+（`admin`、`super_admin`）可以增加或减少 Draft、Online、Offlin
 - 客户端不能提交最终余额、before/after、operator、transaction type、source 或内部幂等键。
 - 调整、Inventory 流水与共享 AuditLog 必须原子提交；失败全部回滚。
 
-旧端点 `PATCH /api/v1/admin/products/kit/{product_id}/stock` 已在 Phase 4.3.10 直接移除，不做兼容包装；Kit 创建请求也不再接受 `stock`。这是 v0.6.0 的明确破坏性变化：新 Kit 固定以 0 建立隐式基线，首次入库必须调用 adjustment。
+旧端点 `PATCH /api/v1/admin/products/kit/{product_id}/stock` 已在 Phase 4.3.10 直接移除，不做兼容包装；Kit 创建请求也不再接受 `stock`。新 fixed Kit 的聚合余额从 0 开始；新 color_selectable Kit 的每个商品颜色余额分别从 0 开始，首次入库必须调用对应 adjustment。
 
 ## 7. 流水类型、来源与操作人
 
@@ -139,6 +153,8 @@ ADMIN+（`admin`、`super_admin`）可以增加或减少 Draft、Online、Offlin
 
 Phase 4.3.3 持久化字段冻结为：`product_id` 关联 `products.id`、可空 `operator_id` 关联 `users.id`，两者均 `ON DELETE RESTRICT`；`source_id` 是可空通用来源标识，不建立多态外键。`source_type` 与 `reason` 均为 NOT NULL，因为第一版四种流水都有明确来源和稳定原因。完整内部 `idempotency_key` 使用 `VARCHAR(256)` 容纳服务端命名空间，客户端提交部分仍限 128 字符。
 
+M6 为 `inventory_transactions` 增加可空 `kit_color_id → product_kit_colors.id ON DELETE RESTRICT`：fixed 流水必须为 null，颜色流水必须非 null 且与 `product_id` 属于同一商品。流水数值始终以对应销售单位记录；颜色流水的 1 表示 10g。API 可从已预加载 ProductKitColor/BeadColor 投影 `bead_color_id`、`bead_color_slot_no`、颜色编码/名称和 `sale_unit_grams=10`，但这些目录字段不复制进 InventoryTransaction。
+
 流水继承项目统一 `BaseModel`，因此物理表包含 `updated_at` 技术字段；业务层不提供流水更新/删除入口，API 不输出 `updated_at`。当前不下沉跨字段数据库 `CHECK`：数据库保证 FK、NOT NULL、容量和幂等唯一性，Model 保证单字段数量边界与非零变化量，Service 保证算术等式、类型/source 组合和余额/流水同事务。
 
 ## 8. 幂等契约
@@ -152,7 +168,15 @@ inventory:refund:{refund_id}:restore:product:{product_id}
 inventory:opening:product:{product_id}
 ```
 
-管理员调整必须携带 `Idempotency-Key` 请求头，值为去除首尾空白后的 1 至 128 个可打印 ASCII 字符；不得写入响应或日志。其持久化身份包含操作类别与该键，避免与自动事件命名空间冲突。
+M6 颜色自动事件把颜色身份纳入幂等键，防止同一订单不同颜色相互冲突：
+
+```text
+inventory:order:{order_id}:deduct:product:{product_id}:color:{kit_color_id}
+inventory:order:{order_id}:restore:product:{product_id}:color:{kit_color_id}
+inventory:refund:{refund_id}:restore:product:{product_id}:color:{kit_color_id}
+```
+
+管理员调整必须携带 `Idempotency-Key` 请求头，值为去除首尾空白后的 1 至 128 个可打印 ASCII 字符；不得写入响应或日志。fixed 内部身份为 `inventory:admin:adjust:{client_key}`，颜色调整为 `inventory:admin:adjust-color:{client_key}`；颜色重放复验还必须包含 ProductKitColor 身份，避免不同颜色共用客户端 key 被误认成同一意图。
 
 - 相同管理员、相同 key、相同 Product/change/reason 的重试返回首次已提交结果，不再次改变余额或写流水/Audit。
 - 相同 key 对应不同操作者或不同规范化 payload 时返回 `InventoryTransactionConflict`。
@@ -164,14 +188,14 @@ inventory:opening:product:{product_id}
 采用“稳定顺序行锁 + 锁后校验 + 原子更新 + 同事务流水”：
 
 1. 写用例开启事务；
-2. 将所有 Kit Product ID 去重并按升序排序；
-3. 依次 `SELECT ... FOR UPDATE` 锁定对应 ProductKit；
+2. 将所有余额目标规范化并按 Product ID、余额类型和 ProductKitColor ID 的固定键按升序排序；
+3. 以集合查询分别 `SELECT ... FOR UPDATE` 锁定对应 ProductKit / ProductKitColor；
 4. 锁后重新校验可售性、余额和幂等记录；
 5. 更新余额并写流水；
 6. 在同一事务中完成 Order/Items/Audit 或管理员 Audit；
 7. 使用同一连接重载响应后提交。
 
-Order 创建、ADMIN+ 代客钱包订单与取消 Service 拥有包含 Inventory 写入在内的外层事务；Refund Service 拥有全额退款及 PAID Kit 恢复事务；它们都直接协调 Inventory Repository，不调用 Inventory Service。管理员调整事务由 Inventory Service 拥有。Repository 只执行锁、查询和持久化，不判断业务状态或抛业务异常。
+Order 创建、ADMIN+ 代客钱包订单与取消 Service 拥有包含 Inventory 写入在内的外层事务；Refund Service 拥有全额退款及 PAID Kit 恢复事务；它们都直接协调 Inventory Repository，不调用 Inventory Service。管理员 fixed/颜色调整事务由 Inventory Service 拥有。Repository 只执行锁、查询和持久化，不判断业务状态或抛业务异常。
 
 ### 9.1 Order 创建事务顺序
 
@@ -288,17 +312,29 @@ Phase 4.3.11 在独立临时数据目录、`127.0.0.1:13306` 的 MySQL Community
 
 该门槛没有修改业务实现、物理 Schema、迁移或依赖；测试安全护栏只允许显式启用的 `127.0.0.1`、非 3306 端口和 `pinkdoohub_inventory_4311` 前缀 Schema。fixture 在跨 SQLite/MySQL 前后清理 Tortoise 1.1.7 不区分后端的 Executor SQL 缓存，使两套测试可在同一 pytest 进程中稳定共存。隔离实例验证后销毁，现有 `MySQL80` 服务和所有持久数据库未被访问或修改。
 
+### 9.11 M6 颜色库存实现边界（Pending）
+
+M6 沿用既有分层和事务所有权，不新建第二套 Inventory Service：
+
+- Product Repository 批量提供 ProductKitColor 与 BeadColor 候选；Order/Refund 在事务内通过 Inventory Repository 锁定商品颜色余额。
+- 同一颜色商品的多色请求按 ProductKitColor ID 去重并一次集合锁，不在 Item 循环中查询或逐行锁。
+- fixed 余额仍锁 ProductKit；颜色余额锁 ProductKitColor。混合订单必须使用全局一致的 Product/颜色排序，创建、取消、退款和管理员调整不得各自发明锁序。
+- 流水 `product_id` 继续保留对外商品身份，`kit_color_id` 精确标识余额行；两者归属不一致是内部数据冲突，不能降级成 fixed 流水。
+- 颜色管理 adjustment、下单扣减、Pending 取消和 PAID 退款恢复与 Order/Wallet/Audit 保持同一事务；任何一色失败整笔回滚。
+- M6 完成前必须增加 SQLite 原子回滚/接口矩阵，以及真实 MySQL 同色最后一份、异色并发、fixed+颜色稳定锁序、1205/1213 全用例重试和新索引 EXPLAIN 门槛。Phase 4.3.11 的 fixed 证据不能替代这些新增路径。
+
 ## 10. 错误与优先级
 
 Inventory 特有错误：
 
 | 命名异常 | code | HTTP | message | data |
 |----------|------|------|---------|------|
-| `InsufficientStock` | `40931` | 409 | `Insufficient stock` | 用户下单仅含 `product_id`, `requested_quantity` |
-| `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 管理调整、取消或 PAID 退款恢复含 `product_id`, `before_quantity`, `change_quantity`, `minimum`, `maximum` |
+| `InventoryKitKindMismatch` | `40031` | 400 | `Kit kind does not match this inventory operation` | `expected`, `actual` |
+| `InsufficientStock` | `40931` | 409 | `Insufficient stock` | fixed 含 `product_id`, `requested_quantity`；颜色行另含 `kit_color_id`，均不返回 available |
+| `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 管理调整、取消或 PAID 退款恢复含 `product_id`, `before_quantity`, `change_quantity`, `minimum`, `maximum`；颜色余额场景另含 `kit_color_id`，fixed 场景保持不含该字段 |
 | `InventoryTransactionConflict` | `40933` | 409 | `Inventory idempotency key conflicts with another request` | `null` |
 
-Product 不存在/删除/类型/Kit 扩展缺失复用 Product 的 `40401`、`40903`、`40001`、`40404`；Order 状态错误继续复用 `40921`。`change`、reason、Idempotency-Key 和查询形状错误使用全局 HTTP 422 / code `422`。
+Product 不存在/删除/类型/Kit 扩展缺失复用 Product 的 `40401`、`40903`、`40001`、`40404`；颜色余额不存在或不属于该 Product 使用 `40406 ProductKitColorNotFound`。Order 状态错误继续复用 `40921`。`change`、reason、Idempotency-Key 和查询形状错误使用全局 HTTP 422 / code `422`。
 
 用户下单的 `InsufficientStock` 不暴露精确可用量，避免库存探测；管理调整成功响应和余额越界错误可以返回当前安全余额。多个 Kit 同时不足时，在锁定全部 Kit 后按请求 Item 顺序返回第一个不足项，避免扩大错误结构并保持与现有 Order “首个稳定错误”契约一致。
 
@@ -306,11 +342,13 @@ Product 不存在/删除/类型/Kit 扩展缺失复用 Product 的 `40401`、`40
 
 1. Schema 请求形状；
 2. Product 不存在、删除或未上架；
-3. Product 类型与 Option 形状不匹配；
+3. Product 类型与 Option/颜色形状不匹配；
 4. Experience Option 无效；
 5. Kit 扩展缺失；
-6. Kit 库存不足；
-7. 持久化完整性错误。
+6. ProductKitColor 不存在、归属错误、未启用或颜色目录未配置；
+7. 候选订单总额超出持久化范围；
+8. Kit/颜色库存不足；
+9. 持久化完整性错误。
 
 ## 11. API、查询与权限范围
 
@@ -322,7 +360,16 @@ GET  /api/v1/admin/products/kit/{product_id}/inventory-transactions
 GET  /api/v1/admin/inventory-transactions
 ```
 
-全部为 ADMIN+。Product 管理详情已经返回当前 stock，因此不增加单独余额端点。流水支持 Product、类型、Order source 和 UTC 时间范围筛选，使用 `created_at DESC, id DESC` 稳定分页。用户不访问流水，只通过 Product 详情读取当前 stock/available，并通过 Order API 间接触发库存变化。
+M6 计划在相同 ADMIN+、严格 adjustment 和幂等语义下增加：
+
+```text
+POST /api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments
+GET  /api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions
+```
+
+全局流水查询增加可选 `kit_color_id` 筛选。上述颜色端点与筛选在路由、Schema、Mapper、HTTP 测试落地前保持 Pending；不得把本段当作现网接口。
+
+全部为 ADMIN+。fixed Product 管理详情返回当前 stock；颜色详情按颜色返回 `stock_units`，因此不增加单独只读余额端点。流水支持 Product、可选 KitColor、类型、Order source和 UTC 时间范围筛选，使用 `created_at DESC, id DESC` 稳定分页。用户不访问流水，只通过 Product 详情读取当前余额/available，并通过 Order API 间接触发库存变化。
 
 查询 Schema 固定 `source_id` 只可与 `source_type=order` 组合；`created_from` / `created_to` 必须为 UTC 且使用包含下界、排除上界语义。响应 Schema 对余额等式、流水类型与增减方向、source/operator 元数据组合和调整结果进行交叉校验，并只接受内部 UTC aware `datetime`。这些约束现已由三个 HTTP 端点统一执行。
 
@@ -332,8 +379,9 @@ GET  /api/v1/admin/inventory-transactions
 - 静态 `select_for_update()`、SQLite 原子回滚和 MySQL 8+ 真实并发测试均已通过。
 - MySQL “最后一件库存”、交叉多 Kit 锁序、取消竞争、管理员调整与下单竞争均已通过。
 - MySQL `EXPLAIN` 已验证锁定和 Product/全局流水分页索引。
+- 上述既有真实 MySQL 证据只覆盖 Phase 4.3 fixed Kit；M6 颜色库存的 SQLite/HTTP 门槛已通过，但仍须取得新的 MySQL 0→6/锁等待/EXPLAIN 结果后才能标为已完成发布验证。
 - 未经明确授权不执行迁移、不重建开发数据库、不 push/tag/release/deploy。
 
 ## 13. 后续实施顺序
 
-已完成 4.3.2 领域语言与 Schema → 4.3.3 Model/数据库设计 → 4.3.4 离线迁移 → 4.3.5 Repository → 4.3.6 管理调整 → 4.3.7 Kit/混合下单 → 4.3.8 取消恢复 → 4.3.9 查询/Mapper → 4.3.10 API → 4.3.11 并发与 HTTP 矩阵 → 4.3.12 最终 Review 与 v0.6.0 候选收口。后续业务阶段需另行冻结范围。
+已完成 4.3.2 领域语言与 Schema → 4.3.3 Model/数据库设计 → 4.3.4 离线迁移 → 4.3.5 Repository → 4.3.6 管理调整 → 4.3.7 Kit/混合下单 → 4.3.8 取消恢复 → 4.3.9 查询/Mapper → 4.3.10 API → 4.3.11 并发与 HTTP 矩阵 → 4.3.12 最终 Review 与 v0.6.0 候选收口。M6 颜色库存的领域/Schema、Model/M6 迁移、Repository/Service、Order/Wallet/Refund 联动、API/Mapper、SQLite/HTTP/本地回归与文档对齐已完成；下一步是执行受控的真实 MySQL 0→6/并发/EXPLAIN 门槛，再决定持久环境迁移与部署。

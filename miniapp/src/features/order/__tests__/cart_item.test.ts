@@ -3,7 +3,11 @@ import type {
   KitProductDetail,
 } from '@/api/endpoints/products'
 
-import { buildExperienceCartItem, buildKitCartItem } from '../cart_item'
+import {
+  buildColorKitCartItem,
+  buildExperienceCartItem,
+  buildKitCartItem,
+} from '../cart_item'
 
 const experienceDetail: ExperienceProductDetail = {
   id: 1,
@@ -35,6 +39,28 @@ const kitDetail: KitProductDetail = {
   price: '599.00',
   stock: 3,
   available: true,
+  kit_kind: { value: 'fixed', label: '固定套装' },
+  sale_unit_grams: null,
+  colors: [],
+}
+
+const colorKitDetail: KitProductDetail = {
+  ...kitDetail,
+  id: 3,
+  name: '自选颜色拼豆',
+  price: '2.50',
+  stock: null,
+  kit_kind: { value: 'color_selectable', label: '自选颜色' },
+  sale_unit_grams: 10,
+  colors: [{
+    id: 31,
+    bead_color_id: 301,
+    slot_no: 1,
+    color_code: 'A01',
+    name: '白色',
+    swatch_image_url: '/uploads/bead-colors/a01.webp',
+    available: true,
+  }],
 }
 
 describe('Product detail → CartItem', () => {
@@ -42,6 +68,7 @@ describe('Product detail → CartItem', () => {
     expect(buildExperienceCartItem(experienceDetail, experienceDetail.options[0])).toEqual({
       productId: 1,
       experienceOptionId: 11,
+      kitColorId: null,
       productType: 'experience',
       productName: '周末拼豆体验',
       configurationLabel: '1小时 · 2人 · 工作日',
@@ -62,12 +89,50 @@ describe('Product detail → CartItem', () => {
     expect(buildKitCartItem(kitDetail)).toEqual({
       productId: 2,
       experienceOptionId: null,
+      kitColorId: null,
       productType: 'kit',
+      kitKind: 'fixed',
       productName: '基础拼豆套装',
       configurationLabel: null,
       unitPrice: '599.00',
       imageUrl: '/uploads/products/kit.png',
       quantity: 1,
     })
+  })
+
+  it('自选颜色 Kit 保存商品颜色 ID，并把份数解释为 10g 单位', () => {
+    expect(buildColorKitCartItem(colorKitDetail, colorKitDetail.colors[0], 99)).toEqual({
+      productId: 3,
+      experienceOptionId: null,
+      kitColorId: 31,
+      productType: 'kit',
+      kitKind: 'color_selectable',
+      productName: '自选颜色拼豆',
+      configurationLabel: 'A01 · 白色',
+      saleUnitGrams: 10,
+      unitPrice: '2.50',
+      imageUrl: '/uploads/bead-colors/a01.webp',
+      quantity: 99,
+    })
+  })
+
+  it('色号与名称相同时购物车配置只保存一个标签', () => {
+    const color = { ...colorKitDetail.colors[0], color_code: 'A1', name: 'A1' }
+
+    expect(buildColorKitCartItem(
+      { ...colorKitDetail, colors: [color] },
+      color,
+      1,
+    ).configurationLabel).toBe('A1')
+  })
+
+  it('拒绝超过 990g 或不属于当前商品的颜色', () => {
+    expect(() => buildColorKitCartItem(colorKitDetail, colorKitDetail.colors[0], 100))
+      .toThrow('每种颜色必须选择 10g 至 990g')
+    expect(() => buildColorKitCartItem(
+      colorKitDetail,
+      { ...colorKitDetail.colors[0], id: 999 },
+      1,
+    )).toThrow('所选颜色不属于当前商品')
   })
 })

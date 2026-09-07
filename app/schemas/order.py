@@ -14,10 +14,12 @@ from pydantic import (
 )
 
 from app.common.constants.order import (
+    ORDER_COLOR_ITEMS_MAX_COUNT,
     ORDER_ITEM_QUANTITY_MAX,
     ORDER_ITEM_QUANTITY_MIN,
     ORDER_ITEMS_MAX_COUNT,
     ORDER_ITEMS_MIN_COUNT,
+    ORDER_NON_COLOR_ITEMS_MAX_COUNT,
     ORDER_NO_PATTERN,
     ORDER_REMARK_MAX_LENGTH,
 )
@@ -88,6 +90,7 @@ class OrderItemCreate(_OrderRequest):
 
     product_id: PositiveOrderResourceId
     experience_option_id: PositiveOrderResourceId | None = None
+    kit_color_id: PositiveOrderResourceId | None = None
     quantity: OrderItemQuantity
 
 
@@ -107,17 +110,40 @@ class OrderCreate(_OrderRequest):
 
         return None if value == "" else value
 
+    @field_validator("items", mode="after")
+    @classmethod
+    def enforce_item_kind_counts(
+        cls,
+        items: list[OrderItemCreate],
+    ) -> list[OrderItemCreate]:
+        """颜色行与既有订单行分别执行冻结上限。"""
+
+        color_count = sum(item.kit_color_id is not None for item in items)
+        non_color_count = len(items) - color_count
+        if color_count > ORDER_COLOR_ITEMS_MAX_COUNT:
+            raise ValueError(
+                f"An order may contain at most {ORDER_COLOR_ITEMS_MAX_COUNT} "
+                "kit color items"
+            )
+        if non_color_count > ORDER_NON_COLOR_ITEMS_MAX_COUNT:
+            raise ValueError(
+                "An order may contain at most "
+                f"{ORDER_NON_COLOR_ITEMS_MAX_COUNT} non-color items"
+            )
+        return items
+
     @model_validator(mode="after")
     def reject_duplicate_items(self) -> "OrderCreate":
-        """同一 Product/Option 组合不得重复，也不静默合并。"""
+        """同一 Product/Option/KitColor 组合不得重复，也不静默合并。"""
 
         keys = [
-            (item.product_id, item.experience_option_id)
+            (item.product_id, item.experience_option_id, item.kit_color_id)
             for item in self.items
         ]
         if len(keys) != len(set(keys)):
             raise ValueError(
-                "Duplicate product and experience option combinations "
+                "Duplicate product and experience option and kit color "
+                "combinations "
                 "are not allowed"
             )
         return self

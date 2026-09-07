@@ -17,6 +17,8 @@ from app.common.constants.order import (
     ORDER_AUDIT_ACTION_CREATE,
     ORDER_AUDIT_ACTION_MARK_PAID,
     ORDER_AUDIT_TARGET_TYPE,
+    ORDER_AMOUNT_MAX,
+    ORDER_COLOR_SALE_UNIT_GRAMS,
     ORDER_NO_GENERATION_MAX_ATTEMPTS,
     ORDER_OPERATION_CANCEL,
     ORDER_OPERATION_COMPLETE,
@@ -25,6 +27,8 @@ from app.common.constants.order import (
     ORDER_STATUS_VALUES,
 )
 from app.common.constants.inventory import (
+    INVENTORY_ORDER_COLOR_DEDUCTION_IDEMPOTENCY_KEY,
+    INVENTORY_ORDER_COLOR_RESTORE_IDEMPOTENCY_KEY,
     INVENTORY_ORDER_DEDUCTION_IDEMPOTENCY_KEY,
     INVENTORY_ORDER_DEDUCTION_REASON,
     INVENTORY_ORDER_RESTORE_IDEMPOTENCY_KEY,
@@ -45,7 +49,7 @@ from app.common.enums.inventory import (
     InventoryTransactionType,
 )
 from app.common.enums.order import OrderStatus, OrderStatusValue
-from app.common.enums.product import ProductStatus, ProductType
+from app.common.enums.product import KitKind, ProductStatus, ProductType
 from app.common.enums.user import UserRole, UserStatus
 from app.common.enums.wallet import (
     PaymentMethod,
@@ -60,6 +64,8 @@ from app.common.exceptions import (
     InsufficientStock,
     InventoryBalanceExceeded,
     InventoryTransactionConflict,
+    OrderAmountExceeded,
+    OrderKitColorUnavailable,
     OrderNotFound,
     OrderOptionUnavailable,
     OrderProductUnavailable,
@@ -89,6 +95,7 @@ from app.repositories.order_repo import (
     OrderRepository,
 )
 from app.repositories.inventory_repo import (
+    InventoryColorStockUpdateData,
     InventoryRepository,
     InventoryStockUpdateData,
     InventoryTransactionCreateData,
@@ -113,6 +120,7 @@ class OrderItemInput:
     product_id: int
     experience_option_id: int | None
     quantity: int
+    kit_color_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -470,11 +478,21 @@ class OrderService:
         if order is None:
             raise WalletTransactionConflict()
         expected_items = [
-            (item.product_id, item.experience_option_id, item.quantity)
+            (
+                item.product_id,
+                item.experience_option_id,
+                item.kit_color_id,
+                item.quantity,
+            )
             for item in items
         ]
         actual_items = [
-            (item.product_id, item.experience_option_id, item.quantity)
+            (
+                item.product_id,
+                item.experience_option_id,
+                item.kit_color_id,
+                item.quantity,
+            )
             for item in order.items
         ]
         if (
@@ -717,20 +735,67 @@ class OrderService:
         kit_items: list[OrderItemInput],
         using_db: BaseDBAsyncClient,
     ) -> None:
-        """稳定锁定全部 Kit，锁后重检并批量持久化余额与流水。"""
+        """按固定 Kit、可选颜色的全局锁序扣减两类权威余额。"""
 
         if not kit_items:
             return
-        product_ids = {item.product_id for item in kit_items}
+
+        fixed_quantity_by_product: dict[int, int] = {}
+        color_request_by_id: dict[int, tuple[int, int]] = {}
+        for item in kit_items:
+            if item.kit_color_id is None:
+                fixed_quantity_by_product[item.product_id] = (
+                    (
+                        fixed_quantity_by_product[item.product_id]
+                        if item.product_id in fixed_quantity_by_product
+                        else 0
+                    )
+                    + item.quantity
+                )
+                continue
+            existing_product_id, existing_quantity = (
+                color_request_by_id[item.kit_color_id]
+                if item.kit_color_id in color_request_by_id
+                else (item.product_id, 0)
+            )
+            if existing_product_id != item.product_id:
+                raise OrderKitColorUnavailable(
+                    product_id=item.product_id,
+                    kit_color_id=item.kit_color_id,
+                )
+            color_request_by_id[item.kit_color_id] = (
+                item.product_id,
+                existing_quantity + item.quantity,
+            )
+
+        fixed_product_ids = set(fixed_quantity_by_product)
+        color_ids = set(color_request_by_id)
+        product_ids = fixed_product_ids | {
+            product_id for product_id, _ in color_request_by_id.values()
+        }
+
+        # 跨创建、取消、退款统一锁序：固定余额优先，颜色余额其次。
         locked_kits = await self.inventory_repository.get_kits_for_update(
-            product_ids,
+            fixed_product_ids,
+            using_db=using_db,
+        )
+        locked_colors = await self.inventory_repository.get_kit_colors_for_update(
+            color_ids,
             using_db=using_db,
         )
         products = await self.product_repository.get_products_by_ids(
             product_ids,
             using_db=using_db,
         )
+        kit_configs = await self.product_repository.get_kits_by_product_ids(
+            product_ids,
+            using_db=using_db,
+        )
         kits_by_product_id = {kit.product_id: kit for kit in locked_kits}
+        kit_configs_by_product_id = {
+            kit.product_id: kit for kit in kit_configs
+        }
+        colors_by_id = {kit_color.id: kit_color for kit_color in locked_colors}
         products_by_id = {product.id: product for product in products}
 
         for item in kit_items:
@@ -744,29 +809,62 @@ class OrderService:
                 or product.is_deleted
                 or product.status is not ProductStatus.ONLINE
                 or product.product_type is not ProductType.KIT
-                or item.product_id not in kits_by_product_id
             ):
                 raise OrderProductUnavailable(product_id=item.product_id)
+            kit_config = (
+                kit_configs_by_product_id[item.product_id]
+                if item.product_id in kit_configs_by_product_id
+                else None
+            )
+            if kit_config is None:
+                raise OrderProductUnavailable(product_id=item.product_id)
+            if item.kit_color_id is None:
+                if (
+                    kit_config.kit_kind is not KitKind.FIXED
+                    or item.product_id not in kits_by_product_id
+                    or kits_by_product_id[item.product_id].stock is None
+                ):
+                    raise OrderProductUnavailable(product_id=item.product_id)
+            else:
+                kit_color = (
+                    colors_by_id[item.kit_color_id]
+                    if item.kit_color_id in colors_by_id
+                    else None
+                )
+                if (
+                    kit_config.kit_kind is not KitKind.COLOR_SELECTABLE
+                    or kit_color is None
+                    or kit_color.product_id != item.product_id
+                    or not kit_color.is_enabled
+                ):
+                    raise OrderKitColorUnavailable(
+                        product_id=item.product_id,
+                        kit_color_id=item.kit_color_id,
+                    )
 
         stock_updates: list[InventoryStockUpdateData] = []
+        color_stock_updates: list[InventoryColorStockUpdateData] = []
         transactions: list[InventoryTransactionCreateData] = []
-        for item in kit_items:
-            kit = kits_by_product_id[item.product_id]
+        for product_id in sorted(fixed_product_ids):
+            kit = kits_by_product_id[product_id]
+            requested_quantity = fixed_quantity_by_product[product_id]
             before_quantity = kit.stock
-            if before_quantity < item.quantity:
+            if before_quantity is None:
+                raise InventoryTransactionConflict()
+            if before_quantity < requested_quantity:
                 raise InsufficientStock(
-                    product_id=item.product_id,
-                    requested_quantity=item.quantity,
+                    product_id=product_id,
+                    requested_quantity=requested_quantity,
                 )
-            after_quantity = before_quantity - item.quantity
+            after_quantity = before_quantity - requested_quantity
             stock_updates.append(
                 InventoryStockUpdateData(kit=kit, stock=after_quantity)
             )
             transactions.append(
                 InventoryTransactionCreateData(
-                    product_id=item.product_id,
+                    product_id=product_id,
                     transaction_type=InventoryTransactionType.ORDER_DEDUCTION,
-                    change_quantity=-item.quantity,
+                    change_quantity=-requested_quantity,
                     before_quantity=before_quantity,
                     after_quantity=after_quantity,
                     source_type=InventorySourceType.ORDER,
@@ -776,7 +874,45 @@ class OrderService:
                     idempotency_key=(
                         INVENTORY_ORDER_DEDUCTION_IDEMPOTENCY_KEY.format(
                             order_id=order_id,
-                            product_id=item.product_id,
+                            product_id=product_id,
+                        )
+                    ),
+                )
+            )
+
+        for kit_color in locked_colors:
+            product_id, requested_quantity = color_request_by_id[kit_color.id]
+            before_quantity = kit_color.stock_units
+            if before_quantity < requested_quantity:
+                raise InsufficientStock(
+                    product_id=product_id,
+                    kit_color_id=kit_color.id,
+                    requested_quantity=requested_quantity,
+                )
+            after_quantity = before_quantity - requested_quantity
+            color_stock_updates.append(
+                InventoryColorStockUpdateData(
+                    kit_color=kit_color,
+                    stock_units=after_quantity,
+                )
+            )
+            transactions.append(
+                InventoryTransactionCreateData(
+                    product_id=product_id,
+                    kit_color_id=kit_color.id,
+                    transaction_type=InventoryTransactionType.ORDER_DEDUCTION,
+                    change_quantity=-requested_quantity,
+                    before_quantity=before_quantity,
+                    after_quantity=after_quantity,
+                    source_type=InventorySourceType.ORDER,
+                    source_id=order_id,
+                    operator_id=user_id,
+                    reason=INVENTORY_ORDER_DEDUCTION_REASON,
+                    idempotency_key=(
+                        INVENTORY_ORDER_COLOR_DEDUCTION_IDEMPOTENCY_KEY.format(
+                            order_id=order_id,
+                            product_id=product_id,
+                            kit_color_id=kit_color.id,
                         )
                     ),
                 )
@@ -784,6 +920,10 @@ class OrderService:
 
         await self.inventory_repository.bulk_update_stocks(
             updates=stock_updates,
+            using_db=using_db,
+        )
+        await self.inventory_repository.bulk_update_color_stocks(
+            updates=color_stock_updates,
             using_db=using_db,
         )
         await self.inventory_repository.bulk_create_transactions(
@@ -920,27 +1060,55 @@ class OrderService:
         items: list[OrderCancellationItemData],
         using_db: BaseDBAsyncClient,
     ) -> None:
-        """稳定锁定 Kit，并批量保存取消恢复余额及不可变流水。"""
+        """按统一锁序恢复固定 Kit 与可选颜色余额。"""
 
-        quantity_by_product_id: dict[int, int] = {}
+        fixed_quantity_by_product: dict[int, int] = {}
+        color_quantity_by_id: dict[int, tuple[int, int]] = {}
         for item in items:
             if item.experience_option_id is not None:
                 continue
-            quantity_by_product_id[item.product_id] = (
-                quantity_by_product_id[item.product_id] + item.quantity
-                if item.product_id in quantity_by_product_id
-                else item.quantity
+            if item.kit_color_id is None:
+                fixed_quantity_by_product[item.product_id] = (
+                    (
+                        fixed_quantity_by_product[item.product_id]
+                        if item.product_id in fixed_quantity_by_product
+                        else 0
+                    )
+                    + item.quantity
+                )
+                continue
+            existing_product_id, existing_quantity = (
+                color_quantity_by_id[item.kit_color_id]
+                if item.kit_color_id in color_quantity_by_id
+                else (item.product_id, 0)
             )
-        if not quantity_by_product_id:
+            if existing_product_id != item.product_id:
+                raise InventoryTransactionConflict()
+            color_quantity_by_id[item.kit_color_id] = (
+                item.product_id,
+                existing_quantity + item.quantity,
+            )
+        if not fixed_quantity_by_product and not color_quantity_by_id:
             return
 
-        product_ids = set(quantity_by_product_id)
+        product_ids = set(fixed_quantity_by_product)
+        color_ids = set(color_quantity_by_id)
         locked_kits = await self.inventory_repository.get_kits_for_update(
             product_ids,
             using_db=using_db,
         )
+        locked_colors = await self.inventory_repository.get_kit_colors_for_update(
+            color_ids,
+            using_db=using_db,
+        )
         kits_by_product_id = {kit.product_id: kit for kit in locked_kits}
         if set(kits_by_product_id) != product_ids:
+            raise InventoryTransactionConflict()
+        colors_by_id = {kit_color.id: kit_color for kit_color in locked_colors}
+        if set(colors_by_id) != color_ids or any(
+            colors_by_id[kit_color_id].product_id != product_id
+            for kit_color_id, (product_id, _) in color_quantity_by_id.items()
+        ):
             raise InventoryTransactionConflict()
 
         idempotency_keys = {
@@ -949,6 +1117,14 @@ class OrderService:
                 product_id=product_id,
             )
             for product_id in product_ids
+        }
+        idempotency_keys |= {
+            INVENTORY_ORDER_COLOR_RESTORE_IDEMPOTENCY_KEY.format(
+                order_id=order_id,
+                product_id=product_id,
+                kit_color_id=kit_color_id,
+            )
+            for kit_color_id, (product_id, _) in color_quantity_by_id.items()
         }
         existing = (
             await self.inventory_repository.get_transactions_by_idempotency_keys(
@@ -960,11 +1136,14 @@ class OrderService:
             raise InventoryTransactionConflict()
 
         stock_updates: list[InventoryStockUpdateData] = []
+        color_stock_updates: list[InventoryColorStockUpdateData] = []
         transactions: list[InventoryTransactionCreateData] = []
         for product_id in sorted(product_ids):
             kit = kits_by_product_id[product_id]
-            change_quantity = quantity_by_product_id[product_id]
+            change_quantity = fixed_quantity_by_product[product_id]
             before_quantity = kit.stock
+            if before_quantity is None:
+                raise InventoryTransactionConflict()
             after_quantity = before_quantity + change_quantity
             if after_quantity > INVENTORY_STOCK_MAX:
                 raise InventoryBalanceExceeded(
@@ -997,8 +1176,53 @@ class OrderService:
                 )
             )
 
+        for kit_color in locked_colors:
+            product_id, change_quantity = color_quantity_by_id[kit_color.id]
+            before_quantity = kit_color.stock_units
+            after_quantity = before_quantity + change_quantity
+            if after_quantity > INVENTORY_STOCK_MAX:
+                raise InventoryBalanceExceeded(
+                    product_id=product_id,
+                    kit_color_id=kit_color.id,
+                    before_quantity=before_quantity,
+                    change_quantity=change_quantity,
+                )
+            color_stock_updates.append(
+                InventoryColorStockUpdateData(
+                    kit_color=kit_color,
+                    stock_units=after_quantity,
+                )
+            )
+            transactions.append(
+                InventoryTransactionCreateData(
+                    product_id=product_id,
+                    kit_color_id=kit_color.id,
+                    transaction_type=(
+                        InventoryTransactionType.ORDER_CANCELLATION_RESTORE
+                    ),
+                    change_quantity=change_quantity,
+                    before_quantity=before_quantity,
+                    after_quantity=after_quantity,
+                    source_type=InventorySourceType.ORDER,
+                    source_id=order_id,
+                    operator_id=user_id,
+                    reason=INVENTORY_ORDER_RESTORE_REASON,
+                    idempotency_key=(
+                        INVENTORY_ORDER_COLOR_RESTORE_IDEMPOTENCY_KEY.format(
+                            order_id=order_id,
+                            product_id=product_id,
+                            kit_color_id=kit_color.id,
+                        )
+                    ),
+                )
+            )
+
         await self.inventory_repository.bulk_update_stocks(
             updates=stock_updates,
+            using_db=using_db,
+        )
+        await self.inventory_repository.bulk_update_color_stocks(
+            updates=color_stock_updates,
             using_db=using_db,
         )
         await self.inventory_repository.bulk_create_transactions(
@@ -1226,9 +1450,17 @@ class OrderService:
         kits = await self.product_repository.get_kits_by_product_ids(
             {item.product_id for item in items}
         )
+        kit_colors = await self.product_repository.get_kit_colors_by_ids(
+            {
+                item.kit_color_id
+                for item in items
+                if item.kit_color_id is not None
+            }
+        )
         products_by_id = {product.id: product for product in products}
         options_by_id = {option.id: option for option in options}
         kits_by_product_id = {kit.product_id: kit for kit in kits}
+        kit_colors_by_id = {kit_color.id: kit_color for kit_color in kit_colors}
 
         snapshots: list[OrderItemCreateData] = []
         kit_items: list[OrderItemInput] = []
@@ -1247,6 +1479,11 @@ class OrderService:
                 raise OrderProductUnavailable(product_id=item.product_id)
 
             if product.product_type is ProductType.EXPERIENCE:
+                if item.kit_color_id is not None:
+                    raise OrderKitColorUnavailable(
+                        product_id=item.product_id,
+                        kit_color_id=item.kit_color_id,
+                    )
                 option = (
                     options_by_id[item.experience_option_id]
                     if item.experience_option_id is not None
@@ -1267,6 +1504,11 @@ class OrderService:
                 option_duration_minutes = option.duration
                 option_participants = option.participants
                 option_day_type = option.day_type
+                kit_color_id = None
+                kit_color_slot_no = None
+                kit_color_code = None
+                kit_color_name = None
+                sale_unit_grams = None
             elif product.product_type is ProductType.KIT:
                 if item.experience_option_id is not None:
                     raise OrderOptionUnavailable(
@@ -1279,6 +1521,48 @@ class OrderService:
                     else None
                 )
                 if kit is None:
+                    raise OrderProductUnavailable(product_id=item.product_id)
+                if kit.kit_kind is KitKind.FIXED:
+                    if item.kit_color_id is not None:
+                        raise OrderKitColorUnavailable(
+                            product_id=item.product_id,
+                            kit_color_id=item.kit_color_id,
+                        )
+                    kit_color_id = None
+                    kit_color_slot_no = None
+                    kit_color_code = None
+                    kit_color_name = None
+                    sale_unit_grams = None
+                elif kit.kit_kind is KitKind.COLOR_SELECTABLE:
+                    kit_color = (
+                        kit_colors_by_id[item.kit_color_id]
+                        if item.kit_color_id is not None
+                        and item.kit_color_id in kit_colors_by_id
+                        else None
+                    )
+                    bead_color = (
+                        kit_color.bead_color if kit_color is not None else None
+                    )
+                    if (
+                        kit_color is None
+                        or kit_color.product_id != product.id
+                        or not kit_color.is_enabled
+                        or bead_color is None
+                        or not bead_color.is_active
+                        or bead_color.color_code is None
+                        or bead_color.name is None
+                        or kit.sale_unit_grams != ORDER_COLOR_SALE_UNIT_GRAMS
+                    ):
+                        raise OrderKitColorUnavailable(
+                            product_id=item.product_id,
+                            kit_color_id=item.kit_color_id,
+                        )
+                    kit_color_id = kit_color.id
+                    kit_color_slot_no = bead_color.slot_no
+                    kit_color_code = bead_color.color_code
+                    kit_color_name = bead_color.name
+                    sale_unit_grams = kit.sale_unit_grams
+                else:
                     raise OrderProductUnavailable(product_id=item.product_id)
                 unit_price = kit.price
                 experience_option_id = None
@@ -1301,12 +1585,19 @@ class OrderService:
                     option_participants=option_participants,
                     option_day_type=option_day_type,
                     product_name=product.name,
+                    kit_color_id=kit_color_id,
+                    kit_color_slot_no=kit_color_slot_no,
+                    kit_color_code=kit_color_code,
+                    kit_color_name=kit_color_name,
+                    sale_unit_grams=sale_unit_grams,
                     product_price=unit_price,
                     quantity=item.quantity,
                     subtotal=subtotal,
                 )
             )
             total_amount += subtotal
+            if total_amount > ORDER_AMOUNT_MAX:
+                raise OrderAmountExceeded(total_amount=total_amount)
 
         return snapshots, total_amount, kit_items
 

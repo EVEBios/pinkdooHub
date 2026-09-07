@@ -76,9 +76,9 @@ HTTP Client 不默认重试写请求。只有后端已明确返回 Token 失效 
 才通过共享 refresh Promise 刷新并重放一次；普通超时不会自动重新 POST/PATCH。
 受保护请求若收到已禁用 code `1005`，立即清理本地 Session，且不尝试 refresh。
 
-## 当前认证、Product、Order 与 ADMIN 链路
+## 当前认证、Product、Order、Reservation 与 ADMIN 链路
 
-- `src/api/endpoints/auth.ts`：register/login/refresh/logout/getMe 与响应 Runtime Guard；
+- `src/api/endpoints/auth.ts`：register/login/refresh/logout/getMe/updateProfile 与响应 Runtime Guard；预约前补充手机号通过同一 Profile PATCH 链写入，不把手机号塞进预约请求；
 - `src/platform/storage.ts`：跨端 Storage Port 和 Taro Adapter；
 - `src/auth/session.ts`：Token 内存状态、版本化持久化、过期时间和并发 refresh；
 - `src/auth/context.tsx`：注册用例、启动恢复、`/users/me` 验证及全局认证状态；注册成功不会凭空建立 Session；
@@ -97,7 +97,7 @@ HTTP Client 不默认重试写请求。只有后端已明确返回 Token 失效 
 - `src/features/order/use_admin_order_detail.ts`：Pending → Paid、Paid → Completed 的唯一命令派生，以及 unknown/40921/成功后重拉收敛；
 - `src/auth/login_route.ts`：只允许已注册确认页、用户订单列表或管理列表的固定登录/注册回跳，拒绝动态详情、外部或任意内部地址；
 - `src/pages/product-detail/`：把当前真实 Experience Option 或 Kit 加入购物车；
-- `src/pages/cart/`：购物车恢复四态、预览字段、数量修改、移除和进入确认页；
+- `src/pages/cart/`：购物车恢复四态、预览字段、数量修改、移除和进入确认页；同一自选颜色商品在界面合并为一个区块，卡内仍按色样逐色编辑并保持下单明细独立；
 - `src/pages/order-confirm/`：登录守卫、受控备注、确认提交、权威下单结果与未知结果核对入口；
 - `src/pages/orders/`：当前账号订单列表、状态筛选、分页和详情入口；
 - `src/pages/order-detail/`：服务端历史快照、Pending 取消确认及结果反馈。
@@ -107,10 +107,15 @@ HTTP Client 不默认重试写请求。只有后端已明确返回 Token 失效 
 - `src/admin/pages/products/`、`src/admin/pages/product-detail/`、`src/admin/pages/product-create/`、`src/admin/pages/product-edit/`、`src/admin/pages/product-configuration/`、`src/admin/pages/product-images/`：可查看 Draft/Online/Offline 与逻辑删除聚合，可创建 Experience/Kit 草稿、编辑名称/描述、逻辑删除 Draft/Offline、管理 Experience Option/Kit 价格、Product/Option 图片，并执行上下架/readiness 核对。Product 删除恢复仍未开放。
 - `src/api/endpoints/inventory.ts`、`src/features/inventory/`：Kit 调整、指定 Kit/全局流水、筛选分页、201/200 判别和幂等业务意图；unknown 不自动重发，安全重试复用原 key 与 payload。
 - `src/admin/pages/product-inventory/`、`src/admin/pages/inventory-transactions/`：未删除 Kit 的库存管理与两类 ADMIN+ 流水页；动态 Kit 页不进入登录 redirect 白名单。
+- `src/api/endpoints/reservations.ts`、`src/features/reservation/`：服务端预约日历、创建/查询/取消、ADMIN 审核与店休 API 的白名单投影、Runtime Guard、请求竞态和 unknown 结果收敛；pending/confirmed 的取消窗口由服务端最终裁决。
+- `src/pages/reservation-create/`、`src/pages/reservations/`、`src/pages/reservation-detail/`：从 Experience 当前 Option 可达的预约创建、我的预约和详情/取消；严格登录回跳只允许精确的创建参数组合。
+- `src/admin/pages/reservations/`、`src/admin/pages/reservation-detail/`、`src/admin/pages/store-closures/`：ADMIN+ 预约筛选/详情、确认或固定“无空位”拒绝，以及店休批量取消/恢复；列表只显示掩码手机号，完整号码按需在详情读取。
 - `src/api/endpoints/audit.ts`、`src/features/audit/`、`src/admin/pages/product-audit/`：ADMIN+ Product 操作历史的目标绑定 Runtime Guard、服务端分页和只读页面；逻辑删除商品仍可追溯。
 - `src/api/endpoints/admin_users.ts`、`src/features/admin_user/`、`src/admin/pages/users/`：ADMIN+ 用户角色/状态筛选、安全摘要列表与幂等禁用；不提供后端尚不存在的详情、启用或头像上传。
 
 Phase 8.6 Inventory 管理前端的工程实现、自动化、四端构建与微信开发者工具 Functional 均已完成；Product 删除恢复仍未开放。
+
+Reservation N1 的六个页面、API/Feature、入口与工程自动化已形成候选；2026-09-06 完整前端 77 套件/488 项、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移检查、17 项 CI policy 测试，以及微信/支付宝/抖音/H5 四端 production build 均通过。微信端另以 CI 固定 HTTPS Origin 重建并通过产物扫描（141 个文件、总计 968,329 bytes、`release_eligible=false`）；该结果不代表正式 RC。H5 仅保留既有 bundle-size 建议警告。真实 API、角色、营业边界和弱网场景仍需在微信开发者工具单独完成 Functional；N2 主动通知未实现。
 
 本地联调时先启动 FastAPI，再执行 `npm run dev:weapp`，用微信开发者工具导入仓库的 `miniapp/`（`miniprogramRoot` 已指向 `dist/weapp`）。开发环境 Origin 默认是 `http://localhost:8000`；开发者工具需按本地调试策略处理合法域名校验，真机不能把电脑的 `localhost` 当成后端。H5 真实跨域联调仍需后端配置严格 CORS allowlist。
 
@@ -138,7 +143,7 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `app.tasks
 - `src/styles/_patterns.scss`：页面壳、标题、面板、卡片、按钮、反馈和空状态等共享 Sass mixin，不承载业务状态。
 - `src/utils/`：无状态纯函数。
 
-当前主题已覆盖 20 条已注册页面路由，包括客户侧登录、注册、商品、购物车与订单，以及 ADMIN+ 商品、配置、图片、库存、订单和用户管理。页面继续使用各自业务语义类名；新增界面应优先复用上述 Token 与模式，并对 390 px 移动视口和关键 768 px 宽屏状态做视觉检查。
+当前主题已覆盖 31 条已注册页面路由，包括客户侧登录、注册、商品、购物车、订单与预约，以及 ADMIN+ 商品、配置、图片、库存、订单、预约、店休和用户管理。页面继续使用各自业务语义类名；新增界面应优先复用上述 Token 与模式，并对 390 px 移动视口和关键 768 px 宽屏状态做视觉检查。
 
 依赖方向：Page → Component/Feature → Service → HTTP Client → JSON/Upload Transport → Taro 平台 API。
 页面禁止直接调用 `Taro.request`、`Taro.uploadFile` 或平台原生选图 API。

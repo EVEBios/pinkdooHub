@@ -44,7 +44,9 @@ def test_product_kit_metadata_matches_database_contract() -> None:
 
     assert isinstance(fields_map["stock"], fields.IntField)
     assert fields_map["stock"].default == MIN_STOCK
-    assert fields_map["stock"].null is False
+    assert fields_map["stock"].null is True
+    assert fields_map["kit_kind"].default.value == "fixed"
+    assert fields_map["sale_unit_grams"].null is True
     assert "is_deleted" not in fields_map
     assert ProductKit._meta.indexes == ()
 
@@ -185,6 +187,9 @@ async def test_product_kit_sqlite_ddl_matches_contract() -> None:
     columns_by_name = {column["name"]: column for column in columns}
     assert columns_by_name["product_id"]["notnull"] == 1
     assert columns_by_name["price"]["notnull"] == 1
-    assert columns_by_name["stock"]["notnull"] == 1
+    assert columns_by_name["stock"]["notnull"] == 0
     assert columns_by_name["stock"]["dflt_value"] == "0"
+    assert columns_by_name["kit_kind"]["notnull"] == 1
+    assert columns_by_name["kit_kind"]["dflt_value"] == "'fixed'"
+    assert columns_by_name["sale_unit_grams"]["notnull"] == 0
     assert "is_deleted" not in columns_by_name

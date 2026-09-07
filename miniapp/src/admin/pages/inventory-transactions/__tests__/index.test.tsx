@@ -136,6 +136,49 @@ describe('InventoryTransactionsPage', () => {
     testUtils.fireEvent.click(findButton(testUtils, '管理员'))
     expect(testUtils.queries.querySelector('.inventory-filters__pending')).toBeNull()
   })
+
+  it('全局流水把颜色单位换算为克数并展示 ProductKitColor 身份', async () => {
+    mockUseInventoryTransactionList.mockReturnValue({
+      filters: mockFilters,
+      state: {
+        status: 'content',
+        items: [{
+          id: 32,
+          product_id: 7,
+          kit_color_id: 701,
+          bead_color_id: 21,
+          bead_color_slot_no: 21,
+          color_code: 'A21',
+          color_name: '樱桃红',
+          sale_unit_grams: 10,
+          transaction_type: 'admin_adjustment',
+          change_quantity: 3,
+          before_quantity: 2,
+          after_quantity: 5,
+          reason: '颜色补货',
+          source_type: 'admin',
+          source_id: null,
+          source_order_no: null,
+          operator_id: 2,
+          operator_nickname: '管理员',
+          created_at: '2026-09-06T08:00:00Z',
+        }],
+        total: 1,
+        page: 1,
+        pages: 1,
+        loadingMore: false,
+      },
+      applyFilters: mockApplyFilters,
+      retry: jest.fn(),
+      loadNextPage: jest.fn(),
+    })
+    await testUtils.mount(AuthenticatedInventoryTransactions)
+
+    const card = requireElement(testUtils, '.inventory-card')
+    expect(card.textContent).toContain('+30g')
+    expect(card.textContent).toContain('20g → 50g')
+    expect(card.textContent).toContain('颜色 #701 · 槽位 21 · A21 · 樱桃红')
+  })
 })
 
 function authenticated(role: 'user' | 'admin'): AuthContextValue {
@@ -146,7 +189,7 @@ function authenticated(role: 'user' | 'admin'): AuthContextValue {
       role, status: 'normal', last_login_at: null,
       created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
     },
-    register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+    register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
   }
 }
 

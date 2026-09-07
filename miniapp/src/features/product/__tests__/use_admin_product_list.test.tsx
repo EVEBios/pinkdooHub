@@ -12,6 +12,8 @@ const page: AdminProductListPage = {
     status: { value: 'draft', label: '草稿' },
     cover_image: null,
     display_price: null,
+    kit_kind: null,
+    sale_unit_grams: null,
     updated_at: '2026-08-25T08:00:00Z',
     is_deleted: false,
   }],

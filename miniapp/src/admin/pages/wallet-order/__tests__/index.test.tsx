@@ -15,6 +15,7 @@ const mockLedgerRetry = jest.fn()
 const mockUseTarget = jest.fn()
 let mockAuth: AuthContextValue
 let mockAssistedState: AssistedWalletOrderState
+let mockProductDetail: Record<string, unknown>
 
 const result = {
   order: {
@@ -27,6 +28,8 @@ const result = {
     remark: '门店代客下单',
     items: [{
       id: 301, product_id: 8, experience_option_id: null, product_name: '拼豆材料套装',
+      kit_color_id: null, kit_color_slot_no: null, kit_color_code: null, kit_color_name: null,
+      sale_unit_grams: null, total_weight_grams: null,
       option_duration_minutes: null, option_participants: null, option_day_type: null,
       product_price: '25.00', quantity: 2, subtotal: '50.00',
     }],
@@ -82,16 +85,7 @@ jest.mock('@/features/product/use_product_detail', () => ({
   useProductDetail: () => ({
     state: {
       status: 'content',
-      detail: {
-        id: 8,
-        name: '拼豆材料套装',
-        description: '材料包',
-        product_type: { value: 'kit', label: '材料套装' },
-        images: [],
-        price: '25.00',
-        stock: 4,
-        available: true,
-      },
+      detail: mockProductDetail,
     },
     retry: jest.fn(),
   }),
@@ -112,7 +106,10 @@ jest.mock('@/features/wallet', () => ({
     reset: mockReset,
   }),
 }))
-jest.mock('@/utils/format', () => ({ formatPrice: (value: string) => value }))
+jest.mock('@/utils/format', () => ({
+  ...jest.requireActual('@/utils/format'),
+  formatPrice: (value: string) => value,
+}))
 
 describe('AdminWalletOrderPage', () => {
   let testUtils: ReactTestUtil
@@ -126,9 +123,22 @@ describe('AdminWalletOrderPage', () => {
         role: 'admin', status: 'normal', last_login_at: null,
         created_at: timestamp, updated_at: timestamp,
       },
-      register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+      register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
     }
     mockAssistedState = { status: 'idle' }
+    mockProductDetail = {
+      id: 8,
+      name: '拼豆材料套装',
+      description: '材料包',
+      product_type: { value: 'kit', label: '材料套装' },
+      images: [],
+      price: '25.00',
+      stock: 4,
+      available: true,
+      kit_kind: { value: 'fixed', label: '固定套装' },
+      sale_unit_grams: null,
+      colors: [],
+    }
     mockCreateOrder.mockResolvedValue(result)
     mockUseTarget.mockReturnValue({
       state: {
@@ -195,6 +205,38 @@ describe('AdminWalletOrderPage', () => {
 
     expect(requireElement(testUtils, '.wallet-order-state').textContent).toContain('不可代客消费')
     expect(mockCreateOrder).not.toHaveBeenCalled()
+  })
+
+  it('自选颜色按 10g 单位确认并提交商品颜色 ID', async () => {
+    mockProductDetail = {
+      ...mockProductDetail,
+      name: '自选颜色拼豆',
+      price: '2.50',
+      stock: null,
+      kit_kind: { value: 'color_selectable', label: '自选颜色' },
+      sale_unit_grams: 10,
+      colors: [{
+        id: 81,
+        bead_color_id: 101,
+        slot_no: 1,
+        color_code: 'A01',
+        name: '白色',
+        swatch_image_url: null,
+        available: true,
+      }],
+    }
+    await testUtils.mount(AuthenticatedAdminWalletOrder, { props: { currentUserId: 2, userId: 7 } })
+    testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-product'))
+    testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-quantity__increase'))
+    testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-form__submit'))
+    await flush(testUtils)
+
+    expect(Taro.showModal).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringMatching(/颜色：A01 · 白色[\s\S]*¥2\.50 \/ 10g[\s\S]*重量：20g/),
+    }))
+    expect(mockCreateOrder).toHaveBeenCalledWith({
+      items: [{ product_id: 8, kit_color_id: 81, quantity: 2 }],
+    })
   })
 
   it('成功态展示真实订单、支付单号与扣款后余额', async () => {

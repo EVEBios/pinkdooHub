@@ -16,6 +16,12 @@ const createdResult: InventoryAdjustmentResult = {
     transaction: {
       id: 31,
       product_id: 7,
+      kit_color_id: null,
+      bead_color_id: null,
+      bead_color_slot_no: null,
+      color_code: null,
+      color_name: null,
+      sale_unit_grams: null,
       transaction_type: 'admin_adjustment',
       change_quantity: 5,
       before_quantity: 10,

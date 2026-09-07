@@ -28,9 +28,12 @@ jest.mock('@/features/product/use_product_list', () => ({
 jest.mock('@/auth', () => ({
   ADMIN_INVENTORY_LIST_PATH: '/admin/pages/inventory-transactions/index',
   ADMIN_ORDER_LIST_PATH: '/admin/pages/orders/index',
+  ADMIN_RESERVATION_LIST_PATH: '/admin/pages/reservations/index',
+  ADMIN_STORE_CLOSURE_LIST_PATH: '/admin/pages/store-closures/index',
   ADMIN_PRODUCT_LIST_PATH: '/admin/pages/products/index',
   ADMIN_USER_LIST_PATH: '/admin/pages/users/index',
   MEMBER_PATH: '/pages/member/index',
+  RESERVATION_LIST_PATH: '/pages/reservations/index',
   useAuth: () => mockAuth,
 }))
 
@@ -56,6 +59,7 @@ describe('ProductListPage', () => {
     mockAuth = {
       status: 'guest',
       register: jest.fn(),
+      updateProfile: jest.fn(),
       login: jest.fn(),
       loginWithWechat: jest.fn(),
       logout: jest.fn(),
@@ -84,7 +88,7 @@ describe('ProductListPage', () => {
       .toContain(expectedText)
   })
 
-  it('渲染 Product 内容并只给体验商品添加起价后缀', async () => {
+  it('按体验、固定套装、自选颜色套装显示准确价格单位', async () => {
     mockProductListState = {
       status: 'content',
       items: [
@@ -94,6 +98,8 @@ describe('ProductListPage', () => {
           product_type: { value: 'experience', label: '拼豆体验' },
           cover_image: '/uploads/products/experience.webp',
           display_price: '299.00',
+          kit_kind: null,
+          sale_unit_grams: null,
         },
         {
           id: 2,
@@ -101,9 +107,20 @@ describe('ProductListPage', () => {
           product_type: { value: 'kit', label: '拼豆套装' },
           cover_image: 'https://cdn.example.com/kit.webp',
           display_price: '599.00',
+          kit_kind: { value: 'fixed', label: '固定套装' },
+          sale_unit_grams: null,
+        },
+        {
+          id: 3,
+          name: '自选颜色拼豆',
+          product_type: { value: 'kit', label: '拼豆套装' },
+          cover_image: 'https://cdn.example.com/color-kit.webp',
+          display_price: '2.50',
+          kit_kind: { value: 'color_selectable', label: '自选颜色' },
+          sale_unit_grams: 10,
         },
       ],
-      total: 2,
+      total: 3,
       page: 1,
       pages: 1,
       loadingMore: false,
@@ -111,10 +128,11 @@ describe('ProductListPage', () => {
     await testUtils.mount(ProductListPage)
 
     const cards = testUtils.queries.querySelectorAll('.product-card')
-    expect(cards).toHaveLength(2)
+    expect(cards).toHaveLength(3)
     expect(cards[0].textContent).toContain('¥299.00 起')
     expect(cards[1].textContent).toContain('¥599.00')
     expect(cards[1].textContent).not.toContain('¥599.00 起')
+    expect(cards[2].textContent).toContain('¥2.50 / 10g')
     expect(testUtils.queries.querySelector('.product-page__end')?.textContent)
       .toContain('已经到底了')
   })
@@ -132,7 +150,7 @@ describe('ProductListPage', () => {
     expect(mockSetProductType).toHaveBeenCalledWith('kit')
   })
 
-  it('只为 ADMIN+ 展示四类管理入口', async () => {
+  it('为顾客展示预约入口，并只为 ADMIN+ 展示六类管理入口', async () => {
     const baseUser = {
       id: 2,
       username: 'dev_admin',
@@ -151,11 +169,16 @@ describe('ProductListPage', () => {
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理用户')
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('店铺管理')
     expect(testUtils.queries.querySelector('.product-page__account')?.textContent).toContain('会员中心')
+    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).toContain('我的预约')
     expect(testUtils.queries.querySelectorAll('.product-page__account-group')).toHaveLength(1)
     const memberButton = Array.from(testUtils.queries.querySelectorAll('.product-page__account-action'))
       .find((button) => button.textContent.includes('会员中心'))
     testUtils.fireEvent.click(memberButton!)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/member/index' })
+    const reservationButton = Array.from(testUtils.queries.querySelectorAll('.product-page__account-action'))
+      .find((button) => button.textContent.includes('我的预约'))
+    testUtils.fireEvent.click(reservationButton!)
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/reservations/index' })
     testUtils.unmout()
 
     testUtils = new ReactTestUtil()
@@ -169,22 +192,30 @@ describe('ProductListPage', () => {
     expect(Array.from(testUtils.queries.querySelectorAll('.product-page__account-section'))
       .map((section) => section.textContent)).toEqual(['我的', '店铺管理'])
     expect(Array.from(testUtils.queries.querySelectorAll('.product-page__account-action-meta'))
-      .map((meta) => meta.textContent)).toEqual(['查看', '管理', '管理', '管理', '管理'])
-    expect(buttons).toHaveLength(5)
+      .map((meta) => meta.textContent)).toEqual(['查看', '管理', '管理', '管理', '管理', '管理', '管理'])
+    expect(buttons).toHaveLength(7)
     const inventoryButton = buttons.find((button) => button.textContent.includes('库存流水'))
     const adminButton = buttons.find((button) => button.textContent.includes('管理订单'))
     const productButton = buttons.find((button) => button.textContent.includes('管理商品'))
     const userButton = buttons.find((button) => button.textContent.includes('管理用户'))
+    const reservationAdminButton = buttons.find((button) => button.textContent.includes('管理预约'))
+    const closuresButton = buttons.find((button) => button.textContent.includes('店休设置'))
     expect(adminButton).toBeDefined()
     expect(productButton).toBeDefined()
     expect(userButton).toBeDefined()
     expect(inventoryButton).toBeDefined()
+    expect(reservationAdminButton).toBeDefined()
+    expect(closuresButton).toBeDefined()
     testUtils.fireEvent.click(inventoryButton!)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/inventory-transactions/index' })
     testUtils.fireEvent.click(productButton!)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/products/index' })
     testUtils.fireEvent.click(adminButton!)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/orders/index' })
+    testUtils.fireEvent.click(reservationAdminButton!)
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/reservations/index' })
+    testUtils.fireEvent.click(closuresButton!)
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/store-closures/index' })
     testUtils.fireEvent.click(userButton!)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/users/index' })
     testUtils.fireEvent.click(testUtils.queries.querySelector('.product-page__account-logout')!)

@@ -1,8 +1,8 @@
 # pinkdooHub 前端 API 集成契约
 
-> **Document Version:** v0.12
+> **Document Version:** v0.13
 > **Status:** Draft
-> **Last Updated:** 2026-09-02
+> **Last Updated:** 2026-09-06
 > **Source of Truth:** 实际 FastAPI OpenAPI、路由/Schema/测试及对应业务/API 文档
 
 本文档是 Taro 客户端与现有 FastAPI 后端之间的适配契约。它不复制各模块完整 API 文档，而是冻结所有前端模块必须共同遵守的解析、认证、类型、错误、上传和幂等规则。
@@ -12,7 +12,7 @@
 基础集成层、账号密码注册/登录、公开 Product、用户侧 Order、ADMIN Order 人工状态，以及 ADMIN Product 与 Kit Inventory 管理纵向链路已落地：
 
 - `scripts/export_openapi.py`：隔离导出当前 FastAPI OpenAPI；
-- `miniapp/openapi/openapi.json`：50 条路径、124 个 Schema 的生成输入；
+- `miniapp/openapi/openapi.json`：73 条路径、179 个 Schema 的生成输入；
 - `miniapp/src/api/generated/schema.d.ts`：`openapi-typescript@7.13.0` 生成的只读、字母序类型；
 - `miniapp/src/api/client.ts`：统一信封、Query、Bearer、错误与 refresh 边界；普通 `request()` 返回 data，Inventory 调整使用窄 `requestWithMeta()` 保留最终 HTTP status；
 - `miniapp/src/api/taro_transport.ts`：`Taro.request` Transport 与取消/网络/超时分类；
@@ -31,7 +31,9 @@
 - `miniapp/src/features/order/`：本地 Cart、一次提交状态机、用户/管理列表竞态隔离、详情命令 unknown/40921 状态收敛；`miniapp/src/auth/login_route.ts` 只允许登录返回已注册的固定确认页、用户列表或管理列表；
 - `miniapp/src/pages/order-confirm/`、`pages/orders/`、`pages/order-detail/`：用户创建、核对、查询与 Pending 取消；`miniapp/src/admin/pages/`：ADMIN+ Order 查询/状态操作，Product 完整管理与操作历史、Kit Inventory，以及用户列表/禁用。
 
-账号密码注册/登录、Product 浏览、Cart、用户/ADMIN Order，以及 Phase 8 当前后端能力范围的 ADMIN Product、Inventory、Product Audit 和 ADMIN User 均已完成微信开发者工具 Functional。Phase 8.2 验收后延期的管理页白色图案和登录下划线闪烁已于 2026-08-29 复测关闭：白色图案通过把白色卡片视觉层从原生 `Form` 移到外层 `View` 解决，登录 `_` 闪烁后续无法复现并由用户确认消失。该修复不改变任何 HTTP 请求、响应或授权契约。H5 真实跨域联调仍受后端尚未注册 CORS allowlist 限制；微信登录和真实支付也仍未交付。
+账号密码注册/登录、Product 浏览、Cart、用户/ADMIN Order，以及 Phase 8 当前后端能力范围的 ADMIN Product、Inventory、Product Audit 和 ADMIN User 均已完成微信开发者工具 Functional。Phase 8.2 验收后延期的管理页白色图案和登录下划线闪烁已于 2026-08-29 复测关闭：白色图案通过把白色卡片视觉层从原生 `Form` 移到外层 `View` 解决，登录 `_` 闪烁后续无法复现并由用户确认消失。该修复不改变任何 HTTP 请求、响应或授权契约。H5 真实跨域联调仍受后端尚未注册 CORS allowlist 限制；微信登录仓库链已实现但真实 AppID/受控 Secret/真机尚未启用或验收，真实微信支付仍未交付。
+
+Reservation N1 后端契约与仓库实现已完成，M5 已在一次性 MySQL 8.0.46 完成 0→5 与核心并发/重试/索引验证；前端 Endpoint、Runtime Guard、Feature、页面与 Functional 必须以 [Reservation API](../03_api/reservation_api.md)、实际代码、自动化和 changelog 共同判断。M5 尚未应用持久数据库，真实客户端/目标环境验收仍未完成。N1 的顾客可见结果以“我的预约/详情”中的状态和 `customer_message` 为准，店方可从管理详情读取当前手机号人工联系；N1 不主动发送微信通知，N2 继续 Deferred。
 
 ---
 
@@ -208,6 +210,8 @@ Product 与 Order 金额是普通十进制字符串，响应固定两位：
 
 响应使用 ISO 8601 UTC。客户端显示时可转换到用户本地时区；管理筛选发送给后端时必须显式转换为 UTC。
 
+Reservation 创建是明确的本地营业时间例外：`reservation_date` 与 `start_time` 按 `Asia/Shanghai` 解释，分别使用严格 `YYYY-MM-DD` 和 `HH:00` / `HH:30`；详情的 `reservation_date/start_time/end_time` 已由后端从 UTC 排期转换，客户端不得用设备时区重新推导。预约倒计时、三小时取消和按钮禁用只作即时反馈，最终以服务端 `server_now`、`cancellation_deadline_at` 和写请求校验为准。
+
 ### 6.3 Enum
 
 响应常用：
@@ -335,6 +339,14 @@ Idempotency-Key: <stable-client-key>
 - Cart 对账或 Storage 失败不改变“服务端订单已创建”的事实，只显示本地清理警告，避免用户再次 POST；
 - unknown 保留 Cart、不宣称失败、不自动重发，并提供“我的订单”入口读取服务端权威结果。
 
+### 9.5 Reservation 写请求
+
+`POST /reservations` 当前没有客户端幂等键。一次提交只投影 `experience_option_id/reservation_date/start_time`；同步门闩和进行中 Promise 合并用于防连点，但 network/timeout/cancel/contract/5xx 后进入 unknown，不自动重发，提供“我的预约”入口核对。
+
+confirm/reject/cancel 与店休 DELETE 均使用 empty-body 请求，连 `{}` 也不能发送。除店休 PUT 外，重复命令不会返回幂等成功：40951/40953 后先 GET 预约详情收敛，DELETE 成功后的再次调用返回 40452。
+
+`PUT /admin/store-closures/{business_date}` 是服务端幂等：首次 201、同日已关闭重放 200。前端要保留最终 HTTP status 并校验 `is_replay` 与取消计数；未知结果先查店休列表，只有用户明确安全重试时才重复 PUT。恢复营业结果未知时也先 GET，不自动 DELETE。
+
 ---
 
 ## 10. 特殊业务契约
@@ -394,6 +406,21 @@ Idempotency-Key: <stable-client-key>
 - 日期界面连续接收 `YYYYMMDD` 并用固定横杠显示 `YYYY-MM-DD`；包含式结束日期转换为次日 UTC 零点作为排他 `created_to`；换筛选回第一页，加载更多保持原条件；
 - 指定 Kit 动态页不进登录 redirect 白名单；Guest 返回固定管理商品列表。全局流水固定页可安全加入白名单。
 
+### 10.4 Reservation
+
+- 预约独立于 Cart/Order/Payment；创建页面不要求下单，不从 Cart 推导请求，也不声称已经付款；
+- 只对用户当前选中的真实 ExperienceOption 调用 `GET /reservations/booking-options`。返回的 `dates[]` 一次覆盖未来第 0–30 日且只含合法时段；为空是正常 Empty，不是 Error；
+- `booking-options` 不表达空位或占座。页面可写“提交后由门店确认”，不能写“已预留座位”；
+- 同一用户/Option/时段允许存在多条独立预约；页面只合并同一次点击的进行中请求，不把它实现为业务去重。N1 不自动防超额，门店逐条人工确认或拒绝；
+- 创建只发送 Option ID、上海当地日期和半小时开始值，不发送 Product、价格、时长、人数、手机号、状态或原因；
+- 创建前可以检查 Profile phone 并引导补充，但 `42254` 仍是并发变化后的最终裁决；手机号不得进入预约本地快照；
+- 列表/详情只渲染后端 Reservation 快照、状态/原因和 `customer_message`。`rejected/no_capacity` 与 `cancelled/store_closed` 必须显示不同语义；
+- 用户 cancel 在本地当前状态为 pending/confirmed 时始终显示截止时间和取消按钮；客户端不依据设备时钟提前隐藏或发明 `can_cancel`。服务端以 40951/40952 作最终裁决，冲突后重新读取详情。改期 UI 必须明确执行“取消旧预约后新建”，不能 PATCH 原行；
+- 管理列表只消费 `user_phone_masked`，不接收或缓存完整号码；详情才消费当前 `user_phone`，null 时展示“联系方式不可用”；
+- ADMIN confirm/reject 仅从 pending 派生；客户端不依据设备时钟提前隐藏操作，开始后由服务端以 40953 作最终裁决并重新读取详情。reject 不弹自由原因输入，服务端固定 no_capacity；
+- 店休 PUT 成功展示 `newly_cancelled_count` 与 pending/confirmed 分项，并明确 N1 需要人工联系。DELETE 后不把历史 cancelled 项在本地改回 pending；
+- N1 不实现订阅授权、消息发送状态或“已通知”徽标。N2 未批准前任何通知 UI 都是假功能。
+
 ---
 
 ## 11. 当前 API Gap Matrix
@@ -401,16 +428,19 @@ Idempotency-Key: <stable-client-key>
 | 需求 | 当前实际状态 | 前端决策 |
 |------|--------------|----------|
 | 用户名密码 | 已实现 | MVP 使用 |
-| 微信登录 | 未实现 | 正式公开发布前新增后端契约 |
+| 微信登录 | 后端与小程序模式的仓库实现已完成；真实 AppID、目标环境和真机尚未启用/验收 | Gate B 前完成受控 Secret、真实账号与真机矩阵 |
 | 微信支付 | 未实现 | MVP 显示待商家确认；商业发布前新增 |
 | 头像上传 | 实际 OpenAPI 未提供 | 不创建入口 |
 | 管理员启用用户 | 未实现 | 不创建伪功能 |
 | 管理员用户详情 | 实际 OpenAPI 未提供 | 列表只用现有字段 |
 | Order 创建幂等 | 未提供客户端 key | 禁止自动重试；发布前补齐 |
+| Reservation N1 后端 | 仓库实现完成；M5 一次性 MySQL 8.0.46 核心门槛通过，但未应用持久环境 | 部署前确认目标数据库版本、迁移记录与发布验收 |
+| Reservation N1 前端 | 六个页面、Endpoint/Guard/Feature、入口与登录回跳已形成工程候选；Functional 状态仍以真实环境证据和 changelog 为准 | 作为独立纵向切片，不复用 Order 创建语义 |
+| Reservation N2 主动通知 | Deferred，未实现/未启用/未授权 | 不创建订阅、发送状态或已通知 UI |
 | 生产图片 | 当前开发本地/相对 URL | 开发 resolver；生产对象存储/CDN |
 | H5 CORS | FastAPI 当前未注册 | H5 联调前实现严格 allowlist |
-| Refresh rotation | 未实现 | MVP 接受已知限制；公开发布前安全 Review |
-| 登录/注册限流 | 未实现 | 公开发布前后端门槛 |
+| Refresh rotation | 仓库实现已完成：family 原子轮换与重放撤销 | 目标 Redis/多实例/真机仍按 Gate B 留证 |
+| 登录/注册限流 | 仓库实现已完成：Redis fail-closed 认证限流 | 目标环境配置、监控和告警送达仍需验收 |
 
 ---
 
@@ -434,6 +464,13 @@ Idempotency-Key: <stable-client-key>
 | 管理订单列表/详情 | `GET /admin/orders`、`GET /admin/orders/{id}` | ADMIN+ |
 | 人工支付/完成 | `PATCH /admin/orders/{id}/paid`、`PATCH /admin/orders/{id}/complete` | ADMIN+；empty body |
 | 用户列表/禁用 | `/admin/users...` | ADMIN+ |
+| 预约创建选项 | `GET /reservations/booking-options` | 正常 USER |
+| 创建预约 | `POST /reservations` | 正常 USER；无客户端幂等键 |
+| 我的预约/详情 | `GET /reservations`、`GET /reservations/{id}` | 正常 USER；Owner-only |
+| 取消预约 | `PATCH /reservations/{id}/cancel` | 正常 USER；empty body |
+| 管理预约列表/详情/审计 | `GET /admin/reservations...` | ADMIN+ |
+| 确认/拒绝预约 | `PATCH /admin/reservations/{id}/confirm|reject` | ADMIN+；empty body |
+| 管理店休 | `GET/PUT/DELETE /admin/store-closures...` | ADMIN+；PUT 首次 201/重放 200 |
 
 完整字段和错误以对应模块 API 文档及 OpenAPI 为准。
 

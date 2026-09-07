@@ -26,12 +26,16 @@ jest.mock('@/auth', () => ({
 }))
 
 jest.mock('@/features/order', () => ({
+  cartItemKey: (item: { productId: number; experienceOptionId: number | null; kitColorId: number | null }) => (
+    `${item.productId}:${item.experienceOptionId ?? item.kitColorId ?? 'fixed'}`
+  ),
   ORDER_REMARK_LIMIT: 500,
   useCart: () => mockCart,
   useOrderSubmission: () => mockSubmission,
 }))
 
 jest.mock('@/utils/format', () => ({
+  ...jest.requireActual('@/utils/format'),
   formatPrice: (value: string) => value,
 }))
 
@@ -39,6 +43,7 @@ const cartItems: CartContextValue['items'] = [
   {
     productId: 1,
     experienceOptionId: 11,
+    kitColorId: null,
     productType: 'experience',
     productName: '周末拼豆体验',
     configurationLabel: '1小时 · 2人 · 工作日',
@@ -49,7 +54,9 @@ const cartItems: CartContextValue['items'] = [
   {
     productId: 2,
     experienceOptionId: null,
+    kitColorId: null,
     productType: 'kit',
+    kitKind: 'fixed',
     productName: '基础拼豆套装',
     configurationLabel: null,
     unitPrice: '199.00',
@@ -69,6 +76,12 @@ const createdOrder: OrderDetail = {
       id: 1001,
       product_id: 1,
       experience_option_id: 11,
+      kit_color_id: null,
+      kit_color_slot_no: null,
+      kit_color_code: null,
+      kit_color_name: null,
+      sale_unit_grams: null,
+      total_weight_grams: null,
       product_name: '服务端体验名称快照',
       option_duration_minutes: 60,
       option_participants: 1,
@@ -81,6 +94,12 @@ const createdOrder: OrderDetail = {
       id: 1002,
       product_id: 2,
       experience_option_id: null,
+      kit_color_id: null,
+      kit_color_slot_no: null,
+      kit_color_code: null,
+      kit_color_name: null,
+      sale_unit_grams: null,
+      total_weight_grams: null,
       product_name: '服务端套装名称快照',
       option_duration_minutes: null,
       option_participants: null,
@@ -118,6 +137,7 @@ describe('OrderConfirmPage', () => {
         updated_at: '2026-08-13T10:30:00Z',
       },
       register: jest.fn(),
+      updateProfile: jest.fn(),
       login: jest.fn(async () => undefined),
       loginWithWechat: jest.fn(async () => undefined),
       logout: jest.fn(async () => undefined),
@@ -127,6 +147,7 @@ describe('OrderConfirmPage', () => {
       status: 'ready',
       items: cartItems,
       addItem: jest.fn(async () => undefined),
+      addItems: jest.fn(async () => undefined),
       updateQuantity: jest.fn(async () => undefined),
       removeItem: jest.fn(async () => undefined),
       clear: jest.fn(async () => undefined),

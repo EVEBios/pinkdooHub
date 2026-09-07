@@ -6,12 +6,13 @@ import { BusinessError, SessionExpiredError } from '@/api'
 import type { OrderDetail } from '@/api/endpoints/orders'
 import { buildLoginUrl, ORDER_CONFIRM_PATH, ORDER_LIST_PATH, useAuth } from '@/auth'
 import {
+  cartItemKey,
   ORDER_REMARK_LIMIT,
   type OrderSubmissionState,
   useCart,
   useOrderSubmission,
 } from '@/features/order'
-import { formatPrice } from '@/utils/format'
+import { formatColorLabel, formatPrice } from '@/utils/format'
 
 import './index.scss'
 
@@ -86,7 +87,7 @@ export default function OrderConfirmPage() {
 
       <View className='order-confirm-list'>
         {cart.items.map((item) => (
-          <View className='order-confirm-item' key={`${item.productId}:${item.experienceOptionId ?? 'kit'}`}>
+          <View className='order-confirm-item' key={cartItemKey(item)}>
             <Text className='order-confirm-item__type'>
               {item.productType === 'experience' ? '拼豆体验' : '拼豆套装'}
             </Text>
@@ -95,8 +96,8 @@ export default function OrderConfirmPage() {
               <Text className='order-confirm-item__configuration'>{item.configurationLabel}</Text>
             )}
             <View className='order-confirm-item__summary'>
-              <Text>预览单价 ¥{formatPrice(item.unitPrice)}</Text>
-              <Text>数量 × {item.quantity}</Text>
+              <Text>预览单价 ¥{formatPrice(item.unitPrice)}{item.kitColorId === null ? '' : ` / ${item.saleUnitGrams}g`}</Text>
+              <Text>{item.kitColorId === null ? `数量 × ${item.quantity}` : `重量 ${item.quantity * item.saleUnitGrams}g`}</Text>
             </View>
           </View>
         ))}
@@ -155,6 +156,9 @@ function OrderResult({
             {item.experience_option_id !== null && item.experience_option_id !== undefined && (
               <Text className='order-result-item__configuration'>{formatOrderOption(item)}</Text>
             )}
+            {item.kit_color_id !== null && item.kit_color_id !== undefined && (
+              <Text className='order-result-item__configuration'>{formatOrderColor(item)}</Text>
+            )}
             <View className='order-result-item__summary'>
               <Text>¥{formatPrice(item.product_price)} × {item.quantity}</Text>
               <Text>小计 ¥{formatPrice(item.subtotal)}</Text>
@@ -190,6 +194,10 @@ function OrderResult({
 
 function formatOrderOption(item: OrderDetail['items'][number]): string {
   return `${item.option_duration_minutes} 分钟 · ${item.option_participants} 人 · ${item.option_day_type?.label}`
+}
+
+function formatOrderColor(item: OrderDetail['items'][number]): string {
+  return `${formatColorLabel(item.kit_color_code ?? '', item.kit_color_name ?? '')} · ${item.total_weight_grams}g`
 }
 
 function SubmissionFeedback({ state }: { state: OrderSubmissionState }) {

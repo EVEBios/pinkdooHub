@@ -60,10 +60,16 @@ def test_inventory_repository_public_methods_are_async_and_typed() -> None:
 
 
 def test_inventory_lock_methods_keep_transaction_and_stable_order() -> None:
-    """单 Kit 与多 Kit 锁都必须保留悲观锁，多 Kit 明确按 Product ID 排序。"""
+    """固定 Kit 与颜色余额锁都保留悲观锁和全局稳定顺序。"""
 
     single_source = inspect.getsource(InventoryRepository.get_kit_for_update)
     multi_source = inspect.getsource(InventoryRepository.get_kits_for_update)
+    color_single_source = inspect.getsource(
+        InventoryRepository.get_kit_color_for_update
+    )
+    color_multi_source = inspect.getsource(
+        InventoryRepository.get_kit_colors_for_update
+    )
 
     assert ".select_for_update()" in single_source
     assert ".using_db(using_db)" in single_source
@@ -71,6 +77,12 @@ def test_inventory_lock_methods_keep_transaction_and_stable_order() -> None:
     assert ".using_db(using_db)" in multi_source
     assert "sorted(product_ids)" in multi_source
     assert '.order_by("product_id")' in multi_source
+    assert ".select_for_update()" in color_single_source
+    assert ".using_db(using_db)" in color_single_source
+    assert ".select_for_update()" in color_multi_source
+    assert ".using_db(using_db)" in color_multi_source
+    assert "sorted(kit_color_ids)" in color_multi_source
+    assert '.order_by("product_id", "bead_color_id")' in color_multi_source
 
 
 def test_inventory_automatic_writes_are_bulk_and_not_awaited_in_a_loop() -> None:
@@ -78,12 +90,17 @@ def test_inventory_automatic_writes_are_bulk_and_not_awaited_in_a_loop() -> None
 
     source = inspect.getsource(InventoryRepository.bulk_create_transactions)
     stock_source = inspect.getsource(InventoryRepository.bulk_update_stocks)
+    color_stock_source = inspect.getsource(
+        InventoryRepository.bulk_update_color_stocks
+    )
 
     assert "InventoryTransaction.bulk_create" in source
     assert "await InventoryTransaction.create" not in source
     assert "for data in transactions" in source
     assert "ProductKit.bulk_update" in stock_source
     assert "await update.kit.save" not in stock_source
+    assert "ProductKitColor.bulk_update" in color_stock_source
+    assert "await update.kit_color.save" not in color_stock_source
 
 
 def test_inventory_restore_identities_are_loaded_as_one_set_query() -> None:
@@ -108,6 +125,7 @@ def test_inventory_pagination_preloads_operator_and_batches_order_sources() -> N
     )
 
     assert '.select_related("operator")' in list_source
+    assert '.select_related("kit_color__bead_color")' in list_source
     assert "Order.filter(id__in=source_ids)" in hydration_source
     assert ".values_list(" in hydration_source
     assert "await" not in hydration_source.split("for transaction in transactions:")[1]

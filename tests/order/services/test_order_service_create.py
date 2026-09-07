@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from tortoise.exceptions import IntegrityError
 
-from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.enums.product import DayType, KitKind, ProductStatus, ProductType
 from app.common.enums.user import UserRole, UserStatus
 from app.common.exceptions import (
     InsufficientStock,
@@ -67,6 +67,8 @@ def _kit(
         product_id=product_id,
         price=Decimal(price),
         stock=stock,
+        kit_kind=KitKind.FIXED,
+        sale_unit_grams=None,
     )
 
 

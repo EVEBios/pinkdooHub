@@ -10,6 +10,7 @@ from tortoise.exceptions import IntegrityError, OperationalError
 from tortoise.transactions import in_transaction
 
 from app.common.constants.inventory import (
+    INVENTORY_ORDER_COLOR_REFUND_RESTORE_IDEMPOTENCY_KEY,
     INVENTORY_ORDER_REFUND_RESTORE_IDEMPOTENCY_KEY,
     INVENTORY_ORDER_REFUND_RESTORE_REASON,
     INVENTORY_STOCK_MAX,
@@ -61,6 +62,7 @@ from app.models.order import Order
 from app.models.payment import Payment, PaymentSettlement, Refund
 from app.models.user import User
 from app.repositories.inventory_repo import (
+    InventoryColorStockUpdateData,
     InventoryRepository,
     InventoryStockUpdateData,
     InventoryTransactionCreateData,
@@ -426,23 +428,48 @@ class RefundService:
         items: list[OrderCancellationItemData],
         using_db: BaseDBAsyncClient,
     ) -> bool:
-        quantity_by_product: dict[int, int] = {}
+        fixed_quantity_by_product: dict[int, int] = {}
+        color_quantity_by_id: dict[int, tuple[int, int]] = {}
         for item in items:
             if item.experience_option_id is not None:
                 continue
-            quantity_by_product[item.product_id] = (
-                quantity_by_product.get(item.product_id, 0) + item.quantity
+            if item.kit_color_id is None:
+                fixed_quantity_by_product[item.product_id] = (
+                    fixed_quantity_by_product.get(item.product_id, 0)
+                    + item.quantity
+                )
+                continue
+            existing_product_id, existing_quantity = color_quantity_by_id.get(
+                item.kit_color_id,
+                (item.product_id, 0),
             )
-        if not quantity_by_product:
+            if existing_product_id != item.product_id:
+                raise InventoryTransactionConflict()
+            color_quantity_by_id[item.kit_color_id] = (
+                item.product_id,
+                existing_quantity + item.quantity,
+            )
+        if not fixed_quantity_by_product and not color_quantity_by_id:
             return False
 
-        product_ids = set(quantity_by_product)
+        product_ids = set(fixed_quantity_by_product)
+        color_ids = set(color_quantity_by_id)
         kits = await self.inventory_repository.get_kits_for_update(
             product_ids,
             using_db=using_db,
         )
+        kit_colors = await self.inventory_repository.get_kit_colors_for_update(
+            color_ids,
+            using_db=using_db,
+        )
         kits_by_product = {kit.product_id: kit for kit in kits}
         if set(kits_by_product) != product_ids:
+            raise InventoryTransactionConflict()
+        colors_by_id = {kit_color.id: kit_color for kit_color in kit_colors}
+        if set(colors_by_id) != color_ids or any(
+            colors_by_id[kit_color_id].product_id != product_id
+            for kit_color_id, (product_id, _) in color_quantity_by_id.items()
+        ):
             raise InventoryTransactionConflict()
 
         keys = {
@@ -452,6 +479,14 @@ class RefundService:
             )
             for product_id in product_ids
         }
+        keys.update(
+            INVENTORY_ORDER_COLOR_REFUND_RESTORE_IDEMPOTENCY_KEY.format(
+                refund_id=refund.id,
+                product_id=product_id,
+                kit_color_id=kit_color_id,
+            )
+            for kit_color_id, (product_id, _) in color_quantity_by_id.items()
+        )
         if await self.inventory_repository.get_transactions_by_idempotency_keys(
             keys,
             using_db=using_db,
@@ -459,11 +494,14 @@ class RefundService:
             raise InventoryTransactionConflict()
 
         updates: list[InventoryStockUpdateData] = []
+        color_updates: list[InventoryColorStockUpdateData] = []
         transactions: list[InventoryTransactionCreateData] = []
         for product_id in sorted(product_ids):
             kit = kits_by_product[product_id]
-            quantity = quantity_by_product[product_id]
+            quantity = fixed_quantity_by_product[product_id]
             before_quantity = kit.stock
+            if before_quantity is None:
+                raise InventoryTransactionConflict()
             after_quantity = before_quantity + quantity
             if after_quantity > INVENTORY_STOCK_MAX:
                 raise InventoryBalanceExceeded(
@@ -491,8 +529,51 @@ class RefundService:
                     ),
                 )
             )
+
+        for kit_color in kit_colors:
+            product_id, quantity = color_quantity_by_id[kit_color.id]
+            before_quantity = kit_color.stock_units
+            after_quantity = before_quantity + quantity
+            if after_quantity > INVENTORY_STOCK_MAX:
+                raise InventoryBalanceExceeded(
+                    product_id=product_id,
+                    kit_color_id=kit_color.id,
+                    before_quantity=before_quantity,
+                    change_quantity=quantity,
+                )
+            color_updates.append(
+                InventoryColorStockUpdateData(
+                    kit_color=kit_color,
+                    stock_units=after_quantity,
+                )
+            )
+            transactions.append(
+                InventoryTransactionCreateData(
+                    product_id=product_id,
+                    kit_color_id=kit_color.id,
+                    transaction_type=InventoryTransactionType.ORDER_REFUND_RESTORE,
+                    change_quantity=quantity,
+                    before_quantity=before_quantity,
+                    after_quantity=after_quantity,
+                    source_type=InventorySourceType.ORDER,
+                    source_id=order.id,
+                    operator_id=operator.id,
+                    reason=INVENTORY_ORDER_REFUND_RESTORE_REASON,
+                    idempotency_key=(
+                        INVENTORY_ORDER_COLOR_REFUND_RESTORE_IDEMPOTENCY_KEY.format(
+                            refund_id=refund.id,
+                            product_id=product_id,
+                            kit_color_id=kit_color.id,
+                        )
+                    ),
+                )
+            )
         await self.inventory_repository.bulk_update_stocks(
             updates=updates,
+            using_db=using_db,
+        )
+        await self.inventory_repository.bulk_update_color_stocks(
+            updates=color_updates,
             using_db=using_db,
         )
         await self.inventory_repository.bulk_create_transactions(

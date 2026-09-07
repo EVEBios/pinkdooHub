@@ -1,8 +1,8 @@
 # Phase 9 微信小程序发布规划
 
-> **Document Version:** v0.2
+> **Document Version:** v0.3
 > **Status:** Phase 9.1–9.3 Complete; Phase 9.4 等待备案外部项；Phase 9.5 仓库内可实施范围已完成（Gate A/Gate B 均仍为 No-Go）
-> **Last Updated:** 2026-09-02
+> **Last Updated:** 2026-09-06
 > **Release Scope:** 本版只发布微信小程序（`weapp`）
 
 本文把“多端、CI 与发布”收敛为本版可执行的微信单平台路线。Phase 9 不是一次性把代码上传到微信，而是依次建立发布目标、可重复门槛、隔离演练、内部测试版和公开发布门。每一阶段都必须产生可复核证据；历史测试通过、单次本机构建或开发者工具 Functional 不能替代当前候选版本的发布证据。
@@ -43,8 +43,11 @@ Phase 9.1 不实现以下能力：
 - 正式域名购买、DNS 切换、证书签发或微信后台配置；
 - 持久数据库迁移、Git tag、Release、微信上传、提审或发布；
 - 支付宝、抖音或 H5 的构建修复、CORS、Functional 或安全债处理。
+- Reservation N2 微信订阅消息、通知 Outbox/Worker、主动投递、重试或送达状态。
 
 这些事项在 9.1 中只记录依赖、验收标准和负责人，不提前绑定商业平台或扩大外部变更权限。
+
+Reservation N1 是后续新增的独立业务候选，不改变上述历史 Phase 9.1 范围。若把 N1 纳入下一 Gate A/RC，必须把 M5 纳入“0→当前”、同步 OpenAPI/微信构建，并完成下面 Reservation 角色与业务矩阵；不能沿用旧 0→3/0→4 或无预约页面的 RC 证据。N1 只使用站内状态与管理员当前手机号人工联系，不要求微信订阅授权；[N2 规划](../01_requirements/reservation_wechat_notification_plan.md) 保持 Deferred，不是 Gate A/Gate B 默认门槛。
 
 ---
 
@@ -183,7 +186,7 @@ HMAC、结构化安全事件、Secret 文件注入边界、图片存储 Protocol
 | Job | 关键动作 | 阻断条件 | 证据 |
 |-----|----------|----------|------|
 | backend-sqlite | Python 3.10、锁定依赖、`pytest tests/ -q` | 任一失败；MySQL-only 以外出现跳过且无批准 | pytest 日志与汇总 |
-| backend-mysql-release | 启动隔离 MySQL 8+、执行 Aerich 0→当前、运行 9 项 MySQL 门槛 | 迁移、并发、1205 重试、HTTP smoke 或 EXPLAIN 任一失败 | MySQL 版本、迁移版本、pytest 报告 |
+| backend-mysql-release | 启动隔离 MySQL 8+、执行 Aerich 0→当前（当前为 0→6）、重放 M5 fixed 样本并联合运行 Inventory + Reservation 18 项 MySQL 候选门槛 | 迁移、历史兼容、221 槽、颜色 FK/索引、并发、1205/1213 重试、HTTP smoke、店休一致性或 EXPLAIN 任一失败 | MySQL 版本、迁移/M6 快照、pytest 报告 |
 | frontend-quality | `npm ci --legacy-peer-deps`、typecheck、ESLint、Stylelint、Jest | error、warning 超过已批准白名单、测试失败 | Node/npm 版本和测试报告 |
 | openapi-contract | 从 FastAPI 导出 OpenAPI、比较固定 JSON、运行类型漂移检查 | OpenAPI 或生成类型有未提交漂移 | diff 和 schema 统计 |
 | weapp-build | 使用受控 Origin 执行 `npm run build:weapp` | 构建失败、Secret/开发 Origin 命中、包体越界、未批准 warning | `dist/weapp` artifact、大小清单、Git SHA |
@@ -280,8 +283,8 @@ Go / 前滚修复 / 从备份恢复
 | 角色/边界 | Gate A 最低 Smoke | RC Functional / E2E | Gate B 额外门槛 |
 |-----------|------------------|---------------------|------------------|
 | Guest | 启动、首页、Product 列表/详情、登录入口 | Content/Empty/Error/重试、分页筛选、图片失败占位 | 隐私入口、审核可见文案、未登录数据最小化 |
-| 普通用户 | 账号登录、Session 恢复、登出 | 注册、主动/被动 refresh、Cart、Experience/Kit/混合创建、我的订单、Pending 取消 | 微信登录、账号绑定/冲突/禁用、refresh 轮换；在线收款时接微信支付 |
-| ADMIN | 登录、管理入口、读取列表 | Order Paid/Completed、Product CRUD/Option/图片/上下架、Inventory 调整与流水、Audit、用户列表/禁用 | 正式凭据策略、最小权限、敏感操作告警和审核说明 |
+| 普通用户 | 账号登录、Session 恢复、登出 | 注册、主动/被动 refresh、Cart、Experience/Kit/混合创建、我的订单、Pending 取消；若 N1 纳入 RC，再覆盖我的预约/详情/取消 | 微信登录、账号绑定/冲突/禁用、refresh 轮换；在线收款时接微信支付 |
+| ADMIN | 登录、管理入口、读取列表 | Order Paid/Completed、Product CRUD/Option/图片/上下架、Inventory 调整与流水、Audit、用户列表/禁用；若 N1 纳入 RC，再覆盖预约审核/店休 | 正式凭据策略、最小权限、敏感操作告警和审核说明 |
 | SUPER_ADMIN | 登录和 SUPER_ADMIN 端点 | 初始化、角色边界、不能被低角色禁用 | bootstrap 关闭/轮换、紧急访问流程和审计 |
 | 被禁用用户 | 登录失败 | 已有 access/refresh 失效，客户端清理 Session，不触发 refresh 循环 | 微信身份关联后同样立即阻断 |
 | Token 边界 | access 过期可刷新 | access/refresh 同失效、并发 refresh single-flight、时钟边界 | refresh 轮换、重放检测和撤销策略 |
@@ -299,8 +302,9 @@ Go / 前滚修复 / 从备份恢复
 | Product Admin | 创建/编辑/删除、Option 恢复原 ID、Kit 改价、图片生命周期、readiness、上下架和历史快照 |
 | Inventory | 首次 201/重放 200、同意图同 key、正负调整、40932、两类流水、筛选/分页/Order 跳转、隐私字段 |
 | Audit/User Admin | Product Audit、逻辑删除历史、ADMIN User 筛选、禁用事务/审计/旧 Token 阻断、角色层级 |
+| Reservation N1（纳入 RC 时） | booking-options 第 0–30 日、上海时区、周一/自定义店休、11:00–20:00/至少 3 小时、完整 Option 价格快照、四状态、no_capacity、两取消原因、Owner cancel、ADMIN 审核、手机号列表掩码/详情按需完整、店休批量取消 201/200 与恢复不复活历史、unknown/竞态 |
 
-Gate B 在上述矩阵上增加微信身份和支付域，不另建一套绕开现有订单/库存事务的平行流程。
+Gate B 在上述矩阵上增加微信身份和支付域，不另建一套绕开现有订单/库存/预约事务的平行流程。N2 主动通知只有另行批准才增加模板、授权、隐私、Worker、送达和人工兜底门槛。
 
 ### 7.3 设备、网络与生命周期
 

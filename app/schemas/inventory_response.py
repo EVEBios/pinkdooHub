@@ -18,6 +18,13 @@ from app.common.constants.inventory import (
     INVENTORY_STOCK_MIN,
 )
 from app.common.constants.order import ORDER_NO_PATTERN
+from app.common.constants.product import (
+    BEAD_COLOR_CODE_MAX_LENGTH,
+    BEAD_COLOR_NAME_MAX_LENGTH,
+    BEAD_COLOR_SLOT_COUNT,
+    BEAD_COLOR_SLOT_MIN,
+    COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+)
 from app.common.constants.validation import (
     NICKNAME_MAX_LENGTH,
     NICKNAME_MIN_LENGTH,
@@ -74,11 +81,62 @@ class InventoryBalanceOut(_InventoryOut):
     stock: InventoryQuantityOut
 
 
+class InventoryColorBalanceOut(_InventoryOut):
+    """一个可选颜色以 10g 为单位的当前权威库存余额。"""
+
+    product_id: PositiveInventoryResourceIdOut
+    kit_color_id: PositiveInventoryResourceIdOut
+    bead_color_id: PositiveInventoryResourceIdOut
+    bead_color_slot_no: int = Field(
+        strict=True,
+        ge=BEAD_COLOR_SLOT_MIN,
+        le=BEAD_COLOR_SLOT_COUNT,
+    )
+    color_code: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_CODE_MAX_LENGTH,
+    )
+    color_name: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_NAME_MAX_LENGTH,
+    )
+    sale_unit_grams: int = Field(
+        strict=True,
+        ge=COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+        le=COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+    )
+    stock_units: InventoryQuantityOut
+
+
 class InventoryTransactionOut(_InventoryOut):
     """单条不可变库存流水的公开字段。"""
 
     id: PositiveInventoryResourceIdOut
     product_id: PositiveInventoryResourceIdOut
+    kit_color_id: PositiveInventoryResourceIdOut | None
+    bead_color_id: PositiveInventoryResourceIdOut | None
+    bead_color_slot_no: int | None = Field(
+        strict=True,
+        ge=BEAD_COLOR_SLOT_MIN,
+        le=BEAD_COLOR_SLOT_COUNT,
+    )
+    color_code: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_CODE_MAX_LENGTH,
+    )
+    color_name: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_NAME_MAX_LENGTH,
+    )
+    sale_unit_grams: int | None = Field(
+        strict=True,
+        ge=COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+        le=COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+    )
     transaction_type: InventoryTransactionType
     change_quantity: int = Field(
         strict=True,
@@ -110,6 +168,26 @@ class InventoryTransactionOut(_InventoryOut):
             raise ValueError("Inventory transaction change must not be zero")
         if self.after_quantity != self.before_quantity + self.change_quantity:
             raise ValueError("Inventory transaction quantities are inconsistent")
+
+        color_metadata = (
+            self.bead_color_id,
+            self.bead_color_slot_no,
+            self.color_code,
+            self.color_name,
+            self.sale_unit_grams,
+        )
+        if self.kit_color_id is None:
+            if any(value is not None for value in color_metadata):
+                raise ValueError("Fixed inventory transaction has color metadata")
+        elif any(
+            value is None
+            for value in (
+                self.bead_color_id,
+                self.bead_color_slot_no,
+                self.sale_unit_grams,
+            )
+        ):
+            raise ValueError("Color inventory transaction metadata is incomplete")
 
         if self.transaction_type is InventoryTransactionType.OPENING_BALANCE:
             if (
@@ -166,4 +244,22 @@ class InventoryAdjustmentOut(InventoryBalanceOut):
             or self.transaction.after_quantity != self.stock
         ):
             raise ValueError("Inventory adjustment result is inconsistent")
+        return self
+
+
+class InventoryColorAdjustmentOut(InventoryColorBalanceOut):
+    """管理员调整颜色余额后的当前值与不可变流水。"""
+
+    transaction: InventoryTransactionOut
+
+    @model_validator(mode="after")
+    def validate_adjustment_result(self) -> "InventoryColorAdjustmentOut":
+        if (
+            self.transaction.transaction_type
+            is not InventoryTransactionType.ADMIN_ADJUSTMENT
+            or self.transaction.product_id != self.product_id
+            or self.transaction.kit_color_id != self.kit_color_id
+            or self.transaction.after_quantity != self.stock_units
+        ):
+            raise ValueError("Color inventory adjustment result is inconsistent")
         return self

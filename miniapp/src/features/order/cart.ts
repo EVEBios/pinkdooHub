@@ -2,9 +2,13 @@ import type { components } from '@/api/generated/schema'
 import type { StoragePort } from '@/platform/storage'
 
 const CART_STORAGE_KEY = 'pinkdoohub.cart.v1'
-const CART_VERSION = 1
-export const CART_ITEM_LIMIT = 10
+const CART_VERSION = 2
+const LEGACY_CART_VERSION = 1
+export const CART_NON_COLOR_ITEM_LIMIT = 10
+export const CART_COLOR_ITEM_LIMIT = 20
+export const CART_ITEM_LIMIT = CART_NON_COLOR_ITEM_LIMIT + CART_COLOR_ITEM_LIMIT
 export const CART_QUANTITY_LIMIT = 99
+export const COLOR_SELECTABLE_SALE_UNIT_GRAMS = 10
 
 export type CartProductType = 'experience' | 'kit'
 
@@ -18,19 +22,31 @@ interface CartItemBase {
 
 export interface ExperienceCartItem extends CartItemBase {
   readonly experienceOptionId: number
+  readonly kitColorId: null
   readonly productType: 'experience'
   readonly configurationLabel: string
 }
 
 export interface KitCartItem extends CartItemBase {
   readonly experienceOptionId: null
+  readonly kitColorId: null
   readonly productType: 'kit'
+  readonly kitKind: 'fixed'
   readonly configurationLabel: null
 }
 
-export type CartItem = ExperienceCartItem | KitCartItem
+export interface ColorKitCartItem extends CartItemBase {
+  readonly experienceOptionId: null
+  readonly kitColorId: number
+  readonly productType: 'kit'
+  readonly kitKind: 'color_selectable'
+  readonly configurationLabel: string
+  readonly saleUnitGrams: typeof COLOR_SELECTABLE_SALE_UNIT_GRAMS
+}
 
+export type CartItem = ExperienceCartItem | KitCartItem | ColorKitCartItem
 export type AddCartItemInput = CartItem
+export type CartItemIdentity = Pick<CartItem, 'productId' | 'experienceOptionId' | 'kitColorId'>
 
 export type CartStatus = 'initializing' | 'ready' | 'error'
 
@@ -104,7 +120,7 @@ export class CartStore {
           this.setState('ready', [])
           return
         }
-        // 重写白名单投影，清除 Storage 中可能存在的多余字段。
+        // 重写 v2 白名单投影；旧购物车会在原 key 上原子升级，用户已有商品不会丢失。
         await this.storage.set(CART_STORAGE_KEY, parsed)
         this.setState('ready', parsed.items)
       } catch (cause) {
@@ -115,40 +131,61 @@ export class CartStore {
   }
 
   addItem(input: AddCartItemInput): Promise<void> {
+    return this.addItems([input])
+  }
+
+  addItems(inputs: readonly AddCartItemInput[]): Promise<void> {
     return this.enqueue(async () => {
       this.assertReady()
-      const item = parseCartItem(input)
-      if (!item) {
+      if (inputs.length < 1) {
+        throw new CartValidationError('invalid_item', '请选择至少一个商品配置')
+      }
+
+      const parsedItems = inputs.map((input) => parseCartItem(input, false))
+      if (parsedItems.some((item) => item === undefined)) {
         throw new CartValidationError('invalid_item', '无法加入无效的商品配置')
       }
+      const batchKeys = new Set((parsedItems as CartItem[]).map(cartItemKey))
+      if (batchKeys.size !== parsedItems.length) {
+        throw new CartValidationError('invalid_item', '一次加入的商品配置不能重复')
+      }
 
-      const existingIndex = this.items.findIndex((candidate) => cartItemKey(candidate) === cartItemKey(item))
-      if (existingIndex >= 0) {
-        const quantity = this.items[existingIndex].quantity + item.quantity
-        if (quantity > CART_QUANTITY_LIMIT) {
-          throw new CartValidationError('quantity_limit', `同一商品配置最多购买 ${CART_QUANTITY_LIMIT} 件`)
+      let nextItems = this.items.map(copyCartItem)
+      for (const item of parsedItems as CartItem[]) {
+        const existingIndex = nextItems.findIndex(
+          (candidate) => cartItemKey(candidate) === cartItemKey(item),
+        )
+        if (existingIndex >= 0) {
+          const quantity = nextItems[existingIndex].quantity + item.quantity
+          if (quantity > CART_QUANTITY_LIMIT) {
+            throw new CartValidationError(
+              'quantity_limit',
+              `同一商品配置最多购买 ${CART_QUANTITY_LIMIT} 份`,
+            )
+          }
+          nextItems = nextItems.map((candidate, index) => index === existingIndex
+            ? { ...item, quantity }
+            : candidate)
+        } else {
+          nextItems = [...nextItems, item]
         }
-        const nextItems = this.items.map((candidate, index) => index === existingIndex
-          ? { ...item, quantity }
-          : candidate)
-        await this.persist(nextItems)
-        return
       }
 
-      if (this.items.length >= CART_ITEM_LIMIT) {
-        throw new CartValidationError('item_limit', `购物车最多包含 ${CART_ITEM_LIMIT} 种商品配置`)
-      }
-      await this.persist([...this.items, item])
+      assertCartComposition(nextItems)
+      await this.persist(nextItems)
     })
   }
 
-  updateQuantity(productId: number, experienceOptionId: number | null, quantity: number): Promise<void> {
+  updateQuantity(identity: CartItemIdentity, quantity: number): Promise<void> {
     return this.enqueue(async () => {
       this.assertReady()
       if (!isPositiveInteger(quantity) || quantity > CART_QUANTITY_LIMIT) {
-        throw new CartValidationError('quantity_limit', `数量必须在 1 至 ${CART_QUANTITY_LIMIT} 之间`)
+        throw new CartValidationError(
+          'quantity_limit',
+          `数量必须在 1 至 ${CART_QUANTITY_LIMIT} 之间`,
+        )
       }
-      const key = cartItemKey({ productId, experienceOptionId })
+      const key = cartItemKey(identity)
       const index = this.items.findIndex((item) => cartItemKey(item) === key)
       if (index < 0) {
         throw new CartValidationError('invalid_item', '购物车中没有这个商品配置')
@@ -160,10 +197,10 @@ export class CartStore {
     })
   }
 
-  removeItem(productId: number, experienceOptionId: number | null): Promise<void> {
+  removeItem(identity: CartItemIdentity): Promise<void> {
     return this.enqueue(async () => {
       this.assertReady()
-      const key = cartItemKey({ productId, experienceOptionId })
+      const key = cartItemKey(identity)
       const nextItems = this.items.filter((item) => cartItemKey(item) !== key)
       if (nextItems.length === this.items.length) {
         return
@@ -183,14 +220,11 @@ export class CartStore {
   reconcileSubmittedItems(submittedItems: readonly CartItem[]): Promise<CartReconciliationResult> {
     return this.enqueue(async () => {
       this.assertReady()
-      const parsedItems = submittedItems.map(parseCartItem)
-      if (
-        parsedItems.length < 1 ||
-        parsedItems.length > CART_ITEM_LIMIT ||
-        parsedItems.some((item) => item === undefined)
-      ) {
+      const parsedItems = submittedItems.map((item) => parseCartItem(item, false))
+      if (parsedItems.length < 1 || parsedItems.some((item) => item === undefined)) {
         throw new CartValidationError('invalid_item', '无法对账无效的已提交商品')
       }
+      assertCartComposition(parsedItems as CartItem[])
       const submittedByKey = new Map(
         (parsedItems as CartItem[]).map((item) => [cartItemKey(item), item]),
       )
@@ -253,43 +287,80 @@ export class CartStore {
 }
 
 export function buildOrderItems(items: readonly CartItem[]): readonly OrderItemCreate[] {
-  return items.map((item) => item.productType === 'experience'
-    ? {
+  return items.map((item) => {
+    if (item.productType === 'experience') {
+      return {
         product_id: item.productId,
         experience_option_id: item.experienceOptionId,
         quantity: item.quantity,
       }
-    : {
+    }
+    if (item.kitKind === 'color_selectable') {
+      return {
         product_id: item.productId,
+        kit_color_id: item.kitColorId,
         quantity: item.quantity,
-      })
+      }
+    }
+    return { product_id: item.productId, quantity: item.quantity }
+  })
 }
 
-export function cartItemKey(item: { readonly productId: number; readonly experienceOptionId: number | null }): string {
-  return `${item.productId}:${item.experienceOptionId ?? 'kit'}`
+export function cartItemKey(item: CartItemIdentity): string {
+  if (item.experienceOptionId !== null) {
+    return `${item.productId}:experience:${item.experienceOptionId}`
+  }
+  if (item.kitColorId !== null) {
+    return `${item.productId}:color:${item.kitColorId}`
+  }
+  return `${item.productId}:fixed`
+}
+
+function assertCartComposition(items: readonly CartItem[]): void {
+  const colorCount = items.filter(isColorKitCartItem).length
+  const nonColorCount = items.length - colorCount
+  if (colorCount > CART_COLOR_ITEM_LIMIT) {
+    throw new CartValidationError(
+      'item_limit',
+      `每单最多选择 ${CART_COLOR_ITEM_LIMIT} 种拼豆颜色`,
+    )
+  }
+  if (nonColorCount > CART_NON_COLOR_ITEM_LIMIT) {
+    throw new CartValidationError(
+      'item_limit',
+      `每单最多包含 ${CART_NON_COLOR_ITEM_LIMIT} 种非自选颜色配置`,
+    )
+  }
+  if (items.length > CART_ITEM_LIMIT) {
+    throw new CartValidationError('item_limit', `每单最多包含 ${CART_ITEM_LIMIT} 个商品明细`)
+  }
 }
 
 function parseStoredCart(value: unknown): StoredCart | undefined {
-  if (!isRecord(value) || value.version !== CART_VERSION || !Array.isArray(value.items)) {
+  if (!isRecord(value) || !Array.isArray(value.items) ||
+    (value.version !== CART_VERSION && value.version !== LEGACY_CART_VERSION)) {
     return undefined
   }
-  if (value.items.length > CART_ITEM_LIMIT) {
-    return undefined
-  }
+  const allowLegacyShape = value.version === LEGACY_CART_VERSION
   const items: CartItem[] = []
   const keys = new Set<string>()
   for (const candidate of value.items) {
-    const item = parseCartItem(candidate)
+    const item = parseCartItem(candidate, allowLegacyShape)
     if (!item || keys.has(cartItemKey(item))) {
       return undefined
     }
     keys.add(cartItemKey(item))
     items.push(item)
   }
+  try {
+    assertCartComposition(items)
+  } catch {
+    return undefined
+  }
   return { version: CART_VERSION, items }
 }
 
-function parseCartItem(value: unknown): CartItem | undefined {
+function parseCartItem(value: unknown, allowLegacyShape: boolean): CartItem | undefined {
   if (!isRecord(value) || !(
     isPositiveInteger(value.productId) &&
     (value.productType === 'experience' || value.productType === 'kit') &&
@@ -302,13 +373,18 @@ function parseCartItem(value: unknown): CartItem | undefined {
     return undefined
   }
 
+  const kitColorId = hasOwn(value, 'kitColorId') ? value.kitColorId : null
   if (value.productType === 'experience') {
-    if (!isPositiveInteger(value.experienceOptionId) || !isBoundedText(value.configurationLabel, 200)) {
+    if (!isPositiveInteger(value.experienceOptionId) ||
+      !isBoundedText(value.configurationLabel, 200) ||
+      kitColorId !== null ||
+      (!allowLegacyShape && !hasOwn(value, 'kitColorId'))) {
       return undefined
     }
     return {
       productId: value.productId,
       experienceOptionId: value.experienceOptionId,
+      kitColorId: null,
       productType: 'experience',
       productName: value.productName,
       configurationLabel: value.configurationLabel,
@@ -317,19 +393,51 @@ function parseCartItem(value: unknown): CartItem | undefined {
       quantity: value.quantity,
     }
   }
-  if (value.experienceOptionId !== null || value.configurationLabel !== null) {
+
+  if (value.experienceOptionId !== null) {
+    return undefined
+  }
+  const kitKind = hasOwn(value, 'kitKind') ? value.kitKind : 'fixed'
+  if (kitKind === 'fixed') {
+    if (kitColorId !== null || value.configurationLabel !== null ||
+      (!allowLegacyShape && (!hasOwn(value, 'kitColorId') || !hasOwn(value, 'kitKind')))) {
+      return undefined
+    }
+    return {
+      productId: value.productId,
+      experienceOptionId: null,
+      kitColorId: null,
+      productType: 'kit',
+      kitKind: 'fixed',
+      productName: value.productName,
+      configurationLabel: null,
+      unitPrice: value.unitPrice,
+      imageUrl: value.imageUrl,
+      quantity: value.quantity,
+    }
+  }
+  if (kitKind !== 'color_selectable' || !isPositiveInteger(kitColorId) ||
+    !isBoundedText(value.configurationLabel, 200) ||
+    value.saleUnitGrams !== COLOR_SELECTABLE_SALE_UNIT_GRAMS) {
     return undefined
   }
   return {
     productId: value.productId,
     experienceOptionId: null,
+    kitColorId,
     productType: 'kit',
+    kitKind: 'color_selectable',
     productName: value.productName,
-    configurationLabel: null,
+    configurationLabel: value.configurationLabel,
+    saleUnitGrams: COLOR_SELECTABLE_SALE_UNIT_GRAMS,
     unitPrice: value.unitPrice,
     imageUrl: value.imageUrl,
     quantity: value.quantity,
   }
+}
+
+function isColorKitCartItem(item: CartItem): item is ColorKitCartItem {
+  return item.productType === 'kit' && item.kitKind === 'color_selectable'
 }
 
 function copyCartItem(item: CartItem): CartItem {
@@ -338,6 +446,10 @@ function copyCartItem(item: CartItem): CartItem {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
 }
 
 function isPositiveInteger(value: unknown): value is number {

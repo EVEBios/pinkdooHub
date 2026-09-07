@@ -13,8 +13,10 @@ from app.common.constants.order import (
     ORDER_AMOUNT_MAX,
     ORDER_ITEM_QUANTITY_MAX,
     ORDER_ITEM_QUANTITY_MIN,
+    ORDER_COLOR_ITEMS_MAX_COUNT,
     ORDER_ITEMS_MAX_COUNT,
     ORDER_ITEMS_MIN_COUNT,
+    ORDER_NON_COLOR_ITEMS_MAX_COUNT,
     ORDER_NO_GENERATION_MAX_ATTEMPTS,
     ORDER_NO_LENGTH,
     ORDER_NO_PATTERN,
@@ -83,22 +85,24 @@ def test_order_status_int_enum_does_not_serialize_as_api_value() -> None:
 
 def test_order_request_boundary_constants_match_frozen_contract() -> None:
     assert ORDER_ITEMS_MIN_COUNT == 1
-    assert ORDER_ITEMS_MAX_COUNT == 10
+    assert ORDER_NON_COLOR_ITEMS_MAX_COUNT == 10
+    assert ORDER_COLOR_ITEMS_MAX_COUNT == 20
+    assert ORDER_ITEMS_MAX_COUNT == 30
     assert ORDER_ITEM_QUANTITY_MIN == 1
     assert ORDER_ITEM_QUANTITY_MAX == 99
     assert ORDER_REMARK_MAX_LENGTH == 500
 
 
-def test_request_bounds_cannot_overflow_order_decimal_capacity() -> None:
-    """组合上限必须保证合法请求计算出的最大总额可存入 DECIMAL(10,2)。"""
+def test_request_bounds_require_explicit_total_amount_guard() -> None:
+    """30 行组合可超过 DECIMAL(10,2)，Service 必须显式拒绝溢出总额。"""
 
     maximum_reachable_total = (
         PRODUCT_PRICE_MAX
         * ORDER_ITEM_QUANTITY_MAX
         * ORDER_ITEMS_MAX_COUNT
     )
-    assert maximum_reachable_total == 98999010
-    assert maximum_reachable_total <= ORDER_AMOUNT_MAX
+    assert maximum_reachable_total == 296997030
+    assert maximum_reachable_total > ORDER_AMOUNT_MAX
 
 
 def test_order_number_constants_match_frozen_contract() -> None:

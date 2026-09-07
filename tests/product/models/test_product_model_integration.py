@@ -164,8 +164,15 @@ async def test_mysql_schema_generator_matches_production_contract() -> None:
     assert "UNIQUE KEY `idx_option_unique` (`product_id`, `duration`, `participants`, `day_type`)" in ddl
 
     assert "CREATE TABLE `product_kits`" in ddl
-    assert "`stock` INT NOT NULL DEFAULT 0" in ddl
+    assert "`stock` INT DEFAULT 0" in ddl
+    assert "`kit_kind` VARCHAR(20) NOT NULL" in ddl
+    assert "`sale_unit_grams` SMALLINT" in ddl
     assert "`product_id` BIGINT NOT NULL UNIQUE" in ddl
+
+    assert "CREATE TABLE `bead_colors`" in ddl
+    assert "`slot_no` SMALLINT NOT NULL UNIQUE" in ddl
+    assert "`swatch_image_url` VARCHAR(2048)" in ddl
+    assert "CREATE TABLE `product_kit_colors`" in ddl
 
     assert "CREATE TABLE `product_images`" in ddl
     assert "`image_url` VARCHAR(2048) NOT NULL" in ddl

@@ -216,7 +216,9 @@ function AdminProductCard({ product }: { readonly product: AdminProductListItem 
         </View>
         <Text className='admin-product-card__name'>{product.name}</Text>
         <Text className='admin-product-card__price'>
-          {product.display_price ? `¥${formatPrice(product.display_price)}` : '价格待配置'}
+          {product.display_price
+            ? `¥${formatPrice(product.display_price)}${product.kit_kind?.value === 'color_selectable' ? ' / 10g' : ''}`
+            : '价格待配置'}
         </Text>
         <Text className='admin-product-card__time'>更新：{product.updated_at}</Text>
       </View>

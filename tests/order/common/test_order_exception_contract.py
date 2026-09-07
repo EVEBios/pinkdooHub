@@ -1,6 +1,7 @@
 """Order 命名异常与全局 HTTP 映射契约测试。"""
 
 from collections.abc import Callable
+from decimal import Decimal
 
 import pytest
 from fastapi import FastAPI
@@ -9,6 +10,8 @@ from httpx import ASGITransport, AsyncClient, Response
 from app.common.enums.order import OrderStatus
 from app.common.exceptions import (
     OrderNotFound,
+    OrderAmountExceeded,
+    OrderKitColorUnavailable,
     OrderOptionUnavailable,
     OrderProductUnavailable,
     OrderStatusConflict,
@@ -49,6 +52,14 @@ def _create_exception_test_app() -> FastAPI:
             product_id=8,
             experience_option_id=13,
         )
+
+    @test_app.get("/color-unavailable")
+    async def raise_color_unavailable() -> None:
+        raise OrderKitColorUnavailable(product_id=8, kit_color_id=21)
+
+    @test_app.get("/amount-exceeded")
+    async def raise_amount_exceeded() -> None:
+        raise OrderAmountExceeded(total_amount=Decimal("100000000.00"))
 
 
     register_exception_handlers(test_app)
@@ -122,6 +133,16 @@ def test_order_option_unavailable_contract() -> None:
     }
 
 
+def test_order_color_and_total_amount_exception_contracts() -> None:
+    color = OrderKitColorUnavailable(product_id=8, kit_color_id=21)
+    amount = OrderAmountExceeded(total_amount=Decimal("100000000.00"))
+
+    assert color.code == 42233
+    assert color.data == {"product_id": 8, "kit_color_id": 21}
+    assert amount.code == 42234
+    assert amount.data == {"maximum": "99999999.99"}
+
+
 @pytest.mark.parametrize(
     ("path", "status_code", "payload"),
     [
@@ -163,6 +184,24 @@ def test_order_option_unavailable_contract() -> None:
                 "code": 42232,
                 "message": "Order experience option is unavailable",
                 "data": {"product_id": 8, "experience_option_id": 13},
+            },
+        ),
+        (
+            "/color-unavailable",
+            422,
+            {
+                "code": 42233,
+                "message": "Order kit color is unavailable",
+                "data": {"product_id": 8, "kit_color_id": 21},
+            },
+        ),
+        (
+            "/amount-exceeded",
+            422,
+            {
+                "code": 42234,
+                "message": "Order amount exceeds the allowed maximum",
+                "data": {"maximum": "99999999.99"},
             },
         ),
     ],

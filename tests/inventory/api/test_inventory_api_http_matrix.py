@@ -418,6 +418,12 @@ async def test_query_http_filters_pages_order_source_and_privacy(
         {
             "id": order_transaction.id,
             "product_id": first_kit.product_id,
+            "kit_color_id": None,
+            "bead_color_id": None,
+            "bead_color_slot_no": None,
+            "color_code": None,
+            "color_name": None,
+            "sale_unit_grams": None,
             "transaction_type": "order_deduction",
             "change_quantity": -1,
             "before_quantity": 4,

@@ -35,23 +35,37 @@ def test_create_response_requires_expected_type_and_draft_status(
     product_type: str,
     type_label: str,
 ) -> None:
-    schema = schema_type.model_validate(
-        {
-            "id": 1,
-            "name": "新商品",
-            "product_type": _labeled(product_type, type_label),
-            "status": _labeled("draft", "草稿"),
-            "description": "not part of create response",
-            "is_deleted": False,
-        }
-    )
+    payload = {
+        "id": 1,
+        "name": "新商品",
+        "product_type": _labeled(product_type, type_label),
+        "status": _labeled("draft", "草稿"),
+        "description": "not part of create response",
+        "is_deleted": False,
+    }
+    if schema_type is KitProductCreateOut:
+        payload.update(
+            {
+                "kit_kind": _labeled("fixed", "固定套装"),
+                "sale_unit_grams": None,
+            }
+        )
+    schema = schema_type.model_validate(payload)
 
-    assert schema.model_dump(mode="json") == {
+    expected = {
         "id": 1,
         "name": "新商品",
         "product_type": {"value": product_type, "label": type_label},
         "status": {"value": "draft", "label": "草稿"},
     }
+    if schema_type is KitProductCreateOut:
+        expected.update(
+            {
+                "kit_kind": {"value": "fixed", "label": "固定套装"},
+                "sale_unit_grams": None,
+            }
+        )
+    assert schema.model_dump(mode="json") == expected
 
 
 @pytest.mark.parametrize(

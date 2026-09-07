@@ -1,16 +1,17 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 Complete — PR #2 Eight Jobs Passed
-> **Last Updated:** 2026-08-31
+> **Status:** Phase 9.2 远端基线完成；Reservation N1 本地候选增量等待新远端 Run
+> **Last Updated:** 2026-09-07
 > **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [Run 33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
-9.2.1–9.2.6 已完成：`.github/workflows/ci.yml` 的 `backend-sqlite`、
+9.2.1–9.2.6 的历史基线已完成：当时 `.github/workflows/ci.yml` 的 `backend-sqlite`、
 `backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、
 `repository-hygiene`、`python-dependency-audit` 和 `npm-dependency-audit` 已在真实
-Pull Request 的干净 checkout 全部通过。该结论只关闭 Phase 9.2 的 CI 与可重复构建范围，
-不替代 9.3 的生产相似演练或 9.4 的微信真机 RC。
+Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job，但已加入 Wallet/Reservation
+后续增量；这些改动尚无绑定当前候选 SHA 的新远端 Run。历史结论只关闭当时 Phase 9.2 的 CI 与
+可重复构建范围，不替代 9.3 的生产相似演练、9.4 的微信真机 RC 或后续模块的重新留证。
 
 ## 0. Phase 9.2.6 远端证据
 
@@ -24,6 +25,14 @@ Pull Request 的干净 checkout 全部通过。该结论只关闭 Phase 9.2 的 
 
 1. Run `33354728020` 暴露 Python 策略测试硬编码 `.venv/bin/python`，以及微信检查器错误假设 `project.config.json` 一定存在于 `dist/weapp`；改为 `sys.executable`，并分别校验编译目录与项目根配置。Taro 若生成规范化副本，只允许 `miniprogramRoot` 从 `dist/weapp/` 变为 `./`，其他字段必须一致。
 2. Run `33355556336` 进一步暴露 `NODE_ENV=production` 使 `npm ci` 省略 Taro 构建期 devDependencies，且 `tee` 掩盖 `taro: not found`；微信 Job 现显式 `--include=dev` 并启用 `pipefail`。构建期依赖不会因此进入微信运行产物。
+
+### 0.1 Reservation N1 / M6 本地候选增量（2026-09-06）
+
+- M6 接入前最近一次已实测的 workflow 已把迁移链升级为 Aerich 0→5，`backend-mysql-release` 联合运行 `tests/inventory/mysql` 与 `tests/reservation/mysql`。一次性 MySQL 8.0.46 本地验证结果为 `16 passed`，其中 Reservation 专项为 `7 passed`；覆盖 M5、店休并发/回滚、1205/1213 与六个索引计划。
+- M6 接入后，workflow 候选会先真实执行空库 0→6，再以 `downgrade -v 6` 只回退 M6、写入一条 M5 非零库存 fixed Kit、重新升级 M6。最终 snapshot 必须同时核验七条 Aerich 版本、221 个未配置占位槽、历史 fixed 库存/类型兼容、19 个关键列、4 个命名 `RESTRICT` 外键和 7 个命名索引（其中 3 个 `NON_UNIQUE=0`）；Inventory MySQL 目录另增加 2 项结构/EXPLAIN 与反向颜色行锁等待门槛。该 M6 workflow 与测试尚未在真实 MySQL Runner 执行，不能把下述 M5 `16 passed` 历史结果改称 M6 已通过。
+- 当前本地普通后端基线为 `1978 passed, 20 skipped`：20 项均为需要显式隔离外部环境的门槛；回环端口发布探测已在完整主套件中直接通过，Linux CI 仍应继续直接执行该探测。
+- 当前前端为 `81 suites / 556 tests`；TypeScript、ESLint、Stylelint、OpenAPI 类型漂移和 17 项 CI policy 通过。微信 production build 成功；固定 CI HTTPS Origin 产物通过扫描（141 个文件、主包 645,547 bytes、分包 390,570 bytes、总计 1,036,117 bytes，manifest SHA-256 `260e2f3e129ce75e418a1e487886a27e26684000111be5bd8c19161bc1570f8a`，`release_eligible=false`）。
+- 上述均是本地候选证据，尚无绑定当前候选 SHA 的 PR/远端 Run，也不是可发布微信 RC；历史 PR #2 / Run 33355935212 的数值继续按原样保留，不能冒充 N1 证据。
 
 ## 1. 全局规则
 
@@ -41,7 +50,7 @@ Pull Request 的干净 checkout 全部通过。该结论只关闭 Phase 9.2 的 
 | Job | 服务 | 关键命令/动作 | 阻断规则 | Artifact/证据 | 负责人 |
 |-----|------|---------------|----------|---------------|--------|
 | `backend-sqlite` | 隔离 Redis 或 fakeredis | 安装 Python；`pytest tests/ -q` | 任一失败；除已批准 MySQL-only 外出现未知 skip | pytest 日志/JUnit | Yijie Shen |
-| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→1→2；运行 `tests/inventory/mysql` 9 项 | 迁移、版本、并发、1205、HTTP、EXPLAIN 任一失败 | MySQL 版本、Aerich 版本、pytest/JUnit | Yijie Shen |
+| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→当前（当前为 0→6）；M6 历史 fixed 重放；联合运行 `tests/inventory/mysql tests/reservation/mysql` 18 项候选 | 迁移、版本、历史兼容、221 槽、FK/索引、并发、1205/1213、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6 快照、pytest/JUnit | Yijie Shen |
 | `frontend-quality` | 无 | `npm ci --legacy-peer-deps`；typecheck；ESLint；Stylelint；Jest；CI policy tests | 安装/检查/测试任一失败；新增未批准 warning | Jest JSON/log、版本清单 | Yijie Shen |
 | `openapi-contract` | 无外部 DB/Redis | 设置 UTF-8；真实导出到临时文件；比较固定 JSON；生成类型 `--check` | JSON/类型漂移、临时文件残留、CLI smoke 失败 | diff、paths/schemas 摘要 | Yijie Shen |
 | `weapp-build` | 无 | 注入受控 HTTPS Origin；`npm run build:weapp`；配置/包体/Secret 扫描 | 构建失败、非预期/占位/本机 Origin、Secret、微信包体越界、未批准 warning；保留 `.test` Origin 若被标成可发布也必须失败 | `dist/weapp`、manifest、checksum、构建日志 | Yijie Shen |
@@ -56,10 +65,10 @@ Pull Request 的干净 checkout 全部通过。该结论只关闭 Phase 9.2 的 
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip check
-python -m pytest tests/ -q
+python -m pytest tests/ -q --ignore=tests/inventory/mysql --ignore=tests/reservation/mysql
 ```
 
-当前普通基线：1507 passed；9 项 MySQL-only 由独立 Job 执行。测试数量变化不是失败本身，但必须解释增删原因；不能把真实失败改成 skip 来维持数字。
+当前本地普通基线的最近完整记录为 `1978 passed, 20 skipped`；20 项均为需要显式隔离外部环境的门槛。历史 16 项 Inventory + Reservation MySQL-only 已在 M5 Schema 通过，M6 新增 2 项后形成 18 项 CI 候选，仍待真实 MySQL Runner 执行。回环端口发布探测已在完整主套件中直接通过，Linux CI 不应排除该检查。测试数量变化不是失败本身，但必须解释增删原因；不能把真实失败改成 skip 来维持数字。
 
 ### 3.2 Backend MySQL Release Gate
 
@@ -81,6 +90,15 @@ CI 配置不得放宽 fixture 来连接共享 MySQL，也不得使用 `--fake` �
 - `aerich --app models upgrade` 真实应用三条权威迁移，snapshot 校验 MySQL 8.0.46 与精确 0、1、2 版本链；没有 `--fake`、`init-db` 或 `generate_schemas()`；
 - 9 项门槛保存 JUnit；`always()` cleanup 删除精确专用 Schema、停止 GitHub service container、确认容器不再运行和 13306 关闭，再上传 preflight、迁移日志、snapshot、JUnit 与 cleanup JSON；
 - 2026-08-31 本地以同一镜像、端口和 Schema 真实执行：三条迁移及 9 项门槛全部通过，cleanup 四项均为 true，容器对象和临时证据目录随后删除；未连接 3306、持久或共享数据库。
+
+当前 M6 候选在上述安全边界上追加以下 fail-closed 门槛：
+
+- `aerich --app models upgrade` 先从空库真实执行 0→6；随后仅以 `downgrade -v 6` 回退最后一条迁移，在 M5 表形状中写入一条非零库存 fixed Kit，再重新执行正常 `upgrade`，从而同时验证空库完整链和历史数据升级，而不是只检查 SQL 文本；
+- snapshot 精确接受 M0–M6 七条版本，并核验 221 槽连续、唯一、初始未配置/未激活且 `sort=slot_no`，历史 Kit 仍为 `stock=7 / kit_kind=fixed / sale_unit_grams=NULL`，以及 M6 19 个关键列、4 个命名 `RESTRICT` 外键、7 个命名索引的列序和 `NON_UNIQUE`（3 个 UNIQUE 必须为 0，其余必须为 1）；
+- `tests/inventory/mysql/test_color_selectable_mysql_gate.py` 复核最终 Schema、数据库 fixed 默认和颜色集合锁 `EXPLAIN`，并用正/反请求构造真实 `performance_schema.data_lock_waits`，确认等待释放后仍按 Product/BeadColor 稳定顺序取得锁；
+- workflow 保存独立 `mysql-m6-legacy-seed.json`、迁移日志、最终 snapshot 和 18 项联合 JUnit，任一步失败均阻断；`always()` cleanup 语义保持不变。
+
+这些 M6 条目目前是可执行仓库候选，尚无绑定当前 SHA 的真实 MySQL / 远端 Run 结果。正式记录只能在实际 Runner 完成并复核 cleanup 后补写，不能沿用 M5 的 `16 passed` 作为替代证据。
 
 ### 3.3 Frontend Quality
 

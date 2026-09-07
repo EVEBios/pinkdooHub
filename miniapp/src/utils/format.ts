@@ -12,3 +12,11 @@ export function formatPrice(price: string): string {
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
   return decimal ? `${grouped}.${decimal}` : grouped
 }
+
+/**
+ * 色卡来源可能只提供一个标签，此时 color_code 与 name 会保存为相同值。
+ * 展示层只显示一次；有独立名称时仍保留“色号 · 名称”的既有格式。
+ */
+export function formatColorLabel(colorCode: string, colorName: string): string {
+  return colorCode === colorName ? colorCode : `${colorCode} · ${colorName}`
+}

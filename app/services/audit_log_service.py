@@ -1,6 +1,7 @@
 """AuditLog Service —— 操作审计日志。
 
-写入方式：顺序 await，同一请求内完成；可加入调用方管理的事务。
+单条写入顺序 await；同一业务批处理可一次 bulk create。两者都可加入
+调用方管理的事务。
 """
 
 import logging
@@ -9,7 +10,10 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 
 from app.common.pagination import Page
 from app.models.audit_log import AuditLog
-from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.audit_log_repo import (
+    AuditLogCreateData,
+    AuditLogRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,22 @@ class AuditLogService:
             "Audit: operator=%d action=%s target=%s/%d",
             operator_id, action, target_type, target_id,
         )
+
+    async def log_many(
+        self,
+        entries: list[AuditLogCreateData],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> None:
+        """批量写入审计事实，供单事务批处理避免逐条数据库往返。"""
+
+        await self.audit_repo.bulk_create(entries, using_db=using_db)
+        if entries:
+            logger.info(
+                "Audit batch: count=%d action=%s",
+                len(entries),
+                entries[0].action,
+            )
 
     async def list_logs(
         self,

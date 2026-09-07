@@ -27,6 +27,7 @@ from app.models.user import User
 from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.payment_repo import PaymentRepository
+from app.repositories.reservation_repo import ReservationRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.wallet_repo import WalletRepository
 from app.schemas.user import AccountDeletionRequest
@@ -47,6 +48,7 @@ class AccountLifecycleService:
         provider: ExternalIdentityProvider,
         wallet_repository: WalletRepository | None = None,
         payment_repository: PaymentRepository | None = None,
+        reservation_repository: ReservationRepository | None = None,
     ) -> None:
         self.user_repository = user_repository
         self.order_repository = order_repository
@@ -55,6 +57,9 @@ class AccountLifecycleService:
         self.provider = provider
         self.wallet_repository = wallet_repository or WalletRepository()
         self.payment_repository = payment_repository or PaymentRepository()
+        self.reservation_repository = (
+            reservation_repository or ReservationRepository()
+        )
 
     async def delete_account(
         self,
@@ -88,6 +93,7 @@ class AccountLifecycleService:
                 credentials=credentials,
                 using_db=connection,
             )
+            operation_now = datetime.now(timezone.utc)
             if await self.order_repository.has_non_terminal_orders_for_user(
                 locked_user.id,
                 using_db=connection,
@@ -95,6 +101,19 @@ class AccountLifecycleService:
                 emit_security_event(
                     "account_deletion",
                     "blocked_active_order",
+                    level=logging.WARNING,
+                    user_id=locked_user.id,
+                )
+                raise AccountDeletionBlocked()
+
+            if await self.reservation_repository.has_active_reservations_for_user(
+                locked_user.id,
+                now_utc=operation_now,
+                using_db=connection,
+            ):
+                emit_security_event(
+                    "account_deletion",
+                    "blocked_active_reservation",
                     level=logging.WARNING,
                     user_id=locked_user.id,
                 )
@@ -167,7 +186,7 @@ class AccountLifecycleService:
                 status=int(UserStatus.DELETED),
                 last_login_at=None,
                 auth_version=locked_user.auth_version + 1,
-                deleted_at=datetime.now(timezone.utc),
+                deleted_at=operation_now,
                 using_db=connection,
             )
 

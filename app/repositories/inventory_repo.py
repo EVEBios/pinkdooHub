@@ -1,4 +1,4 @@
-"""Inventory Repository —— 封装库存余额锁定、流水写入与分页查询。"""
+"""Inventory Repository —— 库存余额锁定、流水写入与分页查询。"""
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -11,6 +11,7 @@ from app.common.pagination import Page
 from app.models.inventory_transaction import InventoryTransaction
 from app.models.order import Order
 from app.models.product_kit import ProductKit
+from app.models.product_kit_color import ProductKitColor
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class InventoryTransactionCreateData:
     operator_id: int | None
     reason: str
     idempotency_key: str
+    kit_color_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,10 +39,19 @@ class InventoryStockUpdateData:
     stock: int
 
 
+@dataclass(frozen=True, slots=True)
+class InventoryColorStockUpdateData:
+    """Repository 批量保存一个已锁定可选颜色的最终余额。"""
+
+    kit_color: ProductKitColor
+    stock_units: int
+
+
 def _apply_transaction_filters(
     query: QuerySet[InventoryTransaction],
     *,
     product_id: int | None = None,
+    kit_color_id: int | None = None,
     transaction_type: InventoryTransactionType | None = None,
     source_type: InventorySourceType | None = None,
     source_id: int | None = None,
@@ -51,6 +62,8 @@ def _apply_transaction_filters(
 
     if product_id is not None:
         query = query.filter(product_id=product_id)
+    if kit_color_id is not None:
+        query = query.filter(kit_color_id=kit_color_id)
     if transaction_type is not None:
         query = query.filter(transaction_type=transaction_type)
     if source_type is not None:
@@ -65,7 +78,7 @@ def _apply_transaction_filters(
 
 
 class InventoryRepository:
-    """Inventory 数据访问层，不判断可售性、余额充足性或状态机。"""
+    """Inventory 数据访问层，不判断可售性、余额或状态机。"""
 
     async def get_kit_for_update(
         self,
@@ -97,6 +110,38 @@ class InventoryRepository:
             ProductKit.filter(product_id__in=sorted_product_ids)
             .using_db(using_db)
             .order_by("product_id")
+            .select_for_update()
+        )
+
+    async def get_kit_color_for_update(
+        self,
+        kit_color_id: int,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> ProductKitColor | None:
+        """在调用方事务中锁定单个可选颜色余额行。"""
+
+        return await (
+            ProductKitColor.filter(id=kit_color_id)
+            .using_db(using_db)
+            .select_for_update()
+            .first()
+        )
+
+    async def get_kit_colors_for_update(
+        self,
+        kit_color_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[ProductKitColor]:
+        """按 Product、BeadColor 升序一次锁定多个可选颜色余额行。"""
+
+        if not kit_color_ids:
+            return []
+        return await (
+            ProductKitColor.filter(id__in=sorted(kit_color_ids))
+            .using_db(using_db)
+            .order_by("product_id", "bead_color_id")
             .select_for_update()
         )
 
@@ -135,6 +180,44 @@ class InventoryRepository:
         await ProductKit.bulk_update(
             kits,
             fields=["stock", "updated_at"],
+            using_db=using_db,
+        )
+
+    async def update_color_stock(
+        self,
+        kit_color: ProductKitColor,
+        *,
+        stock_units: int,
+        using_db: BaseDBAsyncClient,
+    ) -> ProductKitColor:
+        """持久化调用方已计算的可选颜色最终余额。"""
+
+        kit_color.stock_units = stock_units
+        await kit_color.save(
+            using_db=using_db,
+            update_fields=["stock_units", "updated_at"],
+        )
+        return kit_color
+
+    async def bulk_update_color_stocks(
+        self,
+        *,
+        updates: list[InventoryColorStockUpdateData],
+        using_db: BaseDBAsyncClient,
+    ) -> None:
+        """用一条批量更新保存多个已锁定可选颜色的最终余额。"""
+
+        if not updates:
+            return
+        updated_at = datetime.now(timezone.utc)
+        kit_colors: list[ProductKitColor] = []
+        for update in updates:
+            update.kit_color.stock_units = update.stock_units
+            update.kit_color.updated_at = updated_at
+            kit_colors.append(update.kit_color)
+        await ProductKitColor.bulk_update(
+            kit_colors,
+            fields=["stock_units", "updated_at"],
             using_db=using_db,
         )
 
@@ -205,7 +288,8 @@ class InventoryRepository:
         """读取单条流水及安全展示元数据，不产生 Mapper 查询。"""
 
         query = InventoryTransaction.filter(id=transaction_id).select_related(
-            "operator"
+            "operator",
+            "kit_color__bead_color",
         )
         if using_db is not None:
             query = query.using_db(using_db)
@@ -224,6 +308,7 @@ class InventoryRepository:
         page: int,
         page_size: int,
         product_id: int | None = None,
+        kit_color_id: int | None = None,
         transaction_type: InventoryTransactionType | None = None,
         source_type: InventorySourceType | None = None,
         source_id: int | None = None,
@@ -236,6 +321,7 @@ class InventoryRepository:
         query = _apply_transaction_filters(
             InventoryTransaction.all(),
             product_id=product_id,
+            kit_color_id=kit_color_id,
             transaction_type=transaction_type,
             source_type=source_type,
             source_id=source_id,
@@ -248,6 +334,7 @@ class InventoryRepository:
         total = await query.count()
         items = await (
             query.select_related("operator")
+            .select_related("kit_color__bead_color")
             .order_by("-created_at", "-id")
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -270,6 +357,7 @@ class InventoryRepository:
 
         return {
             "product_id": data.product_id,
+            "kit_color_id": data.kit_color_id,
             "transaction_type": data.transaction_type,
             "change_quantity": data.change_quantity,
             "before_quantity": data.before_quantity,

@@ -24,9 +24,92 @@ EXPECTED_MIGRATIONS = [
     "1_20260813130455_add_order_tables.py",
     "2_20260814104655_add_inventory_transactions.py",
     "3_20260902125032_phase95_external_identity.py",
+    "4_20260905162243_add_wallet_payment_refund.py",
+    "5_20260906094653_add_reservations.py",
+    "6_20260906123000_add_color_selectable_kits.py",
 ]
 MYSQL_VERSION_PREFIX = "8.0.46"
 CONTAINER_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")
+M6_LEGACY_PRODUCT_NAME = "__ci_m6_legacy_fixed_kit__"
+M6_EXPECTED_COLUMNS = {
+    ("product_kits", "stock", "YES", "int"),
+    ("product_kits", "kit_kind", "NO", "varchar"),
+    ("product_kits", "sale_unit_grams", "YES", "smallint"),
+    ("bead_colors", "slot_no", "NO", "smallint"),
+    ("bead_colors", "color_code", "YES", "varchar"),
+    ("bead_colors", "name", "YES", "varchar"),
+    ("bead_colors", "swatch_image_url", "YES", "varchar"),
+    ("bead_colors", "sort", "NO", "smallint"),
+    ("bead_colors", "is_active", "NO", "tinyint"),
+    ("product_kit_colors", "is_enabled", "NO", "tinyint"),
+    ("product_kit_colors", "stock_units", "NO", "int"),
+    ("product_kit_colors", "bead_color_id", "NO", "bigint"),
+    ("product_kit_colors", "product_id", "NO", "bigint"),
+    ("order_items", "kit_color_id", "YES", "bigint"),
+    ("order_items", "kit_color_slot_no", "YES", "smallint"),
+    ("order_items", "kit_color_code", "YES", "varchar"),
+    ("order_items", "kit_color_name", "YES", "varchar"),
+    ("order_items", "sale_unit_grams", "YES", "smallint"),
+    ("inventory_transactions", "kit_color_id", "YES", "bigint"),
+}
+M6_EXPECTED_FOREIGN_KEYS = {
+    (
+        "fk_product_kit_colors_bead_color",
+        "product_kit_colors",
+        "bead_color_id",
+        "bead_colors",
+        "id",
+        "RESTRICT",
+    ),
+    (
+        "fk_product_kit_colors_product",
+        "product_kit_colors",
+        "product_id",
+        "products",
+        "id",
+        "RESTRICT",
+    ),
+    (
+        "fk_order_items_kit_color",
+        "order_items",
+        "kit_color_id",
+        "product_kit_colors",
+        "id",
+        "RESTRICT",
+    ),
+    (
+        "fk_inventory_transactions_kit_color",
+        "inventory_transactions",
+        "kit_color_id",
+        "product_kit_colors",
+        "id",
+        "RESTRICT",
+    ),
+}
+M6_EXPECTED_INDEXES = {
+    ("bead_colors", "uidx_bead_colors_slot_no"): (0, ["slot_no"]),
+    ("bead_colors", "uidx_bead_colors_color_code"): (0, ["color_code"]),
+    ("bead_colors", "idx_bead_colors_active_sort_slot"): (
+        1,
+        ["is_active", "sort", "slot_no"],
+    ),
+    ("product_kit_colors", "uidx_product_kit_colors_product_color"): (
+        0,
+        ["product_id", "bead_color_id"],
+    ),
+    ("product_kit_colors", "idx_product_kit_colors_product_enabled"): (
+        1,
+        ["product_id", "is_enabled"],
+    ),
+    ("product_kit_colors", "idx_product_kit_colors_color_enabled"): (
+        1,
+        ["bead_color_id", "is_enabled"],
+    ),
+    ("inventory_transactions", "idx_inventory_color_created_id"): (
+        1,
+        ["kit_color_id", "created_at", "id"],
+    ),
+}
 
 
 class GateError(RuntimeError):
@@ -130,6 +213,23 @@ def preflight(config: GateConfig, report_path: Path) -> None:
     )
 
 
+def _group_m6_index_rows(
+    rows: Sequence[Sequence[object]],
+) -> dict[tuple[str, str], tuple[int, list[str]]]:
+    """按表和索引聚合列序，并冻结 MySQL NON_UNIQUE 标志。"""
+
+    flags: dict[tuple[str, str], int] = {}
+    columns: dict[tuple[str, str], list[str]] = {}
+    for table_name, index_name, non_unique, column_name in rows:
+        key = (str(table_name), str(index_name))
+        flag = int(non_unique)
+        if key in flags and flags[key] != flag:
+            raise GateError("M6 index uniqueness metadata is inconsistent")
+        flags[key] = flag
+        columns.setdefault(key, []).append(str(column_name))
+    return {key: (flags[key], value) for key, value in columns.items()}
+
+
 async def _read_snapshot(config: GateConfig) -> tuple[str, list[str]]:
     import asyncmy
 
@@ -158,12 +258,228 @@ async def _read_snapshot(config: GateConfig) -> tuple[str, list[str]]:
     return mysql_version, migrations
 
 
+async def _seed_m6_legacy_fixed_kit(config: GateConfig) -> None:
+    """在仅回退 M6 的一次性 Schema 中写入一条 M5 fixed Kit。"""
+
+    import asyncmy
+
+    connection = await asyncmy.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        database=config.database,
+        connect_timeout=5,
+        autocommit=False,
+    )
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute("SELECT version FROM aerich ORDER BY id")
+            migration_rows = await cursor.fetchall()
+            migrations = [str(row[0]) for row in migration_rows]
+            if migrations != EXPECTED_MIGRATIONS[:-1]:
+                raise GateError(
+                    "M6 legacy seed requires the reviewed chain through M5"
+                )
+
+            await cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'product_kits' "
+                "AND COLUMN_NAME IN ('kit_kind', 'sale_unit_grams')",
+                (config.database,),
+            )
+            column_row = await cursor.fetchone()
+            if column_row is None or int(column_row[0]) != 0:
+                raise GateError("M6 columns must be absent before legacy seeding")
+
+            await cursor.execute(
+                "SELECT COUNT(*) FROM products WHERE name = %s",
+                (M6_LEGACY_PRODUCT_NAME,),
+            )
+            existing_row = await cursor.fetchone()
+            if existing_row is None or int(existing_row[0]) != 0:
+                raise GateError("M6 legacy seed marker already exists")
+
+            await cursor.execute(
+                "INSERT INTO products ("
+                "created_at, updated_at, name, product_type, description, "
+                "status, is_deleted"
+                ") VALUES ("
+                "UTC_TIMESTAMP(6), UTC_TIMESTAMP(6), %s, 'kit', NULL, "
+                "'draft', 0"
+                ")",
+                (M6_LEGACY_PRODUCT_NAME,),
+            )
+            product_id = int(cursor.lastrowid)
+            await cursor.execute(
+                "INSERT INTO product_kits ("
+                "created_at, updated_at, price, stock, product_id"
+                ") VALUES ("
+                "UTC_TIMESTAMP(6), UTC_TIMESTAMP(6), 12.30, 7, %s"
+                ")",
+                (product_id,),
+            )
+        await connection.commit()
+    except Exception:
+        await connection.rollback()
+        raise
+    finally:
+        await connection.ensure_closed()
+
+
+async def _read_m6_evidence(config: GateConfig) -> dict[str, object]:
+    """读取 M6 数据迁移证据；仅返回非敏感聚合与布尔结论。"""
+
+    import asyncmy
+
+    connection = await asyncmy.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        database=config.database,
+        connect_timeout=5,
+        autocommit=True,
+    )
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT COUNT(*), MIN(slot_no), MAX(slot_no), "
+                "COUNT(DISTINCT slot_no), "
+                "SUM(color_code IS NOT NULL), SUM(name IS NOT NULL), "
+                "SUM(swatch_image_url IS NOT NULL), SUM(is_active <> 0), "
+                "SUM(sort <> slot_no) FROM bead_colors"
+            )
+            palette_row = await cursor.fetchone()
+            expected_palette = (221, 1, 221, 221, 0, 0, 0, 0, 0)
+            if (
+                palette_row is None
+                or any(value is None for value in palette_row)
+                or tuple(map(int, palette_row)) != expected_palette
+            ):
+                raise GateError(
+                    "M6 did not create the exact 221-slot placeholder palette"
+                )
+
+            await cursor.execute(
+                "SELECT product_kits.stock, product_kits.kit_kind, "
+                "product_kits.sale_unit_grams "
+                "FROM product_kits "
+                "INNER JOIN products ON products.id = product_kits.product_id "
+                "WHERE products.name = %s",
+                (M6_LEGACY_PRODUCT_NAME,),
+            )
+            legacy_rows = await cursor.fetchall()
+            if len(legacy_rows) != 1 or legacy_rows[0] != (7, "fixed", None):
+                raise GateError("M6 changed the historical fixed Kit semantics")
+
+            await cursor.execute(
+                "SELECT TABLE_NAME, COLUMN_NAME, IS_NULLABLE, DATA_TYPE, "
+                "COLUMN_DEFAULT FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME IN ("
+                "'product_kits', 'bead_colors', 'product_kit_colors', "
+                "'order_items', 'inventory_transactions'"
+                ")",
+                (config.database,),
+            )
+            column_rows = await cursor.fetchall()
+            expected_column_names = {
+                (table_name, column_name)
+                for table_name, column_name, _, _ in M6_EXPECTED_COLUMNS
+            }
+            actual_columns = {
+                (str(table), str(column), str(nullable), str(data_type))
+                for table, column, nullable, data_type, _ in column_rows
+                if (str(table), str(column)) in expected_column_names
+            }
+            if actual_columns != M6_EXPECTED_COLUMNS:
+                raise GateError("M6 critical column shape does not match the contract")
+            kit_kind_defaults = [
+                default
+                for table, column, _, _, default in column_rows
+                if table == "product_kits" and column == "kit_kind"
+            ]
+            if kit_kind_defaults != ["fixed"]:
+                raise GateError("M6 fixed Kit database default is missing")
+
+            await cursor.execute(
+                "SELECT kcu.CONSTRAINT_NAME, kcu.TABLE_NAME, "
+                "kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, "
+                "kcu.REFERENCED_COLUMN_NAME, rc.DELETE_RULE "
+                "FROM information_schema.KEY_COLUMN_USAGE AS kcu "
+                "INNER JOIN information_schema.REFERENTIAL_CONSTRAINTS AS rc "
+                "ON rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA "
+                "AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+                "WHERE kcu.CONSTRAINT_SCHEMA = %s "
+                "AND kcu.CONSTRAINT_NAME IN ("
+                "'fk_product_kit_colors_bead_color', "
+                "'fk_product_kit_colors_product', "
+                "'fk_order_items_kit_color', "
+                "'fk_inventory_transactions_kit_color'"
+                ")",
+                (config.database,),
+            )
+            foreign_key_rows = await cursor.fetchall()
+            actual_foreign_keys = {
+                tuple(str(value) for value in row) for row in foreign_key_rows
+            }
+            if actual_foreign_keys != M6_EXPECTED_FOREIGN_KEYS:
+                raise GateError("M6 named foreign keys do not match the contract")
+
+            await cursor.execute(
+                "SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, COLUMN_NAME "
+                "FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s AND INDEX_NAME IN ("
+                "'uidx_bead_colors_slot_no', "
+                "'uidx_bead_colors_color_code', "
+                "'idx_bead_colors_active_sort_slot', "
+                "'uidx_product_kit_colors_product_color', "
+                "'idx_product_kit_colors_product_enabled', "
+                "'idx_product_kit_colors_color_enabled', "
+                "'idx_inventory_color_created_id'"
+                ") ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
+                (config.database,),
+            )
+            index_rows = await cursor.fetchall()
+            actual_indexes = _group_m6_index_rows(index_rows)
+            if actual_indexes != M6_EXPECTED_INDEXES:
+                raise GateError("M6 named indexes do not match the contract")
+    finally:
+        await connection.ensure_closed()
+
+    return {
+        "palette_slots": 221,
+        "palette_placeholder_shape_valid": True,
+        "legacy_fixed_kit_compatible": True,
+        "critical_column_count": len(M6_EXPECTED_COLUMNS),
+        "named_foreign_key_count": len(M6_EXPECTED_FOREIGN_KEYS),
+        "named_index_count": len(M6_EXPECTED_INDEXES),
+    }
+
+
+def seed_m6_legacy(config: GateConfig, report_path: Path) -> None:
+    """为 M6 二次升级写入受控 M5 历史数据。"""
+
+    asyncio.run(_seed_m6_legacy_fixed_kit(config))
+    write_report(
+        report_path,
+        {
+            "schema_version": 1,
+            "status": "m6-legacy-seed-ready",
+            **config.safe_target(),
+            "migration_tail": EXPECTED_MIGRATIONS[-2],
+        },
+    )
+    print("MySQL M6 legacy fixed Kit seed passed")
+
+
 def snapshot(config: GateConfig, report_path: Path) -> None:
     mysql_version, migrations = asyncio.run(_read_snapshot(config))
     if not mysql_version.startswith(MYSQL_VERSION_PREFIX):
         raise GateError("MySQL server is not the frozen 8.0.46 release-gate version")
     if migrations != EXPECTED_MIGRATIONS:
         raise GateError("Aerich did not apply the complete reviewed migration chain")
+    m6_evidence = asyncio.run(_read_m6_evidence(config))
 
     write_report(
         report_path,
@@ -173,6 +489,7 @@ def snapshot(config: GateConfig, report_path: Path) -> None:
             **config.safe_target(),
             "mysql_version": mysql_version,
             "aerich_versions": migrations,
+            "m6_evidence": m6_evidence,
             "git_sha": os.getenv("GITHUB_SHA", "local-uncommitted"),
             "workflow_run_id": os.getenv("GITHUB_RUN_ID", "local"),
         },
@@ -293,7 +610,10 @@ def cleanup(config: GateConfig, report_path: Path) -> bool:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("preflight", "snapshot", "cleanup"))
+    parser.add_argument(
+        "command",
+        choices=("preflight", "seed-m6-legacy", "snapshot", "cleanup"),
+    )
     parser.add_argument("--report", required=True, type=Path)
     return parser.parse_args()
 
@@ -307,6 +627,9 @@ def main() -> int:
             return 0
         if arguments.command == "snapshot":
             snapshot(config, arguments.report)
+            return 0
+        if arguments.command == "seed-m6-legacy":
+            seed_m6_legacy(config, arguments.report)
             return 0
         return 0 if cleanup(config, arguments.report) else 1
     except GateError as error:

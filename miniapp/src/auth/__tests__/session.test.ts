@@ -127,4 +127,19 @@ describe('SessionManager', () => {
     expect(listener).toHaveBeenLastCalledWith(undefined)
     expect(storage.values.size).toBe(0)
   })
+
+  it('更新用户资料时保留 Token、持久化白名单用户并通知订阅者', async () => {
+    const storage = new MemoryStorage()
+    const manager = new SessionManager(storage, jest.fn(), { now: () => 1_000_000 })
+    const listener = jest.fn()
+    manager.subscribe(listener)
+    await manager.start(loginResult)
+
+    const updatedUser = { ...user, phone: '13900139000' }
+    await expect(manager.updateUser(updatedUser)).resolves.toMatchObject({ user: updatedUser })
+
+    expect(manager.getAccessToken()).toBe('access-token')
+    expect(manager.getSnapshot()?.user).toEqual(updatedUser)
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ user: updatedUser }))
+  })
 })

@@ -1,5 +1,7 @@
 import {
   ADMIN_ORDER_LIST_PATH,
+  ADMIN_RESERVATION_LIST_PATH,
+  ADMIN_STORE_CLOSURE_LIST_PATH,
   ADMIN_INVENTORY_LIST_PATH,
   ADMIN_PRODUCT_LIST_PATH,
   ADMIN_USER_LIST_PATH,
@@ -7,6 +9,7 @@ import {
   buildRegisterUrl,
   ORDER_CONFIRM_PATH,
   ORDER_LIST_PATH,
+  RESERVATION_LIST_PATH,
   MEMBER_PATH,
   WALLET_RECHARGE_PATH,
   WALLET_TRANSACTION_LIST_PATH,
@@ -24,10 +27,13 @@ describe('登录安全返回路由', () => {
       '/pages/login/index?redirect=%2Fpages%2Forders%2Findex',
     )
     expect(parseLoginRedirect(ORDER_LIST_PATH)).toBe(ORDER_LIST_PATH)
+    expect(parseLoginRedirect(RESERVATION_LIST_PATH)).toBe(RESERVATION_LIST_PATH)
     expect(buildLoginUrl(ADMIN_ORDER_LIST_PATH)).toBe(
       '/pages/login/index?redirect=%2Fadmin%2Fpages%2Forders%2Findex',
     )
     expect(parseLoginRedirect(ADMIN_ORDER_LIST_PATH)).toBe(ADMIN_ORDER_LIST_PATH)
+    expect(parseLoginRedirect(ADMIN_RESERVATION_LIST_PATH)).toBe(ADMIN_RESERVATION_LIST_PATH)
+    expect(parseLoginRedirect(ADMIN_STORE_CLOSURE_LIST_PATH)).toBe(ADMIN_STORE_CLOSURE_LIST_PATH)
     expect(buildLoginUrl(ADMIN_PRODUCT_LIST_PATH)).toBe(
       '/pages/login/index?redirect=%2Fadmin%2Fpages%2Fproducts%2Findex',
     )
@@ -48,6 +54,25 @@ describe('登录安全返回路由', () => {
     expect(buildRegisterUrl(ORDER_CONFIRM_PATH)).toBe(
       '/pages/register/index?redirect=%2Fpages%2Forder-confirm%2Findex',
     )
+  })
+
+  it('仅允许规范且完整的预约创建动态回跳', () => {
+    const target = '/pages/reservation-create/index?product_id=7&option_id=11' as const
+    expect(buildLoginUrl(target)).toBe(
+      '/pages/login/index?redirect=%2Fpages%2Freservation-create%2Findex%3Fproduct_id%3D7%26option_id%3D11',
+    )
+    expect(parseLoginRedirect(encodeURIComponent(target))).toBe(target)
+    expect(parseLoginRedirect(target)).toBe(target)
+
+    for (const unsafe of [
+      '/pages/reservation-create/index',
+      '/pages/reservation-create/index?option_id=11&product_id=7',
+      '/pages/reservation-create/index?product_id=0&option_id=11',
+      '/pages/reservation-create/index?product_id=7&option_id=11&next=https://evil.example.com',
+      '/pages/reservation-create/index?product_id=9007199254740992&option_id=11',
+    ]) {
+      expect(parseLoginRedirect(unsafe)).toBeUndefined()
+    }
   })
 
   it.each([

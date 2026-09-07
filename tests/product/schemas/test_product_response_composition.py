@@ -68,6 +68,8 @@ def test_user_list_item_composes_with_page() -> None:
                     "product_type": _product_type("experience", "拼豆体验"),
                     "cover_image": "https://example.com/products/1.jpg",
                     "display_price": Decimal("299"),
+                    "kit_kind": None,
+                    "sale_unit_grams": None,
                 }
             ],
             "total": 1,
@@ -88,6 +90,8 @@ def test_user_list_item_composes_with_page() -> None:
                 },
                 "cover_image": "https://example.com/products/1.jpg",
                 "display_price": "299.00",
+                "kit_kind": None,
+                "sale_unit_grams": None,
             }
         ],
         "total": 1,
@@ -108,6 +112,8 @@ def test_admin_list_item_allows_incomplete_deleted_draft() -> None:
             "display_price": None,
             "updated_at": NOW,
             "is_deleted": True,
+            "kit_kind": {"value": "fixed", "label": "固定套装"},
+            "sale_unit_grams": None,
         }
     )
 
@@ -120,6 +126,8 @@ def test_admin_list_item_allows_incomplete_deleted_draft() -> None:
         "display_price": None,
         "updated_at": "2026-08-09T12:00:00+08:00",
         "is_deleted": True,
+        "kit_kind": {"value": "fixed", "label": "固定套装"},
+        "sale_unit_grams": None,
     }
 
 
@@ -155,6 +163,9 @@ def test_user_kit_detail_returns_consistent_availability() -> None:
             "price": Decimal("599"),
             "stock": 20,
             "available": True,
+            "kit_kind": {"value": "fixed", "label": "固定套装"},
+            "sale_unit_grams": None,
+            "colors": [],
         }
     )
 
@@ -207,6 +218,9 @@ def test_admin_kit_detail_returns_raw_stock_without_available() -> None:
             "images": [],
             "price": Decimal("99.9"),
             "stock": 0,
+            "kit_kind": {"value": "fixed", "label": "固定套装"},
+            "sale_unit_grams": None,
+            "colors": [],
             "created_at": NOW,
             "updated_at": NOW,
             "is_deleted": True,

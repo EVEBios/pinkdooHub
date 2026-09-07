@@ -20,6 +20,7 @@ const mockCreateOption = jest.fn()
 const mockUpdateOption = jest.fn()
 const mockDeleteOption = jest.fn()
 const mockUpdateKitPrice = jest.fn()
+const mockUpdateKitColor = jest.fn()
 
 jest.mock('@tarojs/taro', () => ({
   __esModule: true,
@@ -56,12 +57,14 @@ describe('AdminProductConfigurationPage', () => {
       updateOption: mockUpdateOption,
       deleteOption: mockDeleteOption,
       updateKitPrice: mockUpdateKitPrice,
+      updateKitColor: mockUpdateKitColor,
       reset: jest.fn(),
     }))
     mockCreateOption.mockResolvedValue({ action: 'create_option', option: option() })
     mockUpdateOption.mockResolvedValue({ action: 'update_option', option: baseOption() })
     mockDeleteOption.mockResolvedValue({ action: 'delete_option', option: { id: 21, is_deleted: true } })
     mockUpdateKitPrice.mockResolvedValue({ action: 'update_kit_price', kit: { id: 8, price: '299.00' } })
+    mockUpdateKitColor.mockResolvedValue({ action: 'update_kit_color', color: configuredColor() })
     ;(Taro.showModal as jest.Mock).mockResolvedValue({ confirm: true, cancel: false })
   })
   afterEach(() => { testUtils.unmout(); jest.clearAllMocks() })
@@ -120,6 +123,17 @@ describe('AdminProductConfigurationPage', () => {
     expect(mockUpdateKitPrice).toHaveBeenCalledWith(8, '299.00')
   })
 
+  it('自选颜色 Kit 显示 10g 定价与 221 色目录，并可切换已配置颜色', async () => {
+    mockUseDetail.mockReturnValue({ retry: jest.fn(), state: { status: 'content', product: colorSelectableKitProduct() } })
+    await testUtils.mount(AuthenticatedAdminProductConfiguration, { props: { productId: 8, productType: 'kit' } })
+    const page = requireElement(testUtils, '.admin-product-configuration-page')
+    expect(page.textContent).toContain('修改每 10g 价格')
+    expect(page.textContent).toContain('商品颜色（1/221）')
+    testUtils.fireEvent.click(requireElement(testUtils, '.admin-product-kit-color__toggle'))
+    await flush(testUtils)
+    expect(mockUpdateKitColor).toHaveBeenCalledWith(301, false)
+  })
+
   it.each([
     { ...experienceProduct(), status: { value: 'online' as const, label: '已上架' } },
     { ...experienceProduct(), is_deleted: true },
@@ -167,7 +181,27 @@ function kitProduct() {
     product_type: { value: 'kit' as const, label: '拼豆套装' },
     status: { value: 'draft' as const, label: '草稿' },
     images: [], price: '199.00', stock: 4,
+    kit_kind: { value: 'fixed' as const, label: '固定套装' }, sale_unit_grams: null, colors: [],
     created_at: '2026-08-25T07:00:00Z', updated_at: '2026-08-26T08:00:00Z', is_deleted: false,
+  }
+}
+
+function colorSelectableKitProduct() {
+  return {
+    ...kitProduct(),
+    name: '自选颜色套装',
+    stock: null,
+    kit_kind: { value: 'color_selectable' as const, label: '自选颜色' },
+    sale_unit_grams: 10,
+    colors: [configuredColor()],
+  }
+}
+
+function configuredColor() {
+  return {
+    id: 301, bead_color_id: 1, slot_no: 1, color_code: 'A01', name: '正红',
+    swatch_image_url: null, sort: 1, is_active: true, is_configured: true,
+    is_enabled: true, stock_units: 7,
   }
 }
 
@@ -191,7 +225,7 @@ function authenticatedAdmin(): AuthContextValue {
       role: 'admin', status: 'normal', last_login_at: null,
       created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
     },
-    register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+    register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
   }
 }
 

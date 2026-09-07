@@ -1,6 +1,8 @@
 """Order 模块命名业务异常。"""
 
-from app.common.constants.order import ORDER_STATUS_VALUES
+from decimal import Decimal
+
+from app.common.constants.order import ORDER_AMOUNT_MAX, ORDER_STATUS_VALUES
 from app.common.enums.order import OrderStatus
 from app.core.exceptions import (
     ConflictException,
@@ -85,4 +87,34 @@ class OrderOptionUnavailable(UnprocessableEntityException):
                 "product_id": product_id,
                 "experience_option_id": experience_option_id,
             },
+        )
+
+
+class OrderKitColorUnavailable(UnprocessableEntityException):
+    """颜色 Kit 配置不存在、不可用或不属于指定 Product。"""
+
+    def __init__(self, *, product_id: int, kit_color_id: int | None) -> None:
+        _validate_positive_id(product_id, field_name="product_id")
+        if kit_color_id is not None:
+            _validate_positive_id(kit_color_id, field_name="kit_color_id")
+        super().__init__(
+            code=42233,
+            message="Order kit color is unavailable",
+            data={
+                "product_id": product_id,
+                "kit_color_id": kit_color_id,
+            },
+        )
+
+
+class OrderAmountExceeded(UnprocessableEntityException):
+    """订单权威总金额超过持久化与响应契约上限。"""
+
+    def __init__(self, *, total_amount: Decimal) -> None:
+        if not isinstance(total_amount, Decimal) or total_amount <= ORDER_AMOUNT_MAX:
+            raise ValueError("total_amount must exceed the order amount maximum")
+        super().__init__(
+            code=42234,
+            message="Order amount exceeds the allowed maximum",
+            data={"maximum": f"{ORDER_AMOUNT_MAX:.2f}"},
         )

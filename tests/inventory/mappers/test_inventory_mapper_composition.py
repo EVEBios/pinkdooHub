@@ -72,6 +72,8 @@ def _transaction(
     return SimpleNamespace(
         id=transaction_id,
         product_id=5,
+        kit_color_id=None,
+        kit_color=None,
         transaction_type=transaction_type,
         change_quantity=change,
         before_quantity=before,
@@ -103,6 +105,12 @@ def test_transaction_mapper_supports_every_ledger_type_and_isolates_fields(
     assert set(data) == {
         "id",
         "product_id",
+        "kit_color_id",
+        "bead_color_id",
+        "bead_color_slot_no",
+        "color_code",
+        "color_name",
+        "sale_unit_grams",
         "transaction_type",
         "change_quantity",
         "before_quantity",

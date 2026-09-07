@@ -12,6 +12,7 @@ import {
 import type {
   AddCartItemInput,
   CartItem,
+  CartItemIdentity,
   CartReconciliationResult,
   CartSnapshot,
   CartStatus,
@@ -23,8 +24,9 @@ export interface CartContextValue {
   readonly items: readonly CartItem[]
   readonly initializationError?: Error
   addItem(item: AddCartItemInput): Promise<void>
-  updateQuantity(productId: number, experienceOptionId: number | null, quantity: number): Promise<void>
-  removeItem(productId: number, experienceOptionId: number | null): Promise<void>
+  addItems(items: readonly AddCartItemInput[]): Promise<void>
+  updateQuantity(identity: CartItemIdentity, quantity: number): Promise<void>
+  removeItem(identity: CartItemIdentity): Promise<void>
   clear(): Promise<void>
   reconcileSubmittedItems(items: readonly CartItem[]): Promise<CartReconciliationResult>
   retryInitialization(): void
@@ -59,10 +61,9 @@ export function CartProvider({ children, runtime: runtimeProp }: CartProviderPro
     items: snapshot.items,
     initializationError: snapshot.initializationError,
     addItem: (item) => runtime.store.addItem(item),
-    updateQuantity: (productId, experienceOptionId, quantity) => (
-      runtime.store.updateQuantity(productId, experienceOptionId, quantity)
-    ),
-    removeItem: (productId, experienceOptionId) => runtime.store.removeItem(productId, experienceOptionId),
+    addItems: (items) => runtime.store.addItems(items),
+    updateQuantity: (identity, quantity) => runtime.store.updateQuantity(identity, quantity),
+    removeItem: (identity) => runtime.store.removeItem(identity),
     clear: () => runtime.store.clear(),
     reconcileSubmittedItems: (items) => runtime.store.reconcileSubmittedItems(items),
     retryInitialization,

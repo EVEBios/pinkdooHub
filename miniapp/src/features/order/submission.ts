@@ -9,6 +9,9 @@ import type { OrderCreateRequest, OrderDetail } from '@/api/endpoints/orders'
 
 import {
   buildOrderItems,
+  CART_COLOR_ITEM_LIMIT,
+  CART_ITEM_LIMIT,
+  CART_NON_COLOR_ITEM_LIMIT,
   type CartItem,
   type CartReconciliationResult,
 } from './cart'
@@ -152,8 +155,13 @@ function buildSubmissionSnapshot(
   items: readonly CartItem[],
   remark?: string | null,
 ): SubmissionSnapshot {
-  if (items.length < 1 || items.length > 10) {
-    throw new OrderSubmissionValidationError('购物清单必须包含 1 至 10 种商品配置')
+  const colorCount = items.filter((item) => item.kitColorId !== null).length
+  const nonColorCount = items.length - colorCount
+  if (items.length < 1 || items.length > CART_ITEM_LIMIT ||
+    colorCount > CART_COLOR_ITEM_LIMIT || nonColorCount > CART_NON_COLOR_ITEM_LIMIT) {
+    throw new OrderSubmissionValidationError(
+      `购物清单最多包含 ${CART_COLOR_ITEM_LIMIT} 种颜色和 ${CART_NON_COLOR_ITEM_LIMIT} 种其他配置`,
+    )
   }
   const submittedItems = items.map((item) => ({ ...item }))
   const normalizedRemark = normalizeOrderRemark(remark)

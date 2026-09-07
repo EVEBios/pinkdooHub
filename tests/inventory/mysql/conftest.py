@@ -9,6 +9,7 @@ from tortoise.backends.base.executor import EXECUTOR_CACHE
 
 
 MYSQL_DATABASE_PREFIX = "pinkdoohub_inventory_4311"
+MIGRATION_EVIDENCE_TABLES = {"aerich", "bead_colors"}
 
 
 def _mysql_test_config() -> dict[str, object]:
@@ -55,14 +56,14 @@ def _mysql_test_config() -> dict[str, object]:
 
 
 async def _truncate_business_tables() -> None:
-    """在已校验的专用 Schema 中清空业务数据，保留 Aerich 版本链。"""
+    """清空用例数据，保留 Aerich 版本链与 M6 的 221 槽种子。"""
 
     connection = connections.get("default")
     table_names = sorted(
         {
             model._meta.db_table
             for model in Tortoise.apps["models"].values()
-            if model._meta.db_table != "aerich"
+            if model._meta.db_table not in MIGRATION_EVIDENCE_TABLES
         }
     )
     await connection.execute_query("SET FOREIGN_KEY_CHECKS = 0")

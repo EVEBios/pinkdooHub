@@ -85,6 +85,14 @@
   box-sizing: border-box;
 }
 
+@mixin button-disabled {
+  color: var(--pd-color-ink-soft);
+  background: var(--pd-color-surface-muted);
+  border: 1px solid var(--pd-color-line);
+  box-shadow: none;
+  opacity: 0.62;
+}
+
 @mixin primary-button($radius: 14px) {
   @include button-base($radius);
 
@@ -94,7 +102,7 @@
   box-shadow: 0 9px 22px rgb(143 35 70 / 17%);
 
   &[disabled] {
-    color: #fff;
+    @include button-disabled;
   }
 }
 
@@ -106,7 +114,7 @@
   border: 1px solid var(--pd-color-line-strong);
 
   &[disabled] {
-    color: var(--pd-color-primary-strong);
+    @include button-disabled;
   }
 }
 
@@ -118,7 +126,7 @@
   border: 1px solid transparent;
 
   &[disabled] {
-    color: var(--pd-color-ink-soft);
+    @include button-disabled;
   }
 }
 
@@ -130,7 +138,7 @@
   border: 1px solid rgb(169 47 56 / 22%);
 
   &[disabled] {
-    color: var(--pd-color-danger);
+    @include button-disabled;
   }
 }
 
@@ -153,6 +161,10 @@
   border: 1px solid transparent;
   border-radius: 999px;
   box-sizing: border-box;
+
+  &[disabled] {
+    @include button-disabled;
+  }
 }
 
 @mixin chip-active {

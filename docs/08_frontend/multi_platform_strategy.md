@@ -1,8 +1,8 @@
 # pinkdooHub 前端多端策略
 
-> **Document Version:** v0.1
+> **Document Version:** v0.2
 > **Status:** Draft
-> **Last Updated:** 2026-08-29
+> **Last Updated:** 2026-09-06
 > **Scope:** 微信小程序、支付宝小程序、抖音小程序、H5
 
 本文档定义同一 Taro 应用在四个目标平台上的共享边界、差异隔离、构建配置与验收方式。总体依赖方向见 [前端架构](frontend_architecture.md)。
@@ -56,7 +56,7 @@ Taro 可以统一大量 React、组件、路由和 API 用法，但不能保证�
 - Endpoint API 与响应信封；
 - HTTP 错误模型；
 - Token 刷新核心流程；
-- Product/Order/Inventory 前端用例；
+- Product/Order/Inventory/Reservation 前端用例；Reservation N1 使用普通 HTTPS API，不需要平台专属订阅能力；
 - 金额、日期、Enum 和分页格式化；
 - Experience Option 有效组合算法；
 - 表单字段规则与通用页面四态；
@@ -123,7 +123,7 @@ interface SharePort {
 
 禁止在以下位置使用：
 
-- Product/Order/Inventory 业务页面；
+- Product/Order/Inventory/Reservation 业务页面；
 - Endpoint API；
 - OpenAPI DTO；
 - 通用格式化和业务算法；
@@ -236,6 +236,8 @@ Spike 结果写回 [ADR-005](adr/ADR-005-cross-platform-ui-strategy.md)。
 未来支付宝、抖音登录不得复制微信专属数据模型。后端需先冻结通用外部身份关联契约。
 
 MVP 的 Paid 状态由 ADMIN+ 人工确认。正式支付由服务端创建支付单、签名、验签和消费异步通知；客户端支付 API 成功回调不能直接把 Order 标记 Paid。
+
+Reservation N1 在所有平台共享相同后端契约：上海营业日历、booking-options、创建/查询/取消和 ADMIN 审核/店休均通过普通 Bearer HTTPS；客户端设备时区不改变权威预约日期。N1 不调用微信 `requestSubscribeMessage`。未来 N2 若获批准，订阅授权只能放在微信 Platform Adapter，并为支付宝、抖音和 H5 明确不同能力或无能力降级；通知授权失败不得影响预约成功。
 
 ---
 

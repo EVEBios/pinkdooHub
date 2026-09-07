@@ -44,6 +44,7 @@ def _service_with_mocks(
     product: object | None,
 ) -> tuple[ProductService, AsyncMock, AsyncMock]:
     product_repository = AsyncMock(spec=ProductRepository)
+    product_repository.get_product_for_update.return_value = product
     product_repository.get_product_detail.return_value = product
 
     async def update_product(
@@ -75,10 +76,8 @@ async def test_missing_product_is_rejected_before_write() -> None:
             ip_address="127.0.0.1",
         )
 
-    repository.get_product_detail.assert_awaited_once_with(
-        404,
-        include_deleted=True,
-    )
+    repository.get_product_for_update.assert_awaited_once()
+    repository.get_product_detail.assert_not_awaited()
     repository.update_product.assert_not_awaited()
     audit_service.log.assert_not_awaited()
 
@@ -162,11 +161,20 @@ async def test_success_updates_and_audits_with_same_transaction_connection(
 
     assert result is product
     assert result.status is ProductStatus.ONLINE
+    repository.get_product_for_update.assert_awaited_once()
+    lock_call = repository.get_product_for_update.await_args
     repository.update_product.assert_awaited_once()
     update_call = repository.update_product.await_args
     assert update_call.args == (product,)
     assert update_call.kwargs["status"] is ProductStatus.ONLINE
     connection = update_call.kwargs["using_db"]
+    assert lock_call.args == (product.id,)
+    assert lock_call.kwargs["using_db"] is connection
+    repository.get_product_detail.assert_awaited_once_with(
+        product.id,
+        include_deleted=True,
+        using_db=connection,
+    )
     audit_service.log.assert_awaited_once_with(
         operator_id=17,
         action="ONLINE_PRODUCT",
@@ -188,6 +196,10 @@ async def test_success_preserves_load_validate_update_audit_order(
         events.append("load")
         return product
 
+    async def lock(*args: object, **kwargs: object) -> object:
+        events.append("lock")
+        return product
+
     async def update(
         target: object,
         **kwargs: object,
@@ -199,6 +211,7 @@ async def test_success_preserves_load_validate_update_audit_order(
     async def audit(**kwargs: object) -> None:
         events.append("audit")
 
+    repository.get_product_for_update.side_effect = lock
     repository.get_product_detail.side_effect = load
     repository.update_product.side_effect = update
     audit_service = AsyncMock(spec=AuditLogService)
@@ -217,7 +230,7 @@ async def test_success_preserves_load_validate_update_audit_order(
         ip_address="127.0.0.1",
     )
 
-    assert events == ["load", "validate", "update", "audit"]
+    assert events == ["lock", "load", "validate", "update", "audit"]
     validate.assert_called_once_with(product)
 
 

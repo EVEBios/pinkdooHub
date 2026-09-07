@@ -44,6 +44,46 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/bead-colors": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Bead Colors
+         * @description 分页查询全局 221 槽拼豆颜色目录。
+         */
+        readonly get: operations["list_bead_colors_api_v1_admin_bead_colors_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/bead-colors/{bead_color_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /**
+         * Update Bead Color
+         * @description 修改全局颜色槽的元数据、排序或激活状态。
+         */
+        readonly patch: operations["update_bead_color_api_v1_admin_bead_colors__bead_color_id__patch"];
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/config": {
         readonly parameters: {
             readonly query?: never;
@@ -286,6 +326,26 @@ export interface paths {
         readonly patch: operations["update_product_image_api_v1_admin_product_images__image_id__patch"];
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/product-kit-colors/{kit_color_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /**
+         * Update Product Kit Color
+         * @description 启用或禁用一个自选颜色 Kit 的商品颜色。
+         */
+        readonly patch: operations["update_product_kit_color_api_v1_admin_product_kit_colors__kit_color_id__patch"];
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/products": {
         readonly parameters: {
             readonly query?: never;
@@ -510,6 +570,46 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Adjust Color Inventory
+         * @description 按变化量调整一个商品颜色的 10g 单位库存。
+         */
+        readonly post: operations["adjust_color_inventory_api_v1_admin_products_kit__product_id__colors__kit_color_id__inventory_adjustments_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Product Color Inventory Transactions
+         * @description 分页查询一个商品颜色的 10g 单位库存流水。
+         */
+        readonly get: operations["list_product_color_inventory_transactions_api_v1_admin_products_kit__product_id__colors__kit_color_id__inventory_transactions_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/products/kit/{product_id}/inventory-adjustments": {
         readonly parameters: {
             readonly query?: never;
@@ -568,6 +668,129 @@ export interface paths {
          * @description 修改 Kit 当前售价。
          */
         readonly patch: operations["update_kit_price_api_v1_admin_products_kit__product_id__price_patch"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservations": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Admin Reservations */
+        readonly get: operations["list_admin_reservations_api_v1_admin_reservations_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservations/{reservation_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Admin Reservation Detail */
+        readonly get: operations["get_admin_reservation_detail_api_v1_admin_reservations__reservation_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservations/{reservation_id}/audit-logs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Reservation Audit Logs */
+        readonly get: operations["list_reservation_audit_logs_api_v1_admin_reservations__reservation_id__audit_logs_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservations/{reservation_id}/confirm": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /** Confirm Reservation */
+        readonly patch: operations["confirm_reservation_api_v1_admin_reservations__reservation_id__confirm_patch"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservations/{reservation_id}/reject": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /**
+         * Reject Reservation
+         * @description 以固定原因 no_capacity 拒绝 Pending 预约。
+         */
+        readonly patch: operations["reject_reservation_api_v1_admin_reservations__reservation_id__reject_patch"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/store-closures": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Store Closures */
+        readonly get: operations["list_store_closures_api_v1_admin_store_closures_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/store-closures/{business_date}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Close Store Day */
+        readonly put: operations["close_store_day_api_v1_admin_store_closures__business_date__put"];
+        readonly post?: never;
+        /** Reopen Store Day */
+        readonly delete: operations["reopen_store_day_api_v1_admin_store_closures__business_date__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
         readonly trace?: never;
     };
     readonly "/api/v1/admin/users": {
@@ -1146,6 +1369,90 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/reservations": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Reservations
+         * @description 分页查询当前顾客自己的预约历史。
+         */
+        readonly get: operations["list_reservations_api_v1_reservations_get"];
+        readonly put?: never;
+        /**
+         * Create Reservation
+         * @description 创建独立于订单与支付的待门店确认预约。
+         */
+        readonly post: operations["create_reservation_api_v1_reservations_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/reservations/{reservation_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Reservation Detail
+         * @description 查询当前顾客可见的预约详情。
+         */
+        readonly get: operations["get_reservation_detail_api_v1_reservations__reservation_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/reservations/{reservation_id}/cancel": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /**
+         * Cancel Reservation
+         * @description 在开始前至少三小时取消自己的 Pending/Confirmed 预约。
+         */
+        readonly patch: operations["cancel_reservation_api_v1_reservations__reservation_id__cancel_patch"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/reservations/booking-options": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Reservation Booking Options
+         * @description 返回服务端计算的当前 Option 可预约日期和半小时时段。
+         */
+        readonly get: operations["get_reservation_booking_options_api_v1_reservations_booking_options_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/users/me": {
         readonly parameters: {
             readonly query?: never;
@@ -1340,6 +1647,8 @@ export interface components {
          * @description 管理端套装商品详情。
          */
         readonly AdminKitProductDetailOut: {
+            /** Colors */
+            readonly colors: readonly components["schemas"]["AdminProductKitColorOut"][];
             /**
              * Created At
              * Format: date-time
@@ -1353,6 +1662,7 @@ export interface components {
             readonly images: readonly components["schemas"]["ProductImageOut"][];
             /** Is Deleted */
             readonly is_deleted: boolean;
+            readonly kit_kind: components["schemas"]["LabeledValue_KitKind_"];
             /** Name */
             readonly name: string;
             /**
@@ -1362,9 +1672,11 @@ export interface components {
              */
             readonly price: string;
             readonly product_type: components["schemas"]["LabeledValue_Literal_KIT__"];
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
             readonly status: components["schemas"]["LabeledValue_ProductStatus_"];
             /** Stock */
-            readonly stock: number;
+            readonly stock: number | null;
             /**
              * Updated At
              * Format: date-time
@@ -1440,6 +1752,34 @@ export interface components {
             readonly user_nickname: string;
         };
         /**
+         * AdminProductKitColorOut
+         * @description 管理端商品颜色关联，包含配置与当前余额。
+         */
+        readonly AdminProductKitColorOut: {
+            /** Bead Color Id */
+            readonly bead_color_id: number;
+            /** Color Code */
+            readonly color_code: string | null;
+            /** Id */
+            readonly id: number;
+            /** Is Active */
+            readonly is_active: boolean;
+            /** Is Configured */
+            readonly is_configured: boolean;
+            /** Is Enabled */
+            readonly is_enabled: boolean;
+            /** Name */
+            readonly name: string | null;
+            /** Slot No */
+            readonly slot_no: number;
+            /** Sort */
+            readonly sort: number;
+            /** Stock Units */
+            readonly stock_units: number;
+            /** Swatch Image Url */
+            readonly swatch_image_url: string | null;
+        };
+        /**
          * AdminProductListItemOut
          * @description 管理端商品列表摘要，允许草稿商品尚未配置完整。
          */
@@ -1452,15 +1792,170 @@ export interface components {
             readonly id: number;
             /** Is Deleted */
             readonly is_deleted: boolean;
+            readonly kit_kind: components["schemas"]["LabeledValue_KitKind_"] | null;
             /** Name */
             readonly name: string;
             readonly product_type: components["schemas"]["LabeledValue_ProductType_"];
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
             readonly status: components["schemas"]["LabeledValue_ProductStatus_"];
             /**
              * Updated At
              * Format: date-time
              */
             readonly updated_at: string;
+        };
+        /**
+         * AdminReservationDetailOut
+         * @description 管理端详情返回当前完整手机号；该字段不是预约快照。
+         */
+        readonly AdminReservationDetailOut: {
+            /**
+             * Cancellation Deadline At
+             * Format: date-time
+             */
+            readonly cancellation_deadline_at: string;
+            readonly cancellation_reason?: components["schemas"]["ReservationCancellationReasonOut"] | null;
+            /** Cancelled At */
+            readonly cancelled_at?: string | null;
+            /** Confirmed At */
+            readonly confirmed_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Customer Message */
+            readonly customer_message: string;
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /** End Time */
+            readonly end_time: string;
+            /** Experience Option Id */
+            readonly experience_option_id: number;
+            /** Id */
+            readonly id: number;
+            /** Participants */
+            readonly participants: number;
+            /**
+             * Price
+             * @description 固定两位小数的金额字符串，0 < price <= 99999
+             * @example 599.00
+             */
+            readonly price: string;
+            /** Product Id */
+            readonly product_id: number;
+            /** Product Name */
+            readonly product_name: string;
+            /** Rejected At */
+            readonly rejected_at?: string | null;
+            readonly rejection_reason?: components["schemas"]["ReservationRejectionReasonOut"] | null;
+            /**
+             * Reservation Date
+             * Format: date
+             */
+            readonly reservation_date: string;
+            /**
+             * Scheduled End At
+             * Format: date-time
+             */
+            readonly scheduled_end_at: string;
+            /**
+             * Scheduled Start At
+             * Format: date-time
+             */
+            readonly scheduled_start_at: string;
+            /** Start Time */
+            readonly start_time: string;
+            readonly status: components["schemas"]["ReservationStatusOut"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            /** User Id */
+            readonly user_id: number;
+            /** User Nickname */
+            readonly user_nickname: string;
+            /** User Phone */
+            readonly user_phone?: string | null;
+        };
+        /**
+         * AdminReservationListItemOut
+         * @description 管理端列表额外包含当前用户摘要和后端掩码手机号。
+         */
+        readonly AdminReservationListItemOut: {
+            /**
+             * Cancellation Deadline At
+             * Format: date-time
+             */
+            readonly cancellation_deadline_at: string;
+            readonly cancellation_reason?: components["schemas"]["ReservationCancellationReasonOut"] | null;
+            /** Cancelled At */
+            readonly cancelled_at?: string | null;
+            /** Confirmed At */
+            readonly confirmed_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Customer Message */
+            readonly customer_message: string;
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /** End Time */
+            readonly end_time: string;
+            /** Experience Option Id */
+            readonly experience_option_id: number;
+            /** Id */
+            readonly id: number;
+            /** Participants */
+            readonly participants: number;
+            /**
+             * Price
+             * @description 固定两位小数的金额字符串，0 < price <= 99999
+             * @example 599.00
+             */
+            readonly price: string;
+            /** Product Id */
+            readonly product_id: number;
+            /** Product Name */
+            readonly product_name: string;
+            /** Rejected At */
+            readonly rejected_at?: string | null;
+            readonly rejection_reason?: components["schemas"]["ReservationRejectionReasonOut"] | null;
+            /**
+             * Reservation Date
+             * Format: date
+             */
+            readonly reservation_date: string;
+            /**
+             * Scheduled End At
+             * Format: date-time
+             */
+            readonly scheduled_end_at: string;
+            /**
+             * Scheduled Start At
+             * Format: date-time
+             */
+            readonly scheduled_start_at: string;
+            /** Start Time */
+            readonly start_time: string;
+            readonly status: components["schemas"]["ReservationStatusOut"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            /** User Id */
+            readonly user_id: number;
+            /** User Nickname */
+            readonly user_nickname: string;
+            /** User Phone Masked */
+            readonly user_phone_masked?: string | null;
         };
         /** AdminUserWalletOut */
         readonly AdminUserWalletOut: {
@@ -1501,6 +1996,42 @@ export interface components {
             readonly target_id: number;
             /** Target Type */
             readonly target_type: string;
+        };
+        /**
+         * BeadColorOut
+         * @description 管理端全局颜色槽响应。
+         */
+        readonly BeadColorOut: {
+            /** Color Code */
+            readonly color_code: string | null;
+            /** Id */
+            readonly id: number;
+            /** Is Active */
+            readonly is_active: boolean;
+            /** Is Configured */
+            readonly is_configured: boolean;
+            /** Name */
+            readonly name: string | null;
+            /** Slot No */
+            readonly slot_no: number;
+            /** Sort */
+            readonly sort: number;
+            /** Swatch Image Url */
+            readonly swatch_image_url: string | null;
+        };
+        /**
+         * BeadColorUpdate
+         * @description 修改全局颜色槽元数据；null 可清空名称或业务编码。
+         */
+        readonly BeadColorUpdate: {
+            /** Color Code */
+            readonly color_code?: string | null;
+            /** Is Active */
+            readonly is_active?: boolean | null;
+            /** Name */
+            readonly name?: string | null;
+            /** Sort */
+            readonly sort?: number | null;
         };
         /**
          * DayType
@@ -1712,6 +2243,29 @@ export interface components {
             readonly transaction: components["schemas"]["InventoryTransactionOut"];
         };
         /**
+         * InventoryColorAdjustmentOut
+         * @description 管理员调整颜色余额后的当前值与不可变流水。
+         */
+        readonly InventoryColorAdjustmentOut: {
+            /** Bead Color Id */
+            readonly bead_color_id: number;
+            /** Bead Color Slot No */
+            readonly bead_color_slot_no: number;
+            /** Color Code */
+            readonly color_code: string | null;
+            /** Color Name */
+            readonly color_name: string | null;
+            /** Kit Color Id */
+            readonly kit_color_id: number;
+            /** Product Id */
+            readonly product_id: number;
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number;
+            /** Stock Units */
+            readonly stock_units: number;
+            readonly transaction: components["schemas"]["InventoryTransactionOut"];
+        };
+        /**
          * InventorySourceType
          * @description 库存流水的业务来源类型。
          * @enum {string}
@@ -1724,10 +2278,18 @@ export interface components {
         readonly InventoryTransactionListItem: {
             /** After Quantity */
             readonly after_quantity: number;
+            /** Bead Color Id */
+            readonly bead_color_id: number | null;
+            /** Bead Color Slot No */
+            readonly bead_color_slot_no: number | null;
             /** Before Quantity */
             readonly before_quantity: number;
             /** Change Quantity */
             readonly change_quantity: number;
+            /** Color Code */
+            readonly color_code: string | null;
+            /** Color Name */
+            readonly color_name: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1735,6 +2297,8 @@ export interface components {
             readonly created_at: string;
             /** Id */
             readonly id: number;
+            /** Kit Color Id */
+            readonly kit_color_id: number | null;
             /** Operator Id */
             readonly operator_id?: number | null;
             /** Operator Nickname */
@@ -1743,6 +2307,8 @@ export interface components {
             readonly product_id: number;
             /** Reason */
             readonly reason: string;
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
             /** Source Id */
             readonly source_id?: number | null;
             /** Source Order No */
@@ -1757,10 +2323,18 @@ export interface components {
         readonly InventoryTransactionOut: {
             /** After Quantity */
             readonly after_quantity: number;
+            /** Bead Color Id */
+            readonly bead_color_id: number | null;
+            /** Bead Color Slot No */
+            readonly bead_color_slot_no: number | null;
             /** Before Quantity */
             readonly before_quantity: number;
             /** Change Quantity */
             readonly change_quantity: number;
+            /** Color Code */
+            readonly color_code: string | null;
+            /** Color Name */
+            readonly color_name: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1768,6 +2342,8 @@ export interface components {
             readonly created_at: string;
             /** Id */
             readonly id: number;
+            /** Kit Color Id */
+            readonly kit_color_id: number | null;
             /** Operator Id */
             readonly operator_id?: number | null;
             /** Operator Nickname */
@@ -1776,6 +2352,8 @@ export interface components {
             readonly product_id: number;
             /** Reason */
             readonly reason: string;
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
             /** Source Id */
             readonly source_id?: number | null;
             /** Source Order No */
@@ -1789,6 +2367,32 @@ export interface components {
          * @enum {string}
          */
         readonly InventoryTransactionType: "opening_balance" | "admin_adjustment" | "order_deduction" | "order_cancellation_restore" | "order_refund_restore";
+        /**
+         * KitColorOptionOut
+         * @description 用户端可选颜色；不泄露商品级精确库存。
+         */
+        readonly KitColorOptionOut: {
+            /** Available */
+            readonly available: boolean;
+            /** Bead Color Id */
+            readonly bead_color_id: number;
+            /** Color Code */
+            readonly color_code: string;
+            /** Id */
+            readonly id: number;
+            /** Name */
+            readonly name: string;
+            /** Slot No */
+            readonly slot_no: number;
+            /** Swatch Image Url */
+            readonly swatch_image_url: string | null;
+        };
+        /**
+         * KitKind
+         * @description 套装商品的销售形态。
+         * @enum {string}
+         */
+        readonly KitKind: "fixed" | "color_selectable";
         /**
          * KitPriceOut
          * @description 修改套装商品价格响应。
@@ -1822,6 +2426,8 @@ export interface components {
         readonly KitProductCreate: {
             /** Description */
             readonly description?: string | null;
+            /** @default fixed */
+            readonly kit_kind: components["schemas"]["KitKind"];
             /** Name */
             readonly name: string;
             /**
@@ -1838,9 +2444,12 @@ export interface components {
         readonly KitProductCreateOut: {
             /** Id */
             readonly id: number;
+            readonly kit_kind: components["schemas"]["LabeledValue_KitKind_"];
             /** Name */
             readonly name: string;
             readonly product_type: components["schemas"]["LabeledValue_Literal_KIT__"];
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
             readonly status: components["schemas"]["LabeledValue_Literal_DRAFT__"];
         };
         /**
@@ -1850,12 +2459,15 @@ export interface components {
         readonly KitProductDetailOut: {
             /** Available */
             readonly available: boolean;
+            /** Colors */
+            readonly colors: readonly components["schemas"]["KitColorOptionOut"][];
             /** Description */
             readonly description: string;
             /** Id */
             readonly id: number;
             /** Images */
             readonly images: readonly components["schemas"]["ProductImageOut"][];
+            readonly kit_kind: components["schemas"]["LabeledValue_KitKind_"];
             /** Name */
             readonly name: string;
             /**
@@ -1865,8 +2477,10 @@ export interface components {
              */
             readonly price: string;
             readonly product_type: components["schemas"]["LabeledValue_Literal_KIT__"];
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
             /** Stock */
-            readonly stock: number;
+            readonly stock: number | null;
         };
         /** LabeledValue[Annotated[int, FieldInfo(annotation=NoneType, required=True, metadata=[Strict(strict=True), Ge(ge=1)])]] */
         readonly LabeledValue_Annotated_int__FieldInfo_annotation_NoneType__required_True__metadata__Strict_strict_True___Ge_ge_1_____: {
@@ -1880,6 +2494,12 @@ export interface components {
             /** Label */
             readonly label: string;
             readonly value: components["schemas"]["DayType"];
+        };
+        /** LabeledValue[KitKind] */
+        readonly LabeledValue_KitKind_: {
+            /** Label */
+            readonly label: string;
+            readonly value: components["schemas"]["KitKind"];
         };
         /** LabeledValue[Literal[<ProductStatus.DRAFT: 'draft'>]] */
         readonly LabeledValue_Literal_DRAFT__: {
@@ -2079,6 +2699,8 @@ export interface components {
         readonly OrderItemCreate: {
             /** Experience Option Id */
             readonly experience_option_id?: number | null;
+            /** Kit Color Id */
+            readonly kit_color_id?: number | null;
             /** Product Id */
             readonly product_id: number;
             /** Quantity */
@@ -2093,6 +2715,14 @@ export interface components {
             readonly experience_option_id?: number | null;
             /** Id */
             readonly id: number;
+            /** Kit Color Code */
+            readonly kit_color_code: string | null;
+            /** Kit Color Id */
+            readonly kit_color_id: number | null;
+            /** Kit Color Name */
+            readonly kit_color_name: string | null;
+            /** Kit Color Slot No */
+            readonly kit_color_slot_no: number | null;
             readonly option_day_type?: components["schemas"]["OrderDayTypeOut"] | null;
             /** Option Duration Minutes */
             readonly option_duration_minutes?: number | null;
@@ -2110,12 +2740,16 @@ export interface components {
             readonly product_price: string;
             /** Quantity */
             readonly quantity: number;
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
             /**
              * Subtotal
              * @description 固定两位小数的订单金额字符串
              * @example 497.00
              */
             readonly subtotal: string;
+            /** Total Weight Grams */
+            readonly total_weight_grams: number | null;
         };
         /**
          * OrderListItemOut
@@ -2201,10 +2835,36 @@ export interface components {
             /** Total */
             readonly total: number;
         };
+        /** Page[AdminReservationListItemOut] */
+        readonly Page_AdminReservationListItemOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["AdminReservationListItemOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
         /** Page[AuditLogOut] */
         readonly Page_AuditLogOut_: {
             /** Items */
             readonly items: readonly components["schemas"]["AuditLogOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
+        /** Page[BeadColorOut] */
+        readonly Page_BeadColorOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["BeadColorOut"][];
             /** Page */
             readonly page: number;
             /** Page Size */
@@ -2244,6 +2904,32 @@ export interface components {
         readonly Page_ProductListItemOut_: {
             /** Items */
             readonly items: readonly components["schemas"]["ProductListItemOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
+        /** Page[ReservationOut] */
+        readonly Page_ReservationOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["ReservationOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
+        /** Page[StoreBusinessDayOut] */
+        readonly Page_StoreBusinessDayOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["StoreBusinessDayOut"][];
             /** Page */
             readonly page: number;
             /** Page Size */
@@ -2401,6 +3087,14 @@ export interface components {
             readonly sort: number;
         };
         /**
+         * ProductKitColorUpdate
+         * @description 修改商品颜色是否启用；库存由 Inventory 单独维护。
+         */
+        readonly ProductKitColorUpdate: {
+            /** Is Enabled */
+            readonly is_enabled: boolean;
+        };
+        /**
          * ProductListItemOut
          * @description 用户端商品列表项——仅用于完整且已上架的商品。
          */
@@ -2415,9 +3109,12 @@ export interface components {
             readonly display_price: string;
             /** Id */
             readonly id: number;
+            readonly kit_kind: components["schemas"]["LabeledValue_KitKind_"] | null;
             /** Name */
             readonly name: string;
             readonly product_type: components["schemas"]["LabeledValue_ProductType_"];
+            /** Sale Unit Grams */
+            readonly sale_unit_grams: number | null;
         };
         /**
          * ProductOfflineOut
@@ -2578,6 +3275,209 @@ export interface components {
          */
         readonly RefundStatus: "pending" | "succeeded" | "failed";
         /**
+         * ReservationBookingDateOut
+         * @description 一个可预约上海本地日期及其半小时时段。
+         */
+        readonly ReservationBookingDateOut: {
+            /**
+             * Date
+             * Format: date
+             */
+            readonly date: string;
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            /** Start Times */
+            readonly start_times: readonly string[];
+        };
+        /**
+         * ReservationBookingOptionsOut
+         * @description 服务端生成的当前 Option 可预约日期/时间选择集。
+         */
+        readonly ReservationBookingOptionsOut: {
+            /**
+             * Booking Window Days
+             * @default 30
+             */
+            readonly booking_window_days: number;
+            /**
+             * Booking Window End Date
+             * Format: date
+             */
+            readonly booking_window_end_date: string;
+            /**
+             * Closes At
+             * @default 20:00
+             */
+            readonly closes_at: string;
+            /** Dates */
+            readonly dates: readonly components["schemas"]["ReservationBookingDateOut"][];
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /** Experience Option Id */
+            readonly experience_option_id: number;
+            /**
+             * Minimum Lead Hours
+             * @default 3
+             */
+            readonly minimum_lead_hours: number;
+            /**
+             * Opens At
+             * @default 11:00
+             */
+            readonly opens_at: string;
+            /** Participants */
+            readonly participants: number;
+            /**
+             * Price
+             * @description 固定两位小数的金额字符串，0 < price <= 99999
+             * @example 599.00
+             */
+            readonly price: string;
+            /** Product Id */
+            readonly product_id: number;
+            /** Product Name */
+            readonly product_name: string;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            readonly server_now: string;
+            /**
+             * Slot Interval Minutes
+             * @default 30
+             */
+            readonly slot_interval_minutes: number;
+            /** Timezone */
+            readonly timezone: string;
+        };
+        /**
+         * ReservationCancellationReason
+         * @description 取消预约的受控原因。
+         * @enum {string}
+         */
+        readonly ReservationCancellationReason: "customer_request" | "store_closed";
+        /** ReservationCancellationReasonOut */
+        readonly ReservationCancellationReasonOut: {
+            /** Label */
+            readonly label: string;
+            readonly value: components["schemas"]["ReservationCancellationReason"];
+        };
+        /**
+         * ReservationCreate
+         * @description 创建独立体验预约；其余快照均由服务端生成。
+         */
+        readonly ReservationCreate: {
+            /** Experience Option Id */
+            readonly experience_option_id: number;
+            /**
+             * Reservation Date
+             * Format: date
+             */
+            readonly reservation_date: string;
+            /** Start Time */
+            readonly start_time: string;
+        };
+        /** ReservationDayTypeOut */
+        readonly ReservationDayTypeOut: {
+            /** Label */
+            readonly label: string;
+            readonly value: components["schemas"]["DayType"];
+        };
+        /**
+         * ReservationOut
+         * @description 用户端列表、详情和状态变迁响应，不包含任何 User 字段。
+         */
+        readonly ReservationOut: {
+            /**
+             * Cancellation Deadline At
+             * Format: date-time
+             */
+            readonly cancellation_deadline_at: string;
+            readonly cancellation_reason?: components["schemas"]["ReservationCancellationReasonOut"] | null;
+            /** Cancelled At */
+            readonly cancelled_at?: string | null;
+            /** Confirmed At */
+            readonly confirmed_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Customer Message */
+            readonly customer_message: string;
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /** End Time */
+            readonly end_time: string;
+            /** Experience Option Id */
+            readonly experience_option_id: number;
+            /** Id */
+            readonly id: number;
+            /** Participants */
+            readonly participants: number;
+            /**
+             * Price
+             * @description 固定两位小数的金额字符串，0 < price <= 99999
+             * @example 599.00
+             */
+            readonly price: string;
+            /** Product Id */
+            readonly product_id: number;
+            /** Product Name */
+            readonly product_name: string;
+            /** Rejected At */
+            readonly rejected_at?: string | null;
+            readonly rejection_reason?: components["schemas"]["ReservationRejectionReasonOut"] | null;
+            /**
+             * Reservation Date
+             * Format: date
+             */
+            readonly reservation_date: string;
+            /**
+             * Scheduled End At
+             * Format: date-time
+             */
+            readonly scheduled_end_at: string;
+            /**
+             * Scheduled Start At
+             * Format: date-time
+             */
+            readonly scheduled_start_at: string;
+            /** Start Time */
+            readonly start_time: string;
+            readonly status: components["schemas"]["ReservationStatusOut"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * ReservationRejectionReason
+         * @description 门店拒绝预约的受控原因。
+         * @enum {string}
+         */
+        readonly ReservationRejectionReason: "no_capacity";
+        /** ReservationRejectionReasonOut */
+        readonly ReservationRejectionReasonOut: {
+            /** Label */
+            readonly label: string;
+            readonly value: components["schemas"]["ReservationRejectionReason"];
+        };
+        /**
+         * ReservationStatus
+         * @description 预约排期状态；与订单支付状态相互独立。
+         * @enum {string}
+         */
+        readonly ReservationStatus: "pending" | "confirmed" | "rejected" | "cancelled";
+        /** ReservationStatusOut */
+        readonly ReservationStatusOut: {
+            /** Label */
+            readonly label: string;
+            readonly value: components["schemas"]["ReservationStatus"];
+        };
+        /**
          * RootResponse
          * @description GET / 根路由响应。
          */
@@ -2590,6 +3490,58 @@ export interface components {
             readonly health: string;
             /** Version */
             readonly version: string;
+        };
+        /** StoreBusinessDayOut */
+        readonly StoreBusinessDayOut: {
+            /**
+             * Business Date
+             * Format: date
+             */
+            readonly business_date: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Is Closed */
+            readonly is_closed: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** StoreClosureMutationOut */
+        readonly StoreClosureMutationOut: {
+            /**
+             * Business Date
+             * Format: date
+             */
+            readonly business_date: string;
+            /** Cancelled Confirmed Count */
+            readonly cancelled_confirmed_count: number;
+            /** Cancelled Pending Count */
+            readonly cancelled_pending_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Is Closed */
+            readonly is_closed: boolean;
+            /** Is Replay */
+            readonly is_replay: boolean;
+            /** Newly Cancelled Count */
+            readonly newly_cancelled_count: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
         };
         /** SuccessResponse[AdminExperienceProductDetailOut] */
         readonly SuccessResponse_AdminExperienceProductDetailOut_: {
@@ -2636,6 +3588,36 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[AdminProductKitColorOut] */
+        readonly SuccessResponse_AdminProductKitColorOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["AdminProductKitColorOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[AdminReservationDetailOut] */
+        readonly SuccessResponse_AdminReservationDetailOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["AdminReservationDetailOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[AdminUserWalletOut] */
         readonly SuccessResponse_AdminUserWalletOut_: {
             /**
@@ -2660,6 +3642,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["AssistedWalletOrderOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[BeadColorOut] */
+        readonly SuccessResponse_BeadColorOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["BeadColorOut"];
             /**
              * Message
              * @default success
@@ -2780,6 +3777,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["InventoryAdjustmentOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[InventoryColorAdjustmentOut] */
+        readonly SuccessResponse_InventoryColorAdjustmentOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["InventoryColorAdjustmentOut"];
             /**
              * Message
              * @default success
@@ -2982,6 +3994,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[Page[AdminReservationListItemOut]] */
+        readonly SuccessResponse_Page_AdminReservationListItemOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_AdminReservationListItemOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[Page[AuditLogOut]] */
         readonly SuccessResponse_Page_AuditLogOut__: {
             /**
@@ -2991,6 +4018,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["Page_AuditLogOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[Page[BeadColorOut]] */
+        readonly SuccessResponse_Page_BeadColorOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_BeadColorOut_"];
             /**
              * Message
              * @default success
@@ -3036,6 +4078,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["Page_ProductListItemOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[Page[ReservationOut]] */
+        readonly SuccessResponse_Page_ReservationOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_ReservationOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[Page[StoreBusinessDayOut]] */
+        readonly SuccessResponse_Page_StoreBusinessDayOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_StoreBusinessDayOut_"];
             /**
              * Message
              * @default success
@@ -3171,6 +4243,51 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["RefundOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[ReservationBookingOptionsOut] */
+        readonly SuccessResponse_ReservationBookingOptionsOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["ReservationBookingOptionsOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[ReservationOut] */
+        readonly SuccessResponse_ReservationOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["ReservationOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[StoreClosureMutationOut] */
+        readonly SuccessResponse_StoreClosureMutationOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["StoreClosureMutationOut"];
             /**
              * Message
              * @default success
@@ -3562,6 +4679,163 @@ export interface operations {
             };
         };
     };
+    readonly list_bead_colors_api_v1_admin_bead_colors_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_BeadColorOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly update_bead_color_api_v1_admin_bead_colors__bead_color_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly bead_color_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["BeadColorUpdate"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_BeadColorOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly system_config_api_v1_admin_config_get: {
         readonly parameters: {
             readonly query?: never;
@@ -3587,6 +4861,7 @@ export interface operations {
             readonly query?: {
                 readonly created_from?: string | null;
                 readonly created_to?: string | null;
+                readonly kit_color_id?: number | null;
                 readonly page?: number;
                 readonly page_size?: number;
                 readonly product_id?: number | null;
@@ -4632,6 +5907,86 @@ export interface operations {
             };
         };
     };
+    readonly update_product_kit_color_api_v1_admin_product_kit_colors__kit_color_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly kit_color_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ProductKitColorUpdate"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AdminProductKitColorOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly list_admin_products_api_v1_admin_products_get: {
         readonly parameters: {
             readonly query?: {
@@ -5577,6 +6932,183 @@ export interface operations {
             };
         };
     };
+    readonly adjust_color_inventory_api_v1_admin_products_kit__product_id__colors__kit_color_id__inventory_adjustments_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path: {
+                readonly kit_color_id: number;
+                readonly product_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["InventoryAdjustmentCreate"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_InventoryColorAdjustmentOut_"];
+                };
+            };
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_InventoryColorAdjustmentOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_product_color_inventory_transactions_api_v1_admin_products_kit__product_id__colors__kit_color_id__inventory_transactions_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly created_from?: string | null;
+                readonly created_to?: string | null;
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly source_id?: number | null;
+                readonly source_type?: components["schemas"]["InventorySourceType"] | null;
+                readonly type?: components["schemas"]["InventoryTransactionType"] | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly kit_color_id: number;
+                readonly product_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_InventoryTransactionListItem__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly adjust_inventory_api_v1_admin_products_kit__product_id__inventory_adjustments_post: {
         readonly parameters: {
             readonly query?: never;
@@ -5774,6 +7306,635 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["SuccessResponse_KitPriceOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_admin_reservations_api_v1_admin_reservations_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly business_date?: string | null;
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly product_id?: number | null;
+                readonly status?: components["schemas"]["ReservationStatus"] | null;
+                readonly user_id?: number | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_AdminReservationListItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_admin_reservation_detail_api_v1_admin_reservations__reservation_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AdminReservationDetailOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_reservation_audit_logs_api_v1_admin_reservations__reservation_id__audit_logs_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_AuditLogOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly confirm_reservation_api_v1_admin_reservations__reservation_id__confirm_patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly reject_reservation_api_v1_admin_reservations__reservation_id__reject_patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_store_closures_api_v1_admin_store_closures_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly date_from?: string | null;
+                readonly date_to?: string | null;
+                readonly is_closed?: boolean | null;
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_StoreBusinessDayOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly close_store_day_api_v1_admin_store_closures__business_date__put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly business_date: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_StoreClosureMutationOut_"];
+                };
+            };
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_StoreClosureMutationOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly reopen_store_day_api_v1_admin_store_closures__business_date__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly business_date: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_StoreClosureMutationOut_"];
                 };
             };
             /** @description Bad Request */
@@ -7736,6 +9897,390 @@ export interface operations {
             };
             /** @description Not Found */
             readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_reservations_api_v1_reservations_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly status?: components["schemas"]["ReservationStatus"] | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_ReservationOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_reservation_api_v1_reservations_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ReservationCreate"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_reservation_detail_api_v1_reservations__reservation_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly cancel_reservation_api_v1_reservations__reservation_id__cancel_patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_reservation_booking_options_api_v1_reservations_booking_options_get: {
+        readonly parameters: {
+            readonly query: {
+                readonly experience_option_id: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationBookingOptionsOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
                 headers: {
                     readonly [name: string]: unknown;
                 };

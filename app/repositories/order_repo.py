@@ -29,6 +29,11 @@ class OrderItemCreateData:
     product_price: Decimal
     quantity: int
     subtotal: Decimal
+    kit_color_id: int | None = None
+    kit_color_code: str | None = None
+    kit_color_name: str | None = None
+    kit_color_slot_no: int | None = None
+    sale_unit_grams: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +43,7 @@ class OrderCancellationItemData:
     product_id: int
     experience_option_id: int | None
     quantity: int
+    kit_color_id: int | None = None
 
 
 def _apply_order_filters(
@@ -183,10 +189,15 @@ class OrderRepository:
                 order_id=order.id,
                 product_id=item.product_id,
                 experience_option_id=item.experience_option_id,
+                kit_color_id=item.kit_color_id,
                 option_duration_minutes=item.option_duration_minutes,
                 option_participants=item.option_participants,
                 option_day_type=item.option_day_type,
                 product_name=item.product_name,
+                kit_color_code=item.kit_color_code,
+                kit_color_name=item.kit_color_name,
+                kit_color_slot_no=item.kit_color_slot_no,
+                sale_unit_grams=item.sale_unit_grams,
                 product_price=item.product_price,
                 quantity=item.quantity,
                 subtotal=item.subtotal,
@@ -228,7 +239,12 @@ class OrderRepository:
             OrderItem.filter(order_id=order_id)
             .using_db(using_db)
             .order_by("id")
-            .values("product_id", "experience_option_id", "quantity")
+            .values(
+                "product_id",
+                "experience_option_id",
+                "kit_color_id",
+                "quantity",
+            )
         )
         return [OrderCancellationItemData(**row) for row in rows]
 

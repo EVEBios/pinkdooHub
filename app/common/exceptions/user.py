@@ -93,7 +93,8 @@ class AccountDeletionBlocked(UserException):
             code=1015,
             message=(
                 "Account deletion is blocked by active orders, wallet balance, "
-                "refundable wallet payments, or in-flight financial records"
+                "active reservations, refundable wallet payments, or in-flight "
+                "financial records"
             ),
         )
 

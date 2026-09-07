@@ -130,7 +130,24 @@ def test_cancel_inventory_sequence_keeps_order_lock_and_bulk_boundaries() -> Non
         "_restore_kit_stock_after_cancellation"
     ) < cancel_source.index("update_status")
     assert "get_kits_for_update" in restore_source
+    assert restore_source.index("get_kits_for_update") < restore_source.index(
+        "get_kit_colors_for_update"
+    )
     assert "get_transactions_by_idempotency_keys" in restore_source
     assert "bulk_update_stocks" in restore_source
+    assert "bulk_update_color_stocks" in restore_source
     assert "bulk_create_transactions" in restore_source
     assert "inventory_repository" not in transition_source
+
+
+def test_create_inventory_sequence_locks_fixed_before_color_balances() -> None:
+    """混合订单创建必须先锁固定 Kit，再锁按 Product/颜色排序的颜色余额。"""
+
+    source = inspect.getsource(OrderService._deduct_kit_stock)
+
+    assert source.index("get_kits_for_update") < source.index(
+        "get_kit_colors_for_update"
+    )
+    assert "bulk_update_stocks" in source
+    assert "bulk_update_color_stocks" in source
+    assert "bulk_create_transactions" in source

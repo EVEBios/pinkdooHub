@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from app.schemas.inventory_response import (
     InventoryAdjustmentOut,
     InventoryBalanceOut,
+    InventoryColorAdjustmentOut,
     InventoryTransactionListItem,
     InventoryTransactionOut,
 )
@@ -21,6 +22,12 @@ def _transaction(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "id": 101,
         "product_id": 5,
+        "kit_color_id": None,
+        "bead_color_id": None,
+        "bead_color_slot_no": None,
+        "color_code": None,
+        "color_name": None,
+        "sale_unit_grams": None,
         "transaction_type": "admin_adjustment",
         "change_quantity": 20,
         "before_quantity": 60,
@@ -58,6 +65,12 @@ def test_inventory_transaction_filters_internal_and_private_fields() -> None:
     assert output.model_dump(mode="json") == {
         "id": 101,
         "product_id": 5,
+        "kit_color_id": None,
+        "bead_color_id": None,
+        "bead_color_slot_no": None,
+        "color_code": None,
+        "color_name": None,
+        "sale_unit_grams": None,
         "transaction_type": "admin_adjustment",
         "change_quantity": 20,
         "before_quantity": 60,
@@ -199,6 +212,48 @@ def test_adjustment_response_matches_transaction_product_and_balance() -> None:
     )
 
     assert output.stock == output.transaction.after_quantity
+
+
+def test_color_adjustment_response_exposes_unit_and_color_identity() -> None:
+    transaction = _transaction(
+        kit_color_id=9,
+        bead_color_id=3,
+        bead_color_slot_no=2,
+        color_code="A002",
+        color_name="海盐蓝",
+        sale_unit_grams=10,
+    )
+
+    output = InventoryColorAdjustmentOut.model_validate(
+        {
+            "product_id": 5,
+            "kit_color_id": 9,
+            "bead_color_id": 3,
+            "bead_color_slot_no": 2,
+            "color_code": "A002",
+            "color_name": "海盐蓝",
+            "sale_unit_grams": 10,
+            "stock_units": 80,
+            "transaction": transaction,
+        }
+    )
+
+    assert output.stock_units == 80
+    assert output.transaction.kit_color_id == 9
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _transaction(bead_color_id=3),
+        _transaction(kit_color_id=9, bead_color_id=3),
+    ],
+)
+def test_inventory_transaction_rejects_partial_color_identity(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        InventoryTransactionOut.model_validate(payload)
 
 
 @pytest.mark.parametrize(

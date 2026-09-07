@@ -6,7 +6,7 @@ import pytest
 
 from app.common.enums.inventory import InventoryTransactionType
 from app.common.enums.order import OrderStatus
-from app.common.enums.product import ProductStatus, ProductType
+from app.common.enums.product import KitKind, ProductStatus, ProductType
 from app.common.enums.user import UserRole, UserStatus
 from app.common.enums.wallet import PaymentMethod, PaymentStatus
 from app.common.exceptions.wallet import (
@@ -17,11 +17,13 @@ from app.common.exceptions.wallet import (
 from app.common.exceptions.user import UserDeleted, UserDisabled
 from app.core.exceptions import PermissionException
 from app.models.audit_log import AuditLog
+from app.models.bead_color import BeadColor
 from app.models.inventory_transaction import InventoryTransaction
 from app.models.order import Order, OrderItem
 from app.models.payment import Payment, PaymentSettlement
 from app.models.product import Product
 from app.models.product_kit import ProductKit
+from app.models.product_kit_color import ProductKitColor
 from app.models.user import User
 from app.models.wallet import WalletAccount, WalletTransaction
 from app.repositories.audit_log_repo import AuditLogRepository
@@ -147,6 +149,82 @@ async def test_assisted_wallet_order_is_atomic_and_strictly_idempotent() -> None
             ],
             remark="门店代客下单",
             idempotency_key="assisted-once",
+            ip_address="127.0.0.1",
+        )
+
+
+async def test_assisted_wallet_replay_identity_includes_kit_color() -> None:
+    admin = await _user("assisted-color-admin", role=UserRole.ADMIN)
+    customer = await _user("assisted-color-customer", role=UserRole.USER)
+    await WalletAccount.create(user=customer, balance=Decimal("100.00"))
+    product = await Product.create(
+        name="代客自选颜色",
+        product_type=ProductType.KIT,
+        status=ProductStatus.ONLINE,
+    )
+    await ProductKit.create(
+        product=product,
+        price=Decimal("5.00"),
+        stock=None,
+        kit_kind=KitKind.COLOR_SELECTABLE,
+        sale_unit_grams=10,
+    )
+    first_bead = await BeadColor.create(
+        slot_no=1,
+        color_code="A001",
+        name="红色",
+        sort=1,
+        is_active=True,
+    )
+    second_bead = await BeadColor.create(
+        slot_no=2,
+        color_code="A002",
+        name="蓝色",
+        sort=2,
+        is_active=True,
+    )
+    first_color = await ProductKitColor.create(
+        product=product,
+        bead_color=first_bead,
+        is_enabled=True,
+        stock_units=3,
+    )
+    second_color = await ProductKitColor.create(
+        product=product,
+        bead_color=second_bead,
+        is_enabled=True,
+        stock_units=3,
+    )
+    service = _service()
+    first_items = [OrderItemInput(product.id, None, 1, first_color.id)]
+
+    first = await service.create_assisted_wallet_order(
+        operator=admin,
+        user_id=customer.id,
+        items=first_items,
+        remark=None,
+        idempotency_key="assisted-color-once",
+        ip_address="127.0.0.1",
+    )
+    replay = await service.create_assisted_wallet_order(
+        operator=admin,
+        user_id=customer.id,
+        items=first_items,
+        remark=None,
+        idempotency_key="assisted-color-once",
+        ip_address="127.0.0.1",
+    )
+
+    assert first.is_replay is False
+    assert replay.is_replay is True
+    assert replay.order.items[0].kit_color_id == first_color.id
+    with pytest.raises(WalletTransactionConflict):
+        await service.create_assisted_wallet_order(
+            operator=admin,
+            user_id=customer.id,
+            items=[OrderItemInput(product.id, None, 1, second_color.id)],
+            remark=None,
+            idempotency_key="assisted-color-once",
             ip_address="127.0.0.1",
         )
 

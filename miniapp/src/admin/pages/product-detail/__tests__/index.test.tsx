@@ -55,7 +55,7 @@ describe('AdminProductDetailPage', () => {
         role: 'admin', status: 'normal', last_login_at: null,
         created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
       },
-      register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+      register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
     }
     mockUseAdminProductMutation.mockReturnValue({
       state: { status: 'idle' },
@@ -239,6 +239,9 @@ function kitProduct() {
     images: [],
     price: '99.00',
     stock: 10,
+    kit_kind: { value: 'fixed' as const, label: '固定套装' },
+    sale_unit_grams: null,
+    colors: [],
     created_at: '2026-08-25T07:00:00Z',
     updated_at: '2026-08-25T08:00:00Z',
     is_deleted: false,

@@ -175,6 +175,8 @@ async def test_public_list_translates_query_and_serializes_page(
                 },
                 "cover_image": "https://cdn.example.com/10.jpg",
                 "display_price": "299.00",
+                "kit_kind": None,
+                "sale_unit_grams": None,
             }
         ],
         "total": 1,

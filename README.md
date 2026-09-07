@@ -2,7 +2,7 @@
 
 pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、Tortoise ORM、Pydantic 和 Redis 构建。开发环境使用 SQLite，生产数据库设计面向 MySQL 8+。
 
-当前代码版本候选为 **v0.6.0（尚未发布）**。Phase 4.1 Product、Phase 4.2 Order 与 Phase 4.3 Inventory 均已完成实现和最终 Review；Wallet/Payment/Refund v1 已完成仓库实现，但 M4 尚未通过 Aerich 应用到持久 MySQL、共享、预发布或生产环境，生产资金能力仍关闭。开发 SQLite 可能由 `generate_schemas` 自动补建缺失表；这种状态不会产生 Aerich 版本记录，不能作为发布迁移证据。
+当前代码版本候选为 **v0.6.0（尚未发布）**。Phase 4.1 Product、Phase 4.2 Order、Phase 4.3 Inventory、Wallet/Payment/Refund v1、Reservation N1 与 M6 自选颜色 Kit 均已完成仓库实现；M4/M5/M6 尚未通过 Aerich 应用到持久 MySQL、共享、预发布或生产环境，生产资金能力仍关闭。开发 SQLite 可能由 `generate_schemas` 自动补建缺失表；这种状态不会产生 Aerich 版本记录，不能作为发布迁移证据。
 
 ## 当前能力
 
@@ -10,18 +10,22 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - 微信小程序 `code2Session` 登录、显式绑定/安全解绑、外部身份 HMAC 最小化、refresh family 轮换/重放撤销、Redis 认证限流和账号匿名化注销；正式微信与 Gate B 外部资源尚未启用。
 - RBAC 权限链、管理员用户列表和禁用操作。
 - 敏感操作顺序审计，以及 Product 操作历史分页查询。
-- Product、ExperienceOption、ProductKit 和 ProductImage 的完整业务、持久化与 API 链路。
-- 21 个 Product API 操作，包括公开查询、ADMIN+ 管理、图片上传和审计历史；库存写入由 Inventory API 独立承担。
+- Product、ExperienceOption、ProductKit、ProductImage，以及 M6 全局 221 槽 BeadColor/商品级 ProductKitColor 的完整业务、持久化与 API 链路。
+- Product API 包括公开查询、ADMIN+ 管理、图片上传、审计历史、全局颜色目录与商品颜色启停；库存写入仍由 Inventory API 独立承担。
+- MARD 221 标准色卡的 A1–M15 色号、来源 HEX/RGB 清单和 221 张确定性 256×256 sRGB PNG 已导入本地开发库；来源页本身使用 CSS 色块而非独立图片，生产对象存储发布仍待 Gate B。
 - Product 图片大小、格式、MIME 和安全路径校验，以及上传失败补偿和延迟物理清理。
-- Order 的 Experience、Kit 与混合下单、不可变 Product/Option/Kit 价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
+- Order 的 Experience、固定 Kit、自选颜色 Kit 与混合下单、不可变 Product/Option/颜色/10g 单位/价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
 - Pending 创建时的稳定多 Kit 行锁、库存扣减、不可变 Order 来源流水和全写集原子回滚。
 - Order 状态与审计原子事务、订单号冲突重试、分页组合筛选、用户资源隐藏和完整 HTTP 错误/边界矩阵。
+- 独立于订单和支付的体验预约：顾客使用当前手机号选择服务端生成的上海营业日/半小时时段，预约先进入待确认；顾客可查询历史并在开始前至少三小时取消。
+- ADMIN+ 可查看预约与当前联系电话、确认或以唯一原因 `no_capacity` 拒绝；可配置单日店休，并在同一事务内将当天尚未开始的 Pending/Confirmed 预约批量取消为独立原因 `store_closed`，恢复营业不会复活历史预约。
+- 预约营业规则固定为上海时间周二至周日 11:00–20:00、周一店休、最早提前三小时、最远当地今日起第 30 天（含）；首版由店员人工判断容量，不自动防超额。
 - 普通会员的钱包摘要与不可变流水、ADMIN+ 调账和代客钱包订单、订单余额支付与资金事实查询，以及 PAID/COMPLETED 一次全额退款；PAID Kit 退款恢复库存，COMPLETED 不恢复。
 - 钱包余额和单笔充值上限均为 `1000.00`（充值下限 `1.00`）；真实微信充值、支付和退款 Provider 当前关闭并返回 503 零写入。
-- 微信小程序客户与 ADMIN+ 共 25 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory、Wallet/Payment 与 User 管理流程。
+- 微信小程序客户与 ADMIN+ 共 31 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory、Wallet/Payment、Reservation/店休与 User 管理流程。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
 
-当前包含 Wallet/Payment/Refund 的本地基线为 **1847 passed、11 skipped**（完整后端套件；唯一受沙箱限制的回环端口项已在本机权限下单独复验通过），另有 Wallet 专项 **2 passed** 和既有 Inventory **9 passed** 的一次性 MySQL 8.0.46 验证；前端为 **71 套件、447 项 Jest**。详细版本记录见 [Development Changelog](docs/05_development/changelog.md)。
+当前含 M6 与 MARD 221 导入契约的本地后端基线为 **1978 passed、20 skipped**；20 项 skip 均为需显式环境的隔离门槛，回环端口发布探测已在完整主套件中直接通过。前端完整 **81 套件、556 项 Jest**、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移、17 项 CI policy、微信 production build 与产物检查均通过。M5 历史上已在一次性 MySQL 8.0.46 真实执行 Aerich 0→5，并通过 Reservation **7 passed**、Inventory + Reservation **16 passed** 后销毁实例；M6 的一次性 0→6/历史 fixed 重放/颜色锁门槛目前只完成 CI 编排，尚未获得真实 MySQL 结果。该实现是本地候选证据，不等于正式 RC、真机或目标环境验收。详细记录见 [Development Changelog](docs/05_development/changelog.md)。
 
 Phase 4.3.1–4.3.12 已完成 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 8+ 增量迁移、Repository、管理员库存调整、Kit/混合订单创建扣减、Pending 取消幂等恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/完整 HTTP 发布门槛和最终 Review。最后一件库存、反向多 Kit、同单取消、同/异 key 调整、管理员调整与下单阻塞、真实 1205 全事务重试和 EXPLAIN 均已在隔离 MySQL 8.0.46 通过；三端点完整权限/错误/边界矩阵与真实 MySQL HTTP 并发重放也已通过。最终 Review 进一步统一了 Product Kit 详情的库存上限响应校验，并清理了数据库文档中的旧 Kit 规划描述。临时实例验证后销毁，未应用持久环境。
 
@@ -107,6 +111,23 @@ uvicorn app.main:app --reload
 
 所有业务 API 使用 `/api/v1` 前缀。`v1` 只属于 HTTP 传输层版本，不需要复制到 Schema、Service、Repository 或 Model 目录。
 
+### 4. 本地 MARD 221 色板导入
+
+仓库冻结来源清单 `app/tasks/manifests/mard_221.json`，并提供两个默认只读的本地工具。来源抓取只接受 `https://peiseka.com/pindouseka.html`，导入只接受当前项目内的 M6 SQLite、清单、图片和备份路径：
+
+```bash
+# 抓取/校验来源页；默认不覆盖清单
+python scripts/local/fetch_mard_bead_colors.py
+
+# 预览数据库和 221 张确定性 PNG 的变化
+python scripts/local/import_mard_bead_colors.py
+
+# 复核预览后显式应用本地开发数据；写库前自动备份
+python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
+```
+
+该工具不会创建商品、启用商品颜色或写入库存，也不能应用到 MySQL。生产环境必须先完成 M6 MySQL 发布门槛和对象存储/CDN 接入，再以独立受控流程导入同一清单。
+
 ## 测试与检查
 
 运行完整测试：
@@ -179,7 +200,7 @@ python -m app.tasks.product_image_cleanup \
 
 ## 数据库迁移
 
-MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ 首迁移、Order 增量迁移和 Inventory 增量迁移均已离线生成并通过静态契约测试；完整链已在一次性 MySQL 8.0.46 实例真实执行并销毁，但尚未应用到任何持久、共享或生产数据库。Inventory 迁移还包含正库存期初流水数据回填，正式执行前仍必须停写、扫描库存范围并备份。
+MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ 首迁移、Order、Inventory、Wallet/Payment/Refund、Reservation M5 与自选颜色 Kit M6 增量迁移均已离线生成并通过静态契约测试；完整 Aerich 0→5 已在一次性 MySQL 8.0.46 实例真实执行并销毁，M6 真实 0→6 仍待执行，所有增量均尚未应用到任何持久、共享或生产数据库。Inventory 迁移还包含正库存期初流水数据回填，Wallet M4 还需要按冻结顺序执行历史 backfill/reconcile；正式执行前仍必须停写、扫描数据范围并备份。
 
 生产环境禁止通过应用启动自动建表。执行 `aerich upgrade` 前必须：
 
@@ -201,6 +222,9 @@ MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化�
 | Order API v1.0 | [Order API](docs/03_api/order_api.md) |
 | Inventory 权威业务规则 | [Inventory Module](docs/01_requirements/inventory_module.md) |
 | Inventory API v0.6 | [Inventory API](docs/03_api/inventory_api.md) |
+| Reservation N1 业务规则 | [Reservation Module](docs/01_requirements/reservation_module.md) |
+| Reservation N1 API | [Reservation API](docs/03_api/reservation_api.md) |
+| Reservation N2 微信主动通知规划 | [Reservation WeChat Notification Plan](docs/01_requirements/reservation_wechat_notification_plan.md) |
 | 通用 API 约定 | [API Design Conventions](docs/03_api/api_design_conventions.md) |
 | 数据库设计 | [Database Design](docs/02_database/database_design.md) |
 | 分层与目录 | [Architecture](docs/04_architecture/architecture.md) |
@@ -244,9 +268,10 @@ docs(readme): document local development workflow
 ## 当前限制与后续工作
 
 - v0.6.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
-- Gate A 持久环境当前停留在 Aerich 0→2；Phase 9.5 外部身份迁移 3 只在一次性 MySQL 8.0.46 完成验证，尚未应用到任何持久环境。后续部署必须遵循停写、备份、迁移和核验流程。
+- Gate A 持久环境当前停留在 Aerich 0→2；Phase 9.5 外部身份 M3、Wallet M4 与 Reservation M5 只在一次性 MySQL 8.0.46 完成验证，尚未应用到任何持久环境。后续部署必须遵循停写、备份、迁移和核验流程。
 - 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
 - Phase 9.1–9.3 已完成；9.4 中不依赖备案的服务器部署、备份恢复与运维治理已完成，真实 HTTPS/合法域名、体验版上传和 iOS/Android 真机仍等待备案与单独授权。Phase 9.5 不依赖外部资源的仓库实现已完成，但真实微信 AppID、集中 Secret Manager、监控告警、对象存储和隐私平台材料仍是 Gate B 阻断项。当前改动只有本地证据，需由当前 SHA 的远端干净 CI 替代后才能进入 RC；CI 通过也不授权微信上传、提审或发布。
 - Phase 4.3.1–4.3.12 已完成并通过最终 Review；持久环境迁移、发布与下一业务 Phase 仍需单独规划和授权。
 - Wallet/Payment/Refund v1 已完成仓库实现；M4、历史 NORMAL/DISABLED 普通 USER wallet backfill、legacy manual settlement backfill、只读 reconcile 和扩展 MySQL 发布门槛尚未应用/完成于持久环境，必须按此顺序收敛后才能启用。历史 DELETED USER 与 ADMIN/SUPER_ADMIN 不补建钱包。
+- Reservation N1 已完成仓库实现，但 M5 尚未应用到持久环境，也未执行真实微信小程序真机验收；N2 微信订阅消息主动通知、可逆加密投递地址、durable outbox、worker、重试与监控均未实现，当前仅通过“我的预约/详情”展示状态和文案，并由管理端当前手机号提供人工联系兜底。

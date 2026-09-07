@@ -68,6 +68,7 @@ describe('登录页注册入口', () => {
     mockAuth = {
       status: 'guest',
       register: jest.fn(),
+      updateProfile: jest.fn(),
       login: jest.fn(),
       loginWithWechat: jest.fn(),
       logout: jest.fn(),

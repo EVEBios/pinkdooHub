@@ -18,9 +18,15 @@ export interface AdminProductCreateForm {
   readonly name: string
   readonly description: string
   readonly price: string
+  readonly kitKind: 'fixed' | 'color_selectable'
 }
 
-const EMPTY_FORM: AdminProductCreateForm = { name: '', description: '', price: '' }
+const EMPTY_FORM: AdminProductCreateForm = {
+  name: '',
+  description: '',
+  price: '',
+  kitKind: 'fixed',
+}
 
 export default function AdminProductCreatePage() {
   const auth = useAuth()
@@ -80,6 +86,7 @@ export function AuthenticatedAdminProductCreate({ productType }: {
           name: normalized.name,
           ...(description ? { description } : {}),
           price: normalized.price,
+          kit_kind: normalized.kitKind,
         })
     if (result?.action === 'create_experience' || result?.action === 'create_kit') {
       void Taro.redirectTo({
@@ -114,15 +121,32 @@ export function AuthenticatedAdminProductCreate({ productType }: {
         />
         {productType === 'kit' && (
           <>
+            <Text className='admin-product-form__label'>套装销售形态</Text>
+            <View className='admin-product-form__kind-options'>
+              <Button
+                className={`admin-product-form__kind${form.kitKind === 'fixed' ? ' admin-product-form__kind--active' : ''}`}
+                disabled={blocked}
+                onClick={() => updateForm({ kitKind: 'fixed' })}
+              >固定套装</Button>
+              <Button
+                className={`admin-product-form__kind${form.kitKind === 'color_selectable' ? ' admin-product-form__kind--active' : ''}`}
+                disabled={blocked}
+                onClick={() => updateForm({ kitKind: 'color_selectable' })}
+              >自选颜色</Button>
+            </View>
             <ProductTextField
-              label='套装价格'
+              label={form.kitKind === 'color_selectable' ? '每 10g 价格' : '套装价格'}
               maxlength={8}
               placeholder='例如 599.00'
               type='digit'
               value={form.price}
               onInput={(price) => updateForm({ price })}
             />
-            <Text className='admin-product-form__notice'>新 Kit 库存固定从 0 开始，后续入库必须使用 Inventory 调整。</Text>
+            <Text className='admin-product-form__notice'>
+              {form.kitKind === 'color_selectable'
+                ? '将关联全局 221 色目录；创建后所有颜色默认关闭、库存为 0，需完成色板资料后逐色启用和入库。'
+                : '新 Kit 库存固定从 0 开始，后续入库必须使用 Inventory 调整。'}
+            </Text>
           </>
         )}
         <MutationFeedback state={state} validationMessage={validationMessage} />
@@ -148,6 +172,7 @@ export function normalizeAdminProductCreateForm(
     name: form.name.trim(),
     description: form.description.trim(),
     price: form.price.trim(),
+    kitKind: form.kitKind,
   }
 }
 

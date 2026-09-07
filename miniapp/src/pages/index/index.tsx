@@ -5,10 +5,13 @@ import { useState } from 'react'
 import type { ProductListItem } from '@/api/endpoints/products'
 import {
   ADMIN_ORDER_LIST_PATH,
+  ADMIN_RESERVATION_LIST_PATH,
+  ADMIN_STORE_CLOSURE_LIST_PATH,
   ADMIN_INVENTORY_LIST_PATH,
   ADMIN_PRODUCT_LIST_PATH,
   ADMIN_USER_LIST_PATH,
   MEMBER_PATH,
+  RESERVATION_LIST_PATH,
   useAuth,
 } from '@/auth'
 import { type ProductTypeFilter, useProductList } from '@/features/product/use_product_list'
@@ -166,6 +169,8 @@ function AccountActions({ onLogout, status, userNickname, userRole }: AccountAct
       { label: '库存流水', url: ADMIN_INVENTORY_LIST_PATH },
       { label: '管理商品', url: ADMIN_PRODUCT_LIST_PATH },
       { label: '管理订单', url: ADMIN_ORDER_LIST_PATH },
+      { label: '管理预约', url: ADMIN_RESERVATION_LIST_PATH },
+      { label: '店休设置', url: ADMIN_STORE_CLOSURE_LIST_PATH },
       { label: '管理用户', url: ADMIN_USER_LIST_PATH },
     ] as const
 
@@ -176,13 +181,22 @@ function AccountActions({ onLogout, status, userNickname, userRole }: AccountAct
           <View className='product-page__account-group'>
             <Text className='product-page__account-section'>我的</Text>
             {!isAdmin && (
-              <Button
-                className='product-page__account-action'
-                onClick={() => void Taro.navigateTo({ url: MEMBER_PATH })}
-              >
-                <Text className='product-page__account-action-label'>会员中心</Text>
-                <Text className='product-page__account-action-meta'>余额与资金</Text>
-              </Button>
+              <>
+                <Button
+                  className='product-page__account-action'
+                  onClick={() => void Taro.navigateTo({ url: MEMBER_PATH })}
+                >
+                  <Text className='product-page__account-action-label'>会员中心</Text>
+                  <Text className='product-page__account-action-meta'>余额与资金</Text>
+                </Button>
+                <Button
+                  className='product-page__account-action'
+                  onClick={() => void Taro.navigateTo({ url: RESERVATION_LIST_PATH })}
+                >
+                  <Text className='product-page__account-action-label'>我的预约</Text>
+                  <Text className='product-page__account-action-meta'>查看状态</Text>
+                </Button>
+              </>
             )}
             <Button
               className='product-page__account-action'
@@ -247,6 +261,11 @@ function PageState({ children, description, title }: PageStateProps) {
 function ProductCard({ product }: { product: ProductListItem }) {
   const [imageFailed, setImageFailed] = useState(false)
   const experience = product.product_type.value === 'experience'
+  const priceSuffix = experience
+    ? ' 起'
+    : product.kit_kind?.value === 'color_selectable'
+      ? ' / 10g'
+      : ''
 
   return (
     <View
@@ -272,7 +291,7 @@ function ProductCard({ product }: { product: ProductListItem }) {
         <Text className='product-card__type'>{product.product_type.label}</Text>
         <Text className='product-card__name'>{product.name}</Text>
         <Text className='product-card__price'>
-          ¥{formatPrice(product.display_price)}{experience ? ' 起' : ''}
+          ¥{formatPrice(product.display_price)}{priceSuffix}
         </Text>
       </View>
     </View>

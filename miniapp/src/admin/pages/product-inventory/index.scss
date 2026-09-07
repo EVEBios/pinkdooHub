@@ -1,6 +1,78 @@
 /* stylelint-disable-next-line at-rule-no-unknown */
 @use '../../styles/inventory';
 
+.color-inventory-picker {
+  margin: 22px 0;
+  padding: 20px;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-large);
+  box-shadow: var(--pd-shadow-small);
+
+  &__title,
+  &__empty {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__search {
+    width: 100%;
+    min-height: var(--pd-control-height);
+    margin-top: 14px;
+    padding: 0 15px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+    background: var(--pd-color-surface-muted);
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-small);
+    box-sizing: border-box;
+  }
+
+  &__list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    margin-top: 14px;
+  }
+
+  &__empty {
+    padding: 26px 8px 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-body-size);
+    text-align: center;
+  }
+}
+
+.color-inventory-option {
+  display: grid;
+  width: 100%;
+  min-height: var(--pd-control-height);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-caption);
+  text-align: left;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: var(--pd-radius-small);
+  box-sizing: border-box;
+
+  &--active {
+    color: var(--pd-color-primary-strong);
+    font-weight: 700;
+    background: var(--pd-color-primary-soft);
+    border-color: var(--pd-color-line-strong);
+  }
+}
+
 .product-inventory-page {
   min-height: 100vh;
   padding: 0 24px calc(52px + env(safe-area-inset-bottom));
@@ -142,6 +214,14 @@
     &__status {
       background: rgb(255 255 255 / 64%);
       backdrop-filter: blur(14px);
+    }
+  }
+}
+
+@media (width >= 768px) {
+  .color-inventory-picker {
+    &__list {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 }

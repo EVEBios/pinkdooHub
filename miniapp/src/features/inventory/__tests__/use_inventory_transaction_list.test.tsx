@@ -14,12 +14,18 @@ const emptyPage: InventoryTransactionPage = {
 function Harness({
   source,
   productId,
+  kitColorId,
 }: {
   readonly source: InventoryTransactionListSource
   readonly productId?: number
+  readonly kitColorId?: number
 }) {
   const inventory = useInventoryTransactionList(
-    productId === undefined ? { kind: 'global' } : { kind: 'product', productId },
+    kitColorId !== undefined && productId !== undefined
+      ? { kind: 'color', productId, kitColorId }
+      : productId === undefined
+        ? { kind: 'global' }
+        : { kind: 'product', productId },
     source,
   )
   return (
@@ -106,11 +112,26 @@ describe('useInventoryTransactionList', () => {
     })
     expect(source.listProductTransactions).toHaveBeenCalledTimes(3)
   })
+
+  it('颜色作用域只调用带 Product 与 ProductKitColor 身份的流水端点', async () => {
+    const source = createSource(emptyPage)
+    await testUtils.mount(Harness, { props: { source, productId: 7, kitColorId: 701 } })
+    await flush(testUtils)
+
+    expect(source.listProductColorTransactions).toHaveBeenCalledWith(
+      7,
+      701,
+      { page: 1, page_size: 20 },
+    )
+    expect(source.listProductTransactions).not.toHaveBeenCalled()
+    expect(source.listTransactions).not.toHaveBeenCalled()
+  })
 })
 
 function createSource(page: InventoryTransactionPage): InventoryTransactionListSource {
   return {
     listProductTransactions: jest.fn(async () => page),
+    listProductColorTransactions: jest.fn(async () => page),
     listTransactions: jest.fn(async () => page),
   }
 }
@@ -119,6 +140,12 @@ function transaction(id: number) {
   return {
     id,
     product_id: 7,
+    kit_color_id: null,
+    bead_color_id: null,
+    bead_color_slot_no: null,
+    color_code: null,
+    color_name: null,
+    sale_unit_grams: null,
     transaction_type: 'admin_adjustment' as const,
     change_quantity: 1,
     before_quantity: id - 1,

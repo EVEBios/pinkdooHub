@@ -163,3 +163,4 @@ class InventoryTransactionQuery(_InventoryTransactionQueryBase):
     """全局库存流水分页筛选。"""
 
     product_id: PositiveInventoryQueryId | None = None
+    kit_color_id: PositiveInventoryQueryId | None = None

@@ -5,16 +5,74 @@ import type { components, operations } from '@/api/schema'
 export type AdminProductListRequest = NonNullable<operations[
   'list_admin_products_api_v1_admin_products_get'
 ]['parameters']['query']>
-export type AdminProductListItem = components['schemas']['AdminProductListItemOut']
-export type AdminProductListPage = components['schemas']['Page_AdminProductListItemOut_']
+type KitKindLabel = NonNullable<components['schemas']['AdminKitProductDetailOut']['kit_kind']>
+type GeneratedAdminProductListItem = components['schemas']['AdminProductListItemOut']
+type GeneratedAdminProductListPage = components['schemas']['Page_AdminProductListItemOut_']
+type GeneratedBeadColor = components['schemas']['BeadColorOut']
+type GeneratedBeadColorListPage = components['schemas']['Page_BeadColorOut_']
+type GeneratedAdminProductKitColor = components['schemas']['AdminProductKitColorOut']
+type GeneratedAdminKitProductDetail = components['schemas']['AdminKitProductDetailOut']
+type GeneratedKitProductCreateResult = components['schemas']['KitProductCreateOut']
+export type AdminProductListItem = Omit<
+  GeneratedAdminProductListItem,
+  'kit_kind' | 'sale_unit_grams'
+> & {
+  readonly kit_kind: KitKindLabel | null
+  readonly sale_unit_grams: number | null
+}
+export type AdminProductListPage = Omit<GeneratedAdminProductListPage, 'items'> & {
+  readonly items: readonly AdminProductListItem[]
+}
+export type BeadColorListRequest = NonNullable<operations[
+  'list_bead_colors_api_v1_admin_bead_colors_get'
+]['parameters']['query']>
+export type BeadColor = Omit<
+  GeneratedBeadColor,
+  'color_code' | 'name' | 'swatch_image_url'
+> & {
+  readonly color_code: string | null
+  readonly name: string | null
+  readonly swatch_image_url: string | null
+}
+export type BeadColorListPage = Omit<GeneratedBeadColorListPage, 'items'> & {
+  readonly items: readonly BeadColor[]
+}
+export type BeadColorUpdateRequest = components['schemas']['BeadColorUpdate']
+export type AdminProductKitColor = Omit<
+  GeneratedAdminProductKitColor,
+  'color_code' | 'name' | 'swatch_image_url'
+> & {
+  readonly color_code: string | null
+  readonly name: string | null
+  readonly swatch_image_url: string | null
+}
+export type ProductKitColorUpdateRequest = components['schemas']['ProductKitColorUpdate']
 export type AdminExperienceProductDetail = components['schemas']['AdminExperienceProductDetailOut']
-export type AdminKitProductDetail = components['schemas']['AdminKitProductDetailOut']
+export type AdminKitProductDetail = Omit<
+  GeneratedAdminKitProductDetail,
+  'kit_kind' | 'sale_unit_grams' | 'colors'
+> & {
+  readonly kit_kind: KitKindLabel
+  readonly sale_unit_grams: number | null
+  readonly colors: readonly AdminProductKitColor[]
+}
 export type AdminProductDetail = AdminExperienceProductDetail | AdminKitProductDetail
 export type AdminProductType = 'experience' | 'kit'
 export type ExperienceProductCreateRequest = components['schemas']['ExperienceProductCreate']
-export type KitProductCreateRequest = components['schemas']['KitProductCreate']
+export type KitProductCreateRequest = Omit<
+  components['schemas']['KitProductCreate'],
+  'kit_kind'
+> & {
+  readonly kit_kind?: components['schemas']['KitKind']
+}
 export type ExperienceProductCreateResult = components['schemas']['ExperienceProductCreateOut']
-export type KitProductCreateResult = components['schemas']['KitProductCreateOut']
+export type KitProductCreateResult = Omit<
+  GeneratedKitProductCreateResult,
+  'kit_kind' | 'sale_unit_grams'
+> & {
+  readonly kit_kind: KitKindLabel
+  readonly sale_unit_grams: number | null
+}
 export type ProductBasicInfoUpdateRequest = {
   readonly name?: string
   readonly description?: string | null
@@ -57,6 +115,18 @@ type ProductImage = components['schemas']['ProductImageOut']
 type ExperienceOption = components['schemas']['ExperienceOptionOut']
 type PositiveIntegerLabel = ExperienceOption['duration']
 type DayTypeLabel = ExperienceOption['day_type']
+type KitKindValue = 'fixed' | 'color_selectable'
+
+interface BeadColorMetadata {
+  readonly id: number
+  readonly slot_no: number
+  readonly color_code: string | null
+  readonly name: string | null
+  readonly swatch_image_url: string | null
+  readonly sort: number
+  readonly is_active: boolean
+  readonly is_configured: boolean
+}
 
 const UTC_DATETIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$/
 
@@ -199,6 +269,24 @@ export class AdminProductApi {
     return parsed
   }
 
+  async updateProductKitColor(
+    kitColorId: number,
+    request: ProductKitColorUpdateRequest,
+  ): Promise<AdminProductKitColor> {
+    assertKitColorId(kitColorId)
+    const operation = 'products.admin.kit_color.update'
+    const result = await this.client.request<unknown>({
+      operation,
+      path: `/api/v1/admin/product-kit-colors/${kitColorId}`,
+      method: 'PATCH',
+      auth: 'required',
+      body: { is_enabled: request.is_enabled },
+    })
+    const parsed = parseAdminProductKitColor(result)
+    if (!parsed) throw new ContractError({ operation })
+    return parsed
+  }
+
   async uploadProductImage(
     productId: number,
     request: ProductImageUploadRequest,
@@ -302,6 +390,42 @@ export class AdminProductApi {
     return parsed
   }
 
+  async listBeadColors(request: BeadColorListRequest = {}): Promise<BeadColorListPage> {
+    const operation = 'products.admin.bead_colors.list'
+    const result = await this.client.request<unknown>({
+      operation,
+      path: '/api/v1/admin/bead-colors',
+      method: 'GET',
+      auth: 'required',
+      query: projectBeadColorListRequest(request),
+    })
+    const parsed = parseBeadColorListPage(result)
+    if (!parsed) throw new ContractError({ operation })
+    return parsed
+  }
+
+  async updateBeadColor(
+    beadColorId: number,
+    request: BeadColorUpdateRequest,
+  ): Promise<BeadColor> {
+    assertBeadColorId(beadColorId)
+    const body = projectBeadColorUpdate(request)
+    if (Object.keys(body).length === 0) {
+      throw new Error('拼豆颜色至少需要一个改动字段')
+    }
+    const operation = 'products.admin.bead_color.update'
+    const result = await this.client.request<unknown>({
+      operation,
+      path: `/api/v1/admin/bead-colors/${beadColorId}`,
+      method: 'PATCH',
+      auth: 'required',
+      body,
+    })
+    const parsed = parseBeadColor(result)
+    if (!parsed) throw new ContractError({ operation })
+    return parsed
+  }
+
   async getExperienceProduct(productId: number): Promise<AdminExperienceProductDetail> {
     assertProductId(productId)
     const operation = 'products.admin.experience.detail'
@@ -364,14 +488,17 @@ export function parseExperienceProductCreateResult(
 
 export function parseKitProductCreateResult(value: unknown): KitProductCreateResult | undefined {
   const parsed = parseProductCreateResult(value, 'kit')
-  return parsed
-    ? {
-        id: parsed.id,
-        name: parsed.name,
-        product_type: { value: 'kit', label: parsed.product_type.label },
-        status: { value: 'draft', label: parsed.status.label },
-      }
-    : undefined
+  const kitKind = isRecord(value) ? parseKitKind(value.kit_kind) : undefined
+  if (!parsed || !isRecord(value) || !kitKind ||
+    !isKitSaleUnitValid(kitKind.value, value.sale_unit_grams)) return undefined
+  return {
+    id: parsed.id,
+    name: parsed.name,
+    product_type: { value: 'kit', label: parsed.product_type.label },
+    status: { value: 'draft', label: parsed.status.label },
+    kit_kind: kitKind,
+    sale_unit_grams: value.sale_unit_grams as number | null,
+  }
 }
 
 export function parseProductBasicInfoResult(value: unknown): ProductBasicInfoResult | undefined {
@@ -453,6 +580,56 @@ export function parseAdminProductListPage(value: unknown): AdminProductListPage 
   }
 }
 
+export function parseBeadColorListPage(value: unknown): BeadColorListPage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(parseBeadColor)
+  if (items.some((item) => item === undefined) || !isNonNegativeInteger(value.total) ||
+    !isPositiveInteger(value.page) || !isPositiveInteger(value.page_size) ||
+    !isNonNegativeInteger(value.pages)) return undefined
+  return {
+    items: items as BeadColor[],
+    total: value.total,
+    page: value.page,
+    page_size: value.page_size,
+    pages: value.pages,
+  }
+}
+
+export function parseBeadColor(value: unknown): BeadColor | undefined {
+  const metadata = parseBeadColorMetadata(value)
+  if (!metadata || !isRecord(value)) return undefined
+  return {
+    id: metadata.id,
+    slot_no: metadata.slot_no,
+    color_code: metadata.color_code,
+    name: metadata.name,
+    swatch_image_url: metadata.swatch_image_url,
+    sort: metadata.sort,
+    is_active: metadata.is_active,
+    is_configured: metadata.is_configured,
+  }
+}
+
+export function parseAdminProductKitColor(value: unknown): AdminProductKitColor | undefined {
+  const metadata = parseBeadColorMetadata(value)
+  if (!metadata || !isRecord(value) || !isPositiveInteger(value.bead_color_id) ||
+    typeof value.is_enabled !== 'boolean' || !isStock(value.stock_units) ||
+    (value.is_enabled && (!metadata.is_active || !metadata.is_configured))) return undefined
+  return {
+    id: metadata.id,
+    bead_color_id: value.bead_color_id,
+    slot_no: metadata.slot_no,
+    color_code: metadata.color_code,
+    name: metadata.name,
+    swatch_image_url: metadata.swatch_image_url,
+    sort: metadata.sort,
+    is_active: metadata.is_active,
+    is_configured: metadata.is_configured,
+    is_enabled: value.is_enabled,
+    stock_units: value.stock_units,
+  }
+}
+
 export function parseAdminExperienceProductDetail(
   value: unknown,
 ): AdminExperienceProductDetail | undefined {
@@ -478,13 +655,21 @@ export function parseAdminKitProductDetail(value: unknown): AdminKitProductDetai
   const base = parseAdminProductDetailBase(value, 'kit')
   if (!base || !isRecord(value)) return undefined
   const images = parseArray(value.images, parseProductImage)
-  if (!images || !isMoneyString(value.price) || !isStock(value.stock)) return undefined
+  const kitKind = parseKitKind(value.kit_kind)
+  const colors = parseArray(value.colors, parseAdminProductKitColor)
+  if (!images || !isMoneyString(value.price) || !kitKind || !colors ||
+    !isAdminKitShapeValid(kitKind.value, value.sale_unit_grams, value.stock, colors)) {
+    return undefined
+  }
   return {
     ...base,
     product_type: { value: 'kit', label: base.product_type.label },
     images,
+    kit_kind: kitKind,
+    sale_unit_grams: value.sale_unit_grams as number | null,
     price: value.price,
-    stock: value.stock,
+    stock: value.stock as number | null,
+    colors,
   }
 }
 
@@ -495,6 +680,8 @@ function parseAdminProductListItem(value: unknown): AdminProductListItem | undef
     !isProductStatus(value.status.value) || !isNonEmptyString(value.status.label) ||
     !isNullableAssetUrl(value.cover_image) || !isNullableMoney(value.display_price) ||
     !isUtcDatetime(value.updated_at) || typeof value.is_deleted !== 'boolean') return undefined
+  const kitMetadata = parseListKitMetadata(value, value.product_type.value)
+  if (!kitMetadata) return undefined
   return {
     id: value.id,
     name: value.name,
@@ -504,6 +691,69 @@ function parseAdminProductListItem(value: unknown): AdminProductListItem | undef
     display_price: value.display_price,
     updated_at: value.updated_at,
     is_deleted: value.is_deleted,
+    ...kitMetadata,
+  }
+}
+
+function parseListKitMetadata(
+  value: Record<string, unknown>,
+  productType: AdminProductType,
+): Pick<AdminProductListItem, 'kit_kind' | 'sale_unit_grams'> | undefined {
+  if (productType === 'experience') {
+    return value.kit_kind === null && value.sale_unit_grams === null
+      ? { kit_kind: null, sale_unit_grams: null }
+      : undefined
+  }
+  const kitKind = parseKitKind(value.kit_kind)
+  if (!kitKind || !isKitSaleUnitValid(kitKind.value, value.sale_unit_grams)) return undefined
+  return {
+    kit_kind: kitKind,
+    sale_unit_grams: value.sale_unit_grams as number | null,
+  }
+}
+
+function parseKitKind(value: unknown): KitKindLabel | undefined {
+  if (!isRecord(value) ||
+    (value.value !== 'fixed' && value.value !== 'color_selectable') ||
+    !isNonEmptyString(value.label)) return undefined
+  return { value: value.value, label: value.label }
+}
+
+function isKitSaleUnitValid(kitKind: KitKindValue, saleUnitGrams: unknown): boolean {
+  return kitKind === 'fixed' ? saleUnitGrams === null : saleUnitGrams === 10
+}
+
+function isAdminKitShapeValid(
+  kitKind: KitKindValue,
+  saleUnitGrams: unknown,
+  stock: unknown,
+  colors: readonly AdminProductKitColor[],
+): boolean {
+  if (!isKitSaleUnitValid(kitKind, saleUnitGrams)) return false
+  return kitKind === 'fixed'
+    ? isStock(stock) && colors.length === 0
+    : stock === null
+}
+
+function parseBeadColorMetadata(value: unknown): BeadColorMetadata | undefined {
+  if (!isRecord(value) || !isPositiveInteger(value.id) ||
+    !isPositiveInteger(value.slot_no) || value.slot_no > 221 ||
+    !(value.color_code === null || isBoundedNonEmptyString(value.color_code, 50)) ||
+    !(value.name === null || isBoundedNonEmptyString(value.name, 100)) ||
+    !(value.swatch_image_url === null || isSupportedAssetUrl(value.swatch_image_url)) ||
+    !isNonNegativeInteger(value.sort) || typeof value.is_active !== 'boolean' ||
+    typeof value.is_configured !== 'boolean') return undefined
+  const configured = value.color_code !== null && value.name !== null
+  if (value.is_configured !== configured || (value.is_active && !configured)) return undefined
+  return {
+    id: value.id,
+    slot_no: value.slot_no,
+    color_code: value.color_code,
+    name: value.name,
+    swatch_image_url: value.swatch_image_url,
+    sort: value.sort,
+    is_active: value.is_active,
+    is_configured: value.is_configured,
   }
 }
 
@@ -605,6 +855,13 @@ function projectAdminProductListRequest(request: AdminProductListRequest): Admin
   }
 }
 
+function projectBeadColorListRequest(request: BeadColorListRequest): BeadColorListRequest {
+  return {
+    ...(request.page === undefined ? {} : { page: request.page }),
+    ...(request.page_size === undefined ? {} : { page_size: request.page_size }),
+  }
+}
+
 function projectExperienceProductCreate(
   request: ExperienceProductCreateRequest,
 ): ExperienceProductCreateRequest {
@@ -619,6 +876,16 @@ function projectKitProductCreate(request: KitProductCreateRequest): KitProductCr
     name: request.name,
     ...(request.description === undefined ? {} : { description: request.description }),
     price: request.price,
+    ...(request.kit_kind === undefined ? {} : { kit_kind: request.kit_kind }),
+  }
+}
+
+function projectBeadColorUpdate(request: BeadColorUpdateRequest): BeadColorUpdateRequest {
+  return {
+    ...(request.color_code === undefined ? {} : { color_code: request.color_code }),
+    ...(request.name === undefined ? {} : { name: request.name }),
+    ...(request.sort === undefined ? {} : { sort: request.sort }),
+    ...(request.is_active === undefined ? {} : { is_active: request.is_active }),
   }
 }
 
@@ -688,6 +955,18 @@ function assertImageId(imageId: number): void {
   if (!Number.isSafeInteger(imageId) || imageId <= 0) throw new Error('Image ID 必须是正安全整数')
 }
 
+function assertBeadColorId(beadColorId: number): void {
+  if (!Number.isSafeInteger(beadColorId) || beadColorId <= 0) {
+    throw new Error('Bead Color ID 必须是正安全整数')
+  }
+}
+
+function assertKitColorId(kitColorId: number): void {
+  if (!Number.isSafeInteger(kitColorId) || kitColorId <= 0) {
+    throw new Error('Product Kit Color ID 必须是正安全整数')
+  }
+}
+
 function assertFilePath(filePath: string): void {
   if (!filePath) throw new Error('上传文件路径不能为空')
 }
@@ -747,7 +1026,8 @@ function isStock(value: unknown): value is number {
 }
 
 function isSupportedAssetUrl(value: unknown): value is string {
-  return isNonEmptyString(value) && (value.startsWith('/') || /^https?:\/\//i.test(value))
+  return isNonEmptyString(value) && value.length <= 2048 &&
+    (value.startsWith('/') || /^https?:\/\//i.test(value))
 }
 
 function isNullableAssetUrl(value: unknown): value is string | null | undefined {

@@ -6,7 +6,8 @@ from app.common.constants.inventory import (
     INVENTORY_STOCK_MAX,
     INVENTORY_STOCK_MIN,
 )
-from app.core.exceptions import ConflictException
+from app.common.enums.product import KitKind
+from app.core.exceptions import BusinessException, ConflictException
 
 
 def _validate_integer(value: int, *, field_name: str) -> None:
@@ -22,22 +23,44 @@ def _validate_positive_integer(value: int, *, field_name: str) -> None:
         raise ValueError(f"{field_name} must be a positive integer")
 
 
+class InventoryKitKindMismatch(BusinessException):
+    """库存端点与 Kit 的余额权威类型不匹配。"""
+
+    def __init__(self, *, expected: KitKind, actual: KitKind) -> None:
+        super().__init__(
+            code=40031,
+            message="Kit kind does not match this inventory operation",
+            data={"expected": expected.value, "actual": actual.value},
+        )
+
+
 class InsufficientStock(ConflictException):
     """Kit 可售库存小于本次订单请求数量。"""
 
-    def __init__(self, *, product_id: int, requested_quantity: int) -> None:
+    def __init__(
+        self,
+        *,
+        product_id: int,
+        requested_quantity: int,
+        kit_color_id: int | None = None,
+    ) -> None:
         _validate_positive_integer(product_id, field_name="product_id")
         _validate_positive_integer(
             requested_quantity,
             field_name="requested_quantity",
         )
+        if kit_color_id is not None:
+            _validate_positive_integer(kit_color_id, field_name="kit_color_id")
+        data = {
+            "product_id": product_id,
+            "requested_quantity": requested_quantity,
+        }
+        if kit_color_id is not None:
+            data["kit_color_id"] = kit_color_id
         super().__init__(
             code=40931,
             message="Insufficient stock",
-            data={
-                "product_id": product_id,
-                "requested_quantity": requested_quantity,
-            },
+            data=data,
         )
 
 
@@ -50,8 +73,11 @@ class InventoryBalanceExceeded(ConflictException):
         product_id: int,
         before_quantity: int,
         change_quantity: int,
+        kit_color_id: int | None = None,
     ) -> None:
         _validate_positive_integer(product_id, field_name="product_id")
+        if kit_color_id is not None:
+            _validate_positive_integer(kit_color_id, field_name="kit_color_id")
         _validate_integer(before_quantity, field_name="before_quantity")
         _validate_integer(change_quantity, field_name="change_quantity")
         if not INVENTORY_STOCK_MIN <= before_quantity <= INVENTORY_STOCK_MAX:
@@ -64,16 +90,19 @@ class InventoryBalanceExceeded(ConflictException):
         if INVENTORY_STOCK_MIN <= after_quantity <= INVENTORY_STOCK_MAX:
             raise ValueError("adjusted balance must exceed the stock range")
 
+        data = {
+            "product_id": product_id,
+            "before_quantity": before_quantity,
+            "change_quantity": change_quantity,
+            "minimum": INVENTORY_STOCK_MIN,
+            "maximum": INVENTORY_STOCK_MAX,
+        }
+        if kit_color_id is not None:
+            data["kit_color_id"] = kit_color_id
         super().__init__(
             code=40932,
             message="Inventory balance exceeds the allowed range",
-            data={
-                "product_id": product_id,
-                "before_quantity": before_quantity,
-                "change_quantity": change_quantity,
-                "minimum": INVENTORY_STOCK_MIN,
-                "maximum": INVENTORY_STOCK_MAX,
-            },
+            data=data,
         )
 
 

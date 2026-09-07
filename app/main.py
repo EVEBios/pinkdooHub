@@ -46,6 +46,7 @@ from app.api.static import DeferredDirectoryStaticFiles
 from app.api.v1.admin import router as admin_router
 from app.api.v1.admin_inventory import router as admin_inventory_router
 from app.api.v1.admin_orders import router as admin_orders_router
+from app.api.v1.admin_reservations import router as admin_reservations_router
 from app.api.v1.admin_refunds import router as admin_refunds_router
 from app.api.v1.admin_wallet import router as admin_wallet_router
 from app.api.v1.admin_products import router as admin_products_router
@@ -53,6 +54,7 @@ from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
 from app.api.v1.products import router as products_router
+from app.api.v1.reservations import router as reservations_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.users import router as users_router
@@ -197,6 +199,8 @@ app.include_router(admin_products_router, prefix="/api/v1")
 app.include_router(admin_inventory_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(admin_orders_router, prefix="/api/v1")
+app.include_router(reservations_router, prefix="/api/v1")
+app.include_router(admin_reservations_router, prefix="/api/v1")
 app.include_router(wallet_router, prefix="/api/v1")
 app.include_router(admin_wallet_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")

@@ -40,6 +40,7 @@ describe('OrdersPage', () => {
     mockAuth = {
       status: 'authenticated',
       register: jest.fn(),
+      updateProfile: jest.fn(),
       login: jest.fn(),
       loginWithWechat: jest.fn(),
       logout: jest.fn(),

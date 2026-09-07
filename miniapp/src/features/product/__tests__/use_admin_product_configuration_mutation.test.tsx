@@ -103,6 +103,19 @@ function createSource(overrides: Partial<AdminProductConfigurationSource>): Admi
     }),
     deleteExperienceOption: jest.fn(async () => ({ id: 21, is_deleted: true as const })),
     updateKitPrice: jest.fn(async (_productId, request) => ({ id: 8, price: request.price })),
+    updateProductKitColor: jest.fn(async (kitColorId, request) => ({
+      id: kitColorId,
+      bead_color_id: 1,
+      slot_no: 1,
+      color_code: 'A01',
+      name: '白色',
+      swatch_image_url: null,
+      sort: 1,
+      is_active: true,
+      is_configured: true,
+      is_enabled: request.is_enabled,
+      stock_units: 0,
+    })),
     ...overrides,
   }
 }

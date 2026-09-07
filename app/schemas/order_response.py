@@ -18,10 +18,15 @@ from app.common.constants.order import (
     ORDER_AMOUNT_DECIMAL_PLACES,
     ORDER_AMOUNT_MAX,
     ORDER_AMOUNT_MIN_EXCLUSIVE,
+    ORDER_COLOR_SALE_UNIT_GRAMS,
     ORDER_ITEM_QUANTITY_MAX,
     ORDER_ITEM_QUANTITY_MIN,
     ORDER_ITEMS_MAX_COUNT,
     ORDER_ITEMS_MIN_COUNT,
+    ORDER_KIT_COLOR_CODE_MAX_LENGTH,
+    ORDER_KIT_COLOR_NAME_MAX_LENGTH,
+    ORDER_KIT_COLOR_SLOT_MAX,
+    ORDER_KIT_COLOR_SLOT_MIN,
     ORDER_NO_PATTERN,
     ORDER_REMARK_MAX_LENGTH,
     ORDER_STATUS_LABELS,
@@ -168,6 +173,7 @@ class OrderItemOut(_OrderOut):
     id: int = Field(strict=True, gt=0)
     product_id: int = Field(strict=True, gt=0)
     experience_option_id: int | None = Field(default=None, strict=True, gt=0)
+    kit_color_id: int | None = Field(strict=True, gt=0)
     product_name: str = Field(
         strict=True,
         min_length=1,
@@ -184,6 +190,23 @@ class OrderItemOut(_OrderOut):
         ge=MIN_PARTICIPANTS,
     )
     option_day_type: OrderDayTypeOut | None = None
+    kit_color_code: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=ORDER_KIT_COLOR_CODE_MAX_LENGTH,
+    )
+    kit_color_name: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=ORDER_KIT_COLOR_NAME_MAX_LENGTH,
+    )
+    kit_color_slot_no: int | None = Field(
+        strict=True,
+        ge=ORDER_KIT_COLOR_SLOT_MIN,
+        le=ORDER_KIT_COLOR_SLOT_MAX,
+    )
+    sale_unit_grams: int | None = Field(strict=True, gt=0)
+    total_weight_grams: int | None = Field(strict=True, gt=0)
     product_price: OrderUnitPriceOut
     quantity: int = Field(
         strict=True,
@@ -199,11 +222,36 @@ class OrderItemOut(_OrderOut):
             self.option_participants,
             self.option_day_type,
         )
+        color_metadata = (
+            self.kit_color_slot_no,
+            self.kit_color_code,
+            self.kit_color_name,
+            self.sale_unit_grams,
+            self.total_weight_grams,
+        )
         if self.experience_option_id is None:
             if any(value is not None for value in option_metadata):
                 raise ValueError("Kit item must not contain option snapshots")
+            if self.kit_color_id is None:
+                if any(value is not None for value in color_metadata):
+                    raise ValueError(
+                        "Fixed kit item must not contain color snapshots"
+                    )
+            else:
+                if any(value is None for value in color_metadata):
+                    raise ValueError(
+                        "Color kit item requires complete color snapshots"
+                    )
+                if self.sale_unit_grams != ORDER_COLOR_SALE_UNIT_GRAMS:
+                    raise ValueError("Color kit sale unit must be 10 grams")
+                if self.total_weight_grams != self.quantity * self.sale_unit_grams:
+                    raise ValueError("Color kit total weight is inconsistent")
         elif any(value is None for value in option_metadata):
             raise ValueError("Experience item requires complete option snapshots")
+        elif self.kit_color_id is not None or any(
+            value is not None for value in color_metadata
+        ):
+            raise ValueError("Experience item must not contain color snapshots")
         if self.subtotal != self.product_price * self.quantity:
             raise ValueError("Order item subtotal does not match price and quantity")
         return self

@@ -201,9 +201,15 @@ function projectOrderCreateRequest(request: OrderCreateRequest): OrderCreateRequ
       product_id: item.product_id,
       quantity: item.quantity,
     }
-    return item.experience_option_id === undefined || item.experience_option_id === null
-      ? projected
-      : { ...projected, experience_option_id: item.experience_option_id }
+    return {
+      ...projected,
+      ...(item.experience_option_id === undefined || item.experience_option_id === null
+        ? {}
+        : { experience_option_id: item.experience_option_id }),
+      ...(item.kit_color_id === undefined || item.kit_color_id === null
+        ? {}
+        : { kit_color_id: item.kit_color_id }),
+    }
   })
 
   return request.remark === undefined
@@ -218,7 +224,7 @@ export function parseOrderDetail(value: unknown): OrderDetail | undefined {
     hasOwn(value, 'remark') && isNullableBoundedText(value.remark, 500) &&
     isUtcDatetime(value.created_at) &&
     isUtcDatetime(value.updated_at) &&
-    Array.isArray(value.items) && value.items.length >= 1 && value.items.length <= 10
+    Array.isArray(value.items) && value.items.length >= 1 && value.items.length <= 30
   )) {
     return undefined
   }
@@ -369,7 +375,7 @@ function parseOrderListItem(value: unknown): OrderListItem | undefined {
   if (!isRecord(value) || !(
     isPositiveInteger(value.id) &&
     typeof value.order_no === 'string' && ORDER_NO_PATTERN.test(value.order_no) &&
-    isPositiveInteger(value.item_count) && value.item_count <= 10 &&
+    isPositiveInteger(value.item_count) && value.item_count <= 30 &&
     isUtcDatetime(value.created_at) &&
     isUtcDatetime(value.updated_at) &&
     parseMoneyCents(value.total_amount, ORDER_AMOUNT_MAX_CENTS) !== undefined
@@ -396,10 +402,17 @@ function parseOrderItem(value: unknown): OrderItem | undefined {
     isPositiveInteger(value.product_id) &&
     hasOwn(value, 'experience_option_id') &&
     (value.experience_option_id === null || isPositiveInteger(value.experience_option_id)) &&
+    hasOwn(value, 'kit_color_id') &&
+    (value.kit_color_id === null || isPositiveInteger(value.kit_color_id)) &&
     isBoundedText(value.product_name, 100) &&
     hasOwn(value, 'option_duration_minutes') &&
     hasOwn(value, 'option_participants') &&
     hasOwn(value, 'option_day_type') &&
+    hasOwn(value, 'kit_color_code') &&
+    hasOwn(value, 'kit_color_name') &&
+    hasOwn(value, 'kit_color_slot_no') &&
+    hasOwn(value, 'sale_unit_grams') &&
+    hasOwn(value, 'total_weight_grams') &&
     isPositiveInteger(value.quantity) && value.quantity <= 99
   )) {
     return undefined
@@ -418,6 +431,11 @@ function parseOrderItem(value: unknown): OrderItem | undefined {
   let optionDurationMinutes: number | null
   let optionParticipants: number | null
   let optionDayType: OrderItem['option_day_type']
+  let kitColorCode: string | null
+  let kitColorName: string | null
+  let kitColorSlotNo: number | null
+  let saleUnitGrams: number | null
+  let totalWeightGrams: number | null
   if (value.experience_option_id === null) {
     if (
       value.option_duration_minutes !== null ||
@@ -429,8 +447,44 @@ function parseOrderItem(value: unknown): OrderItem | undefined {
     optionDurationMinutes = null
     optionParticipants = null
     optionDayType = null
+    if (value.kit_color_id === null) {
+      if (
+        value.kit_color_code !== null ||
+        value.kit_color_name !== null ||
+        value.kit_color_slot_no !== null ||
+        value.sale_unit_grams !== null ||
+        value.total_weight_grams !== null
+      ) {
+        return undefined
+      }
+      kitColorCode = null
+      kitColorName = null
+      kitColorSlotNo = null
+      saleUnitGrams = null
+      totalWeightGrams = null
+    } else {
+      if (!isBoundedText(value.kit_color_code, 50) ||
+        !isBoundedText(value.kit_color_name, 100) ||
+        !isPositiveInteger(value.kit_color_slot_no) || value.kit_color_slot_no > 221 ||
+        value.sale_unit_grams !== 10 ||
+        value.total_weight_grams !== value.quantity * 10) {
+        return undefined
+      }
+      kitColorCode = value.kit_color_code
+      kitColorName = value.kit_color_name
+      kitColorSlotNo = value.kit_color_slot_no
+      saleUnitGrams = value.sale_unit_grams
+      totalWeightGrams = value.total_weight_grams
+    }
   } else {
-    if (!isPositiveInteger(value.option_duration_minutes) || !isPositiveInteger(value.option_participants)) {
+    if (!isPositiveInteger(value.option_duration_minutes) ||
+      !isPositiveInteger(value.option_participants) ||
+      value.kit_color_id !== null ||
+      value.kit_color_code !== null ||
+      value.kit_color_name !== null ||
+      value.kit_color_slot_no !== null ||
+      value.sale_unit_grams !== null ||
+      value.total_weight_grams !== null) {
       return undefined
     }
     const parsedDayType = parseDayType(value.option_day_type)
@@ -440,16 +494,27 @@ function parseOrderItem(value: unknown): OrderItem | undefined {
     optionDurationMinutes = value.option_duration_minutes
     optionParticipants = value.option_participants
     optionDayType = parsedDayType
+    kitColorCode = null
+    kitColorName = null
+    kitColorSlotNo = null
+    saleUnitGrams = null
+    totalWeightGrams = null
   }
 
   return {
     id: value.id,
     product_id: value.product_id,
     experience_option_id: value.experience_option_id,
+    kit_color_id: value.kit_color_id,
     product_name: value.product_name,
     option_duration_minutes: optionDurationMinutes,
     option_participants: optionParticipants,
     option_day_type: optionDayType,
+    kit_color_code: kitColorCode,
+    kit_color_name: kitColorName,
+    kit_color_slot_no: kitColorSlotNo,
+    sale_unit_grams: saleUnitGrams,
+    total_weight_grams: totalWeightGrams,
     product_price: value.product_price as string,
     quantity: value.quantity,
     subtotal: value.subtotal as string,

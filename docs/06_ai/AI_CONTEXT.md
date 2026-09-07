@@ -23,6 +23,9 @@
 | 会员钱包/支付/退款 API | [wallet_api.md](../03_api/wallet_api.md) |
 | 库存业务规则 | [inventory_module.md](../01_requirements/inventory_module.md) |
 | 库存 API 草案 | [inventory_api.md](../03_api/inventory_api.md) |
+| 预约业务规则（N1 权威） | [reservation_module.md](../01_requirements/reservation_module.md) |
+| 预约 API（N1 权威） | [reservation_api.md](../03_api/reservation_api.md) |
+| 预约微信店休通知（N2 Deferred） | [reservation_wechat_notification_plan.md](../01_requirements/reservation_wechat_notification_plan.md) |
 | 数据库设计 | [database_design.md](../02_database/database_design.md) |
 | ER 图 | [er_diagram.dbml](../02_database/er_diagram.dbml) |
 | Code Review 清单 | [code_review_checklist.md](../07_process/code_review_checklist.md) |
@@ -72,6 +75,8 @@
 
 ### 2.1 当前 Phase 与实现边界
 
+- M6 **自选颜色 Kit 仓库实现、客户端接入、本地回归、持久 SQLite 专用升级及 MARD 221 本地目录导入已完成，真实 MySQL/部署未完成**：`KitKind=fixed|color_selectable`，省略保持 fixed；全局 BeadColor 固定 221 槽，每个 color_selectable Product 原子关联全部槽并独立维护 `is_enabled/stock_units`，库存不跨商品共享。价格统一按 10g，颜色每色一条 OrderItem；每色数量≤99、颜色行≤20、非颜色行≤10、总行≤30。Order 保存 kit_color code/name/slot/10g 快照，InventoryTransaction 可空关联 kit_color，fixed 旧路径和历史语义保持兼容。Product 上架与颜色启停共用 Product 行锁；全局色板修改按引用 Product ID 升序→BeadColor→启用关联锁序并锁后复验，管理输出允许诊断 enabled + inactive/unconfigured，公共输出仍 fail-closed。BeadColor.sort 统一为 0..32767；最长元数据审计使用有效 JSON 的 len/SHA-256 有界摘要。2026-09-07 已从指定 MARD 页面严格抓取 A1–M15 221 个 CSS HEX/RGB 色块，冻结带来源 SHA-256 的 manifest；页面无独立图片和描述名，因此 code/name 均为页面色号，并生成 221 张确定性 256×256 sRGB PNG（128,325 bytes）。本地导入工具默认 dry-run、显式 `--apply --confirm-local-only`，具备冲突/Online 引用拒绝、写前备份、事务回滚、文件补偿和幂等重放；已应用本地 `db.sqlite3`，221 槽均完整激活，未创建商品颜色映射或库存。候选 MySQL 迁移 `6_20260906123000_add_color_selectable_kits.py` 尚未跑真实 MySQL 0→6、未应用 Gate A、共享、预发布或生产 MySQL；生产对象存储/CDN 和实体拼豆校色仍待完成，miniapp 与 OpenAPI 生成物已同步。
+- Reservation N1 **契约、仓库实现与一次性 MySQL 核心门槛已完成，持久迁移/部署验收未完成**：独立预约不创建 Order/Payment；正常普通 USER 以 `experience_option_id +` 上海当地 `reservation_date/start_time` 创建 pending，必须有当前手机号。服务端一次返回未来第 0–30 日合法日期/半小时时段，执行周一固定店休、周二至周五 weekday、周末 holiday、11:00–20:00、完整体验、至少提前 3 小时与自定义店休规则。四状态为 pending/confirmed/rejected/cancelled，不新增 completed；拒绝原因固定 no_capacity，取消原因只允许 customer_request/store_closed。同一用户/Option/时段允许多条独立预约，N1 不占座、不自动去重或防超额，由店员逐条判断容量。ADMIN+ 开始后不可确认/拒绝；用户在精确开始前至少 3 小时可取消，改期为取消后新建。自定义店休仅今天/未来且不能周一，PUT 首次 201/重放 200 并原子批量取消尚未开始的活跃预约，DELETE 不复活历史且重复恢复 40452。顾客以“我的预约/详情”的状态与 `customer_message` 获知结果；管理列表返回后端掩码当前手机号，详情才返回当前完整手机号作为人工电话兜底，手机号不快照。`StoreBusinessDay` / `Reservation`、四个 RESTRICT FK、UTC 起止、完整 Option 快照、状态原因/时间、Repository/Validator/Service/Mapper/Router 和 M5 离线迁移均已落地。一次性 MySQL 8.0.46 已完成 Aerich 0→5，Reservation `7 passed`、与 Inventory 联合 `16 passed`，覆盖核心并发、1205/1213 和六个索引计划；容器与端口已清理。叠加 M6 与 MARD 导入契约后的当前本地基线为后端 `1978 passed, 20 skipped`（回环端口探测已在完整主套件直接通过）和前端 `81 suites / 556 tests`；微信固定 CI HTTPS Origin 产物为 141 个文件、1,036,117 bytes、`release_eligible=false`。详细边界见 changelog。M5 未应用本地持久 SQLite、Gate A、共享、预发布或生产库。N2 微信订阅消息、Outbox、Worker 和主动通知保持 Deferred，N1 没有主动微信通知。
 - Wallet/Payment/Refund v1 **已于 2026-09-05 完成仓库实现，尚未应用持久数据库**：新建普通 USER 创建一个 `0.00..1000.00` WalletAccount；历史 backfill 只补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补，ADMIN/SUPER_ADMIN 始终不建钱包且只能操作普通客户。单笔充值冻结为 `1.00..1000.00`。已实现会员/流水查询、ADMIN+ 增减余额与按商品代客钱包订单、余额支付、manual PaymentSettlement、订单资金查询，以及 PAID/COMPLETED 一次全额退款；PAID Kit 恢复、COMPLETED 不恢复。正向入账还保留尚可全额退款的钱包支付敞口。四类持久资金幂等键在 MySQL 使用 ASCII / `ascii_bin`，大小写敏感逐字节比较；支付、退款和调账重放均复验完整关联、金额、状态、来源、算术和业务意图，矛盾事实不返回成功。M4 已在一次性 `mysql:8.0.46` 容器真实执行 Aerich 0→4，MySQL 钱包专项 `2 passed`，覆盖资金闭环、幂等及大小写 key 独立提交；容器已停止并由 `--rm` 删除，未触碰持久库。钱包专项并发、1205/1213 和 EXPLAIN 扩展门槛仍未覆盖。M4 未应用本地持久 `db.sqlite3`；development 的 `generate_schemas` 可能补建缺表但不 ALTER 既有表、不写 Aerich。正式顺序固定为 M4 → NORMAL/DISABLED USER wallet backfill → legacy manual settlement backfill → reconcile/发布门槛 → 启用；reconcile 全程只读并稳定检查余额净额、逐行算术/范围、余额链、末条余额和无流水零余额规则，任一违规非零退出且不自动修账。真实微信 Provider、充值和微信支付/退款均关闭并以 503 零写入；商户号、AppID 关联、HTTPS notify、证书/密钥和经营进件资料待正式接入时填入受控 Secret/发布记录。
 - Phase 9.5 **不依赖备案的仓库实现已于 2026-09-02 完成**：后端已实现服务端微信 code2Session、微信首次普通用户创建、既有账号显式绑定/冲突/解绑、外部标识独立 Pepper HMAC、Refresh family 原子轮换与重放撤销、认证限流 fail-closed、账号注销匿名化和脱敏安全事件；密码/微信既有身份登录及微信首次注册唯一冲突收敛均锁定并复验 User，`last_login_at` 与登录 Audit 同事务，签发后再锁定确认 `auth_version/status`，不一致时只撤销本次新 family。注销以数据库 commit 为权威成功点，commit 后 Redis family 清理为 best-effort；失败仍返回成功，`status/auth_version` 保持会话失效，并记录不含 Token/JTI 的高优先级安全事件供运维重试清理。Order 创建也先锁后复验 NORMAL 普通 USER，封闭注销竞态。小程序新增显式 password/wechat 模式和 refresh 双 Token 替换。MySQL 迁移 3 已离线生成并在可销毁 MySQL 验证，未应用 Gate A。`ImageStorage` 与 Secret 文件注入只完成供应商无关边界；真实 AppID 真机、集中 Secret Manager、告警送达、对象存储和微信隐私材料仍是 Gate B 阻断，未连接微信后台或创建云资源。权威边界见 `docs/09_release/phase95_public_security_baseline.md`。
 - 前端 **Phase 9.1–9.3 已于 2026-08-31 Complete；下一步为 Phase 9.4 微信内部测试版**：Phase 9.3 最终候选 `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success，53 项发布工具契约通过。Run ID `20260831t221625` 在唯一、可销毁的双 MySQL 8.0.46、认证 Redis 8.0.1、短期 CA/Nginx、非 root App 和独立 Source/Restore 图片卷中完成 DR-01～DR-07、DR-09 服务端部分：空库/旧数据迁移、opening balance、数据库与图片独立恢复、MySQL DDL 部分失败恢复、MySQL/Redis Readiness 故障与恢复、Bootstrap 首次/重放/唯一 Audit/凭据轮换、32 请求真实 HTTPS 纵向 Smoke 和优雅重启均通过。演练促成 Python 基础镜像标签、Compose `--env`、合成 Order No、internal/edge 网络四项修复及回归测试；R-004/R-006/R-011 已关闭。Compose containers/networks/volumes、端口、短期 Secret/CA/证据目录和任务 App 镜像已删除，既有开发 Redis 未接管。报告见 `docs/09_release/reports/phase93_rehearsal_2026-08-31.md`。微信合法域名、真实 Origin/证书、iOS/Android 真机 DR-08 与 Gate A 决策仍属于 9.4；未授权上传、分发、提审或发布。
@@ -96,12 +101,12 @@
 - **Product JPEG 导出尾部兼容已实现**（2026-08-27）：真实微信导出 JPEG 在标准 `FF D9` 后统一附加 `17 4D A1 01 00 00 00 00 + JPEG 本体 16-byte MD5`，旧存储层强制 `endswith(FF D9)` 导致 19/19 可解码样本误报 `42221 invalid_image_content`。`LocalImageStorage` 现仅在 JPEG 头尾、固定前缀和摘要全部匹配时剥离 24 字节并保存规范化 JPEG；任意尾随、错误摘要、伪造前缀和 MIME 不匹配继续拒绝，原始文件仍受 2 MiB 限制。MD5 只识别导出格式，不作为安全摘要。存储与真实 multipart API 定向 28 项、`D:\pinkdooPics` 真实样本 19/19 和完整后端 1450 项均通过，9 项 MySQL-only 跳过；临时输出已清理。无 API Schema、错误码、数据库、迁移、依赖或版本候选变化。
 - 前端 **账号密码注册补漏工程与微信 Functional 已完成**（2026-08-25）：`AuthApi/AuthContext` 接入现有无认证 `POST /auth/register`，注册页实现 username/password/confirm/nickname/phone 受控校验、同步 ref 防双击、1001/1007 提示、POST unknown 不重试及成功后主动登录；登录/注册双向保留固定白名单 redirect，密码不进入 URL/Storage，注册成功不伪造 Session。完整前端现为 38 套件/255 项；用户已确认普通注册、字段/唯一性、快速连点、结果未知、密码隔离及订单列表 redirect 全链路通过。审阅发现 username 字符集旧文档与实际 Pydantic/OpenAPI 不一致，API 文档已同步当前无 pattern 的事实，客户端不额外限制。
 - Phase 7.1–7.4 已收口。H5 等后端 CORS allowlist 后验证。Order create 仍无客户端幂等键；真实微信支付 Provider 仍未实现，是明确集成/发布缺口。微信登录、refresh 轮换及登录/注册限流已由 Phase 9.5 仓库实现，但真实 AppID/域名/真机与持久环境启用仍受 Gate B 控制。
-- 当前代码版本候选仍为 **v0.6.0（尚未发布）**；**Phase 4.1 Product Module**、**Phase 4.2 Order Module** 与 **Phase 4.3 Inventory Module** 均已完成实现和最终 Review。Wallet/Payment/Refund v1 是其后的未发布仓库增量，新增资金端点和 M4；一次性 MySQL 8.0.46 已通过 0→4，钱包专项 `2 passed` 覆盖关键资金闭环及 `ascii_bin` 大小写敏感幂等回归，但 M4 尚未应用持久库，钱包专项并发/1205/EXPLAIN 门槛仍待完成。不得用 Phase 4.3.11 旧证据或这次专项 smoke 代替未执行的扩展门槛。
+- 当前代码版本候选仍为 **v0.6.0（尚未发布）**；Phase 4.1/4.2/4.3 既有能力已完成，Wallet/Payment/Refund、Reservation N1 与 M6 自选颜色 Kit 分别是 M4/M5/M6 未发布增量。M6 仓库实现、本地验证和持久 SQLite 专用升级已完成，真实 MySQL 0→6 和发布目标环境迁移/验收未完成；M4/M5 未应用持久环境，M6 未应用任何持久 MySQL/发布环境。
 - Product 业务规则、数据库设计、API 契约和 Validator 对外契约均已完成；Product API 文档已通过 Phase 4.1 最终 Review，并收口为 v1.0 Implemented。
-- 已实现 Product 字符串 Enum、字段常量、请求/查询 Schema、响应 Schema 及其契约测试。
+- 既有 Product 字符串 Enum、字段常量、Schema 与测试已实现；M6 新增 KitKind、颜色字段/Schema 的实现和测试状态必须以实际代码与 changelog 为准。
 - `app/schemas/product.py` 负责请求体和查询参数；`app/schemas/product_response.py` 负责响应白名单。
-- Product、ExperienceOption、ProductKit 与 ProductImage 的全部 Model、`ProductRepository`、Product Validator、Service、API Mapper 与 21 个 FastAPI 端点均已实现。其中 19 个 JSON 端点负责公开/管理查询、Product/Option/Kit mutation、图片元数据 PATCH/DELETE 和 Product 操作历史；两个 ADMIN+ multipart 端点负责 Product 公共图和 Option 专属图创建。旧 stock 写端点已在 Phase 4.3.10 移除。上传已接入严格表单、文件校验/本地存储、Service 失败幂等补偿、开发环境静态 URL 和真实 SQLite HTTP 一致性测试。Product 操作历史通过共享 AuditLog Repository/Service、Out Schema 和 Mapper 分页查询，支持逻辑删除后的追溯。逻辑删除图片的本地文件由带显式截止时间的可重试批处理清理。
-- MySQL 8+ 权威首迁移、Order 增量迁移及 Inventory 增量迁移已离线生成并通过契约测试；完整链已在一次性 MySQL 8.0.46 实例真实执行并在验证后销毁，未应用任何持久、共享或生产数据库，也未使用 `--fake`。SQLite 开发库未被本次演练修改。
+- Product、ExperienceOption、ProductKit 与 ProductImage 的既有链路及 21 个端点保持 Implemented。M6 新增 BeadColor/ProductKitColor，并扩展同一 Product Repository/Service/Validator/Mapper 与路由；颜色库存不回流 Product stock 写端点。现有单图链只服务 Product/Option 图片；BeadColor 使用独立全局 URL，MARD 221 本地 manifest/PNG/SQLite 导入已完成，生产对象存储发布仍是独立 Gate B 边界。
+- MySQL 8+ 既有 0→5 迁移链已离线生成并在一次性实例验证；M6 候选迁移 6 已生成，仍需验证历史 fixed 默认、221 槽、颜色 FK/索引和真实 0→6 升级链。任何这些迁移均未因本轮工作自动应用到持久、共享或生产数据库。
 - Phase 4.3.1–4.3.12 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 增量迁移、Repository、管理员调整、Kit/混合订单创建扣减、Pending 取消恢复、查询 Service/Mapper、三个 ADMIN+ API、发布门槛和最终 Review 均已完成。Order 创建和取消分别拥有 deduction/restore 的稳定集合锁、批量余额/流水、Order/Audit/重载外层事务；状态机与 restore UNIQUE 共同防止重复恢复。指定 Kit 查询验证资源聚合，全局查询把 Product ID 仅作为筛选；Mapper 对预加载展示字段显式投影并保持零 SQL/零修改。调整 API 首次返回 201、幂等重放返回 200。真实 MySQL 回填、Repository smoke、竞争/1205/EXPLAIN、MySQL HTTP smoke 与完整 HTTP 矩阵均已通过；旧直接设置库存端点和 Kit 创建 stock 输入已移除。Product Kit 详情响应的库存上限已与 Inventory `999999` 契约一致，数据库文档的旧 Kit 规划描述已清理。
 - 2026-08-14 的 MySQL smoke 曾发现 Order 阻断：`OrderStatus` 直接写普通 `SmallIntField` 会被 asyncmy 编码成 `OrderStatus.*` 字符串并报 1366。现已将 Model Pending 默认值、Repository 状态更新和状态筛选统一转换为原生整数，并在全新 MySQL 8.0.46 上通过默认创建、Pending/Paid 筛选及状态更新回归；物理 Schema 和 API 语义未变化，无需迁移。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
@@ -116,6 +121,7 @@
 | `users.status` 1/2/3 | `"normal"` / `"disabled"` / `"deleted"` | `UserStatus` |
 | `products.product_type` VARCHAR | `"experience"` / `"kit"` | `ProductType(str, Enum)` |
 | `products.status` VARCHAR | `"draft"` / `"online"` / `"offline"` | `ProductStatus(str, Enum)` |
+| `product_kits.kit_kind` VARCHAR(20)（本地 SQLite 已应用；MySQL M6 未应用） | `"fixed"` / `"color_selectable"` | `KitKind(str, Enum)` |
 | `experience_options.day_type` VARCHAR | `"weekday"` / `"holiday"` | `DayType(str, Enum)` |
 | `orders.status` 0/1/2/3 | `"pending"` / `"paid"` / `"cancelled"` / `"completed"` | `OrderStatus` |
 | `inventory_transactions.transaction_type` VARCHAR(40)（M4 增加退款恢复；未应用持久环境） | `"opening_balance"` / `"admin_adjustment"` / `"order_deduction"` / `"order_cancellation_restore"` / `"order_refund_restore"` | `InventoryTransactionType(str, Enum)` |
@@ -126,6 +132,9 @@
 | `payments.method` VARCHAR(32)（M4 未应用） | `"wallet"` / `"wechat"` / `"manual"` | `PaymentMethod(str, Enum)` |
 | `payments.status` VARCHAR(32)（M4 未应用） | `"pending"` / `"succeeded"` / `"failed"` / `"closed"` | `PaymentStatus(str, Enum)` |
 | `refunds.status` VARCHAR(32)（M4 未应用） | `"pending"` / `"succeeded"` / `"failed"` | `RefundStatus(str, Enum)` |
+| `reservations.status` VARCHAR(32)（M5 未应用） | `"pending"` / `"confirmed"` / `"rejected"` / `"cancelled"` | `ReservationStatus(str, Enum)` |
+| `reservations.rejection_reason` VARCHAR(32)（M5 未应用） | null / `"no_capacity"` | `ReservationRejectionReason(str, Enum)` |
+| `reservations.cancellation_reason` VARCHAR(32)（M5 未应用） | null / `"customer_request"` / `"store_closed"` | `ReservationCancellationReason(str, Enum)` |
 
 > `duration_minutes` 和 `participants` 是开放正整数，不是 Enum。当前常用值不构成允许值白名单。
 
@@ -136,18 +145,29 @@
 | 模块 | 号段 | 已用 |
 |------|------|------|
 | 用户 | 1xxx | 1001-1015；认证限流另用 42901 |
-| 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40404 / 40901-40905, 40911-40912 / 42201, 42221 |
-| 订单 | 4041x / 4092x / 4223x | 40411 / 40921 / 42231-42232（命名异常与 HTTP 映射已实现；40922 已移除） |
-| 库存 | 4093x | 40931-40933（命名异常、HTTP 映射与三个 ADMIN+ Inventory API 均已实现） |
+| 商品 | 40xxx / 409xx / 422xx | 40001, 40021 / 40401-40406 / 40901-40905, 40911-40915 / 42201, 42221（M6 新增 40405-40406/40913-40915） |
+| 订单 | 4041x / 4092x / 4223x | 40411 / 40921 / 42231-42234（M6 新增颜色不可用 42233、总额上限 42234；40922 已移除） |
+| 库存 | 40031 / 4093x | 40031 / 40931-40933（M6 以 40031 区分 fixed/颜色库存端点） |
 | Wallet/Payment/Refund | 4044x / 4094x / 4224x | 40441-40444 / 40941-40948 / 42241（40947 退款预留容量、40948 超退款窗口；M4 仓库实现，未应用持久库） |
+| Reservation | 4045x / 4095x / 4225x | 40451-40452 / 40951-40953 / 42251-42255（N1 仓库候选；M5 未应用持久库） |
 
-Inventory Phase 4.3.1 契约速查：
+Reservation N1 速查：
 
-- `product_kits.stock` 继续作为唯一权威可售余额；每次变化写不可变流水，余额/流水必须同事务。
+- POST 只接受 `experience_option_id + reservation_date(YYYY-MM-DD) + start_time(HH:00/HH:30)`；手机号来自锁后的当前 User，缺失为 42254，且不快照。
+- 上海当地今天至第 30 日、至少提前 3 小时、11:00–20:00、完整体验、周一固定店休；周二至周五 weekday、周末 holiday，不处理法定节假日/调休。`booking-options` 一次返回全部仍合法日期/时段，不表达空位。
+- 同一用户/Option/开始时段可创建多条 Reservation；没有容量表、占座或同槽 UNIQUE，店员逐条人工确认/拒绝。POST 结果未知时先查列表，不自动重发。
+- 四状态 pending/confirmed/rejected/cancelled；拒绝只允许 no_capacity，取消只允许 customer_request/store_closed。管理员在开始时刻及之后不能确认/拒绝，顾客 `now == start-3h` 仍可取消。
+- 自定义店休只允许今天或未来且不能周一；首次 PUT 201、重放 200。首次关闭锁营业日后按 Reservation ID 升序批量取消 `scheduled_start_at > now` 的 pending/confirmed，并与逐预约 Audit/店休 Audit 原子提交；DELETE 不恢复预约，无店休时 40452。
+- 管理列表只返回服务端掩码当前手机号，详情才返回当前完整手机号；User 注销时未来 pending/confirmed 且 `scheduled_end_at > now` 使用现有 1015 阻断。
+- M5 两表为 `store_business_days` 与 `reservations`；四个历史 FK 全 RESTRICT，排期存 UTC，完整 Option 值存快照。N2 主动通知保持 Deferred。
+
+Inventory Phase 4.3 + M6 契约速查：
+
+- fixed 使用 `product_kits.stock`；color_selectable 使用各 `product_kit_colors.stock_units`，同一全局颜色在不同商品间不共享。每次变化写不可变流水，余额/流水必须同事务。
 - 新建 Pending Kit/混合订单立即扣减；Pending 取消幂等恢复；支付和完成不再改变库存。
-- 支持纯 Experience、纯 Kit 和混合订单；多 Kit 按 Product ID 升序加行锁，Order 创建/取消 Service 拥有外层事务并协调 Inventory Repository。
+- 支持 Experience、fixed Kit、color_selectable Kit 混合订单；颜色每色一行，稳定锁序扩展到 Product/商品颜色，Order 创建/取消 Service 拥有外层事务并协调 Inventory Repository。
 - 管理员调整为 ADMIN+ 的 `change + reason + Idempotency-Key`，允许未删除 Online Kit；余额范围 `0..999999`，reason trim 后 `1..256`。
-- 旧 `PATCH .../stock` 与 Kit 创建 `stock` 输入已在 Phase 4.3.10 移除；当前库存写入统一经过 Inventory 流水语义。
+- 旧 `PATCH .../stock` 与 Kit 创建库存输入已移除；fixed 与颜色库存分别使用明确的 Inventory 路径，路径和 KitKind 不匹配返回 40031。
 - 流水类型冻结为 `opening_balance`、`admin_adjustment`、`order_deduction`、`order_cancellation_restore`、`order_refund_restore`；现有正库存生成期初流水，零库存不生成零变化流水。
 - 用户库存不足不披露精确 available；自动事件和管理员重试均由 UNIQUE 幂等身份保护。
 - MySQL 8+ 真实并发验证是 v0.6.0 发布硬门槛；Phase 4.3.11 已在隔离实例通过，但未执行持久环境迁移或版本发布。
@@ -155,7 +175,7 @@ Inventory Phase 4.3.1 契约速查：
 Inventory Phase 4.3.2 实现速查：
 
 - `app/common/enums/inventory.py` 现定义五种流水类型（含 `order_refund_restore`）和三种 source 类型，均为稳定字符串 Enum；常量集中在 `app/common/constants/inventory.py`。
-- `InsufficientStock(40931)` 不包含 available；`InventoryBalanceExceeded(40932)` 只接受确实越界的调整上下文；`InventoryTransactionConflict(40933)` 不输出 data。三者均继承 `ConflictException` 并由全局中间件映射 HTTP 409。
+- `InsufficientStock(40931)` 不包含 available；`InventoryBalanceExceeded(40932)` 只接受确实越界的调整上下文，颜色余额场景的 data 另含 `kit_color_id`，fixed 场景保持原形状；`InventoryTransactionConflict(40933)` 不输出 data。三者均继承 `ConflictException` 并由全局中间件映射 HTTP 409。
 - `app/schemas/inventory.py` 实现 `InventoryIdempotencyKey`、`InventoryAdjustmentCreate`、`InventoryProductTransactionQuery` 与 `InventoryTransactionQuery`。写整数 strict；HTTP Query ID 接受十进制字符串；时间只接受 UTC；`source_id` 要求 `source_type=order`。
 - `app/schemas/inventory_response.py` 实现余额、流水列表/详情和调整响应白名单，拒绝内部幂等键与隐私字段，并校验 before/change/after、流水方向和 source/operator 元数据一致性。
 
@@ -187,7 +207,7 @@ Inventory Phase 4.3.6 管理调整 Service 速查：
 
 Inventory Phase 4.3.7–4.3.8 Order 库存生命周期速查：
 
-- `OrderItemCreate.experience_option_id` 现为可省略/null；Service 对 Experience 要求有效 Option，对 Kit 要求 null。`OrderItemOut` 只接受完整 Option 快照或四项全 null Kit 快照，既有 POST 路由已可创建纯 Kit/混合订单。
+- `OrderItemCreate.experience_option_id` 可省略/null；M6 增加 nullable `kit_color_id`。Service 强制 Experience(option 有/color 无)、fixed Kit(二者空)、color_selectable Kit(option 空/color 有)三态；响应颜色行保存 code/name/slot/10g 快照并派生总克重，其他行颜色字段全 null。
 - ProductRepository 批量读取 Product、非空 Option ID 和 Kit 候选价格；事务内先锁定 User 并复验仍为 NORMAL 普通 USER，再创建 Pending Order，随后由 InventoryRepository 一次按 Product ID 升序锁定全部 Kit，并用同一连接重读 Product 状态。
 - 锁后按请求顺序检查 Kit 扩展和余额；多 Kit 余额用一次 `bulk_update`、流水用一次 `bulk_create`。流水固定为 `order_deduction` / Order source / 下单用户 operator / `Order stock deduction`，key 为 `inventory:order:{order_id}:deduct:product:{product_id}`。
 - Order、库存、流水、Items、`CREATE_ORDER` Audit 和详情重载原子提交；库存不足、审计或重载失败全部回滚。`40931` 不包含 available。纯 Experience 创建零 Inventory Repository 调用。
@@ -199,7 +219,7 @@ Inventory Phase 4.3.7–4.3.8 Order 库存生命周期速查：
 Inventory Phase 4.3.9–4.3.11 查询、API 与发布门槛速查：
 
 - 指定 Kit 查询先验证 Product/Kit 聚合身份；全局 Product ID 只筛选。Mapper 显式投影严格 Out Schema，只消费预加载 operator 与批量 Order 编号，零 SQL、零修改且不泄漏幂等键或用户隐私。
-- `get_inventory_service()` 与三个 ADMIN+ 路由已注册；调整要求严格 body/`Idempotency-Key`，首次 201、重放 200，两个 GET 输出统一 Page。旧 Product stock 路由和创建 stock 输入已移除。
+- `get_inventory_service()` 与三个既有 ADMIN+ fixed/全局路由已注册；M6 另增两个颜色子资源端点并扩展全局 kit_color_id 筛选。两类调整都要求严格 body/`Idempotency-Key`，首次 201、重放 200；旧 Product stock 路由和创建库存输入不恢复。
 - Phase 4.3.11 在隔离 MySQL 8.0.46、真实 Aerich 0→1→2 上通过 9 项门槛：同/异 key、最后一件、反向多 Kit、同单取消、调整/下单真实等待、真实 1205 全事务重试、三类 EXPLAIN 和 MySQL HTTP 并发重放/查询。
 - 完整 HTTP 矩阵另有 41 项，覆盖三端点 401/1006/403、资源/业务异常、严格 422、分页/筛选/Order source/UTC 与隐私。测试 fixture 强制回环、非 3306 和专用 Schema 前缀；实例销毁且未修改持久数据库。
 

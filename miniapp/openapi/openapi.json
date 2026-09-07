@@ -127,6 +127,13 @@
       "AdminKitProductDetailOut": {
         "description": "管理端套装商品详情。",
         "properties": {
+          "colors": {
+            "items": {
+              "$ref": "#/components/schemas/AdminProductKitColorOut"
+            },
+            "title": "Colors",
+            "type": "array"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -160,6 +167,9 @@
             "title": "Is Deleted",
             "type": "boolean"
           },
+          "kit_kind": {
+            "$ref": "#/components/schemas/LabeledValue_KitKind_"
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
@@ -178,14 +188,34 @@
           "product_type": {
             "$ref": "#/components/schemas/LabeledValue_Literal_KIT__"
           },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
+          },
           "status": {
             "$ref": "#/components/schemas/LabeledValue_ProductStatus_"
           },
           "stock": {
-            "maximum": 999999.0,
-            "minimum": 0.0,
-            "title": "Stock",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 999999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock"
           },
           "updated_at": {
             "format": "date-time",
@@ -203,8 +233,11 @@
           "created_at",
           "updated_at",
           "is_deleted",
+          "kit_kind",
+          "sale_unit_grams",
           "price",
-          "stock"
+          "stock",
+          "colors"
         ],
         "title": "AdminKitProductDetailOut",
         "type": "object"
@@ -226,7 +259,7 @@
             "items": {
               "$ref": "#/components/schemas/OrderItemOut"
             },
-            "maxItems": 10,
+            "maxItems": 30,
             "minItems": 1,
             "title": "Items",
             "type": "array"
@@ -306,7 +339,7 @@
             "type": "integer"
           },
           "item_count": {
-            "maximum": 10.0,
+            "maximum": 30.0,
             "minimum": 1.0,
             "title": "Item Count",
             "type": "integer"
@@ -359,6 +392,105 @@
         "title": "AdminOrderListItemOut",
         "type": "object"
       },
+      "AdminProductKitColorOut": {
+        "description": "管理端商品颜色关联，包含配置与当前余额。",
+        "properties": {
+          "bead_color_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Bead Color Id",
+            "type": "integer"
+          },
+          "color_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_configured": {
+            "title": "Is Configured",
+            "type": "boolean"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "slot_no": {
+            "maximum": 221.0,
+            "minimum": 1.0,
+            "title": "Slot No",
+            "type": "integer"
+          },
+          "sort": {
+            "maximum": 32767.0,
+            "minimum": 0.0,
+            "title": "Sort",
+            "type": "integer"
+          },
+          "stock_units": {
+            "maximum": 999999.0,
+            "minimum": 0.0,
+            "title": "Stock Units",
+            "type": "integer"
+          },
+          "swatch_image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swatch Image Url"
+          }
+        },
+        "required": [
+          "id",
+          "bead_color_id",
+          "slot_no",
+          "color_code",
+          "name",
+          "swatch_image_url",
+          "sort",
+          "is_active",
+          "is_configured",
+          "is_enabled",
+          "stock_units"
+        ],
+        "title": "AdminProductKitColorOut",
+        "type": "object"
+      },
       "AdminProductListItemOut": {
         "description": "管理端商品列表摘要，允许草稿商品尚未配置完整。",
         "properties": {
@@ -399,6 +531,16 @@
             "title": "Is Deleted",
             "type": "boolean"
           },
+          "kit_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LabeledValue_KitKind_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
@@ -407,6 +549,19 @@
           },
           "product_type": {
             "$ref": "#/components/schemas/LabeledValue_ProductType_"
+          },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
           },
           "status": {
             "$ref": "#/components/schemas/LabeledValue_ProductStatus_"
@@ -423,9 +578,408 @@
           "product_type",
           "status",
           "updated_at",
-          "is_deleted"
+          "is_deleted",
+          "kit_kind",
+          "sale_unit_grams"
         ],
         "title": "AdminProductListItemOut",
+        "type": "object"
+      },
+      "AdminReservationDetailOut": {
+        "description": "管理端详情返回当前完整手机号；该字段不是预约快照。",
+        "properties": {
+          "cancellation_deadline_at": {
+            "format": "date-time",
+            "title": "Cancellation Deadline At",
+            "type": "string"
+          },
+          "cancellation_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationCancellationReasonOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_message": {
+            "minLength": 1,
+            "title": "Customer Message",
+            "type": "string"
+          },
+          "day_type": {
+            "$ref": "#/components/schemas/ReservationDayTypeOut"
+          },
+          "duration_minutes": {
+            "minimum": 1.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "end_time": {
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "End Time",
+            "type": "string"
+          },
+          "experience_option_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experience Option Id",
+            "type": "integer"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "participants": {
+            "minimum": 1.0,
+            "title": "Participants",
+            "type": "integer"
+          },
+          "price": {
+            "description": "固定两位小数的金额字符串，0 < price <= 99999",
+            "examples": [
+              "599.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Price",
+            "type": "string"
+          },
+          "product_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Product Name",
+            "type": "string"
+          },
+          "rejected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected At"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationRejectionReasonOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reservation_date": {
+            "format": "date",
+            "title": "Reservation Date",
+            "type": "string"
+          },
+          "scheduled_end_at": {
+            "format": "date-time",
+            "title": "Scheduled End At",
+            "type": "string"
+          },
+          "scheduled_start_at": {
+            "format": "date-time",
+            "title": "Scheduled Start At",
+            "type": "string"
+          },
+          "start_time": {
+            "pattern": "^(?:[01]\\d|2[0-3]):(?:00|30)$",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReservationStatusOut"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          },
+          "user_nickname": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "User Nickname",
+            "type": "string"
+          },
+          "user_phone": {
+            "anyOf": [
+              {
+                "pattern": "^1[3-9]\\d{9}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Phone"
+          }
+        },
+        "required": [
+          "id",
+          "product_id",
+          "experience_option_id",
+          "product_name",
+          "duration_minutes",
+          "participants",
+          "day_type",
+          "price",
+          "status",
+          "customer_message",
+          "reservation_date",
+          "start_time",
+          "end_time",
+          "scheduled_start_at",
+          "scheduled_end_at",
+          "cancellation_deadline_at",
+          "created_at",
+          "updated_at",
+          "user_id",
+          "user_nickname"
+        ],
+        "title": "AdminReservationDetailOut",
+        "type": "object"
+      },
+      "AdminReservationListItemOut": {
+        "description": "管理端列表额外包含当前用户摘要和后端掩码手机号。",
+        "properties": {
+          "cancellation_deadline_at": {
+            "format": "date-time",
+            "title": "Cancellation Deadline At",
+            "type": "string"
+          },
+          "cancellation_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationCancellationReasonOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_message": {
+            "minLength": 1,
+            "title": "Customer Message",
+            "type": "string"
+          },
+          "day_type": {
+            "$ref": "#/components/schemas/ReservationDayTypeOut"
+          },
+          "duration_minutes": {
+            "minimum": 1.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "end_time": {
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "End Time",
+            "type": "string"
+          },
+          "experience_option_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experience Option Id",
+            "type": "integer"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "participants": {
+            "minimum": 1.0,
+            "title": "Participants",
+            "type": "integer"
+          },
+          "price": {
+            "description": "固定两位小数的金额字符串，0 < price <= 99999",
+            "examples": [
+              "599.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Price",
+            "type": "string"
+          },
+          "product_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Product Name",
+            "type": "string"
+          },
+          "rejected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected At"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationRejectionReasonOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reservation_date": {
+            "format": "date",
+            "title": "Reservation Date",
+            "type": "string"
+          },
+          "scheduled_end_at": {
+            "format": "date-time",
+            "title": "Scheduled End At",
+            "type": "string"
+          },
+          "scheduled_start_at": {
+            "format": "date-time",
+            "title": "Scheduled Start At",
+            "type": "string"
+          },
+          "start_time": {
+            "pattern": "^(?:[01]\\d|2[0-3]):(?:00|30)$",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReservationStatusOut"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          },
+          "user_nickname": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "User Nickname",
+            "type": "string"
+          },
+          "user_phone_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Phone Masked"
+          }
+        },
+        "required": [
+          "id",
+          "product_id",
+          "experience_option_id",
+          "product_name",
+          "duration_minutes",
+          "participants",
+          "day_type",
+          "price",
+          "status",
+          "customer_message",
+          "reservation_date",
+          "start_time",
+          "end_time",
+          "scheduled_start_at",
+          "scheduled_end_at",
+          "cancellation_deadline_at",
+          "created_at",
+          "updated_at",
+          "user_id",
+          "user_nickname"
+        ],
+        "title": "AdminReservationListItemOut",
         "type": "object"
       },
       "AdminUserWalletOut": {
@@ -524,6 +1078,145 @@
           "created_at"
         ],
         "title": "AuditLogOut",
+        "type": "object"
+      },
+      "BeadColorOut": {
+        "description": "管理端全局颜色槽响应。",
+        "properties": {
+          "color_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_configured": {
+            "title": "Is Configured",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "slot_no": {
+            "maximum": 221.0,
+            "minimum": 1.0,
+            "title": "Slot No",
+            "type": "integer"
+          },
+          "sort": {
+            "maximum": 32767.0,
+            "minimum": 0.0,
+            "title": "Sort",
+            "type": "integer"
+          },
+          "swatch_image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swatch Image Url"
+          }
+        },
+        "required": [
+          "id",
+          "slot_no",
+          "color_code",
+          "name",
+          "swatch_image_url",
+          "sort",
+          "is_active",
+          "is_configured"
+        ],
+        "title": "BeadColorOut",
+        "type": "object"
+      },
+      "BeadColorUpdate": {
+        "additionalProperties": false,
+        "description": "修改全局颜色槽元数据；null 可清空名称或业务编码。",
+        "properties": {
+          "color_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "maximum": 32767.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort"
+          }
+        },
+        "title": "BeadColorUpdate",
         "type": "object"
       },
       "DayType": {
@@ -1026,6 +1719,86 @@
         "title": "InventoryAdjustmentOut",
         "type": "object"
       },
+      "InventoryColorAdjustmentOut": {
+        "description": "管理员调整颜色余额后的当前值与不可变流水。",
+        "properties": {
+          "bead_color_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Bead Color Id",
+            "type": "integer"
+          },
+          "bead_color_slot_no": {
+            "maximum": 221.0,
+            "minimum": 1.0,
+            "title": "Bead Color Slot No",
+            "type": "integer"
+          },
+          "color_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "color_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Name"
+          },
+          "kit_color_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Kit Color Id",
+            "type": "integer"
+          },
+          "product_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "sale_unit_grams": {
+            "maximum": 10.0,
+            "minimum": 10.0,
+            "title": "Sale Unit Grams",
+            "type": "integer"
+          },
+          "stock_units": {
+            "maximum": 999999.0,
+            "minimum": 0.0,
+            "title": "Stock Units",
+            "type": "integer"
+          },
+          "transaction": {
+            "$ref": "#/components/schemas/InventoryTransactionOut"
+          }
+        },
+        "required": [
+          "product_id",
+          "kit_color_id",
+          "bead_color_id",
+          "bead_color_slot_no",
+          "color_code",
+          "color_name",
+          "sale_unit_grams",
+          "stock_units",
+          "transaction"
+        ],
+        "title": "InventoryColorAdjustmentOut",
+        "type": "object"
+      },
       "InventorySourceType": {
         "description": "库存流水的业务来源类型。",
         "enum": [
@@ -1045,6 +1818,31 @@
             "title": "After Quantity",
             "type": "integer"
           },
+          "bead_color_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bead Color Id"
+          },
+          "bead_color_slot_no": {
+            "anyOf": [
+              {
+                "maximum": 221.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bead Color Slot No"
+          },
           "before_quantity": {
             "maximum": 999999.0,
             "minimum": 0.0,
@@ -1057,6 +1855,32 @@
             "title": "Change Quantity",
             "type": "integer"
           },
+          "color_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "color_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Name"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1066,6 +1890,18 @@
             "exclusiveMinimum": 0.0,
             "title": "Id",
             "type": "integer"
+          },
+          "kit_color_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kit Color Id"
           },
           "operator_id": {
             "anyOf": [
@@ -1103,6 +1939,19 @@
             "title": "Reason",
             "type": "string"
           },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
+          },
           "source_id": {
             "anyOf": [
               {
@@ -1137,6 +1986,12 @@
         "required": [
           "id",
           "product_id",
+          "kit_color_id",
+          "bead_color_id",
+          "bead_color_slot_no",
+          "color_code",
+          "color_name",
+          "sale_unit_grams",
           "transaction_type",
           "change_quantity",
           "before_quantity",
@@ -1157,6 +2012,31 @@
             "title": "After Quantity",
             "type": "integer"
           },
+          "bead_color_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bead Color Id"
+          },
+          "bead_color_slot_no": {
+            "anyOf": [
+              {
+                "maximum": 221.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bead Color Slot No"
+          },
           "before_quantity": {
             "maximum": 999999.0,
             "minimum": 0.0,
@@ -1169,6 +2049,32 @@
             "title": "Change Quantity",
             "type": "integer"
           },
+          "color_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "color_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Name"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1178,6 +2084,18 @@
             "exclusiveMinimum": 0.0,
             "title": "Id",
             "type": "integer"
+          },
+          "kit_color_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kit Color Id"
           },
           "operator_id": {
             "anyOf": [
@@ -1215,6 +2133,19 @@
             "title": "Reason",
             "type": "string"
           },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
+          },
           "source_id": {
             "anyOf": [
               {
@@ -1249,6 +2180,12 @@
         "required": [
           "id",
           "product_id",
+          "kit_color_id",
+          "bead_color_id",
+          "bead_color_slot_no",
+          "color_code",
+          "color_name",
+          "sale_unit_grams",
           "transaction_type",
           "change_quantity",
           "before_quantity",
@@ -1270,6 +2207,76 @@
           "order_refund_restore"
         ],
         "title": "InventoryTransactionType",
+        "type": "string"
+      },
+      "KitColorOptionOut": {
+        "description": "用户端可选颜色；不泄露商品级精确库存。",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "bead_color_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Bead Color Id",
+            "type": "integer"
+          },
+          "color_code": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Color Code",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "slot_no": {
+            "maximum": 221.0,
+            "minimum": 1.0,
+            "title": "Slot No",
+            "type": "integer"
+          },
+          "swatch_image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swatch Image Url"
+          }
+        },
+        "required": [
+          "id",
+          "bead_color_id",
+          "slot_no",
+          "color_code",
+          "name",
+          "swatch_image_url",
+          "available"
+        ],
+        "title": "KitColorOptionOut",
+        "type": "object"
+      },
+      "KitKind": {
+        "description": "套装商品的销售形态。",
+        "enum": [
+          "fixed",
+          "color_selectable"
+        ],
+        "title": "KitKind",
         "type": "string"
       },
       "KitPriceOut": {
@@ -1333,6 +2340,10 @@
             ],
             "title": "Description"
           },
+          "kit_kind": {
+            "$ref": "#/components/schemas/KitKind",
+            "default": "fixed"
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
@@ -1364,6 +2375,9 @@
             "title": "Id",
             "type": "integer"
           },
+          "kit_kind": {
+            "$ref": "#/components/schemas/LabeledValue_KitKind_"
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
@@ -1373,6 +2387,19 @@
           "product_type": {
             "$ref": "#/components/schemas/LabeledValue_Literal_KIT__"
           },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
+          },
           "status": {
             "$ref": "#/components/schemas/LabeledValue_Literal_DRAFT__"
           }
@@ -1381,7 +2408,9 @@
           "id",
           "name",
           "product_type",
-          "status"
+          "status",
+          "kit_kind",
+          "sale_unit_grams"
         ],
         "title": "KitProductCreateOut",
         "type": "object"
@@ -1392,6 +2421,13 @@
           "available": {
             "title": "Available",
             "type": "boolean"
+          },
+          "colors": {
+            "items": {
+              "$ref": "#/components/schemas/KitColorOptionOut"
+            },
+            "title": "Colors",
+            "type": "array"
           },
           "description": {
             "maxLength": 2000,
@@ -1412,6 +2448,9 @@
             "title": "Images",
             "type": "array"
           },
+          "kit_kind": {
+            "$ref": "#/components/schemas/LabeledValue_KitKind_"
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
@@ -1430,11 +2469,31 @@
           "product_type": {
             "$ref": "#/components/schemas/LabeledValue_Literal_KIT__"
           },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
+          },
           "stock": {
-            "maximum": 999999.0,
-            "minimum": 0.0,
-            "title": "Stock",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 999999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock"
           }
         },
         "required": [
@@ -1443,9 +2502,12 @@
           "product_type",
           "description",
           "images",
+          "kit_kind",
+          "sale_unit_grams",
           "price",
           "stock",
-          "available"
+          "available",
+          "colors"
         ],
         "title": "KitProductDetailOut",
         "type": "object"
@@ -1486,6 +2548,24 @@
           "label"
         ],
         "title": "LabeledValue[DayType]",
+        "type": "object"
+      },
+      "LabeledValue_KitKind_": {
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/KitKind"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "LabeledValue[KitKind]",
         "type": "object"
       },
       "LabeledValue_Literal_DRAFT__": {
@@ -1769,7 +2849,7 @@
             "items": {
               "$ref": "#/components/schemas/OrderItemCreate"
             },
-            "maxItems": 10,
+            "maxItems": 30,
             "minItems": 1,
             "title": "Items",
             "type": "array"
@@ -1829,7 +2909,7 @@
             "items": {
               "$ref": "#/components/schemas/OrderItemOut"
             },
-            "maxItems": 10,
+            "maxItems": 30,
             "minItems": 1,
             "title": "Items",
             "type": "array"
@@ -1936,6 +3016,18 @@
             ],
             "title": "Experience Option Id"
           },
+          "kit_color_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kit Color Id"
+          },
           "product_id": {
             "exclusiveMinimum": 0.0,
             "title": "Product Id",
@@ -1974,6 +3066,57 @@
             "exclusiveMinimum": 0.0,
             "title": "Id",
             "type": "integer"
+          },
+          "kit_color_code": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kit Color Code"
+          },
+          "kit_color_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kit Color Id"
+          },
+          "kit_color_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kit Color Name"
+          },
+          "kit_color_slot_no": {
+            "anyOf": [
+              {
+                "maximum": 221.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kit Color Slot No"
           },
           "option_day_type": {
             "anyOf": [
@@ -2035,6 +3178,18 @@
             "title": "Quantity",
             "type": "integer"
           },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
+          },
           "subtotal": {
             "description": "固定两位小数的订单金额字符串",
             "examples": [
@@ -2043,12 +3198,30 @@
             "pattern": "^\\d+\\.\\d{2}$",
             "title": "Subtotal",
             "type": "string"
+          },
+          "total_weight_grams": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Weight Grams"
           }
         },
         "required": [
           "id",
           "product_id",
+          "kit_color_id",
           "product_name",
+          "kit_color_code",
+          "kit_color_name",
+          "kit_color_slot_no",
+          "sale_unit_grams",
+          "total_weight_grams",
           "product_price",
           "quantity",
           "subtotal"
@@ -2070,7 +3243,7 @@
             "type": "integer"
           },
           "item_count": {
-            "maximum": 10.0,
+            "maximum": 30.0,
             "minimum": 1.0,
             "title": "Item Count",
             "type": "integer"
@@ -2239,6 +3412,42 @@
         "title": "Page[AdminProductListItemOut]",
         "type": "object"
       },
+      "Page_AdminReservationListItemOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminReservationListItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[AdminReservationListItemOut]",
+        "type": "object"
+      },
       "Page_AuditLogOut_": {
         "properties": {
           "items": {
@@ -2273,6 +3482,42 @@
           "pages"
         ],
         "title": "Page[AuditLogOut]",
+        "type": "object"
+      },
+      "Page_BeadColorOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BeadColorOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[BeadColorOut]",
         "type": "object"
       },
       "Page_InventoryTransactionListItem_": {
@@ -2381,6 +3626,78 @@
           "pages"
         ],
         "title": "Page[ProductListItemOut]",
+        "type": "object"
+      },
+      "Page_ReservationOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReservationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[ReservationOut]",
+        "type": "object"
+      },
+      "Page_StoreBusinessDayOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StoreBusinessDayOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[StoreBusinessDayOut]",
         "type": "object"
       },
       "Page_UserListItem_": {
@@ -2729,6 +4046,21 @@
         "title": "ProductImageUploadForm",
         "type": "object"
       },
+      "ProductKitColorUpdate": {
+        "additionalProperties": false,
+        "description": "修改商品颜色是否启用；库存由 Inventory 单独维护。",
+        "properties": {
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_enabled"
+        ],
+        "title": "ProductKitColorUpdate",
+        "type": "object"
+      },
       "ProductListItemOut": {
         "description": "用户端商品列表项——仅用于完整且已上架的商品。",
         "properties": {
@@ -2751,6 +4083,16 @@
             "title": "Id",
             "type": "integer"
           },
+          "kit_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LabeledValue_KitKind_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "name": {
             "maxLength": 100,
             "minLength": 1,
@@ -2759,6 +4101,19 @@
           },
           "product_type": {
             "$ref": "#/components/schemas/LabeledValue_ProductType_"
+          },
+          "sale_unit_grams": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Unit Grams"
           }
         },
         "required": [
@@ -2766,7 +4121,9 @@
           "name",
           "product_type",
           "cover_image",
-          "display_price"
+          "display_price",
+          "kit_kind",
+          "sale_unit_grams"
         ],
         "title": "ProductListItemOut",
         "type": "object"
@@ -3085,6 +4442,448 @@
         "title": "RefundStatus",
         "type": "string"
       },
+      "ReservationBookingDateOut": {
+        "description": "一个可预约上海本地日期及其半小时时段。",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "day_type": {
+            "$ref": "#/components/schemas/ReservationDayTypeOut"
+          },
+          "start_times": {
+            "items": {
+              "pattern": "^(?:[01]\\d|2[0-3]):(?:00|30)$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Start Times",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "day_type",
+          "start_times"
+        ],
+        "title": "ReservationBookingDateOut",
+        "type": "object"
+      },
+      "ReservationBookingOptionsOut": {
+        "description": "服务端生成的当前 Option 可预约日期/时间选择集。",
+        "properties": {
+          "booking_window_days": {
+            "default": 30,
+            "maximum": 30.0,
+            "minimum": 30.0,
+            "title": "Booking Window Days",
+            "type": "integer"
+          },
+          "booking_window_end_date": {
+            "format": "date",
+            "title": "Booking Window End Date",
+            "type": "string"
+          },
+          "closes_at": {
+            "default": "20:00",
+            "title": "Closes At",
+            "type": "string"
+          },
+          "dates": {
+            "items": {
+              "$ref": "#/components/schemas/ReservationBookingDateOut"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "day_type": {
+            "$ref": "#/components/schemas/ReservationDayTypeOut"
+          },
+          "duration_minutes": {
+            "minimum": 1.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "experience_option_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experience Option Id",
+            "type": "integer"
+          },
+          "minimum_lead_hours": {
+            "default": 3,
+            "maximum": 3.0,
+            "minimum": 3.0,
+            "title": "Minimum Lead Hours",
+            "type": "integer"
+          },
+          "opens_at": {
+            "default": "11:00",
+            "title": "Opens At",
+            "type": "string"
+          },
+          "participants": {
+            "minimum": 1.0,
+            "title": "Participants",
+            "type": "integer"
+          },
+          "price": {
+            "description": "固定两位小数的金额字符串，0 < price <= 99999",
+            "examples": [
+              "599.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Price",
+            "type": "string"
+          },
+          "product_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Product Name",
+            "type": "string"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          },
+          "slot_interval_minutes": {
+            "default": 30,
+            "maximum": 30.0,
+            "minimum": 30.0,
+            "title": "Slot Interval Minutes",
+            "type": "integer"
+          },
+          "timezone": {
+            "pattern": "^Asia/Shanghai$",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experience_option_id",
+          "product_id",
+          "product_name",
+          "duration_minutes",
+          "participants",
+          "day_type",
+          "price",
+          "timezone",
+          "server_now",
+          "booking_window_end_date",
+          "dates"
+        ],
+        "title": "ReservationBookingOptionsOut",
+        "type": "object"
+      },
+      "ReservationCancellationReason": {
+        "description": "取消预约的受控原因。",
+        "enum": [
+          "customer_request",
+          "store_closed"
+        ],
+        "title": "ReservationCancellationReason",
+        "type": "string"
+      },
+      "ReservationCancellationReasonOut": {
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ReservationCancellationReason"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ReservationCancellationReasonOut",
+        "type": "object"
+      },
+      "ReservationCreate": {
+        "additionalProperties": false,
+        "description": "创建独立体验预约；其余快照均由服务端生成。",
+        "properties": {
+          "experience_option_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experience Option Id",
+            "type": "integer"
+          },
+          "reservation_date": {
+            "format": "date",
+            "title": "Reservation Date",
+            "type": "string"
+          },
+          "start_time": {
+            "pattern": "^(?:[01]\\d|2[0-3]):(?:00|30)$",
+            "title": "Start Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experience_option_id",
+          "reservation_date",
+          "start_time"
+        ],
+        "title": "ReservationCreate",
+        "type": "object"
+      },
+      "ReservationDayTypeOut": {
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/DayType"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ReservationDayTypeOut",
+        "type": "object"
+      },
+      "ReservationOut": {
+        "description": "用户端列表、详情和状态变迁响应，不包含任何 User 字段。",
+        "properties": {
+          "cancellation_deadline_at": {
+            "format": "date-time",
+            "title": "Cancellation Deadline At",
+            "type": "string"
+          },
+          "cancellation_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationCancellationReasonOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_message": {
+            "minLength": 1,
+            "title": "Customer Message",
+            "type": "string"
+          },
+          "day_type": {
+            "$ref": "#/components/schemas/ReservationDayTypeOut"
+          },
+          "duration_minutes": {
+            "minimum": 1.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "end_time": {
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "End Time",
+            "type": "string"
+          },
+          "experience_option_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experience Option Id",
+            "type": "integer"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "participants": {
+            "minimum": 1.0,
+            "title": "Participants",
+            "type": "integer"
+          },
+          "price": {
+            "description": "固定两位小数的金额字符串，0 < price <= 99999",
+            "examples": [
+              "599.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Price",
+            "type": "string"
+          },
+          "product_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Product Name",
+            "type": "string"
+          },
+          "rejected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected At"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationRejectionReasonOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reservation_date": {
+            "format": "date",
+            "title": "Reservation Date",
+            "type": "string"
+          },
+          "scheduled_end_at": {
+            "format": "date-time",
+            "title": "Scheduled End At",
+            "type": "string"
+          },
+          "scheduled_start_at": {
+            "format": "date-time",
+            "title": "Scheduled Start At",
+            "type": "string"
+          },
+          "start_time": {
+            "pattern": "^(?:[01]\\d|2[0-3]):(?:00|30)$",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReservationStatusOut"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "product_id",
+          "experience_option_id",
+          "product_name",
+          "duration_minutes",
+          "participants",
+          "day_type",
+          "price",
+          "status",
+          "customer_message",
+          "reservation_date",
+          "start_time",
+          "end_time",
+          "scheduled_start_at",
+          "scheduled_end_at",
+          "cancellation_deadline_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReservationOut",
+        "type": "object"
+      },
+      "ReservationRejectionReason": {
+        "description": "门店拒绝预约的受控原因。",
+        "enum": [
+          "no_capacity"
+        ],
+        "title": "ReservationRejectionReason",
+        "type": "string"
+      },
+      "ReservationRejectionReasonOut": {
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ReservationRejectionReason"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ReservationRejectionReasonOut",
+        "type": "object"
+      },
+      "ReservationStatus": {
+        "description": "预约排期状态；与订单支付状态相互独立。",
+        "enum": [
+          "pending",
+          "confirmed",
+          "rejected",
+          "cancelled"
+        ],
+        "title": "ReservationStatus",
+        "type": "string"
+      },
+      "ReservationStatusOut": {
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ReservationStatus"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ReservationStatusOut",
+        "type": "object"
+      },
       "RootResponse": {
         "description": "GET / 根路由响应。",
         "properties": {
@@ -3112,6 +4911,103 @@
           "health"
         ],
         "title": "RootResponse",
+        "type": "object"
+      },
+      "StoreBusinessDayOut": {
+        "properties": {
+          "business_date": {
+            "format": "date",
+            "title": "Business Date",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_closed": {
+            "title": "Is Closed",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "business_date",
+          "is_closed",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StoreBusinessDayOut",
+        "type": "object"
+      },
+      "StoreClosureMutationOut": {
+        "properties": {
+          "business_date": {
+            "format": "date",
+            "title": "Business Date",
+            "type": "string"
+          },
+          "cancelled_confirmed_count": {
+            "minimum": 0.0,
+            "title": "Cancelled Confirmed Count",
+            "type": "integer"
+          },
+          "cancelled_pending_count": {
+            "minimum": 0.0,
+            "title": "Cancelled Pending Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_closed": {
+            "title": "Is Closed",
+            "type": "boolean"
+          },
+          "is_replay": {
+            "title": "Is Replay",
+            "type": "boolean"
+          },
+          "newly_cancelled_count": {
+            "minimum": 0.0,
+            "title": "Newly Cancelled Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "business_date",
+          "is_closed",
+          "created_at",
+          "updated_at",
+          "newly_cancelled_count",
+          "cancelled_pending_count",
+          "cancelled_confirmed_count",
+          "is_replay"
+        ],
+        "title": "StoreClosureMutationOut",
         "type": "object"
       },
       "SuccessResponse_AdminExperienceProductDetailOut_": {
@@ -3186,6 +5082,54 @@
         "title": "SuccessResponse[AdminOrderDetailOut]",
         "type": "object"
       },
+      "SuccessResponse_AdminProductKitColorOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminProductKitColorOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[AdminProductKitColorOut]",
+        "type": "object"
+      },
+      "SuccessResponse_AdminReservationDetailOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminReservationDetailOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[AdminReservationDetailOut]",
+        "type": "object"
+      },
       "SuccessResponse_AdminUserWalletOut_": {
         "additionalProperties": false,
         "properties": {
@@ -3232,6 +5176,30 @@
           "data"
         ],
         "title": "SuccessResponse[AssistedWalletOrderOut]",
+        "type": "object"
+      },
+      "SuccessResponse_BeadColorOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/BeadColorOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[BeadColorOut]",
         "type": "object"
       },
       "SuccessResponse_DeletedResourceOut_": {
@@ -3424,6 +5392,30 @@
           "data"
         ],
         "title": "SuccessResponse[InventoryAdjustmentOut]",
+        "type": "object"
+      },
+      "SuccessResponse_InventoryColorAdjustmentOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InventoryColorAdjustmentOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[InventoryColorAdjustmentOut]",
         "type": "object"
       },
       "SuccessResponse_KitPriceOut_": {
@@ -3739,6 +5731,30 @@
         "title": "SuccessResponse[Page[AdminProductListItemOut]]",
         "type": "object"
       },
+      "SuccessResponse_Page_AdminReservationListItemOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_AdminReservationListItemOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[AdminReservationListItemOut]]",
+        "type": "object"
+      },
       "SuccessResponse_Page_AuditLogOut__": {
         "additionalProperties": false,
         "properties": {
@@ -3761,6 +5777,30 @@
           "data"
         ],
         "title": "SuccessResponse[Page[AuditLogOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_BeadColorOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_BeadColorOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[BeadColorOut]]",
         "type": "object"
       },
       "SuccessResponse_Page_InventoryTransactionListItem__": {
@@ -3833,6 +5873,54 @@
           "data"
         ],
         "title": "SuccessResponse[Page[ProductListItemOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_ReservationOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_ReservationOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[ReservationOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_StoreBusinessDayOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_StoreBusinessDayOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[StoreBusinessDayOut]]",
         "type": "object"
       },
       "SuccessResponse_Page_UserListItem__": {
@@ -4049,6 +6137,78 @@
           "data"
         ],
         "title": "SuccessResponse[RefundOut]",
+        "type": "object"
+      },
+      "SuccessResponse_ReservationBookingOptionsOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReservationBookingOptionsOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ReservationBookingOptionsOut]",
+        "type": "object"
+      },
+      "SuccessResponse_ReservationOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReservationOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ReservationOut]",
+        "type": "object"
+      },
+      "SuccessResponse_StoreClosureMutationOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StoreClosureMutationOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[StoreClosureMutationOut]",
         "type": "object"
       },
       "SuccessResponse_TokenOut_": {
@@ -4940,6 +7100,227 @@
         "summary": "Admin Only"
       }
     },
+    "/api/v1/admin/bead-colors": {
+      "get": {
+        "description": "分页查询全局 221 槽拼豆颜色目录。",
+        "operationId": "list_bead_colors_api_v1_admin_bead_colors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_BeadColorOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Bead Colors",
+        "tags": [
+          "admin-products"
+        ]
+      }
+    },
+    "/api/v1/admin/bead-colors/{bead_color_id}": {
+      "patch": {
+        "description": "修改全局颜色槽的元数据、排序或激活状态。",
+        "operationId": "update_bead_color_api_v1_admin_bead_colors__bead_color_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bead_color_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Bead Color Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeadColorUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_BeadColorOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Bead Color",
+        "tags": [
+          "admin-products"
+        ]
+      }
+    },
     "/api/v1/admin/config": {
       "get": {
         "description": "系统配置——仅超级管理员可访问。",
@@ -5091,6 +7472,23 @@
                 }
               ],
               "title": "Product Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kit_color_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kit Color Id"
             }
           }
         ],
@@ -6584,6 +8982,115 @@
         ]
       }
     },
+    "/api/v1/admin/product-kit-colors/{kit_color_id}": {
+      "patch": {
+        "description": "启用或禁用一个自选颜色 Kit 的商品颜色。",
+        "operationId": "update_product_kit_color_api_v1_admin_product_kit_colors__kit_color_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kit_color_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Kit Color Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductKitColorUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AdminProductKitColorOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Product Kit Color",
+        "tags": [
+          "admin-products"
+        ]
+      }
+    },
     "/api/v1/admin/products": {
       "get": {
         "description": "分页查询管理端 Product 摘要。",
@@ -7263,6 +9770,361 @@
         "summary": "Get Admin Kit Product",
         "tags": [
           "admin-products"
+        ]
+      }
+    },
+    "/api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments": {
+      "post": {
+        "description": "按变化量调整一个商品颜色的 10g 单位库存。",
+        "operationId": "adjust_color_inventory_api_v1_admin_products_kit__product_id__colors__kit_color_id__inventory_adjustments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Product Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kit_color_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Kit Color Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryAdjustmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_InventoryColorAdjustmentOut_"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_InventoryColorAdjustmentOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Adjust Color Inventory",
+        "tags": [
+          "admin-inventory"
+        ]
+      }
+    },
+    "/api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions": {
+      "get": {
+        "description": "分页查询一个商品颜色的 10g 单位库存流水。",
+        "operationId": "list_product_color_inventory_transactions_api_v1_admin_products_kit__product_id__colors__kit_color_id__inventory_transactions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Product Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kit_color_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Kit Color Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InventoryTransactionType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InventorySourceType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_InventoryTransactionListItem__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Product Color Inventory Transactions",
+        "tags": [
+          "admin-inventory"
         ]
       }
     },
@@ -8342,6 +11204,966 @@
         "summary": "Online Product",
         "tags": [
           "admin-products"
+        ]
+      }
+    },
+    "/api/v1/admin/reservations": {
+      "get": {
+        "operationId": "list_admin_reservations_api_v1_admin_reservations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReservationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "business_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Business Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "product_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Product Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_AdminReservationListItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Admin Reservations",
+        "tags": [
+          "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/reservations/{reservation_id}": {
+      "get": {
+        "operationId": "get_admin_reservation_detail_api_v1_admin_reservations__reservation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AdminReservationDetailOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Admin Reservation Detail",
+        "tags": [
+          "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/reservations/{reservation_id}/audit-logs": {
+      "get": {
+        "operationId": "list_reservation_audit_logs_api_v1_admin_reservations__reservation_id__audit_logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_AuditLogOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Reservation Audit Logs",
+        "tags": [
+          "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/reservations/{reservation_id}/confirm": {
+      "patch": {
+        "operationId": "confirm_reservation_api_v1_admin_reservations__reservation_id__confirm_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Reservation",
+        "tags": [
+          "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/reservations/{reservation_id}/reject": {
+      "patch": {
+        "description": "以固定原因 no_capacity 拒绝 Pending 预约。",
+        "operationId": "reject_reservation_api_v1_admin_reservations__reservation_id__reject_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject Reservation",
+        "tags": [
+          "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/store-closures": {
+      "get": {
+        "operationId": "list_store_closures_api_v1_admin_store_closures_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_closed",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": true,
+              "title": "Is Closed"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_StoreBusinessDayOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Store Closures",
+        "tags": [
+          "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/store-closures/{business_date}": {
+      "delete": {
+        "operationId": "reopen_store_day_api_v1_admin_store_closures__business_date__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "business_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Business Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StoreClosureMutationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reopen Store Day",
+        "tags": [
+          "admin-reservations"
+        ]
+      },
+      "put": {
+        "operationId": "close_store_day_api_v1_admin_store_closures__business_date__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "business_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Business Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StoreClosureMutationOut_"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StoreClosureMutationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Close Store Day",
+        "tags": [
+          "admin-reservations"
         ]
       }
     },
@@ -10897,6 +14719,526 @@
         "summary": "Get Kit Product",
         "tags": [
           "products"
+        ]
+      }
+    },
+    "/api/v1/reservations": {
+      "get": {
+        "description": "分页查询当前顾客自己的预约历史。",
+        "operationId": "list_reservations_api_v1_reservations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReservationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_ReservationOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Reservations",
+        "tags": [
+          "reservations"
+        ]
+      },
+      "post": {
+        "description": "创建独立于订单与支付的待门店确认预约。",
+        "operationId": "create_reservation_api_v1_reservations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReservationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Reservation",
+        "tags": [
+          "reservations"
+        ]
+      }
+    },
+    "/api/v1/reservations/booking-options": {
+      "get": {
+        "description": "返回服务端计算的当前 Option 可预约日期和半小时时段。",
+        "operationId": "get_reservation_booking_options_api_v1_reservations_booking_options_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "experience_option_id",
+            "required": true,
+            "schema": {
+              "gt": 0,
+              "title": "Experience Option Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationBookingOptionsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Reservation Booking Options",
+        "tags": [
+          "reservations"
+        ]
+      }
+    },
+    "/api/v1/reservations/{reservation_id}": {
+      "get": {
+        "description": "查询当前顾客可见的预约详情。",
+        "operationId": "get_reservation_detail_api_v1_reservations__reservation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Reservation Detail",
+        "tags": [
+          "reservations"
+        ]
+      }
+    },
+    "/api/v1/reservations/{reservation_id}/cancel": {
+      "patch": {
+        "description": "在开始前至少三小时取消自己的 Pending/Confirmed 预约。",
+        "operationId": "cancel_reservation_api_v1_reservations__reservation_id__cancel_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Reservation",
+        "tags": [
+          "reservations"
         ]
       }
     },

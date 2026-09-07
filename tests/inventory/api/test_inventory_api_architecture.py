@@ -61,6 +61,16 @@ def test_inventory_routes_are_registered_once_and_legacy_route_is_absent() -> No
             "GET",
             "/api/v1/admin/products/kit/{product_id}/inventory-transactions",
         ),
+        (
+            "POST",
+            "/api/v1/admin/products/kit/{product_id}/colors/"
+            "{kit_color_id}/inventory-adjustments",
+        ),
+        (
+            "GET",
+            "/api/v1/admin/products/kit/{product_id}/colors/"
+            "{kit_color_id}/inventory-transactions",
+        ),
         ("GET", "/api/v1/admin/inventory-transactions"),
     }
     registered = {
@@ -95,6 +105,10 @@ def test_inventory_openapi_declares_security_headers_and_success_envelopes() -> 
     assert set(paths) == {
         "/api/v1/admin/products/kit/{product_id}/inventory-adjustments",
         "/api/v1/admin/products/kit/{product_id}/inventory-transactions",
+        "/api/v1/admin/products/kit/{product_id}/colors/"
+        "{kit_color_id}/inventory-adjustments",
+        "/api/v1/admin/products/kit/{product_id}/colors/"
+        "{kit_color_id}/inventory-transactions",
         "/api/v1/admin/inventory-transactions",
     }
     for path_item in paths.values():
@@ -134,5 +148,5 @@ def test_inventory_route_functions_are_async() -> None:
         if hasattr(route, "endpoint")
     ]
 
-    assert len(functions) == 3
+    assert len(functions) == 5
     assert all(inspect.iscoroutinefunction(function) for function in functions)

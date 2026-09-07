@@ -84,8 +84,12 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     assert "INVENTORY_MYSQL_TEST_DB: pinkdoohub_inventory_4311_ci" in workflow
     assert "python scripts/ci/check_mysql_gate.py preflight" in workflow
     assert "aerich --app models upgrade" in workflow
+    assert "aerich --app models downgrade -v 6 --yes" in workflow
+    assert "check_mysql_gate.py seed-m6-legacy" in workflow
     assert "python scripts/ci/check_mysql_gate.py snapshot" in workflow
-    assert "python -m pytest tests/inventory/mysql -q" in workflow
+    assert "--ignore=tests/inventory/mysql" in workflow
+    assert "--ignore=tests/reservation/mysql" in workflow
+    assert "tests/inventory/mysql tests/reservation/mysql -q" in workflow
     assert "--fake" not in workflow
     assert "init-db" not in workflow
     assert "generate_schemas" not in workflow
@@ -98,6 +102,7 @@ def test_mysql_release_job_always_cleans_up_and_saves_evidence() -> None:
     assert "python scripts/ci/check_mysql_gate.py cleanup" in workflow
     assert "if: always()" in workflow
     assert "artifacts/mysql-release.json" in workflow
+    assert "artifacts/mysql-m6-legacy-seed.json" in workflow
     assert "artifacts/mysql-cleanup.json" in workflow
     assert "artifacts/backend-mysql-release.xml" in workflow
     assert "backend-mysql-release-${{ github.sha }}-${{ github.run_id }}" in workflow

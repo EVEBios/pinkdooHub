@@ -11,7 +11,11 @@ from app.api.deps import get_current_admin, get_inventory_service
 from app.common.enums.inventory import InventorySourceType, InventoryTransactionType
 from app.common.pagination import Page
 from app.main import app
-from app.services.inventory_service import InventoryAdjustmentResult, InventoryService
+from app.services.inventory_service import (
+    InventoryAdjustmentResult,
+    InventoryColorAdjustmentResult,
+    InventoryService,
+)
 
 
 NOW = datetime(2026, 8, 14, 10, 30, tzinfo=timezone.utc)
@@ -21,6 +25,8 @@ def _transaction() -> SimpleNamespace:
     return SimpleNamespace(
         id=101,
         product_id=5,
+        kit_color_id=None,
+        kit_color=None,
         transaction_type=InventoryTransactionType.ADMIN_ADJUSTMENT,
         change_quantity=2,
         before_quantity=10,
@@ -43,10 +49,28 @@ def _transaction() -> SimpleNamespace:
     )
 
 
+def _color_transaction() -> SimpleNamespace:
+    transaction = _transaction()
+    transaction.kit_color_id = 9
+    transaction.kit_color = SimpleNamespace(
+        id=9,
+        bead_color_id=3,
+        bead_color=SimpleNamespace(
+            id=3,
+            slot_no=2,
+            color_code="A002",
+            name="海盐蓝",
+        ),
+    )
+    return transaction
+
+
 def _service() -> Mock:
     service = Mock(spec=InventoryService)
     service.adjust_stock = AsyncMock()
+    service.adjust_color_stock = AsyncMock()
     service.list_product_transactions = AsyncMock()
+    service.list_product_color_transactions = AsyncMock()
     service.list_transactions = AsyncMock()
     return service
 
@@ -94,6 +118,12 @@ async def test_adjustment_maps_request_and_selects_replay_status(
         "transaction": {
             "id": 101,
             "product_id": 5,
+            "kit_color_id": None,
+            "bead_color_id": None,
+            "bead_color_slot_no": None,
+            "color_code": None,
+            "color_name": None,
+            "sale_unit_grams": None,
             "transaction_type": "admin_adjustment",
             "change_quantity": 2,
             "before_quantity": 10,
@@ -156,6 +186,67 @@ async def test_product_query_forwards_all_filters_and_serializes_page(
     assert call.kwargs["created_to"].utcoffset().total_seconds() == 0
 
 
+async def test_color_adjustment_and_query_routes_preserve_color_identity(
+    client: AsyncClient,
+    admin_routed_service: Mock,
+) -> None:
+    transaction = _color_transaction()
+    admin_routed_service.adjust_color_stock.return_value = (
+        InventoryColorAdjustmentResult(
+            product_id=5,
+            kit_color_id=9,
+            stock_units=12,
+            transaction=transaction,
+            is_replay=False,
+        )
+    )
+    admin_routed_service.list_product_color_transactions.return_value = Page(
+        items=[transaction],
+        total=1,
+        page=1,
+        page_size=20,
+        pages=1,
+    )
+
+    adjusted = await client.post(
+        "/api/v1/admin/products/kit/5/colors/9/inventory-adjustments",
+        headers={"Idempotency-Key": "color-request-001"},
+        json={"change": 2, "reason": "颜色补货"},
+    )
+    queried = await client.get(
+        "/api/v1/admin/products/kit/5/colors/9/inventory-transactions"
+    )
+
+    assert adjusted.status_code == 201
+    assert adjusted.json()["data"] | {"transaction": {}} == {
+        "product_id": 5,
+        "kit_color_id": 9,
+        "bead_color_id": 3,
+        "bead_color_slot_no": 2,
+        "color_code": "A002",
+        "color_name": "海盐蓝",
+        "sale_unit_grams": 10,
+        "stock_units": 12,
+        "transaction": {},
+    }
+    assert adjusted.json()["data"]["transaction"]["kit_color_id"] == 9
+    assert queried.status_code == 200
+    assert queried.json()["data"]["items"][0]["bead_color_slot_no"] == 2
+    admin_routed_service.adjust_color_stock.assert_awaited_once_with(
+        5,
+        9,
+        change=2,
+        reason="颜色补货",
+        operator_id=7,
+        ip_address="127.0.0.1",
+        idempotency_key="color-request-001",
+    )
+    assert admin_routed_service.list_product_color_transactions.await_args.args == (
+        5,
+        9,
+    )
+
+
 async def test_global_query_forwards_product_and_order_source_filters(
     client: AsyncClient,
     admin_routed_service: Mock,
@@ -169,6 +260,7 @@ async def test_global_query_forwards_product_and_order_source_filters(
         params={
             "page_size": "5",
             "product_id": "5",
+            "kit_color_id": "9",
             "source_type": "order",
             "source_id": "31",
         },
@@ -186,6 +278,7 @@ async def test_global_query_forwards_product_and_order_source_filters(
         page=1,
         page_size=5,
         product_id=5,
+        kit_color_id=9,
         transaction_type=None,
         source_type=InventorySourceType.ORDER,
         source_id=31,

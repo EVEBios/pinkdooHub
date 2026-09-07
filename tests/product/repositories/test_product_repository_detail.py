@@ -242,4 +242,4 @@ async def test_get_product_detail_has_constant_query_count(
     ]
     assert len(loaded_options) == 3
     assert len(loaded_images) == 6
-    assert 1 <= len(select_queries) <= 4
+    assert 1 <= len(select_queries) <= 5

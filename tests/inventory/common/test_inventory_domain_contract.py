@@ -9,12 +9,14 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from app.common.constants.inventory import (
     INVENTORY_ADMIN_IDEMPOTENCY_PREFIX,
+    INVENTORY_ADMIN_COLOR_IDEMPOTENCY_PREFIX,
     INVENTORY_AUDIT_ACTION_ADJUST,
     INVENTORY_AUDIT_TARGET_TYPE,
     INVENTORY_CHANGE_MAX,
     INVENTORY_CHANGE_MIN,
     INVENTORY_IDEMPOTENCY_KEY_MAX_LENGTH,
     INVENTORY_ORDER_DEDUCTION_IDEMPOTENCY_KEY,
+    INVENTORY_ORDER_COLOR_DEDUCTION_IDEMPOTENCY_KEY,
     INVENTORY_ORDER_DEDUCTION_REASON,
     INVENTORY_ORDER_RESTORE_IDEMPOTENCY_KEY,
     INVENTORY_ORDER_RESTORE_REASON,
@@ -28,9 +30,11 @@ from app.common.enums.inventory import (
     InventorySourceType,
     InventoryTransactionType,
 )
+from app.common.enums.product import KitKind
 from app.common.exceptions import (
     InsufficientStock,
     InventoryBalanceExceeded,
+    InventoryKitKindMismatch,
     InventoryTransactionConflict,
 )
 from app.core.exceptions import ConflictException
@@ -62,11 +66,19 @@ def test_inventory_constants_match_frozen_boundaries() -> None:
     assert INVENTORY_REASON_MAX_LENGTH == 256
     assert INVENTORY_IDEMPOTENCY_KEY_MAX_LENGTH == 128
     assert INVENTORY_ADMIN_IDEMPOTENCY_PREFIX == "inventory:admin:adjust:"
+    assert INVENTORY_ADMIN_COLOR_IDEMPOTENCY_PREFIX == (
+        "inventory:admin:adjust-color:"
+    )
     assert INVENTORY_ORDER_DEDUCTION_IDEMPOTENCY_KEY.format(
         order_id=7,
         product_id=5,
     ) == "inventory:order:7:deduct:product:5"
     assert INVENTORY_ORDER_DEDUCTION_REASON == "Order stock deduction"
+    assert INVENTORY_ORDER_COLOR_DEDUCTION_IDEMPOTENCY_KEY.format(
+        order_id=7,
+        product_id=5,
+        kit_color_id=21,
+    ) == "inventory:order:7:deduct:product:5:color:21"
     assert INVENTORY_ORDER_RESTORE_IDEMPOTENCY_KEY.format(
         order_id=7,
         product_id=5,
@@ -111,6 +123,35 @@ def test_inventory_balance_exceeded_contract(before: int, change: int) -> None:
     }
 
 
+def test_color_inventory_errors_include_color_identity_without_available_stock() -> None:
+    insufficient = InsufficientStock(
+        product_id=5,
+        kit_color_id=21,
+        requested_quantity=3,
+    )
+    exceeded = InventoryBalanceExceeded(
+        product_id=5,
+        kit_color_id=21,
+        before_quantity=999_999,
+        change_quantity=1,
+    )
+
+    assert insufficient.data == {
+        "product_id": 5,
+        "requested_quantity": 3,
+        "kit_color_id": 21,
+    }
+    assert "available_quantity" not in insufficient.data
+    assert exceeded.data == {
+        "product_id": 5,
+        "before_quantity": 999_999,
+        "change_quantity": 1,
+        "minimum": 0,
+        "maximum": 999_999,
+        "kit_color_id": 21,
+    }
+
+
 def test_inventory_transaction_conflict_contract_has_no_data() -> None:
     error = InventoryTransactionConflict()
 
@@ -120,6 +161,19 @@ def test_inventory_transaction_conflict_contract_has_no_data() -> None:
         "Inventory idempotency key conflicts with another request"
     )
     assert error.data is None
+
+
+def test_inventory_kit_kind_mismatch_contract() -> None:
+    error = InventoryKitKindMismatch(
+        expected=KitKind.FIXED,
+        actual=KitKind.COLOR_SELECTABLE,
+    )
+
+    assert error.code == 40031
+    assert error.data == {
+        "expected": "fixed",
+        "actual": "color_selectable",
+    }
 
 
 @pytest.mark.parametrize(

@@ -3,23 +3,29 @@
 from typing import TypeVar
 
 from app.common.constants.product import (
+    COLOR_SELECTABLE_SALE_UNIT_GRAMS,
     DAY_TYPE_LABELS,
     FULL_DAY_DURATION_LABEL,
     FULL_DAY_DURATION_MINUTES,
+    KIT_KIND_LABELS,
     MIN_STOCK,
     PRODUCT_STATUS_LABELS,
     PRODUCT_TYPE_LABELS,
 )
-from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.enums.product import DayType, KitKind, ProductStatus, ProductType
 from app.common.pagination import Page
+from app.models.bead_color import BeadColor
 from app.models.experience_option import ExperienceOption
 from app.models.product import Product
 from app.models.product_image import ProductImage
 from app.models.product_kit import ProductKit
+from app.models.product_kit_color import ProductKitColor
 from app.schemas.product_response import (
     AdminExperienceProductDetailOut,
     AdminKitProductDetailOut,
+    AdminProductKitColorOut,
     AdminProductListItemOut,
+    BeadColorOut,
     DeletedResourceOut,
     ExperienceDimensionsOut,
     ExperienceOptionBaseOut,
@@ -27,6 +33,7 @@ from app.schemas.product_response import (
     ExperienceProductCreateOut,
     ExperienceProductDetailOut,
     KitPriceOut,
+    KitColorOptionOut,
     KitProductCreateOut,
     KitProductDetailOut,
     LabeledValue,
@@ -39,7 +46,7 @@ from app.schemas.product_response import (
 )
 
 
-EnumValueT = TypeVar("EnumValueT", ProductType, ProductStatus, DayType)
+EnumValueT = TypeVar("EnumValueT", ProductType, ProductStatus, KitKind, DayType)
 DeletedModel = Product | ExperienceOption | ProductImage
 
 
@@ -66,6 +73,13 @@ def map_product_status(value: ProductStatus) -> LabeledValue[ProductStatus]:
 
     normalized = ProductStatus(value)
     return _enum_labeled_value(normalized, PRODUCT_STATUS_LABELS)
+
+
+def map_kit_kind(value: KitKind) -> LabeledValue[KitKind]:
+    """映射套装销售形态展示值。"""
+
+    normalized = KitKind(value)
+    return _enum_labeled_value(normalized, KIT_KIND_LABELS)
 
 
 def map_day_type(value: DayType) -> LabeledValue[DayType]:
@@ -251,6 +265,112 @@ def _kit(product: Product) -> ProductKit:
     return kit
 
 
+def _kit_list_metadata(product: Product) -> dict[str, object]:
+    """构造列表项中的 KitKind 与销售单位；Experience 固定为 null。"""
+
+    if ProductType(product.product_type) is ProductType.EXPERIENCE:
+        return {"kit_kind": None, "sale_unit_grams": None}
+    kit = product.kit
+    if kit is None:
+        return {"kit_kind": None, "sale_unit_grams": None}
+    return {
+        "kit_kind": map_kit_kind(
+            getattr(kit, "kit_kind", KitKind.FIXED)
+        ),
+        "sale_unit_grams": getattr(kit, "sale_unit_grams", None),
+    }
+
+
+def map_bead_color(bead_color: BeadColor) -> BeadColorOut:
+    """映射全局颜色槽，并显式派生配置完整性。"""
+
+    configured = bead_color.color_code is not None and bead_color.name is not None
+    return BeadColorOut.model_validate(
+        {
+            "id": bead_color.id,
+            "slot_no": bead_color.slot_no,
+            "color_code": bead_color.color_code,
+            "name": bead_color.name,
+            "swatch_image_url": bead_color.swatch_image_url,
+            "sort": bead_color.sort,
+            "is_active": bead_color.is_active,
+            "is_configured": configured,
+        }
+    )
+
+
+def _validate_product_kit_color(
+    kit_color: ProductKitColor,
+    *,
+    product_id: int,
+) -> BeadColor:
+    """确认预加载商品颜色归属正确并返回其全局颜色。"""
+
+    if kit_color.product_id != product_id:
+        raise ValueError("Product kit color belongs to a different product")
+    bead_color = kit_color.bead_color
+    if bead_color.id != kit_color.bead_color_id:
+        raise ValueError("Product kit color has mismatched bead color metadata")
+    return bead_color
+
+
+def map_admin_product_kit_color(
+    kit_color: ProductKitColor,
+) -> AdminProductKitColorOut:
+    """映射管理端商品颜色配置及当前库存余额。"""
+
+    bead_color = kit_color.bead_color
+    configured = bead_color.color_code is not None and bead_color.name is not None
+    return AdminProductKitColorOut.model_validate(
+        {
+            "id": kit_color.id,
+            "bead_color_id": kit_color.bead_color_id,
+            "slot_no": bead_color.slot_no,
+            "color_code": bead_color.color_code,
+            "name": bead_color.name,
+            "swatch_image_url": bead_color.swatch_image_url,
+            "sort": bead_color.sort,
+            "is_active": bead_color.is_active,
+            "is_configured": configured,
+            "is_enabled": kit_color.is_enabled,
+            "stock_units": kit_color.stock_units,
+        }
+    )
+
+
+def map_kit_color_option(kit_color: ProductKitColor) -> KitColorOptionOut:
+    """映射已启用且已配置的公共颜色选项，不输出精确库存。"""
+
+    bead_color = kit_color.bead_color
+    if (
+        not kit_color.is_enabled
+        or not bead_color.is_active
+        or bead_color.color_code is None
+        or bead_color.name is None
+    ):
+        raise ValueError("Public product kit color must be active and configured")
+    return KitColorOptionOut.model_validate(
+        {
+            "id": kit_color.id,
+            "bead_color_id": kit_color.bead_color_id,
+            "slot_no": bead_color.slot_no,
+            "color_code": bead_color.color_code,
+            "name": bead_color.name,
+            "swatch_image_url": bead_color.swatch_image_url,
+            "available": kit_color.stock_units > MIN_STOCK,
+        }
+    )
+
+
+def _product_kit_colors(product: Product) -> list[ProductKitColor]:
+    """消费已预加载并按全局色板顺序排列的商品颜色。"""
+
+    colors = list(product.kit_colors)
+    for color in colors:
+        _validate_product_kit_color(color, product_id=product.id)
+    return colors
+
+
 def _require_product_type(product: Product, expected: ProductType) -> None:
     """阻止类型不匹配的聚合进入专用响应。"""
 
@@ -310,6 +430,7 @@ def map_product_list_item(product: Product) -> ProductListItemOut:
 
     _require_online_product(product)
     payload = _product_identity_payload(product)
+    payload.update(_kit_list_metadata(product))
     payload.update(
         {
             "cover_image": _cover_image(product, required=True),
@@ -323,6 +444,7 @@ def map_admin_product_list_item(product: Product) -> AdminProductListItemOut:
     """映射允许不完整 Draft 聚合的管理端列表项。"""
 
     payload = _product_identity_payload(product)
+    payload.update(_kit_list_metadata(product))
     payload.update(
         {
             "status": map_product_status(product.status),
@@ -434,12 +556,32 @@ def map_kit_product_detail(product: Product) -> KitProductDetailOut:
 
     _require_product_type(product, ProductType.KIT)
     kit = _kit(product)
+    kit_kind = KitKind(getattr(kit, "kit_kind", KitKind.FIXED))
+    colors: list[KitColorOptionOut] = []
+    if kit_kind is KitKind.COLOR_SELECTABLE:
+        colors = [
+            map_kit_color_option(color)
+            for color in _product_kit_colors(product)
+            if (
+                color.is_enabled
+                and color.bead_color.is_active
+                and color.bead_color.color_code is not None
+                and color.bead_color.name is not None
+            )
+        ]
     payload = _user_detail_payload(product)
     payload.update(
         {
+            "kit_kind": map_kit_kind(kit_kind),
+            "sale_unit_grams": getattr(kit, "sale_unit_grams", None),
             "price": kit.price,
             "stock": kit.stock,
-            "available": kit.stock > MIN_STOCK,
+            "available": (
+                kit.stock > MIN_STOCK
+                if kit_kind is KitKind.FIXED and kit.stock is not None
+                else any(color.available for color in colors)
+            ),
+            "colors": colors,
         }
     )
     return KitProductDetailOut.model_validate(payload)
@@ -450,8 +592,23 @@ def map_admin_kit_product_detail(product: Product) -> AdminKitProductDetailOut:
 
     _require_product_type(product, ProductType.KIT)
     kit = _kit(product)
+    kit_kind = KitKind(getattr(kit, "kit_kind", KitKind.FIXED))
+    colors: list[AdminProductKitColorOut] = []
+    if kit_kind is KitKind.COLOR_SELECTABLE:
+        colors = [
+            map_admin_product_kit_color(color)
+            for color in _product_kit_colors(product)
+        ]
     payload = _admin_detail_payload(product)
-    payload.update({"price": kit.price, "stock": kit.stock})
+    payload.update(
+        {
+            "kit_kind": map_kit_kind(kit_kind),
+            "sale_unit_grams": getattr(kit, "sale_unit_grams", None),
+            "price": kit.price,
+            "stock": kit.stock,
+            "colors": colors,
+        }
+    )
     return AdminKitProductDetailOut.model_validate(payload)
 
 
@@ -466,13 +623,35 @@ def map_experience_product_create(
     return ExperienceProductCreateOut.model_validate(payload)
 
 
-def map_kit_product_create(product: Product) -> KitProductCreateOut:
+def map_kit_product_create(
+    product: Product,
+    *,
+    kit_kind: KitKind = KitKind.FIXED,
+) -> KitProductCreateOut:
     """映射 Kit 草稿创建响应。"""
 
     _require_product_type(product, ProductType.KIT)
     payload = _product_identity_payload(product)
     payload["status"] = map_product_status(product.status)
+    payload["kit_kind"] = map_kit_kind(kit_kind)
+    payload["sale_unit_grams"] = (
+        COLOR_SELECTABLE_SALE_UNIT_GRAMS
+        if kit_kind is KitKind.COLOR_SELECTABLE
+        else None
+    )
     return KitProductCreateOut.model_validate(payload)
+
+
+def map_bead_color_page(page: Page[BeadColor]) -> Page[BeadColorOut]:
+    """保留分页元数据并映射全局颜色目录。"""
+
+    return Page[BeadColorOut](
+        items=[map_bead_color(color) for color in page.items],
+        total=page.total,
+        page=page.page,
+        page_size=page.page_size,
+        pages=page.pages,
+    )
 
 
 def map_product_basic_info(product: Product) -> ProductBasicInfoOut:

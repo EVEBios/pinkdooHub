@@ -575,6 +575,9 @@ async def test_mysql_version_migrations_and_explain_use_expected_indexes() -> No
         "1_20260813130455_add_order_tables.py",
         "2_20260814104655_add_inventory_transactions.py",
         "3_20260902125032_phase95_external_identity.py",
+        "4_20260905162243_add_wallet_payment_refund.py",
+        "5_20260906094653_add_reservations.py",
+        "6_20260906123000_add_color_selectable_kits.py",
     ]
     assert lock_plan[0]["key"] == "product_id"
     assert product_page_plan[0]["key"] == "idx_inventory_product_created_id"

@@ -25,12 +25,18 @@ from app.models.validators import NonZeroIntegerValidator
 
 
 class InventoryTransaction(BaseModel):
-    """记录每一次已提交库存变化；当前余额仍以 ProductKit.stock 为准。"""
+    """记录每次库存变化；余额由固定 Kit 或商品颜色记录权威承载。"""
 
     product = fields.ForeignKeyField(
         "models.Product",
         related_name="inventory_transactions",
         on_delete=fields.RESTRICT,
+    )
+    kit_color = fields.ForeignKeyField(
+        "models.ProductKitColor",
+        related_name="inventory_transactions",
+        on_delete=fields.RESTRICT,
+        null=True,
     )
     transaction_type = fields.CharEnumField(
         InventoryTransactionType,
@@ -88,6 +94,10 @@ class InventoryTransaction(BaseModel):
             Index(
                 fields=("product_id", "created_at", "id"),
                 name="idx_inventory_product_created_id",
+            ),
+            Index(
+                fields=("kit_color_id", "created_at", "id"),
+                name="idx_inventory_color_created_id",
             ),
             Index(
                 fields=("source_type", "source_id", "created_at", "id"),

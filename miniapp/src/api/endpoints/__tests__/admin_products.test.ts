@@ -12,7 +12,9 @@ import {
   AdminProductApi,
   type AdminExperienceProductDetail,
   type AdminKitProductDetail,
+  type AdminProductKitColor,
   type AdminProductListPage,
+  type BeadColorListPage,
 } from '../admin_products'
 
 const adminPage: AdminProductListPage = {
@@ -23,6 +25,8 @@ const adminPage: AdminProductListPage = {
     status: { value: 'draft', label: '草稿' },
     cover_image: null,
     display_price: null,
+    kit_kind: null,
+    sale_unit_grams: null,
     updated_at: '2026-08-25T08:00:00Z',
     is_deleted: false,
   }],
@@ -53,8 +57,11 @@ const kitDetail: AdminKitProductDetail = {
   product_type: { value: 'kit', label: '拼豆套装' },
   status: { value: 'offline', label: '已下架' },
   images: [],
+  kit_kind: { value: 'fixed', label: '固定套装' },
+  sale_unit_grams: null,
   price: '99.00',
   stock: 0,
+  colors: [],
   created_at: '2026-08-25T07:00:00+00:00',
   updated_at: '2026-08-25T08:00:00.123456Z',
   is_deleted: true,
@@ -72,6 +79,60 @@ const kitCreateResult = {
   name: '新套装',
   product_type: { value: 'kit' as const, label: '拼豆套装' },
   status: { value: 'draft' as const, label: '草稿' },
+  kit_kind: { value: 'fixed' as const, label: '固定套装' },
+  sale_unit_grams: null,
+}
+
+const colorSelectableKitCreateResult = {
+  ...kitCreateResult,
+  id: 13,
+  name: '自选颜色套装',
+  kit_kind: { value: 'color_selectable' as const, label: '自选颜色' },
+  sale_unit_grams: 10,
+}
+
+const configuredKitColor: AdminProductKitColor = {
+  id: 301,
+  bead_color_id: 1,
+  slot_no: 1,
+  color_code: 'A01',
+  name: '正红',
+  swatch_image_url: '/uploads/bead-colors/a01.webp',
+  sort: 1,
+  is_active: true,
+  is_configured: true,
+  is_enabled: true,
+  stock_units: 7,
+}
+
+const placeholderColor = {
+  id: 2,
+  slot_no: 2,
+  color_code: null,
+  name: null,
+  swatch_image_url: null,
+  sort: 2,
+  is_active: false,
+  is_configured: false,
+}
+
+const beadColorPage: BeadColorListPage = {
+  items: [placeholderColor],
+  total: 221,
+  page: 1,
+  page_size: 20,
+  pages: 12,
+}
+
+const colorSelectableKitDetail: AdminKitProductDetail = {
+  ...kitDetail,
+  id: 3,
+  name: '自选颜色套装',
+  is_deleted: false,
+  kit_kind: { value: 'color_selectable', label: '自选颜色' },
+  sale_unit_grams: 10,
+  stock: null,
+  colors: [configuredKitColor],
 }
 
 const basicInfoResult = {
@@ -148,7 +209,7 @@ describe('AdminProductApi', () => {
     })
   })
 
-  it('创建 Kit 发送价格但绝不投影旧 stock 字段', async () => {
+  it('创建固定 Kit 发送价格但不投影旧 stock 或未提交的 kit_kind', async () => {
     const { api, transport } = createApi(kitCreateResult)
     await expect(api.createKitProduct({
       name: '新套装',
@@ -156,6 +217,20 @@ describe('AdminProductApi', () => {
       stock: 100,
     } as never)).resolves.toEqual(kitCreateResult)
     expect(transport.requests[0].body).toEqual({ name: '新套装', price: '99.00' })
+  })
+
+  it('创建自选颜色 Kit 投影 kit_kind 并校验 10g 创建响应', async () => {
+    const { api, transport } = createApi(colorSelectableKitCreateResult)
+    await expect(api.createKitProduct({
+      name: '自选颜色套装',
+      price: '9.90',
+      kit_kind: 'color_selectable',
+    })).resolves.toEqual(colorSelectableKitCreateResult)
+    expect(transport.requests[0].body).toEqual({
+      name: '自选颜色套装',
+      price: '9.90',
+      kit_kind: 'color_selectable',
+    })
   })
 
   it('PATCH 只发送明确字段，并在请求前拒绝空 patch', async () => {
@@ -330,11 +405,81 @@ describe('AdminProductApi', () => {
     })
   })
 
+  it('分页读取全局色板，只投影 page/page_size 并接受未配置占位槽', async () => {
+    const { api, transport } = createApi(beadColorPage)
+    await expect(api.listBeadColors({
+      page: 1,
+      page_size: 20,
+      unexpected: 'ignored',
+    } as never)).resolves.toEqual(beadColorPage)
+    expect(transport.requests[0]).toMatchObject({
+      operation: 'products.admin.bead_colors.list',
+      method: 'GET',
+      url: 'https://api.example.com/api/v1/admin/bead-colors?page=1&page_size=20',
+      headers: { Authorization: 'Bearer admin-token' },
+    })
+  })
+
+  it('修改全局颜色只投影允许字段，并在请求前拒绝空 patch', async () => {
+    const updatedColor = {
+      ...placeholderColor,
+      color_code: 'A02',
+      name: '橙红',
+      sort: 12,
+      is_active: true,
+      is_configured: true,
+    }
+    const { api, transport } = createApi(updatedColor)
+    await expect(api.updateBeadColor(2, {
+      color_code: 'A02',
+      name: '橙红',
+      sort: 12,
+      is_active: true,
+      unexpected: 'ignored',
+    } as never)).resolves.toEqual(updatedColor)
+    expect(transport.requests[0]).toMatchObject({
+      operation: 'products.admin.bead_color.update',
+      method: 'PATCH',
+      url: 'https://api.example.com/api/v1/admin/bead-colors/2',
+      body: { color_code: 'A02', name: '橙红', sort: 12, is_active: true },
+    })
+    await expect(api.updateBeadColor(2, {})).rejects.toThrow('至少需要一个改动字段')
+    expect(transport.requests).toHaveLength(1)
+  })
+
+  it('修改商品颜色只发送 is_enabled，并严格解析关联库存', async () => {
+    const { api, transport } = createApi(configuredKitColor)
+    await expect(api.updateProductKitColor(301, {
+      is_enabled: true,
+      stock_units: 999,
+    } as never)).resolves.toEqual(configuredKitColor)
+    expect(transport.requests[0]).toMatchObject({
+      operation: 'products.admin.kit_color.update',
+      method: 'PATCH',
+      url: 'https://api.example.com/api/v1/admin/product-kit-colors/301',
+      body: { is_enabled: true },
+    })
+  })
+
   it('接受管理草稿的空封面、空价格和空 Option', async () => {
     const { api } = createApi(adminPage)
     await expect(api.listProducts()).resolves.toEqual(adminPage)
     const detailApi = createApi(experienceDetail).api
     await expect(detailApi.getExperienceProduct(1)).resolves.toEqual(experienceDetail)
+
+    const kitPage = {
+      ...adminPage,
+      items: [{
+        ...adminPage.items[0],
+        id: 2,
+        name: '固定套装',
+        product_type: { value: 'kit', label: '拼豆套装' },
+        display_price: '99.00',
+        kit_kind: { value: 'fixed', label: '固定套装' },
+        sale_unit_grams: null,
+      }],
+    }
+    await expect(createApi(kitPage).api.listProducts()).resolves.toEqual(kitPage)
   })
 
   it('读取包含逻辑删除标记和零库存的 Kit 管理详情', async () => {
@@ -343,10 +488,22 @@ describe('AdminProductApi', () => {
     expect(transport.requests[0].url).toBe('https://api.example.com/api/v1/admin/products/kit/2')
   })
 
+  it('读取父级 stock=null 且携带商品颜色库存的自选颜色 Kit 管理详情', async () => {
+    const { api } = createApi(colorSelectableKitDetail)
+    await expect(api.getKitProduct(3)).resolves.toEqual(colorSelectableKitDetail)
+  })
+
   it.each([
     { ...adminPage, items: [{ ...adminPage.items[0], status: { value: 'unknown', label: '未知' } }] },
     { ...adminPage, items: [{ ...adminPage.items[0], updated_at: '2026-08-25' }] },
     { ...adminPage, items: [{ ...adminPage.items[0], display_price: '0.00' }] },
+    { ...adminPage, items: [{ ...adminPage.items[0], kit_kind: { value: 'fixed', label: '固定套装' } }] },
+    { ...adminPage, items: [{
+      ...adminPage.items[0],
+      product_type: { value: 'kit', label: '拼豆套装' },
+      kit_kind: { value: 'color_selectable', label: '自选颜色' },
+      sale_unit_grams: null,
+    }] },
   ])('拒绝不符合管理列表契约的数据：%p', async (data) => {
     await expect(createApi(data).api.listProducts()).rejects.toBeInstanceOf(ContractError)
   })
@@ -356,6 +513,16 @@ describe('AdminProductApi', () => {
     { ...experienceDetail, dimensions: { durations: [{ value: 60, label: '1小时' }], participants: [], day_types: [] } },
     { ...kitDetail, stock: 1_000_000 },
     { ...kitDetail, price: '99' },
+    { ...kitDetail, sale_unit_grams: 10 },
+    { ...kitDetail, colors: [configuredKitColor] },
+    { ...colorSelectableKitDetail, stock: 0 },
+    { ...colorSelectableKitDetail, sale_unit_grams: null },
+    { ...colorSelectableKitDetail, colors: [{ ...configuredKitColor, stock_units: 1_000_000 }] },
+    { ...colorSelectableKitDetail, colors: [{
+      ...configuredKitColor,
+      is_enabled: true,
+      is_active: false,
+    }] },
   ])('拒绝不符合管理详情契约的数据：%p', async (data) => {
     const api = createApi(data).api
     const promise = 'stock' in data ? api.getKitProduct(2) : api.getExperienceProduct(1)
@@ -368,17 +535,41 @@ describe('AdminProductApi', () => {
       .rejects.toThrow('正安全整数')
     await expect(createApi({ id: 1, is_deleted: true }).api.deleteProduct(0))
       .rejects.toThrow('正安全整数')
+    await expect(createApi(beadColorPage).api.listBeadColors()).resolves.toEqual(beadColorPage)
+    await expect(createApi(placeholderColor).api.updateBeadColor(0, { sort: 1 }))
+      .rejects.toThrow('正安全整数')
+    await expect(createApi(configuredKitColor).api.updateProductKitColor(0, { is_enabled: false }))
+      .rejects.toThrow('正安全整数')
+  })
+
+  it.each([
+    { ...beadColorPage, items: [{ ...placeholderColor, is_active: true }] },
+    { ...beadColorPage, items: [{ ...placeholderColor, is_configured: true }] },
+    { ...beadColorPage, items: [{ ...placeholderColor, slot_no: 222 }] },
+  ])('拒绝状态自相矛盾或越界的全局色板响应：%p', async (data) => {
+    await expect(createApi(data).api.listBeadColors()).rejects.toBeInstanceOf(ContractError)
+  })
+
+  it.each([
+    { ...configuredKitColor, is_enabled: true, is_active: false },
+    { ...configuredKitColor, stock_units: 1_000_000 },
+    { ...configuredKitColor, bead_color_id: 0 },
+  ])('拒绝状态自相矛盾或越界的商品颜色响应：%p', async (data) => {
+    await expect(createApi(data).api.updateProductKitColor(301, { is_enabled: true }))
+      .rejects.toBeInstanceOf(ContractError)
   })
 
   it.each([
     { ...experienceCreateResult, status: { value: 'online', label: '已上架' } },
     { ...kitCreateResult, product_type: { value: 'experience', label: '拼豆体验' } },
+    { ...kitCreateResult, sale_unit_grams: 10 },
+    { ...colorSelectableKitCreateResult, sale_unit_grams: null },
     { ...basicInfoResult, updated_at: '2026-08-25' },
   ])('拒绝不符合 mutation 成功响应契约的数据：%p', async (data) => {
     const api = createApi(data).api
     const promise = 'updated_at' in data
       ? api.updateProductBasicInfo(1, { name: '商品' })
-      : data.name === '新套装'
+      : 'kit_kind' in data
         ? api.createKitProduct({ name: '新套装', price: '99.00' })
         : api.createExperienceProduct({ name: '新体验' })
     await expect(promise).rejects.toBeInstanceOf(ContractError)

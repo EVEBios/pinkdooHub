@@ -1,7 +1,9 @@
 """Phase 9.2.4 MySQL CI 门槛脚本的安全契约。"""
 
+import ast
 import json
 import os
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +12,20 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPOSITORY_ROOT / "scripts" / "ci" / "check_mysql_gate.py"
 PHASE95_MIGRATION = "3_20260902125032_phase95_external_identity.py"
+WALLET_MIGRATION = "4_20260905162243_add_wallet_payment_refund.py"
+RESERVATION_MIGRATION = "5_20260906094653_add_reservations.py"
+COLOR_SELECTABLE_KIT_MIGRATION = (
+    "6_20260906123000_add_color_selectable_kits.py"
+)
+EXPECTED_MIGRATION_CHAIN = [
+    "0_20260810101218_init.py",
+    "1_20260813130455_add_order_tables.py",
+    "2_20260814104655_add_inventory_transactions.py",
+    PHASE95_MIGRATION,
+    WALLET_MIGRATION,
+    RESERVATION_MIGRATION,
+    COLOR_SELECTABLE_KIT_MIGRATION,
+]
 SAFE_ENVIRONMENT = {
     "APP_ENV": "testing",
     "DB_ENGINE": "mysql",
@@ -65,10 +81,71 @@ def test_preflight_accepts_only_the_frozen_disposable_target(tmp_path: Path) -> 
     assert SAFE_ENVIRONMENT["INVENTORY_MYSQL_TEST_PASSWORD"] not in report.values()
 
 
-def test_snapshot_contract_includes_phase95_migration() -> None:
+def test_snapshot_contract_includes_complete_current_migration_chain() -> None:
+    checker_source = CHECKER.read_text(encoding="utf-8")
+    checker_tree = ast.parse(checker_source)
+    migration_assignment = next(
+        node
+        for node in checker_tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name)
+            and target.id == "EXPECTED_MIGRATIONS"
+            for target in node.targets
+        )
+    )
+
+    assert ast.literal_eval(migration_assignment.value) == EXPECTED_MIGRATION_CHAIN
+
+
+def test_m6_snapshot_requires_legacy_replay_and_palette_evidence() -> None:
     checker_source = CHECKER.read_text(encoding="utf-8")
 
-    assert PHASE95_MIGRATION in checker_source
+    assert '"seed-m6-legacy"' in checker_source
+    assert "EXPECTED_MIGRATIONS[:-1]" in checker_source
+    assert "M6_LEGACY_PRODUCT_NAME" in checker_source
+    assert '"palette_slots": 221' in checker_source
+    assert '"legacy_fixed_kit_compatible": True' in checker_source
+    assert "M6_EXPECTED_COLUMNS" in checker_source
+    assert "M6_EXPECTED_FOREIGN_KEYS" in checker_source
+    assert "M6_EXPECTED_INDEXES" in checker_source
+
+
+def test_m6_index_snapshot_groups_by_table_name_and_freezes_uniqueness() -> None:
+    checker_namespace = runpy.run_path(str(CHECKER))
+    group_rows = checker_namespace["_group_m6_index_rows"]
+    expected_indexes = checker_namespace["M6_EXPECTED_INDEXES"]
+
+    grouped = group_rows(
+        [
+            ("bead_colors", "uidx_bead_colors_slot_no", 0, "slot_no"),
+            (
+                "product_kit_colors",
+                "idx_product_kit_colors_product_enabled",
+                1,
+                "product_id",
+            ),
+            (
+                "product_kit_colors",
+                "idx_product_kit_colors_product_enabled",
+                1,
+                "is_enabled",
+            ),
+        ]
+    )
+
+    assert grouped == {
+        ("bead_colors", "uidx_bead_colors_slot_no"): (0, ["slot_no"]),
+        (
+            "product_kit_colors",
+            "idx_product_kit_colors_product_enabled",
+        ): (1, ["product_id", "is_enabled"]),
+    }
+    assert all(
+        isinstance(key, tuple) and len(key) == 2
+        for key in expected_indexes
+    )
+    assert sum(non_unique == 0 for non_unique, _ in expected_indexes.values()) == 3
 
 
 def test_preflight_rejects_disabled_default_port_remote_and_wrong_schema(

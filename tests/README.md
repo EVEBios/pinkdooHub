@@ -1,6 +1,6 @@
 # 测试目录导航
 
-测试按业务领域组织；Product、Order 与 Inventory 均按应用层分组。Inventory 已包含 Phase 4.3.1–4.3.12 的文档、common/schema、Model/迁移、Repository、Service、Mapper、API、真实 MySQL 发布门槛与最终 Review 回归；Kit/混合创建扣减与 Pending 取消恢复测试还分布在 Order Schema、Mapper、Service、API 及 Inventory/Product Repository。当前覆盖稳定集合锁、双层幂等、批量余额/流水、全写集回滚、库存隐私、MySQL 瞬态错误重试、ADMIN+ 路由、OpenAPI、首次 201/重放 200、查询参数适配、旧库存请求拒绝、Product Kit 响应库存上限、完整 HTTP 矩阵、真实 MySQL 竞争/1205/EXPLAIN 与 MySQL HTTP smoke。测试文件名和测试函数名继续描述被验证的行为，不使用 `unit` / `integration` 目录强行拆分同时覆盖契约与真实数据库的测试。
+测试按业务领域组织；Product、Order、Inventory 与 Reservation 均按领域和应用层边界归类。Inventory 已包含 Phase 4.3.1–4.3.12 的完整回归，并在其 MySQL 门槛中承载 M6 颜色库存锁与结构验证；Reservation N1 覆盖上海营业日历、快照、状态机、用户归属、手机号隐私、店休批量取消、账号注销联动、OpenAPI/M5，以及真实 MySQL 创建/店休竞争、幂等店休、整批回滚、1205/1213 全事务重试与六个索引 EXPLAIN。测试文件名和测试函数名继续描述被验证的行为，不使用 `unit` / `integration` 目录强行拆分同时覆盖契约与真实数据库的测试。
 
 ```text
 tests/
@@ -9,7 +9,7 @@ tests/
 ├── common/              # 配置、版本、请求工具和基础迁移
 ├── users/               # 认证、用户资料、RBAC 与用户 Model
 ├── audit/               # 共享审计 Model、Repository、Service 与 Mapper
-├── product/
+├── product/              # 含 MARD 221 抓取清单、PNG 生成与本地 SQLite 导入安全契约
 │   ├── api/
 │   ├── common/
 │   ├── schemas/
@@ -27,7 +27,8 @@ tests/
 │   ├── repositories/
 │   ├── services/
 │   └── mappers/
-└── inventory/          # Phase 4.3；常规各层测试、完整 HTTP 矩阵与显式启用的 mysql 发布门槛
+├── inventory/          # Phase 4.3/M6；常规测试、HTTP 矩阵与显式启用的 mysql 发布门槛
+└── reservation/        # N1；Validator/Service/Mapper/HTTP/M5 与显式启用的 mysql 发布门槛
 ```
 
 常用命令：
@@ -39,7 +40,9 @@ python -m pytest tests/ -q
 # 按领域
 python -m pytest tests/order/ -q
 python -m pytest tests/product/ -q
+python -m pytest tests/product/test_mard_bead_color_import.py -q
 python -m pytest tests/inventory/ -q
+python -m pytest tests/reservation/ -q --ignore=tests/reservation/mysql
 
 # 按领域中的应用层
 python -m pytest tests/order/services/ -q
@@ -49,7 +52,7 @@ python -m pytest tests/product/repositories/ -q
 python -m pytest tests/common/ tests/audit/ tests/users/ -q
 ```
 
-`tests/inventory/mysql/` 默认跳过，避免测试误连开发机现有 MySQL。仅在已经创建并迁移的隔离实例上显式启用；fixture 会拒绝非回环地址、3306 和不符合专用前缀的 Schema：
+`tests/inventory/mysql/` 与 `tests/reservation/mysql/` 默认跳过，避免测试误连开发机现有 MySQL。仅在已经创建并迁移的隔离实例上显式启用；两者共用受保护的测试连接配置，fixture 会拒绝非回环地址、3306 和不符合专用前缀的 Schema：
 
 ```powershell
 $env:INVENTORY_MYSQL_TEST_ENABLED = "1"
@@ -58,11 +61,11 @@ $env:INVENTORY_MYSQL_TEST_PORT = "13306"
 $env:INVENTORY_MYSQL_TEST_DB = "pinkdoohub_inventory_4311_ci"
 $env:INVENTORY_MYSQL_TEST_USER = "root"
 $env:INVENTORY_MYSQL_TEST_PASSWORD = ""
-python -m pytest tests/inventory/mysql -q
+python -m pytest tests/inventory/mysql tests/reservation/mysql -q
 ```
 
-该命令不会创建 Schema 或执行迁移。必须先按数据库迁移流程在一次性实例中执行真实 Aerich 0 → 1 → 2；测试只清空专用 Schema 的业务表并保留 `aerich` 版本记录。
+该命令不会创建 Schema 或执行迁移。必须先按数据库迁移流程在一次性实例中执行真实 Aerich 0→6；测试清空专用 Schema 的用例业务数据，但保留 `aerich` 版本记录和 M6 迁移产生的 221 条 `bead_colors` 占位槽，避免把运行时补种误当成迁移证据。
 
-GitHub Actions 的 `backend-mysql-release` 会完成上述一次性实例生命周期。`scripts/ci/check_mysql_gate.py` 在迁移前验证 Aerich/pytest 目标完全一致，在迁移后记录 MySQL 8.0.46 和三条 Aerich 版本，并在 `always()` 清理路径删除专用 Schema、停止准确的 service container、确认容器不再运行和 13306 关闭。禁止为方便本地运行而放宽 fixture、改用 3306、`--fake`、`init-db` 或应用自动建表。
+GitHub Actions 的 `backend-mysql-release` 会完成上述一次性实例生命周期。为同时证明空库 0→6 与历史 fixed 兼容，它先完整升级到 M6，再用 `aerich --app models downgrade -v 6 --yes` 只回退最后一条迁移，在 M5 形状下写入受控的非零库存 fixed Kit，随后重新升级 M6。`scripts/ci/check_mysql_gate.py` 最终记录 MySQL 8.0.46、七条 Aerich 版本、221 槽和历史 fixed 兼容证据，并在 `always()` 清理路径删除专用 Schema、停止准确的 service container、确认容器不再运行和 13306 关闭。禁止为方便本地运行而放宽 fixture、改用 3306、`--fake`、`init-db` 或应用自动建表。
 
 新增测试时，优先放入对应领域和被测层；只有真正跨领域的基础能力才放入 `common/`。全局 fixture 留在根 `conftest.py`，仅供多个测试文件复用的数据构造器放入 `support/`。

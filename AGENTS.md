@@ -17,7 +17,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 ## 当前 Phase 与范围
 
-当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1：Product Module**、**Phase 4.2：Order Module** 与 **Phase 4.3：Inventory Module** 均已完成实现与最终 Review。
+当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1：Product Module**、**Phase 4.2：Order Module**、**Phase 4.3：Inventory Module**、**Reservation N1** 与 **M6 自选颜色 Kit** 均已完成仓库实现。
 
 已完成：
 
@@ -29,10 +29,12 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 当前实现状态：
 
+- M6 自选颜色 Kit 已完成仓库实现与本地回归：全局 221 个 BeadColor 槽、商品级 ProductKitColor 启用/10g 库存、统一每 10g 价格、每单最多 20 个颜色且每色最多 990g、颜色订单快照、扣减/取消/PAID 退款恢复、管理 API 与小程序页面均已接入；既有 fixed Kit 保持兼容。保留数据的 SQLite 专用脚本已于 2026-09-07 应用到本地持久 `db.sqlite3`，写前备份保存在 `backups/local-sqlite-migrations/`，13 个商品/6 个 fixed Kit 保留且 ORM 读取、完整性和外键核验通过；该脚本不写 Aerich，也不是发布迁移证据。同日已从 `https://peiseka.com/pindouseka.html` 抓取并严格核验 A1–M15 共 221 个 CSS 色块，冻结带来源 SHA-256 的 `app/tasks/manifests/mard_221.json`；来源没有独立图片，项目按 HEX/RGB 生成 221 张确定性 256×256 sRGB PNG（总内容 128,325 bytes），以默认 dry-run、显式 apply、写前备份、事务回滚和文件补偿的本地工具导入 `db.sqlite3`。导入后 221 槽均 code/name/URL 完整且全局激活，ProductKitColor 启用/库存仍为独立后续操作。M6 离线 MySQL 迁移与 CI 0→6/历史 fixed 重放/结构/锁等待门槛已形成可执行候选，但尚未在真实 MySQL Runner 执行，也未应用 Gate A、共享、预发布或生产 MySQL。
+- Reservation N1 已完成独立预约、服务端上海营业日历、Pending→Confirmed/Rejected 审核、顾客提前三小时取消、ADMIN+ 单日店休及原子批量 `store_closed` 取消、当前手机号隐私投影、预约历史阻止注销、M5 和六个小程序页面。首版不绑定 Order/Payment、不自动计算容量、不快照手机号、不处理法定节假日/调休；拒绝原因仅 `no_capacity`，恢复营业不恢复历史预约。一次性 MySQL 8.0.46 已真实执行 Aerich 0→5，并通过 Reservation 7 项及 Inventory+Reservation 16 项联合门槛，实例已销毁；M5 未应用任何持久环境。N2 微信主动通知尚未实现，详细冻结方案见 `docs/01_requirements/reservation_wechat_notification_plan.md`。
 - Wallet/Payment/Refund v1 已完成仓库实现：新建普通 `USER` 创建 `0.00..1000.00` WalletAccount；历史 backfill 只补 NORMAL/DISABLED 普通 USER，preview 输出 `through_user_id=N`，apply 必须复用 `--through-user-id N --apply`，每批按 User ID 升序锁定、锁后复验角色/状态并重查钱包存在性；历史 DELETED 不补，ADMIN/SUPER_ADMIN 始终不建钱包。六个用户侧 wallet/payment 端点经共享 customer 依赖强制 NORMAL USER；调账、代客扣款和退款资金写入只能操作普通客户，人工 `pending → paid` 还要求 owner 为 NORMAL 普通 USER，staff/disabled/deleted 均零写入拒绝。已实现会员/流水查询、ADMIN+ 调账与代客钱包订单、余额支付、manual 结算、订单资金只读查询、PAID/COMPLETED 一次全额退款；资金 Out Schema 交叉校验 Payment/Refund/WalletPayment/AssistedWalletOrder 的成功状态和关联，PAID Kit 恢复、COMPLETED 不恢复。单笔充值为 `1.00..1000.00`，真实微信充值/支付/退款保持 503 零写入。注销以 DB commit 为权威成功点，提交后 Redis family 清理为 best-effort；失败仍成功并以不含 Token/JTI 的高优先级安全事件触发运维重试。M4 已在一次性 MySQL 8.0.46 完成 Aerich 0→4，钱包专项 `2 passed` 覆盖关键闭环和 `ascii_bin` 大小写敏感幂等回归，但未通过 Aerich 应用到持久 MySQL/共享/生产库；development SQLite 的 `generate_schemas` 可能补建缺失表但不 ALTER 既有表、不写 Aerich，不能作为发布迁移证据。正式发布顺序固定为 M4 → NORMAL/DISABLED USER wallet backfill → legacy manual settlement backfill → reconcile/发布门槛 → 启用；`wallet_reconcile` 全程只读，除余额净额外还稳定核验非零变化、单行算术、余额范围、流水链、末条余额及无流水零余额规则，任一违规非零退出且不自动修账。钱包专项并发、1205/1213 与 EXPLAIN 扩展门槛仍待完成。
 - Phase 4.2 Order v1.0 已完成契约冻结、4.2.2–4.2.11 实现与 4.2.12 最终 Review：领域语言、Schema、Model/离线迁移、Repository、标准库 OD+ULID 生成器、查询/Experience 创建/三个状态变迁 Service、API Mapper、组合根，以及用户 4 个/管理 5 个 FastAPI 端点均已实现并有契约测试。创建用例批量校验 Product/Option，在单事务内写 Order、快照 Items、`CREATE_ORDER` 审计并重载聚合；编号冲突通过全新事务最多重试 3 次。状态用例在事务内执行 `SELECT ... FOR UPDATE`、锁后重检并原子提交状态/审计/重载。Mapper 对用户/管理列表、详情和状态响应执行显式字段投影与严格 Out Schema 校验，真实聚合测试固定零 SQL、零修改。路由统一通过认证或 ADMIN+ 依赖、`get_order_service()` 组合根、Mapper 和 `success()` 工作；缺失 Bearer 凭据已统一为 401 错误信封，既有无效 Token `1006` 仍按 User 契约返回 HTTP 400。完整真实 HTTP 矩阵覆盖创建防伪与边界、Product/Option/Kit 拒绝、权限和资源隐藏、组合筛选、全部非法状态前置条件、审计顺序、事务故障回滚及订单号冲突重试；三个无请求体状态 PATCH 会主动拒绝任意 body。最终安全复核同时将共享审计 IP 输入收紧为合法 IPv4/IPv6 字面量，非法、超长或带 scope 的代理头回退到直连地址。MySQL 8+ Order 增量迁移已离线生成、通过最终静态 Review 但尚未应用。
 - Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator、Service 和 API Mapper 均已完成，跨表写入和审计有真实事务回滚测试，Mapper 有零 SQL、零修改和字段隔离测试。Phase 4.3.10 移除旧 stock 写入口后保留 21 个 Product FastAPI 端点，包括 19 个用户/管理 JSON 查询与 mutation（含共享 AuditLog 分页操作历史），以及 Product 公共图/Option 专属图两个 ADMIN+ multipart 上传端点。上传链路已实现 2 MiB、jpg/png/webp、内容/MIME 一致、安全 UUID 路径、原子写入、Service 失败的幂等文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试；逻辑删除图片的本地文件由显式截止时间、命名空间校验、有效引用保护和失败重试语义的独立批处理清理。
-- MySQL 8+ 权威首迁移、Order 增量迁移和 Inventory 增量迁移均已离线生成并通过静态契约测试；完整链已在一次性 MySQL 8.0.46 实例真实执行并在验证后销毁，未应用任何持久、共享或生产数据库，也未 fake Aerich 版本。SQLite 开发库未被本次演练修改。
+- MySQL 8+ 权威首迁移及 Order、Inventory、Wallet/Payment/Refund、Reservation 增量迁移均已离线生成并通过静态契约测试；完整 Aerich 0→5 已在一次性 MySQL 8.0.46 实例真实执行并在验证后销毁，未应用任何持久、共享或生产数据库，也未 fake Aerich 版本。SQLite 开发库未被本次演练修改。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
 - Phase 4.1 曾让 Kit 库存采用直接设置最终值模式；Phase 4.3.10 已完成破坏性切换，当前所有业务库存写入统一经过 Inventory 流水语义。
 - Phase 4.3.1 Inventory 现状审计与业务契约冻结已完成：`product_kits.stock` 保持唯一权威余额；创建 Pending Kit/混合订单时扣减、Pending 取消时幂等恢复、支付/完成不改库存；管理员调整采用 `change + reason + Idempotency-Key` 并允许 Online Kit；多 Kit 按 Product ID 升序加锁，MySQL 真实并发测试是发布硬门槛。运行时实现状态以以下分阶段条目及实际代码为准。
@@ -55,9 +57,10 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 - Phase 4.3：Inventory；4.3.1–4.3.12 已完成并通过最终 Review。
 - Wallet/Payment/Refund v1 已完成仓库实现，但 M4 持久迁移、历史数据补齐、扩展 MySQL 门槛和生产开关仍属于发布前工作。
-- Wallet v1 之后的下一业务 Phase 尚未冻结；未经当前任务明确要求，不提前实现未来能力，不把规划误报为已完成能力。
+- Reservation N1 已完成；N2 微信主动通知、可逆加密投递地址、durable outbox、worker、重试与监控仍是明确后续范围，不能把页面状态展示误报为主动通知。
+- M6 之后的下一业务 Phase 尚未冻结；未经当前任务明确要求，不提前实现未来能力，不把规划误报为已完成能力。
 
-当前已知限制包括真实微信支付 Provider/商户进件尚未接入、M4 未应用持久库、钱包专项扩展 MySQL 门槛未完成、未实现邮件验证和 OAuth、管理员启用用户及头像上传仍待实现。Refresh family 轮换与认证限流已由 Phase 9.5 实现。不要在无关任务中顺手扩展这些范围。
+当前已知限制包括真实微信支付 Provider/商户进件尚未接入、M4/M5 未应用持久环境且 M6 仅应用本地 SQLite（未应用任何持久 MySQL/发布环境）、M6 真实 MySQL 门槛与生产对象存储色板发布尚未完成、来源网页色值未经过实体拼豆样本校色、钱包专项扩展 MySQL 门槛未完成、Reservation N2 主动通知未实现、未实现邮件验证和 OAuth、管理员启用用户及头像上传仍待实现。Refresh family 轮换与认证限流已由 Phase 9.5 实现。不要在无关任务中顺手扩展这些范围。
 
 ## 文档导航与事实来源
 
@@ -85,6 +88,8 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | Order 需求 | [`docs/01_requirements/order_module.md`](docs/01_requirements/order_module.md) |
 | Inventory 权威需求 | [`docs/01_requirements/inventory_module.md`](docs/01_requirements/inventory_module.md) |
 | Wallet/Payment/Refund 权威需求 | [`docs/01_requirements/wallet_module.md`](docs/01_requirements/wallet_module.md) |
+| Reservation N1 权威需求 | [`docs/01_requirements/reservation_module.md`](docs/01_requirements/reservation_module.md) |
+| Reservation N2 微信通知规划 | [`docs/01_requirements/reservation_wechat_notification_plan.md`](docs/01_requirements/reservation_wechat_notification_plan.md) |
 
 ### API 与数据
 
@@ -96,6 +101,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | Order API | [`docs/03_api/order_api.md`](docs/03_api/order_api.md) |
 | Inventory API | [`docs/03_api/inventory_api.md`](docs/03_api/inventory_api.md) |
 | Wallet/Payment/Refund API | [`docs/03_api/wallet_api.md`](docs/03_api/wallet_api.md) |
+| Reservation API | [`docs/03_api/reservation_api.md`](docs/03_api/reservation_api.md) |
 | 表、字段、约束和索引 | [`docs/02_database/database_design.md`](docs/02_database/database_design.md) |
 | 可维护的 ER 源文件 | [`docs/02_database/er_diagram.dbml`](docs/02_database/er_diagram.dbml) |
 

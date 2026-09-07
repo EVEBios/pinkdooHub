@@ -1,12 +1,12 @@
 # API Design Conventions
 
-> **Document Version:** v2.2
+> **Document Version:** v2.4
 > **Status:** Active
 > **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
 >
 > 本文档定义 pinkdooHub 所有 API 的强制性设计规范。新增或修改接口时，必须对照本文档逐项检查。
 >
-> **业务模块 API 文档：** [User API](user_api.md) · [Product API](product_api.md) · [Order API](order_api.md)
+> **业务模块 API 文档：** [User API](user_api.md) · [Product API](product_api.md) · [Order API](order_api.md) · [Inventory API](inventory_api.md) · [Wallet API](wallet_api.md) · [Reservation API](reservation_api.md)
 >
 > **快速检查清单见 [§18](#18-快速检查清单)。**
 
@@ -323,6 +323,7 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 4041x / 4092x / 4223x | 订单模块 — 资源不存在 / 状态与阶段冲突 / 聚合不可用 |
 | 4093x | 库存模块 — 余额与幂等冲突 |
 | 4044x / 4094x / 4224x | Wallet/Payment/Refund — 资源不存在 / 余额、结算、退款与幂等冲突 / 充值范围 |
+| 4045x / 4095x / 4225x | Reservation — 预约/店休资源不存在 / 状态与时间冲突 / Product、Option、排期、手机号和店休日期不可用 |
 | 40xxx | 商品模块 — 资源不存在 / 类型错误 |
 | 409xx | 商品模块 — 状态冲突 |
 | 422xx | 商品模块 — 业务校验 |
@@ -359,7 +360,7 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 1012 | 外部身份绑定冲突 |
 | 1013 | 外部身份未绑定 |
 | 1014 | 解绑会移除唯一登录方式 |
-| 1015 | 活跃订单、处理中资金、可退款钱包结算敞口或非零钱包余额阻止账号注销 |
+| 1015 | 活跃订单、未来活跃预约、处理中资金、可退款钱包结算敞口或非零钱包余额阻止账号注销 |
 
 ### 8.4 商品模块错误码（40xxx / 409xx / 422xx）
 
@@ -373,6 +374,8 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 40402 | Option 不存在 |
 | 40403 | 图片不存在 |
 | 40404 | 套装配置不存在 |
+| 40405 | 全局拼豆颜色不存在 |
+| 40406 | 商品颜色关联不存在或不再可见 |
 
 **类型错误（400xx）—— HTTP 400**
 
@@ -396,6 +399,9 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 40905 | online 商品不可修改 |
 | 40911 | Option 配置已存在 |
 | 40912 | Option 已删除 |
+| 40913 | 非空全局颜色业务编码重复 |
+| 40914 | 全局颜色未配置/未激活，不能激活或启用销售 |
+| 40915 | Online 商品正在使用全局颜色，禁止修改 |
 
 **业务校验（422xx）—— HTTP 422**
 
@@ -416,22 +422,25 @@ Order 与 Product 一样使用 HTTP 语义化的稳定业务 code；异常必须
 | 40921 | 409 | `OrderStatusConflict` | 当前订单状态不允许指定状态变迁 |
 | 42231 | 422 | `OrderProductUnavailable` | Product 不存在、已删除、未上架，或所需 Kit 扩展不可用 |
 | 42232 | 422 | `OrderOptionUnavailable` | Experience Option 缺失/无效/归属错误，或 Kit 错误携带 Option |
+| 42233 | 422 | `OrderKitColorUnavailable` | 商品颜色缺失、未启用、全局未激活/未配置、归属错误，或非颜色商品错误携带颜色；data 返回 product_id/kit_color_id |
+| 42234 | 422 | `OrderAmountExceeded` | 服务端权威累计总额超过 `99999999.99`；data 只返回 maximum，不回显内部中间金额 |
 
-`items` 为空/超限、重复 Product/Option 组合、数量范围、备注长度和未知字段属于请求形状校验，使用全局参数错误 code `422`，不再保留旧草案的 `3006`。旧 `3001`—`3006` 从未实现，已由 Order v1.0 冻结契约替换。
+`items` 为空/分类项数超限、重复 `(product_id, experience_option_id, kit_color_id)`、数量范围、备注长度和未知字段属于请求形状校验，使用全局参数错误 code `422`。M6 限制为颜色行最多 20、非颜色行最多 10、总行最多 30，每色数量最多 99；旧 fixed/Experience 客户端仍受原非颜色 10 行边界保护。
 
 > **实现状态：** Order 的 `IntEnum`、API value/label Registry、Schema/应用层及 Phase 4.2 最终 Review 均已完成。Phase 4.3.7–4.3.8 已接入 Kit/混合创建扣减与 Pending 取消恢复；当前会使用 `40931` 库存不足、`40932` 恢复越界和 `40933` restore 幂等矛盾，阶段门禁 `40922` 已移除。
 
-### 8.6 库存模块错误码（4093x）
+### 8.6 库存模块错误码（40031 / 4093x）
 
 以下命名异常及三个 Inventory 管理路由均已实现；Wallet/Payment/Refund M4 另在 PAID Kit 全额退款中复用 `40932`/`40933`：
 
 | code | HTTP | 命名异常 | 说明 |
 |------|------|----------|------|
+| 40031 | 400 | `InventoryKitKindMismatch` | message 固定为 `Kit kind does not match this inventory operation`；data 返回 `expected/actual` KitKind value |
 | 40931 | 409 | `InsufficientStock` | 下单库存不足；用户数据不披露精确可用量 |
-| 40932 | 409 | `InventoryBalanceExceeded` | 调整后余额超出 `0..999999` |
+| 40932 | 409 | `InventoryBalanceExceeded` | 调整后余额超出 `0..999999`；颜色余额场景的 data 另含 `kit_color_id` |
 | 40933 | 409 | `InventoryTransactionConflict` | 幂等键已绑定到不同请求 |
 
-Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40001`、`40903`。请求体、`Idempotency-Key`、分页和筛选形状错误使用全局 HTTP 422 / code `422`。HTTP 状态仍由异常类型映射，不按 `4093x` 数字判断。
+Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40406`、`40001`、`40903`。fixed 端点和颜色端点必须明确拒绝错误 KitKind；请求体、`Idempotency-Key`、分页和筛选形状错误使用全局 HTTP 422 / code `422`。HTTP 状态仍由异常类型映射，不按数字段判断。
 
 ### 8.7 Wallet / Payment / Refund 错误码（4044x / 4094x / 4224x）
 
@@ -453,19 +462,38 @@ Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40001`、`40
 
 钱包余额硬上限为 `1000.00`。ADMIN 正向调账还必须满足 `调整后余额 + 尚可退款的钱包支付敞口 ≤ 1000.00`；PAID 钱包订单和完成未满 30 天的钱包订单在 Refund succeeded 前占用敞口。未来真实充值成功也必须复用该预留校验。真实微信 Provider 当前关闭，充值、微信订单支付及微信退款使用 HTTP 503 / code `503`，且必须在任何数据库写入前失败。完整端点与字段见 [Wallet API](wallet_api.md)。
 
+### 8.8 Reservation 错误码（4045x / 4095x / 4225x）
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40451 | 404 | `ReservationNotFound` | 预约不存在；用户访问他人预约也使用该错误 |
+| 40452 | 404 | `StoreClosureNotFound` | 目标日期当前没有可恢复的自定义店休 |
+| 40951 | 409 | `ReservationStatusConflict` | 当前状态不允许 confirm/reject/cancel；data 返回稳定 operation、current_status、allowed_statuses |
+| 40952 | 409 | `ReservationCancellationWindowClosed` | 已晚于开始前 3 小时的顾客取消截止时间 |
+| 40953 | 409 | `ReservationOperationExpired` | 预约已开始，门店不能再确认或拒绝 |
+| 42251 | 422 | `ReservationProductUnavailable` | Product 已删除、非 Experience 或不处于 Online |
+| 42252 | 422 | `ReservationOptionUnavailable` | ExperienceOption 不存在、已删除或归属不可用 |
+| 42253 | 422 | `ReservationScheduleUnavailable` | 日期/时段不可用；data.reason 为稳定机器原因 |
+| 42254 | 422 | `ReservationPhoneRequired` | 当前普通用户没有手机号，不能创建预约 |
+| 42255 | 422 | `StoreClosureDateUnavailable` | 自定义店休日期是过去日期或周一 |
+
+`42253.data.reason` 只允许 `minimum_lead_time`、`outside_booking_window`、`invalid_slot_increment`、`outside_business_hours`、`weekly_closed`、`store_closed`、`option_day_type_mismatch`。`42255.data.reason` 只允许 `past_date`、`weekly_closed`。完整契约见 [Reservation API](reservation_api.md)。请求形状错误继续使用通用 HTTP 422 / code `422`。
+
 ---
 
 ## 9. 数据类型与格式
 
 ### 9.1 时间
 
-所有时间字段使用 ISO 8601 格式，UTC 时区：
+所有 datetime 字段使用 ISO 8601 格式，UTC 时区：
 
 ```
 "2026-07-23T10:30:00Z"
 ```
 
-字段命名：`created_at`、`updated_at`
+字段命名示例：`created_at`、`updated_at`、`scheduled_start_at`、`scheduled_end_at`。
+
+Reservation 是明确例外的“双表示”输入/输出边界：创建请求使用 `Asia/Shanghai` 当地严格日期 `YYYY-MM-DD` 与开始时间 `HH:00` / `HH:30`；服务端转换后以 UTC datetime 保存并输出，同时返回上海当地的 `reservation_date/start_time/end_time` 便于页面显示。所有提前量、周一、营业时间和第 0–30 日窗口判断使用服务端时钟与上海时区，不能使用客户端设备时区作为权威。
 
 ### 9.2 金额
 
@@ -628,6 +656,8 @@ Content-Type: multipart/form-data
 | 最大体积 | 2MB |
 | 允许格式 | jpg, png, webp |
 
+上述约束适用于现有 Product/Option 单图上传；每个请求只接受一个文件。M6 的 221 色色板图属于全局 BeadColor，而非 ProductImage，不通过逐个 multipart 请求做首批导入。实物图推荐 192×192 或 256×256、sRGB、WebP；指定 MARD 页面只有 CSS HEX/RGB 色块，项目已通过版本化 manifest 和默认 dry-run、显式本地 apply 的离线工具生成 256×256 sRGB PNG，完成槽号、来源顺序、HEX/RGB、确定性文件名、URL、冲突和 Online 引用校验。`swatch_image_url` 可为空，缺图不阻止颜色配置或商品上架；生产对象存储/CDN 发布仍属于 Gate B，而不是该本地工具的能力。
+
 ### 12.3 响应
 
 上传成功返回文件的访问 URL：
@@ -656,10 +686,12 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `updated_at` (datetime) | `updated_at` | → ISO 8601 string |
 | `total_amount` (decimal) | `total_amount` | → 两位小数 string |
 | `is_cover` (boolean) | `is_cover` | → boolean |
+| `scheduled_start_at` (datetime) | `scheduled_start_at` | → UTC ISO 8601 string |
+| `option_price` (decimal) | `price` | → Reservation 创建快照的两位小数 string |
 
 > - 所有 ID 类型在 API 中统一为 `int` / `bigint`
 > - 所有时间字段统一为 ISO 8601 字符串
-> - 枚举字段通过 Enum 类在 DB tinyint 和 API string 之间转换
+> - 枚举字段通过 Enum 类在 DB `SMALLINT` 或 `VARCHAR` 与 API value 之间转换；具体表示按模块注册表执行
 
 ---
 
@@ -685,6 +717,8 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | | | `"offline"` | "已下架" |
 | `ProductType` | VARCHAR | `"experience"` | "拼豆体验" |
 | | | `"kit"` | "拼豆套装" |
+| `KitKind` | VARCHAR | `"fixed"` | "固定套装" |
+| | | `"color_selectable"` | "自选颜色" |
 | `UserRole` | SMALLINT | 1 → `"user"` | "普通用户" |
 | | | 2 → `"admin"` | "管理员" |
 | | | 3 → `"super_admin"` | "超级管理员" |
@@ -704,8 +738,13 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `PaymentStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` / `"closed"` | 支付状态 |
 | `RechargeOrderStatus` | VARCHAR | `"pending"` / `"paid"` / `"failed"` / `"closed"` | 充值单状态 |
 | `RefundStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` | 退款状态 |
+| `ReservationStatus` | VARCHAR | `"pending"` / `"confirmed"` / `"rejected"` / `"cancelled"` | 待门店确认 / 已确认 / 未能确认 / 已取消 |
+| `ReservationRejectionReason` | VARCHAR | `"no_capacity"` | 当前时段无空位 |
+| `ReservationCancellationReason` | VARCHAR | `"customer_request"` / `"store_closed"` | 顾客取消 / 门店店休 |
+| `ReservationScheduleUnavailableReason` | API-only | `"minimum_lead_time"` / `"outside_booking_window"` / `"invalid_slot_increment"` / `"outside_business_hours"` / `"weekly_closed"` / `"store_closed"` / `"option_day_type_mismatch"` | 排期不可用机器原因，不持久化 |
+| `StoreClosureDateUnavailableReason` | API-only | `"past_date"` / `"weekly_closed"` | 自定义店休日期不可操作机器原因，不持久化 |
 
-> Order/DayType 等面向页面展示的字段通过 Mapper 输出 `{value, label}`；Wallet/Payment/Refund 的机器状态当前直接输出稳定字符串 Enum。退款状态独立于 OrderStatus，成功退款不会把 Order 改成 Cancelled。
+> Order/DayType/KitKind/Reservation 状态与持久化原因等面向页面展示的字段通过 Mapper 输出 `{value, label}`；请求中的 `kit_kind` 使用原始字符串 value，省略时默认 `fixed`。Reservation 的 `42253/42255 data.reason` 是机器原因原始 value。Wallet/Payment/Refund 的机器状态当前直接输出稳定字符串 Enum。退款状态独立于 OrderStatus，成功退款不会把 Order 改成 Cancelled。
 
 ### 使用示例
 

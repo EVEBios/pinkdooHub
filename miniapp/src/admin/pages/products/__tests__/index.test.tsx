@@ -45,7 +45,7 @@ describe('AdminProductsPage', () => {
         role: 'admin', status: 'normal', last_login_at: null,
         created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
       },
-      register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+      register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
     }
     mockState = { status: 'loading', items: [], total: 0, page: 1, pages: 0, loadingMore: false }
     mockFilters = { productType: 'all', status: 'all', keyword: '', includeDeleted: false }
@@ -86,6 +86,8 @@ describe('AdminProductsPage', () => {
         status: { value: 'draft', label: '草稿' },
         cover_image: null,
         display_price: null,
+        kit_kind: null,
+        sale_unit_grams: null,
         updated_at: '2026-08-25T08:00:00Z',
         is_deleted: true,
       }],

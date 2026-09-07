@@ -84,5 +84,9 @@ spikes/
 # 候选稿、截图与设计 brief 仅用于本地评审；定稿后再按需迁入正式工程。
 .ui-design-explorations/
 
+# ==================== 本地前端学习导航 ====================
+# 仅供当前机器阅读源码与学习 React/Taro，不进入正式项目或版本控制。
+/frontend-learning-guide/
+
 # Impeccable 的本地验收截图与差异图；方向契约和定稿设计系统仍进入版本控制。
 .impeccable/review/

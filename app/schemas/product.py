@@ -15,9 +15,13 @@ from pydantic import (
 )
 
 from app.common.constants.product import (
+    BEAD_COLOR_CODE_MAX_LENGTH,
+    BEAD_COLOR_NAME_MAX_LENGTH,
+    MAX_BEAD_COLOR_SORT,
     MIN_DURATION_MINUTES,
     MIN_IMAGE_SORT,
     MIN_PARTICIPANTS,
+    MIN_BEAD_COLOR_SORT,
     PRODUCT_DESCRIPTION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_NAME_MIN_LENGTH,
@@ -27,7 +31,7 @@ from app.common.constants.product import (
     PRODUCT_PRICE_PATTERN,
     PRODUCT_SEARCH_KEYWORD_MAX_LENGTH,
 )
-from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.enums.product import DayType, KitKind, ProductStatus, ProductType
 from app.common.pagination import PageParams
 
 _product_price_regex = re.compile(PRODUCT_PRICE_PATTERN)
@@ -122,6 +126,22 @@ ParticipantsInput = Annotated[
     Field(strict=True, ge=MIN_PARTICIPANTS),
 ]
 ImageSortInput = Annotated[int, Field(strict=True, ge=MIN_IMAGE_SORT)]
+BeadColorSortInput = Annotated[
+    int,
+    Field(
+        strict=True,
+        ge=MIN_BEAD_COLOR_SORT,
+        le=MAX_BEAD_COLOR_SORT,
+    ),
+]
+BeadColorCodeInput = Annotated[
+    str,
+    Field(strict=True, min_length=1, max_length=BEAD_COLOR_CODE_MAX_LENGTH),
+]
+BeadColorNameInput = Annotated[
+    str,
+    Field(strict=True, min_length=1, max_length=BEAD_COLOR_NAME_MAX_LENGTH),
+]
 CoverFlagInput = Annotated[Literal[True], BeforeValidator(_parse_cover_flag)]
 ProductSearchKeyword = Annotated[
     str,
@@ -170,6 +190,7 @@ class KitProductCreate(_ProductCreateBase):
     """创建套装商品草稿请求。"""
 
     price: ProductPriceInput
+    kit_kind: KitKind = KitKind.FIXED
 
 
 class ProductUpdate(_NonEmptyPatchRequest):
@@ -249,6 +270,30 @@ class KitPriceUpdate(_ProductRequest):
     price: ProductPriceInput
 
 
+class BeadColorUpdate(_NonEmptyPatchRequest):
+    """修改全局颜色槽元数据；null 可清空名称或业务编码。"""
+
+    color_code: BeadColorCodeInput | None = None
+    name: BeadColorNameInput | None = None
+    sort: BeadColorSortInput | None = None
+    is_active: bool | None = Field(default=None, strict=True)
+
+    @field_validator("sort", "is_active", mode="after")
+    @classmethod
+    def reject_null_non_nullable_fields(cls, value: object) -> object:
+        """排序和启用状态可以缺失，但不能显式提交 null。"""
+
+        if value is None:
+            raise ValueError("sort and is_active cannot be null")
+        return value
+
+
+class ProductKitColorUpdate(_ProductRequest):
+    """修改商品颜色是否启用；库存由 Inventory 单独维护。"""
+
+    is_enabled: bool = Field(strict=True)
+
+
 class ProductListQuery(PageParams):
     """用户端商品列表查询参数。"""
 
@@ -270,3 +315,9 @@ class AdminProductListQuery(ProductListQuery):
 
     status: ProductStatus | None = None
     include_deleted: QueryBoolean = False
+
+
+class BeadColorListQuery(PageParams):
+    """管理端全局颜色目录分页查询。"""
+
+    model_config = ConfigDict(extra="forbid")

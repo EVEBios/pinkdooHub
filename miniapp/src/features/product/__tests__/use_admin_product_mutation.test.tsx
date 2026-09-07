@@ -144,6 +144,8 @@ function createSource(overrides: Partial<AdminProductMutationSource>): AdminProd
     name: '新套装',
     product_type: { value: 'kit', label: '拼豆套装' },
     status: { value: 'draft', label: '草稿' },
+    kit_kind: { value: 'fixed', label: '固定套装' },
+    sale_unit_grams: null,
   }
   return {
     createExperienceProduct: jest.fn(async () => experienceResult),

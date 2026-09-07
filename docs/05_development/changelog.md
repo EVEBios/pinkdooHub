@@ -4,6 +4,38 @@
 
 ---
 
+## M6 Color-selectable Kit — 仓库实现与本地验证完成 / 真实 MySQL 待验（2026-09-06–07）
+
+- 冻结 `KitKind = fixed | color_selectable`。省略仍创建既有 fixed Kit，历史 ProductKit 迁移时保持 fixed 与原 `stock` 语义；自选颜色 Kit 使用 `stock=NULL`、`sale_unit_grams=10`，`price` 表示每 10g 单价，KitKind 创建后不可修改。
+- 冻结全局 `bead_colors` 221 槽与商品级 `product_kit_colors`：全局槽可暂缺 code/name/色板图，非空 code 唯一；每个自选颜色商品原子关联全部槽，初始禁用/零库存。`is_enabled/stock_units` 属于商品，不同商品引用同一颜色时库存不共享。
+- 冻结公开与管理 Product 契约：列表/详情增加 kit_kind/sale_unit_grams，颜色型详情增加 colors，fixed 保持原库存行为并以空 colors/空销售单位兼容；新增 ADMIN+ 全局颜色分页/PATCH 与商品颜色开关 PATCH。颜色库存仍只能走 Inventory，不恢复 Product 直接 stock 写入口。
+- 冻结订单输入 `items[].kit_color_id` 与 Experience/fixed/color 三态；每色一条 OrderItem、每色数量 1–99、颜色行最多 20、非颜色行最多 10、总行最多 30，按 `(product_id, experience_option_id, kit_color_id)` 判重。颜色订单保存 code/name/slot/10g 单位快照，响应派生 `total_weight_grams`，价格/小计均按 10g 单位数计算。
+- 冻结颜色库存流水：InventoryTransaction 增可空 kit_color FK；fixed 保持 ProductKit 余额和既有端点，自选颜色锁定商品颜色余额并使用独立调整/流水路径。自动幂等身份加入 `:color:{kit_color_id}`，全局查询支持 kit_color_id；路径与 KitKind 不匹配使用 `40031`，颜色资源复用 Product `40406`。
+- 新增错误契约：Product `40405–40406`、`40913–40915`，Order `42233–42234`，Inventory `40031`；HTTP 状态继续由异常类型决定。上架要求自选颜色恰好关联 221 槽、至少一个启用色，且启用色必须全局激活且 code/name 完整；零库存允许上架并展示售罄。
+- 色板图属于全局 BeadColor，可为空，不复制为 ProductImage。实物图建议 192×192 或 256×256、sRGB、WebP；指定的 MARD 页面实际只有 CSS HEX/RGB 色块，因此后续以来源 manifest 生成纯色 PNG 并由默认 dry-run、显式 apply 的本地工具导入。现有单文件、2 MiB、jpg/png/webp Product 上传接口不承担 221 张首批导入。
+- 加固 M6 Product 并发边界：上架与商品颜色启停共用 Product 行锁并在锁后重载复验；全局颜色修改按引用 Product ID 升序、BeadColor、启用关联的固定顺序取锁，避免上架/最后一色禁用及 Online 色板突变竞态。管理颜色响应保留 enabled + inactive/unconfigured 诊断态，公共输出和上架仍只接受 sale-ready。BeadColor.sort 统一限制为 `0..32767`，最长 Unicode 修改审计以有效 JSON 的 `{len,sha256}` 摘要适配 256 字符列。
+- Product/Order/Inventory/Wallet/Refund 的 Model、Schema、Repository/Service/Mapper/Router 及 Aerich `6_20260906123000_add_color_selectable_kits.py` 已落盘；加入本地 SQLite 升级与 MARD 导入契约后的最终本地后端回归为 `1978 passed, 20 skipped`，回环端口发布探测已在完整主套件中直接通过；20 项 skip 均为需要显式环境的隔离门槛。
+- miniapp 已完成商品创建/配置、颜色搜索与 10g 数量选择、购物车 v1→v2 兼容迁移、确认页/订单快照、代客钱包订单、颜色库存调整与流水接入；缺图使用诚实槽位占位，远程色板图按需加载；当来源只有一个标签而使 `color_code=name` 时，顾客与代客下单展示去重为单个色号，有独立名称时仍显示“色号 · 名称”。同一自选商品的购物车颜色现在合并为一张商品主卡，卡内以圆色样逐色显示并保留独立 10g 步进与移除，下单映射仍严格保持每色一条明细；商品颜色启停动作使用紧凑圆角矩形并显式双轴居中，避免胶囊在双字按钮上接近圆形。完整前端为 `81 suites / 556 tests`，TypeScript、ESLint、Stylelint、OpenAPI 类型漂移与 17 项 Node CI policy 均通过；微信 production 构建和产物检查通过，141 个文件、主包 645,547 bytes、分包 390,570 bytes、总计 1,036,117 bytes，manifest SHA-256 为 `260e2f3e129ce75e418a1e487886a27e26684000111be5bd8c19161bc1570f8a`，按既有规则保持 `release_eligible=false`。
+- MySQL CI 已把权威版本链收紧到 M0–M6，并增加“空库 0→6 → 仅回退 M6 → M5 fixed 非零库存样本 → 再升级 M6”的历史兼容演练；snapshot 会检查 221 槽、19 个关键列、4 个命名 FK，以及 7 个命名索引的列序与唯一性，Inventory MySQL 另有结构/EXPLAIN 与颜色集合真实锁等待入口。上述 M6 MySQL 门槛尚未在真实 Runner 执行，不能复用 M5 的 16 passed 结论。
+- 新增保留数据的本地 SQLite M6 版本化升级脚本 `scripts/local/upgrade_sqlite_m6.py`：默认只读预览，显式 `--apply` 前用 SQLite Backup API 建立一致性备份，在单事务内重建 `product_kits` 并扩展订单/库存表、建立两张颜色表及 221 个占位槽；提交前核对原业务表行数、字段、槽位和外键，已升级时幂等零写入，未知或含数据的部分状态 fail closed。脚本先在当前 13 商品 `db.sqlite3` 的临时副本演练，随后于 2026-09-07 经用户授权应用本地持久库；写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-m6-20260907-015954.bak`。升级后保留 13 个商品、6 个 fixed Kit，建立 221 个占位槽/零商品颜色映射，SQLite integrity/FK 与 ORM 13 商品读取均通过。脚本不写 Aerich，也不替代 MySQL M6 发布迁移证据。
+- 用户于 2026-09-07 指定公开的 MARD 221 标准色卡页；`scripts/local/fetch_mard_bead_colors.py` 仅允许该 HTTPS host，抓取并严格验证 A1–M15 固定序列、221 项数量、CSS RGB/展示 RGB/HEX 一致以及色号/HEX 唯一。版本化 `app/tasks/manifests/mard_221.json` 保存来源 URL、UTC 时间、HTML SHA-256 `04179ce05e16f6575fee5071ac817c93387a559d2009596b7487ea6d080b513f`、HEX/RGB、槽位/排序和确定性图片名；来源只有 CSS 色块，没有逐色图片或独立名称，因此 `color_code=name=页面色号`。
+- `scripts/local/import_mard_bead_colors.py` 以标准库从来源 RGB 生成 221 张确定性 256×256 sRGB PNG，默认 dry-run，显式 `--apply --confirm-local-only` 才更新项目内 M6 SQLite 与忽略图片目录；现有冲突、Online 商品引用、异常槽位/清单/文件 fail closed，写库前备份，图片原子发布，事务失败完整回滚并补偿本轮文件，完全相同重放零写入。5 项专项覆盖来源解析、清单/PNG、预览/apply/重放、冲突/Online 拒绝和故障补偿。
+- 本地 apply 已写入 221 个 code/name/URL/sort 并全部全局激活，生成图片内容总计 128,325 bytes，写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-mard-221-20260907-024129-065769.bak`；重放预览为 `database_changes=0 / images_reused=221 / already_current=true`，外键检查无结果。ProductKitColor 仍为独立商品配置：导入步骤不创建商品、不启用颜色、不写库存；本地此前已有草稿 Product `14`（`221自选颜色`）的 221 条关联，当前全部禁用且库存为 0，本次只让其关联的全局色板资料变为完整。M6 未应用 Gate A、共享、预发布或生产 MySQL，生产对象存储/CDN 发布与实体拼豆校色仍待完成；未新增依赖，未 commit/push/tag/release。
+
+## Reservation N1 — 仓库实现候选（2026-09-06）
+
+- 新增独立体验预约，不要求下单或付款，也不创建 Order、Payment 或 Wallet 流水。正常普通 `USER` 以 `experience_option_id + reservation_date + start_time` 创建 `pending`；服务端按 `Asia/Shanghai` 返回未来第 0–30 日的合法日期/半小时时段，并统一执行 11:00–20:00、周一固定店休、周二至周五 weekday、周末 holiday、完整体验不跨营业结束时间和开始前至少 3 小时规则。
+- 冻结 Reservation 四状态 `pending/confirmed/rejected/cancelled`，不新增 `completed`、到店或支付状态。ADMIN+ 只可在开始前确认 pending 或以固定 `no_capacity` 拒绝；用户在精确开始前至少 3 小时可取消 pending/confirmed，改期必须取消旧预约后创建新记录，原记录、快照和审计不被覆盖。
+- N1 不维护座位容量、占座或同槽唯一约束。同一用户、同一 Option、同一开始时间允许重复成功提交并生成不同 Reservation ID，由店员逐条人工确认或拒绝；创建 POST 没有客户端幂等键，结果未知时客户端先查“我的预约”，不得自动重发。
+- 新增自定义店休：ADMIN+ 仅能设置上海当地今天或未来的非周一日期；PUT 首次 201、同一关闭状态重放 200。首次关闭在一个事务内按 Reservation ID 升序锁定并批量取消该日尚未开始的 pending/confirmed 预约，使用独立 `store_closed` 原因和顾客文案；DELETE 恢复营业但绝不复活历史预约，重复恢复返回 `40452`。
+- 顾客侧以“我的预约/详情”的四状态、原因和服务端 `customer_message` 获知确认、无空位拒绝或店休取消结果。N1 不包含主动微信通知、订阅授权、Outbox、Worker、投递重试或“已通知”状态；这些能力保留在 N2 Deferred 规划。门店可在管理详情读取 User 当前完整手机号作人工电话兜底，列表只返回后端掩码号码；手机号不写 Reservation 快照，顾客响应不返回手机号。
+- 新增 `StoreBusinessDay` 和 `Reservation` 数据模型：一日一行锁点、四个 `RESTRICT` 外键、UTC 起止、完整 Product/Option 创建快照、状态原因与状态时间；共 5 个 Reservation 普通索引，分别覆盖用户全部列表、用户按状态列表、注销活跃预约检查、店休批量取消和管理状态分页。普通用户存在未来 `pending/confirmed` 且 `scheduled_end_at > now` 的预约时继续以 User 错误 `1015` 阻止账号注销。
+- 新增 5 个顾客端与 8 个 ADMIN+ FastAPI 端点、严格请求/Query/响应 Schema、纯时间 Validator、Repository、事务 Service、零 SQL Mapper、统一业务错误 `40451–40452`、`40951–40953`、`42251–42255` 和审计动作；确认、拒绝、取消及店休恢复的无参数 mutation 均要求真正空 body。
+- 后端完整 SQLite 基线为 `1925 passed, 2 skipped, 1 deselected`：命令显式忽略 `tests/inventory/mysql` 与 `tests/reservation/mysql`，并只因当前沙箱不允许回环端口绑定而 deselect 对应环境探测项；该环境限制不被改写为业务测试跳过，真实 MySQL 门槛由后述一次性 MySQL 8.0.46 专项独立覆盖。
+- 新增 Reservation 小程序 Endpoint/Runtime Guard/Feature 与 6 个页面：顾客创建、我的预约、顾客详情，以及 ADMIN+ 列表、详情审核和店休设置；Experience 详情、首页顾客入口和 ADMIN 工作台入口均已接通。缺少手机号时复用 `PATCH /users/me` 保存当前号码，登录回跳仅接受精确白名单；非幂等写操作结果未知时冻结重复提交并引导查询权威状态，店休 unknown 使用目标日期精确查询收敛。完整前端 `77 suites / 488 tests`、Reservation 专项 `7 suites / 46 tests`、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移和 `17` 项 CI policy 测试通过，微信/支付宝/抖音/H5 production build 均成功；微信端另以 `https://api.ci.pinkdoohub.test` 固定 Origin 重建并通过 artifact checker（141 个文件、总计 968,329 bytes、manifest SHA-256 `70899686b0a6187f2eabafa54d55c4793b5701230892c202fc9c58afd9cf46e7`、`release_eligible=false`），H5 仅有既有 bundle-size 建议警告。该微信产物不是正式 RC；真实 API/角色/弱网/真机 Functional 尚未执行。
+- 新增 Aerich M5 离线迁移，仅创建 `store_business_days`、`reservations` 及约束/索引，不回填历史数据。M5 已在一次性 MySQL 8.0.46 专用 Schema 真实执行完整 Aerich 0→5；Reservation 专项 `7 passed` 覆盖创建/店休两个锁等待方向、同日并发店休、批量取消与审计回滚、真实 1205、1213 全事务重试及营业日唯一索引/五个 Reservation 查询索引的 EXPLAIN，与既有 Inventory 门槛联合运行 `16 passed`。容器由 `--rm` 删除、13307 端口释放、临时报告清理，未触碰持久数据库。
+- 同步新增 Reservation 需求/API 权威文档并更新 User/Product、数据库设计/DBML、API 通用约定、架构、AI Context、迁移流程及前端集成/架构/测试/路线/多端/发布契约。N2 详细规划独立保留，不纳入本次实现范围。本条记录的是未发布仓库候选；M5 仍未应用本地持久 SQLite、Gate A、共享、预发布或生产环境，不代表主动微信通知已启用、目标环境已验收或版本已经发布。
+
 ## Wallet / Payment / Refund v1 — 仓库实现（2026-09-05）
 
 - 新增封闭式会员钱包：新建普通 `USER` 创建一个 `0.00–1000.00` 权威余额账户，历史 backfill 仅补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补；ADMIN/SUPER_ADMIN 始终不建钱包，均只能查询和调整普通客户。单笔充值金额冻结为 `1.00–1000.00`，资金写请求只接受固定两位小数字符串。

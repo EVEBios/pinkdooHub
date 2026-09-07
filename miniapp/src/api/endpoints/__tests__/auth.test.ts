@@ -189,4 +189,36 @@ describe('AuthApi', () => {
     }))
     await expect(logoutApi.logout()).resolves.toBeUndefined()
   })
+
+  it('PATCH me 只发送允许的资料字段并校验更新后的用户', async () => {
+    const authSession: AuthSession = {
+      getAccessToken: () => 'access-token',
+      refreshAccessToken: async () => undefined,
+      clearSession: jest.fn(),
+    }
+    const transport = new FakeTransport({ ...user, phone: '13900139000', internal: 'hidden' })
+    const api = new AuthApi(new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport,
+      authSession,
+    }))
+
+    await expect(api.updateProfile({
+      phone: '13900139000',
+      ignored: 'must-not-cross-endpoint',
+    } as never)).resolves.toEqual({ ...user, phone: '13900139000' })
+    expect(transport.requests[0]).toMatchObject({
+      operation: 'users.updateProfile',
+      method: 'PATCH',
+      url: 'https://api.example.com/api/v1/users/me',
+      headers: expect.objectContaining({ Authorization: 'Bearer access-token' }),
+      body: { phone: '13900139000' },
+    })
+
+    await expect(new AuthApi(new ApiClient({
+      baseUrl: 'https://api.example.com',
+      transport: new FakeTransport({ ...user, phone: '13800138000' }),
+      authSession,
+    })).updateProfile({ phone: '13900139000' })).rejects.toBeInstanceOf(ContractError)
+  })
 })

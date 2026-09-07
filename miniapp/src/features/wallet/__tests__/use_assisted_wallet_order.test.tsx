@@ -20,6 +20,8 @@ const result: AssistedWalletOrderResult = {
     remark: '门店代客下单',
     items: [{
       id: 301, product_id: 8, experience_option_id: null, product_name: '拼豆材料套装',
+      kit_color_id: null, kit_color_slot_no: null, kit_color_code: null, kit_color_name: null,
+      sale_unit_grams: null, total_weight_grams: null,
       option_duration_minutes: null, option_participants: null, option_day_type: null,
       product_price: '25.00', quantity: 2, subtotal: '50.00',
     }],

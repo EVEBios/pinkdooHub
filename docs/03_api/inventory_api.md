@@ -1,10 +1,12 @@
 # Inventory API
 
-> **Document Version:** v0.6
+> **Document Version:** v0.7
 >
 > **Status:** Implemented and Final-Review Complete（Phase 4.3.12；v0.6.0 未发布候选；未应用持久环境）
 >
-> **Last Updated:** 2026-08-14
+> **M6 Status:** Color-selectable Kit repository implementation and local regression complete; real MySQL verification/deployment pending
+>
+> **Last Updated:** 2026-09-06
 >
 > 本文遵循 [API Design Conventions](api_design_conventions.md)，业务规则以 [Inventory Module](../01_requirements/inventory_module.md) 为准。
 
@@ -13,6 +15,8 @@
 ## 1. 概述
 
 Base URL 为 `/api/v1`。Inventory 三个管理端点均已注册并要求 JWT Bearer Token 与 ADMIN+；普通用户不直接访问流水。领域类型、Schema、Model/数据库设计、MySQL 增量迁移、Repository、管理员调整与查询 Service、Mapper、组合根，以及 Order 创建扣减/取消恢复均已实现。完整迁移链、Repository smoke、真实 MySQL 竞争/1205 重试/EXPLAIN、真实 MySQL HTTP smoke、完整 SQLite HTTP 矩阵与 Phase 4.3.12 最终 Review 均已通过；代码收口为 v0.6.0 未发布候选，但未应用任何持久、共享或生产环境。
+
+M6 在相同权限、幂等和事务边界上为 `color_selectable` Kit 增加颜色 adjustment/流水查询，并扩展全局流水筛选。颜色库存按 ProductKitColor 独立保存，一个库存单位固定为 10g；全局 BeadColor 不共享余额。路由/Schema/Service/Mapper 与本地 SQLite/HTTP 回归已完成，但真实 MySQL 0→6/并发/EXPLAIN 门槛及部署未完成，不可视为已部署接口。
 
 所有响应使用统一 `{code, message, data}` 信封。成功输出必须先经专用 Out Schema 显式投影；不得返回 ORM Model、内部幂等键、用户名、手机号、Token 或订单备注。
 
@@ -34,7 +38,13 @@ Base URL 为 `/api/v1`。Inventory 三个管理端点均已注册并要求 JWT B
 |------|------|------|
 | `id` | integer | 流水 ID |
 | `product_id` | integer | Kit Product ID |
-| `transaction_type` | string | `opening_balance` / `admin_adjustment` / `order_deduction` / `order_cancellation_restore` |
+| `kit_color_id` | integer/null | 颜色流水的 ProductKitColor ID；fixed 流水为 null |
+| `bead_color_id` | integer/null | 颜色流水关联的全局 BeadColor ID；fixed 为 null |
+| `bead_color_slot_no` | integer/null | 全局 1..221 槽号展示值；fixed 为 null |
+| `color_code` | string/null | 当前颜色编码展示值；fixed 为 null |
+| `color_name` | string/null | 当前颜色名称展示值；fixed 为 null |
+| `sale_unit_grams` | integer/null | 颜色流水固定为 10；fixed 为 null |
+| `transaction_type` | string | `opening_balance` / `admin_adjustment` / `order_deduction` / `order_cancellation_restore` / `order_refund_restore` |
 | `change_quantity` | integer | 正数增加、负数减少 |
 | `before_quantity` | integer | 变化前余额 |
 | `after_quantity` | integer | 变化后余额 |
@@ -46,7 +56,7 @@ Base URL 为 `/api/v1`。Inventory 三个管理端点均已注册并要求 JWT B
 | `operator_nickname` | string/null | 当前安全展示昵称 |
 | `created_at` | datetime | UTC ISO 8601 |
 
-调整响应包含本次流水对象以及当前 `stock`。内部 `idempotency_key` 永不输出。
+fixed 调整响应包含本次流水对象以及当前 `stock`；颜色调整响应包含 Product/KitColor 身份、本次流水及当前 `stock_units`。内部 `idempotency_key` 永不输出。流水数量均以对应销售单位表达：fixed 为套，颜色为 10g 单位。
 
 ### 2.3 Schema 注册表
 
@@ -55,7 +65,7 @@ Base URL 为 `/api/v1`。Inventory 三个管理端点均已注册并要求 JWT B
 | `InventoryIdempotencyKey` | Header | `Idempotency-Key` 严格字符串类型 |
 | `InventoryAdjustmentCreate` | Request | `change + reason` 调整请求 |
 | `InventoryProductTransactionQuery` | Query | path 已指定 Product 的流水筛选 |
-| `InventoryTransactionQuery` | Query | 全局流水筛选，额外接受 Product ID |
+| `InventoryTransactionQuery` | Query | 全局流水筛选，额外接受 Product ID 与 M6 `kit_color_id` |
 | `InventoryBalanceOut` | Response | 当前权威余额 |
 | `InventoryTransactionOut` | Response | 单条完整安全流水 |
 | `InventoryTransactionListItem` | Response | 分页列表项 |
@@ -69,10 +79,12 @@ Base URL 为 `/api/v1`。Inventory 三个管理端点均已注册并要求 JWT B
 |---------------|------|------|------|
 | `ProductNotFound` | `40401` | 404 | Product 不存在 |
 | `ProductKitNotFound` | `40404` | 404 | Kit 扩展缺失 |
+| `ProductKitColorNotFound` | `40406` | 404 | ProductKitColor 不存在或不属于 path Product |
 | `ProductTypeMismatch` | `40001` | 400 | Product 不是 Kit |
+| `InventoryKitKindMismatch` | `40031` | 400 | message 固定为 `Kit kind does not match this inventory operation`；当前 KitKind 不支持所请求的 fixed/颜色库存操作；`data` 返回 `expected`, `actual` |
 | `ProductIsDeleted` | `40903` | 409 | Product 已逻辑删除 |
 | `InsufficientStock` | `40931` | 409 | 用户下单库存不足，不返回精确 available |
-| `InventoryBalanceExceeded` | `40932` | 409 | 调整后小于 0 或大于 999999 |
+| `InventoryBalanceExceeded` | `40932` | 409 | 调整后小于 0 或大于 999999；颜色余额场景的 `data` 另含 `kit_color_id` |
 | `InventoryTransactionConflict` | `40933` | 409 | 幂等键与已提交请求不一致 |
 | 全局 Schema 校验 | `422` | 422 | 调整、header、分页、筛选或时间格式无效 |
 
@@ -85,8 +97,10 @@ HTTP 状态由异常类型决定，不根据 code 号段推断。认证失败使
 | POST | `/admin/products/kit/{product_id}/inventory-adjustments` | 调整 Kit 库存 | ADMIN+ | 已实现 |
 | GET | `/admin/products/kit/{product_id}/inventory-transactions` | 指定 Kit 流水 | ADMIN+ | 已实现 |
 | GET | `/admin/inventory-transactions` | 全局流水筛选 | ADMIN+ | 已实现 |
+| POST | `/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments` | 调整指定商品颜色的 10g 单位库存 | ADMIN+ | M6 已实现；真实 MySQL/部署待完成 |
+| GET | `/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions` | 指定商品颜色流水 | ADMIN+ | M6 已实现；真实 MySQL/部署待完成 |
 
-不新增单独余额端点；Product 管理详情继续承担当前余额读取。
+不新增单独余额端点；Product 管理详情继续承担 fixed 当前余额和各颜色 `stock_units` 读取。
 
 ## 5. 创建库存调整
 
@@ -137,6 +151,58 @@ Draft、Online、Offline 的未删除 Kit 均可调整。成功时余额、`admi
 
 Router 根据 Phase 4.3.6 Service 返回的不可变 `is_replay` 选择首次 HTTP 201 或重放 HTTP 200；Service 本身不依赖 HTTP。两种成功响应均先通过 `InventoryAdjustmentOut`，且重放返回首次提交的流水与 after 余额。
 
+### 5.1 创建颜色库存调整（M6 仓库候选）
+
+```http
+POST /api/v1/admin/products/kit/9/colors/701/inventory-adjustments
+Idempotency-Key: 02230bcd-2f9d-44a0-8bea-b9b83e6f0d75
+Content-Type: application/json
+```
+
+Body 与 fixed adjustment 完全相同：`change` 表示 10g 单位变化，`change=5` 即增加 50g。Service 必须验证 Product 为未删除的 `color_selectable` Kit、ProductKitColor 701 属于 Product 9，并在锁定该颜色余额后执行相同范围、重放和 Audit 规则。首次返回 201，完全相同重放返回 200；颜色内部幂等身份使用独立 `inventory:admin:adjust-color:` 命名空间，且复验 Product、KitColor、change、reason 与 operator。
+
+示意响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "product_id": 9,
+    "kit_color_id": 701,
+    "bead_color_id": 1,
+    "bead_color_slot_no": 1,
+    "color_code": "A01",
+    "color_name": "示例色名",
+    "stock_units": 5,
+    "sale_unit_grams": 10,
+    "transaction": {
+      "id": 102,
+      "product_id": 9,
+      "kit_color_id": 701,
+      "bead_color_id": 1,
+      "bead_color_slot_no": 1,
+      "color_code": "A01",
+      "color_name": "示例色名",
+      "sale_unit_grams": 10,
+      "transaction_type": "admin_adjustment",
+      "change_quantity": 5,
+      "before_quantity": 0,
+      "after_quantity": 5,
+      "reason": "采购入库",
+      "source_type": "admin",
+      "source_id": null,
+      "source_order_no": null,
+      "operator_id": 7,
+      "operator_nickname": "店长",
+      "created_at": "2026-09-06T10:30:00Z"
+    }
+  }
+}
+```
+
+上述字段名已落入 M6 Out Schema；完整回归和真实迁移验证完成前仍不构成已部署的可调用承诺。
+
 ## 6. 指定 Kit 流水
 
 ```http
@@ -160,7 +226,9 @@ GET /api/v1/admin/products/kit/5/inventory-transactions?page=1&page_size=20&type
 GET /api/v1/admin/inventory-transactions?page=1&page_size=20&product_id=5&source_type=order&source_id=42
 ```
 
-除指定 Kit 端点的查询参数外支持 `product_id`。筛选结果为空时返回空 Page，不把无结果解释为 Product 不存在；若需要验证 Product 身份，使用指定 Kit 端点。
+除指定 Kit 端点的查询参数外支持 `product_id`，M6 增加可选正整数 `kit_color_id`。筛选结果为空时返回空 Page，不把无结果解释为 Product/KitColor 不存在；若需要验证资源身份，使用相应指定资源端点。
+
+M6 指定颜色流水端点接受与指定 Kit 流水相同的分页、type、source 和 UTC 时间参数，但固定同时筛选 path 中的 `product_id + kit_color_id`；颜色不存在或跨 Product 使用 `40406`，不能返回另一个商品的库存事实。
 
 Mapper 只能消费 Repository 已预加载或注解的 Product、Order 和 operator 展示字段，执行期间零 SQL、零 ORM 修改。
 
@@ -168,11 +236,11 @@ Phase 4.3.9 已实现指定 Kit 与全局查询 Service，以及流水/分页/�
 
 ## 8. Order API 联动
 
-现有 `POST /api/v1/orders` 路径不变，Phase 4.3.7 已允许 Kit Item 省略 `experience_option_id` 或显式提交 `null`，并拒绝 Kit 携带正整数 Option ID。Kit 或混合订单创建扣减 Kit；Phase 4.3.8 已让现有 owner cancel 在 Pending 状态恢复全部 Kit。对已存在订单的确认支付和完成继续不改变库存。完整矩阵以 [Inventory Module §4](../01_requirements/inventory_module.md#4-库存发生时点与-order-矩阵) 为准。
+现有 `POST /api/v1/orders` 路径不变。fixed Kit 的 Option/颜色均为空；M6 color-selectable Kit 必须提交 `kit_color_id`，一色一 Item，`quantity` 为 10g 单位。创建扣减对应 ProductKit/ProductKitColor；owner cancel 在 Pending 状态按 Item 快照恢复。对已存在订单的确认支付和完成继续不改变库存。完整矩阵以 [Inventory Module §4](../01_requirements/inventory_module.md#4-库存发生时点与-order-矩阵) 为准。
 
 创建事务已按冻结顺序先写 Pending Order 取得 `Order.id`，再锁定和扣减 Kit，使流水 source 与幂等键引用稳定数据库 ID；任一步失败时该 Order 同样回滚。订单号唯一冲突发生在库存写之前，并沿用全新事务最多 3 次的既有重试契约。
 
-取消事务先锁 owner 可见 Order，再读取 Item 数量快照并稳定锁定 Kit；每个 Product 使用 `inventory:order:{order_id}:restore:product:{product_id}`，写正数 `order_cancellation_restore` 流水。Pending 与已存在 restore 身份矛盾返回 `40933`，恢复余额越界返回 `40932`；重复取消由状态机返回 `40921`。余额、流水、Cancelled、Audit 和响应重载全事务原子，MySQL 1205/1213 对完整取消用例最多尝试 3 次。
+取消事务先锁 owner 可见 Order，再读取 Item 数量快照并稳定锁定 fixed/颜色余额；fixed 使用既有 Product 幂等键，颜色使用 `inventory:order:{order_id}:restore:product:{product_id}:color:{kit_color_id}`，写正数 `order_cancellation_restore` 流水。Pending 与已存在 restore 身份矛盾返回 `40933`，恢复余额越界返回 `40932`；重复取消由状态机返回 `40921`。余额、流水、Cancelled、Audit 和响应重载全事务原子，MySQL 1205/1213 对完整取消用例最多尝试 3 次。
 
 `POST /api/v1/admin/users/{user_id}/wallet-orders` 为状态正常的普通 USER 创建真实代客钱包订单。它复用相同 Item/快照规则，并在单事务内创建 Order、扣减 Kit 和钱包、写 `order_deduction`（operator 为 ADMIN+）及钱包流水、创建成功 Payment/唯一 Settlement、直接提交 Paid 和双审计；余额不足、库存不足、disabled/deleted 目标或任一步失败时全部回滚。该路由、`Idempotency-Key` 与响应详见 [Wallet API §6.4](wallet_api.md#64-按商品创建代客钱包订单)。
 
@@ -193,6 +261,8 @@ ADMIN+ 全额退款是独立资金端点：PAID Kit/混合订单按 OrderItem �
 
 普通用户响应不提供 `available_quantity`。阶段门禁 `40922 KitOrderingRequiresInventory` 已随 Phase 4.3.7 创建切换从代码与当前错误注册表移除。
 
+颜色库存不足的 `data` 在相同字段基础上增加 `kit_color_id`，仍不得返回该颜色的精确可用量。
+
 ## 9. 兼容性
 
 Phase 4.3.10 已移除：
@@ -202,6 +272,8 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 ```
 
 同时已从 Kit 创建请求移除 `stock` 输入，新 Kit 从 0 开始并通过 adjustment 入库。两项均属于 v0.6.0 的已冻结破坏性变化，不提供语义混淆的兼容包装；旧请求现在分别得到 404 与 422。
+
+M6 不改变上述 fixed 路径。历史 Kit 迁移为 `kit_kind=fixed`，原三个 Inventory API 和不含 `kit_color_id` 的流水响应语义保持；新颜色字段对 fixed 流水为 null。颜色库存只能通过新 colors 子资源端点调整，不能把 `kit_color_id` 塞入 fixed adjustment body 绕过 path 归属校验。
 
 ## 10. Phase 4.3.11–4.3.12 验证与 Review 结果
 
@@ -213,3 +285,5 @@ PATCH /api/v1/admin/products/kit/{product_id}/stock
 - 最终 Review 复核 API → Service → Repository → Model 依赖、事务/锁/重试与幂等边界、OpenAPI 双成功状态、Mapper 零 SQL/隐私白名单、迁移/索引和文档一致性；同时为 Product 用户/管理 Kit 详情响应补齐 `stock <= 999999`。
 
 测试实例使用独立临时数据目录和 `127.0.0.1:13306`，验证后销毁；未连接现有 3306 `MySQL80` 服务，也未修改任何持久数据库。最终 Review 没有新增迁移或依赖；应用默认版本与示例环境已收口为 v0.6.0 未发布候选。
+
+以上验证结果仅覆盖 fixed Kit。M6 颜色端点、筛选、同色/异色并发、混合锁序和新索引查询计划尚待专项验证，完成前状态保持 Pending。

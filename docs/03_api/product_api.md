@@ -1,10 +1,10 @@
 # Product API Design
 
-> **Document Version:** v1.0
+> **Document Version:** v1.1
 > **Module:** Product
-> **Phase:** 4.1 Product Module
-> **Status:** Implemented — Phase 4.1 Product API complete
-> **Last Updated:** 2026-08-27
+> **Phase:** 4.1 Product Module + M6 Color-selectable Kit
+> **Status:** Phase 4.1 Implemented；M6 仓库实现与本地验证已完成，真实 MySQL/部署待完成
+> **Last Updated:** 2026-09-07
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -12,7 +12,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** Product 请求/响应 Schema、四个 Model、Repository、Validator、Service、API Mapper 和 21 个 FastAPI 端点已实现。其中 19 个 JSON 查询/mutation（含 Product 操作历史）以及 Product 公共图与 Option 专属图两个 multipart 上传均可调用，具备 ADMIN+ 权限、统一分页/响应、严格表单字段、文件校验/本地存储、Service 失败文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试。Phase 4.3.10 已移除 Product 直接设置库存端点和 Kit 创建 `stock` 输入；库存管理改由 Inventory API 负责。OpenAPI 已精确声明各成功信封的数据类型、通用错误信封和鉴权边界；逻辑删除图片后的本地文件可通过独立、可重试的运维批处理安全清理。
+> **当前实现：** 既有 Phase 4.1 的 21 个 Product 端点保持 Implemented。M6 的 `fixed` / `color_selectable`、221 槽目录、商品颜色关联和三个管理端颜色接口已形成仓库实现并通过 Product 定向与本地跨模块回归；真实 MySQL 0→6、目标环境迁移和部署仍未执行，因此不得视为已部署。Phase 4.3.10 移除的 Product 直接设置库存端点不恢复；两类 Kit 的库存变化均由 Inventory API 负责。
 
 ---
 
@@ -24,7 +24,7 @@
 | Business-Action | 按业务行为划分接口，不按数据库字段划分 |
 | User/Admin 分离 | 用户接口 `/products`，管理员接口 `/admin/products` |
 | 类型独立创建 | 体验和套装创建流程不同，使用独立端点 |
-| **Create 只创建主资源** | 创建接口负责 Product 主记录及必要类型扩展。图片、Option 通过独立接口完成；Kit 创建只接收 price，库存固定为 0 并由 Inventory adjustment 入库 |
+| **Create 只创建聚合基线** | 创建接口负责 Product 及必要类型扩展。图片、Option 通过独立接口完成；fixed Kit 以库存 0 开始，color_selectable Kit 原子关联 221 个零库存、未启用颜色槽，后续库存均由 Inventory adjustment 入库 |
 | **原则统一，字段按需适配** | Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同，Create Request 不强行为"统一"而统一 |
 | **Create → Edit 流程** | 创建 Draft 后前端应立即进入编辑页，而非返回列表。用户感知为"创建商品"，技术实现为多步 API 调用 |
 
@@ -66,8 +66,11 @@ Authorization: Bearer <access_token>
 | options | array | **体验商品返回**，Option 列表 |
 | images | array | 图片列表（仅详情返回） |
 | price | string | **套装详情返回**，固定两位小数 |
-| stock | int | **套装详情返回**，当前库存 |
-| available | boolean | **用户端套装详情返回**，必须等于 `stock > 0` |
+| kit_kind | `{value, label}`/null | Kit 返回 `fixed` / `color_selectable`；Experience 列表项为 null |
+| sale_unit_grams | int/null | 自选颜色 Kit 固定为 10；其余为 null |
+| stock | int/null | fixed Kit 返回总库存；color_selectable 返回 null |
+| colors | array | 自选颜色 Kit 的颜色列表；fixed Kit 为空数组 |
+| available | boolean | 用户端 fixed 为 `stock > 0`；自选颜色为至少一个公开颜色有库存 |
 | created_at | datetime | 创建时间（仅 Admin Detail 返回） |
 | updated_at | datetime | 更新时间（Admin List / Detail 和基本信息修改响应返回） |
 | is_deleted | boolean | 仅管理列表和管理详情返回，用户端永不返回 |
@@ -85,6 +88,8 @@ Authorization: Bearer <access_token>
 
 > Option 通过 `is_deleted` 实现逻辑删除。正常查询自动过滤已删除 Option。同一 Product 的 `(duration, participants, day_type)` 在全历史范围内唯一；再次 POST 相同的已删除组合时恢复原 Option ID，而不是插入第二条记录。
 
+> **Reservation 边界：** Product API 只提供当前有效 Option 及其配置/价格，不返回具体可预约日期、时段、空位或占座结果。顾客选定真实 `experience_option_id` 后，由 [Reservation API](reservation_api.md) 的 `GET /reservations/booking-options` 计算上海当地第 0–30 日合法时段；创建成功会把 Product 名称与完整 Option 值保存为 Reservation 快照。Product/Option 后续改名、改价、下架或逻辑删除不覆盖历史预约。
+
 > **枚举字段统一使用 `{value, label}` 格式**（见 [API Design Conventions §9.4](api_design_conventions.md#94-枚举值--valuelabel-模式)）。
 > Duration 和 Participants 是开放的正整数值，不是固定枚举。60 / 120 / 540 分钟与 1 / 2 人只是当前常用值；180 分钟、3 人等未来值无需新增 Enum。API Mapper 负责生成 label。
 
@@ -93,9 +98,22 @@ Authorization: Bearer <access_token>
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | price | string | 套装售价（`"599.00"`） |
-| stock | int | 当前库存 |
+| kit_kind | `{value, label}` | `fixed`（固定套装）/ `color_selectable`（自选颜色） |
+| sale_unit_grams | int/null | 自选颜色固定 `10`；fixed 为 null |
+| stock | int/null | fixed 的权威余额；自选颜色为 null |
+| colors | array | fixed 为空；自选颜色按全局 sort/slot 顺序返回 |
 
-> Kit 使用 `product_kits` 表，逻辑删除跟随 Product。无独立 `sold_count` 字段——累计销量由订单模块统计。
+> `price` 对 fixed 表示整套售价，对 color_selectable 表示每 10g 单价。颜色库存位于 ProductKitColor，不能汇总或共享为全局 BeadColor 库存。Kit 使用 `product_kits` 表，逻辑删除跟随 Product。无独立 `sold_count` 字段——累计销量由订单模块统计。
+
+### 2.3a BeadColor / ProductKitColor
+
+| 对象 | 公开/管理字段 | 边界 |
+|------|---------------|------|
+| `BeadColorOut` | `id, slot_no, color_code, name, swatch_image_url, sort, is_active, is_configured` | 管理端全局目录；未配置占位的 code/name 可为 null |
+| `KitColorOptionOut` | `id, bead_color_id, slot_no, color_code, name, swatch_image_url, available` | 用户端只返回该 Online 商品已启用、全局激活且已配置的颜色；不泄露精确库存 |
+| `AdminProductKitColorOut` | 上述目录字段及 `is_enabled, stock_units` | 管理端商品详情；包含全部 221 槽及商品级库存，允许如实表达 enabled 但全局 inactive/unconfigured 的待修复状态 |
+
+`KitColorOptionOut.id` 是 ProductKitColor ID，也是下单请求的 `kit_color_id`；`bead_color_id` 只是全局颜色身份，不能拿来下单或调整某个商品的库存。
 
 ### 2.4 Image
 
@@ -120,6 +138,8 @@ Authorization: Bearer <access_token>
 | 新增 / 修改 Option | `ExperienceOptionCreate` / `ExperienceOptionUpdate` |
 | 修改图片排序或封面 | `ProductImageUpdate` |
 | 修改套装价格 | `KitPriceUpdate`；库存调整使用 Inventory Schema |
+| 修改全局颜色 / 商品颜色开关 | `BeadColorUpdate` / `ProductKitColorUpdate` |
+| 全局颜色目录查询 | `BeadColorListQuery` |
 | 用户 / 管理列表查询 | `ProductListQuery` / `AdminProductListQuery` |
 
 **响应（`app/schemas/product_response.py`）**
@@ -136,20 +156,21 @@ Authorization: Bearer <access_token>
 | 新增 / 修改 Option | `ExperienceOptionOut` / `ExperienceOptionBaseOut` |
 | Product 公共图 / Option 图 | `ProductImageOut` / `OptionImageOut` |
 | 修改套装价格 | `KitPriceOut`；库存调整使用 Inventory Out Schema |
+| 全局颜色 / 公开颜色 / 管理商品颜色 | `BeadColorOut` / `KitColorOptionOut` / `AdminProductKitColorOut` |
 
 分页不重复定义模块专属外壳，统一使用 `Page[ProductListItemOut]` 或 `Page[AdminProductListItemOut]`。
 
 ### 2.6 Schema Boundary Rules
 
 - 所有 JSON 写请求使用 `extra="forbid"`；未知字段、客户端试图提交的只读字段或拼写错误字段统一触发 HTTP 422，不静默忽略。
-- JSON Body 中的 `duration_minutes`、`participants`、`sort` 只接受真正的整数；拒绝 boolean、float 和数字字符串。Product 请求不再接受 `stock`；Inventory adjustment 的变化量规则由 Inventory Schema 负责。Query 中的分页参数继续遵循全局 `PageParams` 规则。
+- JSON Body 中的 `duration_minutes`、`participants`、`sort` 只接受真正的整数；拒绝 boolean、float 和数字字符串。Product 请求不接受 `stock` / `stock_units`；Inventory adjustment 的变化量规则由 Inventory Schema 负责。Query 中的分页参数继续遵循全局 `PageParams` 规则。
 - 请求金额必须是普通十进制字符串，例如 `"599"`、`"599.0"`、`"599.00"`；拒绝 JSON number、指数形式和超过两位小数的输入。Schema 内部转换为 `Decimal`，不使用 float，也不静默四舍五入。
 - 响应金额在进入 Out Schema 前必须已经是 `Decimal`，JSON 固定序列化为两位小数字符串。
 - PATCH 空对象统一拒绝。字段“未提交”与“显式提交 `null`”语义不同，Service 必须使用 `model_dump(exclude_unset=True)` 保留这个区别。
 - Product `name=null` 拒绝；`description=null`、空字符串或纯空白表示清空。Option 和 Image PATCH 中显式 `null` 均拒绝。
 - 用户端 Out Schema 是严格的已上架完整形状；管理端 Out Schema 允许 Draft 的空图片、空 Option 和空维度。Out Schema 只输出声明字段，防止内部关联、删除标记或类型专属字段跨接口泄漏。
 
-> **API 集成状态：** 全部 21 个路由已完成端点或契约测试。`RequestValidationError` 统一转换为 `{ "code": 422, "message": "Validation failed", "data": { "errors": [...] } }`，每项错误只包含 `location`、`message` 和 `type`，不回显原始输入值。OpenAPI 使用 `SuccessResponse[T]` 与 `ErrorResponse` 精确描述信封；Product Mapper 仍是运行时输出白名单和金额字符串序列化的唯一边界。
+> **API 集成状态：** Phase 4.1 的 21 个路由已完成端点或契约测试。M6 路由/Schema/Mapper 已落盘但仍处于候选验证；完整 HTTP、Mapper 零 SQL/零修改、OpenAPI 与 MySQL 门槛完成后才能标记 Implemented。`RequestValidationError` 继续使用统一 422 信封且不回显原始输入值。
 
 ---
 
@@ -186,6 +207,8 @@ Authorization: Bearer <access_token>
 | 40402 | `OPTION_NOT_FOUND` | Option 不存在 |
 | 40403 | `PRODUCT_IMAGE_NOT_FOUND` | 图片不存在 |
 | 40404 | `PRODUCT_KIT_NOT_FOUND` | 套装配置不存在 |
+| 40405 | `BEAD_COLOR_NOT_FOUND` | 全局颜色槽不存在 |
+| 40406 | `PRODUCT_KIT_COLOR_NOT_FOUND` | 商品颜色关联不存在或不再可见 |
 
 **类型错误（400xx）—— HTTP 400**
 
@@ -212,6 +235,9 @@ Authorization: Bearer <access_token>
 | 40905 | `ONLINE_PRODUCT_CANNOT_BE_MODIFIED` | online 商品不可修改 |
 | 40911 | `OPTION_ALREADY_EXISTS` | 相同有效 Option 配置已存在，或 PATCH 目标组合已被其他记录占用 |
 | 40912 | `OPTION_ALREADY_DELETED` | Option 已删除 |
+| 40913 | `BEAD_COLOR_CODE_ALREADY_EXISTS` | 非空全局颜色业务编码重复；`data.color_code` 返回冲突值 |
+| 40914 | `BEAD_COLOR_NOT_CONFIGURED` | 颜色未激活或缺少 code/name，不能激活或用于商品销售 |
+| 40915 | `BEAD_COLOR_IN_USE_BY_ONLINE_PRODUCT` | Online 商品正在使用该全局颜色，禁止改变其业务定义/可用性 |
 
 **上架完整性（422xx）—— HTTP 422**
 
@@ -267,6 +293,9 @@ Authorization: Bearer <access_token>
 | `PATCH /admin/product-images/{id}` | 40403, 40905, 40021 |
 | `DELETE /admin/product-images/{id}` | 40403, 40905 |
 | `PATCH /admin/products/kit/{id}/price` | 40401, 40404, 40001, 40903, 40905 |
+| `GET /admin/bead-colors` | 无（空页仍使用 Page；M6 迁移后应固定 221 槽） |
+| `PATCH /admin/bead-colors/{id}` | 40405, 40913, 40914, 40915 |
+| `PATCH /admin/product-kit-colors/{id}` | 40406, 40905, 40914 |
 | `GET /admin/products/{id}/audit-logs` | 40401 |
 
 ### 3.4 规则补充
@@ -283,7 +312,7 @@ GET /products/experience/5  → Product 5 实际是 Kit → 404（不暴露内�
 PATCH /admin/products/kit/5/price → Product 5 实际是 Experience → 40001
 ```
 
-**online 写操作统一使用 40905：** `ONLINE_PRODUCT_CANNOT_BE_MODIFIED` 覆盖所有"线上商品不可修改"场景（修改信息、修改 Option、上传图片、改价、改库存），不逐场景造独立错误码。
+**online 写操作统一使用 40905：** `ONLINE_PRODUCT_CANNOT_BE_MODIFIED` 覆盖修改商品信息、Option、Product 图片、价格和商品颜色启用状态。库存是允许 Online 调整的独立 Inventory 行为；全局颜色被任一 Online 商品使用时则使用更精确的 `40915`。
 
 ---
 
@@ -347,8 +376,11 @@ PATCH /admin/products/kit/5/price → Product 5 实际是 Experience → 40001
 | Method | URI | 说明 |
 |--------|-----|------|
 | PATCH | /admin/products/kit/{id}/price | 修改价格 |
+| GET | /admin/bead-colors | 分页查询全局 221 槽颜色目录 |
+| PATCH | /admin/bead-colors/{bead_color_id} | 修改全局颜色 code/name/sort/is_active |
+| PATCH | /admin/product-kit-colors/{kit_color_id} | 启用/禁用一个商品颜色 |
 
-库存调整属于 Inventory API：`POST /admin/products/kit/{id}/inventory-adjustments`。
+库存调整属于 Inventory API：fixed 使用 `POST /admin/products/kit/{id}/inventory-adjustments`；自选颜色使用 `POST /admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments`。
 
 **审计**
 
@@ -438,14 +470,18 @@ GET /api/v1/products
                 "name": "拼豆体验",
                 "product_type": { "value": "experience", "label": "拼豆体验" },
                 "cover_image": "https://cdn.example.com/products/1-cover.jpg",
-                "display_price": "299.00"
+                "display_price": "299.00",
+                "kit_kind": null,
+                "sale_unit_grams": null
             },
             {
                 "id": 2,
                 "name": "拼豆套装",
                 "product_type": { "value": "kit", "label": "拼豆套装" },
                 "cover_image": "https://cdn.example.com/products/2-cover.jpg",
-                "display_price": "599.00"
+                "display_price": "599.00",
+                "kit_kind": { "value": "fixed", "label": "固定套装" },
+                "sale_unit_grams": null
             }
         ],
         "total": 20,
@@ -458,7 +494,8 @@ GET /api/v1/products
 
 | 字段 | 说明 |
 |------|------|
-| `display_price` | 展示价格。体验商品为最低 Option 价格，套装商品为固定售价。前端据 `product_type` 自行决定加"起"后缀 |
+| `display_price` | 展示价格。体验商品为最低 Option 价格；fixed Kit 为整套价；color_selectable Kit 为每 10g 单价 |
+| `kit_kind` / `sale_unit_grams` | Experience 均为 null；fixed 为 fixed/null；color_selectable 为 color_selectable/10 |
 | 不返回 | `price_label`、`created_at`（列表不需要） |
 
 > 前端根据 `product_type.value` 决定跳转目标：
@@ -555,7 +592,7 @@ GET /api/v1/products/kit/{id}
 
 **可能的业务错误：** `40401`（商品不存在或类型不匹配，统一返回 404）
 
-未上线或已删除商品也统一返回 `40401`。Service 不计算 `available`；API Mapper 根据已加载 `product.kit.stock > 0` 生成。
+未上线或已删除商品也统一返回 `40401`。Service 不计算 `available`；Mapper 对 fixed 使用 `stock > 0`，对 color_selectable 使用公开颜色中是否至少一项 `available=true`。
 
 **Response Schema：** `KitProductDetailOut` — 不含 `options`、`status`、`is_deleted`、`sold_count`、时间字段。
 
@@ -574,9 +611,12 @@ GET /api/v1/products/kit/{id}
             { "id": 5, "image_url": "https://example.com/kit-cover.jpg", "is_cover": true, "sort": 0 },
             { "id": 6, "image_url": "https://example.com/kit-detail.jpg", "is_cover": false, "sort": 10 }
         ],
+        "kit_kind": { "value": "fixed", "label": "固定套装" },
+        "sale_unit_grams": null,
         "price": "599.00",
         "stock": 20,
-        "available": true
+        "available": true,
+        "colors": []
     }
 }
 ```
@@ -584,10 +624,36 @@ GET /api/v1/products/kit/{id}
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | price | string | 售价，Decimal → string 序列化 |
-| stock | int | 当前库存（展示参考用） |
-| available | boolean | `stock > 0`。下单时后端**必须**重新校验库存，不能相信详情页旧数据 |
+| kit_kind | object | `{value,label}`；决定库存和下单形状 |
+| sale_unit_grams | int/null | color_selectable 固定为 10；fixed 为 null |
+| stock | int/null | fixed 返回当前库存；color_selectable 为 null |
+| colors | array | fixed 为空；自选颜色只返回已启用、全局激活且 code/name 完整的颜色，不返回精确库存 |
+| available | boolean | fixed 为 `stock > 0`；自选颜色为任一 `colors[].available=true`。下单时后端必须重新校验 |
 
 > 不返回 `status`、`is_deleted`、`created_at`、`updated_at`、`sold_count`、`product_kit_id`。图片按 `sort ASC, id ASC` 排序。
+
+color_selectable 的关键响应形状如下；`id` 是下单使用的 ProductKitColor ID：
+
+```json
+{
+  "kit_kind": { "value": "color_selectable", "label": "自选颜色" },
+  "sale_unit_grams": 10,
+  "price": "2.50",
+  "stock": null,
+  "available": true,
+  "colors": [
+    {
+      "id": 501,
+      "bead_color_id": 1,
+      "slot_no": 1,
+      "color_code": "A01",
+      "name": "示例颜色",
+      "swatch_image_url": null,
+      "available": true
+    }
+  ]
+}
+```
 
 ---
 
@@ -639,6 +705,8 @@ GET /api/v1/admin/products
                 "status": { "value": "online", "label": "已上架" },
                 "cover_image": "https://cdn.example.com/products/1-cover.jpg",
                 "display_price": "299.00",
+                "kit_kind": null,
+                "sale_unit_grams": null,
                 "updated_at": "2026-08-04T10:30:00Z",
                 "is_deleted": false
             },
@@ -649,6 +717,8 @@ GET /api/v1/admin/products
                 "status": { "value": "draft", "label": "草稿" },
                 "cover_image": null,
                 "display_price": null,
+                "kit_kind": { "value": "fixed", "label": "固定套装" },
+                "sale_unit_grams": null,
                 "updated_at": "2026-08-04T10:30:00Z",
                 "is_deleted": false
             }
@@ -664,6 +734,7 @@ GET /api/v1/admin/products
 | 字段 | 说明 |
 |------|------|
 | `display_price` | 体验商品为所有 Option 最低价（Draft 无 Option 时为 `null`）；套装商品为 `product_kits.price`。不得返回 `"0.00"` |
+| `kit_kind` / `sale_unit_grams` | 与用户列表同一判别规则；便于管理端在读取详情前选择 fixed/颜色工作流 |
 | `is_deleted` | 始终返回。默认查询为 `false`；`include_deleted=true` 时用于区分历史删除记录 |
 | 不返回 | `description`、`images`、`options`、`stock`、`created_at`（详情接口获取） |
 
@@ -773,8 +844,11 @@ GET /api/v1/admin/products/kit/{id}
         "images": [
             { "id": 5, "image_url": "https://cdn.example.com/products/2-cover.jpg", "is_cover": true, "sort": 0 }
         ],
+        "kit_kind": { "value": "fixed", "label": "固定套装" },
+        "sale_unit_grams": null,
         "price": "599.00",
         "stock": 20,
+        "colors": [],
         "created_at": "2026-08-04T10:30:00Z",
         "updated_at": "2026-08-04T10:30:00Z",
         "is_deleted": false
@@ -782,7 +856,7 @@ GET /api/v1/admin/products/kit/{id}
 }
 ```
 
-| 与用户详情不同 | 管理员可查看 draft/offline/已删除记录；返回 `status`、`created_at`、`updated_at`、`is_deleted`；无 `available`（管理员关心原始数据） |
+| 与用户详情不同 | 管理员可查看 draft/offline/已删除记录；返回 `status`、`created_at`、`updated_at`、`is_deleted`；自选颜色 `colors` 固定包含全部 221 槽并额外返回 `sort/is_active/is_configured/is_enabled/stock_units`，包括 enabled 但全局 inactive/unconfigured 的待修复事实；无聚合 `available` |
 
 ---
 
@@ -881,7 +955,7 @@ POST /admin/products/experience  →  { id: 1 }
 POST /api/v1/admin/products/kit
 ```
 
-创建套装商品草稿。与 Experience 不同，Kit 创建时接收聚合价格；库存固定以 0 建立隐式基线，首次入库通过 Inventory adjustment 完成。
+创建套装商品草稿。与 Experience 不同，Kit 创建时接收聚合价格与可选 `kit_kind`。省略 `kit_kind` 等价于历史 fixed；color_selectable 的价格表示每 10g 单价，并在同一事务建立全局 221 槽及本商品 221 条未启用、零库存关联。
 
 **可能的业务错误：** 无。`price` 的类型与范围错误、以及客户端继续提交旧 `stock` 字段，统一由 `KitProductCreate` 触发 HTTP 422 Schema 校验。Experience 和 Kit 共享 Draft、独立图片、上架校验等原则，但业务模型不同——Kit 无 Option，price 属于 Kit 扩展，stock 由 Inventory 管理。
 
@@ -892,6 +966,7 @@ POST /api/v1/admin/products/kit
 | name | string | 是 | 商品名称。trim 后 1–100 字符。允许重名 |
 | description | string | 否 | 商品描述，最大 2000 字符。Draft 阶段可选 |
 | price | string | 是 | `"599.00"`，0 < Price ≤ 99999。Kit 核心字段 |
+| kit_kind | string | 否 | `fixed` / `color_selectable`，默认 `fixed`；创建后不可修改 |
 
 | Experience Create | Kit Create | 原因 |
 |-------------------|------------|------|
@@ -907,15 +982,18 @@ POST /api/v1/admin/products/kit
 | `product_type` | `"kit"` |
 | `status` | `"draft"` |
 | `is_deleted` | `false` |
-| `stock` | `0`（服务端固定，不接受客户端输入） |
+| `stock` | fixed 为 `0`；color_selectable 为 `null`（均不接受客户端输入） |
+| `sale_unit_grams` | fixed 为 `null`；color_selectable 为 `10` |
+| ProductKitColor | color_selectable 原子创建 221 条，全部 `is_enabled=false, stock_units=0` |
 
 **请求示例**
 
 ```json
 {
-    "name": "新手拼豆套装",
-    "description": "适合初学者使用",
-    "price": "599.00"
+    "name": "自选颜色拼豆",
+    "description": "按颜色和 10g 单位选购",
+    "price": "2.50",
+    "kit_kind": "color_selectable"
 }
 ```
 
@@ -940,14 +1018,16 @@ POST /api/v1/admin/products/kit
         "id": 2,
         "name": "新手拼豆套装",
         "product_type": { "value": "kit", "label": "拼豆套装" },
-        "status": { "value": "draft", "label": "草稿" }
+        "status": { "value": "draft", "label": "草稿" },
+        "kit_kind": { "value": "fixed", "label": "固定套装" },
+        "sale_unit_grams": null
     }
 }
 ```
 
-**Service 事务：** `create_kit_product()` 在同一事务连接内依次创建固定为 Kit/Draft/未删除的 Product、零库存 ProductKit 扩展记录和 `CREATE_PRODUCT` 审计；任一步失败三者全部回滚。Service 返回 Product，API 使用 `KitProductCreateOut` 序列化。Schema 与 Service 均不接收 `stock`，Repository 默认值固定为 0。
+**Service 事务：** `create_kit_product()` 在同一连接内创建 Kit/Draft Product、按 KitKind 创建 ProductKit、必要时幂等补齐全局 1..221 槽并批量创建商品关联，最后写 `CREATE_PRODUCT` 审计；任一步失败全部回滚。Schema 与 Service 均不接收库存。
 
-> **实现状态：** Kit 聚合创建 Service、Mapper、ADMIN+ 权限与 HTTP 201 路由已实现，端点当前可调用，并有 Product/ProductKit/审计真实原子性和 HTTP 集成测试。
+> **实现状态：** fixed 创建保持 Implemented；M6 的 kit_kind、221 槽关联与扩展响应已落盘，完整回归与真实迁移验证前保持候选状态。
 
 ---
 
@@ -1146,7 +1226,7 @@ PATCH /api/v1/admin/products/{id}/online
 
 > 以上检查项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，通过 `data.issues` 数组返回所有不通过的项。Option 配置唯一性在 Option 创建/修改流程中返回 `40911` 并由 DB UNIQUE 兜底，不属于上架 Validator。
 
-**Kit 检查项：**
+**Kit 公共及 fixed 检查项：**
 
 | # | 检查项 | 不通过 code |
 |---|--------|------------|
@@ -1155,9 +1235,11 @@ PATCH /api/v1/admin/products/{id}/online
 | ③ | 有封面图 | — |
 | ④ | 存在 ProductKit 扩展记录 | — |
 | ⑤ | price > 0 且 ≤ 99999 | — |
-| ⑥ | stock ≥ 0（stock = 0 允许上架，前端显示"暂时售罄"） | — |
+| ⑥ | fixed：sale_unit_grams 为 null、没有颜色关联、stock ≥ 0；stock = 0 允许上架 | — |
 
-> Kit 上架缺项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，与 Experience 一致。ProductKit 缺失时只返回 `kit configuration is required`，不再追加价格或库存 issue。Kit 目前不额外要求“至少一张公共图片”；公共封面检查已经保证至少存在一张公共图片。
+**color_selectable 追加检查：** `sale_unit_grams=10`、聚合 `stock=null`、恰好关联全局 `slot_no=1..221`、至少一个商品颜色 `is_enabled=true`、每个已启用颜色都必须全局 `is_active=true` 且 code/name 完整、所有商品颜色 `stock_units >= 0`。颜色库存为 0 不阻止上架，只影响公开 `available`。
+
+> Kit 上架缺项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，与 Experience 一致。稳定 issue 字符串和顺序以 Product Business Rules 为准。ProductKit 缺失时只返回 `kit configuration is required`，不再追加派生 issue。Kit 目前不额外要求“至少一张公共图片”；公共封面检查已经保证至少存在一张公共图片。
 
 **成功响应**
 
@@ -1976,5 +2058,79 @@ await audit_service.list_logs(
 > **Schema 边界：** 审计分页响应属于共享 Audit 模块，使用 `app/schemas/audit.py:AuditLogOut`，不在 Product Schema 中重复定义。Repository 按 `created_at DESC, id DESC` 稳定排序；`AuditLogService.list_logs()` 承担跨模块通用查询，ProductService 只增加 Product（包含逻辑删除记录）的存在性校验。
 >
 > **实现状态：** 共享 Repository/Service 分页查询、Audit Mapper/Out Schema、ProductService 委托、ADMIN+ 路由均已实现；有目标隔离、稳定倒序、分页、删除后追溯、404、权限和真实 SQLite HTTP 测试。
+
+---
+
+## 8. M6 全局颜色与商品颜色管理
+
+> 本节契约和仓库候选已落盘、测试正在收口。三个端点均要求 ADMIN+；成功结果先经对应 Out Schema 白名单投影后进入统一信封。
+
+### 8.1 分页查询全局颜色目录
+
+```text
+GET /api/v1/admin/bead-colors?page=1&page_size=100
+```
+
+使用通用分页参数与 `Page[BeadColorOut]`，按 `sort ASC, slot_no ASC, id ASC` 稳定排序。M6 完整迁移后总数必须为 221；接口不为了 221 槽破坏全局分页约定。
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "slot_no": 1,
+        "color_code": null,
+        "name": null,
+        "swatch_image_url": null,
+        "sort": 1,
+        "is_active": false,
+        "is_configured": false
+      }
+    ],
+    "total": 221,
+    "page": 1,
+    "page_size": 100,
+    "pages": 3
+  }
+}
+```
+
+### 8.2 修改全局颜色槽
+
+```text
+PATCH /api/v1/admin/bead-colors/{bead_color_id}
+```
+
+请求 Schema 为 `BeadColorUpdate`，至少提交一项：
+
+| 字段 | 类型 | 规则 |
+|------|------|------|
+| color_code | string/null | trim 后 1–50；null 清空；非空值全局唯一 |
+| name | string/null | trim 后 1–100；null 清空 |
+| sort | int | `0..32767`；不得为 null |
+| is_active | boolean | 不得为 null；设 true 时最终 code/name 必须完整 |
+
+`slot_no` 是不可修改的稳定身份；`swatch_image_url` 当前不是 HTTP PATCH 输入。若该颜色正被任一未删除 Online 商品启用，全部上述修改返回 `40915`，防止销售中展示/身份突变。Service 在同一事务内按 Product ID 升序锁定引用商品，再锁 BeadColor 和当前启用关联，并根据锁后 BeadColor 重算最终 code/name/is_active；这与商品上架共用 Product 行互斥点。成功返回 `BeadColorOut`，并在同一事务写 `UPDATE_BEAD_COLOR` 审计（target_type=`bead_color`）。审计 JSON 保留固定顺序的 `changed_fields` 及对齐的 `before`/`after`；最长 Unicode 值超过 256 字符列容量时以 `{len, sha256}` 摘要替换字符串（`sha256` 为 12 位十六进制前缀），不截断 JSON。
+
+### 8.3 启用或禁用一个商品颜色
+
+```text
+PATCH /api/v1/admin/product-kit-colors/{kit_color_id}
+```
+
+严格请求体：
+
+```json
+{ "is_enabled": true }
+```
+
+只允许未删除、非 Online 的 color_selectable Kit。Service 先锁 Product，再用同一事务连接重载商品与颜色并复验状态；因此与上架请求串行，不能在上架校验后并发禁用最后一色。启用时对应全局颜色必须 `is_active=true` 且 code/name 完整；库存可以为 0。成功返回 `AdminProductKitColorOut`，并在同一事务写 `UPDATE_PRODUCT_KIT_COLOR` 审计；库存字段只读，必须通过 Inventory API 调整。Draft/Offline 中已有的 enabled + inactive/unconfigured 异常组合仍由管理响应如实返回，便于先禁用或修复；上架与公共输出继续严格要求 sale-ready。
+
+### 8.4 色板图片与批量导入边界
+
+`swatch_image_url` 是全局 BeadColor 的可选展示属性，不使用 ProductImage，也不随 ProductKitColor 重复存储。本期不新增逐色图片上传 API。2026-09-07 指定的 MARD 221 页面使用 HEX/RGB CSS 色块，没有独立图片文件；仓库已冻结 221 项来源清单，并通过本地离线工具生成确定性 256×256 sRGB PNG。工具默认 dry-run，只有显式 `--apply --confirm-local-only` 才更新本地 M6 SQLite 和图片目录；会检查槽号、来源顺序、HEX/RGB 一致、确定性文件名、目标 URL、Online 引用与已有冲突，并执行写前备份、事务回滚和文件补偿。现有单图接口每次只接受一个不超过 2 MiB 的 jpg/png/webp，继续只服务 Product/Option 图片；生产对象存储/CDN 导入仍需独立 Gate B 流程。
 
 ---

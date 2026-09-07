@@ -126,6 +126,8 @@ async def test_experience_http_lifecycle_uses_real_service_and_mapper(
             "product_type": {"value": "experience", "label": "拼豆体验"},
             "cover_image": "https://example.com/api-cover.jpg",
             "display_price": "399.00",
+            "kit_kind": None,
+            "sale_unit_grams": None,
         }
     ]
 
@@ -273,6 +275,9 @@ async def test_kit_http_lifecycle_preserves_product_id_and_availability(
         "price": "699.00",
         "stock": 3,
         "available": True,
+        "kit_kind": {"value": "fixed", "label": "固定套装"},
+        "sale_unit_grams": None,
+        "colors": [],
     }
 
 

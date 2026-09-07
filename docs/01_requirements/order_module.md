@@ -1,10 +1,10 @@
 # 订单模块（Order Module）
 
-> **Contract Version:** v1.3
+> **Contract Version:** v1.4
 >
-> **Status:** Kit/Mixed Inventory + Wallet Settlement/Full Refund implemented in repository；M4 not applied to persistent databases
+> **Status:** Existing Experience/fixed-Kit/Mixed Inventory + Wallet Settlement/Full Refund implemented；M6 repository implementation and local regression complete, real MySQL verification/deployment pending
 >
-> **Last Updated:** 2026-09-05
+> **Last Updated:** 2026-09-06
 
 ---
 
@@ -13,6 +13,8 @@
 Phase 4.2 建立可追溯的订单、商品与 Experience Option 快照、用户/管理员查询、权限隔离，以及明确的订单状态生命周期。本文是 Order 业务行为的权威来源；HTTP 形状见 [Order API](../03_api/order_api.md)，表结构见 [Database Design](../02_database/database_design.md)。
 
 Phase 4.3.7–4.3.8 已在既有订单边界上接入 Kit/混合下单、创建时库存扣减及 Pending 取消幂等恢复。Wallet/Payment/Refund v1 进一步接入余额支付、人工付款结算事实、PAID/COMPLETED 全额退款和订单资金查询；真实微信 Provider 仍关闭，M4 尚未应用持久数据库。资金权威规则见 [Wallet Module](wallet_module.md)。
+
+M6 在不破坏既有 Experience 与 `fixed` Kit 的前提下增加 `color_selectable` Kit：每个颜色选择是一条独立 OrderItem，`quantity` 表示 10g 单位数，并在订单中快照颜色和销售单位。代码、客户端、本地跨模块回归与迁移候选已完成，但真实 MySQL 迁移/并发门槛和部署仍待完成，因此不得描述为已部署。
 
 ---
 
@@ -46,6 +48,14 @@ Phase 4.3.7–4.3.8 已在既有订单边界上接入 Kit/混合下单、创建�
 
 任何 Kit 不可售或库存不足时整个请求失败，不允许部分创建或部分扣减。
 
+### 2.3 M6 已冻结、实现中的增量
+
+- 接受 `color_selectable` Kit 的颜色行；客户端提交 ProductKitColor 的 `kit_color_id`，不直接提交全局 BeadColor ID、颜色名称、颜色编码或价格。
+- 一个颜色对应一条 OrderItem；同一商品的同一颜色不能重复行，客户端需要先合并数量。
+- 单个颜色行 `quantity=1..99`，分别代表 10g..990g；每单最多 20 个颜色行、10 个非颜色行、30 个总行。
+- 保存颜色 ID/编码/名称、`sale_unit_grams=10` 与每 10g 价格快照。
+- 创建、Pending 取消、ADMIN+ 代客钱包下单和 PAID 全额退款按商品颜色余额扣减/恢复；COMPLETED 仍不恢复。
+
 ---
 
 ## 3. 角色与能力
@@ -63,27 +73,37 @@ Phase 4.3.7–4.3.8 已在既有订单边界上接入 Kit/混合下单、创建�
 
 ### 4.1 输入规则
 
-每个订单包含 1 至 10 个 Item；每个 Item 包含：
+每个订单至少包含 1 个 Item；M6 后总行数最多 30，其中颜色行最多 20、非颜色行最多 10。每个 Item 包含：
 
 - `product_id`
 - `experience_option_id`：Experience 必填正整数；Kit 可省略或显式为 `null`
+- `kit_color_id`：`color_selectable` Kit 必填正整数并指向该 Product 的 ProductKitColor；Experience 和 `fixed` Kit 可省略或显式为 `null`
 - `quantity`，范围为 1 至 99
 
 `remark` 可选，最大 500 字符。客户端不得提交商品名称、配置快照、单价、小计、总额、订单号、用户 ID 或状态。
 
-同一请求中 `(product_id, experience_option_id)` 组合必须唯一。重复 Item 作为请求参数错误拒绝，不在 Service 中静默合并，以免客户端误提交被掩盖。
+每个 Item 只允许以下三种形状：
+
+| 商品形态 | `experience_option_id` | `kit_color_id` | `quantity` 语义 |
+|----------|------------------------|----------------|-----------------|
+| Experience | 必填 | `null` | 体验份数 |
+| `fixed` Kit | `null` | `null` | 套数 |
+| `color_selectable` Kit | `null` | 必填 | 10g 单位数 |
+
+同一请求中 `(product_id, experience_option_id, kit_color_id)` 组合必须唯一。重复 Item 作为请求参数错误拒绝，不在 Service 中静默合并，以免客户端误提交被掩盖。行数限制在 Schema 层同时计算；20 个颜色行加 10 个非颜色行是允许的 30 行边界，任何一个分类或总数超限均返回统一参数校验错误。
 
 ### 4.2 聚合有效性
 
-Service 必须批量加载本次请求涉及的 Product、非空 ExperienceOption ID 和 Kit 扩展，禁止逐 Item 查询。每个 Item 必须满足：
+Service 必须批量加载本次请求涉及的 Product、非空 ExperienceOption ID、非空 ProductKitColor ID 和 Kit 扩展，禁止逐 Item 查询。每个 Item 必须满足：
 
 1. Product 存在且 `is_deleted = false`；
 2. Product `status = online`；
 3. Experience 必须提交存在、未删除且归属正确的 Option；
-4. Kit 必须省略 Option 且存在 ProductKit 扩展；
-5. 事务内取得全部 Kit 行锁后再次确认 Kit Product 可售及余额充足。
+4. `fixed` Kit 必须同时省略 Option/颜色且存在 ProductKit 扩展；
+5. `color_selectable` Kit 必须省略 Option，颜色行必须存在、属于该 Product、已经启用，且对应全局 BeadColor 的编码/名称已经配置；
+6. 事务内以稳定顺序取得全部 fixed Kit / ProductKitColor 余额锁后，再次确认 Product 和颜色可售及余额充足。
 
-Product、Option 或 Kit 扩展不可用时只返回稳定不可用语义，不向用户暴露内部生命周期细节；库存不足只返回 Product ID 与请求数量。
+Product、Option 或 Kit 扩展不可用时只返回稳定不可用语义，不向用户暴露内部生命周期细节；颜色不可用使用专用稳定错误且只返回 `product_id`、`kit_color_id`。库存不足返回 Product ID、请求数量，并在颜色库存不足时返回对应 `kit_color_id`，不披露精确可用量。
 
 ### 4.3 快照与金额
 
@@ -91,17 +111,18 @@ Product、Option 或 Kit 扩展不可用时只返回稳定不可用语义，不�
 
 - Product ID 与 `product_name` 快照；
 - ExperienceOption ID 与三项 Option 快照；Kit 的这些字段全部为 `null`；
+- `color_selectable` Kit 保存 `kit_color_id`、`kit_color_slot_no`、`kit_color_code`、`kit_color_name` 和 `sale_unit_grams=10`；Experience 与 `fixed` Kit 的这些字段全部为 `null`；响应另派生 `total_weight_grams=quantity×10`；
 - `product_price` 快照；
 - `quantity` 与 `subtotal`。
 
-Experience 单价来自当前有效 Option，Kit 单价来自 ProductKit；都不能信任客户端。内部金额全部使用 `Decimal`：
+Experience 单价来自当前有效 Option，Kit 单价来自 ProductKit；对于 `color_selectable`，该 ProductKit 价格的单位是每 10g，颜色行不拥有独立价格。所有价格都不能信任客户端。内部金额全部使用 `Decimal`：
 
 ```text
 subtotal = product_price × quantity
 total_amount = Σ subtotal
 ```
 
-数据库使用 `DECIMAL(10,2)`；API 中 `product_price`、`subtotal` 和 `total_amount` 固定输出两位小数字符串，例如 `"99.00"`。Product 或 Option 后续改名、改配置、改价、下架或逻辑删除均不得改变历史订单快照。
+数据库使用 `DECIMAL(10,2)`；API 中 `product_price`、`subtotal` 和 `total_amount` 固定输出两位小数字符串，例如 `"99.00"`。由于 M6 允许最多 30 行，Service 必须在写入前拒绝超出金额字段上限的总额，不能让数据库溢出承担业务错误；该错误不得回显内部计算细节。Product、Option、ProductKitColor 或 BeadColor 后续改名、改配置、改价、禁用、下架或逻辑删除均不得改变历史订单快照。
 
 ### 4.4 原子性
 
@@ -109,7 +130,7 @@ total_amount = Σ subtotal
 
 1. 按 User ID 锁定 User 行，锁后复验目标仍存在、`role=user` 且 `status=normal`；
 2. 创建 Pending Order；
-3. 按 Product ID 升序一次锁定全部 Kit，锁后重检并批量保存余额与扣减流水；
+3. 按稳定的 Product/颜色顺序一次锁定全部 fixed Kit 与 ProductKitColor 余额，锁后重检并批量保存余额与扣减流水；
 4. 批量创建 OrderItem；
 5. 顺序写入 `CREATE_ORDER` 审计；
 6. 使用同一事务连接重载响应所需订单聚合。
@@ -118,9 +139,9 @@ total_amount = Σ subtotal
 
 ### 4.5 ADMIN+ 代客钱包订单
 
-`POST /api/v1/admin/users/{user_id}/wallet-orders` 复用同一 `OrderCreate` 请求和 Product/Option/Kit 权威快照规则，但只允许 ADMIN/SUPER_ADMIN 为状态正常的普通 USER 操作，并要求 `Idempotency-Key`。disabled 目标因该用例属于消费而拒绝；deleted 目标禁止资金写入；管理员不能以自身或其他管理员为目标。
+`POST /api/v1/admin/users/{user_id}/wallet-orders` 复用同一 `OrderCreate` 请求和 Product/Option/Kit/颜色权威快照规则，但只允许 ADMIN/SUPER_ADMIN 为状态正常的普通 USER 操作，并要求 `Idempotency-Key`。disabled 目标因该用例属于消费而拒绝；deleted 目标禁止资金写入；管理员不能以自身或其他管理员为目标。
 
-该用例在一个事务中锁定并重检目标 User，创建 Order 后锁 WalletAccount，再按 Product ID 升序锁定全部 Kit；随后写 Items、成功的 wallet Payment、钱包扣款流水、唯一 Settlement，将 Order 保存为 Paid，并顺序写 `CREATE_ORDER`、`PAY_ORDER`。因此响应中的新订单直接为 `paid`，不存在可由客户端观察或操作的 Pending 间隙。余额不足、库存不足或任一后置写入失败时，Order、Items、库存、钱包、Payment、Settlement 与两条审计全部回滚。
+该用例在一个事务中锁定并重检目标 User，创建 Order 后锁 WalletAccount，再按稳定 Product/颜色顺序锁定全部 fixed Kit 与 ProductKitColor；随后写 Items、成功的 wallet Payment、钱包扣款流水、唯一 Settlement，将 Order 保存为 Paid，并顺序写 `CREATE_ORDER`、`PAY_ORDER`。因此响应中的新订单直接为 `paid`，不存在可由客户端观察或操作的 Pending 间隙。余额不足、颜色不可用、库存不足或任一后置写入失败时，Order、Items、库存、钱包、Payment、Settlement 与两条审计全部回滚。
 
 同 key 只有在操作者、目标 USER、Item 顺序和内容以及 remark 全部一致时重放，返回首次 Order/Payment 和首次扣款后的历史余额；不同意图返回资金幂等冲突。该路径由 `WALLET_ADMIN_WRITE_ENABLED` 控制，不能用通用余额调账 reason 替代。
 
@@ -203,9 +224,9 @@ OrderStatus 继续只表达履约生命周期，Payment 与 Refund 使用独立�
 
 余额支付固定锁定 `User → Order → Payment/Settlement 事实 → WalletAccount`；扣款、不可变钱包流水、成功结算、Order Paid 与 `PAY_ORDER` Audit 原子提交。客户端不提交金额，资金金额必须等于服务端 `Order.total_amount`。
 
-ADMIN+ 代客钱包订单锁定 `User → 新建 Order → WalletAccount → ProductKit(Product ID 升序)` 的有效序列；Payment/Settlement 是本事务中新建事实，无需先锁历史行。它一次提交创建、库存扣减、钱包扣减、结算、直接 Paid 和双审计，不允许拆成“先建 Pending、后另调账”的两个业务动作。
+ADMIN+ 代客钱包订单锁定 `User → 新建 Order → WalletAccount → Kit 余额（Product ID、颜色 ID 稳定顺序）` 的有效序列；Payment/Settlement 是本事务中新建事实，无需先锁历史行。它一次提交创建、库存扣减、钱包扣减、结算、直接 Paid 和双审计，不允许拆成“先建 Pending、后另调账”的两个业务动作。
 
-退款固定锁定 `User → Order → PaymentSettlement → Payment → Refund → WalletAccount → ProductKit(Product ID 升序)` 的有效子序列。钱包退款入账、Refund succeeded、PAID Kit 库存恢复流水与 `REFUND_ORDER` Audit 原子提交；COMPLETED 退款不恢复库存。微信退款当前在进入写事务前返回 503。
+退款固定锁定 `User → Order → PaymentSettlement → Payment → Refund → WalletAccount → Kit 余额（Product ID、颜色 ID 稳定顺序）` 的有效子序列。钱包退款入账、Refund succeeded、PAID Kit/颜色库存恢复流水与 `REFUND_ORDER` Audit 原子提交；COMPLETED 退款不恢复库存。微信退款当前在进入写事务前返回 503。
 
 ---
 
@@ -255,8 +276,8 @@ ADMIN+ 代客钱包订单由管理员作为操作者，按顺序同时写 `CREAT
 ## 9. 数据生命周期
 
 - Phase 4.2 不提供订单或订单项的物理删除、逻辑删除接口。
-- Order → User、OrderItem → Order/Product/ExperienceOption 的历史外键采用 `ON DELETE RESTRICT`。
-- Product 与 ExperienceOption 的正常删除仍为逻辑删除；历史订单依靠快照展示，同时保留原始 ID 以便追溯。
+- Order → User、OrderItem → Order/Product/ExperienceOption/ProductKitColor 的历史外键采用 `ON DELETE RESTRICT`。
+- Product 与 ExperienceOption 的正常删除仍为逻辑删除；ProductKitColor 通过商品颜色启用状态控制未来可售性。历史订单依靠 Product/Option/颜色/销售单位快照展示，同时保留原始 ID 以便追溯。
 - Payment、Settlement、Refund、钱包和库存流水均保留历史外键并使用 `ON DELETE RESTRICT`；退款不删除或重写原订单/支付事实。
 - 超时取消、统计、部分退款和用户自助退款不得通过隐藏任务或未文档化入口提前实现。
 
@@ -266,7 +287,7 @@ ADMIN+ 代客钱包订单由管理员作为操作者，按顺序同时写 `CREAT
 
 - 用户按 ID 查询/取消：先通过 `id + current_user_id` 获取可见订单；不存在或属于他人统一为 `OrderNotFound`。
 - 管理员状态变迁：先判断订单存在，再检查当前状态。
-- 创建订单：先完成请求形状校验，再批量解析 Product/Option/Kit；按请求顺序检查 Product 可售性、类型与 Option 形状、Experience Option 和 Kit 扩展，随后计算候选金额。写事务中取得全部 Kit 锁后重检可售性与库存，并按请求顺序返回首个稳定错误。
+- 创建订单：先完成请求形状和颜色/非颜色/总行数校验，再批量解析 Product/Option/Kit/ProductKitColor；按请求顺序检查 Product 可售性、三种 Item 形状、Experience Option、Kit 扩展与颜色归属/启用，随后计算候选金额并拒绝金额上溢。写事务中取得全部 Kit 余额锁后重检可售性与库存，并按请求顺序返回首个稳定错误。
 - 同一请求包含多个无效 Item 时，不保证向客户端枚举全部业务问题；Service 按请求 Item 顺序返回首个稳定业务错误，数据库写入尚未开始。
 
 具体错误码、HTTP 状态和响应数据见 [Order API §3](../03_api/order_api.md#3-错误契约)。HTTP 状态由命名异常类型决定，禁止根据业务 code 数字段推断。
@@ -279,6 +300,7 @@ ADMIN+ 代客钱包订单由管理员作为操作者，按顺序同时写 `CREAT
 |------|------|
 | Phase 4.3 Inventory | 4.3.1–4.3.12 创建扣减、Pending 取消恢复、查询/Mapper、管理 API、真实 MySQL 门槛与 Final Review 均已完成 |
 | Wallet/Payment/Refund v1 | 余额支付、ADMIN+ 代客钱包订单、人工结算事实、订单资金查询、一次全额退款已在仓库实现；M4 未应用持久数据库 |
+| M6 Color-selectable Kit | 每色一 Item、10g 单位、20/10/30 行边界、颜色槽号/编码/名称快照、总克重派生和商品颜色库存扣减/恢复；仓库实现与本地验证已完成，真实 MySQL/部署待完成 |
 | 后续 Payment | 真实微信下单、签名/验签、通知幂等、查单、关单、退款和对账 |
 | 后续 Order | 超时取消、部分退款、用户自助退款、取消原因、统计、报表与订单删除策略 |
 
@@ -286,15 +308,15 @@ ADMIN+ 代客钱包订单由管理员作为操作者，按顺序同时写 `CREAT
 
 ---
 
-## 12. Phase 4.3 Inventory 联动契约（创建扣减与取消恢复已实现）
+## 12. Inventory 联动契约（fixed 已实现，M6 颜色增量 Pending）
 
 Phase 4.3.1 已冻结 Order v1.1 的 Inventory 联动方向，权威细节见 [Inventory Module](inventory_module.md)：
 
-- 原路径 `POST /api/v1/orders` 将同时接受纯 Experience、纯 Kit 和混合订单；Kit Item 可省略 `experience_option_id` 或显式提交 `null`，其 Option ID 与三项 Option 快照为 `null`。
-- 创建事务先锁定 User 并复验仍为 NORMAL 普通 USER，再写 Pending Order 取得稳定 ID；随后按 Product ID 升序锁定全部 ProductKit，并在同一事务内扣减余额、写 Inventory 流水、批量创建 Items、写 `CREATE_ORDER` 审计和重载响应；任一步失败时 Order 也回滚。
-- 任一 Kit 库存不足时整单回滚；用户错误只返回 `product_id` 与 `requested_quantity`，不披露精确可用量。
-- Pending 取消在现有 Order 行锁和状态重检基础上，原子、幂等恢复全部 Kit Item；既有订单的 `pending -> paid` 与 `paid -> completed` 均不改变库存，`paid -> cancelled` 仍禁止。ADMIN+ 代客钱包订单在创建事务中扣减 Kit 并直接提交为 Paid；独立全额退款中，PAID Kit 按快照恢复库存并写 `order_refund_restore`，COMPLETED 不恢复。
+- 原路径 `POST /api/v1/orders` 同时接受纯 Experience、纯 Kit 和混合订单。`fixed` Kit 的 Option/颜色均为 null；M6 `color_selectable` Kit 必须提交 ProductKitColor ID，其 Option 快照为 null，并增加颜色与 10g 销售单位快照。
+- 创建事务先锁定 User 并复验仍为 NORMAL 普通 USER，再写 Pending Order取得稳定 ID；随后按稳定 Product/颜色顺序锁定全部 `product_kits.stock` / `product_kit_colors.stock_units` 余额，并在同一事务内扣减、写 Inventory 流水、批量创建 Items、写 `CREATE_ORDER` 审计和重载响应；任一步失败时 Order 也回滚。
+- 任一 Kit 或颜色库存不足时整单回滚；用户错误返回 `product_id`、可选 `kit_color_id` 与 `requested_quantity`，不披露精确可用量。
+- Pending 取消在现有 Order 行锁和状态重检基础上，原子、幂等恢复全部 Kit/颜色 Item；既有订单的 `pending -> paid` 与 `paid -> completed` 均不改变库存，`paid -> cancelled` 仍禁止。ADMIN+ 代客钱包订单在创建事务中扣减库存并直接提交为 Paid；独立全额退款中，PAID Kit/颜色按快照恢复库存并写 `order_refund_restore`，COMPLETED 不恢复。
 - 自动扣减/恢复使用数据库唯一幂等键；重复取消同时由 Order 状态机和 Inventory 唯一约束保护。
 - Order Service 拥有创建/取消外层事务并协调 Inventory Repository，不调用 Inventory Service。
 
-Phase 4.3.7 已实现请求形状、创建扣减、流水、快照、响应与既有 POST 路由；Phase 4.3.8 已实现 owner cancel 的 Order 行锁、Item 最小快照、稳定 Kit 集合锁、restore 幂等检查、余额/恢复流水、Cancelled/Audit/重载原子事务及 MySQL 1205/1213 完整用例重试。`40922` 阶段门禁已移除，既有订单的支付与完成继续不改变库存；Wallet/Payment/Refund v1 新增代客 Paid 创建扣减和 PAID 全额退款恢复两条独立路径。
+Phase 4.3.7–4.3.8 已实现 fixed Kit 请求形状、创建扣减、流水、快照、响应和取消恢复；Wallet/Payment/Refund v1 已增加代客 Paid 创建扣减与 PAID 全额退款恢复。M6 在相同事务所有权和幂等语义上增加 ProductKitColor 锁与流水，当前仍为实现中增量；既有 fixed 行为、错误码和请求兼容性不得退化。

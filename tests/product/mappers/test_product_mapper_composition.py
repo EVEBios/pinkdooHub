@@ -106,6 +106,8 @@ def test_user_and_admin_pages_preserve_metadata_and_isolate_fields() -> None:
             "product_type": {"value": "experience", "label": "拼豆体验"},
             "cover_image": "https://cdn.example.com/10.jpg",
             "display_price": "299.00",
+            "kit_kind": None,
+            "sale_unit_grams": None,
         }],
         "total": 21,
         "page": 2,

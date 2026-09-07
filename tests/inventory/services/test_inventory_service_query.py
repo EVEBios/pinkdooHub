@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.common.enums.inventory import InventorySourceType, InventoryTransactionType
-from app.common.enums.product import ProductType
+from app.common.enums.product import KitKind, ProductType
 from app.common.exceptions import (
     ProductIsDeleted,
     ProductKitNotFound,
@@ -44,7 +44,7 @@ def _product(
 async def test_product_query_validates_kit_and_forwards_all_filters() -> None:
     service, inventory_repository, product_repository = _service()
     product = _product()
-    kit = SimpleNamespace(product_id=7, stock=12)
+    kit = SimpleNamespace(product_id=7, stock=12, kit_kind=KitKind.FIXED)
     expected = Page(items=[], total=0, page=2, page_size=10, pages=0)
     created_from = datetime(2026, 8, 14, tzinfo=timezone.utc)
     created_to = datetime(2026, 8, 15, tzinfo=timezone.utc)
@@ -120,6 +120,7 @@ async def test_global_query_does_not_validate_product_filter() -> None:
         page=3,
         page_size=20,
         product_id=999,
+        kit_color_id=None,
     )
 
     assert result is expected
@@ -129,6 +130,7 @@ async def test_global_query_does_not_validate_product_filter() -> None:
         page=3,
         page_size=20,
         product_id=999,
+        kit_color_id=None,
         transaction_type=None,
         source_type=None,
         source_id=None,

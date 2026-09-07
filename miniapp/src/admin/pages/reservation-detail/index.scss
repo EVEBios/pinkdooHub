@@ -1,0 +1,250 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
+.admin-reservation-detail-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__back {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+}
+
+.admin-reservation-detail-heading {
+  @include pd.header-band;
+
+  &__topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+  }
+
+  &__title {
+    @include pd.page-title;
+  }
+
+  &__status {
+    flex: 0 0 auto;
+    padding: 7px 13px;
+    color: var(--pd-color-warning);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+    background: var(--pd-color-warning-soft);
+    border-radius: 999px;
+
+    &--confirmed {
+      color: var(--pd-color-success);
+      background: var(--pd-color-success-soft);
+    }
+
+    &--rejected,
+    &--store-closed {
+      color: var(--pd-color-danger);
+      background: var(--pd-color-danger-soft);
+    }
+
+    &--cancelled {
+      color: var(--pd-color-ink-faint);
+      background: var(--pd-color-surface-muted);
+    }
+  }
+
+  &__name {
+    display: block;
+    max-width: 22ch;
+    margin-top: 28px;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.4;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+
+  &__date {
+    display: block;
+    margin-top: 14px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__time {
+    display: block;
+    margin-top: 4px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.admin-reservation-customer,
+.admin-reservation-facts,
+.admin-reservation-decision {
+  @include pd.section-panel;
+
+  margin-top: 20px;
+
+  &__title {
+    display: block;
+    margin-bottom: 10px;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+}
+
+.admin-reservation-fact {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--pd-color-line);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  &__label {
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+
+  &__value {
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.55;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+}
+
+.admin-reservation-message {
+  @include pd.feedback-warning;
+
+  &__label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+  }
+
+  &--confirmed {
+    @include pd.feedback-success;
+  }
+
+  &--rejected,
+  &--store-closed {
+    @include pd.feedback-error;
+  }
+
+  &--cancelled {
+    color: var(--pd-color-ink-soft);
+    background: var(--pd-color-surface-muted);
+    border-color: var(--pd-color-line);
+  }
+}
+
+.admin-reservation-decision {
+  &__hint {
+    display: block;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.6;
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  &__confirm {
+    @include pd.primary-button;
+  }
+
+  &__reject {
+    @include pd.danger-button;
+  }
+}
+
+.admin-reservation-feedback {
+  @include pd.feedback-error;
+
+  &--pending,
+  &--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &--success {
+    @include pd.feedback-success;
+  }
+
+  text {
+    display: block;
+  }
+
+  text + text {
+    margin-top: 6px;
+  }
+
+  button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 12px;
+  }
+}
+
+.admin-reservation-detail-state {
+  @include pd.page-shell;
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action,
+  &__back {
+    @include pd.primary-button;
+
+    margin-top: 22px;
+  }
+
+  &__back {
+    @include pd.secondary-button;
+
+    margin-top: 12px;
+  }
+}
+
+@media (width >= 768px) {
+  .admin-reservation-detail-page {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 20px;
+
+    &__back {
+      width: min(100%, 420px);
+      grid-column: 1 / -1;
+      justify-self: end;
+    }
+  }
+
+  .admin-reservation-detail-heading,
+  .admin-reservation-message,
+  .admin-reservation-decision,
+  .admin-reservation-feedback {
+    grid-column: 1 / -1;
+  }
+}

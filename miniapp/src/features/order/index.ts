@@ -2,8 +2,11 @@ export { CartProvider, useCart } from './context'
 export type { CartContextValue } from './context'
 export {
   buildOrderItems,
+  CART_COLOR_ITEM_LIMIT,
   CART_ITEM_LIMIT,
+  CART_NON_COLOR_ITEM_LIMIT,
   CART_QUANTITY_LIMIT,
+  COLOR_SELECTABLE_SALE_UNIT_GRAMS,
   CartStore,
   CartValidationError,
   cartItemKey,
@@ -11,9 +14,11 @@ export {
 export type {
   AddCartItemInput,
   CartItem,
+  CartItemIdentity,
   CartReconciliationResult,
   CartSnapshot,
   CartStatus,
+  ColorKitCartItem,
   ExperienceCartItem,
   KitCartItem,
   OrderItemCreate,

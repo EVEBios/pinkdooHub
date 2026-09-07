@@ -48,6 +48,8 @@ def test_user_list_filters_admin_and_detail_fields() -> None:
         "product_type",
         "cover_image",
         "display_price",
+        "kit_kind",
+        "sale_unit_grams",
     }
 
 
@@ -124,6 +126,9 @@ def test_user_kit_filters_admin_and_internal_fields() -> None:
         "price",
         "stock",
         "available",
+        "kit_kind",
+        "sale_unit_grams",
+        "colors",
     }
 
 
@@ -152,6 +157,8 @@ def test_admin_list_filters_detail_fields() -> None:
         "display_price",
         "updated_at",
         "is_deleted",
+        "kit_kind",
+        "sale_unit_grams",
     }
 
 

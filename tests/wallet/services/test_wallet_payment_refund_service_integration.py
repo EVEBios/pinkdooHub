@@ -7,7 +7,7 @@ import pytest
 
 from app.common.enums.inventory import InventoryTransactionType
 from app.common.enums.order import OrderStatus
-from app.common.enums.product import DayType, ProductType
+from app.common.enums.product import DayType, KitKind, ProductType
 from app.common.enums.user import UserRole, UserStatus
 from app.common.enums.wallet import (
     PaymentMethod,
@@ -37,12 +37,14 @@ from app.core.config import settings
 from app.core.exceptions import PermissionException, ServiceUnavailableException
 from app.core.security import hash_password
 from app.models.audit_log import AuditLog
+from app.models.bead_color import BeadColor
 from app.models.experience_option import ExperienceOption
 from app.models.inventory_transaction import InventoryTransaction
 from app.models.order import Order, OrderItem
 from app.models.payment import Payment, PaymentSettlement, RechargeOrder, Refund
 from app.models.product import Product
 from app.models.product_kit import ProductKit
+from app.models.product_kit_color import ProductKitColor
 from app.models.user import User
 from app.models.wallet import WalletAccount, WalletTransaction
 from app.repositories.audit_log_repo import AuditLogRepository
@@ -808,6 +810,108 @@ async def test_refund_rejects_settlement_whose_payment_is_not_succeeded() -> Non
     assert not await Refund.all().exists()
     assert not await WalletTransaction.all().exists()
     assert not await AuditLog.filter(action="REFUND_ORDER").exists()
+
+
+@pytest.mark.parametrize(
+    ("order_status", "expected_units", "expected_restored"),
+    [
+        (OrderStatus.PAID, 5, True),
+        (OrderStatus.COMPLETED, 3, False),
+    ],
+)
+async def test_color_inventory_restores_only_for_paid_refund(
+    order_status: OrderStatus,
+    expected_units: int,
+    expected_restored: bool,
+) -> None:
+    _, _, refund_service = _services()
+    admin = await _create_user(
+        f"color-refund-admin-{order_status.value}",
+        role=UserRole.ADMIN,
+    )
+    user = await _create_user(f"color-refund-user-{order_status.value}")
+    order = await _create_order(
+        user,
+        sequence=850 + order_status.value,
+        amount=Decimal("20.00"),
+        status=order_status,
+    )
+    product = await Product.create(
+        name="退款自选颜色",
+        product_type=ProductType.KIT,
+    )
+    kit = await ProductKit.create(
+        product=product,
+        price=Decimal("10.00"),
+        stock=None,
+        kit_kind=KitKind.COLOR_SELECTABLE,
+        sale_unit_grams=10,
+    )
+    bead_color = await BeadColor.create(
+        slot_no=1,
+        color_code="R001",
+        name="退款红",
+        sort=1,
+        is_active=True,
+    )
+    kit_color = await ProductKitColor.create(
+        product=product,
+        bead_color=bead_color,
+        is_enabled=True,
+        stock_units=3,
+    )
+    await OrderItem.create(
+        order=order,
+        product=product,
+        kit_color=kit_color,
+        product_name=product.name,
+        kit_color_slot_no=bead_color.slot_no,
+        kit_color_code=bead_color.color_code,
+        kit_color_name=bead_color.name,
+        sale_unit_grams=10,
+        product_price=Decimal("10.00"),
+        quantity=2,
+        subtotal=Decimal("20.00"),
+    )
+    payment = await Payment.create(
+        payment_no=_number("PY", 850 + order_status.value),
+        user=user,
+        purpose=PaymentPurpose.ORDER,
+        method=PaymentMethod.MANUAL,
+        amount=order.total_amount,
+        status=PaymentStatus.SUCCEEDED,
+        order=order,
+        recharge_order=None,
+        idempotency_key=f"payment:color-refund:{order_status.value}",
+        succeeded_at=datetime.now(timezone.utc),
+    )
+    await PaymentSettlement.create(
+        payment=payment,
+        order=order,
+        amount=order.total_amount,
+    )
+
+    result = await refund_service.refund_order(
+        order.id,
+        operator=admin,
+        reason="颜色订单退款",
+        idempotency_key=f"color-refund-{order_status.value}",
+        ip_address="127.0.0.1",
+    )
+
+    await kit.refresh_from_db()
+    await kit_color.refresh_from_db()
+    assert result.inventory_restored is expected_restored
+    assert kit.stock is None
+    assert kit_color.stock_units == expected_units
+    restores = await InventoryTransaction.filter(
+        transaction_type=InventoryTransactionType.ORDER_REFUND_RESTORE,
+    )
+    assert len(restores) == int(expected_restored)
+    if restores:
+        assert restores[0].product_id == product.id
+        assert restores[0].kit_color_id == kit_color.id
+        assert restores[0].change_quantity == 2
 
 
 @pytest.mark.parametrize("corruption", ["missing_succeeded_at", "provider_reference"])

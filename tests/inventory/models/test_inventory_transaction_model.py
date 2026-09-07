@@ -73,6 +73,7 @@ def test_inventory_transaction_metadata_matches_database_contract() -> None:
     fields_map = InventoryTransaction._meta.fields_map
     product_field = fields_map["product"]
     operator_field = fields_map["operator"]
+    kit_color_field = fields_map["kit_color"]
 
     assert InventoryTransaction._meta.db_table == "inventory_transactions"
     assert isinstance(product_field, ForeignKeyFieldInstance)
@@ -80,6 +81,12 @@ def test_inventory_transaction_metadata_matches_database_contract() -> None:
     assert product_field.related_name == "inventory_transactions"
     assert product_field.on_delete == fields.RESTRICT
     assert product_field.null is False
+
+    assert isinstance(kit_color_field, ForeignKeyFieldInstance)
+    assert kit_color_field.source_field == "kit_color_id"
+    assert kit_color_field.related_name == "inventory_transactions"
+    assert kit_color_field.on_delete == fields.RESTRICT
+    assert kit_color_field.null is True
 
     assert fields_map["transaction_type"].enum_type is InventoryTransactionType
     assert (
@@ -113,6 +120,10 @@ def test_inventory_transaction_metadata_matches_database_contract() -> None:
         (
             "idx_inventory_product_created_id",
             ["product_id", "created_at", "id"],
+        ),
+        (
+            "idx_inventory_color_created_id",
+            ["kit_color_id", "created_at", "id"],
         ),
         (
             "idx_inventory_source_created_id",
@@ -250,6 +261,7 @@ async def test_inventory_transaction_sqlite_ddl_matches_contract() -> None:
     expected_index_columns = {
         "uidx_inventory_idempotency_key": ["idempotency_key"],
         "idx_inventory_product_created_id": ["product_id", "created_at", "id"],
+        "idx_inventory_color_created_id": ["kit_color_id", "created_at", "id"],
         "idx_inventory_source_created_id": [
             "source_type",
             "source_id",
@@ -275,11 +287,19 @@ async def test_inventory_transaction_sqlite_ddl_matches_contract() -> None:
         "PRAGMA foreign_key_list('inventory_transactions')"
     )
     foreign_keys_by_column = {item["from"]: item for item in foreign_keys}
-    assert set(foreign_keys_by_column) == {"product_id", "operator_id"}
+    assert set(foreign_keys_by_column) == {
+        "product_id",
+        "kit_color_id",
+        "operator_id",
+    }
     assert foreign_keys_by_column["product_id"]["table"] == "products"
     assert foreign_keys_by_column["operator_id"]["table"] == "users"
+    assert foreign_keys_by_column["kit_color_id"]["table"] == (
+        "product_kit_colors"
+    )
     assert foreign_keys_by_column["product_id"]["on_delete"] == "RESTRICT"
     assert foreign_keys_by_column["operator_id"]["on_delete"] == "RESTRICT"
+    assert foreign_keys_by_column["kit_color_id"]["on_delete"] == "RESTRICT"
 
     columns = await connection.execute_query_dict(
         "PRAGMA table_info('inventory_transactions')"
@@ -289,6 +309,7 @@ async def test_inventory_transaction_sqlite_ddl_matches_contract() -> None:
     assert columns_by_name["source_type"]["notnull"] == 1
     assert columns_by_name["source_id"]["notnull"] == 0
     assert columns_by_name["operator_id"]["notnull"] == 0
+    assert columns_by_name["kit_color_id"]["notnull"] == 0
     assert columns_by_name["reason"]["notnull"] == 1
     assert columns_by_name["idempotency_key"]["notnull"] == 1
     assert "order_id" not in columns_by_name

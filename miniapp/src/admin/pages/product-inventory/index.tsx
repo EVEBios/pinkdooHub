@@ -7,7 +7,10 @@ import {
   InventoryState,
   InventoryTransactionList,
 } from '@/admin/components/inventory'
-import type { AdminKitProductDetail } from '@/api/endpoints/admin_products'
+import type {
+  AdminKitProductDetail,
+  AdminProductKitColor,
+} from '@/api/endpoints/admin_products'
 import type { InventoryAdjustmentRequest } from '@/api/endpoints/inventory'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
@@ -20,6 +23,7 @@ import {
   parseInventoryFilters,
   parseKitInventoryRoute,
   replaceInventorySourceType,
+  useColorInventoryAdjustment,
   useInventoryAdjustment,
   useInventoryTransactionList,
 } from '@/features/inventory'
@@ -86,10 +90,201 @@ export function AuthenticatedProductInventory({ productId }: { readonly productI
     return <InventoryState title='目标商品不是 Kit' description='Inventory 只管理 Kit 库存' />
   }
   return (
-    <KitInventoryWorkspace
-      product={detail.state.product}
-      refreshProduct={detail.retry}
+    detail.state.product.kit_kind.value === 'color_selectable'
+      ? <ColorKitInventoryWorkspace product={detail.state.product} refreshProduct={detail.retry} />
+      : <KitInventoryWorkspace product={detail.state.product} refreshProduct={detail.retry} />
+  )
+}
+
+function ColorKitInventoryWorkspace({ product, refreshProduct }: {
+  readonly product: AdminKitProductDetail
+  readonly refreshProduct: () => void
+}) {
+  const firstColor = product.colors[0]
+  if (!firstColor) {
+    return <InventoryState title='颜色目录缺失' description='自选颜色商品必须关联完整的 221 个全局颜色槽，请先修复商品配置' />
+  }
+  return (
+    <ColorKitInventoryColorWorkspace
+      firstColor={firstColor}
+      product={product}
+      refreshProduct={refreshProduct}
     />
+  )
+}
+
+function ColorKitInventoryColorWorkspace({ firstColor, product, refreshProduct }: {
+  readonly firstColor: AdminProductKitColor
+  readonly product: AdminKitProductDetail
+  readonly refreshProduct: () => void
+}) {
+  const [selectedColorId, setSelectedColorId] = useState(firstColor.id)
+  const [query, setQuery] = useState('')
+  const [changeGrams, setChangeGrams] = useState('')
+  const [reason, setReason] = useState('')
+  const [adjustmentError, setAdjustmentError] = useState('')
+  const adjustment = useColorInventoryAdjustment()
+  const selectedColor = product.colors.find((color) => color.id === selectedColorId) ?? firstColor
+  const transactions = useInventoryTransactionList({
+    kind: 'color',
+    productId: product.id,
+    kitColorId: selectedColor.id,
+  })
+  const blocked = adjustment.state.status === 'submitting' || adjustment.state.status === 'unknown'
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const visibleColors = product.colors.filter((color) => normalizedQuery.length === 0 ||
+    String(color.slot_no).includes(normalizedQuery) ||
+    color.color_code?.toLocaleLowerCase().includes(normalizedQuery) ||
+    color.name?.toLocaleLowerCase().includes(normalizedQuery))
+  const visibleStockUnits = adjustment.state.status === 'created' || adjustment.state.status === 'replayed'
+    ? adjustment.state.result.adjustment.stock_units
+    : selectedColor.stock_units
+
+  async function submitAdjustment(): Promise<void> {
+    const parsed = parseColorAdjustment(changeGrams, reason)
+    if (!parsed.request) {
+      setAdjustmentError(parsed.error ?? '颜色库存调整输入无效')
+      return
+    }
+    setAdjustmentError('')
+    const result = await adjustment.adjustColorStock(product.id, selectedColor.id, parsed.request)
+    if (result) {
+      setChangeGrams('')
+      setReason('')
+      refreshProduct()
+      transactions.retry()
+    }
+  }
+
+  async function retryUnknown(): Promise<void> {
+    const result = await adjustment.retrySameIntent()
+    if (result) {
+      setChangeGrams('')
+      setReason('')
+      refreshProduct()
+      transactions.retry()
+    }
+  }
+
+  function selectColor(colorId: number): void {
+    if (blocked || colorId === selectedColorId) return
+    setSelectedColorId(colorId)
+    setChangeGrams('')
+    setReason('')
+    setAdjustmentError('')
+    adjustment.reset()
+  }
+
+  const mutationError = adjustment.state.status === 'failed' || adjustment.state.status === 'unknown'
+    ? adjustment.state.errorMessage
+    : ''
+  const resultMessage = adjustment.state.status === 'created'
+    ? `首次调整已提交：${adjustment.state.result.adjustment.transaction.before_quantity * 10}g → ${visibleStockUnits * 10}g`
+    : adjustment.state.status === 'replayed'
+      ? `安全重试命中原结果，未重复调整：当前 ${visibleStockUnits * 10}g`
+      : ''
+
+  return (
+    <View className='product-inventory-page'>
+      <View className='product-inventory-page__header'>
+        <View className='product-inventory-page__header-topline'>
+          <Text className='product-inventory-page__title'>{product.name}</Text>
+          <Text className='product-inventory-page__status'>{product.status.label}</Text>
+        </View>
+        <Text className='product-inventory-page__subtitle'>自选颜色 Kit · 逐色 10g 单位库存</Text>
+        <View className='product-inventory-page__stock-panel'>
+          <Text className='product-inventory-page__stock-label'>当前颜色权威库存</Text>
+          <View className='product-inventory-page__stock-value-row'>
+            <Text className='product-inventory-page__stock-value'>{visibleStockUnits * 10}</Text>
+            <Text className='product-inventory-page__stock-unit'>g</Text>
+          </View>
+          <Text className='product-inventory-page__stock-note'>
+            槽位 {selectedColor.slot_no} · {selectedColor.color_code ?? '待填写色号'} · {selectedColor.name ?? '待填写名称'}
+          </Text>
+        </View>
+      </View>
+
+      <View className='color-inventory-picker'>
+        <Text className='color-inventory-picker__title'>选择要管理的颜色</Text>
+        <Input
+          className='color-inventory-picker__search'
+          disabled={blocked}
+          maxlength={100}
+          placeholder='搜索槽位、色号或名称'
+          value={query}
+          onInput={(event) => setQuery(event.detail.value)}
+        />
+        <View className='color-inventory-picker__list'>
+          {visibleColors.map((color) => (
+            <Button
+              key={color.id}
+              className={`color-inventory-option${color.id === selectedColor.id ? ' color-inventory-option--active' : ''}`}
+              disabled={blocked}
+              onClick={() => selectColor(color.id)}
+            >
+              <Text>{color.color_code ?? `槽位 ${color.slot_no}`} · {color.name ?? '待配置'}</Text>
+              <Text>{color.stock_units * 10}g</Text>
+            </Button>
+          ))}
+        </View>
+        {visibleColors.length === 0 && <Text className='color-inventory-picker__empty'>没有匹配的颜色槽位</Text>}
+      </View>
+
+      <View className='inventory-adjustment'>
+        <Form onSubmit={() => void submitAdjustment()}>
+          <Text className='inventory-adjustment__title'>调整当前颜色库存</Text>
+          <Text className='inventory-adjustment__stock'>当前余额：{visibleStockUnits * 10}g（{visibleStockUnits} 个 10g 单位）</Text>
+          <Input
+            className='inventory-adjustment__input'
+            disabled={blocked}
+            maxlength={9}
+            placeholder='克数变化，例如 200 或 -30'
+            value={changeGrams}
+            onInput={(event) => {
+              setChangeGrams(event.detail.value)
+              setAdjustmentError('')
+              adjustment.reset()
+            }}
+          />
+          <Input
+            className='inventory-adjustment__input'
+            disabled={blocked}
+            maxlength={256}
+            placeholder='原因，例如采购入库或盘点损耗'
+            value={reason}
+            onInput={(event) => {
+              setReason(event.detail.value)
+              setAdjustmentError('')
+              adjustment.reset()
+            }}
+          />
+          <Text className='inventory-adjustment__hint'>变化克数必须是 10 的整数倍；服务端实际以 10g 单位记账并保留不可变流水。</Text>
+          {(adjustmentError || mutationError) && <Text className='inventory-adjustment__error'>{adjustmentError || mutationError}</Text>}
+          {resultMessage && <Text className='inventory-adjustment__success'>{resultMessage}</Text>}
+          <Button
+            className='inventory-adjustment__submit'
+            disabled={blocked}
+            type='primary'
+            onClick={() => void submitAdjustment()}
+          >{adjustment.state.status === 'submitting' ? '正在提交…' : '提交颜色库存调整'}</Button>
+          {adjustment.state.status === 'unknown' && (
+            <Button className='inventory-adjustment__retry' onClick={() => void retryUnknown()}>
+              安全重试同一次调整
+            </Button>
+          )}
+        </Form>
+      </View>
+
+      <InventoryTransactionList
+        loadNextPage={transactions.loadNextPage}
+        retry={transactions.retry}
+        state={transactions.state}
+      />
+      <Button
+        className='product-inventory-page__back'
+        onClick={() => void Taro.redirectTo({ url: buildAdminProductDetailUrl(product.id, 'kit') })}
+      >返回 Kit 管理详情</Button>
+    </View>
   )
 }
 
@@ -289,6 +484,29 @@ function parseAdjustment(changeText: string, reasonText: string): {
   const change = Number(normalizedChange)
   if (!Number.isSafeInteger(change) || change < -999_999 || change > 999_999) {
     return { error: '变化量必须位于 -999999 至 999999' }
+  }
+  if (reason.length < 1 || reason.length > 256) {
+    return { error: '调整原因去除首尾空白后必须是 1 至 256 个字符' }
+  }
+  return { request: { change, reason } }
+}
+
+function parseColorAdjustment(changeGramsText: string, reasonText: string): {
+  readonly request?: InventoryAdjustmentRequest
+  readonly error?: string
+} {
+  const normalizedChange = changeGramsText.trim()
+  const reason = reasonText.trim()
+  if (!/^-?[1-9]\d*$/.test(normalizedChange)) {
+    return { error: '变化克数必须是非零整数，例如 200 或 -30' }
+  }
+  const changeGrams = Number(normalizedChange)
+  if (!Number.isSafeInteger(changeGrams) || changeGrams % 10 !== 0) {
+    return { error: '变化克数必须是 10 的整数倍' }
+  }
+  const change = changeGrams / 10
+  if (change < -999_999 || change > 999_999) {
+    return { error: '变化量超出颜色库存允许范围' }
   }
   if (reason.length < 1 || reason.length > 256) {
     return { error: '调整原因去除首尾空白后必须是 1 至 256 个字符' }

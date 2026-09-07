@@ -47,12 +47,22 @@ def map_order_item(item: OrderItem) -> OrderItemOut:
             "id": item.id,
             "product_id": item.product_id,
             "experience_option_id": item.experience_option_id,
+            "kit_color_id": getattr(item, "kit_color_id", None),
             "product_name": item.product_name,
             "option_duration_minutes": item.option_duration_minutes,
             "option_participants": item.option_participants,
             "option_day_type": (
                 map_order_day_type(item.option_day_type)
                 if item.option_day_type is not None
+                else None
+            ),
+            "kit_color_code": getattr(item, "kit_color_code", None),
+            "kit_color_name": getattr(item, "kit_color_name", None),
+            "kit_color_slot_no": getattr(item, "kit_color_slot_no", None),
+            "sale_unit_grams": getattr(item, "sale_unit_grams", None),
+            "total_weight_grams": (
+                item.sale_unit_grams * item.quantity
+                if getattr(item, "sale_unit_grams", None) is not None
                 else None
             ),
             "product_price": item.product_price,

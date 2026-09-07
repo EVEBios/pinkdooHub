@@ -105,12 +105,16 @@ textarea:focus-visible {
   outline-offset: 3px;
 }
 
-button:active:not([disabled='true']) {
+button[disabled] {
+  opacity: 0.62;
+}
+
+button:active {
   transform: translateY(1px);
 }
 
-button[disabled='true'] {
-  opacity: 0.62;
+button[disabled]:active {
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

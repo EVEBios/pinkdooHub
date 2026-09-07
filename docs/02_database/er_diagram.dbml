@@ -78,10 +78,46 @@ Table experience_options {
 Table product_kits {
   id bigint [pk, increment]
   product_id bigint [not null, unique]
-  price decimal(10,2) [not null, note: 'kit product price']
-  stock int [not null, default: 0, note: 'authoritative balance; application range 0..999999; every Phase 4.3 change writes a ledger row in the same transaction']
+  price decimal(10,2) [not null, note: 'fixed kit price or color-selectable per-10g unit price']
+  stock int [default: 0, note: 'nullable: authoritative fixed balance 0..999999; MUST be NULL for color_selectable']
+  kit_kind varchar(20) [not null, default: 'fixed', note: 'fixed | color_selectable; immutable; default preserves historical kits']
+  sale_unit_grams smallint [note: 'nullable: MUST be NULL for fixed and exactly 10 for color_selectable']
   created_at datetime
   updated_at datetime
+}
+
+Table bead_colors [note: 'M6 global catalog has exactly slot_no 1..221; placeholder rows may have null code/name/image'] {
+  id bigint [pk, increment]
+  slot_no smallint [not null, note: 'stable global slot, application range 1..221']
+  color_code varchar(50) [note: 'nullable placeholder; non-null value is globally unique']
+  name varchar(100) [note: 'nullable placeholder']
+  swatch_image_url varchar(2048) [note: 'optional global swatch image; recommend 192x192 or 256x256 sRGB WebP']
+  sort smallint [not null, default: 0, note: 'range 0..32767; M6 CHECK enforces it; placeholder initialization uses slot_no']
+  is_active boolean [not null, default: false, note: 'Service only allows true when code and name are configured']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (slot_no) [unique, name: 'uidx_bead_colors_slot_no']
+    (color_code) [unique, name: 'uidx_bead_colors_color_code']
+    (is_active, sort, slot_no) [name: 'idx_bead_colors_active_sort_slot']
+  }
+}
+
+Table product_kit_colors [note: 'M6 product-scoped sale flag and 10g-unit balance; stock is never shared between products'] {
+  id bigint [pk, increment]
+  product_id bigint [not null]
+  bead_color_id bigint [not null]
+  is_enabled boolean [not null, default: false]
+  stock_units int [not null, default: 0, note: 'authoritative product/color balance in 10g units; application range 0..999999']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (product_id, bead_color_id) [unique, name: 'uidx_product_kit_colors_product_color', note: 'one row per global color for a product']
+    (product_id, is_enabled) [name: 'idx_product_kit_colors_product_enabled']
+    (bead_color_id, is_enabled) [name: 'idx_product_kit_colors_color_enabled']
+  }
 }
 
 Table product_images {
@@ -105,6 +141,8 @@ Table product_images {
 // Product child FKs use RESTRICT. The nullable Option-image FK uses SET NULL only as a physical-delete fallback.
 Ref: experience_options.product_id > products.id [delete: restrict]
 Ref: product_kits.product_id > products.id [delete: restrict]
+Ref: product_kit_colors.product_id > products.id [delete: restrict]
+Ref: product_kit_colors.bead_color_id > bead_colors.id [delete: restrict]
 Ref: product_images.product_id > products.id [delete: restrict]
 Ref: product_images.experience_option_id > experience_options.id [delete: set null]
 
@@ -113,8 +151,8 @@ Ref: product_images.experience_option_id > experience_options.id [delete: set nu
 Table audit_logs {
   id bigint [pk, increment]
   operator_id bigint [not null, note: 'who performed the action']
-  action varchar(50) [not null, note: 'CREATE_PRODUCT | CREATE_ORDER | PAY_ORDER | ADJUST_WALLET | REFUND_ORDER | ...']
-  target_type varchar(50) [not null, note: 'product | user | order | wallet']
+  action varchar(50) [not null, note: 'CREATE_PRODUCT | CREATE_ORDER | CREATE_RESERVATION | CLOSE_STORE_BUSINESS_DAY | ADJUST_WALLET | REFUND_ORDER | ...']
+  target_type varchar(50) [not null, note: 'product | user | order | reservation | store_business_day | wallet | ...']
   target_id bigint [not null]
   description varchar(256) [note: 'e.g. price changed: 299 → 399']
   ip_address varchar(45) [not null]
@@ -149,8 +187,9 @@ Table orders {
 
 // Lifecycle: pending -> cancelled | paid; paid -> completed.
 // Payment integration records a unique successful settlement for wallet/manual Paid transitions.
-// Phase 4.3 accepts Experience, Kit, and mixed orders. Pending Kit items deduct
-// ProductKit.stock atomically; Pending cancellation and PAID full refund restore it.
+// Phase 4.3 accepts Experience, Kit, and mixed orders. Pending fixed-Kit items
+// deduct ProductKit.stock; M6 color items deduct ProductKitColor.stock_units.
+// Pending cancellation and PAID full refund restore the same snapshotted balance.
 // ADMIN+ assisted wallet orders deduct once at creation and are committed directly as Paid.
 
 Table order_items {
@@ -158,15 +197,21 @@ Table order_items {
   order_id bigint [not null]
   product_id bigint [not null]
 
-  // Experience items reference an option; Kit items keep all option fields NULL.
+  // Experience items reference an option; fixed Kit keeps option/color NULL;
+  // color-selectable Kit references one product-scoped color and snapshots metadata.
   experience_option_id bigint [note: 'FK to experience_options; NULL for kit products']
+  kit_color_id bigint [note: 'FK to product_kit_colors; required only for color-selectable kit items']
   option_duration_minutes int [note: 'snapshot: positive minutes']
   option_participants int [note: 'snapshot: positive participants']
   option_day_type varchar(20) [note: 'snapshot: weekday | holiday']
 
   product_name varchar(100) [not null, note: 'snapshot: product name at order time']
-  product_price decimal(10,2) [not null, note: 'snapshot: price at order time']
-  quantity int [not null, note: 'Phase 4.2 application range: 1..99']
+  kit_color_code varchar(50) [note: 'nullable color snapshot']
+  kit_color_name varchar(100) [note: 'nullable color snapshot']
+  kit_color_slot_no smallint [note: 'nullable color slot snapshot, application range 1..221']
+  sale_unit_grams smallint [note: 'nullable sales-unit snapshot; color-selectable is exactly 10']
+  product_price decimal(10,2) [not null, note: 'snapshot: price; color-selectable means per 10g unit']
+  quantity int [not null, note: 'application range 1..99; color-selectable means number of 10g units']
   subtotal decimal(10,2) [not null]
   created_at datetime
   updated_at datetime
@@ -181,6 +226,58 @@ Ref: orders.user_id > users.id [delete: restrict]
 Ref: order_items.order_id > orders.id [delete: restrict]
 Ref: order_items.product_id > products.id [delete: restrict]
 Ref: order_items.experience_option_id > experience_options.id [delete: restrict]
+Ref: order_items.kit_color_id > product_kit_colors.id [delete: restrict]
+
+// ── Reservation N1 (M5 offline migration generated; not applied) ──
+
+Table store_business_days {
+  id bigint [pk, increment]
+  business_date date [not null, note: 'Asia/Shanghai local date; one row per date; Monday fixed closure is enforced by Validator']
+  is_closed boolean [not null, default: false, note: 'custom administrator closure; reopening keeps the row']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (business_date) [unique, name: 'uidx_store_business_day_date']
+  }
+}
+
+Table reservations [note: 'N1 has no slot-capacity or user/option/start uniqueness; duplicate same-slot reservations are allowed and reviewed manually'] {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: 'owner; current phone is intentionally not snapshotted']
+  business_day_id bigint [not null, note: 'shared create/closure row-lock boundary']
+  product_id bigint [not null]
+  experience_option_id bigint [not null]
+  scheduled_start_at datetime [not null, note: 'UTC authoritative start; request uses Asia/Shanghai local date/time']
+  scheduled_end_at datetime [not null, note: 'UTC authoritative end; full experience must fit local 11:00..20:00']
+  product_name varchar(100) [not null, note: 'immutable creation snapshot']
+  option_duration_minutes int [not null, note: 'immutable creation snapshot']
+  option_participants int [not null, note: 'immutable creation snapshot']
+  option_day_type varchar(20) [not null, note: 'snapshot: weekday | holiday']
+  option_price decimal(10,2) [not null, note: 'immutable creation snapshot used for arrival price']
+  status varchar(32) [not null, default: 'pending', note: 'pending | confirmed | rejected | cancelled']
+  rejection_reason varchar(32) [note: 'rejected only: no_capacity']
+  cancellation_reason varchar(32) [note: 'cancelled only: customer_request | store_closed']
+  confirmed_at datetime [note: 'UTC; retained if a confirmed reservation is later cancelled']
+  rejected_at datetime [note: 'UTC']
+  cancelled_at datetime [note: 'UTC']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (user_id, scheduled_start_at, id) [name: 'idx_reservations_user_start_id']
+    (user_id, status, scheduled_start_at, id) [name: 'idx_reservations_user_status_start_id']
+    (user_id, status, scheduled_end_at, id) [name: 'idx_reservations_user_status_end_id']
+    (business_day_id, status, scheduled_start_at, id) [name: 'idx_reservations_day_status_start_id']
+    (status, scheduled_start_at, id) [name: 'idx_reservations_status_start_id']
+  }
+}
+
+// All four Reservation FKs preserve history through RESTRICT.
+Ref: reservations.user_id > users.id [delete: restrict]
+Ref: reservations.business_day_id > store_business_days.id [delete: restrict]
+Ref: reservations.product_id > products.id [delete: restrict]
+Ref: reservations.experience_option_id > experience_options.id [delete: restrict]
 
 // ── Wallet / Payment / Refund (M4 offline migration generated; not applied) ──
 
@@ -313,7 +410,8 @@ Ref: refunds.operator_id > users.id [delete: restrict]
 
 Table inventory_transactions {
   id bigint [pk, increment]
-  product_id bigint [not null, note: 'public Kit Product ID; balance row is product_kits']
+  product_id bigint [not null, note: 'public Kit Product ID']
+  kit_color_id bigint [note: 'NULL for fixed; product_kit_colors FK for color-selectable balance']
   transaction_type varchar(40) [not null, note: 'opening_balance | admin_adjustment | order_deduction | order_cancellation_restore | order_refund_restore']
   change_quantity int [not null, note: 'application range -999999..999999, non-zero']
   before_quantity int [not null, note: 'application range 0..999999']
@@ -329,6 +427,7 @@ Table inventory_transactions {
   indexes {
     (idempotency_key) [unique, name: 'uidx_inventory_idempotency_key']
     (product_id, created_at, id) [name: 'idx_inventory_product_created_id']
+    (kit_color_id, created_at, id) [name: 'idx_inventory_color_created_id']
     (source_type, source_id, created_at, id) [name: 'idx_inventory_source_created_id']
     (transaction_type, created_at, id) [name: 'idx_inventory_type_created_id']
     (created_at, id) [name: 'idx_inventory_created_id']
@@ -336,4 +435,5 @@ Table inventory_transactions {
 }
 
 Ref: inventory_transactions.product_id > products.id [delete: restrict]
+Ref: inventory_transactions.kit_color_id > product_kit_colors.id [delete: restrict]
 Ref: inventory_transactions.operator_id > users.id [delete: restrict]

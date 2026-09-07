@@ -11,10 +11,14 @@ const mockRemoveItem = jest.fn(async () => undefined)
 let mockCart: CartContextValue
 
 jest.mock('@/features/order', () => ({
-  cartItemKey: (item: { productId: number; experienceOptionId: number | null }) => (
-    `${item.productId}:${item.experienceOptionId ?? 'kit'}`
+  cartItemKey: (item: { productId: number; experienceOptionId: number | null; kitColorId: number | null }) => (
+    `${item.productId}:${item.experienceOptionId ?? item.kitColorId ?? 'fixed'}`
   ),
   useCart: () => mockCart,
+}))
+
+jest.mock('@/utils/asset_url', () => ({
+  resolveAssetUrl: (assetUrl: string) => `https://api.example.com${assetUrl}`,
 }))
 
 describe('CartPage', () => {
@@ -26,6 +30,7 @@ describe('CartPage', () => {
       status: 'ready',
       items: [],
       addItem: jest.fn(async () => undefined),
+      addItems: jest.fn(async () => undefined),
       updateQuantity: mockUpdateQuantity,
       removeItem: mockRemoveItem,
       clear: jest.fn(async () => undefined),
@@ -64,6 +69,7 @@ describe('CartPage', () => {
         {
           productId: 1,
           experienceOptionId: 11,
+          kitColorId: null,
           productType: 'experience',
           productName: '周末拼豆体验',
           configurationLabel: '1小时 · 2人 · 工作日',
@@ -74,7 +80,9 @@ describe('CartPage', () => {
         {
           productId: 2,
           experienceOptionId: null,
+          kitColorId: null,
           productType: 'kit',
+          kitKind: 'fixed',
           productName: '基础拼豆套装',
           configurationLabel: null,
           unitPrice: '599.00',
@@ -93,7 +101,7 @@ describe('CartPage', () => {
 
     const firstRowButtons = rows[0].querySelectorAll('.cart-item__quantity-button')
     testUtils.fireEvent.click(firstRowButtons[1])
-    expect(mockUpdateQuantity).toHaveBeenCalledWith(1, 11, 3)
+    expect(mockUpdateQuantity).toHaveBeenCalledWith(mockCart.items[0], 3)
 
     const checkout = testUtils.queries.querySelector('.cart-page__checkout')
     if (!checkout) {
@@ -101,6 +109,102 @@ describe('CartPage', () => {
     }
     testUtils.fireEvent.click(checkout)
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/order-confirm/index' })
+  })
+
+  it('把同一自选商品合成一个区块，并保留逐色图片和数量操作', async () => {
+    const firstColor = {
+      productId: 3,
+      experienceOptionId: null,
+      kitColorId: 31,
+      productType: 'kit' as const,
+      kitKind: 'color_selectable' as const,
+      productName: '221自选颜色',
+      configurationLabel: 'A1',
+      saleUnitGrams: 10 as const,
+      unitPrice: '3.00',
+      imageUrl: '/uploads/bead-colors/a1.png',
+      quantity: 2,
+    }
+    const secondColor = {
+      ...firstColor,
+      kitColorId: 32,
+      configurationLabel: 'A2',
+      imageUrl: '/uploads/bead-colors/a2.png',
+      quantity: 1,
+    }
+    mockCart = { ...mockCart, items: [firstColor, secondColor] }
+    await testUtils.mount(CartPage)
+
+    expect(testUtils.queries.querySelectorAll('.cart-item')).toHaveLength(1)
+    const group = testUtils.queries.querySelector('.cart-color-group')
+    expect(group?.textContent).toContain('221自选颜色')
+    expect(group?.textContent).toContain('2 种颜色 · 共 30g')
+    expect(group?.textContent.match(/预览单价/g)).toHaveLength(1)
+
+    const colorRows = testUtils.queries.querySelectorAll('.cart-color-row')
+    expect(colorRows).toHaveLength(2)
+    expect(colorRows[0].textContent).toContain('A1')
+    expect(colorRows[0].textContent).toContain('20g')
+    expect(colorRows[0].querySelector('.cart-color-row__swatch')?.getAttribute('src'))
+      .toBe('https://api.example.com/uploads/bead-colors/a1.png')
+
+    const secondColorSteps = colorRows[1].querySelectorAll('.cart-color-row__step')
+    testUtils.fireEvent.click(secondColorSteps[1])
+    expect(mockUpdateQuantity).toHaveBeenCalledWith(secondColor, 2)
+  })
+
+  it('允许从合并区块中单独移除一种颜色', async () => {
+    const color = {
+      productId: 3,
+      experienceOptionId: null,
+      kitColorId: 31,
+      productType: 'kit' as const,
+      kitKind: 'color_selectable' as const,
+      productName: '221自选颜色',
+      configurationLabel: 'A1',
+      saleUnitGrams: 10 as const,
+      unitPrice: '3.00',
+      imageUrl: null,
+      quantity: 1,
+    }
+    mockCart = { ...mockCart, items: [color] }
+    await testUtils.mount(CartPage)
+
+    const remove = testUtils.queries.querySelector('.cart-color-row__remove')
+    if (!remove) {
+      throw new Error('没有渲染单色移除按钮')
+    }
+    testUtils.fireEvent.click(remove)
+
+    expect(mockRemoveItem).toHaveBeenCalledWith(color)
+  })
+
+  it('不同自选商品仍各自占一个区块', async () => {
+    const baseColor = {
+      productId: 3,
+      experienceOptionId: null,
+      kitColorId: 31,
+      productType: 'kit' as const,
+      kitKind: 'color_selectable' as const,
+      productName: '第一套自选颜色',
+      configurationLabel: 'A1',
+      saleUnitGrams: 10 as const,
+      unitPrice: '3.00',
+      imageUrl: null,
+      quantity: 1,
+    }
+    mockCart = {
+      ...mockCart,
+      items: [baseColor, {
+        ...baseColor,
+        productId: 4,
+        kitColorId: 41,
+        productName: '第二套自选颜色',
+      }],
+    }
+    await testUtils.mount(CartPage)
+
+    expect(testUtils.queries.querySelectorAll('.cart-color-group')).toHaveLength(2)
   })
 
   it('恢复失败时允许重试', async () => {

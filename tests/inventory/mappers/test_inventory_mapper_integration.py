@@ -77,7 +77,13 @@ async def test_repository_page_maps_without_sql_or_orm_mutation(
         "items": [
             {
                 "id": loaded.id,
-                "product_id": product.id,
+                    "product_id": product.id,
+                    "kit_color_id": None,
+                    "bead_color_id": None,
+                    "bead_color_slot_no": None,
+                    "color_code": None,
+                    "color_name": None,
+                    "sale_unit_grams": None,
                 "transaction_type": "admin_adjustment",
                 "change_quantity": 2,
                 "before_quantity": 10,

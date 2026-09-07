@@ -107,6 +107,7 @@ def test_order_item_metadata_matches_database_contract() -> None:
         "order": ("order_id", "items", False),
         "product": ("product_id", "order_items", False),
         "experience_option": ("experience_option_id", "order_items", True),
+        "kit_color": ("kit_color_id", "order_items", True),
     }
     for field_name, (source_field, related_name, nullable) in expected_foreign_keys.items():
         relation = fields_map[field_name]
@@ -125,6 +126,14 @@ def test_order_item_metadata_matches_database_contract() -> None:
     assert fields_map["option_day_type"].max_length == PRODUCT_ENUM_MAX_LENGTH
     assert fields_map["option_day_type"].null is True
     assert isinstance(fields_map["product_name"], fields.CharField)
+    assert isinstance(fields_map["kit_color_slot_no"], fields.SmallIntField)
+    assert fields_map["kit_color_slot_no"].null is True
+    assert isinstance(fields_map["kit_color_code"], fields.CharField)
+    assert fields_map["kit_color_code"].null is True
+    assert isinstance(fields_map["kit_color_name"], fields.CharField)
+    assert fields_map["kit_color_name"].null is True
+    assert isinstance(fields_map["sale_unit_grams"], fields.SmallIntField)
+    assert fields_map["sale_unit_grams"].null is True
     assert isinstance(fields_map["product_price"], fields.DecimalField)
     assert isinstance(fields_map["quantity"], fields.IntField)
     assert isinstance(fields_map["subtotal"], fields.DecimalField)
@@ -362,6 +371,7 @@ async def test_order_sqlite_ddl_matches_named_index_and_fk_contract() -> None:
         ("order_id", "orders", "RESTRICT"),
         ("product_id", "products", "RESTRICT"),
         ("experience_option_id", "experience_options", "RESTRICT"),
+        ("kit_color_id", "product_kit_colors", "RESTRICT"),
     }
 
     order_columns = await connection.execute_query_dict("PRAGMA table_info('orders')")
@@ -379,5 +389,10 @@ async def test_order_sqlite_ddl_matches_named_index_and_fk_contract() -> None:
         "option_duration_minutes",
         "option_participants",
         "option_day_type",
+        "kit_color_id",
+        "kit_color_slot_no",
+        "kit_color_code",
+        "kit_color_name",
+        "sale_unit_grams",
     ):
         assert item_columns_by_name[nullable_field]["notnull"] == 0

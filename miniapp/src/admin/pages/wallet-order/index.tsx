@@ -21,7 +21,7 @@ import {
   useAssistedWalletOrder,
 } from '@/features/wallet'
 import { moneyToCents } from '@/features/wallet/money'
-import { formatPrice } from '@/utils/format'
+import { formatColorLabel, formatPrice } from '@/utils/format'
 
 import './index.scss'
 
@@ -193,7 +193,15 @@ function ProductPicker({ catalog, locked, onSelect }: {
                   <Text className='wallet-order-product__type'>{product.product_type.label}</Text>
                   <Text className='wallet-order-product__name'>{product.name}</Text>
                 </View>
-                <Text className='wallet-order-product__price'>¥{formatPrice(product.display_price)} 起</Text>
+                <Text className='wallet-order-product__price'>
+                  ¥{formatPrice(product.display_price)}{
+                    product.product_type.value === 'experience'
+                      ? ' 起'
+                      : product.kit_kind?.value === 'color_selectable'
+                        ? ' / 10g'
+                        : ''
+                  }
+                </Text>
               </Button>
             ))}
           </View>
@@ -257,15 +265,26 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
   const [selectedOptionId, setSelectedOptionId] = useState(
     experienceDetail?.options[0].id,
   )
+  const kitDetail = isKitDetail(detail) ? detail : undefined
+  const [selectedColorId, setSelectedColorId] = useState(
+    kitDetail?.colors.find((item) => item.available)?.id,
+  )
   const option = experienceDetail
     ? experienceDetail.options.find((item) => item.id === selectedOptionId) ?? experienceDetail.options[0]
     : undefined
-  const unitPrice = option?.price ?? (isKitDetail(detail) ? detail.price : '0.00')
+  const color = kitDetail?.kit_kind.value === 'color_selectable'
+    ? kitDetail.colors.find((item) => item.id === selectedColorId)
+    : undefined
+  const unitPrice = option?.price ?? kitDetail?.price ?? '0.00'
   const unitCents = moneyToCents(unitPrice)
   const balanceCents = moneyToCents(target.wallet.balance)
   const totalCents = unitCents === undefined ? undefined : unitCents * quantity
-  const maxQuantity = isKitDetail(detail) ? Math.min(99, detail.stock) : 99
-  const purchasable = !isKitDetail(detail) || detail.available
+  const maxQuantity = kitDetail?.kit_kind.value === 'fixed'
+    ? Math.min(99, kitDetail.stock ?? 0)
+    : 99
+  const purchasable = !kitDetail || (kitDetail.kit_kind.value === 'fixed'
+    ? kitDetail.available
+    : color?.available === true)
   const balanceSufficient = totalCents !== undefined && balanceCents !== undefined && totalCents <= balanceCents
   const canSubmit = !locked && purchasable && balanceSufficient && quantity >= 1 && quantity <= maxQuantity
   const request: OrderCreateRequest = {
@@ -273,6 +292,7 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
       product_id: detail.id,
       quantity,
       ...(option ? { experience_option_id: option.id } : {}),
+      ...(color ? { kit_color_id: color.id } : {}),
     }],
     ...(remark.trim() ? { remark: remark.trim() } : {}),
   }
@@ -281,10 +301,14 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
     if (!canSubmit || totalCents === undefined) return
     const configuration = option
       ? `\n配置：${option.duration.label} · ${option.participants.label} · ${option.day_type.label}`
-      : ''
+      : color
+        ? `\n颜色：${formatColorLabel(color.color_code, color.name)}`
+        : ''
+    const priceUnit = color ? ' / 10g' : ''
+    const quantityLabel = color ? `重量：${quantity * 10}g` : `数量：${quantity}`
     const confirmation = await Taro.showModal({
       title: '确认创建并扣款？',
-      content: `客户：${target.user.nickname}（ID ${target.user.id}）\n商品：${detail.name}${configuration}\n权威预览单价：¥${formatPrice(unitPrice)}\n数量：${quantity}\n预计扣款：¥${(totalCents / 100).toFixed(2)}\n提交时服务端会再次校验价格、余额与库存。`,
+      content: `客户：${target.user.nickname}（ID ${target.user.id}）\n商品：${detail.name}${configuration}\n权威预览单价：¥${formatPrice(unitPrice)}${priceUnit}\n${quantityLabel}\n预计扣款：¥${(totalCents / 100).toFixed(2)}\n提交时服务端会再次校验价格、余额与库存。`,
       confirmText: '创建并扣款',
       confirmColor: '#a92e51',
     })
@@ -330,19 +354,39 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
           ))}
         </View>
       )}
+      {kitDetail?.kit_kind.value === 'color_selectable' && (
+        <View className='wallet-order-options'>
+          <Text className='wallet-order-form__label'>拼豆颜色</Text>
+          {kitDetail.colors.map((item) => (
+            <Button
+              key={item.id}
+              className={`wallet-order-option${item.id === color?.id ? ' wallet-order-option--active' : ''}`}
+              disabled={locked || !item.available}
+              onClick={() => setSelectedColorId(item.id)}
+            >
+              <Text>{formatColorLabel(item.color_code, item.name)}</Text>
+              <Text>{item.available ? '可选' : '无货'}</Text>
+            </Button>
+          ))}
+        </View>
+      )}
       <View className='wallet-order-form__price'>
         <Text className='wallet-order-form__price-label'>服务端当前单价</Text>
         <Text className='wallet-order-form__price-value'>¥{formatPrice(unitPrice)}</Text>
       </View>
-      {isKitDetail(detail) && (
-        <Text className={detail.available ? 'wallet-order-form__stock' : 'wallet-order-form__error'}>
-          {detail.available ? `当前权威库存 ${detail.stock}` : '当前无库存，不可下单'}
+      {kitDetail && (
+        <Text className={purchasable ? 'wallet-order-form__stock' : 'wallet-order-form__error'}>
+          {kitDetail.kit_kind.value === 'fixed'
+            ? (kitDetail.available ? `当前权威库存 ${kitDetail.stock}` : '当前无库存，不可下单')
+            : (color ? '当前颜色可选；精确库存将在提交时校验' : '请选择一个有库存的颜色')}
         </Text>
       )}
-      <Text className='wallet-order-form__label'>Item 数量</Text>
+      <Text className='wallet-order-form__label'>
+        {color ? '重量（每步 10g）' : 'Item 数量'}
+      </Text>
       <View className='wallet-order-quantity'>
         <Button className='wallet-order-quantity__decrease' disabled={locked || quantity <= 1} onClick={() => setQuantity((value) => value - 1)}>−</Button>
-        <Text className='wallet-order-quantity__value'>{quantity}</Text>
+        <Text className='wallet-order-quantity__value'>{color ? `${quantity * 10}g` : quantity}</Text>
         <Button className='wallet-order-quantity__increase' disabled={locked || quantity >= maxQuantity} onClick={() => setQuantity((value) => value + 1)}>＋</Button>
       </View>
       <Text className='wallet-order-form__label'>订单备注（可选）</Text>
@@ -403,7 +447,9 @@ function AssistedOrderResult({ ledgerStatus, onCreateAnother, result, userId }: 
         {result.order.items.map((item) => (
           <View key={item.id} className='wallet-order-result__item'>
             <Text>{item.product_name}</Text>
-            <Text>¥{formatPrice(item.product_price)} × {item.quantity} = ¥{formatPrice(item.subtotal)}</Text>
+            <Text>{item.kit_color_id
+              ? `¥${formatPrice(item.product_price)} / 10g × ${item.total_weight_grams}g = ¥${formatPrice(item.subtotal)}`
+              : `¥${formatPrice(item.product_price)} × ${item.quantity} = ¥${formatPrice(item.subtotal)}`}</Text>
           </View>
         ))}
       </View>

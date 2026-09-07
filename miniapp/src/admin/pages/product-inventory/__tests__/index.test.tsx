@@ -8,6 +8,7 @@ import ProductInventoryPage, { AuthenticatedProductInventory } from '../index'
 let mockAuth: AuthContextValue
 const mockUseAdminProductDetail = jest.fn()
 const mockUseInventoryAdjustment = jest.fn()
+const mockUseColorInventoryAdjustment = jest.fn()
 const mockUseInventoryTransactionList = jest.fn()
 const mockApplyFilters = jest.fn()
 
@@ -58,6 +59,7 @@ jest.mock('@/features/inventory', () => ({
     return next
   },
   useInventoryAdjustment: () => mockUseInventoryAdjustment(),
+  useColorInventoryAdjustment: () => mockUseColorInventoryAdjustment(),
   useInventoryTransactionList: (...args: unknown[]) => mockUseInventoryTransactionList(...args),
 }))
 
@@ -73,6 +75,9 @@ describe('ProductInventoryPage', () => {
     mockUseInventoryAdjustment.mockReturnValue({
       state: { status: 'idle' }, adjustStock: jest.fn(), retrySameIntent: jest.fn(), reset: jest.fn(),
     })
+    mockUseColorInventoryAdjustment.mockReturnValue({
+      state: { status: 'idle' }, adjustColorStock: jest.fn(), retrySameIntent: jest.fn(), reset: jest.fn(),
+    })
     mockUseInventoryTransactionList.mockReturnValue({
       filters: { transactionType: 'all', sourceType: 'all' },
       state: { status: 'empty', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
@@ -87,6 +92,7 @@ describe('ProductInventoryPage', () => {
     expect(testUtils.queries.querySelector('.inventory-state')?.textContent).toContain('无管理权限')
     expect(mockUseAdminProductDetail).not.toHaveBeenCalled()
     expect(mockUseInventoryAdjustment).not.toHaveBeenCalled()
+    expect(mockUseColorInventoryAdjustment).not.toHaveBeenCalled()
   })
 
   it('Guest 返回管理商品固定路径登录，不把动态地址加入 redirect 白名单', async () => {
@@ -106,6 +112,7 @@ describe('ProductInventoryPage', () => {
     await testUtils.mount(AuthenticatedProductInventory, { props: { productId: 7 } })
     expect(testUtils.queries.querySelector('.inventory-state')?.textContent).toContain('已逻辑删除')
     expect(mockUseInventoryAdjustment).not.toHaveBeenCalled()
+    expect(mockUseColorInventoryAdjustment).not.toHaveBeenCalled()
     expect(mockUseInventoryTransactionList).not.toHaveBeenCalled()
   })
 
@@ -115,6 +122,7 @@ describe('ProductInventoryPage', () => {
     expect(testUtils.queries.querySelector('.product-inventory-page__stock-label')?.textContent).toBe('当前权威库存')
     expect(testUtils.queries.querySelector('.product-inventory-page__stock-value')?.textContent).toBe('10')
     expect(mockUseInventoryAdjustment).toHaveBeenCalledTimes(1)
+    expect(mockUseColorInventoryAdjustment).not.toHaveBeenCalled()
     expect(mockUseInventoryTransactionList).toHaveBeenCalledWith({ kind: 'product', productId: 7 })
     expect(testUtils.queries.querySelectorAll('.masked-date-input')).toHaveLength(2)
   })
@@ -131,6 +139,53 @@ describe('ProductInventoryPage', () => {
       transactionType: 'order_cancellation_restore', sourceType: 'admin',
     })
   })
+
+  it('自选颜色 Kit 挂载颜色调整与精确颜色流水，并把克数转换为 10g 单位', async () => {
+    const adjustColorStock = jest.fn().mockResolvedValue(undefined)
+    mockUseColorInventoryAdjustment.mockReturnValue({
+      state: { status: 'idle' }, adjustColorStock, retrySameIntent: jest.fn(), reset: jest.fn(),
+    })
+    mockUseAdminProductDetail.mockReturnValue({
+      retry: jest.fn(), state: { status: 'content', product: colorKitProduct() },
+    })
+    await testUtils.mount(AuthenticatedProductInventory, { props: { productId: 7 } })
+
+    expect(mockUseInventoryAdjustment).not.toHaveBeenCalled()
+    expect(mockUseColorInventoryAdjustment).toHaveBeenCalledTimes(1)
+    expect(mockUseInventoryTransactionList).toHaveBeenCalledWith({
+      kind: 'color', productId: 7, kitColorId: 701,
+    })
+    expect(requireElement(testUtils, '.product-inventory-page__stock-value').textContent).toBe('50')
+
+    input(testUtils, findInput(testUtils, '克数变化，例如 200 或 -30'), '30')
+    input(testUtils, findInput(testUtils, '原因，例如采购入库或盘点损耗'), '  颜色补货  ')
+    testUtils.fireEvent.click(requireElement(testUtils, '.inventory-adjustment__submit'))
+    await flush(testUtils)
+    expect(adjustColorStock).toHaveBeenCalledWith(7, 701, { change: 3, reason: '颜色补货' })
+  })
+
+  it('切换颜色时流水作用域跟随 ProductKitColor，缺少颜色时不挂载 Inventory Hook', async () => {
+    mockUseAdminProductDetail.mockReturnValue({
+      retry: jest.fn(), state: { status: 'content', product: colorKitProduct() },
+    })
+    await testUtils.mount(AuthenticatedProductInventory, { props: { productId: 7 } })
+    testUtils.fireEvent.click(testUtils.queries.querySelectorAll('.color-inventory-option')[1])
+    expect(mockUseInventoryTransactionList).toHaveBeenLastCalledWith({
+      kind: 'color', productId: 7, kitColorId: 702,
+    })
+
+    testUtils.unmout()
+    testUtils = new ReactTestUtil()
+    jest.clearAllMocks()
+    mockUseAdminProductDetail.mockReturnValue({
+      retry: jest.fn(),
+      state: { status: 'content', product: { ...colorKitProduct(), colors: [] } },
+    })
+    await testUtils.mount(AuthenticatedProductInventory, { props: { productId: 7 } })
+    expect(requireElement(testUtils, '.inventory-state').textContent).toContain('颜色目录缺失')
+    expect(mockUseColorInventoryAdjustment).not.toHaveBeenCalled()
+    expect(mockUseInventoryTransactionList).not.toHaveBeenCalled()
+  })
 })
 
 function authenticated(role: 'user' | 'admin'): AuthContextValue {
@@ -141,7 +196,7 @@ function authenticated(role: 'user' | 'admin'): AuthContextValue {
       role, status: 'normal', last_login_at: null,
       created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
     },
-    register: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
+    register: jest.fn(), updateProfile: jest.fn(), login: jest.fn(), loginWithWechat: jest.fn(), logout: jest.fn(), retryInitialization: jest.fn(),
   }
 }
 
@@ -155,9 +210,41 @@ function kitProduct(isDeleted: boolean) {
     images: [],
     price: '99.00',
     stock: 10,
+    kit_kind: { value: 'fixed' as const, label: '固定套装' },
+    sale_unit_grams: null,
+    colors: [],
     created_at: '2026-08-25T07:00:00Z',
     updated_at: '2026-08-25T08:00:00Z',
     is_deleted: isDeleted,
+  }
+}
+
+function colorKitProduct() {
+  return {
+    ...kitProduct(false),
+    stock: null,
+    kit_kind: { value: 'color_selectable' as const, label: '自选颜色' },
+    sale_unit_grams: 10,
+    colors: [
+      kitColor(701, 21, 'A21', '樱桃红', 5),
+      kitColor(702, 22, 'A22', '海盐蓝', 8),
+    ],
+  }
+}
+
+function kitColor(id: number, slotNo: number, colorCode: string, name: string, stockUnits: number) {
+  return {
+    id,
+    bead_color_id: slotNo,
+    slot_no: slotNo,
+    color_code: colorCode,
+    name,
+    swatch_image_url: null,
+    sort: slotNo,
+    is_active: true,
+    is_configured: true,
+    is_enabled: true,
+    stock_units: stockUnits,
   }
 }
 
@@ -172,4 +259,27 @@ function findButton(testUtils: ReactTestUtil, label: string): Element {
     .find((candidate) => candidate.textContent === label)
   if (!button) throw new Error(`button ${label} not found`)
   return button
+}
+
+function findInput(testUtils: ReactTestUtil, placeholder: string): Element {
+  const element = Array.from(testUtils.queries.querySelectorAll('.inventory-adjustment__input'))
+    .find((candidate) => (
+      candidate.getAttribute('placeholder') === placeholder ||
+      candidate.querySelector('input')?.getAttribute('placeholder') === placeholder
+    ))
+  if (!element) throw new Error(`input ${placeholder} not found`)
+  return element
+}
+
+function input(testUtils: ReactTestUtil, element: Element, value: string): void {
+  const fireCustomEvent = testUtils.fireEvent as unknown as (target: Element, event: Event) => void
+  fireCustomEvent(element, new CustomEvent('input', { bubbles: true, detail: { value } }))
+}
+
+async function flush(testUtils: ReactTestUtil): Promise<void> {
+  await testUtils.act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }

@@ -8,6 +8,7 @@ export type RefreshRequest = components['schemas']['RefreshRequest']
 export type LoginResult = components['schemas']['TokenOut']
 export type RefreshResult = components['schemas']['RefreshOut']
 export type UserProfile = components['schemas']['UserOut']
+export type ProfileUpdateRequest = components['schemas']['UserUpdate']
 export type WeChatLoginRequest = components['schemas']['WeChatCodeRequest']
 
 type AuthApiClient = Pick<ApiClient, 'request'>
@@ -100,6 +101,30 @@ export class AuthApi {
       throw new ContractError({ operation: 'users.getMe' })
     }
     return parsed
+  }
+
+  async updateProfile(data: ProfileUpdateRequest): Promise<UserProfile> {
+    const operation = 'users.updateProfile'
+    const result = await this.client.request<unknown>({
+      operation,
+      path: '/api/v1/users/me',
+      method: 'PATCH',
+      auth: 'required',
+      body: projectProfileUpdate(data),
+    })
+    const parsed = parseUserProfile(result)
+    if (!parsed || (data.phone !== undefined && parsed.phone !== data.phone)) {
+      throw new ContractError({ operation })
+    }
+    return parsed
+  }
+}
+
+function projectProfileUpdate(data: ProfileUpdateRequest): ProfileUpdateRequest {
+  return {
+    ...(data.nickname === undefined ? {} : { nickname: data.nickname }),
+    ...(data.phone === undefined ? {} : { phone: data.phone }),
+    ...(data.avatar === undefined ? {} : { avatar: data.avatar }),
   }
 }
 

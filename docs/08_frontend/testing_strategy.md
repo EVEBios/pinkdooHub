@@ -1,8 +1,8 @@
 # pinkdooHub 前端测试策略
 
-> **Document Version:** v0.10
+> **Document Version:** v0.11
 > **Status:** Draft
-> **Last Updated:** 2026-09-02
+> **Last Updated:** 2026-09-07
 > **Applies To:** 正式 `miniapp/` 与其 FastAPI 集成边界
 
 本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。Spike 已固定：Jest 29.7.0 + `jest-environment-jsdom` 29.7.0 + `@tarojs/test-utils-react` 0.1.1（详见 [ADR-001](adr/ADR-001-use-taro-react-typescript.md) 与架构文档 §4.1）。
@@ -15,7 +15,7 @@
 - React 18.3 下 test-utils 内部使用已废弃的 `ReactDOMTestUtils.act`，产生告警但不阻断；升级测试工具时消除。
 - `openapi-typescript@7.13.0` 通过 `--immutable --alphabetize` 生成类型，`npm run api:types:check` 直接检查生成物漂移。
 - 2026-08-31 Phase 9.2.5 已完成依赖可达性分析：官方 npm production tree 仍为 10 包/5 叶子公告（4 moderate、1 high、5 critical），分别归入未启用的 esbuild development server、H5-only 链和当前微信源码/产物未使用的 npm swiper 实现；精确策略于 2026-11-30 到期，不执行会破坏性降级 Taro 3.x 的强制修复。Python 固定 `pip-audit==2.10.1`，升级 asyncmy/cryptography/python-jose 后只剩 ecdsa 的无修复 P-256 时序公告；production 固定 HS256，因此同样按 2026-11-30 不可达例外处理。
-- 当前完整 Jest 最新基线为 61 套件 / 387 项。Auth/Product/Cart/Order/Inventory Endpoint 与 Feature 使用 fake transport、upload transport、image picker、storage、clock 等平台边界；账号注册覆盖请求投影、User Runtime Guard、字段校验、白名单 redirect、登录页入口、成功不自动登录、唯一性错误、未知结果和同步防双击。Order 创建纵向集成保留真实 CartStore → SubmissionStore → OrderApi → ApiClient，用户查询/取消及 ADMIN 列表→Paid→Completed 纵向集成都保留真实 OrderApi → ApiClient，只替换网络、Storage 与 Auth 平台边界。
+- 当前完整 Jest 最新基线为 81 套件 / 556 项。Auth/Product/Cart/Order/Inventory/Wallet/Reservation Endpoint 与 Feature 使用 fake transport、upload transport、image picker、storage、clock 等平台边界；账号注册覆盖请求投影、User Runtime Guard、字段校验、白名单 redirect、登录页入口、成功不自动登录、唯一性错误、未知结果和同步防双击。Order 创建纵向集成保留真实 CartStore → SubmissionStore → OrderApi → ApiClient，用户查询/取消及 ADMIN 列表→Paid→Completed 纵向集成都保留真实 OrderApi → ApiClient，只替换网络、Storage 与 Auth 平台边界；Reservation 另覆盖服务端日历、顾客创建/查询/取消、ADMIN 审核/店休、手机号隐私和 unknown 状态收敛。
 - 2026-08-29 Phase 9.1 当前源码本地基线：后端 `1465 passed, 9 skipped`（均为 MySQL-only），前端 TypeScript/ESLint/Stylelint、61 套件/387 项、OpenAPI 45 paths/109 schemas 字节一致及类型漂移通过；微信构建 97 文件/603,604 bytes、无 source map，但因产物含 `.example.invalid` API Origin 不能作为 Gate A RC。完整证据见 [发布基线审计](../09_release/baseline_audit_2026-08-29.md)。
 - 2026-08-31 Phase 9.2.1–9.2.2 最新本地基线：新增工具链、production 配置、Redis 日志、OpenAPI CLI 和微信发布配置契约后，后端 `1489 passed, 9 skipped`；前端仍为 61 套件/387 项，TypeScript、ESLint、Stylelint、真实 OpenAPI 字节比较和生成类型漂移通过。CI 与最终微信 artifact 证据尚未建立。
 - 2026-08-31 Phase 9.2.3 最新本地基线：新增 5 个基础 GitHub Actions Job、repository hygiene 与微信 artifact checker 后，后端 `1497 passed, 9 skipped`，CI Node policy 9 项通过；前端仍为 61 套件/387 项，静态检查、真实 OpenAPI 字节比较和类型漂移通过。保留 CI Origin 的 production 微信产物为 97 文件、603,619 bytes、0 source map，manifest 明确 `release_eligible=false`；尚无 commit/PR/远端 CI Run，不能作为 Gate A RC。
@@ -142,6 +142,17 @@ Phase 8.8–8.9 自动化固定以下高风险边界：Product Audit 动态路�
 - 201/200 成功分支；
 - key 不进入日志/error。
 
+### 4.5 Reservation N1 契约与验收矩阵
+
+- `booking-options` 请求只发送正整数 Option ID；Guard 校验固定时区、UTC `server_now`、0–30 日上界、规则常量、按日递增、day_type 和不重复半小时时段；空 dates 合法；
+- 创建只投影 `experience_option_id/reservation_date/start_time`，拒绝客户端 Product/price/phone/status；至少覆盖 42251–42254、同步防双击、unknown 不重发和“我的预约”核对入口；
+- 覆盖“同一点击合并 Promise”和“用户明确再次提交同一 Option/时段会得到不同 Reservation ID”两类相反边界，证明客户端防抖不被误写成业务去重或容量限制；
+- Reservation Guard 校验四状态、状态/原因/三个时间/customer_message 组合、UTC 起止、上海本地日期/时间、取消截止精确等式和两位小数快照；
+- 用户列表的 status/Page/迟到响应隔离、owner-only 40451、cancel empty body、pending/confirmed 始终展示截止时间与取消按钮、40951/40952 与 unknown 后 GET 收敛；
+- ADMIN Query 白名单、列表掩码手机号、详情当前完整手机号/null、敏感字段不进入日志/Storage；confirm/reject empty body、固定 no_capacity、40951/40953 和并发后重取；
+- 店休列表日期范围、首次 PUT 201/重放 200 metadata、计数相加、重复点击、unknown 核对；DELETE empty body、40452、恢复后不复活本地历史预约；
+- N1 页面不出现订阅授权、消息投递状态或“已通知”文案。
+
 ---
 
 ## 5. API Client 测试矩阵
@@ -213,6 +224,7 @@ FastAPI app.openapi()
 - public Product list/detail；
 - user Order create/list/detail/cancel；
 - admin Product/Inventory/Order；
+- user/admin Reservation 与 store-closures；
 - HTTP Bearer scheme；
 - 成功/错误信封 Schema。
 
@@ -271,6 +283,8 @@ npm run build:weapp
 6. 取消 Pending；
 7. Token 过期刷新；
 8. 登出并清理会话。
+9. Experience 查询 booking options，创建 pending 预约，查看详情，在精确截止时间内取消；
+10. 手机号缺失 42254、无合法 dates、创建 unknown 与他人预约 40451。
 
 ### 9.2 管理路径
 
@@ -282,6 +296,9 @@ npm run build:weapp
 6. Kit Inventory 调整首次/重放；
 7. 管理订单 Pending → Paid → Completed；
 8. 查看审计历史。
+9. 查看预约掩码手机号与详情当前完整手机号；
+10. pending 确认/无空位拒绝，开始后 40953；
+11. 设置店休批量取消、201/200 replay、恢复不复活历史、重复恢复 40452，并完成 N1 人工联系。
 
 E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数据库中的手工数据。
 
@@ -336,7 +353,7 @@ Phase 9.2 先采用全量门槛。只有在采集到稳定 CI 时长并证明路
 | Job | 内容 | 当前 PR | RC |
 |-----|------|---------|----|
 | Backend SQLite | `pytest tests/ -q`，明确报告 MySQL-only 状态 | 必须 | 必须 |
-| Backend MySQL | 隔离 MySQL 8+、Aerich 0→当前、9 项 MySQL-only | 必须 | 必须 |
+| Backend MySQL | 隔离 MySQL 8+、Aerich 0→当前（当前为 0→6）、M5 fixed 重放、Inventory + Reservation 联合 18 项 MySQL-only 候选 | 必须 | 必须 |
 | Frontend quality | `npm ci --legacy-peer-deps`、TypeScript、ESLint、Stylelint、Jest | 必须 | 必须 |
 | OpenAPI contract | 真实导出、固定 JSON、生成类型和干净 diff | 必须 | 必须 |
 | WeChat build | production mode `npm run build:weapp`、Origin/Secret/包体/artifact 检查 | 必须 | 必须 |
@@ -388,6 +405,8 @@ CI 产物必须绑定 Git SHA。上传微信体验版、提交审核和公开发
 - [x] Phase 8.8–8.9 Product Audit/ADMIN User/当前范围 Review 微信 Functional：2026-08-28 用户确认全部通过，包括 Swagger 独立 ADMIN Session 禁用后旧 refresh/access 阻断与前端 Session 清理。
 - [x] Phase 8.6 工程门槛：Inventory Endpoint/Runtime Guard、201/200 metadata、业务意图幂等、指定 Kit/全局流水、权限/路由/筛选/分页；定向 9 套件/42 项并补充共享 Client metadata 回归，完整前端 60 套件/375 项、静态检查、OpenAPI 漂移、四端 build 与完整后端 1465 项（9 项 MySQL-only 跳过）全部通过。
 - [x] Phase 8.6 微信 Functional：2026-08-28 用户确认 Guest/普通用户/ADMIN 边界、Draft/Offline/Online 与逻辑删除 Kit、正负调整/40932、快速连点、unknown 安全重试 201/200、两类流水与组合筛选/分页/订单跳转/隐私字段全部验证完成并通过。
+- [x] Reservation N1 前端工程门槛：生成类型、Endpoint/Guard、顾客与 ADMIN Feature/Page、业务错误、unknown 收敛、手机号隐私和实际可达入口已落地；2026-09-06 完整前端 77 套件/488 项、Reservation 专项 7 套件/46 项、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移检查、17 项 CI policy 测试和微信/支付宝/抖音/H5 四端 production build 全部通过；微信端另以 CI 固定 HTTPS Origin 重建并通过产物扫描（141 个文件、总计 968,329 bytes、`release_eligible=false`），H5 仅保留既有 bundle-size 建议警告。该微信产物不是正式 RC，真实环境 Functional 仍单独验收。
+- [ ] Reservation N1 微信 Functional：0–30 日服务端时段、周一/店休/3 小时/营业边界、创建与快照、四状态、顾客取消、管理员审核、批量店休/恢复、手机号与权限矩阵通过；N2 通知不在本项。
 
 ### Phase 9.1 发布基线
 

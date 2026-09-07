@@ -3,10 +3,33 @@ import type { ApiClient } from '@/api/client'
 import type { components, operations } from '@/api/schema'
 
 export type ProductType = components['schemas']['ProductType']
-export type ProductListItem = components['schemas']['ProductListItemOut']
-export type ProductListPage = components['schemas']['Page_ProductListItemOut_']
+type KitKindLabel = NonNullable<components['schemas']['KitProductDetailOut']['kit_kind']>
+type GeneratedProductListItem = components['schemas']['ProductListItemOut']
+type GeneratedProductListPage = components['schemas']['Page_ProductListItemOut_']
+type GeneratedKitColorOption = components['schemas']['KitColorOptionOut']
+type GeneratedKitProductDetail = components['schemas']['KitProductDetailOut']
+export type ProductListItem = Omit<
+  GeneratedProductListItem,
+  'kit_kind' | 'sale_unit_grams'
+> & {
+  readonly kit_kind: KitKindLabel | null
+  readonly sale_unit_grams: number | null
+}
+export type ProductListPage = Omit<GeneratedProductListPage, 'items'> & {
+  readonly items: readonly ProductListItem[]
+}
 export type ExperienceProductDetail = components['schemas']['ExperienceProductDetailOut']
-export type KitProductDetail = components['schemas']['KitProductDetailOut']
+export type KitColorOption = Omit<GeneratedKitColorOption, 'swatch_image_url'> & {
+  readonly swatch_image_url: string | null
+}
+export type KitProductDetail = Omit<
+  GeneratedKitProductDetail,
+  'kit_kind' | 'sale_unit_grams' | 'colors'
+> & {
+  readonly kit_kind: KitKindLabel
+  readonly sale_unit_grams: number | null
+  readonly colors: readonly KitColorOption[]
+}
 export type ProductDetail = ExperienceProductDetail | KitProductDetail
 export type ExperienceOption = components['schemas']['_OnlineExperienceOptionOut']
 type ProductImage = components['schemas']['ProductImageOut']
@@ -115,6 +138,10 @@ function parseProductListItem(value: unknown): ProductListItem | undefined {
   )) {
     return undefined
   }
+  const kitMetadata = parseListKitMetadata(value, value.product_type.value)
+  if (!kitMetadata) {
+    return undefined
+  }
   return {
     id: value.id,
     name: value.name,
@@ -124,6 +151,7 @@ function parseProductListItem(value: unknown): ProductListItem | undefined {
       value: value.product_type.value,
       label: value.product_type.label,
     },
+    ...kitMetadata,
   }
 }
 
@@ -166,13 +194,23 @@ export function parseKitProductDetail(value: unknown): KitProductDetail | undefi
     return undefined
   }
   const images = parseArray(value.images, parseProductImage)
+  const kitKind = parseKitKind(value.kit_kind)
+  const colors = parseArray(value.colors, parseKitColorOption)
   if (
     !images || !hasProductCover(images) ||
     !isMoneyString(value.price) ||
-    !isNonNegativeInteger(value.stock) ||
-    typeof value.available !== 'boolean' ||
-    value.available !== (value.stock > 0)
+    !kitKind || !colors ||
+    typeof value.available !== 'boolean'
   ) {
+    return undefined
+  }
+  if (kitKind.value === 'fixed') {
+    if (value.sale_unit_grams !== null || !isStock(value.stock) ||
+      colors.length !== 0 || value.available !== (value.stock > 0)) {
+      return undefined
+    }
+  } else if (value.sale_unit_grams !== 10 || value.stock !== null || colors.length < 1 ||
+    value.available !== colors.some((color) => color.available)) {
     return undefined
   }
   return {
@@ -181,8 +219,65 @@ export function parseKitProductDetail(value: unknown): KitProductDetail | undefi
     description: value.description,
     product_type: { value: 'kit', label: value.product_type.label },
     images,
+    kit_kind: kitKind,
+    sale_unit_grams: value.sale_unit_grams as 10 | null,
     price: value.price,
-    stock: value.stock,
+    stock: value.stock as number | null,
+    available: value.available,
+    colors,
+  }
+}
+
+function parseListKitMetadata(
+  value: Record<string, unknown>,
+  productType: ProductType,
+): Pick<ProductListItem, 'kit_kind' | 'sale_unit_grams'> | undefined {
+  if (productType === 'experience') {
+    return value.kit_kind === null && value.sale_unit_grams === null
+      ? { kit_kind: null, sale_unit_grams: null }
+      : undefined
+  }
+  const kitKind = parseKitKind(value.kit_kind)
+  if (!kitKind) {
+    return undefined
+  }
+  if (kitKind.value === 'fixed') {
+    return value.sale_unit_grams === null
+      ? { kit_kind: kitKind, sale_unit_grams: null }
+      : undefined
+  }
+  return value.sale_unit_grams === 10
+    ? { kit_kind: kitKind, sale_unit_grams: 10 }
+    : undefined
+}
+
+function parseKitKind(value: unknown): KitProductDetail['kit_kind'] | undefined {
+  if (!isRecord(value) ||
+    (value.value !== 'fixed' && value.value !== 'color_selectable') ||
+    !isNonEmptyString(value.label)) {
+    return undefined
+  }
+  return { value: value.value, label: value.label }
+}
+
+function parseKitColorOption(value: unknown): KitColorOption | undefined {
+  if (!isRecord(value) ||
+    !isPositiveInteger(value.id) ||
+    !isPositiveInteger(value.bead_color_id) ||
+    !isPositiveInteger(value.slot_no) || value.slot_no > 221 ||
+    !isNonEmptyString(value.color_code) || value.color_code.length > 50 ||
+    !isNonEmptyString(value.name) || value.name.length > 100 ||
+    !(value.swatch_image_url === null || isSupportedAssetUrl(value.swatch_image_url)) ||
+    typeof value.available !== 'boolean') {
+    return undefined
+  }
+  return {
+    id: value.id,
+    bead_color_id: value.bead_color_id,
+    slot_no: value.slot_no,
+    color_code: value.color_code,
+    name: value.name,
+    swatch_image_url: value.swatch_image_url,
     available: value.available,
   }
 }
@@ -304,8 +399,13 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
 
+function isStock(value: unknown): value is number {
+  return isNonNegativeInteger(value) && value <= 999_999
+}
+
 function isSupportedAssetUrl(value: unknown): value is string {
-  return isNonEmptyString(value) && (value.startsWith('/') || /^https?:\/\//i.test(value))
+  return isNonEmptyString(value) && value.length <= 2048 &&
+    (value.startsWith('/') || /^https?:\/\//i.test(value))
 }
 
 function isMoneyString(value: unknown): value is string {

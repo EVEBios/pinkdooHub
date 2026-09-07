@@ -15,6 +15,7 @@ from fastapi import (
 
 from app.api.deps import get_current_admin, get_inventory_service
 from app.api.mappers.inventory import (
+    map_inventory_color_adjustment,
     map_inventory_adjustment,
     map_inventory_transaction_page,
 )
@@ -30,6 +31,7 @@ from app.schemas.inventory import (
 )
 from app.schemas.inventory_response import (
     InventoryAdjustmentOut,
+    InventoryColorAdjustmentOut,
     InventoryTransactionListItem,
 )
 from app.services.inventory_service import InventoryService
@@ -41,6 +43,7 @@ router = APIRouter(
     responses=error_responses(400, 401, 403, 404, 409, 422),
 )
 ProductId = Annotated[int, Path(gt=0)]
+KitColorId = Annotated[int, Path(gt=0)]
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
 InventoryServiceDependency = Annotated[
     InventoryService,
@@ -91,6 +94,48 @@ async def adjust_inventory(
     return success(data=mapped.model_dump(mode="json"))
 
 
+@router.post(
+    "/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments",
+    status_code=status.HTTP_201_CREATED,
+    response_model=None,
+    responses=success_responses(
+        InventoryColorAdjustmentOut,
+        status.HTTP_200_OK,
+        status.HTTP_201_CREATED,
+    ),
+)
+async def adjust_color_inventory(
+    product_id: ProductId,
+    kit_color_id: KitColorId,
+    data: InventoryAdjustmentCreate,
+    idempotency_key: IdempotencyKeyHeader,
+    request: Request,
+    response: Response,
+    current_admin: CurrentAdmin,
+    service: InventoryServiceDependency,
+) -> dict:
+    """按变化量调整一个商品颜色的 10g 单位库存。"""
+
+    result = await service.adjust_color_stock(
+        product_id,
+        kit_color_id,
+        change=data.change,
+        reason=data.reason,
+        operator_id=current_admin.id,
+        ip_address=get_client_ip(request),
+        idempotency_key=idempotency_key,
+    )
+    if result.is_replay:
+        response.status_code = status.HTTP_200_OK
+    mapped = map_inventory_color_adjustment(
+        product_id=result.product_id,
+        kit_color_id=result.kit_color_id,
+        stock_units=result.stock_units,
+        transaction=result.transaction,
+    )
+    return success(data=mapped.model_dump(mode="json"))
+
+
 @router.get(
     "/products/kit/{product_id}/inventory-transactions",
     response_model=None,
@@ -120,6 +165,36 @@ async def list_product_inventory_transactions(
 
 
 @router.get(
+    "/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions",
+    response_model=None,
+    responses=success_responses(Page[InventoryTransactionListItem]),
+)
+async def list_product_color_inventory_transactions(
+    product_id: ProductId,
+    kit_color_id: KitColorId,
+    query: Annotated[InventoryProductTransactionQuery, Query()],
+    current_admin: CurrentAdmin,
+    service: InventoryServiceDependency,
+) -> dict:
+    """分页查询一个商品颜色的 10g 单位库存流水。"""
+
+    page = await service.list_product_color_transactions(
+        product_id,
+        kit_color_id,
+        page=query.page,
+        page_size=query.page_size,
+        transaction_type=query.transaction_type,
+        source_type=query.source_type,
+        source_id=query.source_id,
+        created_from=query.created_from,
+        created_to=query.created_to,
+    )
+    return success(
+        data=map_inventory_transaction_page(page).model_dump(mode="json")
+    )
+
+
+@router.get(
     "/inventory-transactions",
     response_model=None,
     responses=success_responses(Page[InventoryTransactionListItem]),
@@ -135,6 +210,7 @@ async def list_inventory_transactions(
         page=query.page,
         page_size=query.page_size,
         product_id=query.product_id,
+        kit_color_id=query.kit_color_id,
         transaction_type=query.transaction_type,
         source_type=query.source_type,
         source_id=query.source_id,

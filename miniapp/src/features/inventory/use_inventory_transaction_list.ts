@@ -18,10 +18,16 @@ import { getDefaultInventoryApi } from './runtime'
 export type InventoryTransactionScope =
   | { readonly kind: 'global' }
   | { readonly kind: 'product'; readonly productId: number }
+  | { readonly kind: 'color'; readonly productId: number; readonly kitColorId: number }
 
 export interface InventoryTransactionListSource {
   listProductTransactions(
     productId: number,
+    request?: ProductInventoryTransactionRequest,
+  ): Promise<InventoryTransactionPage>
+  listProductColorTransactions(
+    productId: number,
+    kitColorId: number,
     request?: ProductInventoryTransactionRequest,
   ): Promise<InventoryTransactionPage>
   listTransactions(request?: GlobalInventoryTransactionRequest): Promise<InventoryTransactionPage>
@@ -55,13 +61,27 @@ export function useInventoryTransactionList(
   const sequenceRef = useRef(0)
   const loadingMoreRef = useRef(false)
   const productId = scope.kind === 'product' ? scope.productId : undefined
+  const colorProductId = scope.kind === 'color' ? scope.productId : undefined
+  const kitColorId = scope.kind === 'color' ? scope.kitColorId : undefined
 
-  const loadPage = useCallback((page: number) => productId === undefined
-    ? source.listTransactions(buildGlobalInventoryRequest(filters, page))
-    : source.listProductTransactions(
+  const loadPage = useCallback((page: number) => kitColorId !== undefined && colorProductId !== undefined
+    ? source.listProductColorTransactions(
+        colorProductId,
+        kitColorId,
+        buildProductInventoryRequest(filters, page),
+      )
+    : productId !== undefined
+      ? source.listProductTransactions(
         productId,
         buildProductInventoryRequest(filters, page),
-      ), [filters, productId, source])
+      )
+      : source.listTransactions(buildGlobalInventoryRequest(filters, page)), [
+    colorProductId,
+    filters,
+    kitColorId,
+    productId,
+    source,
+  ])
 
   const loadFirstPage = useCallback(() => {
     const sequence = ++sequenceRef.current

@@ -168,16 +168,29 @@ export function InventoryTransactionCard({ transaction }: {
 }) {
   const positive = transaction.change_quantity > 0
   const sourceOrderId = transaction.source_id
+  const unitGrams = transaction.sale_unit_grams ?? null
+  const kitColorId = transaction.kit_color_id ?? null
+  const changeLabel = unitGrams === null
+    ? `${positive ? '+' : ''}${transaction.change_quantity}`
+    : `${positive ? '+' : ''}${transaction.change_quantity * unitGrams}g`
+  const balanceLabel = unitGrams === null
+    ? `${transaction.before_quantity} → ${transaction.after_quantity}`
+    : `${transaction.before_quantity * unitGrams}g → ${transaction.after_quantity * unitGrams}g`
   return (
     <View className='inventory-card'>
       <View className='inventory-card__heading'>
         <Text className='inventory-card__type'>{TRANSACTION_LABELS[transaction.transaction_type]}</Text>
         <Text className={`inventory-card__change inventory-card__change--${positive ? 'positive' : 'negative'}`}>
-          {positive ? '+' : ''}{transaction.change_quantity}
+          {changeLabel}
         </Text>
       </View>
       <Text className='inventory-card__product'>Product #{transaction.product_id} · 流水 #{transaction.id}</Text>
-      <Text className='inventory-card__balance'>余额：{transaction.before_quantity} → {transaction.after_quantity}</Text>
+      {kitColorId !== null && (
+        <Text className='inventory-card__product'>
+          颜色 #{kitColorId} · 槽位 {transaction.bead_color_slot_no ?? '未知'} · {transaction.color_code ?? '待配置色号'} · {transaction.color_name ?? '待配置名称'}
+        </Text>
+      )}
+      <Text className='inventory-card__balance'>余额：{balanceLabel}</Text>
       <Text className='inventory-card__reason'>原因：{transaction.reason}</Text>
       <Text className='inventory-card__meta'>来源：{SOURCE_LABELS[transaction.source_type]}</Text>
       {transaction.operator_id && (

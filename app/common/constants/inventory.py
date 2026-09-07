@@ -13,16 +13,26 @@ INVENTORY_IDEMPOTENCY_KEY_MIN_LENGTH = 1
 INVENTORY_IDEMPOTENCY_KEY_MAX_LENGTH = 128
 INVENTORY_IDEMPOTENCY_KEY_PATTERN = r"^[\x21-\x7E](?:[\x20-\x7E]{0,126}[\x21-\x7E])?$"
 INVENTORY_ADMIN_IDEMPOTENCY_PREFIX = "inventory:admin:adjust:"
+INVENTORY_ADMIN_COLOR_IDEMPOTENCY_PREFIX = "inventory:admin:adjust-color:"
 INVENTORY_ORDER_DEDUCTION_IDEMPOTENCY_KEY = (
     "inventory:order:{order_id}:deduct:product:{product_id}"
+)
+INVENTORY_ORDER_COLOR_DEDUCTION_IDEMPOTENCY_KEY = (
+    "inventory:order:{order_id}:deduct:product:{product_id}:color:{kit_color_id}"
 )
 INVENTORY_ORDER_DEDUCTION_REASON = "Order stock deduction"
 INVENTORY_ORDER_RESTORE_IDEMPOTENCY_KEY = (
     "inventory:order:{order_id}:restore:product:{product_id}"
 )
+INVENTORY_ORDER_COLOR_RESTORE_IDEMPOTENCY_KEY = (
+    "inventory:order:{order_id}:restore:product:{product_id}:color:{kit_color_id}"
+)
 INVENTORY_ORDER_RESTORE_REASON = "Order cancellation stock restore"
 INVENTORY_ORDER_REFUND_RESTORE_IDEMPOTENCY_KEY = (
     "inventory:refund:{refund_id}:restore:product:{product_id}"
+)
+INVENTORY_ORDER_COLOR_REFUND_RESTORE_IDEMPOTENCY_KEY = (
+    "inventory:refund:{refund_id}:restore:product:{product_id}:color:{kit_color_id}"
 )
 INVENTORY_ORDER_REFUND_RESTORE_REASON = "Paid order refund stock restore"
 

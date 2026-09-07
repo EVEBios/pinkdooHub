@@ -27,6 +27,7 @@ from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.external_identity_repo import ExternalIdentityRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.reservation_repo import ReservationRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.payment_repo import PaymentRepository
 from app.repositories.wallet_repo import WalletRepository
@@ -37,6 +38,7 @@ from app.services.inventory_service import InventoryService
 from app.services.external_auth_service import ExternalAuthService
 from app.services.order_service import OrderService
 from app.services.product_service import ProductService
+from app.services.reservation_service import ReservationService
 from app.services.payment_service import PaymentService
 from app.services.refund_service import RefundService
 from app.services.wallet_service import WalletService
@@ -173,6 +175,22 @@ def get_inventory_service(
     )
 
 
+def get_reservation_service(
+    reservation_repository: ReservationRepository = Depends(),
+    product_repository: ProductRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> ReservationService:
+    """组装独立预约、审核和店休用例。"""
+
+    return ReservationService(
+        reservation_repository,
+        product_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
 def get_admin_user_service(
     user_repository: UserRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
@@ -207,6 +225,7 @@ def get_account_lifecycle_service(
     wallet_repository: WalletRepository = Depends(),
     identity_repository: ExternalIdentityRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
+    reservation_repository: ReservationRepository = Depends(),
 ) -> AccountLifecycleService:
     """组装用户注销所需的订单、身份、审计和微信二次验证边界。"""
 
@@ -216,8 +235,9 @@ def get_account_lifecycle_service(
         identity_repository,
         AuditLogService(audit_log_repository),
         WeChatMiniProgramProvider(),
-        wallet_repository,
-        payment_repository,
+        wallet_repository=wallet_repository,
+        payment_repository=payment_repository,
+        reservation_repository=reservation_repository,
     )
 
 

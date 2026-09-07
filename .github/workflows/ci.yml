@@ -48,7 +48,9 @@ jobs:
       - name: Run SQLite backend suite
         run: |
           mkdir -p artifacts
-          python -m pytest tests/ --ignore=tests/inventory/mysql -q \
+          python -m pytest tests/ \
+            --ignore=tests/inventory/mysql \
+            --ignore=tests/reservation/mysql -q \
             --junitxml=artifacts/backend-sqlite.xml
 
       - name: Save backend test report
@@ -115,15 +117,22 @@ jobs:
           python scripts/ci/check_mysql_gate.py preflight \
             --report artifacts/mysql-preflight.json
 
-      - name: Apply reviewed Aerich migration chain
+      - name: Exercise reviewed Aerich M6 migration over legacy M5 data
         run: |
+          set -o pipefail
           aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log
+          aerich --app models downgrade -v 6 --yes 2>&1 | tee -a artifacts/mysql-migration.log
+          python scripts/ci/check_mysql_gate.py seed-m6-legacy \
+            --report artifacts/mysql-m6-legacy-seed.json \
+            2>&1 | tee -a artifacts/mysql-migration.log
+          aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log
           python scripts/ci/check_mysql_gate.py snapshot \
             --report artifacts/mysql-release.json
 
-      - name: Run nine real MySQL release gates
+      - name: Run real MySQL release gates
         run: |
-          python -m pytest tests/inventory/mysql -q \
+          python -m pytest \
+            tests/inventory/mysql tests/reservation/mysql -q \
             --junitxml=artifacts/backend-mysql-release.xml
 
       - name: Destroy isolated MySQL schema and service
@@ -142,6 +151,7 @@ jobs:
           path: |
             artifacts/mysql-preflight.json
             artifacts/mysql-migration.log
+            artifacts/mysql-m6-legacy-seed.json
             artifacts/mysql-release.json
             artifacts/backend-mysql-release.xml
             artifacts/mysql-cleanup.json

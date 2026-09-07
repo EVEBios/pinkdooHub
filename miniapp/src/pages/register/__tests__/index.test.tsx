@@ -54,6 +54,7 @@ describe('注册页面', () => {
     mockAuth = {
       status: 'guest',
       register: jest.fn(async () => user),
+      updateProfile: jest.fn(),
       login: jest.fn(),
       loginWithWechat: jest.fn(),
       logout: jest.fn(),

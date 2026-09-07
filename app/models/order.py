@@ -15,6 +15,10 @@ from app.common.constants.order import (
     ORDER_AMOUNT_MIN,
     ORDER_ITEM_QUANTITY_MAX,
     ORDER_ITEM_QUANTITY_MIN,
+    ORDER_KIT_COLOR_CODE_MAX_LENGTH,
+    ORDER_KIT_COLOR_NAME_MAX_LENGTH,
+    ORDER_KIT_COLOR_SLOT_MAX,
+    ORDER_KIT_COLOR_SLOT_MIN,
     ORDER_NO_LENGTH,
     ORDER_NO_PATTERN,
     ORDER_REMARK_MAX_LENGTH,
@@ -107,6 +111,12 @@ class OrderItem(BaseModel):
         on_delete=fields.RESTRICT,
         null=True,
     )
+    kit_color = fields.ForeignKeyField(
+        "models.ProductKitColor",
+        related_name="order_items",
+        on_delete=fields.RESTRICT,
+        null=True,
+    )
     option_duration_minutes = fields.IntField(
         null=True,
         validators=[MinValueValidator(MIN_DURATION_MINUTES)],
@@ -123,6 +133,27 @@ class OrderItem(BaseModel):
     product_name = fields.CharField(
         max_length=PRODUCT_NAME_MAX_LENGTH,
         validators=[MinLengthValidator(PRODUCT_NAME_MIN_LENGTH)],
+    )
+    kit_color_code = fields.CharField(
+        max_length=ORDER_KIT_COLOR_CODE_MAX_LENGTH,
+        null=True,
+        validators=[MinLengthValidator(1)],
+    )
+    kit_color_name = fields.CharField(
+        max_length=ORDER_KIT_COLOR_NAME_MAX_LENGTH,
+        null=True,
+        validators=[MinLengthValidator(1)],
+    )
+    kit_color_slot_no = fields.SmallIntField(
+        null=True,
+        validators=[
+            MinValueValidator(ORDER_KIT_COLOR_SLOT_MIN),
+            MaxValueValidator(ORDER_KIT_COLOR_SLOT_MAX),
+        ],
+    )
+    sale_unit_grams = fields.SmallIntField(
+        null=True,
+        validators=[MinValueValidator(1)],
     )
     product_price = StrictDecimalField(
         max_digits=10,

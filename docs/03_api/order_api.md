@@ -1,10 +1,10 @@
 # Order API
 
-> **Document Version:** v1.3
+> **Document Version:** v1.4
 >
-> **Status:** Kit/Mixed Inventory + Wallet Settlement integration implemented in repository；M4 not applied to persistent databases
+> **M6 Status:** Color-selectable Kit repository candidate landed; full regression and real migration verification pending, not deployed
 >
-> **Last Updated:** 2026-09-05
+> **Last Updated:** 2026-09-06
 >
 > 本文遵循 [API Design Conventions](api_design_conventions.md)，业务规则以 [Order Module](../01_requirements/order_module.md) 为准。
 
@@ -13,6 +13,8 @@
 ## 1. 概述与范围
 
 Order API 提供 Experience、Kit 与混合订单创建，以及用户/管理员查询、取消、代客钱包下单、人工付款登记、完成和审计历史。Phase 4.3.7–4.3.8 已接入创建 Pending 时的 Kit 库存扣减及 owner cancel 时的幂等恢复；Wallet/Payment/Refund v1 另提供余额支付、ADMIN+ 代客钱包订单、订单资金查询和全额退款端点，详见 [Wallet API](wallet_api.md)。对既有订单的支付与完成不改变库存；代客订单在创建时扣减 Kit 并直接 Paid，仅 PAID Kit 全额退款恢复库存。
+
+M6 继续复用这些端点，增加 `color_selectable` Kit 的 `kit_color_id`、每色一 Item、10g 数量单位及颜色快照。现有 Experience 与 `fixed` Kit 请求仍合法；新增字段对它们为 null。
 
 Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token。
 
@@ -42,9 +44,12 @@ Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token�
 |------|------|------|------|
 | `product_id` | integer | 是 | 正整数；必须引用当前可售 Experience 或 Kit Product |
 | `experience_option_id` | integer / null | 条件必填 | Experience 必须为当前有效 Option；Kit 必须省略或为 null |
+| `kit_color_id` | integer / null | 条件必填 | `color_selectable` Kit 必须为属于该 Product 的有效 ProductKitColor ID；Experience / `fixed` Kit 必须省略或为 null |
 | `quantity` | integer | 是 | 1 至 99 |
 
-客户端不得提交名称、配置、价格、小计或库存字段。同一订单中 `(product_id, experience_option_id)` 不得重复；不自动合并重复行。
+三种合法形状是 Experience（Option 非空、颜色空）、`fixed` Kit（二者均空）、`color_selectable` Kit（Option 空、颜色非空）。颜色行的 `quantity=N` 表示 `N×10g`，所以单色范围是 10g..990g。
+
+客户端不得提交名称、配置、颜色快照、销售单位、价格、小计或库存字段。同一订单中 `(product_id, experience_option_id, kit_color_id)` 不得重复；不自动合并重复行。`items` 总数为 1..30，其中 `kit_color_id` 非空的颜色行最多 20，其他 Experience/fixed 行最多 10。
 
 ### 2.3 Order Item 响应
 
@@ -53,15 +58,21 @@ Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token�
 | `id` | integer | OrderItem ID |
 | `product_id` | integer | 原 Product ID |
 | `experience_option_id` | integer / null | Experience 的原 Option ID；Kit 为 null |
+| `kit_color_id` | integer / null | color-selectable Kit 的原 ProductKitColor ID；其他类型为 null |
 | `product_name` | string | Product 名称快照 |
 | `option_duration_minutes` | integer / null | Experience 时长快照；Kit 为 null |
 | `option_participants` | integer / null | Experience 人数快照；Kit 为 null |
 | `option_day_type` | object / null | Experience 日期类型 `{value, label}`；Kit 为 null |
+| `kit_color_slot_no` | integer / null | 全局 1..221 槽位号快照；仅颜色行非空 |
+| `kit_color_code` | string / null | 颜色编码快照；仅颜色行非空 |
+| `kit_color_name` | string / null | 颜色名称快照；仅颜色行非空 |
+| `sale_unit_grams` | integer / null | 仅颜色行固定为 10 |
+| `total_weight_grams` | integer / null | 仅颜色行返回 `quantity × sale_unit_grams` 的派生总克重 |
 | `product_price` | string | 单价快照，两位小数 |
 | `quantity` | integer | 数量 |
 | `subtotal` | string | 小计，两位小数 |
 
-`experience_option_id` 与三项 Option 快照必须同时完整或同时为 null：前者表示 Experience，后者表示 Kit；不接受部分 Option 快照。
+Out Schema 严格交叉校验三种形状：Experience 必须有完整 Option 快照且所有颜色字段为空；fixed Kit 的 Option/颜色字段全部为空；颜色 Kit 必须有完整槽号/编码/名称/10g 单位与一致的总克重，且不得含 Option 快照。不接受任何部分快照。
 
 ### 2.4 用户端与管理端对象
 
@@ -105,8 +116,8 @@ Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token�
 
 | Schema | 方向 | 用途 |
 |--------|------|------|
-| `OrderItemCreate` | Request | 单个 Experience 或 Kit Item |
-| `OrderCreate` | Request | `items` + `remark`，负责非空、上限和重复组合校验 |
+| `OrderItemCreate` | Request | 单个 Experience、fixed Kit 或 color-selectable Kit Item |
+| `OrderCreate` | Request | `items` + `remark`，负责 20/10/30 行上限和三元组合判重 |
 | `OrderListQuery` | Query | 用户端分页与状态筛选 |
 | `AdminOrderListQuery` | Query | 管理端分页、状态、订单号、用户和时间范围筛选 |
 | `OrderItemOut` | Response | 明细快照白名单 |
@@ -130,19 +141,21 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 | `OrderStatusConflict` | `40921` | 409 | `Order status does not allow this operation` | `operation`, `current_status`, `required_status` |
 | `OrderProductUnavailable` | `42231` | 422 | `Order product is unavailable` | `product_id` |
 | `OrderOptionUnavailable` | `42232` | 422 | `Order experience option is unavailable` | `product_id`, `experience_option_id`（Experience 缺失时为 null） |
-| `InsufficientStock` | `40931` | 409 | `Insufficient stock` | `product_id`, `requested_quantity`；不返回 available |
+| `OrderKitColorUnavailable` | `42233` | 422 | `Order kit color is unavailable` | `product_id`, `kit_color_id`（颜色缺失时为 null） |
+| `OrderAmountExceeded` | `42234` | 422 | `Order amount exceeds the allowed maximum` | `maximum`，固定为金额字段最大两位小数字符串 |
+| `InsufficientStock` | `40931` | 409 | `Insufficient stock` | `product_id`, 可选 `kit_color_id`, `requested_quantity`；不返回 available |
 | `InventoryBalanceExceeded` | `40932` | 409 | `Inventory balance exceeds the allowed range` | 取消恢复越界时包含 Product、before/change 与上下限 |
 | `InventoryTransactionConflict` | `40933` | 409 | `Inventory idempotency key conflicts with another request` | `null` |
 
 余额支付、PaymentSettlement 与全额退款还可能返回 Wallet/Payment/Refund 的 `40441–40444`、`40941–40948`、`42241` 或受控能力 HTTP 503；完整契约见 [Wallet API §8](wallet_api.md#8-错误契约)。
 
-请求形状错误使用全局 HTTP 422 / code `422` 参数校验信封，包括：`items` 为空或超过 10 项、ID 非正整数、数量不在 1 至 99、重复 `(product_id, experience_option_id)`、备注超过 500 字符、未知字段、分页/时间格式错误。`OrderItemsRequired` 属于 Schema 约束，不额外发明业务错误码。
+请求形状错误使用全局 HTTP 422 / code `422` 参数校验信封，包括：`items` 为空、颜色行超过 20、非颜色行超过 10、总行超过 30、ID 非正整数、数量不在 1 至 99、重复 `(product_id, experience_option_id, kit_color_id)`、备注超过 500 字符、未知字段、分页/时间格式错误。`OrderItemsRequired` 属于 Schema 约束，不额外发明业务错误码。
 
 用户查询或取消他人订单与订单确实不存在都返回 `40411`，不会对外提供 `OrderDoesNotBelongToUser`，避免资源枚举。管理员端才可按真实 ID 查询任意订单。
 
 `OrderStatusConflict.data.operation` 对三条状态用例分别固定为 `cancel`、`mark_paid`、`complete`；它是稳定的业务操作标识，不等同于大写审计 action。
 
-> **实现状态：** Phase 4.2 Order v1.0 全链及最终 Review 保持完成；Phase 4.3.7–4.3.8 已把既有创建/取消端点升级为完整 Kit 库存生命周期。创建和取消分别写 deduction/restore 流水，均使用稳定集合锁、同事务余额/Order/Audit/重载及 MySQL 1205/1213 有限重试；取消额外使用 Order 状态机和 restore UNIQUE 双层幂等保护。`40922` 阶段门禁已移除，Phase 4.3.11 真实 MySQL 最后一件、反向多 Kit、同单取消和管理调整竞争均已通过。
+> **实现状态：** Phase 4.2 与 Phase 4.3 的 Experience/fixed-Kit 全链保持完成。M6 的 Schema、42233/42234、持久化、Service/Mapper/Router、客户端与本地回归已完成；真实 MySQL 0→6/并发门槛和部署完成前仍不能视为已部署能力。
 
 错误示例：
 
@@ -190,13 +203,13 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 
 `POST /api/v1/orders`
 
-创建 Experience、Kit 或混合订单。系统批量加载 Product/Option/Kit 并读取数据库价格；事务内先创建 Pending Order，再稳定锁定、重检并扣减所有 Kit。余额、`order_deduction` 流水、Items、`CREATE_ORDER` 审计和响应重载共享一个事务。
+创建 Experience、fixed Kit、color-selectable Kit 或混合订单。系统批量加载 Product/Option/Kit/ProductKitColor 并读取数据库价格；事务内先创建 Pending Order，再稳定锁定、重检并扣减所有 Kit/颜色余额。余额、`order_deduction` 流水、Items、`CREATE_ORDER` 审计和响应重载共享一个事务。
 
 请求字段：
 
 | 字段 | 类型 | 必填 | 规则 |
 |------|------|------|------|
-| `items` | array | 是 | 1 至 10 项，组合不可重复 |
+| `items` | array | 是 | 总计 1 至 30 项；颜色行最多 20、非颜色行最多 10，三元组合不可重复 |
 | `remark` | string / null | 否 | 最大 500 字符；缺省为 null |
 
 请求示例：
@@ -212,6 +225,11 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
         {
             "product_id": 5,
             "quantity": 2
+        },
+        {
+            "product_id": 9,
+            "kit_color_id": 701,
+            "quantity": 3
         }
     ],
     "remark": "周五晚上到店"
@@ -227,7 +245,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
     "data": {
         "id": 101,
         "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
-        "total_amount": "497.00",
+        "total_amount": "507.50",
         "status": { "value": "pending", "label": "待支付" },
         "remark": "周五晚上到店",
         "items": [
@@ -235,10 +253,16 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
                 "id": 1001,
                 "product_id": 1,
                 "experience_option_id": 10,
+                "kit_color_id": null,
                 "product_name": "拼豆体验",
                 "option_duration_minutes": 60,
                 "option_participants": 1,
                 "option_day_type": { "value": "weekday", "label": "工作日" },
+                "kit_color_slot_no": null,
+                "kit_color_code": null,
+                "kit_color_name": null,
+                "sale_unit_grams": null,
+                "total_weight_grams": null,
                 "product_price": "99.00",
                 "quantity": 1,
                 "subtotal": "99.00"
@@ -247,13 +271,37 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
                 "id": 1002,
                 "product_id": 5,
                 "experience_option_id": null,
+                "kit_color_id": null,
                 "product_name": "拼豆材料包",
                 "option_duration_minutes": null,
                 "option_participants": null,
                 "option_day_type": null,
+                "kit_color_slot_no": null,
+                "kit_color_code": null,
+                "kit_color_name": null,
+                "sale_unit_grams": null,
+                "total_weight_grams": null,
                 "product_price": "199.00",
                 "quantity": 2,
                 "subtotal": "398.00"
+            },
+            {
+                "id": 1003,
+                "product_id": 9,
+                "experience_option_id": null,
+                "kit_color_id": 701,
+                "product_name": "自选拼豆 10g",
+                "option_duration_minutes": null,
+                "option_participants": null,
+                "option_day_type": null,
+                "kit_color_slot_no": 1,
+                "kit_color_code": "A01",
+                "kit_color_name": "示例色名",
+                "sale_unit_grams": 10,
+                "total_weight_grams": 30,
+                "product_price": "3.50",
+                "quantity": 3,
+                "subtotal": "10.50"
             }
         ],
         "created_at": "2026-08-13T10:30:00Z",
@@ -262,7 +310,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 }
 ```
 
-创建响应不返回 `user_id`。可能的业务错误：`40931`、`42231`、`42232`；请求形状错误返回全局参数 422。
+创建响应不返回 `user_id`。可能的业务错误：`40931`、`42231`、`42232`、`42233`、`42234`；请求形状错误返回全局参数 422。
 
 ### 5.2 我的订单
 
@@ -289,7 +337,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
                 "order_no": "OD01K2M7Y0J7A3N5Q8T4V6W9X2BC",
                 "total_amount": "497.00",
                 "status": { "value": "pending", "label": "待支付" },
-                "item_count": 2,
+                "item_count": 3,
                 "created_at": "2026-08-13T10:30:00Z",
                 "updated_at": "2026-08-13T10:30:00Z"
             }
@@ -312,7 +360,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 
 `PATCH /api/v1/orders/{order_id}/cancel`
 
-仅允许订单所属用户执行 `pending → cancelled`。事务先锁定 owner 可见 Order 并重检 Pending，再读取最小 Item 快照、按 Product ID 升序锁定全部 Kit、批量确认 restore 幂等身份尚未提交，随后恢复余额并写 `order_cancellation_restore` 流水，最后更新状态、写 `CANCEL_ORDER` 审计并重载响应。纯 Experience 订单跳过 Inventory；重复取消返回 `40921` 且不重复恢复。任何库存、流水、状态、审计或重载失败都会让整个事务回滚。
+仅允许订单所属用户执行 `pending → cancelled`。事务先锁定 owner 可见 Order 并重检 Pending，再读取最小 Item 快照、按稳定 Product/颜色顺序锁定全部 fixed Kit 与 ProductKitColor、批量确认 restore 幂等身份尚未提交，随后恢复余额并写 `order_cancellation_restore` 流水，最后更新状态、写 `CANCEL_ORDER` 审计并重载响应。纯 Experience 订单跳过 Inventory；重复取消返回 `40921` 且不重复恢复。任何一色库存、流水、状态、审计或重载失败都会让整个事务回滚。
 
 ```json
 {
@@ -450,15 +498,15 @@ M4 前已有的 PAID/COMPLETED 旧单若没有 Settlement，必须在停写窗�
 
 | 用例 | 前置状态 | 后置状态 | Audit action | 原子范围 |
 |------|----------|----------|--------------|----------|
-| 创建 | - | `pending` | `CREATE_ORDER` | Order + Items + Audit + 响应重载；编号冲突整事务最多尝试 3 次 |
-| ADMIN+ 代客钱包订单 | - | 新建并直接 `paid` | `CREATE_ORDER` + `PAY_ORDER` | User + 新 Order + Wallet + 稳定 Kit 锁；Items + 库存/钱包流水 + Payment/Settlement + 直接 Paid + 双 Audit 原子提交 |
-| 用户取消 | `pending` | `cancelled` | `CANCEL_ORDER` | 锁定 Order + Item 快照 + 稳定 Kit 锁 + restore 幂等检查 + 批量余额/流水 + 状态 + Audit + 响应重载；1205/1213 完整用例最多尝试 3 次 |
+| 创建 | - | `pending` | `CREATE_ORDER` | Order + Items + fixed/颜色余额与流水 + Audit + 响应重载；编号冲突整事务最多尝试 3 次 |
+| ADMIN+ 代客钱包订单 | - | 新建并直接 `paid` | `CREATE_ORDER` + `PAY_ORDER` | User + 新 Order + Wallet + 稳定 fixed/颜色锁；Items + 库存/钱包流水 + Payment/Settlement + 直接 Paid + 双 Audit 原子提交 |
+| 用户取消 | `pending` | `cancelled` | `CANCEL_ORDER` | 锁定 Order + Item 快照 + 稳定 fixed/颜色锁 + restore 幂等检查 + 批量余额/流水 + 状态 + Audit + 响应重载；1205/1213 完整用例最多尝试 3 次 |
 | ADMIN+ 人工付款登记 | `pending` | `paid` | `MARK_ORDER_PAID` | 锁定 Order + manual Payment + 唯一 Settlement + 状态 + Audit + 响应重载 |
 | USER 余额支付 | `pending` | `paid` | `PAY_ORDER` | User + Order + Wallet 行锁；Payment + 钱包扣款/流水 + Settlement + 状态 + Audit 原子提交 |
 | ADMIN+ 完成 | `paid` | `completed` | `COMPLETE_ORDER` | 锁定 Order + Refund 冲突检查 + 状态更新 + Audit + 响应重载 |
 | ADMIN+ 全额退款 | `paid` / `completed` | Order 状态不变 | `REFUND_ORDER` | 先验证 Settlement/Payment 的用户、订单、金额、purpose/status/充值关联一致性，再将 Refund + 钱包退款 + PAID Kit 恢复（如有）+ Audit 原子提交 |
 
-所有事务内 Repository 方法必须接收并使用 `using_db`。状态变迁在事务内使用 `SELECT ... FOR UPDATE` 锁定订单并重新校验状态，并发请求只有一个可以成功。取消恢复、支付结算、代客订单、退款与状态/Audit 使用同一连接，任一失败整体回滚；对既有订单的支付和完成仍不修改 ProductKit.stock。失败的前置检查不写审计。
+所有事务内 Repository 方法必须接收并使用 `using_db`。状态变迁在事务内使用 `SELECT ... FOR UPDATE` 锁定订单并重新校验状态，并发请求只有一个可以成功。取消恢复、支付结算、代客订单、退款与状态/Audit 使用同一连接，任一失败整体回滚；对既有订单的支付和完成仍不修改 ProductKit.stock 或 ProductKitColor.stock_units。失败的前置检查不写审计。
 
 ---
 
@@ -485,3 +533,9 @@ OD01K2M7Y0J7A3N5Q8T4V6W9X2BC
 Phase 4.3.7 已在原 `POST /api/v1/orders` 实现 Experience/Kit/混合创建和 Pending 扣减；Phase 4.3.8 已在原 cancel 端点实现 Kit/混合订单幂等恢复。Kit Item 可省略 `experience_option_id` 或显式提交 `null`；对既有订单的支付与完成不触碰库存。Wallet/Payment/Refund v1 另增加 ADMIN+ 代客钱包订单创建扣减，并为 PAID Kit 全额退款新增 `order_refund_restore`。
 
 库存不足使用 `40931 InsufficientStock`，普通用户只收到 `product_id` 和 `requested_quantity`。仅用于阶段门禁的 `40922 KitOrderingRequiresInventory` 已从代码和当前错误注册表移除。具体事务、幂等和并发规则见 [Inventory Module](../01_requirements/inventory_module.md) 与 [Inventory API](inventory_api.md)。
+
+### 9.2 M6 Color-selectable Kit（实现中）
+
+M6 不新增另一套订单端点，而是扩展 `OrderItemCreate` / `OrderItemOut`。请求通过 `kit_color_id` 引用 ProductKitColor；响应和历史查询固定返回颜色槽号、编码、名称、10g 单位及总克重。新增 `42233` 表达颜色缺失/归属/启用不可用，`42234` 在写数据库前表达总金额超过 `DECIMAL(10,2)` 契约上限。现有 Experience/fixed Kit 行新增颜色字段时全部为 null，旧请求不必提交新字段。
+
+本节当前为冻结契约：只有在 M6 Model/迁移、创建/取消/代客/退款 Service、Mapper、HTTP 矩阵与真实 MySQL 颜色并发门槛完成后，才能把状态改为 Implemented。

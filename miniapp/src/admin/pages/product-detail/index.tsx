@@ -162,7 +162,11 @@ function AdminProductDetailContent({ product, retry }: {
           onClick={() => void Taro.navigateTo({
             url: buildAdminProductConfigurationUrl(product.id, product.product_type.value),
           })}
-        >{product.product_type.value === 'experience' ? '管理 Option' : '修改价格'}</Button>
+        >{'options' in product
+            ? '管理 Option'
+            : product.kit_kind.value === 'color_selectable'
+              ? '管理价格与颜色'
+              : '修改价格'}</Button>
         <Button
           className='admin-product-detail-actions__images'
           disabled={!mutable || mutationBlocked || lifecycleBlocked}
@@ -278,12 +282,23 @@ function ExperienceConfiguration({ product }: { readonly product: AdminExperienc
 }
 
 function KitConfiguration({ product }: { readonly product: AdminKitProductDetail }) {
+  const colorSelectable = product.kit_kind.value === 'color_selectable'
+  const configuredColors = product.colors.filter((color) => color.is_configured).length
+  const enabledColors = product.colors.filter((color) => color.is_enabled).length
+  const stockUnits = product.colors.reduce((total, color) => total + color.stock_units, 0)
   return (
     <View className='admin-product-detail-kit'>
       <Text className='admin-product-detail-section-title'>套装数据</Text>
-      <Text>当前价格：¥{formatPrice(product.price)}</Text>
-      <Text>权威库存余额：{product.stock}</Text>
-      <Text className='admin-product-detail-kit__hint'>库存调整必须从“管理库存”进入，并经过 Inventory API、流水与幂等键。</Text>
+      <Text>销售形态：{product.kit_kind.label}</Text>
+      <Text>当前价格：¥{formatPrice(product.price)}{colorSelectable ? ' / 10g' : ''}</Text>
+      {colorSelectable ? (
+        <>
+          <Text>全局色板关联：{product.colors.length}/221</Text>
+          <Text>资料已配置：{configuredColors}/221 · 商品已启用：{enabledColors}/221</Text>
+          <Text>全部颜色库存：{stockUnits * 10}g（{stockUnits} 个 10g 单位）</Text>
+        </>
+      ) : <Text>权威库存余额：{product.stock}</Text>}
+      <Text className='admin-product-detail-kit__hint'>库存调整必须从“管理库存”进入，并经过 Inventory API、流水与幂等键；自选商品的库存逐色独立。</Text>
     </View>
   )
 }
