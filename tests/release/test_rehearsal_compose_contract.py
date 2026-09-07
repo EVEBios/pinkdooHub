@@ -284,6 +284,8 @@ def test_docker_context_excludes_local_state_and_frontend_tree() -> None:
     assert {
         ".git",
         ".venv",
+        "**/__pycache__",
+        "**/*.py[cod]",
         "artifacts",
         "backups",
         "logs",
