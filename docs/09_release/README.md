@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** M7 候选重新留证中；9.4 外部条件仍阻断 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** M7 当前候选远端 CI 已通过；持久升级、Wallet、色板、RC 与外部条件仍阻断 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-07
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -10,19 +10,22 @@
 ## 0. 当前候选覆盖层（2026-09-07）
 
 2026-09-02 以前的 Phase 9.2/9.3/9.4 报告仍是有效的**历史证据**，但它们绑定旧 SHA、
-旧 OpenAPI、Aerich M0–M2 和旧微信产物，不能证明当前 M7 候选可发布。当前审计起点为
-`feature/phase9-ci` 的 `c6778e79cccd7940928431ab17b958ea19993915`；其远端
-[Run 34104680282](https://github.com/EVEBios/pinkdooHub/actions/runs/34104680282)
-为 7/8，通过项不能抵消 `backend-mysql-release` 失败。失败原因是权威迁移链已到 M7，
-而 workflow 与 MySQL snapshot 仍以 M6 为终点。任何后续修复也必须以新的干净 SHA
-重新取得完整 8/8，不能把本地结果或旧 Run 拼接成当前成功记录。
+旧 OpenAPI、Aerich M0–M2 和旧微信产物，不能证明当前 M7 候选可发布。审计起点
+`c6778e79...` 的 [Run 34104680282](https://github.com/EVEBios/pinkdooHub/actions/runs/34104680282)
+保留为 7/8 失败记录；M7 gate 修复随后进入当前 PR head
+`4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf`。新的
+[Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349)
+已在 merge-ref `ccbbe9dcb675a99369867814386051befc5922f2` 的干净 checkout 上取得 8/8，
+保存 7 组带 merge-ref、Run ID 和 digest 的 artifact；不能再把旧 Run 的 7 个成功项
+与新结果拼接使用。
 
 本地提交 `58d8435d76022db41e625e3cdb7704a37943c94d` 已修复该 M7 gate；提交前的
 同内容 dirty 工作树在一次性 MySQL 8.0.46 完成 0→7、M0–M6 七个历史起点→M7、
 M6/M7 snapshot 和联合 MySQL `21 passed`，资源最终清理。执行时不是干净提交且通用
 cleanup checker 有已解释的 `--rm` inspect 假失败，因此这只是本地证据，详见
-[M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。该提交尚未 push，
-也没有新的远端 8/8。
+[M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。远端后续验证为
+SQLite `2000 passed, 2 skipped`、MySQL `21 passed`，完整身份、Job 与 artifact 清单见
+[M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。
 
 当前仓库功能基线已经包含：M4 Wallet/Payment/Refund、M5 Reservation N1、M6
 自选颜色 Kit、M7 可配置固定店休、代客钱包订单多颜色界面和会员缺省头像居中修复。
@@ -44,16 +47,15 @@ cleanup checker 有已解释的 `--rm` inspect 假失败，因此这只是本地
 - M6 的本地 SQLite 升级、221 色来源清单和确定性图片导入仅属于开发数据；Gate A
   MySQL、持久图片存储、商品颜色启用与库存均未完成。
 - M7 的仓库实现和离线迁移已存在；本地一次性 MySQL 0→7、七个历史升级起点、
-  snapshot 和 21 项联合门槛已完成，但运行时是提交前 dirty 工作树，远端干净 SHA
-  尚未重跑。M7 未应用 Gate A、共享、预发布或生产数据库。
+  snapshot 和 21 项联合门槛已完成；同一修复已随当前候选在远端干净 checkout 通过
+  8/8。M7 仍未应用 Gate A、共享、预发布或生产数据库。
 - Gate A 在 2026-09-02 的最后记录是 M2。写入前必须重新只读查询真实 Aerich 状态；
   不得把这条历史记录当作当前数据库事实。仓库尚无经批准的既有非空库升级入口；
   只支持空库的 `gatea_operations initial-migrate` 不能用于最后留证的 M2→M7 场景。
 - 本轮本地 SQLite Schema 修复和综合 seed 已完成，但只产生开发数据与本地
   回归证据，不改变 Gate A 的任何发布勾选项。
 
-因此当前结论仍是 **No-Go / Not Authorized**。下一次 Gate A 决策至少要重新绑定：
-本地 `58d8435...` 与新远端 Run 的 8/8 绑定、远端 M0–M7 MySQL/cleanup artifact、
+因此当前结论仍是 **No-Go / Not Authorized**。下一次 Gate A 决策至少还要关闭：
 持久 Gate A 的只读实际起点、备份/独立恢复及经批准的既有库升级入口（若仍为 M2，
 依次应用 M3–M7）、钱包补齐/对账、221 色持久数据与图片、
 真实 HTTPS Origin、微信合法域名、release-eligible RC，以及 iOS/Android 全矩阵。
@@ -65,8 +67,9 @@ cleanup checker 有已解释的 `--rm` inspect 假失败，因此这只是本地
 | Release Decision Record | [release_decision_record.md](release_decision_record.md) | Gate A 决策已冻结；Gate B 未授权 |
 | 当前基线审计 | [baseline_audit_2026-08-29.md](baseline_audit_2026-08-29.md) | 已采集本地证据；MySQL/真机/外部环境未执行 |
 | Environment Matrix + Secret Inventory | [environment_and_secrets.md](environment_and_secrets.md) | Gate A 文件 Secret、轮换、备份密钥和日志策略已落地；真实域名待备案 |
-| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | Phase 9.2 历史基线完成；当前 M7 候选远端 Run 34104680282 为 7/8，阻断 |
-| M7 一次性 MySQL 报告 | [reports/m7_mysql_release_gate_2026-09-07.md](reports/m7_mysql_release_gate_2026-09-07.md) | 本地 dirty-tree M0–M7/历史矩阵/21 项通过；本地提交 `58d8435...` 尚无远端 Run，发布仍阻断 |
+| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | Phase 9.2 历史基线完成；当前 M7 候选 Run 34129910349 为 8/8，持久 Gate 仍阻断 |
+| M7 一次性 MySQL 报告 | [reports/m7_mysql_release_gate_2026-09-07.md](reports/m7_mysql_release_gate_2026-09-07.md) | 本地 dirty-tree M0–M7/历史矩阵/21 项通过，并已补记远端后续结果 |
+| M7 当前候选远端 CI 报告 | [reports/m7_remote_ci_2026-09-07.md](reports/m7_remote_ci_2026-09-07.md) | Head `4d6430c...` / merge-ref `ccbbe9d...` / Run 34129910349 / 8/8 / 7 artifacts |
 | Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
 | Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | 历史 M2 的 DR-01～DR-07、DR-09 服务端部分通过；当前 M4–M7 持久升级与重演未执行 |
 | 9.3 演练环境 | [rehearsal_environment_2026-08-31.md](rehearsal_environment_2026-08-31.md) | 双 MySQL/Redis/HTTPS/图片恢复拓扑已真实执行并清理 |
@@ -79,7 +82,7 @@ cleanup checker 有已解释的 `--rm` inspect 假失败，因此这只是本地
 | Gate A 内部测试运维规则 | [gatea_test_operations.md](gatea_test_operations.md) | 测试人员、反馈、14 日窗口、停用、数据清理与事故职责已冻结 |
 | Functional/Smoke/E2E Matrix | [wechat_acceptance_matrix.md](wechat_acceptance_matrix.md) | 已扩展到 Wallet、颜色 Kit、Reservation、M7 与最新界面；当前 RC 真机结果待填 |
 | Risk Register | [risk_register.md](risk_register.md) | 已登记当前 M7 CI、持久升级、钱包、色板和 RC 重验风险 |
-| Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | 当前候选 CI/MySQL/持久迁移/RC/真机均未关闭；未授权发布 |
+| Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | 当前候选 CI 已关闭；Wallet/持久迁移/RC/真机仍未关闭，未授权发布 |
 
 ## 2. 当前结论
 

@@ -25,7 +25,7 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - 微信小程序客户与 ADMIN+ 共 31 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory、Wallet/Payment、Reservation/店休与 User 管理流程。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
 
-当前后端完整回归为 **2000 passed、23 skipped**（112.25s），退款专项 **49 passed**；`compileall` 通过，`pip check` 无破损依赖。前端完整 **83 套件、562 项 Jest**、TypeScript、ESLint、Stylelint 与 17 项 CI policy 均通过。本地提交 `58d8435` 的 M7 候选已在一次性 MySQL 8.0.46 完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 及 Inventory + Reservation **21 passed**；容器已销毁。该提交尚未 push/远端重跑，也未应用 Gate A 或任何持久 MySQL；本地证据不等于正式 RC、真机或目标环境验收。详细记录见 [Development Changelog](docs/05_development/changelog.md)。
+当前后端完整本地回归为 **2000 passed、23 skipped**（112.25s），退款专项 **49 passed**；`compileall` 通过，`pip check` 无破损依赖。前端完整 **83 套件、562 项 Jest**、TypeScript、ESLint、Stylelint 与 17 项 CI policy 均通过。本地提交 `58d8435` 的 M7 候选已在一次性 MySQL 8.0.46 完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 及 Inventory + Reservation **21 passed**；容器已销毁。包含该修复的 head `4d6430c...` 已由 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 取得 8/8，远端 SQLite 为 **2000 passed、2 skipped**，MySQL 为 **21 passed**。M4–M7 仍未应用 Gate A 或任何持久 MySQL；CI 证据不等于正式 RC、真机或目标环境验收。详细记录见 [Development Changelog](docs/05_development/changelog.md)。
 
 Phase 4.3.1–4.3.12 已完成 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 8+ 增量迁移、Repository、管理员库存调整、Kit/混合订单创建扣减、Pending 取消幂等恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/完整 HTTP 发布门槛和最终 Review。最后一件库存、反向多 Kit、同单取消、同/异 key 调整、管理员调整与下单阻塞、真实 1205 全事务重试和 EXPLAIN 均已在隔离 MySQL 8.0.46 通过；三端点完整权限/错误/边界矩阵与真实 MySQL HTTP 并发重放也已通过。最终 Review 进一步统一了 Product Kit 详情的库存上限响应校验，并清理了数据库文档中的旧 Kit 规划描述。临时实例验证后销毁，未应用持久环境。
 
@@ -238,7 +238,7 @@ python -m app.tasks.product_image_cleanup \
 
 ## 数据库迁移
 
-MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ M0–M7 迁移均已离线生成并通过静态契约测试；一次性 MySQL 8.0.46 已完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 与联合 21 项真实 MySQL 门槛，随后销毁实例。该结果尚未由当前 SHA 的远端 CI 重跑替代，M3–M7 也均未应用 Gate A、共享、预发布或生产 MySQL。Inventory 迁移包含正库存期初流水回填，Wallet M4 还需按冻结顺序执行历史 backfill/reconcile；正式执行前仍必须停写、扫描数据范围并备份。
+MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ M0–M7 迁移均已离线生成并通过静态契约测试；一次性 MySQL 8.0.46 已完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 与联合 21 项真实 MySQL 门槛，随后销毁实例；当前 head 的远端 Run 34129910349 也已在 MySQL 8.0.46 完成 M5→M6→M7 重放、snapshot 与联合 21 项门槛。M3–M7 均未应用 Gate A、共享、预发布或生产 MySQL。Inventory 迁移包含正库存期初流水回填，Wallet M4 还需按冻结顺序执行历史 backfill/reconcile；正式执行前仍必须停写、扫描数据范围并备份。
 
 本地持久 `db.sqlite3` 曾缺失目标设计已定义的 `refunds.inventory_restored` 与 `UNIQUE(order_id)`。提交 `35e8630` 提供默认预览、双显式确认、精确基线拒绝和 SQLite Backup API 的本地修复工具：
 
@@ -318,7 +318,7 @@ docs(readme): document local development workflow
 - Gate A 持久环境在 2026-09-02 的最后留证为 Aerich M2 且数据库非空，当前真实状态尚未重新只读确认；现有 `initial-migrate` 只支持空库，尚无经批准的 M2→M7 非空升级入口，因此必须停止在此阻塞而不直接执行。M3–M7 只在一次性 MySQL 8.0.46 完成候选验证，尚未应用任何持久环境。
 - 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
-- Phase 9.1–9.3 已完成；9.4 中不依赖备案的服务器部署、备份恢复与运维治理已完成，真实 HTTPS/合法 Origin、正式 RC、体验版上传和 iOS/Android 真机仍等待外部条件与单独授权。Phase 9.5 不依赖外部资源的仓库实现已完成，但真实微信 AppID、集中 Secret Manager、监控告警、对象存储和隐私平台材料仍是 Gate B 阻断项。MARD 仍缺持久 MySQL/对象存储导入流程；当前改动尚未 push，需由当前 SHA 的远端干净 8/8 CI 替代本地证据后才能进入 RC。CI 通过也不授权微信上传、提审或发布。
+- Phase 9.1–9.3 已完成；9.4 中不依赖备案的服务器部署、备份恢复与运维治理已完成，真实 HTTPS/合法 Origin、正式 RC、体验版上传和 iOS/Android 真机仍等待外部条件与单独授权。Phase 9.5 不依赖外部资源的仓库实现已完成，但真实微信 AppID、集中 Secret Manager、监控告警、对象存储和隐私平台材料仍是 Gate B 阻断项。MARD 仍缺持久 MySQL/对象存储导入流程；当前 head 已取得远端干净 8/8 CI，但 Wallet 扩展门槛、非空 Gate A 升级入口、目标环境迁移与 RC 仍未关闭。CI 通过也不授权微信上传、提审或发布。
 - Phase 4.3.1–4.3.12 已完成并通过最终 Review；持久环境迁移、发布与下一业务 Phase 仍需单独规划和授权。
 - Wallet/Payment/Refund v1 已完成仓库实现；M4、历史 NORMAL/DISABLED 普通 USER wallet backfill、legacy manual settlement backfill、只读 reconcile 和扩展 MySQL 发布门槛尚未应用/完成于持久环境，必须按此顺序收敛后才能启用。历史 DELETED USER 与 ADMIN/SUPER_ADMIN 不补建钱包。
 - Reservation N1 与 M7 可配置每周固定店休已完成仓库实现，但 M5/M7 尚未应用持久 MySQL，也未执行真实微信小程序真机验收；N2 微信订阅消息主动通知、可逆加密投递地址、durable outbox、worker、重试与监控均未实现，当前仅通过“我的预约/详情”展示状态和文案，并由管理端当前手机号提供人工联系兜底。

@@ -9,8 +9,8 @@
 2026-09-07 覆盖说明：R-001、R-004～R-006 等 `closed` 项绑定的是 Phase 9.2 PR head
 `23a0f08...`、Phase 9.3 `136a8bd...`、Phase 9.4 Runtime `51ad315...` / Operations
 `c4d27a8...` 等旧 SHA 与 Aerich M0–M2；它们证明对应流程曾有效，不自动关闭当前 M4–M7 候选的
-R-026 以后风险。审计起点 `c6778e7...` 的远端 Run 34104680282 为 7/8，当前 Gate A
-仍是 No-Go。
+后续风险。审计起点 `c6778e7...` 的远端 Run 34104680282 保留为 7/8 失败记录；当前
+head `4d6430c...` 的 Run 34129910349 已 8/8 并关闭 R-026，但 Gate A 因其余风险仍是 No-Go。
 
 ## 1. 活跃风险
 
@@ -41,8 +41,8 @@ R-026 以后风险。审计起点 `c6778e7...` 的远端 Run 34104680282 为 7/8
 | R-023 | P2 | Jest 重复提示 ReactDOMTestUtils.act deprecated | 高×低 | Taro 测试依赖升级窗口或有期限 warning 白名单 | Yijie Shen | Gate A 后可排期 | open |
 | R-024 | P1 | Gate B 公开服务仍依赖单主机本地图片卷，缺少高可用存储/CDN | 高×高 | Phase 9.5 已冻结 `ImageStorage` 端口和对象存储验收门；仍需选型、真实 Bucket/CDN、最小权限和恢复演练 | Yijie Shen | Gate B | mitigating |
 | R-025 | P1 | Gate B 缺少集中 Secret Manager、访问审计和自动轮换 | 中×高 | Phase 9.5 已冻结 Secret inventory、文件注入边界和 Pepper 轮换约束；仍需选择集中系统并验证最小权限、版本、轮换、撤销和审计 | Yijie Shen | Gate B | mitigating |
-| R-026 | P0 | 当前远端 CI 只有 7/8；失败 Run 的 MySQL Job 把 M6 当最新版本，本地 M7 修复尚未 push/重跑 | 确定×高 | 本地 `58d8435...` 已更新 workflow/snapshot 到精确 M0–M7 并保留 M5→M6→M7 重放；仍须同一干净 SHA 取得可复核远端 8/8 与 cleanup artifact | Yijie Shen | 当前候选 / Gate A | open |
-| R-027 | P0 | M7 已有本地 dirty-tree 一次性 MySQL 完整证据，但运行时未绑定干净 commit/远端 Runner | 中×高 | [本地报告](reports/m7_mysql_release_gate_2026-09-07.md)覆盖 MySQL 8.0.46 空库 0→7、M0–M6→M7、默认周一/唯一单例/索引、固定店休锁序/批量取消及资源销毁；关闭须由当前干净 SHA 在远端重现 | Yijie Shen | 当前候选 / Gate A | mitigating |
+| R-026 | P0 | M7 修复前远端 CI 只有 7/8；失败 Run 的 MySQL Job 把 M6 当最新版本 | 确定×高 | `4d6430c...` / merge-ref `ccbbe9d...` 的 Run 34129910349 已 8/8；MySQL 21 项、cleanup 步骤和 7 组 artifact 可复核；旧 Run 保留 | Yijie Shen | 当前候选 / Gate A | closed |
+| R-027 | P0 | M7 最初只有本地 dirty-tree 一次性 MySQL 完整证据，未绑定干净 commit/远端 Runner | 中×高 | [本地报告](reports/m7_mysql_release_gate_2026-09-07.md)保留完整历史矩阵；当前 [远端报告](reports/m7_remote_ci_2026-09-07.md)绑定 head/merge-ref，在干净 Runner 复现 workflow、21 项 MySQL 与 cleanup | Yijie Shen | 当前候选 / Gate A | closed |
 | R-028 | P0 | 持久 Gate A 最后记录为 M2，但当前真实版本尚未重新读取；现有批准入口只允许空库，若实际仍为 M2，则不存在可安全执行的非空 M2→M7 路径 | 确定×极高 | 先只读确认真实版本；实现并测试经 Review 的既有库升级/候选 Record 入口；停写、备份/独立恢复，并从获批实际起点逐步升级（M2 时依次 M3–M7），再完成匹配镜像部署与失败前滚/恢复演练 | Yijie Shen | Gate A | open |
 | R-029 | P1 | Wallet 当前只有有限 MySQL 关键闭环，缺少扩展并发/瞬态错误/查询计划与跨资金库存门槛 | 中×极高 | 并发调账/余额支付/退款、1205/1213 全事务重试、稳定锁序、关键 `EXPLAIN`、Wallet/Payment/Settlement/Refund/Inventory 联合回归通过 | Yijie Shen | Gate A | open |
 | R-030 | P1 | 本地 SQLite 的 221 色与图片未发布到 Gate A MySQL/持久图片存储，商品颜色启用/库存也未配置 | 确定×高 | 来源 manifest 保留 HEX/RGB/checksum；Gate A MySQL 导入 221 个 slot/code/name/URL，发布图片并核验槽位/文件，为测试商品配置启用色和库存，HTTPS 真机读取通过 | Yijie Shen | Gate A | open |

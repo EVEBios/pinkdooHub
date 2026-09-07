@@ -142,4 +142,4 @@ Redis 键不含明文 IP、账号或 Token。Redis 故障时身份敏感请求�
 - 微信构建：以 `TARO_APP_AUTH_MODE=wechat` 和保留 CI HTTPS Origin 编译，97 文件、主包 427,289 bytes、分包 178,092 bytes、总计 605,381 bytes；产物扫描无占位 Origin/source map/H5 marker/Secret marker，并明确为 `release_eligible=false`。
 - OpenAPI：从真实 FastAPI 应用重新导出为 50 paths / 124 component schemas，再生成只读 TypeScript 类型。
 
-这些是功能提交 `94325fa...` 对应的本地证据。推送后仍须以当前分支头的远端干净 checkout CI 结果补齐远端证据；它们也不是正式微信、备案域名或 Gate B 发布证据。
+这些是功能提交 `94325fa...` 对应的本地证据。当前分支头已由 Run 34129910349 取得远端干净 checkout 8/8，但这只补齐当前组合候选的仓库 CI；它们仍不是正式微信、备案域名或 Gate B 发布证据。

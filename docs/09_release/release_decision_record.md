@@ -38,14 +38,17 @@ Gate A 的身份、资金或分发决定：仍使用账号密码；只有 M4 迁
 充值、支付或退款，也不向公众开放。
 
 审计起点 `c6778e7...` 的远端 Run 34104680282 为 7/8，旧 MySQL gate 没有正确纳入 M7。
-本地提交 `58d8435...` 已修复该 gate，提交前 dirty-tree 一次性 MySQL 报告完成 0→7、
-历史矩阵、snapshot 和 21 项联合门槛；但该提交尚未 push/远端重跑，不能改写旧 Run。
+本地提交 `58d8435...` 修复该 gate，提交前 dirty-tree 一次性 MySQL 报告完成 0→7、
+历史矩阵、snapshot 和 21 项联合门槛。包含该修复的当前 PR head `4d6430c...` 随后在
+Run 34129910349 的干净 merge-ref checkout 上取得 8/8，并保存 7 组 artifact；旧失败
+Run 仍保留为历史回归依据。
 Gate A 最后留证版本仍是 M2，但当前真实状态只能重新只读确认；仓库没有获批的非空
 M2→M7 升级入口。钱包 backfill/reconcile、221 色持久发布、真实 RC 与真机均未执行。
 本检查点只更新 No-Go 依据，不授予持久迁移、微信后台修改、上传、
 分发、提审或发布权限。完整当前门槛见
 [Go/No-Go Checklist](go_no_go_checklist.md)，本地证据边界见
-[M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。
+[M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)与
+[M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。
 
 ## 1. 决策
 

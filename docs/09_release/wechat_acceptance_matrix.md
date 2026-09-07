@@ -1,6 +1,6 @@
 # 微信 Gate A Functional / Smoke / E2E 验收矩阵
 
-> **Status:** Current M7 candidate A incomplete (remote 7/8) — release-eligible RC/M evidence blocked
+> **Status:** Current M7 candidate CI A passed (8/8) — release-eligible RC/M evidence blocked
 > **Last Updated:** 2026-09-07
 > **Scope:** 微信小程序内部测试版（Gate A）
 
@@ -23,24 +23,25 @@
 持久 Gate A 的代表数据、异机加密备份、依赖故障、重启、数据/图片保持和日志脱敏也
 绑定该旧基线。历史表项中的 `A PASS` 不得解释为当前 M7 候选已经通过。
 
-当前审计起点 `c6778e7...` 的
-[Run 34104680282](https://github.com/EVEBios/pinkdooHub/actions/runs/34104680282)
-只有 7/8；失败的 `backend-mysql-release` 仍按 M6 作为迁移终点。本轮本地结果为后端
-`2000 passed, 23 skipped in 112.25s`、前端 `83 suites / 562 tests`；前端 typecheck、
-ESLint、Stylelint 和 17 项 CI policy 也均通过。当前本地覆盖已经包含 M4 Wallet、
-M5 Reservation、M6 自选颜色、M7 固定店休、代客多颜色和头像布局。上述均为本地
-候选证据，不是远端或 RC 结果。微信
+当前审计起点 `c6778e7...` 的 Run 34104680282 保留为 7/8 失败记录；当前 PR head
+`4d6430c...` 的 [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349)
+已在干净 merge-ref checkout 上取得 8/8。远端后端为 `2000 passed, 2 skipped`、MySQL
+为 `21 passed`，前端 typecheck、ESLint、Stylelint、`83 suites / 562 tests` 和 17 项
+CI policy 均通过。本地完整结果仍为后端 `2000 passed, 23 skipped in 112.25s`。当前
+自动化覆盖已经包含 M4 Wallet、M5 Reservation、M6 自选颜色、M7 固定店休、代客多颜色
+和头像布局；其中仓库 CI 已绑定当前 Run，但仍不是 RC 真机结果。微信
 production-mode 代码检查产物为 141 个文件、主包 649,739 bytes、分包 407,624 bytes、
 总计 1,057,363 bytes，manifest SHA-256 为
 `693fb673df044e03c2865af2827e39ac7a5d6de86dbb1b3214f0b4237eeb69b4`，但仍为
-`release_eligible=false`。在新的修复 SHA 完成 8/8 前，当前候选总体 `A` 结论仍是
-`BLOCKED`；下面各功能的本地/旧自动化证据也不能替代真实 HTTPS、微信合法域名和
+`release_eligible=false`。当前候选的仓库 CI `A` 已通过，但 release-eligible RC 与
+完整功能矩阵仍为 `BLOCKED`；下面各功能的自动化证据也不能替代真实 HTTPS、微信合法域名和
 iOS/Android 的 `M` 证据。
 
 补充的 [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md) 已在提交前
 dirty 工作树完成 MySQL 0→7、M0–M6→M7 历史矩阵、M6/M7 snapshot 和联合
-`21 passed`；同内容随后记录为本地提交 `58d8435...`。因为尚无干净 SHA 的远端 Run，
-它只改善下表 MySQL 实现证据，不把任何当前 RC 的 `A/M BLOCKED` 改为整体 PASS。
+`21 passed`；同内容随后记录为提交 `58d8435...`，并由当前 Run 远端复现 workflow
+门槛。精确证据见 [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。这不把
+任何当前 RC 的 `M BLOCKED`、Wallet 扩展门槛或持久环境项目改为 PASS。
 
 ## 2. 身份、角色与权限
 

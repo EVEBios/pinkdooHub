@@ -4,22 +4,29 @@
 
 ---
 
+## M7 当前候选远端 CI 8/8 收口（2026-09-07）
+
+- `feature/phase9-ci` 当前 PR head `4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf` 已推送；PR #2 的 merge-ref `ccbbe9dcb675a99369867814386051befc5922f2` 在 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 完成 8/8 success。
+- 远端 `backend-sqlite` 为 `2000 passed, 2 skipped in 736.46s`；`backend-mysql-release` 在 MySQL 8.0.46 完成 M5→M6→M7 历史重放、M6/M7 snapshot、联合 `21 passed in 10.65s` 和 cleanup。前端质量、OpenAPI、微信构建、双依赖审计与仓库卫生同一 Run 全部通过。
+- Run 保存 7 组 artifact；名称绑定 merge-ref 与 Run ID，GitHub SHA-256 digest、大小和到期时间已冻结在 `docs/09_release/reports/m7_remote_ci_2026-09-07.md`。`openapi-contract` 不上传 artifact，8 个 Job 对应 7 组 artifact 符合 workflow 设计。
+- 旧 Run 34104680282 继续保留为 7/8 失败回归记录；R-026 已关闭。整体发布仍为 **No-Go**：Wallet 扩展 MySQL、Gate A 只读盘点与非空升级入口、backfill/reconcile、MARD 持久发布、真实 RC/HTTPS/合法域名和真机均未关闭。
+
 ## M7 MySQL 候选门槛与本地综合演示基线（2026-09-07）
 
-- 本地提交 `58d8435` 将 MySQL CI/release gate 收口到 M7，对 `reservation_settings` 单例、默认周一、约束/索引与历史 Reservation 重放加入结构及真实并发验证。在一次性 MySQL 8.0.46 中完成空库 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 和 Inventory + Reservation 联合 `21 passed`；专用 Schema、容器与端口已清理。该提交尚未 push/远端重跑，也未应用 Gate A、共享、预发布或生产 MySQL。
+- 本地提交 `58d8435` 将 MySQL CI/release gate 收口到 M7，对 `reservation_settings` 单例、默认周一、约束/索引与历史 Reservation 重放加入结构及真实并发验证。在一次性 MySQL 8.0.46 中完成空库 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 和 Inventory + Reservation 联合 `21 passed`；专用 Schema、容器与端口已清理。包含该修复的当前候选后续已由 Run 34129910349 远端 8/8；任何迁移仍未应用 Gate A、共享、预发布或生产 MySQL。
 - 本地持久 `db.sqlite3` 的结构对比只发现 `refunds.inventory_restored` 和一单一退款 `UNIQUE(order_id)` 缺失。提交 `35e8630` 新增精确、默认预览、双显式确认的 SQLite 修复脚本；实际 apply 写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-refunds-repair-20260907-105304-874045.bak`，权限 `0600`，修复后完整性、外键、目标字段/唯一索引和幂等重放均通过。该脚本不写 Aerich，不是 MySQL/发布迁移证据；数据库设计和 API 文档已是目标形状，无需修改契约。
 - 同次 Schema 对比发现 `ProductKitColor.Meta.indexes` 使用 ORM 关系名时会在新 SQLite 生成表达式索引。提交 `9ffebe7` 改为物理外键列 `product_id` / `bead_color_id` 并增加生成 Schema 契约测试；本地持久库、M6 MySQL DDL、`database_design.md` 与 DBML 原本已是正确物理索引，因此无需新迁移。
 - 综合 demo seed 已通过正式 Service/Repository 链路应用到本地开发库。写前备份 `backups/local-demo-data/db.sqlite3.pre-local-demo-20260907-105320-455438.bak` 与被 Git 忽略的 `backups/local-demo-data/synthetic-credentials.json` 均为 `0600`，不记录、输出或提交任何凭据值。专用 verifier 通过，`wallet_reconcile` 为 `scanned=11 mismatches=0 violations=0`。
 - 本地表当前摘要为 users 13、products 19、product_images 24、orders 8 / order_items 10、payments 6、settlements 6、refunds 2、inventory transactions 238、reservations 7、wallet accounts 11 / wallet transactions 9、audit logs 583、external identities 0；真实微信外部身份没有被伪造。其中新增 9 个合成用户；Product 非删除口径为 online 14 / offline 1 / draft 3，活跃类型为 Experience 8 / Kit 10，另 1 条逻辑删除；Order 为 pending 1 / cancelled 1 / paid 4 / completed 2；Payment 为 wallet 4 / manual 2，Refund 为 2。
 - Seed 新增 6 条 Reservation：pending 1 / confirmed 1 / rejected 1 / cancelled 3，取消中 `customer_request` 1 / `store_closed` 2；加原有历史后实际表共 7 条。Inventory seed 包含 `order_deduction` 8、`order_cancellation_restore` 2、`order_refund_restore` 2，自选颜色 Kit 启用三色；M7 每周固定店休已由默认周一收敛为本地演示用的周三。
 - 最终回归：后端完整 `2000 passed, 23 skipped`（112.25s），退款专项 `49 passed`，`compileall` 通过，`pip check` 无破损依赖；前端 Node 24.13.0 / npm 11.6.2 下 `83 suites / 562 tests`、TypeScript、ESLint、Stylelint 与 CI policy `17/17` 均通过。无新依赖、无版本提升。
-- 发布状态仍为 **No-Go**：Gate A 在 2026-09-02 的最后留证为非空 M2，当前真实状态尚未重新只读确认；现有 `initial-migrate` 只支持空库，尚无批准的 M2→M7 升级入口；MARD 缺持久 MySQL/对象存储导入；钱包扩展 MySQL 门槛、backfill/reconcile、当前 SHA 远端 8/8、真实 Origin/RC、iOS/Android 真机与微信外部条件均未完成。
+- 发布状态仍为 **No-Go**：Gate A 在 2026-09-02 的最后留证为非空 M2，当前真实状态尚未重新只读确认；现有 `initial-migrate` 只支持空库，尚无批准的 M2→M7 升级入口；MARD 缺持久 MySQL/对象存储导入；钱包扩展 MySQL 门槛、backfill/reconcile、真实 Origin/RC、iOS/Android 真机与微信外部条件均未完成。当前 SHA 远端 8/8 已关闭。
 
 ## Reservation 可配置固定店休（仓库实现候选，2026-09-07）
 
 - 管理端店休页拆分为“每周固定店休”和“添加单日店休”两个独立操作，按钮、说明、确认弹窗和恢复动作均明确表达作用范围；顾客预约页动态展示当前固定店休日。
 - 新增 `ReservationSettings` 单例、星期枚举、管理查询/更换 API 与 M7 候选迁移。固定店休默认周一；更换后旧星期立即恢复可预约，未来 30 天内命中新星期且尚未开始的 pending/confirmed 预约原子取消为 `store_closed`，单日店休与历史取消记录不变。
-- M7 未应用持久环境；其一次性 MySQL 8.0.46 候选门槛已由上述 `58d8435` 证据完成，但尚未 push/远端重跑或完成目标环境部署验收；N2 微信主动通知仍未实现。
+- M7 未应用持久环境；其一次性 MySQL 8.0.46 候选门槛已由上述 `58d8435` 证据完成，当前候选也已远端 8/8，但目标环境部署验收仍未完成；N2 微信主动通知仍未实现。
 
 ## M6 Color-selectable Kit — 仓库实现与本地验证完成 / 真实 MySQL 待验（2026-09-06–07）
 

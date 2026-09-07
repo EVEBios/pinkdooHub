@@ -73,7 +73,9 @@ Gate A 在 2026-09-02 的最后记录是非空 M2；这不是当前数据库事�
 
 当前 M7 的本地可销毁迁移与联合门槛见
 [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。该报告运行于提交前
-dirty 工作树；同内容随后成为本地提交 `58d8435...`，但尚未 push/远端重跑，也不包含
+dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430c...` 在
+[Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 取得远端
+8/8。远端证据见 [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)，但仍不包含
 持久部署、备份恢复、应用/图片/Redis Smoke 或微信真机，因此不能把 DR-01～DR-13
 整体标成当前候选 PASS。
 
@@ -81,11 +83,11 @@ dirty 工作树；同内容随后成为本地提交 `58d8435...`，但尚未 pus
 
 | 版本 | 仓库/历史事实 | 当前候选一次性 MySQL | 持久 Gate A 必需动作 |
 |------|---------------|----------------------|----------------------|
-| M3 | 外部身份与认证安全仓库实现完成；旧一次性 0→3 通过 | 本地 M0–M6→M7 历史矩阵已纳入 M3；远端待重跑 | 只读扫描后先应用 M3；Gate A 仍保持 password 模式 |
+| M3 | 外部身份与认证安全仓库实现完成；旧一次性 0→3 通过 | 本地 M0–M6→M7 历史矩阵已纳入 M3；当前 workflow 远端 8/8 | 只读扫描后先应用 M3；Gate A 仍保持 password 模式 |
 | M4 | 钱包/支付/退款代码完成；旧关键闭环 `2 passed` | 扩展并发、1205/1213、锁序、`EXPLAIN` 和 Inventory 联合门槛待完成 | 应用 M4 后执行两个 backfill 与 reconcile，零差异前禁止启用资金入口 |
-| M5 | 一次性 MySQL 0→5 与 Inventory + Reservation `16 passed` | 本地历史矩阵与 M5 fixed→M6→M7 已通过；远端待重跑 | 核验两张预约表、外键/六个索引、既有数据和注销边界 |
-| M6 | 本地 SQLite/221 色 manifest/确定性 PNG 已完成 | 本地 M6 snapshot/颜色锁等待已纳入联合 21 项；远端待重跑 | 使用专门的 MySQL/持久存储导入发布入口；本地 SQLite-only 工具不得复用 |
-| M7 | 离线迁移与本地业务测试已完成 | 本地单例/默认/约束/历史不漂移/事务并发已通过；远端待重跑 | 核验现有预约/单日店休不漂移并配置目标固定店休日 |
+| M5 | 一次性 MySQL 0→5 与 Inventory + Reservation `16 passed` | 本地历史矩阵与远端 M5 fixed→M6→M7 workflow 均通过 | 核验两张预约表、外键/六个索引、既有数据和注销边界 |
+| M6 | 本地 SQLite/221 色 manifest/确定性 PNG 已完成 | 本地 M6 snapshot/颜色锁等待及远端联合 21 项通过 | 使用专门的 MySQL/持久存储导入发布入口；本地 SQLite-only 工具不得复用 |
+| M7 | 离线迁移与本地业务测试已完成 | 本地单例/默认/约束/历史不漂移/事务并发通过；远端 workflow 8/8 | 核验现有预约/单日店休不漂移并配置目标固定店休日 |
 
 任何“一次性 MySQL PASS”只关闭候选迁移实现风险，不等于已应用 Gate A。任何本地
 SQLite 数据也只属于开发环境，不是 Gate A 的数据或图片发布证据。
@@ -310,7 +312,7 @@ python -m app.tasks.super_admin_bootstrap \
 - readiness、Redis、图片持久化或管理员初始化失败；
 - 越权、凭据泄漏、数据破坏、重复订单/扣库存或无法恢复；
 - artifact 与已测试 SHA 不一致；
-- 当前远端 CI 未达 8/8，或 MySQL snapshot 未精确覆盖 M0–M7；
+- 当前远端 CI 未达 8/8，或 MySQL snapshot 未精确覆盖 M0–M7（当前 Run 34129910349 已满足，后续 SHA 必须重验）；
 - 非空升级入口/候选 migration Record 缺失，或试图对 Gate A 使用空库 `initial-migrate`；
 - wallet backfill/reconcile 非零差异，或 Gate A 221 色/图片/商品库存未完成；
 - 微信真机无法通过 HTTPS 或合法域名访问。

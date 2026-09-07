@@ -9,14 +9,15 @@
 2026-09-07 候选覆盖说明：历史 Phase 9.2/9.3/9.4 的勾选项绑定 M0–M2 和旧 SHA，
 只说明当时的流程或基础设施能力，不自动满足当前 M7 RC。审计起点 `c6778e7...` 的
 [Run 34104680282](https://github.com/EVEBios/pinkdooHub/actions/runs/34104680282)
-为 7/8，`backend-mysql-release` 因发布门槛仍停在 M6 而失败；当前候选必须在修复后的
-新 SHA 上完整重跑 8 个 Job。任何标记为“历史”的 `[x]` 都不能用于跳过下面未勾选的
-当前候选项目。
+保留为 7/8 失败记录；修复后的当前 PR head `4d6430c...` 已由
+[Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349)
+在 merge-ref `ccbbe9d...` 的干净 checkout 上完整重跑并取得 8/8。任何标记为“历史”
+的 `[x]` 仍不能用于跳过持久环境、RC 或真机项目。
 
-本地提交 `58d8435...` 已包含 M7 CI gate 修复；提交前同内容 dirty 工作树的一次性
-MySQL 报告完成 0→7、M0–M6→M7 和联合 `21 passed`。由于执行时不是干净 commit 且
-尚无远端 Run，下面的当前 SHA/远端项目继续不勾选。详见
-[M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。
+本地提交 `58d8435...` 包含 M7 CI gate 修复；提交前同内容 dirty 工作树的一次性
+MySQL 报告完成 0→7、M0–M6→M7 和联合 `21 passed`。当前远端 Run 已独立复现
+workflow 覆盖并保存证据，详见
+[M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。
 
 ## 1. Gate A：内部微信测试版
 
@@ -29,8 +30,8 @@ MySQL 报告完成 0→7、M0–M6→M7 和联合 `21 passed`。由于执行时�
 - [ ] Gate A RC 建立前填写计划窗口和当次审批时间；
 - [ ] RC Git SHA 工作树干净，后端/前端/微信版本映射明确；
 - [x] M7 CI gate 修复已形成独立本地提交 `58d8435...`；该项只证明提交边界；
-- [ ] `58d8435...` 或包含同一修复的后续候选已绑定 PR head/merge-ref 和新的 CI Run；
-- [ ] 后端与 `weapp` artifact 均来自同一已通过 CI 的 SHA，并记录 checksum；
+- [x] 包含 `58d8435...` 修复的当前候选已绑定 PR head `4d6430c...`、merge-ref `ccbbe9d...` 和 Run 34129910349；
+- [x] 后端与 `weapp` artifact 均来自同一已通过 Run，并记录 GitHub digest；
 - [ ] OpenAPI 摘要、运行时版本、微信开发者工具/上传工具版本已记录；
 - [ ] 体验版名称、界面和测试说明明确标识“内部测试”，无公开承诺。
 - [x] 备案前预 RC 已绑定 `c4d27a8...`、Node 24.13.0/npm 11.6.2、开发者工具 Stable 2.02.2608060、不可发布 `.test` Origin、97 文件/603,624 bytes、0 source map 和 manifest `aeb81ef...`；该项不替代上面的真实 RC；
@@ -38,13 +39,12 @@ MySQL 报告完成 0→7、M0–M6→M7 和联合 `21 passed`。由于执行时�
 ### 1.2 CI 与代码质量
 
 - [x] 历史 Phase 9.2/9.3：M0–M2 候选曾从干净 checkout 完成 8/8；仅作为流水线基础能力证据；
-- [ ] 当前 M7 候选从同一干净 SHA 完成 8/8；`c6778e7...` / Run 34104680282 只有 7/8，
-  本地 `58d8435...` 尚无远端 Run；
-- [ ] 当前 `backend-sqlite` 完整通过，skip 仅为批准的隔离外部环境门槛，并保存 JUnit；
-- [ ] 当前 `backend-mysql-release` 在专用 MySQL 8.0.46 验证精确 M0–M7、M5→M6→M7 历史重放、M7 单例/默认值/约束/索引和联合 MySQL 门槛；
+- [x] 当前 M7 候选在同一干净 PR checkout 完成 8/8；Run 34129910349 success；
+- [x] 当前 `backend-sqlite` 为 `2000 passed, 2 skipped`，skip 仅为批准的隔离门槛，并保存 JUnit；
+- [x] 当前 `backend-mysql-release` 在专用 MySQL 8.0.46 验证精确 M0–M7、M5→M6→M7 历史重放、M7 单例/默认值/约束/索引和联合 `21 passed`；
 - [ ] Wallet 扩展 MySQL 门槛覆盖并发调账/余额支付/退款、1205/1213 全事务重试、锁序、`EXPLAIN` 与 Inventory 联合回归；
-- [ ] 当前 `frontend-quality` 远端结果覆盖 TypeScript、ESLint、Stylelint、`83 suites / 562 tests` 和 17 项 CI policy；
-- [ ] 当前 `openapi-contract`、`weapp-build`、repository hygiene 与双依赖审计均在同一 SHA 通过；
+- [x] 当前 `frontend-quality` 远端结果覆盖 TypeScript、ESLint、Stylelint、`83 suites / 562 tests` 和 17 项 CI policy；
+- [x] 当前 `openapi-contract`、`weapp-build`、repository hygiene 与双依赖审计均在同一 Run 通过；
 - [x] 本轮完整本地后端结果为 `2000 passed, 23 skipped in 112.25s`；23 项为显式隔离门槛，该项不是远端或 RC 证据；
 - [x] 当前前端本地结果为 `83 suites / 562 tests`；该项不是远端或 RC 证据；
 - [x] Node/npm/Python/Taro 支持版本由仓库和 CI 固定。
@@ -65,7 +65,7 @@ MySQL 报告完成 0→7、M0–M6→M7 和联合 `21 passed`。由于执行时�
 - [x] 历史 M2：空 MySQL 8+ 0→2、M0/M1 代表数据升级、部分失败处置和资源清理曾通过；
 - [x] 历史 M2：持久 Gate A 的代表性 User/Product/图片/Order/Inventory/Audit 非空备份、无端口独立恢复与加密异机副本曾通过；
 - [ ] 写前只读查询并记录 Gate A 当前真实 Aerich 版本、Schema 摘要、数据行数和运行镜像；最后记录为 M2 不能替代查询；
-- [ ] 当前干净提交在 CI MySQL 8.0.46 完成空库 0→7 与 0/1/2/3/4/5/6→7 受支持历史升级，并取得远端 cleanup artifact；本地 dirty-tree 报告已通过但不替代此项；
+- [ ] 当前干净 PR checkout 在 CI MySQL 8.0.46 已完成空库 0→7、M5→M6→M7 workflow 重放、M6/M7 snapshot 与远端 cleanup artifact；但本清单要求的完整 0/1/2/3/4/5/6→7 矩阵仍只有本地一次性报告，尚未由远端 CI 逐场景执行，故保持未勾选；
 - [ ] 非空 Gate A 在停写窗口创建新的 MySQL/图片一致备份，并在独立无端口实例恢复经只读确认的迁移前数据通过（最后历史记录为 M2，不预设当前值）；
 - [ ] 批准的非空升级入口已实现并测试；现有 `initial-migrate` 只接受空库。若只读结果仍为最后留证的 M2，必须使用经 Review 的 M2→M7 入口；当前不存在该入口；
 - [ ] 按只读确认且获批的实际起点升级；若为 M2，依次应用 M3→M4→M5→M6→M7，逐步记录真实 DDL/Aerich 状态，核验 User、Wallet、Payment、Reservation、颜色 Kit、Order、Inventory 与 Audit 数据不漂移；

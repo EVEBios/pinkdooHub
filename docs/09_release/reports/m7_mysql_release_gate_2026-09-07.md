@@ -1,6 +1,6 @@
 # M7 一次性 MySQL 发布门槛报告
 
-> **Result:** PASS（仅本地一次性 MySQL 范围）
+> **Result:** PASS（本地一次性 MySQL 范围；远端后续结果见第 7 节）
 > **Release Decision:** BLOCKED / No-Go
 > **Executed At:** 2026-09-07（Asia/Shanghai）
 > **Branch:** `feature/phase9-ci`
@@ -15,9 +15,10 @@ Runner；当时工作树还包含 sibling agent 的未提交发布文档/本地 
 `3e973dd9a0f7d43f16a32f301981a1b58dfce407db2c7fbcb4d8eda3bfda625c`，复核命令为
 `git diff --no-ext-diff --binary <Execution Base> <Post-run Local Commit> | shasum -a 256`。
 执行者确认最终三组测试后没有再修改这些文件。
-报告编写时 `origin/feature/phase9-ci` 仍指向执行基础 `c6778e7...`，尚无本地提交
-`58d8435...` 的 GitHub Actions 结果。因此本报告不能关闭当前远端 7/8、Gate A
-持久迁移、真实 RC 或真机门槛。
+本节保留报告编写时的历史事实：当时 `origin/feature/phase9-ci` 仍指向执行基础
+`c6778e7...`，尚无本地提交 `58d8435...` 的 GitHub Actions 结果。2026-09-07 后续已将
+包含该修复的候选 head `4d6430c...` 推送，并由 Run 34129910349 取得 8/8；精确远端
+证据见第 7 节。该后续结果仍不能关闭 Gate A 持久迁移、真实 RC 或真机门槛。
 
 报告不包含密码、Token、私钥、带凭据连接串或真实用户数据。
 
@@ -115,10 +116,11 @@ MySQL 瞬态重试集合仍精确为 `{1205, 1213}`。
 本报告足以说明当前 M7 CI/MySQL 改动在一次性 MySQL 8.0.46 上完成了 0→7、M0–M6
 历史基线升级、M6/M7 snapshot 和 21 项联合门槛；它只关闭本地可销毁环境的实现风险。
 
-以下事项仍为 **BLOCKED / NOT RUN**：
+以下事项在本地执行当时仍为 **BLOCKED / NOT RUN**：
 
-- 本地提交 `58d8435...` 尚未 push，未取得同一干净 SHA 的远端 8/8 GitHub Actions
-  和远端 cleanup artifact；既有 Run 34104680282 仍是 7/8 失败记录；
+- 本地提交 `58d8435...` 当时尚未 push，未取得同一干净 SHA 的远端 8/8 GitHub
+  Actions 和远端 cleanup artifact；既有 Run 34104680282 保留为 7/8 失败记录；该项
+  后续已由第 7 节的 Run 34129910349 关闭；
 - Gate A 最后证据为非空 M2，但当前真实 Aerich 状态尚未重新只读查询；仓库没有获批的
   既有库升级入口，且现有 `gatea_operations initial-migrate` 只接受空库。若实际仍为
   M2，M2→M7 的停写、备份/独立恢复、逐步迁移和候选 Record 路径尚不存在；
@@ -129,3 +131,16 @@ MySQL 瞬态重试集合仍精确为 `{1205, 1213}`。
   后台，也未执行 iOS/Android 真机矩阵。
 
 因此 Gate A/Gate B 的最终结论继续为 **No-Go / Not Authorized**。
+
+## 7. 远端后续证据（2026-09-07）
+
+包含本地修复提交及其后续文档/测试数据收口的 PR head
+`4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf` 已推送。GitHub Actions
+[Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 在 PR
+merge-ref `ccbbe9dcb675a99369867814386051befc5922f2` 的干净 checkout 上 8/8 success：
+远端 SQLite 为 `2000 passed, 2 skipped`，MySQL 联合门槛为 `21 passed`，MySQL cleanup
+步骤成功，并保存 7 组带 merge-ref、Run ID 和 GitHub SHA-256 digest 的 artifact。
+
+精确 Job 时间、artifact 名称、大小、digest 与仍未关闭的 Gate A 边界见
+[M7 当前候选远端 CI 报告](m7_remote_ci_2026-09-07.md)。远端 CI 已关闭，但整体发布
+结论仍为 **No-Go / Not Authorized**。

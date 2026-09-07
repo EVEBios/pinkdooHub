@@ -1,17 +1,17 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；current M7 candidate remote gate blocked (7/8)
+> **Status:** Phase 9.2 historical baseline complete；current M7 candidate remote gate passed (8/8)
 > **Last Updated:** 2026-09-07
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [current failed Run 34104680282](https://github.com/EVEBios/pinkdooHub/actions/runs/34104680282)）
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [current successful Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
 9.2.1–9.2.6 的历史基线已完成：当时 `.github/workflows/ci.yml` 的 `backend-sqlite`、
 `backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、
 `repository-hygiene`、`python-dependency-audit` 和 `npm-dependency-audit` 已在真实
-Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job，但仓库已经加入
-Wallet/Reservation/颜色 Kit/M7 后续增量；审计起点 `c6778e7...` 的远端 Run 只有 7/8。
-历史结论只关闭当时 Phase 9.2 的 CI 与
+Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job；加入 Wallet、
+Reservation、颜色 Kit 与 M7 后，当前 head `4d6430c...` 的 Run 34129910349 已重新取得
+8/8。历史结论只关闭当时 Phase 9.2 的 CI 与
 可重复构建范围，不替代 9.3 的生产相似演练、9.4 的微信真机 RC 或后续模块的重新留证。
 
 ## 0. Phase 9.2.6 远端证据
@@ -62,6 +62,12 @@ Wallet/Reservation/颜色 Kit/M7 后续增量；审计起点 `c6778e7...` 的远
   M6/M7 snapshot 与联合 MySQL `21 passed`。运行时不是干净 SHA，且远端尚未重跑；
   精确结果、第一次测试污染和 cleanup checker 的 `--rm` inspect 假失败见
   [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。
+- 当前 PR head `4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf` 已推送；PR merge-ref
+  `ccbbe9dcb675a99369867814386051befc5922f2` 的
+  [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 为
+  8/8 success。远端 SQLite 为 `2000 passed, 2 skipped`，MySQL 为 `21 passed`，7 组
+  artifact 均绑定 merge-ref/Run ID 并有 GitHub digest。详见
+  [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。
 
 ## 1. 全局规则
 
@@ -98,8 +104,9 @@ python -m pytest tests/ -q --ignore=tests/inventory/mysql --ignore=tests/reserva
 ```
 
 本轮本地普通基线为 `2000 passed, 23 skipped in 112.25s`；23 项均为需要显式隔离
-外部环境的门槛。历史 16 项 Inventory + Reservation MySQL-only 只绑定 M5 Schema；
-M7 的本地联合 MySQL 结果为 21 项，仍不替代远端 JUnit。回环端口发布探测已在本地
+外部环境的门槛。当前远端 Job 显式忽略两个 MySQL 目录后为 `2000 passed, 2 skipped
+in 736.46s` 并保存 JUnit。历史 16 项 Inventory + Reservation MySQL-only 只绑定 M5
+Schema；当前远端 M7 联合 MySQL 结果为 `21 passed`。回环端口发布探测已在本地
 完整主套件中直接通过，Linux CI 也应直接执行。测试数量变化不是失败本身，但必须解释
 增删原因；不能把真实失败改成 skip 来维持数字。
 
@@ -261,11 +268,11 @@ Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装�
 - [x] warning 策略为零项白名单，任何未批准 warning 都阻断；
 - [x] 没有配置自动迁移持久数据库、自动提审或自动发布。
 
-当前 M7 候选必须重新关闭：
+当前 M7 候选重新关闭结果：
 
-- [ ] 修复后的同一干净 SHA 完成八类 Job 8/8，保存新的 Run 与 artifact；
-- [ ] MySQL Job 在远端精确覆盖 M0–M7、M5→M6→M7 历史重放、M7 snapshot、联合
-  JUnit 和可复核 cleanup；本地提交前 dirty-tree 结果已记录，但不勾选远端门槛；
+- [x] 修复后的同一干净 PR checkout 完成八类 Job 8/8，保存 Run 34129910349 与 7 组 artifact；
+- [x] MySQL Job 在远端精确覆盖 M0–M7、M5→M6→M7 历史重放、M7 snapshot、联合
+  `21 passed` JUnit 和成功 cleanup 步骤；
 - [ ] Wallet 扩展 MySQL 门槛独立完成，不能由 M7 migration gate 代替；
-- [ ] 当前前端/OpenAPI/微信 production artifact、依赖审计与仓库卫生都绑定上述新 SHA；
+- [x] 当前前端/OpenAPI/微信 production artifact、依赖审计与仓库卫生都绑定上述 Run；
 - [ ] Gate A 持久升级、真实 RC、微信后台和真机继续由后续 Gate 单独授权，CI 不自动执行。
