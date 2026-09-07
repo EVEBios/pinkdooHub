@@ -21,11 +21,11 @@ import subprocess
 import sys
 from typing import Any, Mapping, Sequence
 
-from app.tasks.gatea_migrate_step import APPROVED_MIGRATIONS
 from scripts.release import gatea_backup as backup
 from scripts.release import gatea_operations as gatea
 
 
+APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M7_CHAIN
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SUPPORTED_SOURCE_VERSION = 2

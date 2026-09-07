@@ -151,6 +151,10 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
 这些模块不自行验证目标主机、停写、Backup/Restore Record 或候选镜像身份，因此
 不得脱离 `scripts.release.gatea_upgrade` 单独在持久环境运行。
 
+宿主机上的 `scripts.release.gatea_*` 编排入口只能依赖 Python 标准库和 Docker CLI；
+不得在模块导入阶段加载 Aerich、Tortoise 或其他应用 Runtime 依赖。迁移、Wallet 与
+MARD 任务只允许通过目标 App 镜像内的 `app.tasks.*` 执行。
+
 ### 既有 M2 数据库升级
 
 `gatea_upgrade.py` 是当前唯一批准的既有库升级入口，只接受精确 M0–M2 Aerich 链，

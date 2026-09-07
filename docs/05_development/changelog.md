@@ -4,6 +4,16 @@
 
 ---
 
+## Gate A 升级宿主依赖收口（真实主机发现，2026-09-08）
+
+- 真实 Gate A 在成功完成 M2 只读采样、新 Backup 与独立 Restore 后，upgrade plan 于
+  导入阶段发现宿主仅有标准库 Python，而编排脚本为复用迁移常量导入了镜像内
+  `app.tasks.gatea_migrate_step`，间接要求宿主安装 Aerich。失败发生在 plan 阶段，未停
+  服务、未迁移；配置已原子恢复为运行中的 M2 镜像并复核四项 Healthy、数据库零漂移。
+- `gatea_upgrade` 改为复用宿主 `gatea_operations` 已冻结的 M0–M7 清单，不再导入应用
+  Runtime；新增 `python -S` 回归，固定宿主编排只依赖标准库，Aerich/Tortoise 继续只
+  存在于目标 App 镜像。修复需形成新 SHA、远端 8/8 和匹配 amd64 镜像后再继续执行。
+
 ## Gate A 升级后代表性数据证据链（本地候选，2026-09-07）
 
 - 既有库升级成功 Record 新增并强制验证 `source_candidate_sha` 与

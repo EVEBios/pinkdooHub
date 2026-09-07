@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -18,6 +19,18 @@ SOURCE_SHA = "a" * 40
 TARGET_SHA = "b" * 40
 BACKUP_ID = "20260907t120000z"
 MANIFEST_SHA = "c" * 64
+
+
+def test_upgrade_module_imports_with_standard_library_only() -> None:
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", "import scripts.release.gatea_upgrade"],
+        cwd=Path(__file__).resolve().parents[2],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def _values(backup_root: Path) -> dict[str, str]:
