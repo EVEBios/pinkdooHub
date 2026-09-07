@@ -50,7 +50,8 @@ jobs:
           mkdir -p artifacts
           python -m pytest tests/ \
             --ignore=tests/inventory/mysql \
-            --ignore=tests/reservation/mysql -q \
+            --ignore=tests/reservation/mysql \
+            --ignore=tests/wallet/mysql -q \
             --junitxml=artifacts/backend-sqlite.xml
 
       - name: Save backend test report
@@ -137,7 +138,7 @@ jobs:
       - name: Run real MySQL release gates
         run: |
           python -m pytest \
-            tests/inventory/mysql tests/reservation/mysql -q \
+            tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql -q \
             --junitxml=artifacts/backend-mysql-release.xml
 
       - name: Destroy isolated MySQL schema and service

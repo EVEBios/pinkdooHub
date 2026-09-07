@@ -796,6 +796,8 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 
 `wallet_accounts.user_id`、`payment_settlements.payment_id/order_id` 与 `refunds.order_id/settlement_id` 已由 UNIQUE 约束提供索引，不重复创建普通索引。
 
+2026-09-07 的一次性 MySQL 8.0.46 扩展门槛以 2,000 条合法 WalletTransaction 与 2,000 条 Payment 样本执行 `ANALYZE TABLE` 后，`EXPLAIN` 确认：`wallet_accounts.user_id` owner 锁命中唯一索引，钱包/Payment 幂等查询分别命中 `uidx_wallet_transaction_idempotency` / `uidx_payment_idempotency`，钱包流水分页命中 `idx_wallet_transaction_wallet_created_id`，用户支付分页命中 `idx_payment_user_created_id`。因此当前无需新增索引或迁移；该证据尚未应用 Gate A 或任何持久数据库。
+
 #### store_business_days
 
 | # | 查询 | 索引 |

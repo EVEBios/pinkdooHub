@@ -52,7 +52,7 @@ python -m pytest tests/product/repositories/ -q
 python -m pytest tests/common/ tests/audit/ tests/users/ -q
 ```
 
-`tests/inventory/mysql/` 与 `tests/reservation/mysql/` 默认跳过，避免测试误连开发机现有 MySQL。仅在已经创建并迁移的隔离实例上显式启用；两者共用受保护的测试连接配置，fixture 会拒绝非回环地址、3306 和不符合专用前缀的 Schema：
+`tests/inventory/mysql/`、`tests/reservation/mysql/` 与 `tests/wallet/mysql/` 默认跳过，避免测试误连开发机现有 MySQL。仅在已经创建并迁移的隔离实例上显式启用；三者共用受保护的测试连接配置，fixture 会拒绝非回环地址、3306 和不符合专用前缀的 Schema：
 
 ```powershell
 $env:INVENTORY_MYSQL_TEST_ENABLED = "1"
@@ -61,11 +61,11 @@ $env:INVENTORY_MYSQL_TEST_PORT = "13306"
 $env:INVENTORY_MYSQL_TEST_DB = "pinkdoohub_inventory_4311_ci"
 $env:INVENTORY_MYSQL_TEST_USER = "root"
 $env:INVENTORY_MYSQL_TEST_PASSWORD = ""
-python -m pytest tests/inventory/mysql tests/reservation/mysql -q
+python -m pytest tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql -q
 ```
 
 该命令不会创建 Schema 或执行迁移。必须先按数据库迁移流程在一次性实例中执行真实 Aerich 0→6；测试清空专用 Schema 的用例业务数据，但保留 `aerich` 版本记录和 M6 迁移产生的 221 条 `bead_colors` 占位槽，避免把运行时补种误当成迁移证据。
 
-GitHub Actions 的 `backend-mysql-release` 会完成上述一次性实例生命周期。为同时证明空库 0→6 与历史 fixed 兼容，它先完整升级到 M6，再用 `aerich --app models downgrade -v 6 --yes` 只回退最后一条迁移，在 M5 形状下写入受控的非零库存 fixed Kit，随后重新升级 M6。`scripts/ci/check_mysql_gate.py` 最终记录 MySQL 8.0.46、七条 Aerich 版本、221 槽和历史 fixed 兼容证据，并在 `always()` 清理路径删除专用 Schema、停止准确的 service container、确认容器不再运行和 13306 关闭。禁止为方便本地运行而放宽 fixture、改用 3306、`--fake`、`init-db` 或应用自动建表。
+GitHub Actions 的 `backend-mysql-release` 会完成上述一次性实例生命周期。为同时证明空库 0→7、历史 fixed 兼容和 M7 设置升级，它会执行经审查的 M6/M7 回退、历史数据种入与重新升级。`scripts/ci/check_mysql_gate.py` 最终记录 MySQL 8.0.46、八条 Aerich 版本、221 槽、M7 单例和历史兼容证据；联合 pytest 还覆盖资金并发、真实 1205、1213 整事务重试、Wallet/Inventory 锁等待及关键 `EXPLAIN`。`always()` 清理路径删除专用 Schema、停止准确的 service container、确认容器不再运行和 13306 关闭。禁止为方便本地运行而放宽 fixture、改用 3306、`--fake`、`init-db` 或应用自动建表。
 
 新增测试时，优先放入对应领域和被测层；只有真正跨领域的基础能力才放入 `common/`。全局 fixture 留在根 `conftest.py`，仅供多个测试文件复用的数据构造器放入 `support/`。

@@ -47,8 +47,9 @@ Reservation、颜色 Kit 与 M7 后，当前 head `4d6430c...` 的 Run 341299103
   snapshot 精确接受 M0–M7，核验 `reservation_settings` 默认周一、单例 CHECK/UNIQUE、
   已有 Reservation/StoreBusinessDay/M5 历史数据不漂移。M7 固定店休更换的事务、
   稳定锁序、批量取消、1205/1213 与索引也必须在一次性 MySQL 8.0.46 留证。
-- 本轮后端完整本地基线为 `2000 passed, 23 skipped in 112.25s`；23 项为需要显式
-  隔离外部环境的门槛。该结果是本地候选证据，不是远端 `backend-sqlite` JUnit。
+- 当前后端完整本地基线为 `2000 passed, 30 skipped in 113.05s`；30 项为三类需要显式
+  MySQL 环境的门槛，已由一次性 MySQL 联合 `30 passed` 覆盖。该结果是本地候选证据，
+  不是远端 `backend-sqlite` JUnit。
 - 当前前端为 `83 suites / 562 tests`，已包含 M7 固定店休、代客钱包订单多颜色请求/
   布局和会员缺省头像居中回归；TypeScript、ESLint、Stylelint 及 17 项 CI policy
   本轮本地通过。当前 OpenAPI 仍须由新的远端 `openapi-contract` Job 绑定候选 SHA。
@@ -85,7 +86,7 @@ Reservation、颜色 Kit 与 M7 后，当前 head `4d6430c...` 的 Run 341299103
 | Job | 服务 | 关键命令/动作 | 阻断规则 | Artifact/证据 | 负责人 |
 |-----|------|---------------|----------|---------------|--------|
 | `backend-sqlite` | 隔离 Redis 或 fakeredis | 安装 Python；`pytest tests/ -q` | 任一失败；除已批准 MySQL-only 外出现未知 skip | pytest 日志/JUnit | Yijie Shen |
-| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→7；M5 fixed→M6→M7 历史重放；M7 settings snapshot；联合运行 `tests/inventory/mysql tests/reservation/mysql` | 迁移、版本、历史兼容、221 槽、M7 单例/默认值、FK/约束/索引、并发、1205/1213、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6/M7 快照、pytest/JUnit、cleanup | Yijie Shen |
+| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→7；M5 fixed→M6→M7 历史重放；M7 settings snapshot；联合运行 `tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql` | 迁移、版本、历史兼容、221 槽、M7 单例/默认值、FK/约束/索引、库存/预约/资金并发、1205/1213、跨域锁序、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6/M7 快照、pytest/JUnit、cleanup | Yijie Shen |
 | `frontend-quality` | 无 | `npm ci --legacy-peer-deps`；typecheck；ESLint；Stylelint；Jest；CI policy tests | 安装/检查/测试任一失败；新增未批准 warning | Jest JSON/log、版本清单 | Yijie Shen |
 | `openapi-contract` | 无外部 DB/Redis | 设置 UTF-8；真实导出到临时文件；比较固定 JSON；生成类型 `--check` | JSON/类型漂移、临时文件残留、CLI smoke 失败 | diff、paths/schemas 摘要 | Yijie Shen |
 | `weapp-build` | 无 | 注入受控 HTTPS Origin；`npm run build:weapp`；配置/包体/Secret 扫描 | 构建失败、非预期/占位/本机 Origin、Secret、微信包体越界、未批准 warning；保留 `.test` Origin 若被标成可发布也必须失败 | `dist/weapp`、manifest、checksum、构建日志 | Yijie Shen |
@@ -100,13 +101,14 @@ Reservation、颜色 Kit 与 M7 后，当前 head `4d6430c...` 的 Run 341299103
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip check
-python -m pytest tests/ -q --ignore=tests/inventory/mysql --ignore=tests/reservation/mysql
+python -m pytest tests/ -q --ignore=tests/inventory/mysql --ignore=tests/reservation/mysql --ignore=tests/wallet/mysql
 ```
 
-本轮本地普通基线为 `2000 passed, 23 skipped in 112.25s`；23 项均为需要显式隔离
-外部环境的门槛。当前远端 Job 显式忽略两个 MySQL 目录后为 `2000 passed, 2 skipped
-in 736.46s` 并保存 JUnit。历史 16 项 Inventory + Reservation MySQL-only 只绑定 M5
-Schema；当前远端 M7 联合 MySQL 结果为 `21 passed`。回环端口发布探测已在本地
+当前本地普通基线为 `2000 passed, 30 skipped in 113.05s`；30 项均为需要显式 MySQL
+环境的门槛，并已由一次性 MySQL 联合 `30 passed` 覆盖。旧远端 Job 显式忽略两个
+MySQL 目录后为 `2000 passed, 2 skipped in 736.46s` 并保存 JUnit；新的候选改为显式
+忽略三个 MySQL 目录，尚待远端复现。历史 16 项 Inventory + Reservation MySQL-only
+只绑定 M5 Schema；旧远端 M7 联合 MySQL 结果为 `21 passed`。回环端口发布探测已在本地
 完整主套件中直接通过，Linux CI 也应直接执行。测试数量变化不是失败本身，但必须解释
 增删原因；不能把真实失败改成 skip 来维持数字。
 
@@ -158,10 +160,14 @@ MySQL 报告已通过上述迁移、snapshot、历史矩阵和 21 项联合门�
 cleanup artifact；不能沿用 M5 的 `16 passed`、本地 SQLite、旧 8/8 或本地 checker
 结果替代。
 
-Wallet 的 MySQL v1 关键闭环已有单独一次性 `2 passed` 历史结果，但当前 workflow 仍
-不等于已完成扩展资金门槛。并发调账/余额支付/退款、1205/1213 全事务重试、跨资金/
-库存锁序与关键 `EXPLAIN` 必须在 Gate A 前另行完成；即使本 Job 修复为 8/8，也不能
-把这项未覆盖范围标记为通过。
+Wallet 的 MySQL v1 关键闭环原有单独一次性 `2 passed` 历史结果。2026-09-07 的本地
+候选已将 `tests/wallet/mysql` 接入同一 Job，并在一次性 MySQL 8.0.46 完成 Wallet
+`9 passed` 与 Inventory + Reservation + Wallet `30 passed`：覆盖并发调账/余额支付/
+退款、真实 1205、首轮已写后的 1213 整事务回滚重试、可观测资金/库存锁等待和关键
+`EXPLAIN`。精确本地证据见
+[Wallet 扩展 MySQL 报告](reports/wallet_mysql_release_gate_2026-09-07.md)。该 workflow
+变更尚未在新的干净 SHA 上远端复现；远端 JUnit/cleanup artifact 仍是后续 CI 证据，
+不得复用旧 Run 34129910349 的 `21 passed` 声称新门槛已远端通过。
 
 ### 3.3 Frontend Quality
 
@@ -273,6 +279,7 @@ Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装�
 - [x] 修复后的同一干净 PR checkout 完成八类 Job 8/8，保存 Run 34129910349 与 7 组 artifact；
 - [x] MySQL Job 在远端精确覆盖 M0–M7、M5→M6→M7 历史重放、M7 snapshot、联合
   `21 passed` JUnit 和成功 cleanup 步骤；
-- [ ] Wallet 扩展 MySQL 门槛独立完成，不能由 M7 migration gate 代替；
+- [x] Wallet 扩展 MySQL 门槛已独立完成本地候选验证：Wallet `9 passed`、三域联合 `30 passed`；
+- [ ] Wallet-expanded workflow 尚待新干净 SHA 的远端 Runner 复现并保存 JUnit/cleanup artifact；
 - [x] 当前前端/OpenAPI/微信 production artifact、依赖审计与仓库卫生都绑定上述 Run；
 - [ ] Gate A 持久升级、真实 RC、微信后台和真机继续由后续 Gate 单独授权，CI 不自动执行。

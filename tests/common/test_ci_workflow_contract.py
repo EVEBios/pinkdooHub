@@ -91,7 +91,11 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     assert "python scripts/ci/check_mysql_gate.py snapshot" in workflow
     assert "--ignore=tests/inventory/mysql" in workflow
     assert "--ignore=tests/reservation/mysql" in workflow
-    assert "tests/inventory/mysql tests/reservation/mysql -q" in workflow
+    assert "--ignore=tests/wallet/mysql" in workflow
+    assert (
+        "tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql -q"
+        in workflow
+    )
     assert "--fake" not in workflow
     assert "init-db" not in workflow
     assert "generate_schemas" not in workflow

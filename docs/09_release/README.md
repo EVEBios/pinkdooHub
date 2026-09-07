@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** M7 当前候选远端 CI 已通过；持久升级、Wallet、色板、RC 与外部条件仍阻断 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** Wallet 扩展 MySQL 本地候选已通过；新远端 CI、持久升级/回填、色板、RC 与外部条件仍阻断 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-07
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -29,7 +29,8 @@ SQLite `2000 passed, 2 skipped`、MySQL `21 passed`，完整身份、Job 与 art
 
 当前仓库功能基线已经包含：M4 Wallet/Payment/Refund、M5 Reservation N1、M6
 自选颜色 Kit、M7 可配置固定店休、代客钱包订单多颜色界面和会员缺省头像居中修复。
-本轮完整本地回归为后端 `2000 passed, 23 skipped in 112.25s`、前端
+当前完整本地回归为后端 `2000 passed, 30 skipped in 113.05s`；30 项为三类显式
+MySQL-only 门槛，已由一次性 MySQL 联合 `30 passed` 覆盖。既有前端基线为
 `83 suites / 562 tests`，且前端 typecheck、ESLint、Stylelint 和 17 项 CI policy
 均通过。这些结果只绑定本地候选，不是远端 Runner、Gate A 或 RC 证据。
 当前微信 production-mode 代码检查产物为 141 个文件、主包 649,739 bytes、分包
@@ -38,10 +39,17 @@ SQLite `2000 passed, 2 skipped`、MySQL `21 passed`，完整身份、Job 与 art
 `release_eligible=false`。这些数值是本地候选证据，不是远端 8/8、真实 HTTPS RC、
 微信体验版或真机证据。
 
+Wallet 扩展门槛随后在一次性 MySQL 8.0.46 完成专项 `9 passed` 与 Inventory +
+Reservation + Wallet 联合 `30 passed`，并已接入本地候选 workflow；并发调账/余额支付/
+退款、真实 1205、1213 整事务重试、可观测跨资金库存锁等待和关键 `EXPLAIN` 均通过。
+容器/端口已清理，详见
+[Wallet 扩展 MySQL 报告](reports/wallet_mysql_release_gate_2026-09-07.md)。该变更尚未 push，
+不能用旧 Run 34129910349 代替新远端证据。
+
 发布状态必须继续按以下边界解释：
 
-- M4 已有仓库实现与有限的一次性 MySQL 关键闭环证据，但扩展并发、1205/1213、
-  `EXPLAIN` 和资金/库存联合门槛尚未完成；Gate A 也未执行钱包 backfill/reconcile。
+- M4 已有仓库实现与扩展一次性 MySQL 候选证据；新 workflow 尚待远端干净 SHA 复现，
+  Gate A 仍未执行 M4、钱包 backfill、legacy settlement backfill 或 reconcile。
 - M5 曾在一次性 MySQL 8.0.46 完成 0→5 与 16 项 Inventory + Reservation 门槛，
   但未应用 Gate A 持久库。
 - M6 的本地 SQLite 升级、221 色来源清单和确定性图片导入仅属于开发数据；Gate A

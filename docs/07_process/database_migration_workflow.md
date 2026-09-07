@@ -254,7 +254,7 @@ WHERE (pk.stock > 0 AND (
 
 `4_20260905162243_add_wallet_payment_refund.py` 是 MySQL 8+ 离线生成并人工 Review 的资金增量迁移。它创建 `wallet_accounts`、`recharge_orders`、`payments`、`payment_settlements`、`refunds`、`wallet_transactions`，并把 InventoryTransaction 的数据库注释补充为包含 `order_refund_restore`。`RUN_IN_TRANSACTION=False` 明确承认 MySQL DDL 隐式提交。
 
-截至 2026-09-05，M4 已在一次性 MySQL 8.0.46 容器完成 Aerich 0→4，钱包专项 `2 passed`，覆盖关键资金/库存闭环及四个资金幂等列的 `ascii_bin`/大小写 key 独立提交，但没有通过 Aerich 应用到本地持久 `db.sqlite3`、Gate A、共享、预发布或生产数据库。development 的 `generate_schemas` 会在应用启动或热重载时为 SQLite 自动补建缺失表，却不会写入 Aerich 版本记录；因此“表已存在”不等于 M4 已迁移，也不能作为可追溯的发布证据。既有 Phase 4.3.11、Phase 9.2/9.3 的 0→2 或 0→3 证据不能替代 M4 验证；当前 M4 证据也不替代钱包专项并发、1205/1213 与 EXPLAIN 扩展门槛。
+截至 2026-09-07，M4 已在一次性 MySQL 8.0.46 完成 Wallet `9 passed` 与 Inventory + Reservation + Wallet `30 passed`，覆盖关键资金/库存闭环、四个资金幂等列的 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务回滚重试、可观测资金库存锁等待和关键 `EXPLAIN`。新的 Wallet-expanded workflow 尚待远端干净 SHA 复现；M4 仍没有通过 Aerich 应用到本地持久 `db.sqlite3`、Gate A、共享、预发布或生产数据库。development 的 `generate_schemas` 会在应用启动或热重载时为 SQLite 自动补建缺失表，却不会写入 Aerich 版本记录；因此“表已存在”不等于 M4 已迁移，也不能作为可追溯的发布证据。
 
 ### 9.1 执行前硬门槛
 
@@ -362,7 +362,14 @@ MySQL M4 不得应用到 SQLite。development 启动或热重载调用 `generate
 - 验证：`tests/wallet/mysql/test_wallet_mysql_flow.py` 在迁移后的真实 asyncmy/MySQL 上 `2 passed`；一项完成 ADMIN 正向调账、ADMIN+ 代客钱包 Kit 订单、订单直接 PAID、钱包/库存扣减、PAID 全额退款、钱包/库存恢复及退款幂等重放，最终 Wallet/Inventory 流水、Payment、Settlement、Refund 和四条 Audit 数量/类型一致；另一项确认四个资金幂等列均为 `ascii_bin`，并证明仅大小写不同的合法 ASCII key 分别提交且不被误判为重放。
 - 安全：fixture 只有在 `WALLET_MYSQL_TEST_ENABLED=1` 时运行，并拒绝非 `127.0.0.1`、默认 3306、非法端口和非专用 Schema 前缀；测试前仅清空已验证专用 Schema 的业务表，保留 Aerich 版本链。
 - 清理：容器停止后由 `--rm` 自动删除，`docker ps` 复核无匹配；没有读取或修改本地持久 `db.sqlite3`、Gate A、共享、预发布或生产数据库。
-- 证据边界：本次证明 M4 可在真实 MySQL 8.0.46 执行、关键单链路原子闭环成立且四个资金幂等列的 `ascii_bin` 行为正确；尚未覆盖钱包专项并发竞争、真实 1205/1213 重试和资金查询 EXPLAIN，生产启用前仍须完成 §9.5 对应扩展门槛。
+- 证据边界：本节记录 2026-09-05 当时的 M4 单链路与 `ascii_bin` 基线；当时尚未覆盖的钱包专项并发、真实 1205/1213 与资金查询 EXPLAIN 已由后续 §9.10 关闭。M4 持久应用、backfill/reconcile 和生产启用仍不在本节证据内。
+
+### 9.10 Wallet 扩展 MySQL 门槛（2026-09-07）
+
+- 环境：一次性 `mysql:8.0.46`、回环 `127.0.0.1:13316`，分别使用 Wallet 专用 Schema 与 CI 冻结 `pinkdoohub_inventory_4311_ci`，均真实执行 Aerich M0→M7。
+- 验证：Wallet 专项 `9 passed in 4.35s`，Inventory + Reservation + Wallet 联合 `30 passed in 13.33s`。覆盖并发不同/相同 key 调账、并发余额支付与退款只提交一次、真实 1205 后全新事务重试、首轮写后注入 1213 的完整回滚重试、`performance_schema.data_lock_waits` 可观测资金/库存等待，以及五个冻结资金索引的 `EXPLAIN`。
+- CI：`backend-mysql-release` 候选加入 `tests/wallet/mysql`，SQLite Job 显式忽略该目录；Wallet fixture 可复用统一受保护的 `INVENTORY_MYSQL_TEST_*`，仍拒绝远端地址、3306 和非专用 Schema。
+- 清理与边界：任务容器精确停止并由 `--rm` 删除，13316 已释放；未访问任何持久数据库。完整记录见 `docs/09_release/reports/wallet_mysql_release_gate_2026-09-07.md`。本地候选尚未 push/远端复现，且不替代 M4 持久迁移、两个 backfill、reconcile 或生产开关授权。
 
 ### 9.9 M4 资金幂等键排序规则复验（2026-09-05）
 

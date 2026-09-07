@@ -4,7 +4,7 @@
 >
 > **Status:** Implemented in repository；M4 not applied to persistent databases；WeChat Provider disabled
 >
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-07
 
 ---
 
@@ -24,7 +24,7 @@
 - 用户取消与余额支付、管理端完成与退款属于互斥命令；客户端从确认弹窗开始同步加锁，任一请求处于提交中或结果未知时冻结另一命令，并以重新读取的 Order 与资金事实收敛状态。该 UI 门禁不替代服务端行锁、状态校验和唯一约束。
 - 无请求体端点会拒绝任何 body，包括 `{}`。
 - 响应使用项目统一信封；下文只展示 `data`。
-- M4 已在一次性 `mysql:8.0.46` 容器真实执行 Aerich 0→4，MySQL 钱包专项 `2 passed`，覆盖关键资金闭环及四个资金幂等列 `ascii_bin`/大小写 key 独立提交；容器已清理且未触碰持久库。该证据不覆盖钱包专项并发、1205/1213 或 EXPLAIN 扩展门槛。
+- 一次性 MySQL 8.0.46 已完成 Wallet `9 passed` 与三域联合 `30 passed`，覆盖关键资金闭环、四个资金幂等列 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务重试、资金库存锁等待与关键 `EXPLAIN`；容器已清理且未触碰持久库。新的 Wallet-expanded workflow 尚待远端干净 SHA 复现。
 
 ## 2. 路由总览
 
@@ -436,3 +436,7 @@ python -m app.tasks.wallet_reconcile
 - wallet backfill 默认只预览，并输出本次冻结上界 `through_user_id`；apply 必须显式传入预览得到的 `--through-user-id N`，缺少时不连库直接拒绝。每个写批次在独立事务内按 User ID 升序锁定候选 User，锁后复验 `role=user` 且 `status=normal/disabled`，再重新检查钱包存在性，只为仍合格且仍缺失者创建 `0.00` WalletAccount。DELETED/staff 或已有钱包者跳过，且不生成零元流水。apply 后必须以同一 `through_user_id` 复查 `would_create=0`。
 - reconcile 全程只读：按钱包 ID 及流水 `created_at ASC, id ASC` 稳定扫描，除核对 WalletAccount.balance 与 WalletTransaction 净额外，还检查非零变化、单行余额算术与范围、相邻余额链、末条余额，以及无流水钱包只能为 `0.00`。摘要要求 `mismatches=0 violations=0`；任一违规都退出非零，绝不自动改账、删除坏流水或补造流水。
 - 这些命令都不是 Web API，也不替代迁移授权、备份、停写窗口、执行后 SQL 核验和真实 MySQL 发布门槛。应用模式必须分别复用预览输出的 `through_user_id` 与 `through_order_id`，且不得与新旧应用的 User/Order/Payment 写并行。
+
+## 11. 发布验证状态
+
+2026-09-07 已在一次性 MySQL 8.0.46 完成 Wallet 专项 `9 passed` 和 Inventory + Reservation + Wallet 联合 `30 passed`，覆盖并发调账、余额支付、退款、真实 1205、模拟 1213 整事务重试、Wallet/Inventory 行锁等待及关键资金查询 `EXPLAIN`。CI 候选已把 `tests/wallet/mysql` 接入统一 `backend-mysql-release` Job；在新的干净 SHA 远端复现前，本结果只属于本地候选证据。API 请求/响应、错误码与数据模型没有因该门槛发生变化；M4、两个历史 backfill、reconcile 和生产资金开关仍未应用任何持久环境。

@@ -40,7 +40,7 @@ M6 在不破坏既有 Experience 与 `fixed` Kit 的前提下增加 `color_selec
 
 ### 2.2 明确不在本阶段
 
-- Wallet/Payment/Refund 新增资金路径的钱包专项并发、真实 1205/1213 与 EXPLAIN 扩展门槛；旧 Inventory Phase 4.3.11 门槛已通过，但不能替代该新增验证。
+- Wallet/Payment/Refund 的持久 M4 应用、历史 backfill/reconcile、生产开关与真实微信 Provider；资金路径的扩展并发、1205/1213、锁序与 EXPLAIN 仓库门槛已于 2026-09-07 在一次性 MySQL 8.0.46 通过，但不等于目标环境已启用。
 - 真实微信下单、支付通知、查单、关单、退款和对账；当前微信路径稳定 503 且零写入。
 - 超时自动取消、已支付订单取消、部分退款和用户自助退款。
 - 订单删除、订单修改、后台任意状态设置。

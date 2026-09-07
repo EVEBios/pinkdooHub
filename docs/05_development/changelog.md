@@ -4,6 +4,15 @@
 
 ---
 
+## Wallet 扩展 MySQL 发布门槛（本地候选，2026-09-07）
+
+- `backend-mysql-release` 现将 `tests/wallet/mysql` 与既有 Inventory/Reservation 门槛放在同一个 MySQL 8.0.46、同一 M0→M7 Schema 中执行；SQLite Job 显式忽略三类 MySQL-only 目录，CI 契约测试同步冻结该边界。
+- Wallet 专项从 2 项扩为 9 项：覆盖并发不同 key 调账无丢失、同 key 调账重放、并发余额支付只扣一次、并发退款只退款/恢复一次、真实 InnoDB 1205 后新事务重试、首轮已写资金与库存后模拟 1213 的整事务回滚重试，以及 Inventory 调账先持有 Kit 行锁时退款产生可观测 `performance_schema.data_lock_waits`、释放后双方无锁反转完成。
+- `EXPLAIN` 使用 2,000 条合法 WalletTransaction 与 2,000 条 Payment 基数样本，确认钱包 owner 锁、资金幂等查询、钱包流水分页、支付幂等查询和用户支付分页分别命中冻结唯一/组合索引；既有 `ascii_bin` 大小写敏感回归继续保留。
+- 一次性 `mysql:8.0.46` 在 `127.0.0.1:13316` 的专用 Schema 上先完成 Wallet `9 passed in 4.35s`，再以 CI 统一环境变量完成 Inventory + Reservation + Wallet `30 passed in 13.33s`；夹具收口为保留 M6/M7 迁移证据后最终联合复跑 `30 passed in 13.21s`。两次任务容器均已停止并由 `--rm` 删除，13316 已释放；未访问 3306，未修改本地持久 `db.sqlite3`、Gate A、共享或生产数据库。
+- 提交前 Wallet/CI 契约专项 `164 passed in 4.38s`，完整后端 `2000 passed, 30 skipped in 113.05s`；30 项 skip 全部来自三类显式 MySQL-only 门槛，已由上述真实联合 `30 passed` 覆盖。`compileall` 与 `git diff --check` 通过。
+- R-029 的仓库实现与本地候选证据已关闭；本次工作尚未 push，新的 Wallet-expanded workflow 仍需在远端干净 SHA 复现并保存 JUnit/cleanup artifact。发布状态继续 **No-Go**：M4 持久迁移、两个 backfill、reconcile、Gate A 非空升级入口、MARD 持久发布、真实 RC/Origin/真机均未完成。
+
 ## M7 当前候选远端 CI 8/8 收口（2026-09-07）
 
 - `feature/phase9-ci` 当前 PR head `4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf` 已推送；PR #2 的 merge-ref `ccbbe9dcb675a99369867814386051befc5922f2` 在 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 完成 8/8 success。
