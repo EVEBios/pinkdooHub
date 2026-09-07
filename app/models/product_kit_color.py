@@ -39,11 +39,11 @@ class ProductKitColor(BaseModel):
         unique_together = (("product", "bead_color"),)
         indexes = [
             Index(
-                fields=("product", "is_enabled"),
+                fields=("product_id", "is_enabled"),
                 name="idx_product_kit_colors_product_enabled",
             ),
             Index(
-                fields=("bead_color", "is_enabled"),
+                fields=("bead_color_id", "is_enabled"),
                 name="idx_product_kit_colors_color_enabled",
             ),
         ]

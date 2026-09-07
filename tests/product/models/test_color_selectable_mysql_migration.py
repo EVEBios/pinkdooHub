@@ -5,6 +5,7 @@ from pathlib import Path
 from types import ModuleType
 
 from aerich.utils import decompress_dict
+from tortoise import connections
 
 
 def _load_migration() -> ModuleType:
@@ -100,3 +101,29 @@ def test_m6_models_state_contains_complete_cross_module_shape() -> None:
         for field in state["models.InventoryTransaction"]["data_fields"]
     }
     assert "kit_color_id" in inventory_fields
+
+
+async def test_product_kit_color_sqlite_indexes_use_physical_fk_columns() -> None:
+    """开发库自动建表不能把关系名生成为无效表达式索引。"""
+
+    connection = connections.get("default")
+    expected_indexes = {
+        "idx_product_kit_colors_product_enabled": [
+            "product_id",
+            "is_enabled",
+        ],
+        "idx_product_kit_colors_color_enabled": [
+            "bead_color_id",
+            "is_enabled",
+        ],
+    }
+    indexes = await connection.execute_query_dict(
+        "PRAGMA index_list('product_kit_colors')"
+    )
+    indexes_by_name = {index["name"]: index for index in indexes}
+    for index_name, expected_columns in expected_indexes.items():
+        assert indexes_by_name[index_name]["unique"] == 0
+        columns = await connection.execute_query_dict(
+            f"PRAGMA index_info('{index_name}')"
+        )
+        assert [column["name"] for column in columns] == expected_columns
