@@ -486,6 +486,7 @@ MySQL M5 不得直接应用到 SQLite。development `generate_schemas()` 只能�
 → 4_20260905162243_add_wallet_payment_refund.py
 → 5_20260906094653_add_reservations.py
 → 6_20260906123000_add_color_selectable_kits.py
+→ 7_20260907190000_add_reservation_settings.py
 ```
 
 M6 没有导入真实色号、名称或色板图，只创建 1–221 的未配置、未激活占位槽；后续批量清单/图片导入属于独立的 dry-run/apply 运维步骤，不能混进迁移。历史 `product_kits` 必须保持原库存，新增 `kit_kind` 取数据库默认 `fixed`，`sale_unit_grams` 保持 null。M6 不能绕过 M4 的钱包 backfill/reconcile 或 M5 的 Reservation 发布边界；完整迁移记录到 6 也不表示这些业务开关已经获准启用。
@@ -500,20 +501,20 @@ M6 没有导入真实色号、名称或色板图，只创建 1–221 的未配�
 
 ### 11.2 一次性 MySQL CI 演练
 
-`backend-mysql-release` 在固定 disposable Schema 中执行以下顺序：
+`backend-mysql-release` 当前在固定 disposable Schema 中执行以下顺序：
 
-1. `aerich --app models upgrade` 从空库真实执行完整 0→6，禁止 `--fake`、`init-db` 或运行时 `generate_schemas()`；
-2. 以 `aerich --app models downgrade -v 6 --yes` 只回退 M6，在 M5 表形状中写入一条 `stock=7` 的受控 fixed Kit；
-3. 再执行正常 `upgrade`，证明历史库存保持、`kit_kind=fixed`、`sale_unit_grams IS NULL`；
-4. `check_mysql_gate.py snapshot` 精确核验 MySQL 8.0.46、M0–M6 七条版本、221 槽连续/唯一/未配置/未激活/按槽排序、19 个关键列、4 个命名 `ON DELETE RESTRICT` 外键，以及 7 个命名索引的列序与 `NON_UNIQUE`（3 个 UNIQUE 为 0，其余为 1）；
-5. 联合运行 `tests/inventory/mysql tests/reservation/mysql`。M6 新增用例必须复核数据库 fixed 默认、颜色集合锁查询 `EXPLAIN`，并使用正/反颜色请求制造可观察的 `performance_schema.data_lock_waits`，释放后两边都按 `(product_id, bead_color_id)` 稳定顺序取得锁；既有 Inventory/Reservation 版本断言必须同时接受 M6；
-6. 保存 preflight、M6 legacy seed、迁移日志、最终 snapshot 与 JUnit；无论前序结果如何都删除精确专用 Schema、停止准确的 service container，并复核容器非运行与非默认端口已释放。
+1. `aerich --app models upgrade` 从空库真实执行完整 0→7，禁止 `--fake`、`init-db` 或运行时 `generate_schemas()`；
+2. 只回退 M7，写入受控 M6 Reservation/单日店休历史，再只回退 M6 并写入 `stock=7` 的受控 fixed Kit；
+3. 正常升级回 M7，然后再执行一次 no-op `upgrade`，证明历史 fixed 库存、Reservation 事实、M6/M7 默认值和 Aerich 幂等边界保持；
+4. `check_mysql_gate.py snapshot` 同时核验 MySQL 8.0.46、M0–M7 八条版本、M6 的 221 槽/关键列/FK/索引及 M7 `reservation_settings` 单例、默认周一、CHECK 和 UNIQUE；
+5. 联合运行 `tests/inventory/mysql tests/reservation/mysql`，覆盖 M6 颜色集合锁/索引计划与 M7 固定店休更换、历史数据、并发、回滚、1205/1213 和结构计划；
+6. 保存 preflight、M6/M7 legacy seed、迁移日志、最终 snapshot 与 JUnit；无论前序结果如何都删除精确专用 Schema、停止准确的 service container，并复核容器非运行与非默认端口已释放。
 
 fixture 不负责执行迁移。为防止函数级清理把迁移种子抹掉后由运行时代码悄悄补种，MySQL 门槛在各用例之间保留 `bead_colors` 与 `aerich`，只清空其他业务表；snapshot 仍在 pytest 之前直接验证原始迁移结果。
 
 ### 11.3 当前证据边界
 
-M6 的离线迁移、CI replay/snapshot 策略、静态契约与真实 MySQL 测试入口已经进入仓库候选，但尚未启动新的 disposable MySQL 或执行真实 Aerich 0→6。M5 的 `16 passed` 一次性 MySQL 历史记录不能替代 M6 结果；只有新的 disposable MySQL / 远端 Run 实际完成上述全链、测试和 cleanup 后，才能补写 M6 通过记录。SQLite 专用 M6 脚本已于 2026-09-07 应用本地持久 `db.sqlite3`，但 M6 仍未应用 Gate A、共享、预发布或生产 MySQL。
+2026-09-07，本地提交 `58d8435` 的候选已在一次性 MySQL 8.0.46 中完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 及 Inventory + Reservation 联合 `21 passed`。专用 Schema、容器和端口均已清理。该结果同时覆盖 M6，但提交尚未 push/远端重跑，M6 也仍未应用 Gate A、共享、预发布或生产 MySQL。SQLite 专用 M6 脚本已应用本地持久 `db.sqlite3`，但不是发布迁移证据。
 
 ### 11.4 保留数据的本地 SQLite M6 升级
 
@@ -546,3 +547,50 @@ python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
 来源页没有逐色图片；导入器依据清单生成确定性 256×256 sRGB PNG。预览不创建文件、备份或数据库写入；apply 写库前使用 SQLite Backup API，图片原子发布，BeadColor 元数据放在 `BEGIN IMMEDIATE` 中更新并在提交前执行精确清单与外键核验。事务失败删除本轮新图片；现有非空冲突、Online 商品已启用颜色或非 221 槽直接拒绝；相同重放不再备份或写入。
 
 2026-09-07 本地执行结果：221 槽全部写入 code/name/URL/sort 并激活，生成 221 张 PNG，内容总计 128,325 bytes；备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-mard-221-20260907-024129-065769.bak`。再次 preview 为 `database_changes=0 / images_reused=221 / already_current=true`，`PRAGMA foreign_key_check` 无结果。该操作本身不创建商品颜色映射、不启用销售、不调整库存、不写 Aerich，也未连接或修改任何 MySQL/发布环境；本地此前已有的草稿 Product `14` 保留其 221 条关联，当前全部禁用且库存为 0。
+
+---
+
+## 12. Reservation Settings M7 发布流程与证据
+
+`7_20260907190000_add_reservation_settings.py` 创建全店唯一的 `reservation_settings`，以 `singleton_key=1` 的 CHECK + UNIQUE 保证单例，并插入 `weekly_closed_weekday='monday'` 默认行。M7 不改写历史 Reservation；应用上线后，ADMIN+ 的固定店休更换用例才在业务事务中更新设置，并取消新店休星期上尚未开始的 pending/confirmed 预约。MySQL DDL 隐式提交，该迁移的 `RUN_IN_TRANSACTION=False` 是真实能力声明。
+
+### 12.1 一次性 MySQL 8.0.46 候选门槛（2026-09-07）
+
+- 候选代码对应本地提交 `58d8435`；在专用、可销毁 MySQL 8.0.46 中真实完成空库 Aerich 0→7，未使用 `--fake`、`init-db` 或运行时自动建表。
+- M0–M6 各历史起点均重放到 M7；M6 的历史 fixed Kit 与 M7 的历史 Reservation/单日店休样本保留，第二次 `upgrade` 是 no-op。
+- M6/M7 snapshot 核验迁移版本、221 色槽、颜色列/FK/索引、`reservation_settings` 单例、默认周一及 CHECK/UNIQUE。随后 Inventory + Reservation 联合 MySQL 门槛为 `21 passed`。
+- 专用 Schema、容器及非默认端口已销毁/释放。此证据不代表持久环境已迁移；该提交尚未 push，因此当前 SHA 还没有远端 8/8 结果。
+
+### 12.2 Gate A 停止条件
+
+Gate A 持久环境在 2026-09-02 的最后留证是有业务数据的 M2，当前真实 Aerich 状态尚未重新只读确认。现有 `gatea_operations.py initial-migrate` 只支持空库首次迁移，不是 M2→M7 升级入口；在专用的非空升级候选、数据扫描/停写/备份恢复方案通过 Review 并获得明确授权前，必须停止，不得对 Gate A 直接运行空库命令、手工补表/列或 `--fake`。
+
+M7 可销毁 MySQL 通过不会自动关闭以下发布门槛：MARD 221 仍缺持久 MySQL + 对象存储导入流程；Wallet M4 仍需扩展 MySQL 并发/1205/1213/EXPLAIN、历史 wallet/manual settlement backfill 及 reconcile；当前 SHA 的远端 8/8、真实 Origin/RC、iOS/Android 真机与微信外部条件也均未完成。当前发布判定仍为 No-Go。
+
+---
+
+## 13. 本地 SQLite Refund 结构精确修复
+
+development 启动时的 `generate_schemas()` 曾为本地 `db.sqlite3` 补建 M4 表，但不会 ALTER 既有表。2026-09-07 的只读结构对比证明 22 张表中唯一会阻断当前 ORM 投影的差异是 `refunds.inventory_restored` 缺失，同表还缺数据库设计已要求的一单一退款 `UNIQUE(order_id)`。
+
+提交 `35e8630` 新增专用工具：
+
+```bash
+# 默认只读预览
+python scripts/local/repair_sqlite_refunds_schema.py
+
+# 确认目标为本项目本地 SQLite 后显式应用
+python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-only
+```
+
+脚本只接受仓库内普通非 symlink SQLite 文件和精确的 legacy/current `refunds` 形状；存在 Refund 行的不完整基线会 fail closed。首次写入前通过 SQLite Backup API 建立 `0600` 一致性备份，然后在一个 `BEGIN IMMEDIATE` 事务内增加 `inventory_restored INT NOT NULL DEFAULT 0` 和命名唯一索引 `uidx_refund_order_id`；提交前后复核全表行数、完整性、外键和目标结构，已是目标状态时零写入且不重复备份。
+
+已按当前任务授权应用到本地持久 `db.sqlite3`；写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-refunds-repair-20260907-105304-874045.bak`，权限 `0600`，应用后完整性与外键核验通过。该脚本不写 Aerich、不能用于 MySQL，也不是发布迁移证据。`database_design.md` 与 DBML 已是目标形状，无需因本地修复改数据库/API 契约。
+
+---
+
+## 14. 本地综合 Demo Seed 边界
+
+`python -m app.tasks.local_demo_seed --apply --confirm-local-only --operator-username <ADMIN>` 是本地 development SQLite 的可恢复演示数据工具，不是迁移或发布数据入口。它在写入前创建 SQLite Backup API 快照，并把合成用户的随机凭据只写入被 Git 忽略的 `0600` 本地文件；不伪造真实微信充值、支付、退款或外部身份。
+
+2026-09-07 已实际应用，写前备份为 `backups/local-demo-data/db.sqlite3.pre-local-demo-20260907-105320-455438.bak`，凭据文件为 `backups/local-demo-data/synthetic-credentials.json`，两者权限均为 `0600`，不得输出或提交凭据值。`python -m app.tasks.local_demo_seed --verify` 通过，`wallet_reconcile` 为 `scanned=11 mismatches=0 violations=0`。最终本地表摘要：users 13、products 19、product images 24、orders 8/items 10、payments 6/settlements 6/refunds 2、inventory transactions 238、reservations 7、wallet accounts 11/transactions 9、audit logs 583、external identities 0。详细场景分布见 changelog 和根 README。
