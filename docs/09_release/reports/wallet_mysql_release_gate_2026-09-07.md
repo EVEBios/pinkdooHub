@@ -1,6 +1,6 @@
 # Wallet 扩展 MySQL 发布门槛报告（2026-09-07）
 
-> **结论：** 仓库候选 PASS；Wallet-expanded workflow 尚未远端复现；Gate A 继续 No-Go
+> **结论：** 仓库候选与远端 8/8 PASS；Gate A 继续 No-Go
 >
 > **执行基线：** `feature/phase9-ci`，执行前 HEAD `b321225f55c53b52fe7ab700b1e03d3e4e32e199`
 >
@@ -12,7 +12,11 @@
 
 本轮只关闭 Wallet/Payment/Refund 的扩展 MySQL 仓库门槛：并发、瞬态错误整事务重试、跨资金/库存锁序和关键查询计划，并把该目录接入统一 CI Job。没有连接 3306，没有读取或修改本地持久 `db.sqlite3`、Gate A、共享、预发布或生产数据库，也没有执行 backfill、reconcile、资金开关、微信 Provider、tag 或 release。
 
-本轮执行时新增测试与 workflow 尚未 commit/push，因此这里记录的是本地候选证据，不能冒充远端干净 checkout 或 GitHub Actions artifact。
+本轮执行时新增测试与 workflow 尚未 commit/push，因此本报告主体记录本地候选证据。
+其后提交 `62f807ac2fc6c249149b261758403e1e70650685` 已由
+[Run 34134341829](https://github.com/EVEBios/pinkdooHub/actions/runs/34134341829)
+在干净 PR checkout 取得 8/8；远端身份、步骤和 artifact digest 见
+[Wallet 扩展门槛远端 CI 报告](wallet_remote_ci_2026-09-07.md)。
 
 ## 2. 隔离与迁移
 
@@ -53,7 +57,6 @@
 
 R-029 的仓库缺口已关闭，但以下项目不在本报告内，发布仍为 No-Go：
 
-- 新提交/PR merge-ref 的远端 GitHub Actions 8/8 与 Wallet-expanded JUnit/cleanup artifact；
 - Gate A 当前版本只读盘点及非空 M2→M7 升级入口；
 - M4 持久迁移、wallet backfill、legacy manual settlement backfill、只读 reconcile；
 - MARD 持久 MySQL/对象存储发布；

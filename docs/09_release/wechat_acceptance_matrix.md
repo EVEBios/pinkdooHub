@@ -1,6 +1,6 @@
 # 微信 Gate A Functional / Smoke / E2E 验收矩阵
 
-> **Status:** Current M7 candidate CI A passed (8/8) — release-eligible RC/M evidence blocked
+> **Status:** Wallet-expanded candidate CI A passed (8/8) — later operations SHA and release-eligible RC/M evidence blocked
 > **Last Updated:** 2026-09-07
 > **Scope:** 微信小程序内部测试版（Gate A）
 
@@ -38,6 +38,13 @@ production-mode 代码检查产物为 141 个文件、主包 649,739 bytes、分
 完整功能矩阵仍为 `BLOCKED`；下面各功能的自动化证据也不能替代真实 HTTPS、微信合法域名和
 iOS/Android 的 `M` 证据。
 
+Wallet-expanded head `62f807a...` 随后由
+[Run 34134341829](https://github.com/EVEBios/pinkdooHub/actions/runs/34134341829) 再次取得
+8/8，三域联合、cleanup 和 artifact 步骤全部 success；详见
+[Wallet 扩展门槛远端 CI 报告](reports/wallet_remote_ci_2026-09-07.md)。这关闭 Wallet
+自动化的“新远端 SHA”缺口，但不覆盖其后 Gate A 运维/MARD 提交，也不改变任何
+`M BLOCKED`、持久迁移或真实 RC 状态。
+
 补充的 [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md) 已在提交前
 dirty 工作树完成 MySQL 0→7、M0–M6→M7 历史矩阵、M6/M7 snapshot 和联合
 `21 passed`；同内容随后记录为提交 `58d8435...`，并由当前 Run 远端复现 workflow
@@ -74,7 +81,7 @@ dirty 工作树完成 MySQL 0→7、M0–M6→M7 历史矩阵、M6/M7 snapshot �
 | US-09 | Cancel | Pending 取消恢复库存；终态不可取消；重复/40921 正确收敛 | `A+M` | 历史 M2 `A PASS` + 当前本地覆盖；当前 SHA/`M BLOCKED` |
 | US-10 | Session | 登录后 Cart/页面恢复，登出后缓存和敏感数据策略一致 | `A+M` | 历史 M2 `A PASS` + 当前本地覆盖；当前 SHA/`M BLOCKED` |
 | US-11 | Wallet | 会员余额与流水分页、金额格式、空/错/加载态；staff/disabled/deleted 边界 | `A+M` | 本地 `PASS`；当前 SHA `A/M BLOCKED` |
-| US-12 | Wallet payment | 合成余额支付 Pending Order；余额/Payment/Settlement/Order/Audit 一致，失败零写入 | `A+M` | 本地 + 一次性 MySQL 并发门槛 `PASS`；新远端 SHA/`M BLOCKED` |
+| US-12 | Wallet payment | 合成余额支付 Pending Order；余额/Payment/Settlement/Order/Audit 一致，失败零写入 | `A+M` | 本地 + 一次性 MySQL + head `62f807a...` 远端门槛 `A PASS`；`M BLOCKED` |
 | US-13 | Recharge | Gate A 不进行真实充值；微信 provider 返回 503 且零写入，界面不误导为充值成功 | `A+M` | 本地 `PASS`；`M BLOCKED` |
 | US-14 | Reservation | 当前固定店休日、未来 0–30 日合法日期/半小时时段、手机号补录和创建 pending | `A+M` | 本地 `PASS`；Reservation 服务并发门槛已获一次性 MySQL 证据；当前 SHA/`M BLOCKED` |
 | US-15 | Reservation | 我的预约分页/详情、pending/confirmed/rejected/cancelled 文案与提前三小时取消 | `A+M` | 本地 `PASS`；当前 SHA `A/M BLOCKED` |
@@ -95,9 +102,9 @@ dirty 工作树完成 MySQL 0→7、M0–M6→M7 历史矩阵、M6/M7 snapshot �
 | AD-09 | Audit | Product/Order/Inventory/User 敏感操作顺序、主体与时间正确 | `A+M` | 历史 M2 `A PASS` + 当前本地覆盖；当前 SHA/`M BLOCKED` |
 | AD-10 | User Admin | 列表筛选、禁用事务/审计、角色层级和旧 Token 阻断 | `A+M` | 历史 M2 `A PASS` + 当前本地覆盖；当前 SHA/`M BLOCKED` |
 | AD-11 | Wallet Admin | 查询普通客户钱包/流水；staff、disabled、deleted 与不存在用户的稳定边界 | `A+M` | 本地 `PASS`；当前 SHA `A/M BLOCKED` |
-| AD-12 | Wallet adjustment | 正负调账、余额/退款敞口上限、Idempotency-Key 首次/重放/冲突和 Audit | `A+M` | 本地 + 一次性 MySQL 并发/1205/索引门槛 `PASS`；新远端 SHA/`M BLOCKED` |
-| AD-13 | Assisted wallet order | 为 NORMAL USER 创建 fixed/多颜色订单并直接 Paid；库存/余额/资金事实/双 Audit 原子一致 | `A+M` | 本地 + 一次性 MySQL 资金库存闭环 `PASS`；新远端 SHA/`M BLOCKED` |
-| AD-14 | Refund | manual/wallet 一次全额退款；PAID Kit 恢复、COMPLETED 不恢复、重复与窗口边界 | `A+M` | 本地 + 一次性 MySQL 并发/1213/锁序门槛 `PASS`；新远端 SHA/`M BLOCKED` |
+| AD-12 | Wallet adjustment | 正负调账、余额/退款敞口上限、Idempotency-Key 首次/重放/冲突和 Audit | `A+M` | 本地 + 一次性 MySQL + head `62f807a...` 远端门槛 `A PASS`；`M BLOCKED` |
+| AD-13 | Assisted wallet order | 为 NORMAL USER 创建 fixed/多颜色订单并直接 Paid；库存/余额/资金事实/双 Audit 原子一致 | `A+M` | 本地 + 一次性 MySQL + head `62f807a...` 远端门槛 `A PASS`；`M BLOCKED` |
+| AD-14 | Refund | manual/wallet 一次全额退款；PAID Kit 恢复、COMPLETED 不恢复、重复与窗口边界 | `A+M` | 本地 + 一次性 MySQL + head `62f807a...` 远端门槛 `A PASS`；`M BLOCKED` |
 | AD-15 | Color catalog | 221 色分页/搜索/全局启停、商品颜色启停、零库存与上架校验、色板图片读取 | `A+M` | 本地 `PASS`；Gate A 数据/图片/`M BLOCKED` |
 | AD-16 | Reservation Admin | 组合筛选/详情、当前手机号隐私投影、pending 确认与 `no_capacity` 拒绝 | `A+M` | 本地 `PASS`；当前 SHA `A/M BLOCKED` |
 | AD-17 | Store day closure | 单日关闭原子取消活跃预约、重放、恢复营业但不复活历史预约 | `A+M` | 本地 + 一次性 M7 MySQL `PASS`；当前 SHA/`M BLOCKED` |

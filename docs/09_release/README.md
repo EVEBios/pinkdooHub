@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** Wallet 扩展 MySQL 本地候选已通过；新远端 CI、持久升级/回填、色板、RC 与外部条件仍阻断 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** Wallet 扩展 MySQL 已远端通过；Gate A 运维候选待新 CI，持久升级/回填、色板、RC 与外部条件仍阻断 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-07
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -43,13 +43,16 @@ Wallet 扩展门槛随后在一次性 MySQL 8.0.46 完成专项 `9 passed` 与 I
 Reservation + Wallet 联合 `30 passed`，并已接入本地候选 workflow；并发调账/余额支付/
 退款、真实 1205、1213 整事务重试、可观测跨资金库存锁等待和关键 `EXPLAIN` 均通过。
 容器/端口已清理，详见
-[Wallet 扩展 MySQL 报告](reports/wallet_mysql_release_gate_2026-09-07.md)。该变更尚未 push，
-不能用旧 Run 34129910349 代替新远端证据。
+[Wallet 扩展 MySQL 报告](reports/wallet_mysql_release_gate_2026-09-07.md)。受测 head
+`62f807a...` 随后由 [Run 34134341829](https://github.com/EVEBios/pinkdooHub/actions/runs/34134341829)
+在干净 Runner 取得 8/8，三域联合、cleanup 和 artifact 步骤全部成功；详见
+[Wallet 远端 CI 报告](reports/wallet_remote_ci_2026-09-07.md)。其后的 Gate A 运维与
+MARD 提交不属于该 Run，仍须由新 CI 验证。
 
 发布状态必须继续按以下边界解释：
 
-- M4 已有仓库实现与扩展一次性 MySQL 候选证据；新 workflow 尚待远端干净 SHA 复现，
-  Gate A 仍未执行 M4、钱包 backfill、legacy settlement backfill 或 reconcile。
+- M4 已有仓库实现、扩展一次性 MySQL 与远端 8/8 证据；Gate A 仍未执行 M4、钱包
+  backfill、legacy settlement backfill 或 reconcile。
 - M5 曾在一次性 MySQL 8.0.46 完成 0→5 与 16 项 Inventory + Reservation 门槛，
   但未应用 Gate A 持久库。
 - M6 的本地 SQLite 升级、221 色来源清单和确定性图片导入仅属于开发数据；Gate A
@@ -75,9 +78,10 @@ Reservation + Wallet 联合 `30 passed`，并已接入本地候选 workflow；�
 | Release Decision Record | [release_decision_record.md](release_decision_record.md) | Gate A 决策已冻结；Gate B 未授权 |
 | 当前基线审计 | [baseline_audit_2026-08-29.md](baseline_audit_2026-08-29.md) | 已采集本地证据；MySQL/真机/外部环境未执行 |
 | Environment Matrix + Secret Inventory | [environment_and_secrets.md](environment_and_secrets.md) | Gate A 文件 Secret、轮换、备份密钥和日志策略已落地；真实域名待备案 |
-| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | Phase 9.2 历史基线完成；当前 M7 候选 Run 34129910349 为 8/8，持久 Gate 仍阻断 |
+| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | Phase 9.2 历史基线完成；Wallet-expanded 候选 Run 34134341829 为 8/8，后续运维 SHA 与持久 Gate 仍阻断 |
 | M7 一次性 MySQL 报告 | [reports/m7_mysql_release_gate_2026-09-07.md](reports/m7_mysql_release_gate_2026-09-07.md) | 本地 dirty-tree M0–M7/历史矩阵/21 项通过，并已补记远端后续结果 |
 | M7 当前候选远端 CI 报告 | [reports/m7_remote_ci_2026-09-07.md](reports/m7_remote_ci_2026-09-07.md) | Head `4d6430c...` / merge-ref `ccbbe9d...` / Run 34129910349 / 8/8 / 7 artifacts |
+| Wallet 扩展远端 CI 报告 | [reports/wallet_remote_ci_2026-09-07.md](reports/wallet_remote_ci_2026-09-07.md) | Head `62f807a...` / merge-ref `6675b4f...` / Run 34134341829 / 8/8 / 7 artifacts |
 | Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
 | Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | 历史 M2 的 DR-01～DR-07、DR-09 服务端部分通过；当前 M4–M7 持久升级与重演未执行 |
 | 9.3 演练环境 | [rehearsal_environment_2026-08-31.md](rehearsal_environment_2026-08-31.md) | 双 MySQL/Redis/HTTPS/图片恢复拓扑已真实执行并清理 |

@@ -43,7 +43,8 @@ workflow 覆盖并保存证据，详见
 - [x] 当前 `backend-sqlite` 为 `2000 passed, 2 skipped`，skip 仅为批准的隔离门槛，并保存 JUnit；
 - [x] 当前 `backend-mysql-release` 在专用 MySQL 8.0.46 验证精确 M0–M7、M5→M6→M7 历史重放、M7 单例/默认值/约束/索引和联合 `21 passed`；
 - [x] Wallet 扩展 MySQL 门槛已在一次性 MySQL 8.0.46 覆盖并发调账/余额支付/退款、真实 1205、1213 全事务重试、锁序、`EXPLAIN` 与 Inventory 联合回归；Wallet `9 passed`、三域联合 `30 passed`；
-- [ ] 包含 Wallet-expanded workflow 的新干净 SHA 尚未在远端 Runner 复现并保存 JUnit/cleanup artifact；
+- [x] 包含 Wallet-expanded workflow 的 head `62f807a...` 已由 Run 34134341829 在远端
+  Runner 完成 8/8；三域联合、JUnit/cleanup artifact 上传步骤均 success；
 - [x] 当前 `frontend-quality` 远端结果覆盖 TypeScript、ESLint、Stylelint、`83 suites / 562 tests` 和 17 项 CI policy；
 - [x] 当前 `openapi-contract`、`weapp-build`、repository hygiene 与双依赖审计均在同一 Run 通过；
 - [x] 本轮完整本地后端结果为 `2000 passed, 30 skipped in 113.05s`；30 项为三类显式 MySQL-only 门槛，另有真实联合 `30 passed`，该项不是远端或 RC 证据；

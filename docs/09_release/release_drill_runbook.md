@@ -84,7 +84,7 @@ dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430
 | 版本 | 仓库/历史事实 | 当前候选一次性 MySQL | 持久 Gate A 必需动作 |
 |------|---------------|----------------------|----------------------|
 | M3 | 外部身份与认证安全仓库实现完成；旧一次性 0→3 通过 | 本地 M0–M6→M7 历史矩阵已纳入 M3；当前 workflow 远端 8/8 | 只读扫描后先应用 M3；Gate A 仍保持 password 模式 |
-| M4 | 钱包/支付/退款代码完成；旧关键闭环 `2 passed` | 一次性 MySQL 8.0.46 已完成 Wallet `9 passed` 与三域联合 `30 passed`，覆盖并发、真实 1205、1213、锁等待和 `EXPLAIN`；新 workflow 待远端干净 SHA 复现 | 应用 M4 后执行两个 backfill 与 reconcile，零差异前禁止启用资金入口 |
+| M4 | 钱包/支付/退款代码完成；旧关键闭环 `2 passed` | 一次性 MySQL 8.0.46 已完成 Wallet `9 passed` 与三域联合 `30 passed`；head `62f807a...` 的 Run 34134341829 远端 8/8，三域联合/cleanup/artifact 步骤成功 | 应用 M4 后执行两个 backfill 与 reconcile，零差异前禁止启用资金入口 |
 | M5 | 一次性 MySQL 0→5 与 Inventory + Reservation `16 passed` | 本地历史矩阵与远端 M5 fixed→M6→M7 workflow 均通过 | 核验两张预约表、外键/六个索引、既有数据和注销边界 |
 | M6 | 本地 SQLite/221 色 manifest/确定性 PNG 已完成 | 本地 M6 snapshot/颜色锁等待及远端联合 21 项通过 | 使用专门的 MySQL/持久存储导入发布入口；本地 SQLite-only 工具不得复用 |
 | M7 | 离线迁移与本地业务测试已完成 | 本地单例/默认/约束/历史不漂移/事务并发通过；远端 workflow 8/8 | 核验现有预约/单日店休不漂移并配置目标固定店休日 |

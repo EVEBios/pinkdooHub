@@ -1,8 +1,8 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；current M7 candidate remote gate passed (8/8)
+> **Status:** Phase 9.2 historical baseline complete；Wallet-expanded candidate remote gate passed (8/8)
 > **Last Updated:** 2026-09-07
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [current successful Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349)）
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34134341829](https://github.com/EVEBios/pinkdooHub/actions/runs/34134341829)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
@@ -168,9 +168,11 @@ Wallet 的 MySQL v1 关键闭环原有单独一次性 `2 passed` 历史结果。
 `9 passed` 与 Inventory + Reservation + Wallet `30 passed`：覆盖并发调账/余额支付/
 退款、真实 1205、首轮已写后的 1213 整事务回滚重试、可观测资金/库存锁等待和关键
 `EXPLAIN`。精确本地证据见
-[Wallet 扩展 MySQL 报告](reports/wallet_mysql_release_gate_2026-09-07.md)。该 workflow
-变更尚未在新的干净 SHA 上远端复现；远端 JUnit/cleanup artifact 仍是后续 CI 证据，
-不得复用旧 Run 34129910349 的 `21 passed` 声称新门槛已远端通过。
+[Wallet 扩展 MySQL 报告](reports/wallet_mysql_release_gate_2026-09-07.md)。受测 head
+`62f807a...` 的 [Run 34134341829](https://github.com/EVEBios/pinkdooHub/actions/runs/34134341829)
+随后取得 8/8，三域联合、cleanup 与 artifact 步骤均为 success；完整身份和 digest 见
+[Wallet 远端 CI 报告](reports/wallet_remote_ci_2026-09-07.md)。其后新增的 Gate A 运维与
+MARD 测试仍须由后续 SHA 重跑，不能沿用本 Run。
 
 ### 3.3 Frontend Quality
 
@@ -283,6 +285,8 @@ Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装�
 - [x] MySQL Job 在远端精确覆盖 M0–M7、M5→M6→M7 历史重放、M7 snapshot、联合
   `21 passed` JUnit 和成功 cleanup 步骤；
 - [x] Wallet 扩展 MySQL 门槛已独立完成本地候选验证：Wallet `9 passed`、三域联合 `30 passed`；
-- [ ] Wallet-expanded workflow 尚待新干净 SHA 的远端 Runner 复现并保存 JUnit/cleanup artifact；
+- [x] Wallet-expanded workflow 已由 head `62f807a...` 的 Run 34134341829 在干净 Runner
+  复现，JUnit/cleanup artifact 上传步骤均 success；
+- [ ] 其后新增的 Gate A 运维与 MARD 入口尚待后续干净 SHA 的远端 Runner 复现；
 - [x] 当前前端/OpenAPI/微信 production artifact、依赖审计与仓库卫生都绑定上述 Run；
 - [ ] Gate A 持久升级、真实 RC、微信后台和真机继续由后续 Gate 单独授权，CI 不自动执行。
