@@ -128,6 +128,35 @@ python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
 
 该工具不会创建商品、启用商品颜色或写入库存，也不能应用到 MySQL。生产环境必须先完成 M6 MySQL 发布门槛和对象存储/CDN 接入，再以独立受控流程导入同一清单。
 
+### 5. 本地综合演示数据
+
+当前 M7 开发库可通过一个显式、可重放的命令准备跨模块演示数据。执行前应停止其他
+本地业务写入，并使用现有 ADMIN 或 SUPER_ADMIN 用户作为审计操作者：
+
+```bash
+# 仅接受 development + 仓库内 SQLite/图片目录；写入前自动建立并校验备份
+python -m app.tasks.local_demo_seed \
+  --apply \
+  --confirm-local-only \
+  --operator-username local_admin
+
+# 后续只读核验数据库、钱包对账、图片文件和跨域场景
+python -m app.tasks.local_demo_seed --verify
+```
+
+命令使用 `localdemo_v1_*` 保留用户名以及稳定的 remark / idempotency key，覆盖正常和
+禁用会员、Product 全生命周期、Experience/fixed Kit/自选颜色 Kit、订单四种状态、
+库存扣减与两种恢复、钱包调账/支付、人工结算、代客扣款、退款、预约四种状态、单日
+店休/恢复和 M7 固定店休更换。真实微信充值/支付/退款仍按生产边界保持 503 零写入，
+不会伪造成功数据。
+
+每次 apply 都先在 `backups/local-demo-data/` 创建权限为 `0600` 的 SQLite Backup API
+快照；新合成账号的随机密码只写入同目录下权限为 `0600` 的
+`synthetic-credentials.json`，两者均被 Git 忽略，日志不会输出密码。命令不会覆盖已有
+非 seed 固定店休：只接受从未调整过的默认周一，或已经由同一 seed 完整收敛出的周三；
+任何冲突都会停止并保留精确备份路径。该流程是可恢复、可重放的本地开发工具，不是
+Gate A/MySQL 迁移、发布数据或正式验收证据。
+
 ## 测试与检查
 
 运行完整测试：
