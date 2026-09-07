@@ -4,6 +4,8 @@ import Taro from '@tarojs/taro'
 import { AuthenticatedMember } from '../index'
 
 const mockRetry = jest.fn()
+let mockAvatar: string | null
+let mockNickname: string
 
 jest.mock('@/features/wallet', () => ({
   useMemberWallet: () => ({
@@ -13,9 +15,9 @@ jest.mock('@/features/wallet', () => ({
         user: {
           id: 7,
           username: 'member_007',
-          nickname: '拼豆会员',
+          nickname: mockNickname,
           phone: null,
-          avatar: '/uploads/avatars/member.webp',
+          avatar: mockAvatar,
           role: 'user',
           status: 'normal',
           last_login_at: null,
@@ -38,7 +40,11 @@ jest.mock('@/utils/format', () => ({ formatPrice: (value: string) => value }))
 
 describe('AuthenticatedMember', () => {
   let testUtils: ReactTestUtil
-  beforeEach(() => { testUtils = new ReactTestUtil() })
+  beforeEach(() => {
+    testUtils = new ReactTestUtil()
+    mockAvatar = '/uploads/avatars/member.webp'
+    mockNickname = '拼豆会员'
+  })
   afterEach(() => { testUtils.unmout(); jest.clearAllMocks() })
 
   it('首屏展示身份、权威余额、上限与准确的充值状态', async () => {
@@ -58,6 +64,15 @@ describe('AuthenticatedMember', () => {
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/wallet-transactions/index' })
     testUtils.fireEvent.click(requireElement(testUtils, '.member-actions__secondary'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/wallet-recharge/index' })
+  })
+
+  it('无头像时使用带独立居中样式的昵称首字母', async () => {
+    mockAvatar = null
+    mockNickname = 'peter'
+    await testUtils.mount(AuthenticatedMember)
+
+    expect(requireElement(testUtils, '.member-profile__avatar--fallback').textContent).toBe('p')
+    expect(requireElement(testUtils, '.member-profile__avatar-initial').textContent).toBe('p')
   })
 })
 

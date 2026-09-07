@@ -111,15 +111,30 @@
     background: var(--pd-color-primary-soft);
     border: 1px solid var(--pd-color-line);
     border-radius: 50%;
+    box-sizing: border-box;
   }
 
   &__avatar--fallback {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--pd-color-primary-strong);
     font-size: var(--pd-font-title);
     font-weight: 750;
+  }
+
+  &__avatar-initial {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    text-align: center;
+    transform: translateY(-1px);
   }
 
   &__title,

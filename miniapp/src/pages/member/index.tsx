@@ -112,7 +112,7 @@ function MemberProfile({ user }: { readonly user: MemberWallet['user'] }) {
           />
         ) : (
           <View className='member-profile__avatar member-profile__avatar--fallback'>
-            <Text>{user.nickname.slice(0, 1)}</Text>
+            <Text className='member-profile__avatar-initial'>{user.nickname.slice(0, 1)}</Text>
           </View>
         )}
         <View>
