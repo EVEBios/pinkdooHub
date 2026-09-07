@@ -168,14 +168,17 @@ python -m scripts.release.phase93_operations cleanup \
   0 张表；Gate A 最后证据为非空 M2，而当前状态仍须重新只读确认。它没有受控的
   existing-database upgrade Record，`app-up` 又要求 candidate SHA/Image ID 匹配的
   initial migration Record。
+- `scripts.release.gatea_operations database-status` 已可对健康 MySQL 只读输出精确
+  Aerich 链、Schema 数量/指纹和 M2 关键业务聚合，但不会迁移或批准未知起点。
 - `scripts/local/import_mard_bead_colors.py` 明确只操作项目内 SQLite，且 apply 要求
   `--confirm-local-only`；不得连接 Gate A MySQL，也不得把开发图片路径直接复制为
   持久 HTTPS URL。
 
 因此在下列能力实现、测试并 Review 前，执行到持久写入步骤必须停止：
 
-1. 非空库升级入口先验证 Root/Secret/镜像、停写状态、新 Backup/Restore Record、候选
-   SHA/Image ID 和只读确认的 Aerich/Schema；受支持起点清单必须单独 Review，不能由
+1. 先用 `database-status` 保存不含 Secret/PII 的只读起点证据；非空库升级入口再验证
+   Root/Secret/镜像、停写状态、新 Backup/Restore Record、候选 SHA/Image ID 和该份
+   Aerich/Schema 证据；受支持起点清单必须单独 Review，不能由
    一次性 MySQL 的 M0–M6 矩阵自动推导；
 2. 入口按真实 Aerich 版本逐步升级，保存每步 Schema/数据摘要，失败时保留现场，并在
    全部核验通过后生成新的 candidate upgrade Record 供 `app-up` 使用；

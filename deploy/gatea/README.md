@@ -93,6 +93,11 @@ Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 
 TLS 写操作仍被拒绝。
 
 ```bash
+# 只读输出精确 Aerich 链、Schema 数量/指纹和 M2 关键业务聚合。
+sudo python -m scripts.release.gatea_operations \
+  database-status \
+  --mode loopback
+
 # 只启动 MySQL/Redis；失败时停止服务但保留命名卷。
 sudo python -m scripts.release.gatea_operations \
   infra-up \
@@ -124,6 +129,12 @@ sudo python -m scripts.release.gatea_operations \
 迁移记录时严格重放为 no-op；记录缺失但数据库非空时 fail closed，不会猜测状态或
 使用 `--fake`。`app-up` 完成后要求 App/Nginx 均为 healthy，且只有 Nginx 发布
 `127.0.0.1:${GATEA_LOOPBACK_PORT}:8080`。
+
+`database-status` 只接受已有健康 MySQL，输出当前候选、应用版本、精确 Aerich 链、
+Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关键表的行数和金额/库存
+聚合。它不启动、停止或迁移服务，也不输出配置值、Secret、PII 或业务明细；执行人应
+将完整 JSON 作为升级前证据保存到仓库外受控位置。该命令只解决只读起点确认，仍不
+构成非空库升级授权。
 
 ## 受控 SUPER_ADMIN Bootstrap
 

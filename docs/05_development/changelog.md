@@ -4,6 +4,14 @@
 
 ---
 
+## Gate A 只读数据库起点采样（本地候选，2026-09-07）
+
+- 持久运维新增只读 `database-status`：在健康 MySQL 上输出当前候选、精确 Aerich 链、
+  Schema 数量/确定性指纹及 M2 关键业务聚合，不启动、停止或修改任何服务，不输出
+  Secret、PII 或业务明细。
+- 该入口用于 M2→M7 写前重新确认真实起点，不替代尚待实现和 Review 的非空升级、
+  新备份/恢复验证或持久写入授权；当前 Gate A 仍为 **No-Go**。
+
 ## Wallet 扩展 MySQL 发布门槛（本地候选，2026-09-07）
 
 - `backend-mysql-release` 现将 `tests/wallet/mysql` 与既有 Inventory/Reservation 门槛放在同一个 MySQL 8.0.46、同一 M0→M7 Schema 中执行；SQLite Job 显式忽略三类 MySQL-only 目录，CI 契约测试同步冻结该边界。

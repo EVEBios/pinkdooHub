@@ -264,6 +264,104 @@ def test_infra_up_uses_wait_and_stops_services_on_failed_health(
     )
 
 
+def test_database_status_is_read_only_and_normalizes_aerich_versions(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    values = _valid_values()
+    commands: list[tuple[str, ...]] = []
+    database_snapshot = {
+        "aerich_versions": (
+            "0_20260810101218_init.py,"
+            "1_20260813130455_add_order_tables.py,"
+            "2_20260814104655_add_inventory_transactions.py"
+        ),
+        "tables": 10,
+        "columns_sha256": "a" * 64,
+        "users": 2,
+    }
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: _healthy_rows("mysql"),
+    )
+
+    def fake_run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        arguments = tuple(kwargs["arguments"])
+        commands.append(arguments)
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(database_snapshot),
+        )
+
+    monkeypatch.setattr(gatea, "_run_compose", fake_run_compose)
+    gatea.database_status(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "app_version": "0.6.0",
+        "candidate_sha": "a" * 40,
+        "database_snapshot": database_snapshot
+        | {
+            "aerich_versions": [
+                "0_20260810101218_init.py",
+                "1_20260813130455_add_order_tables.py",
+                "2_20260814104655_add_inventory_transactions.py",
+            ]
+        },
+        "mode": "loopback",
+        "read_only": True,
+    }
+    assert commands == [
+        (
+            "exec",
+            "--no-tty",
+            "mysql",
+            "sh",
+            "-ec",
+            gatea.DATABASE_STATUS_COMMAND,
+        )
+    ]
+    assert all("run" not in command and "up" not in command for command in commands)
+
+
+def test_database_status_rejects_invalid_mysql_output_without_echoing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _valid_values()
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: _healthy_rows("mysql"),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="not-json-without-secret-echo",
+        ),
+    )
+
+    with pytest.raises(GateAError, match="status output is invalid") as captured:
+        gatea.database_status(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+        )
+
+    assert "not-json" not in str(captured.value)
+
+
 def test_initial_migrate_requires_empty_schema_and_records_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -3,7 +3,8 @@
 
 本模块不生成、读取或输出 Secret 值。写操作固定到经过验证的 Compose
 文件、完整 Git SHA 镜像与受保护配置；当前只允许 loopback 首次部署，
-不提供删卷、恢复、Bootstrap、TLS 切换或公开发布操作。
+并提供既有库的只读状态采样，不提供删卷、恢复、Bootstrap、TLS 切换或
+公开发布操作。
 """
 
 from __future__ import annotations
@@ -91,8 +92,56 @@ INITIAL_SCHEMA_COUNT_COMMAND = (
     '--execute="SELECT COUNT(*) FROM information_schema.tables '
     'WHERE table_schema = DATABASE();" "$MYSQL_DATABASE"'
 )
+DATABASE_STATUS_COMMAND = r"""MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+mysql --batch --skip-column-names --raw --host=127.0.0.1 --user=root "$MYSQL_DATABASE" <<'SQL'
+SET SESSION group_concat_max_len = 1048576;
+SELECT JSON_OBJECT(
+  'aerich_versions', COALESCE((SELECT GROUP_CONCAT(version ORDER BY id SEPARATOR ',') FROM aerich), ''),
+  'tables', (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()),
+  'columns', (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE()),
+  'statistics', (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE()),
+  'constraints', (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema = DATABASE()),
+  'columns_sha256', SHA2(COALESCE((
+    SELECT GROUP_CONCAT(
+      CONCAT_WS(':', table_name, ordinal_position, column_name, column_type,
+                is_nullable, COALESCE(column_default, '<NULL>'), extra)
+      ORDER BY table_name, ordinal_position SEPARATOR '\n'
+    )
+    FROM information_schema.columns WHERE table_schema = DATABASE()
+  ), ''), 256),
+  'statistics_sha256', SHA2(COALESCE((
+    SELECT GROUP_CONCAT(
+      CONCAT_WS(':', table_name, index_name, non_unique, seq_in_index,
+                column_name, COALESCE(sub_part, '<NULL>'))
+      ORDER BY table_name, index_name, seq_in_index SEPARATOR '\n'
+    )
+    FROM information_schema.statistics WHERE table_schema = DATABASE()
+  ), ''), 256),
+  'constraints_sha256', SHA2(COALESCE((
+    SELECT GROUP_CONCAT(
+      CONCAT_WS(':', table_name, constraint_name, constraint_type)
+      ORDER BY table_name, constraint_name SEPARATOR '\n'
+    )
+    FROM information_schema.table_constraints WHERE table_schema = DATABASE()
+  ), ''), 256),
+  'users', (SELECT COUNT(*) FROM users),
+  'products', (SELECT COUNT(*) FROM products),
+  'experience_options', (SELECT COUNT(*) FROM experience_options),
+  'product_images', (SELECT COUNT(*) FROM product_images),
+  'product_kits', (SELECT COUNT(*) FROM product_kits),
+  'kit_stock', (SELECT COALESCE(SUM(stock), 0) FROM product_kits),
+  'orders', (SELECT COUNT(*) FROM orders),
+  'order_items', (SELECT COUNT(*) FROM order_items),
+  'order_total', (SELECT CAST(COALESCE(SUM(total_amount), 0) AS CHAR) FROM orders),
+  'inventory_transactions', (SELECT COUNT(*) FROM inventory_transactions),
+  'inventory_change', (SELECT COALESCE(SUM(change_quantity), 0) FROM inventory_transactions),
+  'audit_logs', (SELECT COUNT(*) FROM audit_logs)
+);
+SQL"""
 LIFECYCLE_COMMANDS = (
     "preflight",
+    "database-status",
     "infra-up",
     "initial-migrate",
     "app-up",
@@ -596,6 +645,66 @@ def preflight(*, config_file: Path, secret_dir: Path, mode: str) -> None:
     print(f"Gate A {mode} preflight passed")
 
 
+def database_status(*, config_file: Path, secret_dir: Path, mode: str) -> None:
+    """只读输出 Aerich、Schema 指纹和 M2 关键业务摘要。"""
+
+    values = _validated_inputs(
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        require_available_port=False,
+    )
+    rows = _compose_ps(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=("mysql",),
+    )
+    _ensure_services_healthy(rows, "mysql")
+    result = _run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-tty",
+            "mysql",
+            "sh",
+            "-ec",
+            DATABASE_STATUS_COMMAND,
+        ),
+        capture_output=True,
+    )
+    try:
+        snapshot = json.loads(result.stdout.strip())
+    except (json.JSONDecodeError, TypeError) as error:
+        raise GateAError("Gate A database status output is invalid") from error
+    if not isinstance(snapshot, dict):
+        raise GateAError("Gate A database status output has an invalid shape")
+
+    raw_versions = snapshot.get("aerich_versions")
+    if not isinstance(raw_versions, str):
+        raise GateAError("Gate A Aerich status output is invalid")
+    snapshot["aerich_versions"] = (
+        raw_versions.split(",") if raw_versions else []
+    )
+    print(
+        json.dumps(
+            {
+                "app_version": values["APP_VERSION"],
+                "candidate_sha": _candidate_sha(values),
+                "database_snapshot": snapshot,
+                "mode": mode,
+                "read_only": True,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+
 def infra_up(
     *,
     config_file: Path,
@@ -922,6 +1031,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "preflight":
             preflight(**common)
+        elif args.command == "database-status":
+            database_status(**common)
         elif args.command == "infra-up":
             infra_up(**common, wait_timeout=args.wait_timeout)
         elif args.command == "initial-migrate":
