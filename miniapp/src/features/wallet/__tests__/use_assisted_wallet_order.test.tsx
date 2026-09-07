@@ -1,6 +1,7 @@
 import ReactTestUtil from '@tarojs/test-utils-react'
 
 import { BusinessError, NetworkError } from '@/api'
+import type { OrderCreateRequest } from '@/api/endpoints/orders'
 import type { AssistedWalletOrderResult } from '@/api/endpoints/wallet'
 
 import {
@@ -44,9 +45,18 @@ const result: AssistedWalletOrderResult = {
   post_payment_balance: '230.00',
 }
 
-function Harness({ createKey, source }: {
+const colorRequest: OrderCreateRequest = {
+  items: [
+    { product_id: 8, kit_color_id: 81, quantity: 2 },
+    { product_id: 8, kit_color_id: 82, quantity: 1 },
+  ],
+  remark: '  门店代客下单  ',
+}
+
+function Harness({ createKey, request = colorRequest, source }: {
   readonly source: AssistedWalletOrderSource
   readonly createKey: () => string
+  readonly request?: OrderCreateRequest
 }) {
   const order = useAssistedWalletOrder(7, source, createKey)
   return (
@@ -59,10 +69,7 @@ function Harness({ createKey, source }: {
       </span>
       <button
         className='create'
-        onClick={() => void order.createOrder({
-          items: [{ product_id: 8, quantity: 2 }],
-          remark: '  门店代客下单  ',
-        })}
+        onClick={() => void order.createOrder(request)}
       >create</button>
       <button className='retry' onClick={() => void order.retrySameIntent()}>retry</button>
     </div>
@@ -96,6 +103,13 @@ describe('useAssistedWalletOrder', () => {
     expect(source.createAssistedWalletOrder).toHaveBeenCalledTimes(2)
     expect((source.createAssistedWalletOrder as jest.Mock).mock.calls[0])
       .toEqual((source.createAssistedWalletOrder as jest.Mock).mock.calls[1])
+    expect((source.createAssistedWalletOrder as jest.Mock).mock.calls[0][1]).toEqual({
+      items: [
+        { product_id: 8, kit_color_id: 81, quantity: 2 },
+        { product_id: 8, kit_color_id: 82, quantity: 1 },
+      ],
+      remark: '门店代客下单',
+    })
   })
 
   it('明确库存失败释放旧意图，下一次提交使用新幂等键', async () => {

@@ -102,6 +102,9 @@ function copyRequest(request: OrderCreateRequest): OrderCreateRequest {
       ...(item.experience_option_id === undefined || item.experience_option_id === null
         ? {}
         : { experience_option_id: item.experience_option_id }),
+      ...(item.kit_color_id === undefined || item.kit_color_id === null
+        ? {}
+        : { kit_color_id: item.kit_color_id }),
     })),
     ...(remark ? { remark } : {}),
   }

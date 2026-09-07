@@ -180,6 +180,73 @@ describe('WalletApi', () => {
     })
   })
 
+  it('代客钱包订单保留多种自选颜色，并按颜色区分请求与响应', async () => {
+    const payment = {
+      id: 18,
+      payment_no: `PY${'C'.repeat(26)}`,
+      order_id: 201,
+      recharge_order_id: null,
+      purpose: 'order',
+      method: 'wallet',
+      amount: '7.50',
+      status: 'succeeded',
+      created_at: timestamp,
+      updated_at: timestamp,
+      succeeded_at: timestamp,
+    }
+    const colorItem = (id: number, kitColorId: number, code: string, quantity: number) => ({
+      id,
+      product_id: 8,
+      experience_option_id: null,
+      kit_color_id: kitColorId,
+      product_name: '自选颜色拼豆',
+      option_duration_minutes: null,
+      option_participants: null,
+      option_day_type: null,
+      kit_color_code: code,
+      kit_color_name: code === 'A01' ? '白色' : '米白',
+      kit_color_slot_no: kitColorId - 80,
+      sale_unit_grams: 10,
+      total_weight_grams: quantity * 10,
+      product_price: '2.50',
+      quantity,
+      subtotal: quantity === 2 ? '5.00' : '2.50',
+    })
+    const order = {
+      id: 201,
+      order_no: `OD${'D'.repeat(26)}`,
+      user_id: 7,
+      user_nickname: '拼豆会员',
+      total_amount: '7.50',
+      status: { value: 'paid', label: '已支付' },
+      remark: null,
+      items: [colorItem(301, 81, 'A01', 2), colorItem(302, 82, 'A02', 1)],
+      created_at: timestamp,
+      updated_at: timestamp,
+    }
+    const client = new FakeClient([{ order, payment, post_payment_balance: '272.50' }])
+    const api = new WalletApi(client)
+
+    await expect(api.createAssistedWalletOrder(7, {
+      items: [
+        { product_id: 8, kit_color_id: 81, quantity: 2 },
+        { product_id: 8, kit_color_id: 82, quantity: 1 },
+      ],
+    }, 'assisted-color-order-key')).resolves.toEqual({
+      order,
+      payment,
+      post_payment_balance: '272.50',
+    })
+    expect(client.requests[0]).toMatchObject({
+      body: {
+        items: [
+          { product_id: 8, kit_color_id: 81, quantity: 2 },
+          { product_id: 8, kit_color_id: 82, quantity: 1 },
+        ],
+      },
+    })
+  })
+
   it('接受无结算订单的 null 资金事实，并绑定用户端和管理端请求订单', async () => {
     const financial = {
       order_id: 101,

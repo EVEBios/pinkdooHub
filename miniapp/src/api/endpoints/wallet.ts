@@ -36,6 +36,11 @@ export interface WalletTransactionRequest {
 
 type WalletApiClient = Pick<ApiClient, 'request'>
 const ORDER_NO_PATTERN = /^OD[0-9A-HJKMNP-TV-Z]{26}$/
+const ASSISTED_ORDER_NON_COLOR_ITEM_LIMIT = 10
+const ASSISTED_ORDER_COLOR_ITEM_LIMIT = 20
+const ASSISTED_ORDER_ITEM_LIMIT = (
+  ASSISTED_ORDER_NON_COLOR_ITEM_LIMIT + ASSISTED_ORDER_COLOR_ITEM_LIMIT
+)
 
 export class WalletApi {
   constructor(private readonly client: WalletApiClient) {}
@@ -258,24 +263,42 @@ function projectPageRequest(request: WalletTransactionRequest): Record<string, n
 }
 
 function projectAssistedWalletOrderRequest(request: OrderCreateRequest): OrderCreateRequest {
-  if (!Array.isArray(request.items) || request.items.length < 1 || request.items.length > 10) {
-    throw new Error('代客订单必须包含 1–10 个商品配置')
+  if (!Array.isArray(request.items) || request.items.length < 1 ||
+    request.items.length > ASSISTED_ORDER_ITEM_LIMIT) {
+    throw new Error('代客订单必须包含有效商品配置')
   }
   const seen = new Set<string>()
+  let colorItemCount = 0
+  let nonColorItemCount = 0
   const items = request.items.map((item) => {
     if (!isPositiveSafeInteger(item.product_id) || !isPositiveSafeInteger(item.quantity) || item.quantity > 99 ||
       !(item.experience_option_id === undefined || item.experience_option_id === null ||
-        isPositiveSafeInteger(item.experience_option_id))) {
+        isPositiveSafeInteger(item.experience_option_id)) ||
+      !(item.kit_color_id === undefined || item.kit_color_id === null ||
+        isPositiveSafeInteger(item.kit_color_id))) {
       throw new Error('代客订单商品、配置或数量无效')
     }
     const optionId = item.experience_option_id ?? null
-    const identity = `${item.product_id}:${optionId ?? 'kit'}`
+    const colorId = item.kit_color_id ?? null
+    if (optionId !== null && colorId !== null) {
+      throw new Error('代客订单商品配置无效')
+    }
+    if (colorId === null) nonColorItemCount += 1
+    else colorItemCount += 1
+    const identity = `${item.product_id}:${optionId ?? 'none'}:${colorId ?? 'none'}`
     if (seen.has(identity)) throw new Error('代客订单不能包含重复商品配置')
     seen.add(identity)
-    return optionId === null
-      ? { product_id: item.product_id, quantity: item.quantity }
-      : { product_id: item.product_id, experience_option_id: optionId, quantity: item.quantity }
+    return {
+      product_id: item.product_id,
+      quantity: item.quantity,
+      ...(optionId === null ? {} : { experience_option_id: optionId }),
+      ...(colorId === null ? {} : { kit_color_id: colorId }),
+    }
   })
+  if (colorItemCount > ASSISTED_ORDER_COLOR_ITEM_LIMIT ||
+    nonColorItemCount > ASSISTED_ORDER_NON_COLOR_ITEM_LIMIT) {
+    throw new Error('代客订单最多包含 20 种颜色和 10 种其他商品配置')
+  }
   if (!(request.remark === undefined || request.remark === null || typeof request.remark === 'string')) {
     throw new Error('代客订单备注格式无效')
   }
@@ -296,12 +319,12 @@ function matchesAssistedWalletOrderIntent(
   const expectedItems = new Map<string, number>()
   for (const item of intent.items) {
     expectedItems.set(
-      `${item.product_id}:${item.experience_option_id ?? 'kit'}`,
+      `${item.product_id}:${item.experience_option_id ?? 'none'}:${item.kit_color_id ?? 'none'}`,
       item.quantity,
     )
   }
   for (const item of result.order.items) {
-    const identity = `${item.product_id}:${item.experience_option_id ?? 'kit'}`
+    const identity = `${item.product_id}:${item.experience_option_id ?? 'none'}:${item.kit_color_id ?? 'none'}`
     if (expectedItems.get(identity) !== item.quantity) return false
     expectedItems.delete(identity)
   }

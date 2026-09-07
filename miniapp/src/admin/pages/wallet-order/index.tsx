@@ -5,12 +5,13 @@ import { useState } from 'react'
 import type { OrderCreateRequest } from '@/api/endpoints/orders'
 import type {
   ExperienceProductDetail,
+  KitColorOption,
   KitProductDetail,
   ProductListItem,
 } from '@/api/endpoints/products'
 import type { AdminUserWallet, AssistedWalletOrderResult } from '@/api/endpoints/wallet'
 import { ADMIN_USER_LIST_PATH, buildLoginUrl, isAdminRole, useAuth } from '@/auth'
-import { buildAdminOrderDetailUrl } from '@/features/order'
+import { buildAdminOrderDetailUrl, CART_COLOR_ITEM_LIMIT } from '@/features/order'
 import { useProductDetail } from '@/features/product/use_product_detail'
 import { type ProductTypeFilter, useProductList } from '@/features/product/use_product_list'
 import {
@@ -261,51 +262,113 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
 }) {
   const experienceDetail = isKitDetail(detail) ? undefined : detail
   const [quantity, setQuantity] = useState(1)
+  const [colorQuery, setColorQuery] = useState('')
+  const [colorQuantities, setColorQuantities] = useState<Record<number, number>>({})
   const [remark, setRemark] = useState('')
   const [selectedOptionId, setSelectedOptionId] = useState(
     experienceDetail?.options[0].id,
   )
   const kitDetail = isKitDetail(detail) ? detail : undefined
-  const [selectedColorId, setSelectedColorId] = useState(
-    kitDetail?.colors.find((item) => item.available)?.id,
-  )
+  const colorKitDetail = kitDetail?.kit_kind.value === 'color_selectable' ? kitDetail : undefined
   const option = experienceDetail
     ? experienceDetail.options.find((item) => item.id === selectedOptionId) ?? experienceDetail.options[0]
     : undefined
-  const color = kitDetail?.kit_kind.value === 'color_selectable'
-    ? kitDetail.colors.find((item) => item.id === selectedColorId)
-    : undefined
+  const selectedColors = colorKitDetail?.colors.filter(
+    (item) => colorQuantities[item.id] !== undefined,
+  ) ?? []
+  const normalizedColorQuery = colorQuery.trim().toLocaleLowerCase()
+  const visibleColors = colorKitDetail?.colors.filter((item) => (
+    normalizedColorQuery.length === 0 ||
+    item.color_code.toLocaleLowerCase().includes(normalizedColorQuery) ||
+    item.name.toLocaleLowerCase().includes(normalizedColorQuery)
+  )) ?? []
+  const colorUnitGrams = colorKitDetail?.sale_unit_grams ?? 10
+  const totalColorUnits = selectedColors.reduce(
+    (total, item) => total + colorQuantities[item.id],
+    0,
+  )
+  const totalColorWeight = totalColorUnits * colorUnitGrams
   const unitPrice = option?.price ?? kitDetail?.price ?? '0.00'
   const unitCents = moneyToCents(unitPrice)
   const balanceCents = moneyToCents(target.wallet.balance)
-  const totalCents = unitCents === undefined ? undefined : unitCents * quantity
+  const totalCents = unitCents === undefined
+    ? undefined
+    : unitCents * (colorKitDetail ? totalColorUnits : quantity)
   const maxQuantity = kitDetail?.kit_kind.value === 'fixed'
     ? Math.min(99, kitDetail.stock ?? 0)
     : 99
   const purchasable = !kitDetail || (kitDetail.kit_kind.value === 'fixed'
     ? kitDetail.available
-    : color?.available === true)
+    : selectedColors.length > 0 && selectedColors.every((item) => item.available))
+  const colorSelectionValid = !colorKitDetail || (
+    selectedColors.length <= CART_COLOR_ITEM_LIMIT &&
+    selectedColors.every((item) => {
+      const colorQuantity = colorQuantities[item.id]
+      return Number.isSafeInteger(colorQuantity) && colorQuantity >= 1 && colorQuantity <= 99
+    })
+  )
   const balanceSufficient = totalCents !== undefined && balanceCents !== undefined && totalCents <= balanceCents
-  const canSubmit = !locked && purchasable && balanceSufficient && quantity >= 1 && quantity <= maxQuantity
+  const canSubmit = !locked && purchasable && colorSelectionValid && balanceSufficient &&
+    (colorKitDetail ? selectedColors.length > 0 : quantity >= 1 && quantity <= maxQuantity)
   const request: OrderCreateRequest = {
-    items: [{
-      product_id: detail.id,
-      quantity,
-      ...(option ? { experience_option_id: option.id } : {}),
-      ...(color ? { kit_color_id: color.id } : {}),
-    }],
+    items: colorKitDetail
+      ? selectedColors.map((item) => ({
+        product_id: detail.id,
+        kit_color_id: item.id,
+        quantity: colorQuantities[item.id],
+      }))
+      : [{
+        product_id: detail.id,
+        quantity,
+        ...(option ? { experience_option_id: option.id } : {}),
+      }],
     ...(remark.trim() ? { remark: remark.trim() } : {}),
+  }
+
+  function toggleColor(item: KitColorOption): void {
+    if (locked || !item.available) return
+    if (colorQuantities[item.id] !== undefined) {
+      setColorQuantities((current) => {
+        const next = { ...current }
+        delete next[item.id]
+        return next
+      })
+      return
+    }
+    if (selectedColors.length >= CART_COLOR_ITEM_LIMIT) {
+      void Taro.showToast({
+        title: `每单最多选择 ${CART_COLOR_ITEM_LIMIT} 种颜色`,
+        icon: 'none',
+      })
+      return
+    }
+    setColorQuantities((current) => ({ ...current, [item.id]: 1 }))
+  }
+
+  function changeColorQuantity(colorId: number, change: number): void {
+    setColorQuantities((current) => {
+      const currentQuantity = current[colorId]
+      if (currentQuantity === undefined) return current
+      return {
+        ...current,
+        [colorId]: Math.max(1, Math.min(99, currentQuantity + change)),
+      }
+    })
   }
 
   async function confirmCreate(): Promise<void> {
     if (!canSubmit || totalCents === undefined) return
     const configuration = option
       ? `\n配置：${option.duration.label} · ${option.participants.label} · ${option.day_type.label}`
-      : color
-        ? `\n颜色：${formatColorLabel(color.color_code, color.name)}`
+      : colorKitDetail
+        ? `\n已选：${selectedColors.map((item) => (
+          `${formatColorLabel(item.color_code, item.name)} ${colorQuantities[item.id] * colorUnitGrams}g`
+        )).join('、')}`
         : ''
-    const priceUnit = color ? ' / 10g' : ''
-    const quantityLabel = color ? `重量：${quantity * 10}g` : `数量：${quantity}`
+    const priceUnit = colorKitDetail ? ` / ${colorUnitGrams}g` : ''
+    const quantityLabel = colorKitDetail
+      ? `合计：${selectedColors.length} 种颜色 · ${totalColorWeight}g`
+      : `数量：${quantity}`
     const confirmation = await Taro.showModal({
       title: '确认创建并扣款？',
       content: `客户：${target.user.nickname}（ID ${target.user.id}）\n商品：${detail.name}${configuration}\n权威预览单价：¥${formatPrice(unitPrice)}${priceUnit}\n${quantityLabel}\n预计扣款：¥${(totalCents / 100).toFixed(2)}\n提交时服务端会再次校验价格、余额与库存。`,
@@ -354,41 +417,115 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
           ))}
         </View>
       )}
-      {kitDetail?.kit_kind.value === 'color_selectable' && (
-        <View className='wallet-order-options'>
-          <Text className='wallet-order-form__label'>拼豆颜色</Text>
-          {kitDetail.colors.map((item) => (
-            <Button
-              key={item.id}
-              className={`wallet-order-option${item.id === color?.id ? ' wallet-order-option--active' : ''}`}
-              disabled={locked || !item.available}
-              onClick={() => setSelectedColorId(item.id)}
-            >
-              <Text>{formatColorLabel(item.color_code, item.name)}</Text>
-              <Text>{item.available ? '可选' : '无货'}</Text>
-            </Button>
-          ))}
+      {colorKitDetail && (
+        <View className='wallet-order-color-picker'>
+          <View className='wallet-order-color-picker__heading'>
+            <View>
+              <Text className='wallet-order-form__label'>选择拼豆颜色</Text>
+              <Text className='wallet-order-color-picker__hint'>点击色号多选；每种颜色以 {colorUnitGrams}g 为一步。</Text>
+            </View>
+            <Text className='wallet-order-color-picker__count'>{selectedColors.length}/{CART_COLOR_ITEM_LIMIT}</Text>
+          </View>
+          <Input
+            className='wallet-order-color-picker__search'
+            disabled={locked}
+            maxlength={100}
+            placeholder='搜索色号或颜色名称'
+            value={colorQuery}
+            onInput={(event) => setColorQuery(event.detail.value)}
+          />
+          {visibleColors.length === 0 ? (
+            <Text className='wallet-order-color-picker__empty'>没有匹配的颜色</Text>
+          ) : (
+            <View className='wallet-order-color-grid'>
+              {visibleColors.map((item) => {
+                const selected = colorQuantities[item.id] !== undefined
+                return (
+                  <Button
+                    key={item.id}
+                    className={`wallet-order-color-option${selected ? ' wallet-order-color-option--selected' : ''}`}
+                    disabled={locked || !item.available}
+                    aria-label={`${selected ? '取消选择' : '选择'} ${formatColorLabel(item.color_code, item.name)}`}
+                    onClick={() => toggleColor(item)}
+                  >
+                    <Text className='wallet-order-color-option__code'>{item.color_code}</Text>
+                    {!item.available && <Text className='wallet-order-color-option__status'>无货</Text>}
+                    {selected && <Text className='wallet-order-color-option__status'>已选</Text>}
+                  </Button>
+                )
+              })}
+            </View>
+          )}
+          {selectedColors.length > 0 && (
+            <View className='wallet-order-selected-colors'>
+              <View className='wallet-order-selected-colors__heading'>
+                <View>
+                  <Text className='wallet-order-selected-colors__title'>已选颜色与数量</Text>
+                  <Text className='wallet-order-selected-colors__hint'>共 {totalColorWeight}g，可分别调整每种颜色。</Text>
+                </View>
+                <Button
+                  className='wallet-order-selected-colors__clear'
+                  disabled={locked}
+                  onClick={() => setColorQuantities({})}
+                >清空</Button>
+              </View>
+              <View className='wallet-order-selected-colors__list'>
+                {selectedColors.map((item) => {
+                  const colorQuantity = colorQuantities[item.id]
+                  return (
+                    <View className='wallet-order-selected-color' key={item.id}>
+                      <View className='wallet-order-selected-color__identity'>
+                        <Text className='wallet-order-selected-color__name'>
+                          {formatColorLabel(item.color_code, item.name)}
+                        </Text>
+                        <Text className='wallet-order-selected-color__weight'>
+                          {colorQuantity * colorUnitGrams}g
+                        </Text>
+                      </View>
+                      <View className='wallet-order-selected-color__controls'>
+                        <Button
+                          className='wallet-order-selected-color__step'
+                          disabled={locked || colorQuantity <= 1}
+                          aria-label={`${item.color_code} 减少 ${colorUnitGrams}g`}
+                          onClick={() => changeColorQuantity(item.id, -1)}
+                        >−</Button>
+                        <Text className='wallet-order-selected-color__quantity'>{colorQuantity}</Text>
+                        <Button
+                          className='wallet-order-selected-color__step'
+                          disabled={locked || colorQuantity >= 99}
+                          aria-label={`${item.color_code} 增加 ${colorUnitGrams}g`}
+                          onClick={() => changeColorQuantity(item.id, 1)}
+                        >＋</Button>
+                      </View>
+                    </View>
+                  )
+                })}
+              </View>
+            </View>
+          )}
         </View>
       )}
       <View className='wallet-order-form__price'>
         <Text className='wallet-order-form__price-label'>服务端当前单价</Text>
-        <Text className='wallet-order-form__price-value'>¥{formatPrice(unitPrice)}</Text>
+        <Text className='wallet-order-form__price-value'>
+          ¥{formatPrice(unitPrice)}{colorKitDetail ? ` / ${colorUnitGrams}g` : ''}
+        </Text>
       </View>
-      {kitDetail && (
+      {kitDetail?.kit_kind.value === 'fixed' && (
         <Text className={purchasable ? 'wallet-order-form__stock' : 'wallet-order-form__error'}>
-          {kitDetail.kit_kind.value === 'fixed'
-            ? (kitDetail.available ? `当前权威库存 ${kitDetail.stock}` : '当前无库存，不可下单')
-            : (color ? '当前颜色可选；精确库存将在提交时校验' : '请选择一个有库存的颜色')}
+          {kitDetail.available ? `当前权威库存 ${kitDetail.stock}` : '当前无库存，不可下单'}
         </Text>
       )}
-      <Text className='wallet-order-form__label'>
-        {color ? '重量（每步 10g）' : 'Item 数量'}
-      </Text>
-      <View className='wallet-order-quantity'>
-        <Button className='wallet-order-quantity__decrease' disabled={locked || quantity <= 1} onClick={() => setQuantity((value) => value - 1)}>−</Button>
-        <Text className='wallet-order-quantity__value'>{color ? `${quantity * 10}g` : quantity}</Text>
-        <Button className='wallet-order-quantity__increase' disabled={locked || quantity >= maxQuantity} onClick={() => setQuantity((value) => value + 1)}>＋</Button>
-      </View>
+      {!colorKitDetail && (
+        <>
+          <Text className='wallet-order-form__label'>Item 数量</Text>
+          <View className='wallet-order-quantity'>
+            <Button className='wallet-order-quantity__decrease' disabled={locked || quantity <= 1} onClick={() => setQuantity((value) => value - 1)}>−</Button>
+            <Text className='wallet-order-quantity__value'>{quantity}</Text>
+            <Button className='wallet-order-quantity__increase' disabled={locked || quantity >= maxQuantity} onClick={() => setQuantity((value) => value + 1)}>＋</Button>
+          </View>
+        </>
+      )}
       <Text className='wallet-order-form__label'>订单备注（可选）</Text>
       <Textarea
         className='wallet-order-form__remark'

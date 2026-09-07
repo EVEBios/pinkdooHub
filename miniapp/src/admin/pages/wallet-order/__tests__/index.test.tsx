@@ -56,6 +56,7 @@ jest.mock('@/auth', () => ({
 }))
 jest.mock('@/features/order', () => ({
   buildAdminOrderDetailUrl: (orderId: number) => `/admin/pages/order-detail/index?id=${orderId}`,
+  CART_COLOR_ITEM_LIMIT: 20,
 }))
 jest.mock('@/features/product/use_product_list', () => ({
   useProductList: () => ({
@@ -157,6 +158,7 @@ describe('AdminWalletOrderPage', () => {
       retry: mockTargetRetry,
     })
     jest.spyOn(Taro, 'showModal').mockResolvedValue({ confirm: true, cancel: false, errMsg: 'showModal:ok' })
+    jest.spyOn(Taro, 'showToast').mockResolvedValue({ errMsg: 'showToast:ok' })
   })
 
   afterEach(() => {
@@ -207,7 +209,7 @@ describe('AdminWalletOrderPage', () => {
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
-  it('自选颜色按 10g 单位确认并提交商品颜色 ID', async () => {
+  it('自选颜色以纯文字网格多选，并分别调整数量后一次提交', async () => {
     mockProductDetail = {
       ...mockProductDetail,
       name: '自选颜色拼豆',
@@ -215,27 +217,90 @@ describe('AdminWalletOrderPage', () => {
       stock: null,
       kit_kind: { value: 'color_selectable', label: '自选颜色' },
       sale_unit_grams: 10,
-      colors: [{
-        id: 81,
-        bead_color_id: 101,
-        slot_no: 1,
-        color_code: 'A01',
-        name: '白色',
-        swatch_image_url: null,
-        available: true,
-      }],
+      colors: [
+        {
+          id: 81,
+          bead_color_id: 101,
+          slot_no: 1,
+          color_code: 'A01',
+          name: '白色',
+          swatch_image_url: '/uploads/swatches/a01.png',
+          available: true,
+        },
+        {
+          id: 82,
+          bead_color_id: 102,
+          slot_no: 2,
+          color_code: 'A02',
+          name: '米白',
+          swatch_image_url: '/uploads/swatches/a02.png',
+          available: true,
+        },
+      ],
     }
     await testUtils.mount(AuthenticatedAdminWalletOrder, { props: { currentUserId: 2, userId: 7 } })
     testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-product'))
-    testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-quantity__increase'))
+    const colorOptions = testUtils.queries.querySelectorAll('.wallet-order-color-option')
+    expect(colorOptions).toHaveLength(2)
+    expect(testUtils.queries.querySelector('img, image, taro-image-core')).toBeNull()
+    expect(testUtils.queries.querySelector('.wallet-order-quantity')).toBeNull()
+
+    testUtils.fireEvent.click(colorOptions[0])
+    await flush(testUtils)
+    testUtils.fireEvent.click(testUtils.queries.querySelectorAll('.wallet-order-color-option')[1])
+    await flush(testUtils)
+    expect(testUtils.queries.querySelectorAll('.wallet-order-selected-color')).toHaveLength(2)
+    expect(requireElement(testUtils, '.wallet-order-selected-colors').textContent).toContain('共 20g')
+
+    const colorSteps = testUtils.queries.querySelectorAll('.wallet-order-selected-color__step')
+    testUtils.fireEvent.click(colorSteps[1])
+    await flush(testUtils)
+    expect(requireElement(testUtils, '.wallet-order-selected-colors').textContent).toContain('共 30g')
     testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-form__submit'))
     await flush(testUtils)
 
     expect(Taro.showModal).toHaveBeenCalledWith(expect.objectContaining({
-      content: expect.stringMatching(/颜色：A01 · 白色[\s\S]*¥2\.50 \/ 10g[\s\S]*重量：20g/),
+      content: expect.stringMatching(/已选：A01 · 白色 20g、A02 · 米白 10g[\s\S]*¥2\.50 \/ 10g[\s\S]*合计：2 种颜色 · 30g[\s\S]*预计扣款：¥7\.50/),
     }))
     expect(mockCreateOrder).toHaveBeenCalledWith({
-      items: [{ product_id: 8, kit_color_id: 81, quantity: 2 }],
+      items: [
+        { product_id: 8, kit_color_id: 81, quantity: 2 },
+        { product_id: 8, kit_color_id: 82, quantity: 1 },
+      ],
+    })
+  })
+
+  it('自选颜色最多选择 20 种', async () => {
+    mockProductDetail = {
+      ...mockProductDetail,
+      name: '自选颜色拼豆',
+      price: '2.50',
+      stock: null,
+      kit_kind: { value: 'color_selectable', label: '自选颜色' },
+      sale_unit_grams: 10,
+      colors: Array.from({ length: 21 }, (_, index) => ({
+        id: 81 + index,
+        bead_color_id: 101 + index,
+        slot_no: index + 1,
+        color_code: `A${String(index + 1).padStart(2, '0')}`,
+        name: `颜色 ${index + 1}`,
+        swatch_image_url: null,
+        available: true,
+      })),
+    }
+    await testUtils.mount(AuthenticatedAdminWalletOrder, { props: { currentUserId: 2, userId: 7 } })
+    testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-product'))
+    for (let index = 0; index < 20; index += 1) {
+      testUtils.fireEvent.click(testUtils.queries.querySelectorAll('.wallet-order-color-option')[index])
+      await flush(testUtils)
+    }
+    testUtils.fireEvent.click(testUtils.queries.querySelectorAll('.wallet-order-color-option')[20])
+    await flush(testUtils)
+
+    expect(requireElement(testUtils, '.wallet-order-color-picker__count').textContent).toBe('20/20')
+    expect(Taro.showToast).toHaveBeenCalledWith({
+      title: '每单最多选择 20 种颜色',
+      icon: 'none',
     })
   })
 
