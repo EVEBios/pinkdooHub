@@ -29,6 +29,7 @@ EXPECTED_MIGRATIONS = [
     "4_20260905162243_add_wallet_payment_refund.py",
     "5_20260906094653_add_reservations.py",
     "6_20260906123000_add_color_selectable_kits.py",
+    "7_20260907190000_add_reservation_settings.py",
 ]
 EXPECTED_FOREIGN_KEYS = {
     (

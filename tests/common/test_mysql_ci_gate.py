@@ -1,6 +1,5 @@
 """Phase 9.2.4 MySQL CI 门槛脚本的安全契约。"""
 
-import ast
 import json
 import os
 import runpy
@@ -17,6 +16,9 @@ RESERVATION_MIGRATION = "5_20260906094653_add_reservations.py"
 COLOR_SELECTABLE_KIT_MIGRATION = (
     "6_20260906123000_add_color_selectable_kits.py"
 )
+RESERVATION_SETTINGS_MIGRATION = (
+    "7_20260907190000_add_reservation_settings.py"
+)
 EXPECTED_MIGRATION_CHAIN = [
     "0_20260810101218_init.py",
     "1_20260813130455_add_order_tables.py",
@@ -25,6 +27,7 @@ EXPECTED_MIGRATION_CHAIN = [
     WALLET_MIGRATION,
     RESERVATION_MIGRATION,
     COLOR_SELECTABLE_KIT_MIGRATION,
+    RESERVATION_SETTINGS_MIGRATION,
 ]
 SAFE_ENVIRONMENT = {
     "APP_ENV": "testing",
@@ -82,38 +85,38 @@ def test_preflight_accepts_only_the_frozen_disposable_target(tmp_path: Path) -> 
 
 
 def test_snapshot_contract_includes_complete_current_migration_chain() -> None:
-    checker_source = CHECKER.read_text(encoding="utf-8")
-    checker_tree = ast.parse(checker_source)
-    migration_assignment = next(
-        node
-        for node in checker_tree.body
-        if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name)
-            and target.id == "EXPECTED_MIGRATIONS"
-            for target in node.targets
-        )
-    )
+    checker_namespace = runpy.run_path(str(CHECKER))
 
-    assert ast.literal_eval(migration_assignment.value) == EXPECTED_MIGRATION_CHAIN
+    assert checker_namespace["EXPECTED_MIGRATIONS"] == EXPECTED_MIGRATION_CHAIN
 
 
-def test_m6_snapshot_requires_legacy_replay_and_palette_evidence() -> None:
+def test_m6_and_m7_snapshots_require_legacy_replay_and_schema_evidence() -> None:
     checker_source = CHECKER.read_text(encoding="utf-8")
 
     assert '"seed-m6-legacy"' in checker_source
-    assert "EXPECTED_MIGRATIONS[:-1]" in checker_source
+    assert "EXPECTED_MIGRATIONS_THROUGH_M5" in checker_source
     assert "M6_LEGACY_PRODUCT_NAME" in checker_source
     assert '"palette_slots": 221' in checker_source
     assert '"legacy_fixed_kit_compatible": True' in checker_source
     assert "M6_EXPECTED_COLUMNS" in checker_source
     assert "M6_EXPECTED_FOREIGN_KEYS" in checker_source
     assert "M6_EXPECTED_INDEXES" in checker_source
+    assert '"seed-m7-legacy"' in checker_source
+    assert "EXPECTED_MIGRATIONS_THROUGH_M6" in checker_source
+    assert "M7_LEGACY_USERNAME" in checker_source
+    assert "M7_LEGACY_PRODUCT_NAME" in checker_source
+    assert "M7_EXPECTED_COLUMNS" in checker_source
+    assert "M7_EXPECTED_INDEXES" in checker_source
+    assert '"default_weekly_closed_weekday": "monday"' in checker_source
+    assert '"singleton_check_valid": True' in checker_source
+    assert '"legacy_history_unchanged": True' in checker_source
+    assert "EXPECTED_MIGRATIONS[:-1]" not in checker_source
+    assert "EXPECTED_MIGRATIONS[:-2]" not in checker_source
 
 
 def test_m6_index_snapshot_groups_by_table_name_and_freezes_uniqueness() -> None:
     checker_namespace = runpy.run_path(str(CHECKER))
-    group_rows = checker_namespace["_group_m6_index_rows"]
+    group_rows = checker_namespace["_group_index_rows"]
     expected_indexes = checker_namespace["M6_EXPECTED_INDEXES"]
 
     grouped = group_rows(

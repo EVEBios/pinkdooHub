@@ -19,18 +19,32 @@ from typing import Mapping, Sequence
 
 
 EXPECTED_DATABASE = "pinkdoohub_inventory_4311_ci"
-EXPECTED_MIGRATIONS = [
+M5_MIGRATION = "5_20260906094653_add_reservations.py"
+M6_MIGRATION = "6_20260906123000_add_color_selectable_kits.py"
+M7_MIGRATION = "7_20260907190000_add_reservation_settings.py"
+EXPECTED_MIGRATIONS_THROUGH_M5 = [
     "0_20260810101218_init.py",
     "1_20260813130455_add_order_tables.py",
     "2_20260814104655_add_inventory_transactions.py",
     "3_20260902125032_phase95_external_identity.py",
     "4_20260905162243_add_wallet_payment_refund.py",
-    "5_20260906094653_add_reservations.py",
-    "6_20260906123000_add_color_selectable_kits.py",
+    M5_MIGRATION,
+]
+EXPECTED_MIGRATIONS_THROUGH_M6 = [
+    *EXPECTED_MIGRATIONS_THROUGH_M5,
+    M6_MIGRATION,
+]
+EXPECTED_MIGRATIONS = [
+    *EXPECTED_MIGRATIONS_THROUGH_M6,
+    M7_MIGRATION,
 ]
 MYSQL_VERSION_PREFIX = "8.0.46"
 CONTAINER_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")
 M6_LEGACY_PRODUCT_NAME = "__ci_m6_legacy_fixed_kit__"
+M7_LEGACY_USERNAME = "__ci_m7_legacy_user__"
+M7_LEGACY_PRODUCT_NAME = "__ci_m7_legacy_experience__"
+M7_LEGACY_OPEN_DATE = "2026-09-10"
+M7_LEGACY_CLOSED_DATE = "2026-09-11"
 M6_EXPECTED_COLUMNS = {
     ("product_kits", "stock", "YES", "int"),
     ("product_kits", "kit_kind", "NO", "varchar"),
@@ -108,6 +122,16 @@ M6_EXPECTED_INDEXES = {
     ("inventory_transactions", "idx_inventory_color_created_id"): (
         1,
         ["kit_color_id", "created_at", "id"],
+    ),
+}
+M7_EXPECTED_COLUMNS = {
+    "singleton_key": ("NO", "tinyint", "1"),
+    "weekly_closed_weekday": ("NO", "varchar", "monday"),
+}
+M7_EXPECTED_INDEXES = {
+    ("reservation_settings", "uidx_reservation_settings_singleton"): (
+        0,
+        ["singleton_key"],
     ),
 }
 
@@ -213,7 +237,7 @@ def preflight(config: GateConfig, report_path: Path) -> None:
     )
 
 
-def _group_m6_index_rows(
+def _group_index_rows(
     rows: Sequence[Sequence[object]],
 ) -> dict[tuple[str, str], tuple[int, list[str]]]:
     """按表和索引聚合列序，并冻结 MySQL NON_UNIQUE 标志。"""
@@ -224,7 +248,7 @@ def _group_m6_index_rows(
         key = (str(table_name), str(index_name))
         flag = int(non_unique)
         if key in flags and flags[key] != flag:
-            raise GateError("M6 index uniqueness metadata is inconsistent")
+            raise GateError("index uniqueness metadata is inconsistent")
         flags[key] = flag
         columns.setdefault(key, []).append(str(column_name))
     return {key: (flags[key], value) for key, value in columns.items()}
@@ -277,7 +301,7 @@ async def _seed_m6_legacy_fixed_kit(config: GateConfig) -> None:
             await cursor.execute("SELECT version FROM aerich ORDER BY id")
             migration_rows = await cursor.fetchall()
             migrations = [str(row[0]) for row in migration_rows]
-            if migrations != EXPECTED_MIGRATIONS[:-1]:
+            if migrations != EXPECTED_MIGRATIONS_THROUGH_M5:
                 raise GateError(
                     "M6 legacy seed requires the reviewed chain through M5"
                 )
@@ -318,6 +342,168 @@ async def _seed_m6_legacy_fixed_kit(config: GateConfig) -> None:
                 "UTC_TIMESTAMP(6), UTC_TIMESTAMP(6), 12.30, 7, %s"
                 ")",
                 (product_id,),
+            )
+        await connection.commit()
+    except Exception:
+        await connection.rollback()
+        raise
+    finally:
+        await connection.ensure_closed()
+
+
+async def _seed_m7_legacy_reservation_history(config: GateConfig) -> None:
+    """在仅回退 M7 的 M6 Schema 中写入预约与单日店休历史。"""
+
+    import asyncmy
+
+    connection = await asyncmy.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        database=config.database,
+        connect_timeout=5,
+        autocommit=False,
+    )
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute("SELECT version FROM aerich ORDER BY id")
+            migration_rows = await cursor.fetchall()
+            migrations = [str(row[0]) for row in migration_rows]
+            if migrations != EXPECTED_MIGRATIONS_THROUGH_M6:
+                raise GateError(
+                    "M7 legacy seed requires the reviewed chain through M6"
+                )
+
+            await cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = %s "
+                "AND TABLE_NAME = 'reservation_settings'",
+                (config.database,),
+            )
+            table_row = await cursor.fetchone()
+            if table_row is None or int(table_row[0]) != 0:
+                raise GateError(
+                    "M7 reservation_settings must be absent before legacy seeding"
+                )
+
+            await cursor.execute(
+                "SELECT COUNT(*) FROM users WHERE username = %s",
+                (M7_LEGACY_USERNAME,),
+            )
+            user_marker_row = await cursor.fetchone()
+            await cursor.execute(
+                "SELECT COUNT(*) FROM products WHERE name = %s",
+                (M7_LEGACY_PRODUCT_NAME,),
+            )
+            product_marker_row = await cursor.fetchone()
+            if (
+                user_marker_row is None
+                or product_marker_row is None
+                or int(user_marker_row[0]) != 0
+                or int(product_marker_row[0]) != 0
+            ):
+                raise GateError("M7 legacy seed marker already exists")
+
+            await cursor.execute(
+                "INSERT INTO users ("
+                "created_at, updated_at, username, password, nickname, phone, "
+                "avatar, role, status"
+                ") VALUES ("
+                "'2026-09-07 01:00:00.000000', "
+                "'2026-09-07 01:00:00.000000', %s, "
+                "'ci-only-non-secret-password-hash', 'M7 legacy user', "
+                "'13970000007', NULL, 1, 1"
+                ")",
+                (M7_LEGACY_USERNAME,),
+            )
+            user_id = int(cursor.lastrowid)
+            await cursor.execute(
+                "INSERT INTO products ("
+                "created_at, updated_at, name, product_type, description, "
+                "status, is_deleted"
+                ") VALUES ("
+                "'2026-09-07 01:00:00.000000', "
+                "'2026-09-07 01:00:00.000000', %s, 'experience', "
+                "'M7 migration preservation marker', 'online', 0"
+                ")",
+                (M7_LEGACY_PRODUCT_NAME,),
+            )
+            product_id = int(cursor.lastrowid)
+            await cursor.execute(
+                "INSERT INTO experience_options ("
+                "created_at, updated_at, duration, participants, day_type, "
+                "price, is_deleted, product_id"
+                ") VALUES ("
+                "'2026-09-07 01:00:00.000000', "
+                "'2026-09-07 01:00:00.000000', 90, 2, 'weekday', "
+                "123.45, 0, %s"
+                ")",
+                (product_id,),
+            )
+            option_id = int(cursor.lastrowid)
+
+            business_day_ids: dict[str, int] = {}
+            for business_date, is_closed in (
+                (M7_LEGACY_OPEN_DATE, 0),
+                (M7_LEGACY_CLOSED_DATE, 1),
+            ):
+                await cursor.execute(
+                    "INSERT INTO store_business_days ("
+                    "created_at, updated_at, business_date, is_closed"
+                    ") VALUES ("
+                    "'2026-09-07 01:00:00.000000', "
+                    "'2026-09-07 01:00:00.000000', %s, %s"
+                    ")",
+                    (business_date, is_closed),
+                )
+                business_day_ids[business_date] = int(cursor.lastrowid)
+
+            await cursor.execute(
+                "INSERT INTO reservations ("
+                "created_at, updated_at, scheduled_start_at, scheduled_end_at, "
+                "product_name, option_duration_minutes, option_participants, "
+                "option_day_type, option_price, status, rejection_reason, "
+                "cancellation_reason, confirmed_at, rejected_at, cancelled_at, "
+                "business_day_id, experience_option_id, product_id, user_id"
+                ") VALUES ("
+                "'2026-09-07 01:00:00.000000', "
+                "'2026-09-07 02:00:00.000000', "
+                "'2026-09-10 06:00:00.000000', "
+                "'2026-09-10 07:30:00.000000', %s, 90, 2, 'weekday', "
+                "123.45, 'confirmed', NULL, NULL, "
+                "'2026-09-07 02:00:00.000000', NULL, NULL, %s, %s, %s, %s"
+                ")",
+                (
+                    M7_LEGACY_PRODUCT_NAME,
+                    business_day_ids[M7_LEGACY_OPEN_DATE],
+                    option_id,
+                    product_id,
+                    user_id,
+                ),
+            )
+            await cursor.execute(
+                "INSERT INTO reservations ("
+                "created_at, updated_at, scheduled_start_at, scheduled_end_at, "
+                "product_name, option_duration_minutes, option_participants, "
+                "option_day_type, option_price, status, rejection_reason, "
+                "cancellation_reason, confirmed_at, rejected_at, cancelled_at, "
+                "business_day_id, experience_option_id, product_id, user_id"
+                ") VALUES ("
+                "'2026-09-07 01:00:00.000000', "
+                "'2026-09-07 03:00:00.000000', "
+                "'2026-09-11 06:30:00.000000', "
+                "'2026-09-11 08:00:00.000000', %s, 90, 2, 'weekday', "
+                "123.45, 'cancelled', NULL, 'store_closed', NULL, NULL, "
+                "'2026-09-07 03:00:00.000000', %s, %s, %s, %s"
+                ")",
+                (
+                    M7_LEGACY_PRODUCT_NAME,
+                    business_day_ids[M7_LEGACY_CLOSED_DATE],
+                    option_id,
+                    product_id,
+                    user_id,
+                ),
             )
         await connection.commit()
     except Exception:
@@ -441,7 +627,7 @@ async def _read_m6_evidence(config: GateConfig) -> dict[str, object]:
                 (config.database,),
             )
             index_rows = await cursor.fetchall()
-            actual_indexes = _group_m6_index_rows(index_rows)
+            actual_indexes = _group_index_rows(index_rows)
             if actual_indexes != M6_EXPECTED_INDEXES:
                 raise GateError("M6 named indexes do not match the contract")
     finally:
@@ -457,6 +643,172 @@ async def _read_m6_evidence(config: GateConfig) -> dict[str, object]:
     }
 
 
+async def _read_m7_evidence(config: GateConfig) -> dict[str, object]:
+    """读取 M7 单例设置及既有 Reservation 数据不漂移证据。"""
+
+    import asyncmy
+
+    connection = await asyncmy.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        database=config.database,
+        connect_timeout=5,
+        autocommit=True,
+    )
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT COLUMN_NAME, IS_NULLABLE, DATA_TYPE, COLUMN_DEFAULT "
+                "FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s "
+                "AND TABLE_NAME = 'reservation_settings' "
+                "AND COLUMN_NAME IN ('singleton_key', 'weekly_closed_weekday')",
+                (config.database,),
+            )
+            column_rows = await cursor.fetchall()
+            actual_columns = {
+                str(column): (
+                    str(nullable),
+                    str(data_type),
+                    None if default is None else str(default),
+                )
+                for column, nullable, data_type, default in column_rows
+            }
+            if actual_columns != M7_EXPECTED_COLUMNS:
+                raise GateError("M7 critical column shape does not match the contract")
+
+            await cursor.execute(
+                "SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE "
+                "FROM information_schema.TABLE_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = %s "
+                "AND TABLE_NAME = 'reservation_settings' "
+                "AND CONSTRAINT_NAME IN ("
+                "'ck_reservation_settings_singleton', "
+                "'uidx_reservation_settings_singleton'"
+                ")",
+                (config.database,),
+            )
+            constraint_rows = await cursor.fetchall()
+            actual_constraints = {
+                (str(name), str(constraint_type))
+                for name, constraint_type in constraint_rows
+            }
+            expected_constraints = {
+                ("ck_reservation_settings_singleton", "CHECK"),
+                ("uidx_reservation_settings_singleton", "UNIQUE"),
+            }
+            if actual_constraints != expected_constraints:
+                raise GateError("M7 singleton constraints do not match the contract")
+
+            await cursor.execute(
+                "SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = %s "
+                "AND CONSTRAINT_NAME = 'ck_reservation_settings_singleton'",
+                (config.database,),
+            )
+            check_rows = await cursor.fetchall()
+            if len(check_rows) != 1:
+                raise GateError("M7 singleton CHECK constraint is missing")
+            normalized_check = "".join(str(check_rows[0][0]).lower().split())
+            if "singleton_key" not in normalized_check or "=1" not in normalized_check:
+                raise GateError("M7 singleton CHECK constraint has drifted")
+
+            await cursor.execute(
+                "SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, COLUMN_NAME "
+                "FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s "
+                "AND TABLE_NAME = 'reservation_settings' "
+                "AND INDEX_NAME = 'uidx_reservation_settings_singleton' "
+                "ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
+                (config.database,),
+            )
+            index_rows = await cursor.fetchall()
+            actual_indexes = _group_index_rows(index_rows)
+            if actual_indexes != M7_EXPECTED_INDEXES:
+                raise GateError("M7 singleton index does not match the contract")
+
+            await cursor.execute(
+                "SELECT singleton_key, weekly_closed_weekday "
+                "FROM reservation_settings ORDER BY id"
+            )
+            settings_rows = await cursor.fetchall()
+            if settings_rows != ((1, "monday"),):
+                raise GateError(
+                    "M7 must create exactly one default Monday settings row"
+                )
+
+            await cursor.execute(
+                "SELECT DATE_FORMAT(days.business_date, '%%Y-%%m-%%d'), "
+                "days.is_closed, reservations.status, "
+                "reservations.cancellation_reason, "
+                "DATE_FORMAT(reservations.scheduled_start_at, "
+                "'%%Y-%%m-%%d %%H:%%i:%%s.%%f'), "
+                "DATE_FORMAT(reservations.scheduled_end_at, "
+                "'%%Y-%%m-%%d %%H:%%i:%%s.%%f'), "
+                "reservations.product_name, "
+                "reservations.option_duration_minutes, "
+                "reservations.option_participants, "
+                "reservations.option_day_type, "
+                "CAST(reservations.option_price AS CHAR) "
+                "FROM reservations "
+                "INNER JOIN store_business_days AS days "
+                "ON days.id = reservations.business_day_id "
+                "INNER JOIN products "
+                "ON products.id = reservations.product_id "
+                "INNER JOIN users ON users.id = reservations.user_id "
+                "WHERE products.name = %s AND users.username = %s "
+                "ORDER BY days.business_date",
+                (M7_LEGACY_PRODUCT_NAME, M7_LEGACY_USERNAME),
+            )
+            legacy_rows = await cursor.fetchall()
+            expected_legacy_rows = (
+                (
+                    M7_LEGACY_OPEN_DATE,
+                    0,
+                    "confirmed",
+                    None,
+                    "2026-09-10 06:00:00.000000",
+                    "2026-09-10 07:30:00.000000",
+                    M7_LEGACY_PRODUCT_NAME,
+                    90,
+                    2,
+                    "weekday",
+                    "123.45",
+                ),
+                (
+                    M7_LEGACY_CLOSED_DATE,
+                    1,
+                    "cancelled",
+                    "store_closed",
+                    "2026-09-11 06:30:00.000000",
+                    "2026-09-11 08:00:00.000000",
+                    M7_LEGACY_PRODUCT_NAME,
+                    90,
+                    2,
+                    "weekday",
+                    "123.45",
+                ),
+            )
+            if legacy_rows != expected_legacy_rows:
+                raise GateError(
+                    "M7 changed existing Reservation or store-closure history"
+                )
+    finally:
+        await connection.ensure_closed()
+
+    return {
+        "singleton_row_count": 1,
+        "default_weekly_closed_weekday": "monday",
+        "singleton_check_valid": True,
+        "named_index_count": len(M7_EXPECTED_INDEXES),
+        "legacy_reservation_count": 2,
+        "legacy_store_business_day_count": 2,
+        "legacy_history_unchanged": True,
+    }
+
+
 def seed_m6_legacy(config: GateConfig, report_path: Path) -> None:
     """为 M6 二次升级写入受控 M5 历史数据。"""
 
@@ -467,10 +819,28 @@ def seed_m6_legacy(config: GateConfig, report_path: Path) -> None:
             "schema_version": 1,
             "status": "m6-legacy-seed-ready",
             **config.safe_target(),
-            "migration_tail": EXPECTED_MIGRATIONS[-2],
+            "migration_tail": M5_MIGRATION,
         },
     )
     print("MySQL M6 legacy fixed Kit seed passed")
+
+
+def seed_m7_legacy(config: GateConfig, report_path: Path) -> None:
+    """为 M7 二次升级写入受控 M6 Reservation 历史。"""
+
+    asyncio.run(_seed_m7_legacy_reservation_history(config))
+    write_report(
+        report_path,
+        {
+            "schema_version": 1,
+            "status": "m7-legacy-seed-ready",
+            **config.safe_target(),
+            "migration_tail": M6_MIGRATION,
+            "legacy_reservation_count": 2,
+            "legacy_store_business_day_count": 2,
+        },
+    )
+    print("MySQL M7 legacy Reservation history seed passed")
 
 
 def snapshot(config: GateConfig, report_path: Path) -> None:
@@ -480,6 +850,7 @@ def snapshot(config: GateConfig, report_path: Path) -> None:
     if migrations != EXPECTED_MIGRATIONS:
         raise GateError("Aerich did not apply the complete reviewed migration chain")
     m6_evidence = asyncio.run(_read_m6_evidence(config))
+    m7_evidence = asyncio.run(_read_m7_evidence(config))
 
     write_report(
         report_path,
@@ -490,6 +861,7 @@ def snapshot(config: GateConfig, report_path: Path) -> None:
             "mysql_version": mysql_version,
             "aerich_versions": migrations,
             "m6_evidence": m6_evidence,
+            "m7_evidence": m7_evidence,
             "git_sha": os.getenv("GITHUB_SHA", "local-uncommitted"),
             "workflow_run_id": os.getenv("GITHUB_RUN_ID", "local"),
         },
@@ -612,7 +984,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("preflight", "seed-m6-legacy", "snapshot", "cleanup"),
+        choices=(
+            "preflight",
+            "seed-m6-legacy",
+            "seed-m7-legacy",
+            "snapshot",
+            "cleanup",
+        ),
     )
     parser.add_argument("--report", required=True, type=Path)
     return parser.parse_args()
@@ -630,6 +1008,9 @@ def main() -> int:
             return 0
         if arguments.command == "seed-m6-legacy":
             seed_m6_legacy(config, arguments.report)
+            return 0
+        if arguments.command == "seed-m7-legacy":
+            seed_m7_legacy(config, arguments.report)
             return 0
         return 0 if cleanup(config, arguments.report) else 1
     except GateError as error:

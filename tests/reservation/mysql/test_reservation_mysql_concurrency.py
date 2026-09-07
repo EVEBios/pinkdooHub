@@ -20,12 +20,13 @@ from app.common.enums.reservation import (
     ReservationRejectionReason,
     ReservationScheduleUnavailableReason,
     ReservationStatus,
+    ReservationWeekday,
 )
 from app.common.exceptions.reservation import ReservationScheduleUnavailable
 from app.models.audit_log import AuditLog
 from app.models.experience_option import ExperienceOption
 from app.models.product import Product
-from app.models.reservation import Reservation, StoreBusinessDay
+from app.models.reservation import Reservation, ReservationSettings, StoreBusinessDay
 from app.models.user import User
 from app.repositories.audit_log_repo import (
     AuditLogCreateData,
@@ -49,39 +50,9 @@ RESERVATION_MIGRATIONS = list(
 COLOR_SELECTABLE_KIT_MIGRATIONS = list(
     Path("migrations/models").glob("6_*_add_color_selectable_kits.py")
 )
-
-
-class _TwoPartyBarrier:
-    """让两个协程在执行营业日锁 SQL 前同时放行。"""
-
-    def __init__(self) -> None:
-        self._arrivals = 0
-        self._mutex = asyncio.Lock()
-        self._open = asyncio.Event()
-
-    async def wait(self) -> None:
-        async with self._mutex:
-            self._arrivals += 1
-            if self._arrivals == 2:
-                self._open.set()
-        await self._open.wait()
-
-
-class _BarrierReservationRepository(ReservationRepository):
-    def __init__(self, barrier: _TwoPartyBarrier) -> None:
-        self._barrier = barrier
-
-    async def ensure_business_day_for_update(
-        self,
-        business_date: date,
-        *,
-        using_db: BaseDBAsyncClient,
-    ) -> StoreBusinessDay:
-        await self._barrier.wait()
-        return await super().ensure_business_day_for_update(
-            business_date,
-            using_db=using_db,
-        )
+RESERVATION_SETTINGS_MIGRATIONS = list(
+    Path("migrations/models").glob("7_*_add_reservation_settings.py")
+)
 
 
 class _HoldingBusinessDayRepository(ReservationRepository):
@@ -104,6 +75,47 @@ class _HoldingBusinessDayRepository(ReservationRepository):
         self.lock_acquired.set()
         await self.release.wait()
         return business_day
+
+
+class _RecordingWeeklyClosureRepository(ReservationRepository):
+    """记录真实 MySQL 返回的预约锁顺序。"""
+
+    def __init__(self) -> None:
+        self.locked_batches: list[list[int]] = []
+
+    async def list_active_for_business_dates_for_update(
+        self,
+        *,
+        business_dates: list[date],
+        scheduled_after: datetime,
+        using_db: BaseDBAsyncClient,
+    ) -> list[Reservation]:
+        reservations = await super().list_active_for_business_dates_for_update(
+            business_dates=business_dates,
+            scheduled_after=scheduled_after,
+            using_db=using_db,
+        )
+        self.locked_batches.append([item.id for item in reservations])
+        return reservations
+
+
+class _HoldingSettingsRepository(_RecordingWeeklyClosureRepository):
+    """取得 M7 单例设置锁后等待测试显式放行。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lock_acquired = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def get_settings_for_update(
+        self,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> ReservationSettings:
+        settings = await super().get_settings_for_update(using_db=using_db)
+        self.lock_acquired.set()
+        await self.release.wait()
+        return settings
 
 
 class _TimeoutSignalingReservationRepository(ReservationRepository):
@@ -149,6 +161,30 @@ class _OneShotDeadlockRepository(ReservationRepository):
             raise OperationalError(1213, "deadlock victim")
         return await super().list_active_for_business_day_for_update(
             business_day_id=business_day_id,
+            scheduled_after=scheduled_after,
+            using_db=using_db,
+        )
+
+
+class _OneShotWeeklyDeadlockRepository(_RecordingWeeklyClosureRepository):
+    """在 M7 首个事务已更新设置后模拟驱动返回 1213。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    async def list_active_for_business_dates_for_update(
+        self,
+        *,
+        business_dates: list[date],
+        scheduled_after: datetime,
+        using_db: BaseDBAsyncClient,
+    ) -> list[Reservation]:
+        self.attempts += 1
+        if self.attempts == 1:
+            raise OperationalError(1213, "M7 weekly closure deadlock victim")
+        return await super().list_active_for_business_dates_for_update(
+            business_dates=business_dates,
             scheduled_after=scheduled_after,
             using_db=using_db,
         )
@@ -386,9 +422,7 @@ async def test_concurrent_same_day_closure_commits_once_and_replays_once() -> No
     await rejected.save(
         update_fields=["rejection_reason", "rejected_at", "updated_at"]
     )
-    service = _service(
-        _BarrierReservationRepository(_TwoPartyBarrier())
-    )
+    service = _service()
 
     first, second = await asyncio.wait_for(
         asyncio.gather(
@@ -559,9 +593,173 @@ async def test_1213_rolls_back_first_attempt_then_retries_full_transaction() -> 
     assert await AuditLog.filter(action="CLOSE_STORE_BUSINESS_DAY").count() == 1
 
 
+async def test_weekly_closure_serializes_on_settings_and_locks_reservations_by_id() -> None:
+    owner = await _create_user(21)
+    admin = await _create_user(22)
+    product, option = await _create_option()
+    later_wednesday_day = await StoreBusinessDay.create(
+        business_date=date(2026, 9, 16),
+        is_closed=False,
+    )
+    soon_wednesday_day = await StoreBusinessDay.create(
+        business_date=date(2026, 9, 9),
+        is_closed=False,
+    )
+    thursday_day = await StoreBusinessDay.create(
+        business_date=date(2026, 9, 10),
+        is_closed=False,
+    )
+    later_wednesday = await _create_reservation_record(
+        user=owner,
+        business_day=later_wednesday_day,
+        product=product,
+        option=option,
+        local_start=time(11, 0),
+    )
+    soon_wednesday = await _create_reservation_record(
+        user=owner,
+        business_day=soon_wednesday_day,
+        product=product,
+        option=option,
+        local_start=time(11, 30),
+        status=ReservationStatus.CONFIRMED,
+    )
+    thursday = await _create_reservation_record(
+        user=owner,
+        business_day=thursday_day,
+        product=product,
+        option=option,
+        local_start=time(12, 0),
+    )
+    holding_repository = _HoldingSettingsRepository()
+    waiting_repository = _RecordingWeeklyClosureRepository()
+
+    first_task = asyncio.create_task(
+        _service(holding_repository).update_weekly_closed_day(
+            weekly_closed_weekday=ReservationWeekday.WEDNESDAY,
+            operator_id=admin.id,
+            ip_address="127.0.0.1",
+        )
+    )
+    await asyncio.wait_for(holding_repository.lock_acquired.wait(), timeout=5)
+    second_task = asyncio.create_task(
+        _service(waiting_repository).update_weekly_closed_day(
+            weekly_closed_weekday=ReservationWeekday.THURSDAY,
+            operator_id=admin.id,
+            ip_address="127.0.0.1",
+        )
+    )
+    try:
+        await asyncio.wait_for(_wait_for_data_lock_wait(), timeout=5)
+    finally:
+        holding_repository.release.set()
+
+    first, second = await asyncio.wait_for(
+        asyncio.gather(first_task, second_task),
+        timeout=10,
+    )
+
+    assert first.previous_weekly_closed_weekday is ReservationWeekday.MONDAY
+    assert first.newly_cancelled_count == 2
+    assert first.cancelled_pending_count == 1
+    assert first.cancelled_confirmed_count == 1
+    assert second.previous_weekly_closed_weekday is ReservationWeekday.WEDNESDAY
+    assert second.newly_cancelled_count == 1
+    assert holding_repository.locked_batches == [
+        sorted([later_wednesday.id, soon_wednesday.id])
+    ]
+    assert waiting_repository.locked_batches == [[thursday.id]]
+    settings = await ReservationSettings.get(singleton_key=True)
+    assert settings.weekly_closed_weekday == ReservationWeekday.THURSDAY
+    for reservation in (later_wednesday, soon_wednesday, thursday):
+        await reservation.refresh_from_db()
+        assert ReservationStatus(reservation.status) is ReservationStatus.CANCELLED
+        assert (
+            ReservationCancellationReason(reservation.cancellation_reason)
+            is ReservationCancellationReason.STORE_CLOSED
+        )
+    assert await AuditLog.filter(action="CANCEL_RESERVATION").count() == 3
+    assert await AuditLog.filter(action="UPDATE_WEEKLY_CLOSED_DAY").count() == 2
+
+
+async def test_weekly_closure_rolls_back_setting_batch_and_audits_together() -> None:
+    owner = await _create_user(23)
+    admin = await _create_user(24)
+    product, option = await _create_option()
+    business_day = await StoreBusinessDay.create(
+        business_date=date(2026, 9, 9),
+        is_closed=False,
+    )
+    reservation = await _create_reservation_record(
+        user=owner,
+        business_day=business_day,
+        product=product,
+        option=option,
+        local_start=time(13, 0),
+    )
+
+    with pytest.raises(RuntimeError, match="fail after MySQL closure audit"):
+        await _service(
+            audit_service=_FailAfterBatchAudit(AuditLogRepository())
+        ).update_weekly_closed_day(
+            weekly_closed_weekday=ReservationWeekday.WEDNESDAY,
+            operator_id=admin.id,
+            ip_address="127.0.0.1",
+        )
+
+    settings = await ReservationSettings.get(singleton_key=True)
+    await reservation.refresh_from_db()
+    assert settings.weekly_closed_weekday == ReservationWeekday.MONDAY
+    assert ReservationStatus(reservation.status) is ReservationStatus.PENDING
+    assert reservation.cancellation_reason is None
+    assert reservation.cancelled_at is None
+    assert not await AuditLog.all().exists()
+
+
+async def test_weekly_closure_1213_retries_the_entire_m7_transaction() -> None:
+    assert RESERVATION_RETRYABLE_MYSQL_ERROR_CODES == frozenset({1205, 1213})
+    owner = await _create_user(25)
+    admin = await _create_user(26)
+    product, option = await _create_option()
+    business_day = await StoreBusinessDay.create(
+        business_date=date(2026, 9, 9),
+        is_closed=False,
+    )
+    reservation = await _create_reservation_record(
+        user=owner,
+        business_day=business_day,
+        product=product,
+        option=option,
+        local_start=time(14, 0),
+    )
+    repository = _OneShotWeeklyDeadlockRepository()
+
+    result = await _service(repository).update_weekly_closed_day(
+        weekly_closed_weekday=ReservationWeekday.WEDNESDAY,
+        operator_id=admin.id,
+        ip_address="127.0.0.1",
+    )
+
+    settings = await ReservationSettings.get(singleton_key=True)
+    await reservation.refresh_from_db()
+    assert repository.attempts == 2
+    assert repository.locked_batches == [[reservation.id]]
+    assert result.previous_weekly_closed_weekday is ReservationWeekday.MONDAY
+    assert result.newly_cancelled_count == 1
+    assert settings.weekly_closed_weekday == ReservationWeekday.WEDNESDAY
+    assert ReservationStatus(reservation.status) is ReservationStatus.CANCELLED
+    assert (
+        ReservationCancellationReason(reservation.cancellation_reason)
+        is ReservationCancellationReason.STORE_CLOSED
+    )
+    assert await AuditLog.filter(action="CANCEL_RESERVATION").count() == 1
+    assert await AuditLog.filter(action="UPDATE_WEEKLY_CLOSED_DAY").count() == 1
+
+
 async def test_mysql_migrations_and_explain_use_all_reservation_indexes() -> None:
     assert len(RESERVATION_MIGRATIONS) == 1
     assert len(COLOR_SELECTABLE_KIT_MIGRATIONS) == 1
+    assert len(RESERVATION_SETTINGS_MIGRATIONS) == 1
     product, option = await _create_option()
     users = [await _create_user(100 + number) for number in range(50)]
     business_days = [
@@ -677,6 +875,7 @@ async def test_mysql_migrations_and_explain_use_all_reservation_indexes() -> Non
         "4_20260905162243_add_wallet_payment_refund.py",
         RESERVATION_MIGRATIONS[0].name,
         COLOR_SELECTABLE_KIT_MIGRATIONS[0].name,
+        RESERVATION_SETTINGS_MIGRATIONS[0].name,
     ]
     assert day_lock_plan[0]["key"] == "uidx_store_business_day_date"
     assert user_page_plan[0]["key"] == "idx_reservations_user_start_id"

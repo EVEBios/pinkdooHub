@@ -84,6 +84,8 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     assert "INVENTORY_MYSQL_TEST_DB: pinkdoohub_inventory_4311_ci" in workflow
     assert "python scripts/ci/check_mysql_gate.py preflight" in workflow
     assert "aerich --app models upgrade" in workflow
+    assert "aerich --app models downgrade -v 7 --yes" in workflow
+    assert "check_mysql_gate.py seed-m7-legacy" in workflow
     assert "aerich --app models downgrade -v 6 --yes" in workflow
     assert "check_mysql_gate.py seed-m6-legacy" in workflow
     assert "python scripts/ci/check_mysql_gate.py snapshot" in workflow
@@ -94,6 +96,31 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     assert "init-db" not in workflow
     assert "generate_schemas" not in workflow
 
+    initial_upgrade = workflow.index(
+        "aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log"
+    )
+    m7_downgrade = workflow.index("aerich --app models downgrade -v 7 --yes")
+    m7_seed = workflow.index("check_mysql_gate.py seed-m7-legacy")
+    m6_downgrade = workflow.index("aerich --app models downgrade -v 6 --yes")
+    m6_seed = workflow.index("check_mysql_gate.py seed-m6-legacy")
+    final_upgrade = workflow.index(
+        "aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log",
+        m6_seed,
+    )
+    snapshot = workflow.index("python scripts/ci/check_mysql_gate.py snapshot")
+    assert (
+        initial_upgrade
+        < m7_downgrade
+        < m7_seed
+        < m6_downgrade
+        < m6_seed
+        < final_upgrade
+        < snapshot
+    )
+    assert workflow.count(
+        "aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log"
+    ) == 2
+
 
 def test_mysql_release_job_always_cleans_up_and_saves_evidence() -> None:
     workflow = _workflow_text()
@@ -103,6 +130,7 @@ def test_mysql_release_job_always_cleans_up_and_saves_evidence() -> None:
     assert "if: always()" in workflow
     assert "artifacts/mysql-release.json" in workflow
     assert "artifacts/mysql-m6-legacy-seed.json" in workflow
+    assert "artifacts/mysql-m7-legacy-seed.json" in workflow
     assert "artifacts/mysql-cleanup.json" in workflow
     assert "artifacts/backend-mysql-release.xml" in workflow
     assert "backend-mysql-release-${{ github.sha }}-${{ github.run_id }}" in workflow

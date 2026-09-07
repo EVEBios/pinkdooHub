@@ -9,7 +9,11 @@ from tortoise.backends.base.executor import EXECUTOR_CACHE
 
 
 MYSQL_DATABASE_PREFIX = "pinkdoohub_inventory_4311"
-MIGRATION_EVIDENCE_TABLES = {"aerich", "bead_colors"}
+MIGRATION_EVIDENCE_TABLES = {
+    "aerich",
+    "bead_colors",
+    "reservation_settings",
+}
 
 
 def _mysql_test_config() -> dict[str, object]:
@@ -56,7 +60,7 @@ def _mysql_test_config() -> dict[str, object]:
 
 
 async def _truncate_business_tables() -> None:
-    """清空用例数据，保留 Aerich 版本链与 M6 的 221 槽种子。"""
+    """清空用例数据，保留迁移版本、M6 色槽与 M7 单例种子。"""
 
     connection = connections.get("default")
     table_names = sorted(
@@ -72,6 +76,10 @@ async def _truncate_business_tables() -> None:
             await connection.execute_query(f"TRUNCATE TABLE `{table_name}`")
     finally:
         await connection.execute_query("SET FOREIGN_KEY_CHECKS = 1")
+    await connection.execute_query(
+        "UPDATE reservation_settings "
+        "SET singleton_key = 1, weekly_closed_weekday = 'monday'"
+    )
 
 
 @pytest_asyncio.fixture(autouse=True)

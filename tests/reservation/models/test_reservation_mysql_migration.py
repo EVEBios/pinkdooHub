@@ -1,4 +1,4 @@
-"""Reservation M5 MySQL 增量迁移的静态契约测试。"""
+"""Reservation M5/M7 MySQL 增量迁移的静态契约测试。"""
 
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -7,6 +7,7 @@ from types import ModuleType
 from aerich.utils import decompress_dict
 
 MIGRATION_NAME = "5_20260906094653_add_reservations.py"
+SETTINGS_MIGRATION_NAME = "7_20260907190000_add_reservation_settings.py"
 
 
 def _load_reservation_migration() -> ModuleType:
@@ -17,6 +18,23 @@ def _load_reservation_migration() -> ModuleType:
 
     spec = spec_from_file_location(
         "reservation_mysql_migration",
+        migration_files[0],
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_reservation_settings_migration() -> ModuleType:
+    migration_files = list(
+        Path("migrations/models").glob("7_*_add_reservation_settings.py")
+    )
+    assert [path.name for path in migration_files] == [SETTINGS_MIGRATION_NAME]
+
+    spec = spec_from_file_location(
+        "reservation_settings_mysql_migration",
         migration_files[0],
     )
     assert spec is not None
@@ -119,3 +137,51 @@ def test_m5_models_state_contains_reservation_models_and_prior_history() -> None
         "idx_reservations_day_status_start_id",
         "idx_reservations_status_start_id",
     ]
+
+
+async def test_m7_only_creates_and_seeds_the_singleton_settings_table() -> None:
+    migration = _load_reservation_settings_migration()
+    ddl = await migration.upgrade(None)
+
+    assert migration.RUN_IN_TRANSACTION is False
+    assert "IF NOT EXISTS" not in ddl
+    assert "ALTER TABLE" not in ddl
+    assert "UPDATE " not in ddl
+    assert "DELETE " not in ddl
+    assert "DROP TABLE" not in ddl
+    created_tables = [
+        normalized.split("`")[1]
+        for line in ddl.splitlines()
+        if (normalized := line.strip()).startswith("CREATE TABLE `")
+    ]
+    assert created_tables == ["reservation_settings"]
+    assert ddl.count("INSERT INTO `reservation_settings`") == 1
+    assert ") VALUES (CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), 1, 'monday')" in ddl
+
+
+async def test_m7_freezes_default_monday_check_and_unique_singleton_index() -> None:
+    migration = _load_reservation_settings_migration()
+    ddl = await migration.upgrade(None)
+
+    assert "`singleton_key` BOOL NOT NULL DEFAULT 1" in ddl
+    assert (
+        "`weekly_closed_weekday` VARCHAR(32) NOT NULL DEFAULT 'monday'" in ddl
+    )
+    assert "CONSTRAINT `ck_reservation_settings_singleton`" in ddl
+    assert "CHECK (`singleton_key` = 1)" in ddl
+    assert (
+        "UNIQUE KEY `uidx_reservation_settings_singleton` (`singleton_key`)"
+        in ddl
+    )
+
+
+async def test_m7_downgrade_only_drops_reservation_settings() -> None:
+    migration = _load_reservation_settings_migration()
+    ddl = await migration.downgrade(None)
+
+    dropped_tables = [
+        normalized.split("`")[1]
+        for line in ddl.splitlines()
+        if (normalized := line.strip()).startswith("DROP TABLE `")
+    ]
+    assert dropped_tables == ["reservation_settings"]
