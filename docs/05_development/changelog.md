@@ -4,6 +4,15 @@
 
 ---
 
+## Gate A 升级后代表性数据证据链（本地候选，2026-09-07）
+
+- 既有库升级成功 Record 新增并强制验证 `source_candidate_sha` 与
+  `source_image_id`；来源 image ID 直接取自 24 小时内且已独立恢复通过的 Backup
+  Record，不接受调用方另行伪造。
+- 韧性演练在首次部署继续要求代表性数据精确绑定当前 SHA/Image；在 M2→M7 路径只接受
+  升级 Record 冻结的来源 SHA/Image 对应历史代表数据 Record，再对当前 M7 完整数据库与
+  图片执行演练前后零漂移检查。历史数据不重建、不删 Record，也不冒充当前候选新数据。
+
 ## Runtime 镜像构建上下文收口（本地候选，2026-09-07）
 
 - `.dockerignore` 增加递归 Python bytecode 规则，避免本地测试/`compileall` 产生的嵌套

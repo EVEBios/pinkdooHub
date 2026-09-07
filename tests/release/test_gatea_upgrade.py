@@ -97,6 +97,7 @@ def _final_snapshot() -> dict[str, object]:
 def _backup_record() -> dict[str, object]:
     return {
         "candidate_sha": SOURCE_SHA,
+        "image_id": "sha256:source-image",
         "database_snapshot": _source_backup_snapshot(),
         "image_manifest": [],
     }
@@ -318,6 +319,7 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
     assert success["passed"] is True
     assert success["backup_id"] == BACKUP_ID
     assert success["source_candidate_sha"] == SOURCE_SHA
+    assert success["source_image_id"] == "sha256:source-image"
     assert success["target_aerich_versions"] == list(APPROVED_MIGRATIONS)
     assert success["evidence_sha256"] == upgrade._sha256(evidence_path)
     assert evidence["status"] == "succeeded"
@@ -486,6 +488,7 @@ def test_verified_backup_must_be_fresh_and_have_exact_restore_record(
     completed = datetime.now(timezone.utc) - timedelta(hours=25)
     payload = {
         "candidate_sha": SOURCE_SHA,
+        "image_id": "sha256:source-image",
         "completed_at": completed.isoformat(),
         "consistency": "nginx-and-app-stopped",
         "application_restarted": True,
@@ -597,19 +600,32 @@ def test_deployment_record_accepts_upgrade_and_rejects_tampering(
         "completed_at": datetime.now(timezone.utc).isoformat(),
         "backup_id": BACKUP_ID,
         "manifest_sha256": MANIFEST_SHA,
+        "source_candidate_sha": SOURCE_SHA,
+        "source_image_id": "sha256:source",
         "source_aerich_versions": list(APPROVED_MIGRATIONS[:3]),
         "target_aerich_versions": list(APPROVED_MIGRATIONS),
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     assert tuple(APPROVED_MIGRATIONS) == gatea.APPROVED_TARGET_M7_CHAIN
-    gatea._require_deployment_record(
+    loaded = gatea._require_deployment_record(
         record_dir=tmp_path,
         candidate_sha=TARGET_SHA,
         image_id="sha256:target",
     )
+    assert loaded == payload
 
     payload["passed"] = False
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(gatea.GateAError, match="does not match"):
+        gatea._require_deployment_record(
+            record_dir=tmp_path,
+            candidate_sha=TARGET_SHA,
+            image_id="sha256:target",
+        )
+
+    payload["passed"] = True
+    payload["source_candidate_sha"] = TARGET_SHA
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(gatea.GateAError, match="does not match"):
         gatea._require_deployment_record(

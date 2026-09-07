@@ -288,6 +288,25 @@ def test_representative_record_must_be_safe_and_bound_to_runtime(
         )
 
 
+def test_representative_binding_uses_verified_upgrade_source() -> None:
+    deployment_record = {
+        "record_type": "existing-database-upgrade",
+        "source_candidate_sha": "b" * 40,
+        "source_image_id": "sha256:source-image",
+    }
+
+    assert resilience._representative_binding(
+        deployment_record,
+        "a" * 40,
+        "sha256:target-image",
+    ) == ("b" * 40, "sha256:source-image")
+    assert resilience._representative_binding(
+        {"schema_version": 1},
+        "a" * 40,
+        "sha256:target-image",
+    ) == ("a" * 40, "sha256:target-image")
+
+
 def test_execute_recovers_services_even_when_dependency_drill_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -302,7 +321,11 @@ def test_execute_recovers_services_even_when_dependency_drill_fails(
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda values: "sha256:image")
-    monkeypatch.setattr(gatea, "_require_deployment_record", lambda **kwargs: None)
+    monkeypatch.setattr(
+        gatea,
+        "_require_deployment_record",
+        lambda **kwargs: {"schema_version": 1},
+    )
     monkeypatch.setattr(resilience, "_load_representative_record", lambda *args: {})
     monkeypatch.setattr(
         gatea,

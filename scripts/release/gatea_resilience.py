@@ -402,6 +402,21 @@ def _load_representative_record(
     return payload
 
 
+def _representative_binding(
+    deployment_record: Mapping[str, Any],
+    candidate_sha: str,
+    image_id: str,
+) -> tuple[str, str]:
+    """解析当前部署或受控升级来源所对应的代表性数据证据。"""
+
+    if deployment_record.get("record_type") == "existing-database-upgrade":
+        return (
+            str(deployment_record["source_candidate_sha"]),
+            str(deployment_record["source_image_id"]),
+        )
+    return candidate_sha, image_id
+
+
 def execute(
     *,
     config_file: Path,
@@ -431,12 +446,19 @@ def execute(
         raise ResilienceError(
             "Gate A resilience drill is already recorded for this candidate"
         )
-    gatea._require_deployment_record(
+    deployment_record = gatea._require_deployment_record(
         record_dir=release_record_dir,
         candidate_sha=candidate_sha,
         image_id=image_id,
     )
-    _load_representative_record(representative_record, candidate_sha, image_id)
+    representative_candidate_sha, representative_image_id = _representative_binding(
+        deployment_record, candidate_sha, image_id
+    )
+    _load_representative_record(
+        representative_record,
+        representative_candidate_sha,
+        representative_image_id,
+    )
     rows = gatea._compose_ps(
         values=values,
         config_file=config_file,

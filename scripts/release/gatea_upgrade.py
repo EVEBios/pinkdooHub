@@ -321,6 +321,8 @@ def _load_verified_backup(
     )
     if (
         payload.get("candidate_sha") != source_candidate_sha
+        or not isinstance(payload.get("image_id"), str)
+        or not payload.get("image_id")
         or payload.get("consistency") != "nginx-and-app-stopped"
         or payload.get("application_restarted") is not True
         or payload.get("passed") is not True
@@ -899,6 +901,7 @@ def upgrade_existing_database(
             "schema_version": 1,
             "source_aerich_versions": _expected_versions(SUPPORTED_SOURCE_VERSION),
             "source_candidate_sha": source_candidate_sha,
+            "source_image_id": backup_record["image_id"],
             "source_database_snapshot": backup_record["database_snapshot"],
             "source_image_manifest": _manifest_summary(
                 backup_record["image_manifest"]

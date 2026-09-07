@@ -71,6 +71,7 @@ FORBIDDEN_CONFIG_KEYS = (
     "PINKDOOHUB_BOOTSTRAP_PASSWORD",
 )
 APP_IMAGE_PATTERN = re.compile(r"^pinkdoohub-gatea:[0-9a-f]{40}$")
+GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 BACKUP_ID_PATTERN = re.compile(r"^[0-9]{8}t[0-9]{6}z$")
 APPROVED_SOURCE_M2_CHAIN = (
@@ -636,7 +637,7 @@ def _require_migration_record(
     record_dir: Path,
     candidate_sha: str,
     image_id: str,
-) -> None:
+) -> dict[str, Any]:
     marker = _migration_marker(record_dir, candidate_sha)
     try:
         payload = json.loads(marker.read_text(encoding="utf-8"))
@@ -649,6 +650,7 @@ def _require_migration_record(
         or not payload.get("completed_at")
     ):
         raise GateAError("Gate A initial migration record does not match the candidate")
+    return payload
 
 
 def _require_upgrade_record(
@@ -656,7 +658,7 @@ def _require_upgrade_record(
     record_dir: Path,
     candidate_sha: str,
     image_id: str,
-) -> None:
+) -> dict[str, Any]:
     """验证既有数据库升级成功 Record 与当前不可变候选一致。"""
 
     marker = _upgrade_marker(record_dir, candidate_sha)
@@ -666,6 +668,8 @@ def _require_upgrade_record(
         raise GateAError(
             "Gate A existing-database upgrade record is unavailable"
         ) from error
+    source_candidate_sha = str(payload.get("source_candidate_sha", ""))
+    source_image_id = payload.get("source_image_id")
     if (
         payload.get("schema_version") != 1
         or payload.get("record_type") != "existing-database-upgrade"
@@ -673,6 +677,10 @@ def _require_upgrade_record(
         or payload.get("image_id") != image_id
         or payload.get("passed") is not True
         or not payload.get("completed_at")
+        or GIT_SHA_PATTERN.fullmatch(source_candidate_sha) is None
+        or source_candidate_sha == candidate_sha
+        or not isinstance(source_image_id, str)
+        or not source_image_id
         or BACKUP_ID_PATTERN.fullmatch(str(payload.get("backup_id", ""))) is None
         or SHA256_PATTERN.fullmatch(str(payload.get("manifest_sha256", ""))) is None
         or payload.get("source_aerich_versions")
@@ -683,6 +691,7 @@ def _require_upgrade_record(
         raise GateAError(
             "Gate A existing-database upgrade record does not match the candidate"
         )
+    return payload
 
 
 def _require_deployment_record(
@@ -690,25 +699,23 @@ def _require_deployment_record(
     record_dir: Path,
     candidate_sha: str,
     image_id: str,
-) -> None:
+) -> dict[str, Any]:
     """接受精确匹配的首次迁移或既有数据库升级 Record。"""
 
     initial_marker = _migration_marker(record_dir, candidate_sha)
     upgrade_marker = _upgrade_marker(record_dir, candidate_sha)
     if initial_marker.exists():
-        _require_migration_record(
+        return _require_migration_record(
             record_dir=record_dir,
             candidate_sha=candidate_sha,
             image_id=image_id,
         )
-        return
     if upgrade_marker.exists():
-        _require_upgrade_record(
+        return _require_upgrade_record(
             record_dir=record_dir,
             candidate_sha=candidate_sha,
             image_id=image_id,
         )
-        return
 
     raise GateAError("Gate A deployment record is unavailable")
 
