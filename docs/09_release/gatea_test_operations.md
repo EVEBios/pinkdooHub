@@ -2,7 +2,7 @@
 
 > **Status:** Frozen for pre-ICP Gate A preparation
 > **Owner:** Yijie Shen
-> **Last Updated:** 2026-09-02
+> **Last Updated:** 2026-09-07
 > **Scope:** 微信开发版/体验版受邀内部测试；不适用于 Gate B 公开发布
 
 本文关闭不依赖域名备案的测试运营输入。实际体验版仍须在备案、DNS、HTTPS、微信
@@ -18,8 +18,14 @@
   身份；普通业务数据不得使用真实客户资料。
 - 版本名称、项目描述和测试说明必须包含“Gate A 内部测试、受邀、不可公开”；不得
   声称已经提供微信登录、微信支付、线上商业收款或公开服务。
-- Gate A 的 `Pending → Paid` 只由 ADMIN+ 人工推进，用于验证订单状态闭环，不代表
-  真实支付结果。
+- Gate A 默认付款闭环仍由 ADMIN+ 人工推进，不代表真实支付结果。Wallet 功能只有在
+  M4 迁移、两个历史 backfill、只读 reconcile 和扩展 MySQL 门槛全部通过后，才可用
+  合成余额测试余额支付、代客扣款与退款；所有余额都没有现金价值，不进行真实微信
+  充值、支付或退款，provider 的 503 零写入边界必须保留。
+- M4–M7 的验收数据只允许在升级后的 Gate A MySQL/持久图片存储中通过正式 API 或
+  已批准的受控任务建立。开发机 `db.sqlite3`、本地 MARD 图片、真实客户资料或直接改表
+  都不能作为 Gate A 数据来源或验收证据。最低数据集见
+  [微信验收矩阵](wechat_acceptance_matrix.md#7-gate-a-最小验收数据集)。
 
 ## 2. 反馈入口与信息分级
 

@@ -1,8 +1,14 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** 9.1–9.3 Complete; 9.4 Gate A pre-ICP server and governance controls passed
-> **Last Updated:** 2026-09-02
+> **Status:** Historical pre-ICP server controls passed；current M7 deployment/Origin still blocked
+> **Last Updated:** 2026-09-07
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
+
+2026-09-02 的持久主机、Secret、备份和日志证据绑定 M2 Runtime `51ad315...` 及对应
+旧 Operations SHA；当前 M4–M7 候选尚未部署。Gate A 最后记录为 M2，但写前必须重新
+只读确认真实 Aerich 状态；现有候选也没有
+真实 HTTPS Origin、微信合法域名或 release-eligible RC。旧 Secret 文件与基础设施控制
+可以作为流程输入，不能替代当前候选的迁移、镜像、颜色图片和真机重验。
 
 ## 1. 环境矩阵
 

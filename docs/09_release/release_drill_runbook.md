@@ -1,10 +1,16 @@
 # 微信 Gate A 隔离发布演练 Runbook
 
-> **Status:** Phase 9.3 Executed — DR-01～DR-07、DR-09 服务端部分通过
-> **Last Updated:** 2026-08-31
+> **Status:** Historical M2 drill passed — current M4–M7 persistent upgrade/RC drill blocked
+> **Last Updated:** 2026-09-07
 > **Scope:** 微信小程序内部测试版（Gate A）
 
 本文定义 Phase 9.3 的安全执行顺序、证据和失败处置。它不是生产操作授权，也不包含任何真实连接信息。首次实际演练必须在专用、可销毁、与共享环境隔离的 MySQL 8+、Redis 和图片存储中执行。
+
+2026-08-31 的已执行报告只证明当时 M0–M2 候选。当前迁移链已经扩展到 M7，功能面
+增加 M4 Wallet/Payment/Refund、M5 Reservation N1、M6 自选颜色 Kit 和 M7 可配置
+固定店休。旧报告、旧工具输出和旧候选迁移 Record 不得重命名或复用为当前结果。
+Gate A 在 2026-09-02 的最后记录是非空 M2；这不是当前数据库事实，任何写操作前仍须
+以只读查询确认真实状态。
 
 ## 1. 安全边界
 
@@ -43,19 +49,46 @@
 
 | ID | 场景 | 核心断言 | 状态 |
 |----|------|----------|------|
-| DR-01 | 全新空库 0→当前 | 迁移 0→1→2 完成；表、约束、索引、Aerich 版本正确 | PASS（9.3 Report） |
-| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；新增结构正确 | PASS（9.3 Report） |
-| DR-03 | 迁移 1 代表性数据升级 | Order、库存余额、opening balance 和历史快照不漂移 | PASS（9.3 Report） |
-| DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | PASS（9.3 Report） |
-| DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | PASS（9.3 Report） |
-| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | PASS（9.3 Report） |
-| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | PASS（9.3 Report） |
-| DR-08 | 微信真机网络 | request/upload/download、证书、Token、图片和错误信封通过 | 待 9.4 |
-| DR-09 | Gate A 纵向 Smoke | Guest、用户、ADMIN、SUPER_ADMIN、禁用用户最小链路通过 | 服务端 HTTPS 32 请求 PASS；真机扩展待 9.4 |
+| DR-01 | 全新空库 0→当前 | 历史要求为 0→2；当前要求为精确 0→7，并核验 M3–M7 表/约束/索引/默认数据 | 历史 M2 PASS；本地 dirty-tree M7 PASS；远端/Gate A 待证据 |
+| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；当前必须继续到 M7 | 历史 M2 PASS；本地 dirty-tree M0→M7 PASS；Gate A 待证据 |
+| DR-03 | 历史版本代表性数据升级 | 历史 M1 Order/库存样本；当前增加 1/2/3/4/5/6→7 与各领域不漂移 | 本地 dirty-tree M0–M6→M7 矩阵 PASS；远端/Gate A 待证据 |
+| DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | 历史 M2 PASS（9.3 Report）；当前候选待重演 |
+| DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | 历史 M2 PASS（9.3 Report）；当前既有库路径待实现/重演 |
+| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | 历史 M2 PASS（9.3 Report）；当前镜像待重演 |
+| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | 历史 M2 PASS（9.3 Report）；当前环境待复核 |
+| DR-08 | 微信真机网络 | request/upload/download、证书、Token、图片和错误信封通过 | BLOCKED：备案/Origin/RC |
+| DR-09 | Gate A 纵向 Smoke | 旧最小链路加 Wallet、颜色 Kit、Reservation、M7 和最新界面 | 历史 M2 服务端 32 请求 PASS；当前候选待重演 |
+| DR-10 | M4 钱包补齐与对账 | wallet/legacy preview 与冻结上界 apply、二次 preview、只读 reconcile 全零差异 | NOT RUN（Gate A） |
+| DR-11 | M5 Reservation | 预约四状态、单日店休、隐私、并发/1205/1213/索引与历史数据 | 一次性 M5 MySQL 历史 PASS；Gate A NOT RUN |
+| DR-12 | M6 颜色目录与库存 | M5 fixed 重放到 M6/M7；221 槽/列/FK/索引；持久图、商品启用色/库存与 HTTPS | 一次性 M6 snapshot PASS；SQLite 色板仅开发证据；Gate A NOT RUN |
+| DR-13 | M7 固定店休 | 单例/默认周一/唯一约束，历史预约/单日店休不漂移，更换的事务/锁序/批量取消 | 本地 dirty-tree 一次性 MySQL/21 项联合门槛 PASS；远端/Gate A 待证据 |
 
-如果未来出现需要接管的既有数据库，必须先新增只读审计场景，确认 Schema、Aerich 版本、数据质量和备份；未审计的库不自动成为“受支持升级起点”。
+对最后留证为非空 M2 的当前 Gate A，以及未来任何需要接管的既有数据库，都必须先执行
+只读审计，确认 Schema、Aerich 版本、数据质量和备份；未审计的库不自动成为“受支持
+升级起点”。
 
-本次执行的 SHA、CI、结果、耗时、修复项和资源清理记录见 [Phase 9.3 隔离发布演练报告](reports/phase93_rehearsal_2026-08-31.md)。
+历史 M2 执行的 SHA、CI、结果、耗时、修复项和资源清理记录见
+[Phase 9.3 隔离发布演练报告](reports/phase93_rehearsal_2026-08-31.md)。该报告不修改，
+当前候选的每次新执行必须另建独立报告并列出 DR-01～DR-13 的适用/不适用项。
+
+当前 M7 的本地可销毁迁移与联合门槛见
+[M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。该报告运行于提交前
+dirty 工作树；同内容随后成为本地提交 `58d8435...`，但尚未 push/远端重跑，也不包含
+持久部署、备份恢复、应用/图片/Redis Smoke 或微信真机，因此不能把 DR-01～DR-13
+整体标成当前候选 PASS。
+
+### 3.1 当前 M4–M7 证据分层
+
+| 版本 | 仓库/历史事实 | 当前候选一次性 MySQL | 持久 Gate A 必需动作 |
+|------|---------------|----------------------|----------------------|
+| M3 | 外部身份与认证安全仓库实现完成；旧一次性 0→3 通过 | 本地 M0–M6→M7 历史矩阵已纳入 M3；远端待重跑 | 只读扫描后先应用 M3；Gate A 仍保持 password 模式 |
+| M4 | 钱包/支付/退款代码完成；旧关键闭环 `2 passed` | 扩展并发、1205/1213、锁序、`EXPLAIN` 和 Inventory 联合门槛待完成 | 应用 M4 后执行两个 backfill 与 reconcile，零差异前禁止启用资金入口 |
+| M5 | 一次性 MySQL 0→5 与 Inventory + Reservation `16 passed` | 本地历史矩阵与 M5 fixed→M6→M7 已通过；远端待重跑 | 核验两张预约表、外键/六个索引、既有数据和注销边界 |
+| M6 | 本地 SQLite/221 色 manifest/确定性 PNG 已完成 | 本地 M6 snapshot/颜色锁等待已纳入联合 21 项；远端待重跑 | 使用专门的 MySQL/持久存储导入发布入口；本地 SQLite-only 工具不得复用 |
+| M7 | 离线迁移与本地业务测试已完成 | 本地单例/默认/约束/历史不漂移/事务并发已通过；远端待重跑 | 核验现有预约/单日店休不漂移并配置目标固定店休日 |
+
+任何“一次性 MySQL PASS”只关闭候选迁移实现风险，不等于已应用 Gate A。任何本地
+SQLite 数据也只属于开发环境，不是 Gate A 的数据或图片发布证据。
 
 ## 4. 执行顺序
 
@@ -123,15 +156,46 @@ python -m scripts.release.phase93_operations cleanup \
 
 `phase93_report` 只有在 DR-01～DR-07 与 DR-09 服务端必需报告全部 `passed=true` 时才生成仓库外脱敏摘要；DR-08 明确写为 9.4 deferred。清理前先保存该摘要，清理后再把端口释放、project label 归零和临时目录删除结果人工回写最终报告。工具不会自动 commit、push、连接微信后台或执行任何持久/生产资源操作。
 
+#### 4.0.1 当前工具适用边界与停止条件
+
+当前这些入口不能直接承担最后留证 M2→M7 的持久升级：
+
+- `scripts.release.phase93_operations` 的迁移版本、Schema 断言和 legacy 场景硬编码为
+  M0–M2，只能复核历史 9.3 报告；在更新并重新测试前不得称为“0→当前”。
+- `scripts.release.gatea_operations initial-migrate` 明确要求 application schema 为
+  0 张表；Gate A 最后证据为非空 M2，而当前状态仍须重新只读确认。它没有受控的
+  existing-database upgrade Record，`app-up` 又要求 candidate SHA/Image ID 匹配的
+  initial migration Record。
+- `scripts/local/import_mard_bead_colors.py` 明确只操作项目内 SQLite，且 apply 要求
+  `--confirm-local-only`；不得连接 Gate A MySQL，也不得把开发图片路径直接复制为
+  持久 HTTPS URL。
+
+因此在下列能力实现、测试并 Review 前，执行到持久写入步骤必须停止：
+
+1. 非空库升级入口先验证 Root/Secret/镜像、停写状态、新 Backup/Restore Record、候选
+   SHA/Image ID 和只读确认的 Aerich/Schema；受支持起点清单必须单独 Review，不能由
+   一次性 MySQL 的 M0–M6 矩阵自动推导；
+2. 入口按真实 Aerich 版本逐步升级，保存每步 Schema/数据摘要，失败时保留现场，并在
+   全部核验通过后生成新的 candidate upgrade Record 供 `app-up` 使用；
+3. Gate A 专用 221 色发布入口支持默认 preview、显式 apply、来源 manifest/checksum、
+   MySQL 事务、持久图片原子发布/补偿、幂等重放和 HTTPS URL 核验；
+4. 两类入口都有失败/重放/资源清理测试，且不会输出 Secret、PII 或幂等键。
+
+本 Runbook 只冻结上述门槛，不授权用临时 SQL、删除旧迁移 Record、伪造 Record 或
+绕过 `initial-migrate` 的保护逻辑。
+
 ### 4.1 预检（只读）
 
 1. 两名人员核对目标主机、端口、数据库名、环境标识和资源所有者。
 2. 确认目标不是生产、共享 `3306`、开发 SQLite 或其他任务资源。
-3. 记录 MySQL/Redis/Python/Node/Taro 版本、Git SHA、artifact checksum 和当前 Aerich 状态。
+3. 记录 MySQL/Redis/Python/Node/Taro 版本、Git SHA、artifact checksum 和当前 Runtime
+   image；对持久 Gate A 通过受控只读查询同时记录精确 Aerich 版本链、表/列/约束/索引
+   摘要和关键领域行数。若与 2026-09-02 的 M2 记录不一致，停止并调查。
 4. 确认应用写入尚未开启；已有数据场景进入明确停写窗口。
 5. 检查磁盘/配额、备份目标、证书有效期、HTTPS Origin 和微信后台合法域名。
 6. 检查 Secret 仅由受控环境注入，命令行历史、日志和 artifact 中无 Secret。
 7. 确认当前版本已经通过 9.2 所有 CI 门槛；任何必需 Job 缺失即停止。
+8. 验证 4.0.1 所述非空升级和颜色发布入口已经实现并通过当前 SHA 的自动化；缺失即停止。
 
 ### 4.2 备份与恢复预验证
 
@@ -142,11 +206,46 @@ python -m scripts.release.phase93_operations cleanup \
 
 ### 4.3 数据库迁移
 
+本节是非空升级入口完成测试、Review 并取得当次持久写入授权后才可执行的顺序；当前
+仓库尚不具备该入口，不能把以下步骤当作直接操作命令。
+
 1. 再次核对连接身份、目标 Schema、当前版本和备份 ID。
-2. 按项目数据库迁移流程执行 Aerich 0→1→2 或已冻结的受支持升级路径。
-3. 每一步记录开始/结束时间、退出码和无敏感信息的日志摘要。
-4. 核验 Aerich 版本、表、外键、唯一约束、索引、库存余额和期初流水。
-5. 对 Product、Order、Inventory、Audit 和 User 做关键行数与抽样聚合对比。
+2. 停止 App/Nginx 的业务写入并证明无活跃写请求；MySQL/Redis 保持受控可用。
+3. 当前真实 Aerich 版本必须等于经 Review 的受支持起点；未知、缺口、重复、Schema 与
+   版本不一致或尚未批准该起点时停止。最后历史记录为 M2，不能在未查询时假设；CI 的
+   M0–M6→M7 矩阵也不构成持久起点批准。
+4. 若只读结果仍为 M2 且 M2→M7 路径已经批准，先依次应用 M3、M4；其他起点严格使用
+   对应批准路径。每一步记录开始/结束时间、退出码、真实 Aerich/Schema 状态和无敏感
+   信息的摘要。不得 `--fake`、直接改 Aerich 表或把 downgrade 当回滚。
+5. M4 后保持资金入口关闭，按预览输出冻结 `through_user_id`，执行：
+
+   ```bash
+   python -m app.tasks.wallet_account_backfill
+   python -m app.tasks.wallet_account_backfill --through-user-id <preview-id> --apply
+   python -m app.tasks.wallet_account_backfill --through-user-id <same-preview-id>
+   ```
+
+   二次 preview 必须 `would_create=0`。随后按同样原则冻结 `through_order_id`：
+
+   ```bash
+   python -m app.tasks.legacy_manual_settlement_backfill
+   python -m app.tasks.legacy_manual_settlement_backfill --through-order-id <preview-id> --apply
+   python -m app.tasks.legacy_manual_settlement_backfill --through-order-id <same-preview-id>
+   python -m app.tasks.wallet_reconcile
+   ```
+
+   二次 preview 必须没有待补订单；任一 `blocked`、mismatch、violation 或非零退出都
+   停止。任务不会自动修账。
+6. 再按顺序应用 M5、M6、M7。M6 后先保持颜色商品不可销售，使用批准的 Gate A
+   发布入口导入/核验 221 色与持久图片，再为测试商品配置启用色和库存。M7 后核验
+   `reservation_settings` 只有一个 `singleton_key=1`，默认/当前 weekday 合法，
+   `ck_reservation_settings_singleton` 与 `uidx_reservation_settings_singleton` 存在。
+7. 核验最终 Aerich 精确为 M0–M7，并对 User、ExternalIdentity、Product、Order、
+   Inventory、Wallet、Payment、Settlement、Refund、Reservation、StoreBusinessDay、
+   ReservationSettings 和 Audit 做前后行数/业务聚合；已有预约、单日店休、历史取消、
+   fixed Kit 库存和订单快照不得漂移。
+8. 只在全部检查通过后写入绑定 candidate SHA、Image ID、迁移前/后版本、Backup ID、
+   backfill/reconcile、颜色 manifest 和复核时间的新 upgrade Record；随后才允许启动候选。
 
 迁移失败后立即停止应用写入和后续步骤。先记录真实 Schema/Aerich 状态，再由授权人选择前滚修复或从已验证备份恢复；不得盲目重跑、fake 版本或直接 downgrade。
 
@@ -158,7 +257,9 @@ python -m scripts.release.phase93_operations cleanup \
 4. 执行管理员幂等 bootstrap，保存审计证据并按流程处置初始凭据。
 5. 执行 API Smoke、图片上传/读取、日志检索和优雅停止/再次启动。
 
-当前仓库已实现 dependency-free liveness 与 DB/Redis dependency-aware readiness，并有本地 SQLite/fakeredis、失败、超时和脱敏契约；它仍需在本场景使用隔离 MySQL/Redis 验证故障摘流量与恢复。受控 SUPER_ADMIN bootstrap 也已实现本地事务、并发、重放、回滚与 Secret 契约；仍需在本场景使用隔离 MySQL 执行首次创建、重复运行、登录、Audit 与初始凭据处置，才能关闭对应风险。
+历史 M2 环境已验证 dependency-free liveness、DB/Redis dependency-aware readiness、
+故障摘流量/恢复、Bootstrap 和凭据处置。当前 M7 镜像必须在升级后的持久环境重新验证；
+旧结果只用于说明流程，不允许直接关闭当前候选项目。
 
 #### 4.4.1 SUPER_ADMIN Bootstrap 安全执行
 
@@ -185,12 +286,18 @@ python -m app.tasks.super_admin_bootstrap \
 ## 5. Smoke 最小集合
 
 - Guest：冷启动、Product 列表/详情、登录入口；
-- 普通用户：登录、Cart、创建 Experience/Kit/混合订单、订单详情、Pending 取消；
-- ADMIN：订单 Paid/Completed、Product 管理、图片、Inventory 调整/流水、Audit、用户列表；
+- 普通用户：登录、Cart、创建 Experience/fixed/color/mixed Order、订单详情、Pending
+  取消、会员余额/流水、合成余额支付、预约创建/列表/详情/取消；
+- ADMIN：订单 Paid/Completed、Product/221 色/图片、fixed/颜色 Inventory、Wallet 客户
+  查询/调账/多颜色代客订单/退款、预约确认/拒绝、单日与固定店休、Audit、用户列表；
 - SUPER_ADMIN：初始化后登录、角色边界、用户禁用；
 - 安全边界：普通用户调用管理 API 为 403，被禁用用户旧 Token 失效；
 - 运行边界：Token 刷新、弱网、断网、请求结果未知、重复点击、图片上传中断；
-- 数据断言：订单快照、库存扣减/恢复、幂等重放和审计顺序一致。
+- 数据断言：订单金额/颜色/重量快照，fixed/颜色库存扣减/取消/PAID 退款恢复，钱包
+  余额链与 Payment/Settlement/Refund，预约状态/店休历史，幂等重放和审计顺序一致；
+- 诚实能力边界：真实微信充值/支付/退款仍返回 503 零写入，Reservation N1 不显示
+  主动通知或自动容量已实现；
+- 视觉回归：会员缺省头像小屏/大字体居中，代客多颜色手机六列/宽屏十列可操作。
 
 完整场景及证据等级以 [wechat_acceptance_matrix.md](wechat_acceptance_matrix.md) 为准。
 
@@ -203,6 +310,9 @@ python -m app.tasks.super_admin_bootstrap \
 - readiness、Redis、图片持久化或管理员初始化失败；
 - 越权、凭据泄漏、数据破坏、重复订单/扣库存或无法恢复；
 - artifact 与已测试 SHA 不一致；
+- 当前远端 CI 未达 8/8，或 MySQL snapshot 未精确覆盖 M0–M7；
+- 非空升级入口/候选 migration Record 缺失，或试图对 Gate A 使用空库 `initial-migrate`；
+- wallet backfill/reconcile 非零差异，或 Gate A 221 色/图片/商品库存未完成；
 - 微信真机无法通过 HTTPS 或合法域名访问。
 
 Inventory downgrade 会删除流水结构并可能丢失新版本运行后的历史，不是常规无损回滚。一旦新版本开始写数据，首选停写、保全证据和前滚修复；从备份恢复只由授权人决定，并明确恢复点之后数据的处置。
@@ -215,7 +325,7 @@ Inventory downgrade 会删除流水结构并可能丢失新版本运行后的历
 Git SHA / artifact checksum：
 环境与资源所有者：
 执行人 / 复核人 / 决策人：Yijie Shen（实际执行时分别确认时间）
-场景：DR-01 ... DR-09
+场景：DR-01 ... DR-13
 迁移前/后 Aerich 版本：
 备份/快照 ID 与恢复验证：
 步骤、开始/结束、退出码、证据链接：

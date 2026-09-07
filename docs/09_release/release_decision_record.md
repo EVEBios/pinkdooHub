@@ -22,12 +22,30 @@ Yijie Shen 确认：本版唯一发布平台为微信小程序，当前只推进
 
 持久 Gate A 的迁移、Bootstrap、代表性数据、非空恢复、加密异机备份、MySQL/Redis
 故障、App 重启、日志轮转/脱敏/查询，以及不可发布微信预 RC 已完成。结果绑定 Runtime
-`51ad315...`、Operations `c4d27a8...` 和 GitHub Actions Run 33584789525；详细证据见
+`51ad315...` 的 M2 Schema、Operations `c4d27a8...` 和 GitHub Actions Run 33584789525；详细证据见
 [`reports/phase94_pre_icp_completion_2026-09-02.md`](reports/phase94_pre_icp_completion_2026-09-02.md)。
 
 该检查点不是 RC 或 Go 决定。微信开发者工具已完成预 RC 加载/编译并验证域名校验
 fail closed；备案、DNS/HTTPS、微信合法域名、release-eligible artifact、iOS/Android
 真机和独立上传授权仍未完成。Gate A 因此继续为 **No-Go / Not Authorized**。
+
+### 0.2 M7 候选检查点（2026-09-07）
+
+当前仓库已经新增 M4 Wallet/Payment/Refund、M5 Reservation N1、M6 自选颜色 Kit、
+M7 可配置固定店休，以及代客钱包订单多颜色和会员头像布局修复。该扩展没有自动改变
+Gate A 的身份、资金或分发决定：仍使用账号密码；只有 M4 迁移、历史补齐、只读对账
+和扩展 MySQL 门槛全部关闭后，才可用合成钱包余额/人工结算验证。Gate A 不接真实微信
+充值、支付或退款，也不向公众开放。
+
+审计起点 `c6778e7...` 的远端 Run 34104680282 为 7/8，旧 MySQL gate 没有正确纳入 M7。
+本地提交 `58d8435...` 已修复该 gate，提交前 dirty-tree 一次性 MySQL 报告完成 0→7、
+历史矩阵、snapshot 和 21 项联合门槛；但该提交尚未 push/远端重跑，不能改写旧 Run。
+Gate A 最后留证版本仍是 M2，但当前真实状态只能重新只读确认；仓库没有获批的非空
+M2→M7 升级入口。钱包 backfill/reconcile、221 色持久发布、真实 RC 与真机均未执行。
+本检查点只更新 No-Go 依据，不授予持久迁移、微信后台修改、上传、
+分发、提审或发布权限。完整当前门槛见
+[Go/No-Go Checklist](go_no_go_checklist.md)，本地证据边界见
+[M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。
 
 ## 1. 决策
 
@@ -46,7 +64,7 @@ Gate A 是当前唯一获准推进的发布目标。Gate B 的设计审计可以
 | 分发 | 微信开发版/体验版；仅受邀测试人员 |
 | 普通用户身份 | 暂时沿用用户名密码 |
 | 管理员身份 | 沿用用户名密码与后端 ADMIN+/SUPER_ADMIN 权限链 |
-| 支付 | 不接微信支付；ADMIN+ 人工确认 Paid 仅用于测试业务闭环 |
+| 支付 | 不接真实微信支付；默认由 ADMIN+ 人工确认 Paid。M4 发布门槛关闭后可用无现金价值的合成钱包余额验证余额支付/代客扣款/退款 |
 | 数据 | 隔离、可恢复、非生产业务数据；不得复用开发者个人 SQLite 作为发布环境 |
 | API | 真实 HTTPS 测试 Origin；微信合法域名开启校验 |
 | 数据库 | 生产相似的隔离 MySQL 8+ |
@@ -73,7 +91,7 @@ Gate A 是当前唯一获准推进的发布目标。Gate B 的设计审计可以
 ## 4. 明确不在 Gate A 内
 
 - 支付宝、抖音、H5 的 Build、Smoke、Functional、CORS 或发布；
-- 微信登录、微信支付、退款、订阅消息或分享增长能力；
+- 微信登录、真实微信支付/退款、订阅消息或分享增长能力；
 - Order create 服务端幂等；
 - 登录/注册限流、refresh token 轮换；
 - 公开隐私审核与公众数据处理；

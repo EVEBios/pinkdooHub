@@ -1,16 +1,17 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 远端基线完成；Reservation N1 本地候选增量等待新远端 Run
+> **Status:** Phase 9.2 historical baseline complete；current M7 candidate remote gate blocked (7/8)
 > **Last Updated:** 2026-09-07
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [Run 33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212)）
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [current failed Run 34104680282](https://github.com/EVEBios/pinkdooHub/actions/runs/34104680282)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
 9.2.1–9.2.6 的历史基线已完成：当时 `.github/workflows/ci.yml` 的 `backend-sqlite`、
 `backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、
 `repository-hygiene`、`python-dependency-audit` 和 `npm-dependency-audit` 已在真实
-Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job，但已加入 Wallet/Reservation
-后续增量；这些改动尚无绑定当前候选 SHA 的新远端 Run。历史结论只关闭当时 Phase 9.2 的 CI 与
+Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job，但仓库已经加入
+Wallet/Reservation/颜色 Kit/M7 后续增量；审计起点 `c6778e7...` 的远端 Run 只有 7/8。
+历史结论只关闭当时 Phase 9.2 的 CI 与
 可重复构建范围，不替代 9.3 的生产相似演练、9.4 的微信真机 RC 或后续模块的重新留证。
 
 ## 0. Phase 9.2.6 远端证据
@@ -26,13 +27,41 @@ Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 J
 1. Run `33354728020` 暴露 Python 策略测试硬编码 `.venv/bin/python`，以及微信检查器错误假设 `project.config.json` 一定存在于 `dist/weapp`；改为 `sys.executable`，并分别校验编译目录与项目根配置。Taro 若生成规范化副本，只允许 `miniprogramRoot` 从 `dist/weapp/` 变为 `./`，其他字段必须一致。
 2. Run `33355556336` 进一步暴露 `NODE_ENV=production` 使 `npm ci` 省略 Taro 构建期 devDependencies，且 `tee` 掩盖 `taro: not found`；微信 Job 现显式 `--include=dev` 并启用 `pipefail`。构建期依赖不会因此进入微信运行产物。
 
-### 0.1 Reservation N1 / M6 本地候选增量（2026-09-06）
+### 0.1 Reservation N1 / M6 本地候选历史增量（2026-09-06）
 
 - M6 接入前最近一次已实测的 workflow 已把迁移链升级为 Aerich 0→5，`backend-mysql-release` 联合运行 `tests/inventory/mysql` 与 `tests/reservation/mysql`。一次性 MySQL 8.0.46 本地验证结果为 `16 passed`，其中 Reservation 专项为 `7 passed`；覆盖 M5、店休并发/回滚、1205/1213 与六个索引计划。
-- M6 接入后，workflow 候选会先真实执行空库 0→6，再以 `downgrade -v 6` 只回退 M6、写入一条 M5 非零库存 fixed Kit、重新升级 M6。最终 snapshot 必须同时核验七条 Aerich 版本、221 个未配置占位槽、历史 fixed 库存/类型兼容、19 个关键列、4 个命名 `RESTRICT` 外键和 7 个命名索引（其中 3 个 `NON_UNIQUE=0`）；Inventory MySQL 目录另增加 2 项结构/EXPLAIN 与反向颜色行锁等待门槛。该 M6 workflow 与测试尚未在真实 MySQL Runner 执行，不能把下述 M5 `16 passed` 历史结果改称 M6 已通过。
-- 当前本地普通后端基线为 `1978 passed, 20 skipped`：20 项均为需要显式隔离外部环境的门槛；回环端口发布探测已在完整主套件中直接通过，Linux CI 仍应继续直接执行该探测。
-- 当前前端为 `81 suites / 556 tests`；TypeScript、ESLint、Stylelint、OpenAPI 类型漂移和 17 项 CI policy 通过。微信 production build 成功；固定 CI HTTPS Origin 产物通过扫描（141 个文件、主包 645,547 bytes、分包 390,570 bytes、总计 1,036,117 bytes，manifest SHA-256 `260e2f3e129ce75e418a1e487886a27e26684000111be5bd8c19161bc1570f8a`，`release_eligible=false`）。
+- M6 接入后，workflow 候选会先真实执行空库 0→6，再以 `downgrade -v 6` 只回退 M6、写入一条 M5 非零库存 fixed Kit、重新升级 M6。最终 snapshot 必须同时核验七条 Aerich 版本、221 个未配置占位槽、历史 fixed 库存/类型兼容、19 个关键列、4 个命名 `RESTRICT` 外键和 7 个命名索引（其中 3 个 `NON_UNIQUE=0`）；Inventory MySQL 目录另增加 2 项结构/EXPLAIN 与反向颜色行锁等待门槛。截至该日期，这套 M6 workflow 与测试尚未在远端真实 MySQL Runner 执行，不能把 M5 的 `16 passed` 历史结果改称 M6 已通过；后续本地 M7 一次性 MySQL 结果单独记录在 0.2。
+- 当时的本地后端计数只属于 2026-09-06 候选，不继续充当当前基线；当前候选必须在
+  本轮改动全部收口后重新完整执行并记录实际 pass/skip。回环端口发布探测仍应在
+  Linux CI 直接执行。
+- 截至 2026-09-06，该 M6 候选的前端结果为 `81 suites / 556 tests`；TypeScript、ESLint、Stylelint、OpenAPI 类型漂移和 17 项 CI policy 通过。微信 production build 成功；固定 CI HTTPS Origin 产物通过扫描（141 个文件、主包 645,547 bytes、分包 390,570 bytes、总计 1,036,117 bytes，manifest SHA-256 `260e2f3e129ce75e418a1e487886a27e26684000111be5bd8c19161bc1570f8a`，`release_eligible=false`）。
 - 上述均是本地候选证据，尚无绑定当前候选 SHA 的 PR/远端 Run，也不是可发布微信 RC；历史 PR #2 / Run 33355935212 的数值继续按原样保留，不能冒充 N1 证据。
+
+### 0.2 M7 与当前前端候选（2026-09-07）
+
+- 审计起点 HEAD 为 `c6778e79cccd7940928431ab17b958ea19993915`。其远端
+  Run 34104680282 为 7/8；`backend-mysql-release` 在“M5 历史数据演练 M6”阶段失败，
+  因为迁移链已新增 `7_20260907190000_add_reservation_settings.py`，而 workflow 的
+  downgrade/重放顺序及 `check_mysql_gate.py::EXPECTED_MIGRATIONS` 仍只到 M6。
+- 当前修复必须保留 M5 非零库存 fixed Kit→M6 兼容演练，并继续升级到 M7；最终
+  snapshot 精确接受 M0–M7，核验 `reservation_settings` 默认周一、单例 CHECK/UNIQUE、
+  已有 Reservation/StoreBusinessDay/M5 历史数据不漂移。M7 固定店休更换的事务、
+  稳定锁序、批量取消、1205/1213 与索引也必须在一次性 MySQL 8.0.46 留证。
+- 本轮后端完整本地基线为 `2000 passed, 23 skipped in 112.25s`；23 项为需要显式
+  隔离外部环境的门槛。该结果是本地候选证据，不是远端 `backend-sqlite` JUnit。
+- 当前前端为 `83 suites / 562 tests`，已包含 M7 固定店休、代客钱包订单多颜色请求/
+  布局和会员缺省头像居中回归；TypeScript、ESLint、Stylelint 及 17 项 CI policy
+  本轮本地通过。当前 OpenAPI 仍须由新的远端 `openapi-contract` Job 绑定候选 SHA。
+- 当前微信 production-mode 代码检查产物为 141 个文件、主包 649,739 bytes、分包
+  407,624 bytes、总计 1,057,363 bytes，manifest SHA-256 为
+  `693fb673df044e03c2865af2827e39ac7a5d6de86dbb1b3214f0b4237eeb69b4`，并明确
+  `release_eligible=false`。修复后的新 SHA 必须完整重跑八类 Job，不能只重跑失败 Job
+  后与 `c6778e7...` 的七个成功结果拼接。
+- 本地提交 `58d8435d76022db41e625e3cdb7704a37943c94d` 已实现 M7 gate 修复；提交前
+  的同内容 dirty 工作树在一次性 MySQL 8.0.46 完成 0→7、M0–M6 七个历史起点→M7、
+  M6/M7 snapshot 与联合 MySQL `21 passed`。运行时不是干净 SHA，且远端尚未重跑；
+  精确结果、第一次测试污染和 cleanup checker 的 `--rm` inspect 假失败见
+  [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。
 
 ## 1. 全局规则
 
@@ -50,7 +79,7 @@ Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 J
 | Job | 服务 | 关键命令/动作 | 阻断规则 | Artifact/证据 | 负责人 |
 |-----|------|---------------|----------|---------------|--------|
 | `backend-sqlite` | 隔离 Redis 或 fakeredis | 安装 Python；`pytest tests/ -q` | 任一失败；除已批准 MySQL-only 外出现未知 skip | pytest 日志/JUnit | Yijie Shen |
-| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→当前（当前为 0→6）；M6 历史 fixed 重放；联合运行 `tests/inventory/mysql tests/reservation/mysql` 18 项候选 | 迁移、版本、历史兼容、221 槽、FK/索引、并发、1205/1213、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6 快照、pytest/JUnit | Yijie Shen |
+| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→7；M5 fixed→M6→M7 历史重放；M7 settings snapshot；联合运行 `tests/inventory/mysql tests/reservation/mysql` | 迁移、版本、历史兼容、221 槽、M7 单例/默认值、FK/约束/索引、并发、1205/1213、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6/M7 快照、pytest/JUnit、cleanup | Yijie Shen |
 | `frontend-quality` | 无 | `npm ci --legacy-peer-deps`；typecheck；ESLint；Stylelint；Jest；CI policy tests | 安装/检查/测试任一失败；新增未批准 warning | Jest JSON/log、版本清单 | Yijie Shen |
 | `openapi-contract` | 无外部 DB/Redis | 设置 UTF-8；真实导出到临时文件；比较固定 JSON；生成类型 `--check` | JSON/类型漂移、临时文件残留、CLI smoke 失败 | diff、paths/schemas 摘要 | Yijie Shen |
 | `weapp-build` | 无 | 注入受控 HTTPS Origin；`npm run build:weapp`；配置/包体/Secret 扫描 | 构建失败、非预期/占位/本机 Origin、Secret、微信包体越界、未批准 warning；保留 `.test` Origin 若被标成可发布也必须失败 | `dist/weapp`、manifest、checksum、构建日志 | Yijie Shen |
@@ -68,7 +97,11 @@ python -m pip check
 python -m pytest tests/ -q --ignore=tests/inventory/mysql --ignore=tests/reservation/mysql
 ```
 
-当前本地普通基线的最近完整记录为 `1978 passed, 20 skipped`；20 项均为需要显式隔离外部环境的门槛。历史 16 项 Inventory + Reservation MySQL-only 已在 M5 Schema 通过，M6 新增 2 项后形成 18 项 CI 候选，仍待真实 MySQL Runner 执行。回环端口发布探测已在完整主套件中直接通过，Linux CI 不应排除该检查。测试数量变化不是失败本身，但必须解释增删原因；不能把真实失败改成 skip 来维持数字。
+本轮本地普通基线为 `2000 passed, 23 skipped in 112.25s`；23 项均为需要显式隔离
+外部环境的门槛。历史 16 项 Inventory + Reservation MySQL-only 只绑定 M5 Schema；
+M7 的本地联合 MySQL 结果为 21 项，仍不替代远端 JUnit。回环端口发布探测已在本地
+完整主套件中直接通过，Linux CI 也应直接执行。测试数量变化不是失败本身，但必须解释
+增删原因；不能把真实失败改成 skip 来维持数字。
 
 ### 3.2 Backend MySQL Release Gate
 
@@ -83,7 +116,7 @@ python -m pytest tests/ -q --ignore=tests/inventory/mysql --ignore=tests/reserva
 
 CI 配置不得放宽 fixture 来连接共享 MySQL，也不得使用 `--fake` 或应用自动建表替代迁移。
 
-9.2.4 已实现以下边界：
+历史 9.2.4 已实现以下边界（以下 M0–M2 数值只描述旧 Run）：
 
 - service 固定 `mysql:8.0.46`，只映射宿主 `127.0.0.1:13306`，Schema 固定为 `pinkdoohub_inventory_4311_ci`；仓库中的密码只是一容器一生命周期的 disposable test credential，不是发布 Secret；
 - `check_mysql_gate.py preflight` 要求 `APP_ENV=testing`，并强制 Aerich 使用的 `DB_*` 与 pytest 使用的 `INVENTORY_MYSQL_TEST_*` 在 host/port/Schema/user/password 上完全一致；
@@ -91,14 +124,37 @@ CI 配置不得放宽 fixture 来连接共享 MySQL，也不得使用 `--fake` �
 - 9 项门槛保存 JUnit；`always()` cleanup 删除精确专用 Schema、停止 GitHub service container、确认容器不再运行和 13306 关闭，再上传 preflight、迁移日志、snapshot、JUnit 与 cleanup JSON；
 - 2026-08-31 本地以同一镜像、端口和 Schema 真实执行：三条迁移及 9 项门槛全部通过，cleanup 四项均为 true，容器对象和临时证据目录随后删除；未连接 3306、持久或共享数据库。
 
-当前 M6 候选在上述安全边界上追加以下 fail-closed 门槛：
+M6 候选在上述安全边界上追加以下 fail-closed 门槛：
 
 - `aerich --app models upgrade` 先从空库真实执行 0→6；随后仅以 `downgrade -v 6` 回退最后一条迁移，在 M5 表形状中写入一条非零库存 fixed Kit，再重新执行正常 `upgrade`，从而同时验证空库完整链和历史数据升级，而不是只检查 SQL 文本；
 - snapshot 精确接受 M0–M6 七条版本，并核验 221 槽连续、唯一、初始未配置/未激活且 `sort=slot_no`，历史 Kit 仍为 `stock=7 / kit_kind=fixed / sale_unit_grams=NULL`，以及 M6 19 个关键列、4 个命名 `RESTRICT` 外键、7 个命名索引的列序和 `NON_UNIQUE`（3 个 UNIQUE 必须为 0，其余必须为 1）；
 - `tests/inventory/mysql/test_color_selectable_mysql_gate.py` 复核最终 Schema、数据库 fixed 默认和颜色集合锁 `EXPLAIN`，并用正/反请求构造真实 `performance_schema.data_lock_waits`，确认等待释放后仍按 Product/BeadColor 稳定顺序取得锁；
 - workflow 保存独立 `mysql-m6-legacy-seed.json`、迁移日志、最终 snapshot 和 18 项联合 JUnit，任一步失败均阻断；`always()` cleanup 语义保持不变。
 
-这些 M6 条目目前是可执行仓库候选，尚无绑定当前 SHA 的真实 MySQL / 远端 Run 结果。正式记录只能在实际 Runner 完成并复核 cleanup 后补写，不能沿用 M5 的 `16 passed` 作为替代证据。
+当前 M7 候选还必须追加：
+
+- `EXPECTED_MIGRATIONS` 精确包含 `7_20260907190000_add_reservation_settings.py`；
+- 历史重放不能因 M7 插入而跳过 M5→M6：先恢复到正确的 M5 形状、写入 fixed 样本，
+  再按官方迁移依次应用 M6 与 M7；禁止手改 Aerich 版本；
+- snapshot 核验 `reservation_settings` 恰有一条 `singleton_key=1`、
+  `weekly_closed_weekday=monday`，`ck_reservation_settings_singleton` CHECK 和
+  `uidx_reservation_settings_singleton` UNIQUE 的列序/唯一性正确；重复检查或正常重放
+  不创建第二条单例；
+- M5 的 Reservation、StoreBusinessDay 与 legacy fixed 样本在 M7 后行数/关键字段不漂移；
+- M7 固定店休更换至少覆盖 settings 行锁、Reservation ID 稳定锁序、未来 30 天
+  pending/confirmed 批量取消、单日店休保持、事务回滚和 MySQL 1205/1213；
+- workflow 保存可区分 M6 seed、M7 snapshot、联合 JUnit 与 cleanup 的 artifact。
+
+审计起点 Run 34104680282 已真实暴露 M7 漂移并失败；随后本地 dirty-tree 一次性
+MySQL 报告已通过上述迁移、snapshot、历史矩阵和 21 项联合门槛，只能作为实现证据。
+正式远端记录仍须由 `58d8435...` 或后续同内容干净 SHA 的实际 Runner 完成并保存可复核
+cleanup artifact；不能沿用 M5 的 `16 passed`、本地 SQLite、旧 8/8 或本地 checker
+结果替代。
+
+Wallet 的 MySQL v1 关键闭环已有单独一次性 `2 passed` 历史结果，但当前 workflow 仍
+不等于已完成扩展资金门槛。并发调账/余额支付/退款、1205/1213 全事务重试、跨资金/
+库存锁序与关键 `EXPLAIN` 必须在 Gate A 前另行完成；即使本 Job 修复为 8/8，也不能
+把这项未覆盖范围标记为通过。
 
 ### 3.3 Frontend Quality
 
@@ -176,7 +232,8 @@ reachability。结论不是整批 H5-only：
 
 Python 选用 Apache-2.0 的 `pip-audit==2.10.1`，仅安装在隔离 CI venv。首次扫描的 4 包/9 条报告中，asyncmy、cryptography、python-jose 均存在可用安全版本，已分别升级到 0.2.14、50.0.1、3.5.0；复扫只剩 `ecdsa==0.19.2` 的 `GHSA-wj6h-64fc-37mp`。上游无 patched release，且项目 production 固定 HS256，不生成 ECDSA 私钥或执行 ECDSA/ECDH，因此在 `python-policy.json` 记录到 2026-11-30 的不可达例外。任何 JWT 算法、依赖、公告或到期变化都会使 Job 失败。
 
-Python 漏洞扫描器尚未选型。新增工具前检查维护状态、许可证、锁定方式和 CI 可复现性；工具本身作为开发依赖记录，不进入生产运行环境。
+Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装在隔离 CI venv，
+不进入生产运行环境。未来更换工具时仍须检查维护状态、许可证、锁定方式和 CI 可复现性。
 
 ## 5. 触发与权限
 
@@ -189,7 +246,9 @@ Python 漏洞扫描器尚未选型。新增工具前检查维护状态、许可�
 | Gate B RC | 全部 Job + Gate B 专项 | 受保护生产候选 Secret | 经双人/明确审批后提审 |
 | 定时 | 依赖审计、可选工具链兼容检查 | 最小读取权限 | 无发布 |
 
-## 6. 9.2 完成定义
+## 6. 历史 9.2 完成定义与当前候选重开项
+
+以下 `[x]` 仅表示 Phase 9.2 的 M0–M2 历史基线完成；不表示当前 M7 候选已经通过：
 
 - [x] CI 配置已提交并经过至少一个 PR 真实运行；
 - [x] 所有 Job 从干净 checkout 通过；
@@ -201,3 +260,12 @@ Python 漏洞扫描器尚未选型。新增工具前检查维护状态、许可�
 - [x] Python 漏洞扫描已锁定，修复可升级项并只保留 1 条有期限不可达例外；
 - [x] warning 策略为零项白名单，任何未批准 warning 都阻断；
 - [x] 没有配置自动迁移持久数据库、自动提审或自动发布。
+
+当前 M7 候选必须重新关闭：
+
+- [ ] 修复后的同一干净 SHA 完成八类 Job 8/8，保存新的 Run 与 artifact；
+- [ ] MySQL Job 在远端精确覆盖 M0–M7、M5→M6→M7 历史重放、M7 snapshot、联合
+  JUnit 和可复核 cleanup；本地提交前 dirty-tree 结果已记录，但不勾选远端门槛；
+- [ ] Wallet 扩展 MySQL 门槛独立完成，不能由 M7 migration gate 代替；
+- [ ] 当前前端/OpenAPI/微信 production artifact、依赖审计与仓库卫生都绑定上述新 SHA；
+- [ ] Gate A 持久升级、真实 RC、微信后台和真机继续由后续 Gate 单独授权，CI 不自动执行。
