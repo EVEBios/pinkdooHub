@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** Loopback、持久 Bootstrap、代表性数据与非空恢复已通过；待备份保管、DNS/HTTPS 和真机
+> **Status:** Loopback、持久 Bootstrap、代表性数据、非空恢复与 M2→M7 升级入口已实现；待新 CI、持久执行、DNS/HTTPS 和真机
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
@@ -88,9 +88,9 @@ sudo python -m scripts.release.gatea_operations \
   --mode tls
 ```
 
-当前脚本只实现首次 loopback 部署需要的最小生命周期，所有写操作都会再次验证
-Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 和 CMD。
-TLS 写操作仍被拒绝。
+生命周期脚本支持空库首次部署与经批准的既有 M2→M7 升级。所有写操作都会再次验证
+Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 和 CMD；TLS
+写操作仍被拒绝。
 
 ```bash
 # 只读输出精确 Aerich 链、Schema 数量/指纹和 M2 关键业务聚合。
@@ -108,7 +108,7 @@ sudo python -m scripts.release.gatea_operations \
   initial-migrate \
   --mode loopback
 
-# 必须存在与候选 SHA/Image ID 匹配的迁移记录；运行时复核唯一发布端口。
+# 必须存在与候选 SHA/Image ID 匹配的首次迁移或既有库升级 Record；复核唯一发布端口。
 sudo python -m scripts.release.gatea_operations \
   app-up \
   --mode loopback
@@ -136,7 +136,7 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
 将完整 JSON 作为升级前证据保存到仓库外受控位置。该命令只解决只读起点确认，仍不
 构成非空库升级授权。
 
-候选镜像内另有两个只供受控非空升级编排调用的执行原语：
+候选镜像内另有三个只供受控非空升级编排调用的执行原语：
 
 - `python -m app.tasks.gatea_migrate_step --target-version <3..7>` 在容器 `/tmp`
   生成只含目标及更早迁移的短期目录，通过 Aerich 公开接口一次只应用一条迁移；当前
@@ -149,7 +149,47 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
   补偿本轮新文件，完全相同重放零写入。
 
 这些模块不自行验证目标主机、停写、Backup/Restore Record 或候选镜像身份，因此
-不得脱离尚待完成的 Gate A 非空升级编排单独在持久环境运行。
+不得脱离 `scripts.release.gatea_upgrade` 单独在持久环境运行。
+
+### 既有 M2 数据库升级
+
+`gatea_upgrade.py` 是当前唯一批准的既有库升级入口，只接受精确 M0–M2 Aerich 链，
+不把一次性 MySQL 的其他历史起点自动批准为持久起点。执行前必须先在 source 配置下
+生成 24 小时内的新 Backup，并完成相同 Backup ID 的无端口独立 Restore；随后把受保护
+配置切换为已经构建和检查的目标 SHA 镜像。默认命令只读输出冻结项：
+
+```bash
+sudo python -m scripts.release.gatea_upgrade \
+  --mode loopback \
+  --source-candidate-sha <source-40位-sha> \
+  --backup-id <YYYYMMDDtHHMMSSz>
+```
+
+真正写入必须把 plan 输出的四个身份逐项原样确认：
+
+```bash
+sudo python -m scripts.release.gatea_upgrade \
+  --mode loopback \
+  --source-candidate-sha <source-40位-sha> \
+  --backup-id <YYYYMMDDtHHMMSSz> \
+  --apply \
+  --confirm-source-sha <source-40位-sha> \
+  --confirm-target-sha <target-40位-sha> \
+  --confirm-backup-id <YYYYMMDDtHHMMSSz> \
+  --confirm-manifest-sha256 <plan-manifest-sha256>
+```
+
+入口在任何数据库写入前校验 Root/Secret/目标 Image ID、新鲜 Backup 与 Restore PASS
+Record、健康的四项服务和精确 M2；随后停止 Nginx/App，并要求停写后的数据库和图片
+与备份完全一致。执行顺序固定为 M3 → M4 → Wallet 双 backfill/reconcile → M5 → M6 →
+MARD preview/apply/replay → M7。每步的 Aerich/Schema/聚合写入脱敏 evidence；最终还要
+核验 M2 核心数据不漂移、Wallet owner、221 色和 ReservationSettings 单例/约束。
+
+只有全部通过才生成
+`<target-sha>.existing-database-upgrade.json`，`app-up` 同时接受这个 Record 与空库
+`initial-migration` Record。成功后应用仍保持停止，须由执行人复核 Record，再单独调用
+`gatea_operations app-up`。失败不自动恢复服务、不 downgrade、不 fake；失败或中断的
+evidence 会阻断盲目重跑，必须先人工确认实际 Schema/Aerich 并另行批准处置。
 
 ## 受控 SUPER_ADMIN Bootstrap
 
@@ -303,8 +343,10 @@ sudo python -m scripts.release.gatea_resilience --apply
 
 1. 从干净 Git SHA 构建 `pinkdoohub-gatea:<40位SHA>` 并记录 image ID。
 2. Root 创建配置/Secret/持久运维目录；运行 loopback preflight。
-3. 使用 `infra-up` 启动 MySQL、Redis；使用 `initial-migrate` 完成空库迁移。
-4. 使用 `app-up` 启动 App/Nginx loopback；验证 liveness/readiness 与端口边界。
+3. 空库使用 `initial-migrate`；既有库先在 source 候选完成新 Backup/Restore，再切换目标
+   配置并用 `gatea_upgrade` plan/apply。两条路径不得混用。
+4. 复核精确 initial/upgrade Record 后使用 `app-up` 启动 App/Nginx loopback；验证
+   liveness/readiness 与端口边界。
 5. 临时注入 Bootstrap Secret，执行首次/严格重放、登录和凭据轮换后删除。
 6. 使用受控工具验证 MySQL/图片独立备份、恢复和校验和；再定义保留和加密异机副本。
 7. ICP 通过后再配置 DNS、证书、80/443 和 TLS override。

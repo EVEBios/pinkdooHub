@@ -93,7 +93,7 @@ def test_prepare_requires_bootstrap_empty_business_baseline_and_no_images(
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _values())
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda values: "sha256:image")
-    monkeypatch.setattr(gatea, "_require_migration_record", lambda **kwargs: None)
+    monkeypatch.setattr(gatea, "_require_deployment_record", lambda **kwargs: None)
     monkeypatch.setattr(
         gatea,
         "_compose_ps",
@@ -148,7 +148,7 @@ def test_prepare_rejects_nonempty_baseline_before_api_write(
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _values())
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda values: "sha256:image")
-    monkeypatch.setattr(gatea, "_require_migration_record", lambda **kwargs: None)
+    monkeypatch.setattr(gatea, "_require_deployment_record", lambda **kwargs: None)
     monkeypatch.setattr(
         gatea,
         "_compose_ps",

@@ -593,9 +593,20 @@ Gate A 非空升级入口在 M6 后调用，不能独立执行到持久环境。
 
 ### 12.2 Gate A 停止条件
 
-Gate A 持久环境在 2026-09-02 的最后留证是有业务数据的 M2，当前真实 Aerich 状态尚未重新只读确认。现有 `gatea_operations.py initial-migrate` 只支持空库首次迁移，不是 M2→M7 升级入口；在专用的非空升级候选、数据扫描/停写/备份恢复方案通过 Review 并获得明确授权前，必须停止，不得对 Gate A 直接运行空库命令、手工补表/列或 `--fake`。
+Gate A 持久环境在 2026-09-02 的最后留证是有业务数据的 M2，当前真实 Aerich 状态尚未
+重新只读确认。`gatea_operations.py initial-migrate` 仍只支持空库首次迁移；非空库必须
+使用 `scripts.release.gatea_upgrade`。该入口只批准精确 M2，要求 24 小时内的新
+Backup/独立 Restore、source/target SHA 与 MARD checksum 四重确认，在停写后再次比较
+数据库/图片与备份，按 M3→M4→Wallet 准备→M5→M6→MARD→M7 执行并逐步留证。只有
+最终核心数据、Wallet owner、221 色、ReservationSettings 与精确 Aerich 链全部通过才
+写成功 Record；失败保持入口停止并阻断盲目重跑。入口实现与一次性 MySQL 通过仍不
+等于 Gate A 写入授权；恢复 SSH 并取得当前只读事实、新 Backup/Restore 与当次授权前
+必须停止，不得手工补表/列、删除失败 evidence、直接重跑或使用 `--fake`。
 
-M7 可销毁 MySQL 通过不会自动关闭以下发布门槛：MARD 221 仍缺持久 MySQL + 对象存储导入流程；Wallet M4 仍需扩展 MySQL 并发/1205/1213/EXPLAIN、历史 wallet/manual settlement backfill 及 reconcile；当前 SHA 的远端 8/8、真实 Origin/RC、iOS/Android 真机与微信外部条件也均未完成。当前发布判定仍为 No-Go。
+M7 可销毁 MySQL 与非空升级入口通过不会自动关闭以下发布门槛：MARD 221 与 Wallet
+backfill/reconcile 仍未应用持久 Gate A，测试商品颜色/库存尚未配置；新增运维 SHA 尚待
+远端 8/8，当前真实数据库起点/镜像和新 Backup/Restore 仍未取得，真实 Origin/RC、
+iOS/Android 真机与微信外部条件也均未完成。当前发布判定仍为 No-Go。
 
 ---
 

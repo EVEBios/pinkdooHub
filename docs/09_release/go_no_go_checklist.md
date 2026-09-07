@@ -69,7 +69,9 @@ workflow 覆盖并保存证据，详见
 - [ ] 写前只读查询并记录 Gate A 当前真实 Aerich 版本、Schema 摘要、数据行数和运行镜像；最后记录为 M2 不能替代查询；
 - [ ] 当前干净 PR checkout 在 CI MySQL 8.0.46 已完成空库 0→7、M5→M6→M7 workflow 重放、M6/M7 snapshot 与远端 cleanup artifact；但本清单要求的完整 0/1/2/3/4/5/6→7 矩阵仍只有本地一次性报告，尚未由远端 CI 逐场景执行，故保持未勾选；
 - [ ] 非空 Gate A 在停写窗口创建新的 MySQL/图片一致备份，并在独立无端口实例恢复经只读确认的迁移前数据通过（最后历史记录为 M2，不预设当前值）；
-- [ ] 批准的非空升级入口已实现并测试；现有 `initial-migrate` 只接受空库。若只读结果仍为最后留证的 M2，必须使用经 Review 的 M2→M7 入口；当前不存在该入口；
+- [x] 批准的非空 M2→M7 升级入口已实现并完成单测/一次性 MySQL 8.0.46 验证；它绑定
+  source/target SHA、24 小时内 Backup/Restore、停写快照、逐步迁移、Wallet、MARD 与
+  成功 Record，失败保持停止并阻断盲目重跑；现有 `initial-migrate` 仍只接受空库；
 - [ ] 按只读确认且获批的实际起点升级；若为 M2，依次应用 M3→M4→M5→M6→M7，逐步记录真实 DDL/Aerich 状态，核验 User、Wallet、Payment、Reservation、颜色 Kit、Order、Inventory 与 Audit 数据不漂移；
 - [ ] M4 后按同一冻结上界执行 wallet account preview/apply/二次 preview、legacy settlement preview/apply 和只读 `wallet_reconcile`，全部差异为零；
 - [ ] M6 后在 Gate A MySQL 导入 221 色 slot/code/name/URL；来源 manifest 保留 HEX/RGB 映射，发布并 checksum 核验 221 张持久图片，为需销售商品启用颜色并设置库存；本地 `db.sqlite3` 不得作为此证据；

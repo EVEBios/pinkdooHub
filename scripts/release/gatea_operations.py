@@ -2,9 +2,9 @@
 """Gate A 持久部署的受控预检与生命周期操作。
 
 本模块不生成、读取或输出 Secret 值。写操作固定到经过验证的 Compose
-文件、完整 Git SHA 镜像与受保护配置；当前只允许 loopback 首次部署，
-并提供既有库的只读状态采样，不提供删卷、恢复、Bootstrap、TLS 切换或
-公开发布操作。
+文件、完整 Git SHA 镜像与受保护配置；当前写操作只允许 loopback，空库首次迁移与
+专用既有库升级分别生成可验证 Record，并提供既有库的只读状态采样。不提供删卷、
+来源卷恢复、TLS 切换或公开发布操作。
 """
 
 from __future__ import annotations
@@ -71,6 +71,20 @@ FORBIDDEN_CONFIG_KEYS = (
     "PINKDOOHUB_BOOTSTRAP_PASSWORD",
 )
 APP_IMAGE_PATTERN = re.compile(r"^pinkdoohub-gatea:[0-9a-f]{40}$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+BACKUP_ID_PATTERN = re.compile(r"^[0-9]{8}t[0-9]{6}z$")
+APPROVED_SOURCE_M2_CHAIN = (
+    "0_20260810101218_init.py",
+    "1_20260813130455_add_order_tables.py",
+    "2_20260814104655_add_inventory_transactions.py",
+)
+APPROVED_TARGET_M7_CHAIN = APPROVED_SOURCE_M2_CHAIN + (
+    "3_20260902125032_phase95_external_identity.py",
+    "4_20260905162243_add_wallet_payment_refund.py",
+    "5_20260906094653_add_reservations.py",
+    "6_20260906123000_add_color_selectable_kits.py",
+    "7_20260907190000_add_reservation_settings.py",
+)
 HOST_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
@@ -579,6 +593,10 @@ def _migration_marker(record_dir: Path, candidate_sha: str) -> Path:
     return record_dir / f"{candidate_sha}.initial-migration.json"
 
 
+def _upgrade_marker(record_dir: Path, candidate_sha: str) -> Path:
+    return record_dir / f"{candidate_sha}.existing-database-upgrade.json"
+
+
 def _write_migration_record(
     *,
     record_dir: Path,
@@ -633,6 +651,68 @@ def _require_migration_record(
         raise GateAError("Gate A initial migration record does not match the candidate")
 
 
+def _require_upgrade_record(
+    *,
+    record_dir: Path,
+    candidate_sha: str,
+    image_id: str,
+) -> None:
+    """验证既有数据库升级成功 Record 与当前不可变候选一致。"""
+
+    marker = _upgrade_marker(record_dir, candidate_sha)
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as error:
+        raise GateAError(
+            "Gate A existing-database upgrade record is unavailable"
+        ) from error
+    if (
+        payload.get("schema_version") != 1
+        or payload.get("record_type") != "existing-database-upgrade"
+        or payload.get("candidate_sha") != candidate_sha
+        or payload.get("image_id") != image_id
+        or payload.get("passed") is not True
+        or not payload.get("completed_at")
+        or BACKUP_ID_PATTERN.fullmatch(str(payload.get("backup_id", ""))) is None
+        or SHA256_PATTERN.fullmatch(str(payload.get("manifest_sha256", ""))) is None
+        or payload.get("source_aerich_versions")
+        != list(APPROVED_SOURCE_M2_CHAIN)
+        or payload.get("target_aerich_versions")
+        != list(APPROVED_TARGET_M7_CHAIN)
+    ):
+        raise GateAError(
+            "Gate A existing-database upgrade record does not match the candidate"
+        )
+
+
+def _require_deployment_record(
+    *,
+    record_dir: Path,
+    candidate_sha: str,
+    image_id: str,
+) -> None:
+    """接受精确匹配的首次迁移或既有数据库升级 Record。"""
+
+    initial_marker = _migration_marker(record_dir, candidate_sha)
+    upgrade_marker = _upgrade_marker(record_dir, candidate_sha)
+    if initial_marker.exists():
+        _require_migration_record(
+            record_dir=record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+        )
+        return
+    if upgrade_marker.exists():
+        _require_upgrade_record(
+            record_dir=record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+        )
+        return
+
+    raise GateAError("Gate A deployment record is unavailable")
+
+
 def preflight(*, config_file: Path, secret_dir: Path, mode: str) -> None:
     """在创建任何 Docker 资源前完成只读 Gate A 预检。"""
 
@@ -645,15 +725,15 @@ def preflight(*, config_file: Path, secret_dir: Path, mode: str) -> None:
     print(f"Gate A {mode} preflight passed")
 
 
-def database_status(*, config_file: Path, secret_dir: Path, mode: str) -> None:
-    """只读输出 Aerich、Schema 指纹和 M2 关键业务摘要。"""
+def read_database_snapshot(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    """从已有健康 MySQL 读取规范化的只读数据库摘要。"""
 
-    values = _validated_inputs(
-        config_file=config_file,
-        secret_dir=secret_dir,
-        mode=mode,
-        require_available_port=False,
-    )
     rows = _compose_ps(
         values=values,
         config_file=config_file,
@@ -689,6 +769,24 @@ def database_status(*, config_file: Path, secret_dir: Path, mode: str) -> None:
         raise GateAError("Gate A Aerich status output is invalid")
     snapshot["aerich_versions"] = (
         raw_versions.split(",") if raw_versions else []
+    )
+    return snapshot
+
+
+def database_status(*, config_file: Path, secret_dir: Path, mode: str) -> None:
+    """只读输出 Aerich、Schema 指纹和 M2 关键业务摘要。"""
+
+    values = _validated_inputs(
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        require_available_port=False,
+    )
+    snapshot = read_database_snapshot(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
     )
     print(
         json.dumps(
@@ -851,7 +949,7 @@ def app_up(
     mode: str,
     wait_timeout: int,
 ) -> None:
-    """迁移记录匹配后启动 App/Nginx，并等待两者健康。"""
+    """首次迁移或既有库升级 Record 匹配后启动 App/Nginx。"""
 
     _require_loopback_write_mode(mode)
     values = _validated_inputs(
@@ -862,7 +960,7 @@ def app_up(
     )
     _validate_root_directory(record_dir, 0o755, "Gate A release record directory")
     image_id = validate_app_image(values)
-    _require_migration_record(
+    _require_deployment_record(
         record_dir=record_dir,
         candidate_sha=_candidate_sha(values),
         image_id=image_id,
@@ -946,12 +1044,17 @@ def status(
         }
         for row in rows
     ]
-    marker = _migration_marker(record_dir, _candidate_sha(values))
+    candidate_sha = _candidate_sha(values)
+    initial_marker = _migration_marker(record_dir, candidate_sha)
+    upgrade_marker = _upgrade_marker(record_dir, candidate_sha)
     print(
         json.dumps(
             {
-                "candidate_sha": _candidate_sha(values),
-                "initial_migration_recorded": marker.is_file(),
+                "candidate_sha": candidate_sha,
+                "deployment_recorded": initial_marker.is_file()
+                or upgrade_marker.is_file(),
+                "existing_database_upgrade_recorded": upgrade_marker.is_file(),
+                "initial_migration_recorded": initial_marker.is_file(),
                 "mode": mode,
                 "services": sorted(summary, key=lambda item: item["service"]),
             },

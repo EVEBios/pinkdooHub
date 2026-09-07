@@ -423,7 +423,7 @@ def execute(
         raise ResilienceError("Gate A resilience drill is already recorded")
     image_id = gatea.validate_app_image(values)
     candidate_sha = gatea._candidate_sha(values)
-    gatea._require_migration_record(
+    gatea._require_deployment_record(
         record_dir=release_record_dir,
         candidate_sha=candidate_sha,
         image_id=image_id,

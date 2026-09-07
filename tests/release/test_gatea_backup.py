@@ -167,7 +167,7 @@ def test_create_backup_stops_writes_records_artifacts_and_restarts(
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
-    monkeypatch.setattr(gatea, "_require_migration_record", lambda **kwargs: None)
+    monkeypatch.setattr(gatea, "_require_deployment_record", lambda **kwargs: None)
     monkeypatch.setattr(
         gatea,
         "_compose_ps",

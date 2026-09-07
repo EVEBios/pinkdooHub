@@ -1,6 +1,6 @@
 # 微信 Gate A 隔离发布演练 Runbook
 
-> **Status:** Historical M2 drill passed — current M4–M7 persistent upgrade/RC drill blocked
+> **Status:** Historical M2 drill passed — M2→M7 tooling ready；persistent execution/RC blocked
 > **Last Updated:** 2026-09-07
 > **Scope:** 微信小程序内部测试版（Gate A）
 
@@ -160,21 +160,20 @@ python -m scripts.release.phase93_operations cleanup \
 
 #### 4.0.1 当前工具适用边界与停止条件
 
-当前这些入口不能直接承担最后留证 M2→M7 的持久升级：
+历史演练入口仍不能直接承担最后留证 M2→M7 的持久升级，但专用入口已经实现：
 
 - `scripts.release.phase93_operations` 的迁移版本、Schema 断言和 legacy 场景硬编码为
   M0–M2，只能复核历史 9.3 报告；在更新并重新测试前不得称为“0→当前”。
-- `scripts.release.gatea_operations initial-migrate` 明确要求 application schema 为
-  0 张表；Gate A 最后证据为非空 M2，而当前状态仍须重新只读确认。它没有受控的
-  existing-database upgrade Record，`app-up` 又要求 candidate SHA/Image ID 匹配的
-  initial migration Record。
+- `scripts.release.gatea_operations initial-migrate` 仍只接受 0 张表的首次数据库，不得
+  对非空 Gate A 使用；`app-up` 现同时接受精确匹配的 initial migration Record 或
+  `gatea_upgrade` 成功生成的 existing-database upgrade Record。
 - `scripts.release.gatea_operations database-status` 已可对健康 MySQL 只读输出精确
   Aerich 链、Schema 数量/指纹和 M2 关键业务聚合，但不会迁移或批准未知起点。
-- `scripts/local/import_mard_bead_colors.py` 仍只操作项目内 SQLite；Gate A 候选已经有
-  独立 `app.tasks.gatea_mard_publish` 原语，但只能由完成主机/停写/备份验证的升级入口
-  在 M6 后调用，不能把本地开发图片复制为持久发布证据。
+- `scripts/local/import_mard_bead_colors.py` 仍只操作项目内 SQLite；Gate A 的
+  `app.tasks.gatea_mard_publish` 已由专用升级入口在 M6 后编排，不能把本地开发图片
+  复制为持久发布证据。
 
-因此在下列能力实现、测试并 Review 前，执行到持久写入步骤必须停止：
+`scripts.release.gatea_upgrade` 已实现并在本地单测与一次性 MySQL 8.0.46 验证以下能力：
 
 1. 先用 `database-status` 保存不含 Secret/PII 的只读起点证据；非空库升级入口再验证
    Root/Secret/镜像、停写状态、新 Backup/Restore Record、候选 SHA/Image ID 和该份
@@ -184,15 +183,18 @@ python -m scripts.release.phase93_operations cleanup \
    全部核验通过后生成新的 candidate upgrade Record 供 `app-up` 使用；
 3. 已实现的 Gate A 221 色发布原语须接入非空升级入口：默认 preview、显式 checksum
    apply、MySQL 事务、持久图片原子发布/补偿、幂等重放和 HTTPS URL 核验均由编排留证；
-4. 两类入口都有失败/重放/资源清理测试，且不会输出 Secret、PII 或幂等键。
+4. 失败保留脱敏 evidence 和停止状态，成功 Record 可重放；输出不含 Secret、PII 或
+   幂等键，`app-up` 只在 Record 与当前 target SHA/Image ID 完全一致时放行。
 
-本 Runbook 只冻结上述门槛，不授权用临时 SQL、删除旧迁移 Record、伪造 Record 或
-绕过 `initial-migrate` 的保护逻辑。
+默认 plan 只读；apply 必须同时确认 source SHA、target SHA、Backup ID 与 MARD manifest
+SHA-256。当前实现只批准精确 M2 起点，不批准 M0/M1/M3–M6 持久升级。入口通过测试不等于
+已取得持久写入授权；Gate A 当前真实版本、当次新 Backup/Restore 与执行仍须在恢复 SSH
+公钥访问后重新取得证据。不得用临时 SQL、删除旧 Record、伪造 Record 或绕过保护逻辑。
 
 候选镜像已提供 `app.tasks.gatea_migrate_step` 与 `app.tasks.gatea_wallet_prepare` 两个
 内部执行原语：前者将 Aerich 限制为 M3–M7 单步前进，后者完成 M4 后双 preview、冻结
-上界 apply、重放与 reconcile。它们不拥有主机/备份/停写/Record 验证，只有后续受控
-非空升级入口可以调用；当前仍不得直接用于持久 Gate A。
+上界 apply、重放与 reconcile。它们不拥有主机/备份/停写/Record 验证，只能由
+`gatea_upgrade` 调用，不得直接用于持久 Gate A。
 
 M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 production MySQL、
 `/data/images`、HTTPS URL、manifest SHA-256 和 `0644` 图片，事务失败补偿本轮文件，
@@ -220,8 +222,9 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 
 ### 4.3 数据库迁移
 
-本节是非空升级入口完成测试、Review 并取得当次持久写入授权后才可执行的顺序；当前
-仓库尚不具备该入口，不能把以下步骤当作直接操作命令。
+本节由 `scripts.release.gatea_upgrade` 固化；只有该入口在当前干净 SHA 的 CI 通过、当前
+Gate A 起点只读确认为 M2、新 Backup/Restore 通过并取得当次持久写入授权后才可执行。
+不能把以下内部步骤拆成现场命令单独运行。
 
 1. 再次核对连接身份、目标 Schema、当前版本和备份 ID。
 2. 停止 App/Nginx 的业务写入并证明无活跃写请求；MySQL/Redis 保持受控可用。
@@ -325,7 +328,8 @@ python -m app.tasks.super_admin_bootstrap \
 - 越权、凭据泄漏、数据破坏、重复订单/扣库存或无法恢复；
 - artifact 与已测试 SHA 不一致；
 - 当前远端 CI 未达 8/8，或 MySQL snapshot 未精确覆盖 M0–M7（当前 Run 34129910349 已满足，后续 SHA 必须重验）；
-- 非空升级入口/候选 migration Record 缺失，或试图对 Gate A 使用空库 `initial-migrate`；
+- 非空升级入口尚未通过当前 SHA 的 CI、候选 upgrade Record 缺失，或试图对 Gate A
+  使用空库 `initial-migrate`；
 - wallet backfill/reconcile 非零差异，或 Gate A 221 色/图片/商品库存未完成；
 - 微信真机无法通过 HTTPS 或合法域名访问。
 

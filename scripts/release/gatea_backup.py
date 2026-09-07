@@ -343,7 +343,7 @@ def create_backup(
         backup_record_dir=backup_record_dir,
     )
     image_id = gatea.validate_app_image(values)
-    gatea._require_migration_record(
+    gatea._require_deployment_record(
         record_dir=release_record_dir,
         candidate_sha=gatea._candidate_sha(values),
         image_id=image_id,

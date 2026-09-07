@@ -4,6 +4,29 @@
 
 ---
 
+## Gate A 非空 M2→M7 升级编排（本地候选，2026-09-07）
+
+- 新增 `scripts.release.gatea_upgrade`，默认 plan 只读，只接受精确 M2 起点；apply 必须
+  同时绑定 source/target 40 位 SHA、24 小时内的新 Backup ID/独立 Restore PASS Record
+  和冻结 MARD manifest SHA-256。目标镜像继续验证 revision、非 root 用户、Entrypoint
+  与 CMD。
+- apply 先停止 Nginx/App，证明 MySQL/Redis healthy 与业务入口退出，并要求停写后的
+  M2 数据库摘要、图片 manifest 和刚验证的备份完全一致；随后固定执行 M3、M4、Wallet
+  双 backfill/reconcile、M5、M6、MARD preview/apply/replay 与 M7，每步保存 Aerich、
+  Schema 指纹和聚合证据。
+- 最终核验 M2 核心 User/Product/Order/Inventory/Audit 数据不漂移、Wallet owner 完整、
+  221 色全配置/激活、持久图片完整和 ReservationSettings 单例/CHECK/UNIQUE；全部通过
+  才生成绑定 target SHA/Image ID 的 existing-database upgrade Record。`app-up`、后续
+  Bootstrap/代表数据/备份/韧性入口现可接受首次迁移或既有库升级 Record。
+- 失败/中断保留脱敏 evidence 和实际数据库摘要，不自动启动入口、恢复、downgrade、
+  fake 或删除现场；已有失败 evidence 阻断盲目重跑。发布工具全套 `154 passed`，完整
+  后端 `2024 passed, 31 skipped in 110.29s`；31 项均为显式 MySQL-only 门槛。
+- 一次性 MySQL 8.0.46 从精确 M2 逐步执行到 M7；3 个合成历史用户中为 2 个普通
+  NORMAL/DISABLED USER 补齐钱包并完成 reconcile，MARD 221 行/221 文件发布与重放、
+  最终 8 条 Aerich/Wallet/MARD/ReservationSettings 摘要均通过；容器、13320 与临时图片
+  已清理。该证据不等于 Gate A 已执行；当前 SSH 公钥不可用，真实起点、新 Backup/
+  Restore、持久升级和 matching image 部署仍阻断，发布继续 **No-Go**。
+
 ## Gate A MARD 221 持久发布入口（本地候选，2026-09-07）
 
 - 把清单、稳定文件名和确定性 PNG 提取到镜像内共享 `mard_catalog`，抓取与本地 SQLite
