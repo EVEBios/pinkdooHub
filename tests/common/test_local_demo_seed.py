@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import sqlite3
@@ -395,3 +396,18 @@ async def test_verify_mode_does_not_create_a_missing_database(
 
     assert local_demo_seed.main() == 2
     assert not missing_database.exists()
+
+
+async def test_command_suppresses_dependency_bind_parameter_logs() -> None:
+    dependency_loggers = [
+        logging.getLogger(name) for name in ("aiosqlite", "passlib", "tortoise")
+    ]
+    for dependency_logger in dependency_loggers:
+        dependency_logger.setLevel(logging.DEBUG)
+
+    local_demo_seed._suppress_dependency_debug_logs()
+
+    assert all(
+        dependency_logger.getEffectiveLevel() >= logging.WARNING
+        for dependency_logger in dependency_loggers
+    )

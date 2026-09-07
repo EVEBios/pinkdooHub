@@ -187,6 +187,13 @@ RESERVATION_EXPECTATIONS: Final = {
 }
 
 
+def _suppress_dependency_debug_logs() -> None:
+    """Keep ORM bind parameters, including password hashes, out of CLI logs."""
+
+    for logger_name in ("aiosqlite", "passlib", "tortoise"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
 @dataclass(frozen=True, slots=True)
 class DemoServices:
     product: ProductService
@@ -1541,6 +1548,7 @@ def _summary_for_log(summary: DemoVerificationSummary) -> str:
 def main() -> int:
     arguments = build_parser().parse_args()
     setup_logging()
+    _suppress_dependency_debug_logs()
     configured_database = Path(settings.db_sqlite_path)
     database = configured_database
     backup: Path | None = None
