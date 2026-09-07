@@ -25,7 +25,7 @@ DEFAULT_REPRESENTATIVE_RECORD = Path(
     "gatea-representative-data.json"
 )
 DEFAULT_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/resilience")
-RECORD_NAME = "gatea-resilience.json"
+RECORD_PREFIX = "gatea-resilience"
 SERVICES = ("mysql", "redis", "app", "nginx")
 FORBIDDEN_LOG_PATTERNS = (
     re.compile(r"authorization\s*:\s*bearer\s+\S+", re.IGNORECASE),
@@ -41,6 +41,12 @@ NGINX_METRIC_PATTERN = re.compile(
 
 class ResilienceError(RuntimeError):
     """不包含日志正文、Secret、连接串或用户身份的安全演练错误。"""
+
+
+def _record_path(record_dir: Path, candidate_sha: str) -> Path:
+    """返回与不可变候选提交绑定且不可覆盖的韧性演练记录路径。"""
+
+    return record_dir / f"{RECORD_PREFIX}-{candidate_sha}.json"
 
 
 def _http_status(port: int, path: str) -> int:
@@ -418,11 +424,13 @@ def execute(
     gatea._validate_root_directory(
         record_dir, 0o755, "Gate A resilience record directory"
     )
-    record_path = record_dir / RECORD_NAME
-    if record_path.exists():
-        raise ResilienceError("Gate A resilience drill is already recorded")
     image_id = gatea.validate_app_image(values)
     candidate_sha = gatea._candidate_sha(values)
+    record_path = _record_path(record_dir, candidate_sha)
+    if record_path.exists():
+        raise ResilienceError(
+            "Gate A resilience drill is already recorded for this candidate"
+        )
     gatea._require_deployment_record(
         record_dir=release_record_dir,
         candidate_sha=candidate_sha,

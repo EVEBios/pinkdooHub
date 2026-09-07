@@ -88,7 +88,7 @@ workflow 覆盖并保存证据，详见
 - [x] SUPER_ADMIN bootstrap 一次性、严格重放、可审计，初始凭据已安全处置；
 - [x] 日志可按精确 Compose project 查询；24 小时请求/4xx/5xx/时延聚合、MySQL/Redis 摘流量与恢复、App 重启和敏感扫描已真实通过；
 - [x] 初始测试人员、allowlist、反馈入口、14 日窗口/停用规则、数据清理和事故联系人已冻结。
-- [ ] 当前 M7 镜像在升级后的 Gate A 重新验证 liveness/readiness、MySQL/Redis 故障恢复、图片持久化、日志脱敏与应用重启；历史 M2 结果不能替代；
+- [ ] 当前 M7 镜像在升级后的 Gate A 重新验证 liveness/readiness、MySQL/Redis 故障恢复、图片持久化、日志脱敏与应用重启，并生成候选 SHA 级不可覆盖 Record；历史 M2 结果不能替代；
 
 ### 1.6 微信与业务验收
 

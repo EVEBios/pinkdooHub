@@ -29,6 +29,18 @@ def _secret_dir(tmp_path: Path) -> Path:
     return secret_dir
 
 
+def test_resilience_record_path_is_scoped_to_candidate(tmp_path: Path) -> None:
+    first_sha = "a" * 40
+    second_sha = "b" * 40
+
+    assert resilience._record_path(tmp_path, first_sha) == (
+        tmp_path / f"gatea-resilience-{first_sha}.json"
+    )
+    assert resilience._record_path(tmp_path, second_sha) != resilience._record_path(
+        tmp_path, first_sha
+    )
+
+
 def test_dependency_drill_stops_observes_and_recovers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -334,4 +346,4 @@ def test_execute_recovers_services_even_when_dependency_drill_fails(
         )
 
     assert recovered == [True]
-    assert not (record_dir / resilience.RECORD_NAME).exists()
+    assert not resilience._record_path(record_dir, "a" * 40).exists()

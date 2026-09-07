@@ -4,6 +4,14 @@
 
 ---
 
+## Gate A 候选级韧性留证（本地候选，2026-09-07）
+
+- 韧性演练成功 Record 从全局固定文件改为
+  `gatea-resilience-<40位candidate SHA>.json`：同一不可变候选仍然拒绝覆盖，历史 M2
+  证据继续保留但不再阻断升级后的 M7 镜像重新验证。
+- 该改动只修正留证边界，不复用或提升历史 PASS；当前 M7 的 MySQL/Redis 故障、App
+  重启、数据/图片保持、日志轮转和脱敏仍须在 Gate A 升级并启动当前镜像后真实执行。
+
 ## Gate A 非空 M2→M7 升级编排（本地候选，2026-09-07）
 
 - 新增 `scripts.release.gatea_upgrade`，默认 plan 只读，只接受精确 M2 起点；apply 必须

@@ -320,7 +320,9 @@ Record `0600`。密钥与副本必须位于仓库外且相互分离；脚本拒�
 ## 依赖故障、应用重启与日志观察
 
 `gatea_resilience.py` 只在代表性数据成功 Record、Runtime/迁移绑定、四项 Healthy 和
-唯一 loopback publisher 全部匹配时执行一次。它依次停止 MySQL、Redis，要求依赖
+唯一 loopback publisher 全部匹配时对当前 candidate SHA 执行一次。成功 Record 固定为
+`gatea-resilience-<40位SHA>.json` 且不覆盖；历史候选记录保留，但不阻断新候选重新演练。
+它依次停止 MySQL、Redis，要求依赖
 故障时 readiness 为 503 而 liveness 保持 200；恢复各依赖并等待 readiness 200 后，
 再重启 App。最终比较完整数据库摘要与图片 manifest，验证四项服务、端口、Docker
 日志轮转、24 小时 Nginx 请求数量/4xx/5xx/时延，并以内存中的四项真实 Secret 扫描
@@ -334,7 +336,7 @@ sudo python -m scripts.release.gatea_resilience --apply
 ```
 
 任何阶段失败都先尝试恢复 MySQL、Redis、App 和 Nginx，再返回失败且不写成功 Record；
-不得为了得到 PASS 删除代表性数据、Record 或绕过日志匹配。
+不得为了得到 PASS 删除代表性数据、当前候选 Record 或绕过日志匹配。
 
 运维工具仍故意不提供备份删除、来源卷恢复、TLS 切换或公开发布命令；这些步骤
 必须分别实现、测试和 Review，不能用未经审查的现场 Shell 绕过。
