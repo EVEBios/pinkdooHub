@@ -170,7 +170,7 @@ M6 全局预留 `slot_no=1..221` 的 221 个 `bead_colors` 颜色槽。颜色名
 | 详情图 | 详情页展示用 | 多张 |
 | 展示图 | 附加展示 | 多张 |
 
-自选颜色的色板图片不属于某个 Product 的公共图库，而属于全局颜色定义；冻结字段为可空 `BeadColor.swatch_image_url`，缺图时客户端使用颜色元数据或统一占位样式。实物照片仍建议使用一致光照与构图的 192×192 或 256×256 sRGB WebP，并由对象存储/CDN 按需加载，不打进小程序包。
+自选颜色的纯数字色块不属于图片：全局颜色定义以规范大写 `BeadColor.swatch_hex`（`#RRGGBB`）为权威值，小程序用 `backgroundColor` 直接绘制。可空 `BeadColor.swatch_image_url` 仅保留给未来统一光照、白平衡和实体校色后的真实色样照片，以及当前客户端迁移的兼容回退。真实色样和 Product/Option 商品照片优先使用 sRGB WebP，并由对象存储/CDN 按需加载，不打进小程序包。
 
 按 221 张计算的资源体积估算如下；这里的 KiB/MiB 使用 1024 进制，只统计图片本体，不含极少量 HTTP/清单开销：
 
@@ -182,9 +182,11 @@ M6 全局预留 `slot_no=1..221` 的 221 个 `bead_colors` 颜色槽。颜色名
 | 128 KiB | 约 27.63 MiB | 建议作为单张硬上限，超过则拒绝导入 |
 | 2 MiB（复用现有 Product 单图上限） | 442 MiB | 明显不适合 221 色批量资源 |
 
-2026-09-07 用户指定的 [MARD 221 标准色卡](https://peiseka.com/pindouseka.html) 来源页并不提供 221 个独立图片文件，而是以 CSS `background-color` 根据 HEX/RGB 绘制纯色色块。项目已抓取 A1–M15 共 221 项，逐项确认 CSS RGB、展示 RGB 与 HEX 一致且无重复，冻结来源 HTML SHA-256 和清单。随后用标准库确定性生成 256×256 sRGB PNG：221 张内容总计 **128,325 bytes（约 125.3 KiB）**，远低于原预算；本地运行文件仍放在忽略目录 `uploads/products/`，不进入小程序包或 Git。
+2026-09-07 用户指定的 [MARD 221 标准色卡](https://peiseka.com/pindouseka.html) 来源页并不提供 221 个独立图片文件，而是以 CSS `background-color` 根据 HEX/RGB 绘制纯色色块。项目已抓取 A1–M15 共 221 项，逐项确认 CSS RGB、展示 RGB 与 HEX 一致且无重复，冻结来源 HTML SHA-256 和清单。M8 直接从该清单将 221 个 HEX 回填到数据库/API，不为纯色块生成新图片格式。
 
-初始化使用 `scripts/local/import_mard_bead_colors.py`：默认 dry-run，显式 `--apply --confirm-local-only` 后才生成图片并更新本地 M6 SQLite；写库前建立一致性备份，元数据事务失败会回滚并删除本轮新建图片，已有冲突或 Online 商品引用时 fail closed，完全相同重放零写入。该本地工具不代替生产对象存储/CDN 发布，也不能应用 MySQL。
+已有标准库确定性生成的 256×256 sRGB PNG 共 221 张、内容总计 **128,325 bytes（约 125.3 KiB）**。它们在迁移期间继续放在忽略目录 `uploads/products/`，不进入小程序包或 Git，不批量转换为 WebP，也不在 M8 中删除。确认已发布客户端完成 HEX 切换且回滚窗口结束后，再单独评估是否清理。
+
+保留资源的本地导入仍使用 `scripts/local/import_mard_bead_colors.py`：默认 dry-run，显式 `--apply --confirm-local-only` 后才更新本地 SQLite/兼容 PNG；写库前建立一致性备份，元数据事务失败会回滚并删除本轮新建图片，已有冲突或 Online 商品引用时 fail closed，完全相同重放零写入。M8 本地保留数据升级使用独立 dry-run/apply 脚本，不修改 Aerich，也不能应用 MySQL。
 
 ---
 

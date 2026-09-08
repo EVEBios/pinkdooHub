@@ -113,7 +113,7 @@ pinkdooHub/
 │   │   ├── product.py          #   Product
 │   │   ├── experience_option.py#   ExperienceOption
 │   │   ├── product_kit.py      #   ProductKit
-│   │   ├── bead_color.py       #   BeadColor：全局固定 221 槽目录（M6）
+│   │   ├── bead_color.py       #   BeadColor：全局固定 221 槽与数字色值（M6/M8）
 │   │   ├── product_kit_color.py#   商品颜色启用状态与 10g 单位库存（M6）
 │   │   ├── product_image.py    #   ProductImage
 │   │   ├── audit_log.py        #   AuditLog
@@ -166,9 +166,9 @@ pinkdooHub/
 │   ├── tasks/                  # 外部调度器可重复执行的运维任务入口
 │   │   ├── manifests/mard_221.json # MARD 221 来源、HEX/RGB 与确定性色板文件名
 │   │   ├── mard_catalog.py     # 清单验证、稳定命名与确定性 PNG 共享契约
-│   │   ├── gatea_migrate_step.py # Gate A M3–M7 单步 Aerich 原语
+│   │   ├── gatea_migrate_step.py # Gate A M3–M8 单步 Aerich 原语
 │   │   ├── gatea_wallet_prepare.py # Gate A M4 历史资金准备与对账
-│   │   ├── gatea_mard_publish.py # Gate A M6 MySQL/持久图片色卡发布
+│   │   ├── gatea_mard_publish.py # Gate A M8 后发布 MARD HEX 与兼容图片
 │   │   ├── product_image_cleanup.py # ProductImage 延迟文件清理命令
 │   │   ├── super_admin_bootstrap.py # 受控首个 SUPER_ADMIN 初始化
 │   │   ├── phase93_legacy_seed.py   # 仅限冻结旧迁移 Schema 的合成 fixture
@@ -190,6 +190,7 @@ pinkdooHub/
 │   │
 │   ├── common/                  # 公共模块 —— 跨领域共享的类型与常量
 │   │   ├── __init__.py
+│   │   ├── bead_color.py       #   颜色 HEX 规范化与完整性纯函数
 │   │   ├── response.py         #   统一响应信封（success / error 工厂函数）
 │   │   ├── pagination.py       #   分页请求/响应 Pydantic Model
 │   │   ├── types.py            #   通用类型别名（TypeAlias）
@@ -203,6 +204,7 @@ pinkdooHub/
 │   │   │   └── wallet.py       #     Wallet/Payment/Recharge/Refund states and types
 │   │   ├── constants/          #   全局常量 —— 消除 Magic Number
 │   │       ├── __init__.py
+│   │       ├── http.py        #     API 文本响应压缩阈值与级别
 │   │       ├── pagination.py  #     MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE
 │   │       ├── upload.py      #     UPLOAD_MAX_SIZE, ALLOWED_IMAGE_TYPES
 │   │       ├── validation.py  #     USERNAME_MIN_LEN, PASSWORD_MAX_LEN, ...
@@ -229,6 +231,7 @@ pinkdooHub/
 │   │   ├── auth.py             #   JWT 认证中间件（提取 Token → 注入 current_user）
 │   │   ├── logging.py          #   请求日志（记录 method、path、耗时、状态码）
 │   │   ├── cors.py             #   CORS 跨域配置
+│   │   ├── compression.py      #   API 文本响应 gzip；上传图片命名空间旁路
 │   │   └── exception.py        #   全局异常捕获 → 统一错误响应
 │   │
 │   ├── db/                     # 数据库
@@ -273,7 +276,7 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 Product 与 Phase 4.2/4.3 Order/Inventory 的既有能力保持 Implemented。M6 自选颜色 Kit 的模型、Schema、Repository/Service/Mapper/Router、客户端、本地回归与候选迁移 `6_20260906123000_add_color_selectable_kits.py` 已完成；真实 MySQL 0→6 门槛和持久环境迁移/部署仍待完成。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 Product 与 Phase 4.2/4.3 Order/Inventory 的既有能力保持 Implemented。M6 自选颜色 Kit 以及 M8 `swatch_hex` 运行时、客户端和候选迁移均已完成仓库实现；一次性 MySQL M8 门槛与当前本地持久 SQLite 的专用 M8 升级均已完成，Gate A、共享、预发布和生产 MySQL 的迁移/部署仍待完成。
 
 Reservation N1 已冻结并完成仓库实现：独立预约的 Enum/常量/异常、严格 Schema、`StoreBusinessDay`/`Reservation` Model、Repository、纯时间 Validator、事务 Service、零 SQL Mapper、5 个顾客端与 8 个 ADMIN+ 端点，以及 M5 离线迁移均已落地。2026-09-06 已在一次性 MySQL 8.0.46 完成 Aerich 0→5，Reservation 专项 `7 passed`、与 Inventory 联合门槛 `16 passed`，覆盖核心并发、事务重试与索引计划；验证容器已销毁。M5 尚未应用任何持久、Gate A、共享、预发布或生产数据库，因此目录和一次性验证都不等于部署环境已可用。N2 微信主动店休通知仍为 Deferred，当前架构没有 Reservation 通知 Outbox 或 Worker。
 
@@ -485,9 +488,9 @@ Product API Mapper 已实现上述列表、详情、mutation 与分页映射。�
 
 Product 普通 JSON 路由拆分为 `app/api/v1/products.py`（公开列表和 Experience/Kit 详情）与 `app/api/v1/admin_products.py`（ADMIN+ 查询及 mutation）。`app/api/deps.py:get_product_service()` 是 API 组合根，负责组装 ProductRepository、共享 AuditLogService 和 ProductService；路由不直接导入 Product Model/Repository，只执行 Request/Query Schema 校验、权限依赖、Service 调用、Mapper 序列化和 `success()`。Product/Kit 创建固定 HTTP 201；ExperienceOption 新建为 201、恢复历史 Option 为 200。该 JSON 路由阶段当时未注册的两个 multipart 图片创建端点和 Product 操作历史端点均已由后续阶段接入。
 
-M6 沿用同一分层而不新增跨层捷径。`BeadColor` 是全局 221 槽身份与可选色板 URL；`ProductKitColor` 是某个 color_selectable Product 的销售开关和库存余额，两者通过 ProductRepository 访问。创建 color_selectable Kit 的事务一次完成 Product、`stock=NULL / sale_unit_grams=10` 的 ProductKit、必要时幂等补齐全局槽、221 条商品关联与 Audit。全局颜色维护及商品颜色开关由 ProductService 负责，颜色库存变化仍只经 InventoryService/InventoryRepository；任何层都不得把 BeadColor 当全局库存。
+M6/M8 沿用同一分层而不新增跨层捷径。`BeadColor` 是全局 221 槽身份、权威数字 `swatch_hex` 与可选真实色样 URL；`ProductKitColor` 是某个 color_selectable Product 的销售开关和库存余额，两者通过 ProductRepository 访问。创建 color_selectable Kit 的事务一次完成 Product、`stock=NULL / sale_unit_grams=10` 的 ProductKit、必要时幂等补齐全局槽、221 条商品关联与 Audit。全局颜色维护及商品颜色开关由 ProductService 负责，颜色库存变化仍只经 InventoryService/InventoryRepository；任何层都不得把 BeadColor 当全局库存。
 
-公开/管理详情由 Product Repository 预加载 Kit、商品颜色与全局颜色后交给同步 Mapper。公开 Mapper 过滤为 `is_enabled && bead_color.is_active && code/name 完整`，仅输出每色 `available`；管理 Mapper 输出全部 221 槽及 `stock_units`。Mapper 不做查询。颜色图不复用 ProductImage：`swatch_image_url` 是全局目录属性。MARD 221 CSS 色卡由 `scripts/local/fetch_mard_bead_colors.py` 冻结为版本化 manifest，再由 `scripts/local/import_mard_bead_colors.py` 默认预览、显式本地 apply；后者生成确定性 256×256 sRGB PNG、写前备份 SQLite，并在事务失败时补偿本轮文件。HTTP 单图链不承担批量导入，生产对象存储仍是 Gate B 边界。
+公开/管理详情由 Product Repository 预加载 Kit、商品颜色与全局颜色后交给同步 Mapper。公开 Mapper 过滤为 `is_enabled && bead_color.is_active && code/name/swatch_hex 完整`，仅输出每色 `available`；管理 Mapper 输出全部 221 槽及 `stock_units`。Mapper 不做查询。小程序优先用 `swatch_hex` 和 `backgroundColor` 直接绘制数字色块；`swatch_image_url` 不复用 ProductImage，只作为未来实拍/校色色样以及迁移期既有 PNG 的可选回退。MARD 221 CSS 色卡由 `scripts/local/fetch_mard_bead_colors.py` 冻结为版本化 manifest，M8 再由本地升级器或 Gate A 发布流程回填 HEX。既有确定性 256×256 sRGB PNG 在客户端迁移期保留，不批量转 WebP、不在本阶段删除；商品照片和未来真实色样照片继续采用 WebP。HTTP 单图链不承担批量导入，生产对象存储仍是 Gate B 边界。
 
 Product 操作历史保持共享审计边界：`AuditLogRepository.list_logs()` 只按 `target_type/target_id` 执行倒序稳定分页，`AuditLogService.list_logs()` 提供 Product/Order/Inventory 均可复用的查询用例；`ProductService.list_product_audit_logs()` 仅负责用 `include_deleted=true` 确认 Product 记录仍存在，再委托共享服务。API 使用共享 `app/schemas/audit.py:AuditLogOut` 与 Audit Mapper 构造字段白名单和 `Page[T]`，不把审计字段复制到 Product Schema，也不把 Audit Log 嵌入 Product Detail。
 
@@ -669,7 +672,7 @@ class User(Model):
 |------|-------|-------------|
 | 依赖方向 | 不依赖 HTTP（可被 CLI、脚本引用） | 依赖 Starlette 的 Middleware 协议 |
 | 生命周期 | 应用级（启动一次） | 请求级（每个请求触发） |
-| 典型内容 | 配置类、加密工具、Redis 客户端 | RequestID、Auth、CORS、日志、异常捕获 |
+| 典型内容 | 配置类、加密工具、Redis 客户端 | RequestID、Auth、CORS、日志、压缩、异常捕获 |
 | 测试方式 | 纯单元测试 | 需要 `TestClient` 或 ASGI transport |
 
 **各文件职责**
@@ -680,6 +683,7 @@ class User(Model):
 | `auth.py` | 解析 Authorization Header → 验证 JWT → 注入 `request.state.user` | 路由匹配前 |
 | `logging.py` | 记录 `method path status_code duration_ms` | 响应返回时 |
 | `cors.py` | 配置允许的 Origin、Method、Header | 预检请求 (OPTIONS) |
+| `compression.py` | 对客户端声明接受 gzip 的大于等于 1 KiB 文本/API 响应压缩；`/uploads/products/` 图片旁路 | 响应返回时 |
 | `exception.py` | 捕获所有未处理异常 → 封装为 `{code, message}` 统一信封 | 异常发生时 |
 
 **执行顺序**
@@ -697,7 +701,8 @@ Request
   │
   ▼
   ├─[5] exception     → 捕获异常，返回统一错误格式
-  ├─[6] logging       → 计算耗时，写入访问日志
+  ├─[6] compression   → 协商并压缩符合条件的文本响应，图片上传路径旁路
+  ├─[7] logging       → 计算耗时，写入访问日志
   │
   ▼
 Response

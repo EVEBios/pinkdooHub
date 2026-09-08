@@ -110,6 +110,8 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 | Gate A M2→M7 升级与综合数据报告 | [reports/gatea_m7_upgrade_and_data_2026-09-08.md](reports/gatea_m7_upgrade_and_data_2026-09-08.md) | Runtime `73dca350...` / Operations `353455b...` / Run 34178908663 / Backup `20260908t021224z` / 不依赖域名范围 PASS |
 | Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
 | Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | 当前 M2→M7、Wallet/MARD、韧性、综合数据和数据后恢复通过；HTTPS/RC/真机仍阻断 |
+| 容量与性能压测 Runbook | [capacity_load_test_runbook.md](capacity_load_test_runbook.md) | 长期复用的隔离、资源限额、流量、指标、门槛、证据与清理规范；不单独构成环境授权 |
+| 本地 2 核/4GiB/5Mbps 探索报告 | [reports/local_2c4g_5mbps_load_test_2026-09-08.md](reports/local_2c4g_5mbps_load_test_2026-09-08.md) | 5/10 人只读与带宽饱和单轮证据；SQLite/占位图片/本机 ARM64，不是发布门槛 |
 | 9.3 演练环境 | [rehearsal_environment_2026-08-31.md](rehearsal_environment_2026-08-31.md) | 双 MySQL/Redis/HTTPS/图片恢复拓扑已真实执行并清理 |
 | 9.3 演练报告 | [reports/phase93_rehearsal_2026-08-31.md](reports/phase93_rehearsal_2026-08-31.md) | SHA `136a8bd...` / Run 33408135841 / DR 服务端范围 PASS |
 | 9.4 Gate A Loopback 报告 | [reports/phase94_gatea_loopback_2026-09-02.md](reports/phase94_gatea_loopback_2026-09-02.md) | Runtime `51ad315...` / Operations `17114d7...` / 持久主机 lifecycle PASS |

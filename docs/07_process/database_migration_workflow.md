@@ -5,7 +5,7 @@
 > **迁移工具：** Aerich 0.9.3
 >
 > **生产权威方言：** MySQL；SQLite 仅用于本地快速开发和自动化测试
-> **Last Updated:** 2026-09-07
+> **Last Updated:** 2026-09-08
 
 ---
 
@@ -494,6 +494,7 @@ MySQL M5 不得直接应用到 SQLite。development `generate_schemas()` 只能�
 → 5_20260906094653_add_reservations.py
 → 6_20260906123000_add_color_selectable_kits.py
 → 7_20260907190000_add_reservation_settings.py
+→ 8_20260908140000_add_bead_color_swatch_hex.py
 ```
 
 M6 没有导入真实色号、名称或色板图，只创建 1–221 的未配置、未激活占位槽；后续批量清单/图片导入属于独立的 dry-run/apply 运维步骤，不能混进迁移。历史 `product_kits` 必须保持原库存，新增 `kit_kind` 取数据库默认 `fixed`，`sale_unit_grams` 保持 null。M6 不能绕过 M4 的钱包 backfill/reconcile 或 M5 的 Reservation 发布边界；完整迁移记录到 6 也不表示这些业务开关已经获准启用。
@@ -510,11 +511,11 @@ M6 没有导入真实色号、名称或色板图，只创建 1–221 的未配�
 
 `backend-mysql-release` 当前在固定 disposable Schema 中执行以下顺序：
 
-1. `aerich --app models upgrade` 从空库真实执行完整 0→7，禁止 `--fake`、`init-db` 或运行时 `generate_schemas()`；
-2. 只回退 M7，写入受控 M6 Reservation/单日店休历史，再只回退 M6 并写入 `stock=7` 的受控 fixed Kit；
-3. 正常升级回 M7，然后再执行一次 no-op `upgrade`，证明历史 fixed 库存、Reservation 事实、M6/M7 默认值和 Aerich 幂等边界保持；
-4. `check_mysql_gate.py snapshot` 同时核验 MySQL 8.0.46、M0–M7 八条版本、M6 的 221 槽/关键列/FK/索引及 M7 `reservation_settings` 单例、默认周一、CHECK 和 UNIQUE；
-5. 联合运行 `tests/inventory/mysql tests/reservation/mysql`，覆盖 M6 颜色集合锁/索引计划与 M7 固定店休更换、历史数据、并发、回滚、1205/1213 和结构计划；
+1. `aerich --app models upgrade` 从空库真实执行完整 0→8，禁止 `--fake`、`init-db` 或运行时 `generate_schemas()`；
+2. 回退 M8 与 M7，写入受控 M7 前 Reservation/单日店休历史，再回退 M6 并写入 `stock=7` 的受控 fixed Kit；
+3. 正常升级 M6→M7→M8，然后再执行一次 no-op `upgrade`，证明历史 fixed 库存、Reservation 事实、M6/M7 默认值、M8 精确 HEX 回填和 Aerich 幂等边界保持；
+4. `check_mysql_gate.py snapshot` 同时核验 MySQL 8.0.46、M0–M8 九条版本、M6 的 221 槽/关键列/FK/索引、M7 `reservation_settings` 单例/默认周一/CHECK/UNIQUE，以及 M8 nullable `VARCHAR(7)` 与冻结清单逐槽相等的 221 个唯一 HEX；
+5. 联合运行 `tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql`，覆盖 M6 颜色集合锁/索引计划、M7 固定店休更换，以及资金/库存历史数据、并发、回滚、1205/1213 和结构计划；
 6. 保存 preflight、M6/M7 legacy seed、迁移日志、最终 snapshot 与 JUnit；无论前序结果如何都删除精确专用 Schema、停止准确的 service container，并复核容器非运行与非默认端口已释放。
 
 fixture 不负责执行迁移。为防止函数级清理把迁移种子抹掉后由运行时代码悄悄补种，MySQL 门槛在各用例之间保留 `bead_colors` 与 `aerich`，只清空其他业务表；snapshot 仍在 pytest 之前直接验证原始迁移结果。
@@ -543,7 +544,7 @@ python scripts/local/upgrade_sqlite_m6.py --apply
 
 ### 11.5 MARD 221 本地目录数据导入
 
-M6 结构升级完成后，使用版本化来源清单填充全局槽位。抓取工具仅允许 `https://peiseka.com/pindouseka.html`，严格验证 A1–M15 的固定序列、221 项数量、CSS/展示 RGB 与 HEX 一致、色号/HEX 唯一，再冻结来源 SHA-256：
+M6 创建颜色目录，M8 再把清单 HEX 变成正式字段；当前导入器只接受已经具备 `swatch_hex` 列的 M8 本地 SQLite。抓取工具仅允许 `https://peiseka.com/pindouseka.html`，严格验证 A1–M15 的固定序列、221 项数量、CSS/展示 RGB 与 HEX 一致、色号/HEX 唯一，再冻结来源 SHA-256：
 
 ```bash
 python scripts/local/fetch_mard_bead_colors.py
@@ -551,7 +552,7 @@ python scripts/local/import_mard_bead_colors.py
 python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
 ```
 
-来源页没有逐色图片；导入器依据清单生成确定性 256×256 sRGB PNG。预览不创建文件、备份或数据库写入；apply 写库前使用 SQLite Backup API，图片原子发布，BeadColor 元数据放在 `BEGIN IMMEDIATE` 中更新并在提交前执行精确清单与外键核验。事务失败删除本轮新图片；现有非空冲突、Online 商品已启用颜色或非 221 槽直接拒绝；相同重放不再备份或写入。
+来源页没有逐色图片；导入器仍可复用既有确定性 256×256 sRGB PNG 作为迁移兼容回退，同时把 `swatch_hex` 与 code/name/URL/sort/active 一并按清单核验。预览不创建文件、备份或数据库写入；apply 写库前使用 SQLite Backup API，图片原子发布，BeadColor 元数据放在 `BEGIN IMMEDIATE` 中更新并在提交前执行精确清单与外键核验。事务失败删除本轮新图片；现有非空冲突、Online 商品已启用颜色或非 221 槽直接拒绝；相同重放不再备份或写入。纯数字色块不再生成新图片格式，现有 PNG 不在 M8 转 WebP 或删除。
 
 2026-09-07 本地执行结果：221 槽全部写入 code/name/URL/sort 并激活，生成 221 张 PNG，内容总计 128,325 bytes；备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-mard-221-20260907-024129-065769.bak`。再次 preview 为 `database_changes=0 / images_reused=221 / already_current=true`，`PRAGMA foreign_key_check` 无结果。该操作本身不创建商品颜色映射、不启用销售、不调整库存、不写 Aerich，也未连接或修改任何 MySQL/发布环境；本地此前已有的草稿 Product `14` 保留其 221 条关联，当前全部禁用且库存为 0。
 
@@ -559,7 +560,7 @@ python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
 
 候选镜像包含 `app.tasks.gatea_mard_publish`，只允许 production MySQL、固定
 `/data/images` 和无凭据 HTTPS `/uploads/products` URL。默认 preview 会只读核验
-221 个 M6 占位槽、版本化 manifest SHA-256、全部目标图片内容、现有元数据冲突与
+221 个已经完成 M8 HEX 回填的槽、版本化 manifest SHA-256、全部目标图片内容、现有元数据冲突与
 Online 已启用颜色；apply 必须复用 preview 的精确 manifest SHA-256：
 
 ```bash
@@ -573,7 +574,7 @@ python -m app.tasks.gatea_mard_publish \
 锁定 221 槽、复查销售引用、批量更新并回读核验。数据库失败删除本轮新图片，已有
 文件不删除；完全相同重放为零写入。任务不创建 ProductKitColor、不启用商品颜色、
 不写库存，也不自行证明 App/Nginx 已停写或 Backup/Restore 已通过，因此只能由受控
-Gate A 非空升级入口在 M6 后调用，不能独立执行到持久环境。
+Gate A 非空升级入口在 M8 后调用，不能独立执行到持久环境。
 
 该路径已在一次性 MySQL 8.0.46 完成 221 行真实事务更新、221 文件发布及 no-op 重放，
 未修改 Gate A；Gate B 公开环境仍须使用经批准的对象存储/CDN，而不是沿用单主机卷。
@@ -597,20 +598,77 @@ Gate A 持久环境在 2026-09-02 的最后留证是有业务数据的 M2，当�
 重新只读确认。`gatea_operations.py initial-migrate` 仍只支持空库首次迁移；非空库必须
 使用 `scripts.release.gatea_upgrade`。该入口只批准精确 M2，要求 24 小时内的新
 Backup/独立 Restore、source/target SHA 与 MARD checksum 四重确认，在停写后再次比较
-数据库/图片与备份，按 M3→M4→Wallet 准备→M5→M6→MARD→M7 执行并逐步留证。只有
-最终核心数据、Wallet owner、221 色、ReservationSettings 与精确 Aerich 链全部通过才
+数据库/图片与备份，按 M3→M4→Wallet 准备→M5→M6→M7→M8→MARD 执行并逐步留证。只有
+最终核心数据、Wallet owner、221 个精确 HEX/色卡、ReservationSettings 与精确 Aerich 链全部通过才
 写成功 Record；失败保持入口停止并阻断盲目重跑。入口实现与一次性 MySQL 通过仍不
 等于 Gate A 写入授权；恢复 SSH 并取得当前只读事实、新 Backup/Restore 与当次授权前
 必须停止，不得手工补表/列、删除失败 evidence、直接重跑或使用 `--fake`。
 
-M7 可销毁 MySQL 与非空升级入口通过不会自动关闭以下发布门槛：MARD 221 与 Wallet
+M8 可销毁 MySQL 与非空升级入口通过不会自动关闭以下发布门槛：MARD 221 与 Wallet
 backfill/reconcile 仍未应用持久 Gate A，测试商品颜色/库存尚未配置；新增运维 SHA 尚待
 远端 8/8，当前真实数据库起点/镜像和新 Backup/Restore 仍未取得，真实 Origin/RC、
 iOS/Android 真机与微信外部条件也均未完成。当前发布判定仍为 No-Go。
 
 ---
 
-## 13. 本地 SQLite Refund 结构精确修复
+## 13. BeadColor HEX M8 发布流程
+
+`8_20260908140000_add_bead_color_swatch_hex.py` 为 `bead_colors` 新增 nullable
+`VARCHAR(7) swatch_hex`，并在同一迁移中按 `slot_no=1..221` 回填冻结 MARD 清单中的
+规范大写 `#RRGGBB`。221 个值内嵌在迁移内，并由常量绑定清单 SHA-256；迁移执行结果不
+依赖工作目录或未来应用包中的清单内容。M8 不修改 code/name/active、库存、订单快照、
+`swatch_image_url` 或现有 PNG，也不把纯数字色块转换为 WebP。
+
+### 13.1 本地 SQLite 保留数据升级
+
+本地持久 SQLite 必须使用专用工具，不能执行 MySQL/Aerich M8：
+
+```bash
+# 默认只读：核验 221 槽、列状态和与冻结清单冲突
+python scripts/local/upgrade_sqlite_m8_swatch_hex.py
+
+# 仅在停止本地写入并复核 preview 后显式执行
+python scripts/local/upgrade_sqlite_m8_swatch_hex.py --apply
+```
+
+apply 在首次写入前用 SQLite Backup API 创建 `0600` 备份；`ALTER + 221 项回填 +
+精确核验` 位于同一个 `BEGIN IMMEDIATE` 事务。提交前后比较所有业务表行数、除 HEX 外
+的全部 BeadColor 字段、221 个唯一 HEX，并运行 `integrity_check` 与
+`foreign_key_check`。脚本接受精确 pre-M8、安全的部分 M8 和完整 post-M8 重放，拒绝
+未知表形状、非 1..221 槽或冲突 HEX。它不写 Aerich，不能应用到 MySQL，也不构成发布
+证据。当前持久 `db.sqlite3` 已于 2026-09-08 在停止本地写入后执行 M8；写前备份
+`backups/local-sqlite-migrations/db.sqlite3.pre-m8-swatch-hex-20260908-130013-906106.bak`
+权限为 `0600`，完整性/外键通过且确认没有 HEX 列。升级后 221 槽全部有唯一规范 HEX、
+与冻结清单逐槽相等，完整性/外键、幂等 preview、本地 Demo verifier 和钱包 reconcile
+均通过。该记录只证明当前本地 SQLite，不替代 Aerich、Gate A 或持久 MySQL 发布证据。
+
+### 13.2 MySQL 非事务性、CHECK 与失败处置
+
+M8 明确设置 `RUN_IN_TRANSACTION=False`。MySQL DDL 隐式提交，因此 `ADD COLUMN` 成功而
+后续回填或 Aerich 记录失败时，可能留下“物理列存在、Aerich 仍为 M7”的部分状态。
+Gate A 必须保存脱敏失败 evidence 并保持 App/Nginx 停止；禁止直接重跑、`--fake`、自动
+downgrade 或猜测性补列。先只读核对 Aerich 链、列形状和 221 项 HEX，再在已验证备份
+恢复与经 Review 的精确前滚修复之间作独立裁决。
+
+本期不在 M8 添加仅 MySQL 可严格表达的大小写正则 `CHECK`。非空格式由 Pydantic
+规范化、Tortoise Regex、Service 销售就绪规则以及 local/Gate A 发布工具逐槽精确核验；
+SQLite 没有内建等价 REGEXP。若未来要把约束下沉数据库，必须先扫描所有环境，再用独立
+跨方言迁移同时更新 Model、数据库设计、DBML 与契约测试，不能夹带修改已经 Review 的
+M8。
+
+### 13.3 一次性 MySQL 8.0.46 证据（2026-09-08）
+
+- 在专用、可销毁实例真实执行 Aerich 0→8，九条版本记录完整；未使用 `--fake`、
+  `init-db` 或运行时 `generate_schemas()`。
+- M8 列为 nullable `VARCHAR(7)`；数据库 1..221 槽逐项等于冻结清单，且有 221 个唯一
+  HEX。随后 Gate A MARD publish/replay 的真实事务与兼容 PNG 路径通过，共 `2 passed`。
+- 容器 `pinkdoohub-m8-codex-20260908` 已删除，临时端口 `13308` 已确认释放；该一次性
+  MySQL 验证没有连接或修改持久、共享、Gate A、预发布或生产 MySQL。本地 `db.sqlite3`
+  后续已通过 §13.1 的专用 SQLite 工具独立升级，不属于这次 MySQL/Aerich 证据。
+
+---
+
+## 14. 本地 SQLite Refund 结构精确修复
 
 development 启动时的 `generate_schemas()` 曾为本地 `db.sqlite3` 补建 M4 表，但不会 ALTER 既有表。2026-09-07 的只读结构对比证明 22 张表中唯一会阻断当前 ORM 投影的差异是 `refunds.inventory_restored` 缺失，同表还缺数据库设计已要求的一单一退款 `UNIQUE(order_id)`。
 
@@ -630,7 +688,7 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 
 ---
 
-## 14. 本地综合 Demo Seed 边界
+## 15. 本地综合 Demo Seed 边界
 
 `python -m app.tasks.local_demo_seed --apply --confirm-local-only --operator-username <ADMIN>` 是本地 development SQLite 的可恢复演示数据工具，不是迁移或发布数据入口。它在写入前创建 SQLite Backup API 快照，并把合成用户的随机凭据只写入被 Git 忽略的 `0600` 本地文件；不伪造真实微信充值、支付、退款或外部身份。
 

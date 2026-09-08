@@ -4,6 +4,70 @@
 
 ---
 
+## 本地 2 核 / 4GiB / 5Mbps 容量探测（2026-09-08）
+
+- 使用当前工作区构建原生 ARM64 临时镜像，在完全隔离的 SQLite M8 副本、Redis、单
+  Uvicorn worker 和 Nginx/TBF 栈中执行容量探测；三个服务共享 CPU `0-1`，内存上限合计
+  4GiB，客户端出口为所有连接共享的 `5Mbit/s`。没有压当前 `8000 --reload` 服务，也没有
+  写持久数据库。
+- 5/10 个快速浏览用户各运行 30 秒，吞吐从 `9.55` 线性增加到 `19.12 req/s`，整体 P95
+  分别为 `30.42ms`、`33.98ms`，错误率和 readiness 失败均为 0；10 人仅使用
+  `0.549Mbps`、约 10.73% 的两核容量，内存峰值 `104.81MiB`。
+- 5/10 个无思考时间的 221 色详情持续请求分别为 `57.20`、`57.16 req/s`；qdisc 精确稳定
+  在 `5.000–5.001Mbps`，并发翻倍后吞吐不再增长、P95 从 `104.50ms` 增至 `191.22ms`，
+  但仍 0 错误、0 丢包、0 OOM/重启。CPU与内存有明显余量，当前饱和瓶颈明确为公网出口。
+- 当前合成图片只有 77–583 bytes，不能外推真实 WebP。10 人同时各取 200KiB/300KiB 图片的
+  带宽下界约为 3.28s/4.92s；真实商品图仍应进入对象存储/CDN并缓存，221 个数字色块继续只
+  传 HEX。后续压测按长期维护的
+  [容量与性能压测 Runbook](../09_release/capacity_load_test_runbook.md) 执行；本次不可变方法、
+  限制和清理证据见
+  [本地容量探测报告](../09_release/reports/local_2c4g_5mbps_load_test_2026-09-08.md)。本轮没有
+  应用代码、依赖、迁移、版本、远端或持久环境变更。
+
+## M8 HEX 色块直绘与文本压缩（仓库实现候选，2026-09-08）
+
+- `BeadColor` 新增 nullable `VARCHAR(7) swatch_hex`；请求接受首尾空白和小写后统一存储为
+  大写 `#RRGGBB`，其他格式严格拒绝。code、name 与有效 HEX 三项齐全才派生
+  `is_configured=true`；激活全局颜色、启用商品颜色、Product 上架、公开颜色输出和下单
+  的锁后复验均使用同一完整性规则。管理 API 继续输出 nullable 诊断态，公共 Online
+  颜色把 `swatch_hex` 固定为非空字段；`swatch_image_url` 仍为可选字段且不新增图片上传
+  API。OpenAPI 与小程序生成类型同步。
+- 新增 MySQL/Aerich M8：按 `slot_no=1..221` 精确回填冻结 MARD 清单中的规范 HEX，迁移
+  内嵌 221 值并绑定 manifest SHA-256。Gate A/CI 白名单和非空升级顺序扩展为
+  `M3→M4→Wallet→M5→M6→M7→M8→MARD`，MARD publisher、本地 importer、代表数据和
+  verifier 均逐槽核验 HEX。新增本地 SQLite preview/apply 工具，写前创建 `0600` 备份，
+  在一个事务内 ALTER、回填、精确核验并支持安全重放。2026-09-08 已在停止本地写入后
+  对当前持久 `db.sqlite3` 执行：写前备份为
+  `backups/local-sqlite-migrations/db.sqlite3.pre-m8-swatch-hex-20260908-130013-906106.bak`
+  且权限为 `0600`；备份完整性/外键通过并确认无 HEX 列，升级后 221 槽全部有唯一规范
+  HEX、与冻结清单逐项相等，完整性/外键与幂等 preview 通过。该 SQLite 操作不写 Aerich；
+  本任务仍未对任何 Gate A、共享、预发布或生产数据库执行 M8。
+- 小程序新增共享 `BeadColorSwatch`：商品详情、购物车和代客钱包下单优先用
+  `View.style.backgroundColor` 直绘 HEX，不发起图片请求；HEX 缺失才回退真实
+  `swatch_image_url`，图片失败再显示占位。购物车 v2 兼容旧记录并保存 nullable
+  `swatchHex`，不升存储版本；移除拿 Product 封面冒充色样的回退。现有 221 张确定性
+  PNG 只在迁移期保留，不转换为 WebP、不删除；新制作的商品照片和未来实拍校色色样约定
+  优先采用 WebP（既有 jpg/png 上传兼容未破坏），纯数字色块不再需要图片格式。
+- FastAPI 增加可排除路径的 gzip 中间件：客户端协商 gzip 且正文不小于 1 KiB 时使用
+  level 6；本地 Product 上传路径直接旁路。Gate A loopback/TLS 与 Rehearsal Nginx 用
+  相同阈值、级别和文本 MIME 白名单，设置 `Vary`，不重复压缩已有 `Content-Encoding`
+  或 PNG/JPEG/WebP。固定标准 Nginx 镜像没有 Brotli 模块，因此本次不为 Brotli 更换
+  镜像或引入第三方动态模块，避免扩大供应链和运维范围。
+- 定向验证已覆盖 Product `789 passed`、Order `426 passed`、Wallet 颜色资金链
+  `46 passed`、数据库/发布/CI/本地工具组合 `871 passed`，小程序 `84 suites / 570
+  tests`；合并修复后最终完整小程序为 `84 suites / 573 tests`，TypeScript、ESLint、
+  Stylelint 与 OpenAPI 生成链均通过。完整后端为 `2069 passed, 31 skipped`（122.64s），
+  skip 均为显式隔离的 MySQL-only 门槛。另在一次性 MySQL
+  8.0.46 真实执行 Aerich 0→8，并通过 M8 精确 HEX 和 Gate A publish/replay `2 passed`；
+  容器已删除、13308 已释放。没有新增依赖或版本提升；当前 SHA 的远端 CI、持久 MySQL
+  迁移和微信真机仍未执行。
+- 本地前两阶段验收另通过后端 M8/压缩/颜色订单定向 `46 passed`、小程序 11 套件
+  `146 passed` 与钱包只读对账 `scanned=11 mismatches=0 violations=0`。真实本地 API
+  管理目录返回 221 项并与清单一致；100 项目录响应经 gzip 从 20,200 bytes 降至
+  4,390 bytes（减少 78.3%）。微信开发者工具模拟器的 221 色商品以 HEX 直绘，选择 A1
+  未请求其兼容 PNG，控制台 0 error。颜色下单/取消库存恢复和代客钱包支付/幂等重放在
+  当前库的隔离副本中通过；隔离服务与临时库已清理，未向持久库写入测试订单。
+
 ## 本地 Demo 活跃预约样本滚动刷新（仓库实现候选，2026-09-08）
 
 - 综合 Demo 的 pending/confirmed 预约此前被误按“合成用户终身只能一条”校验；即使其他

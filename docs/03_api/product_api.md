@@ -1,10 +1,10 @@
 # Product API Design
 
-> **Document Version:** v1.1
+> **Document Version:** v1.2
 > **Module:** Product
-> **Phase:** 4.1 Product Module + M6 Color-selectable Kit
-> **Status:** Phase 4.1 Implemented；M6 仓库实现与本地验证已完成，真实 MySQL/部署待完成
-> **Last Updated:** 2026-09-07
+> **Phase:** 4.1 Product Module + M6 Color-selectable Kit + M8 HEX Swatch
+> **Status:** Phase 4.1/M6 Implemented；M8 仓库实现及一次性 MySQL 8.0.46 候选验证完成，持久 MySQL/部署待完成
+> **Last Updated:** 2026-09-08
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -109,8 +109,8 @@ Authorization: Bearer <access_token>
 
 | 对象 | 公开/管理字段 | 边界 |
 |------|---------------|------|
-| `BeadColorOut` | `id, slot_no, color_code, name, swatch_image_url, sort, is_active, is_configured` | 管理端全局目录；未配置占位的 code/name 可为 null |
-| `KitColorOptionOut` | `id, bead_color_id, slot_no, color_code, name, swatch_image_url, available` | 用户端只返回该 Online 商品已启用、全局激活且已配置的颜色；不泄露精确库存 |
+| `BeadColorOut` | `id, slot_no, color_code, name, swatch_hex, swatch_image_url, sort, is_active, is_configured` | 管理端全局目录；占位阶段 code/name/HEX 可为 null |
+| `KitColorOptionOut` | `id, bead_color_id, slot_no, color_code, name, swatch_hex, swatch_image_url, available` | 用户端只返回该 Online 商品已启用、全局激活且已配置的颜色；`swatch_hex` 必为规范 `#RRGGBB`，不泄露精确库存 |
 | `AdminProductKitColorOut` | 上述目录字段及 `is_enabled, stock_units` | 管理端商品详情；包含全部 221 槽及商品级库存，允许如实表达 enabled 但全局 inactive/unconfigured 的待修复状态 |
 
 `KitColorOptionOut.id` 是 ProductKitColor ID，也是下单请求的 `kit_color_id`；`bead_color_id` 只是全局颜色身份，不能拿来下单或调整某个商品的库存。
@@ -236,7 +236,7 @@ Authorization: Bearer <access_token>
 | 40911 | `OPTION_ALREADY_EXISTS` | 相同有效 Option 配置已存在，或 PATCH 目标组合已被其他记录占用 |
 | 40912 | `OPTION_ALREADY_DELETED` | Option 已删除 |
 | 40913 | `BEAD_COLOR_CODE_ALREADY_EXISTS` | 非空全局颜色业务编码重复；`data.color_code` 返回冲突值 |
-| 40914 | `BEAD_COLOR_NOT_CONFIGURED` | 颜色未激活或缺少 code/name，不能激活或用于商品销售 |
+| 40914 | `BEAD_COLOR_NOT_CONFIGURED` | 颜色缺少 code/name/规范 HEX，不能激活或用于商品销售 |
 | 40915 | `BEAD_COLOR_IN_USE_BY_ONLINE_PRODUCT` | Online 商品正在使用该全局颜色，禁止改变其业务定义/可用性 |
 
 **上架完整性（422xx）—— HTTP 422**
@@ -377,7 +377,7 @@ PATCH /admin/products/kit/5/price → Product 5 实际是 Experience → 40001
 |--------|-----|------|
 | PATCH | /admin/products/kit/{id}/price | 修改价格 |
 | GET | /admin/bead-colors | 分页查询全局 221 槽颜色目录 |
-| PATCH | /admin/bead-colors/{bead_color_id} | 修改全局颜色 code/name/sort/is_active |
+| PATCH | /admin/bead-colors/{bead_color_id} | 修改全局颜色 code/name/swatch_hex/sort/is_active |
 | PATCH | /admin/product-kit-colors/{kit_color_id} | 启用/禁用一个商品颜色 |
 
 库存调整属于 Inventory API：fixed 使用 `POST /admin/products/kit/{id}/inventory-adjustments`；自选颜色使用 `POST /admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments`。
@@ -627,7 +627,7 @@ GET /api/v1/products/kit/{id}
 | kit_kind | object | `{value,label}`；决定库存和下单形状 |
 | sale_unit_grams | int/null | color_selectable 固定为 10；fixed 为 null |
 | stock | int/null | fixed 返回当前库存；color_selectable 为 null |
-| colors | array | fixed 为空；自选颜色只返回已启用、全局激活且 code/name 完整的颜色，不返回精确库存 |
+| colors | array | fixed 为空；自选颜色只返回已启用、全局激活且 code/name/`swatch_hex` 完整的颜色，不返回精确库存 |
 | available | boolean | fixed 为 `stock > 0`；自选颜色为任一 `colors[].available=true`。下单时后端必须重新校验 |
 
 > 不返回 `status`、`is_deleted`、`created_at`、`updated_at`、`sold_count`、`product_kit_id`。图片按 `sort ASC, id ASC` 排序。
@@ -648,6 +648,7 @@ color_selectable 的关键响应形状如下；`id` 是下单使用的 ProductKi
       "slot_no": 1,
       "color_code": "A01",
       "name": "示例颜色",
+      "swatch_hex": "#F5B8C7",
       "swatch_image_url": null,
       "available": true
     }
@@ -1237,7 +1238,7 @@ PATCH /api/v1/admin/products/{id}/online
 | ⑤ | price > 0 且 ≤ 99999 | — |
 | ⑥ | fixed：sale_unit_grams 为 null、没有颜色关联、stock ≥ 0；stock = 0 允许上架 | — |
 
-**color_selectable 追加检查：** `sale_unit_grams=10`、聚合 `stock=null`、恰好关联全局 `slot_no=1..221`、至少一个商品颜色 `is_enabled=true`、每个已启用颜色都必须全局 `is_active=true` 且 code/name 完整、所有商品颜色 `stock_units >= 0`。颜色库存为 0 不阻止上架，只影响公开 `available`。
+**color_selectable 追加检查：** `sale_unit_grams=10`、聚合 `stock=null`、恰好关联全局 `slot_no=1..221`、至少一个商品颜色 `is_enabled=true`、每个已启用颜色都必须全局 `is_active=true` 且 code/name/规范 `swatch_hex` 完整、所有商品颜色 `stock_units >= 0`。颜色库存为 0 不阻止上架，只影响公开 `available`。
 
 > Kit 上架缺项统一合并为 `42201 PRODUCT_NOT_READY_FOR_ONLINE`，与 Experience 一致。稳定 issue 字符串和顺序以 Product Business Rules 为准。ProductKit 缺失时只返回 `kit configuration is required`，不再追加派生 issue。Kit 目前不额外要求“至少一张公共图片”；公共封面检查已经保证至少存在一张公共图片。
 
@@ -2061,7 +2062,7 @@ await audit_service.list_logs(
 
 ---
 
-## 8. M6 全局颜色与商品颜色管理
+## 8. M6/M8 全局颜色与商品颜色管理
 
 > 本节契约和仓库候选已落盘、测试正在收口。三个端点均要求 ADMIN+；成功结果先经对应 Out Schema 白名单投影后进入统一信封。
 
@@ -2084,6 +2085,7 @@ GET /api/v1/admin/bead-colors?page=1&page_size=100
         "slot_no": 1,
         "color_code": null,
         "name": null,
+        "swatch_hex": "#FFFFFF",
         "swatch_image_url": null,
         "sort": 1,
         "is_active": false,
@@ -2110,10 +2112,11 @@ PATCH /api/v1/admin/bead-colors/{bead_color_id}
 |------|------|------|
 | color_code | string/null | trim 后 1–50；null 清空；非空值全局唯一 |
 | name | string/null | trim 后 1–100；null 清空 |
+| swatch_hex | string/null | trim 并转大写后必须为 `#RRGGBB`；null 清空 |
 | sort | int | `0..32767`；不得为 null |
-| is_active | boolean | 不得为 null；设 true 时最终 code/name 必须完整 |
+| is_active | boolean | 不得为 null；设 true 时最终 code/name/`swatch_hex` 必须完整 |
 
-`slot_no` 是不可修改的稳定身份；`swatch_image_url` 当前不是 HTTP PATCH 输入。若该颜色正被任一未删除 Online 商品启用，全部上述修改返回 `40915`，防止销售中展示/身份突变。Service 在同一事务内按 Product ID 升序锁定引用商品，再锁 BeadColor 和当前启用关联，并根据锁后 BeadColor 重算最终 code/name/is_active；这与商品上架共用 Product 行互斥点。成功返回 `BeadColorOut`，并在同一事务写 `UPDATE_BEAD_COLOR` 审计（target_type=`bead_color`）。审计 JSON 保留固定顺序的 `changed_fields` 及对齐的 `before`/`after`；最长 Unicode 值超过 256 字符列容量时以 `{len, sha256}` 摘要替换字符串（`sha256` 为 12 位十六进制前缀），不截断 JSON。
+`slot_no` 是不可修改的稳定身份；`swatch_image_url` 当前不是 HTTP PATCH 输入。若该颜色正被任一未删除 Online 商品启用，全部上述修改返回 `40915`，防止销售中展示/身份突变。Service 在同一事务内按 Product ID 升序锁定引用商品，再锁 BeadColor 和当前启用关联，并根据锁后 BeadColor 重算最终 code/name/`swatch_hex`/is_active；这与商品上架共用 Product 行互斥点。成功返回 `BeadColorOut`，并在同一事务写 `UPDATE_BEAD_COLOR` 审计（target_type=`bead_color`）。审计 JSON 保留固定顺序的 `changed_fields` 及对齐的 `before`/`after`；最长 Unicode 值超过 256 字符列容量时以 `{len, sha256}` 摘要替换字符串（`sha256` 为 12 位十六进制前缀），不截断 JSON。
 
 ### 8.3 启用或禁用一个商品颜色
 
@@ -2127,10 +2130,12 @@ PATCH /api/v1/admin/product-kit-colors/{kit_color_id}
 { "is_enabled": true }
 ```
 
-只允许未删除、非 Online 的 color_selectable Kit。Service 先锁 Product，再用同一事务连接重载商品与颜色并复验状态；因此与上架请求串行，不能在上架校验后并发禁用最后一色。启用时对应全局颜色必须 `is_active=true` 且 code/name 完整；库存可以为 0。成功返回 `AdminProductKitColorOut`，并在同一事务写 `UPDATE_PRODUCT_KIT_COLOR` 审计；库存字段只读，必须通过 Inventory API 调整。Draft/Offline 中已有的 enabled + inactive/unconfigured 异常组合仍由管理响应如实返回，便于先禁用或修复；上架与公共输出继续严格要求 sale-ready。
+只允许未删除、非 Online 的 color_selectable Kit。Service 先锁 Product，再用同一事务连接重载商品与颜色并复验状态；因此与上架请求串行，不能在上架校验后并发禁用最后一色。启用时对应全局颜色必须 `is_active=true` 且 code/name/规范 `swatch_hex` 完整；库存可以为 0。成功返回 `AdminProductKitColorOut`，并在同一事务写 `UPDATE_PRODUCT_KIT_COLOR` 审计；库存字段只读，必须通过 Inventory API 调整。Draft/Offline 中已有的 enabled + inactive/unconfigured 异常组合仍由管理响应如实返回，便于先禁用或修复；上架与公共输出继续严格要求 sale-ready。
 
 ### 8.4 色板图片与批量导入边界
 
-`swatch_image_url` 是全局 BeadColor 的可选展示属性，不使用 ProductImage，也不随 ProductKitColor 重复存储。本期不新增逐色图片上传 API。2026-09-07 指定的 MARD 221 页面使用 HEX/RGB CSS 色块，没有独立图片文件；仓库已冻结 221 项来源清单，并通过本地离线工具生成确定性 256×256 sRGB PNG。工具默认 dry-run，只有显式 `--apply --confirm-local-only` 才更新本地 M6 SQLite 和图片目录；会检查槽号、来源顺序、HEX/RGB 一致、确定性文件名、目标 URL、Online 引用与已有冲突，并执行写前备份、事务回滚和文件补偿。现有单图接口每次只接受一个不超过 2 MiB 的 jpg/png/webp，继续只服务 Product/Option 图片；生产对象存储/CDN 导入仍需独立 Gate B 流程。
+`swatch_hex` 是纯数字色块的正式字段：请求允许 trim/小写输入，服务端统一存储和返回大写 `#RRGGBB`。用户端颜色响应必须带该字段，小程序直接使用 `backgroundColor`。`swatch_image_url` 是可选实拍校色照片 URL，不使用 ProductImage，也不随 ProductKitColor 重复存储；本期不新增逐色图片上传 API。
+
+2026-09-07 指定的 MARD 221 页面使用 HEX/RGB CSS 色块，没有独立图片文件；仓库已冻结 221 项来源清单。M8 从该清单精确回填 `swatch_hex`。现有确定性 256×256 sRGB PNG 只在客户端迁移期间保留为回退，不转 WebP，M8 也不删除文件或 URL；客户端切换及回滚窗口结束后再独立评估清理。未来商品照片和经实物校色的色样照片优先采用 sRGB WebP；纯数字色块不生成新图片格式。
 
 ---

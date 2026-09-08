@@ -18,7 +18,7 @@
 5. 在微信与 H5 观察运行行为；
 6. 主动制造一次错误并读懂报错；
 7. 运行本阶段质量门槛；
-8. 在 `docs/08_frontend/learning_notes/` 写短复盘。
+8. 在本地且由 Git 忽略的 `docs/08_frontend/learning_notes/` 中写短复盘。
 
 复盘回答：
 
@@ -191,7 +191,7 @@ buildOrderItem
 
 ## 8. 阶段 5：React Effect、Context 与认证
 
-> **账号密码主链状态：已完成。** login/register/refresh/logout/getMe Endpoint、Session Manager、Taro Storage Adapter、AuthContext、登录守卫、受控登录表单和账号密码注册页均已实现。登录链已于 2026-08-20 完成微信 Functional；注册补漏项于 2026-08-25 完成工程实现与微信 Functional。注册成功只创建普通用户，不自动登录；非幂等 POST 的未知结果不自动重发。该结果不代表真机、H5、正式 HTTPS/合法域名或微信登录通过。详细复盘见 [Phase 5 登录纵向链路学习笔记](learning_notes/phase5_auth_vertical_slice.md)与[账号密码注册补漏学习笔记](learning_notes/phase5_account_registration.md)。
+> **账号密码主链状态：已完成。** login/register/refresh/logout/getMe Endpoint、Session Manager、Taro Storage Adapter、AuthContext、登录守卫、受控登录表单和账号密码注册页均已实现。登录链已于 2026-08-20 完成微信 Functional；注册补漏项于 2026-08-25 完成工程实现与微信 Functional。注册成功只创建普通用户，不自动登录；非幂等 POST 的未知结果不自动重发。该结果不代表真机、H5、正式 HTTPS/合法域名或微信登录通过。
 
 学习：
 
@@ -212,7 +212,7 @@ buildOrderItem
 
 ## 9. 阶段 6：Product 与 UI 状态
 
-> **阶段状态：已完成并通过自动化与微信 Functional。** `ProductApi.listProducts()`、运行时 Guard、相对图片 Resolver、分页 Feature、公开首页四态、Product type 和 300ms keyword 防抖已实现；2026-08-22 已人工验证 Content、相对图片、第二页、筛选/组合搜索/Empty。Experience/Kit 详情 Endpoint、动态路由、详情状态、Kit 库存展示和真实 Option 组合选择均已完成；local-only Seed 提供一条带两个不同组合、价格和配色图片的 Experience，并通过正式 Inventory 流水让一条 Kit 初始库存为 8、另外五条保持 0。20 项 Seed 隔离测试、前端 11 套件/70 项、静态检查、OpenAPI 漂移和四端生产构建均通过，详见 [列表学习笔记](learning_notes/phase6_product_list.md)和[详情学习笔记](learning_notes/phase6_product_detail.md)。
+> **阶段状态：已完成并通过自动化与微信 Functional。** `ProductApi.listProducts()`、运行时 Guard、相对图片 Resolver、分页 Feature、公开首页四态、Product type 和 300ms keyword 防抖已实现；2026-08-22 已人工验证 Content、相对图片、第二页、筛选/组合搜索/Empty。Experience/Kit 详情 Endpoint、动态路由、详情状态、Kit 库存展示和真实 Option 组合选择均已完成；local-only Seed 提供一条带两个不同组合、价格和配色图片的 Experience，并通过正式 Inventory 流水让一条 Kit 初始库存为 8、另外五条保持 0。20 项 Seed 隔离测试、前端 11 套件/70 项、静态检查、OpenAPI 漂移和四端生产构建均通过。
 
 学习：
 
@@ -232,7 +232,7 @@ buildOrderItem
 
 ## 10. 阶段 7：Order、状态机和幂等
 
-> **阶段状态：Phase 7.1–7.4 的工程实现、自动化与微信开发者工具 Functional 均已完成。** 7.1 已实现判别联合 Cart、版本化 Storage 和串行 mutation；7.2 已实现确认/创建、unknown 分流、服务端快照与保守 Cart 对账；7.3 已实现用户列表/详情/Pending cancel 和状态收敛；7.4 已实现 `admin` 分包、ADMIN+ 完整订单筛选/详情、Pending → Paid、Paid → Completed、前后端权限边界和命令结果收敛。2026-08-25 用户确认 7.3/7.4 两类 40921 独立客户端竞态、7.4 断网 unknown 不重发、普通用户 ADMIN API 403/不 refresh 及其余人工清单全部通过；Slow 3G 约 310 ms 返回、未触发 timeout，严格 timeout 保留为非阻断补测。完整前端 31 套件/213 项、静态检查、OpenAPI 漂移与四端 production build 通过，Order API 后端回归 107 项及完整后端 1445 项通过（9 项 MySQL-only 跳过）。详见[本地购物车学习笔记](learning_notes/phase7_local_cart.md)、[创建订单学习笔记](learning_notes/phase7_order_create.md)、[订单查询/取消学习笔记](learning_notes/phase7_order_query_cancel.md)和[ADMIN 订单操作学习笔记](learning_notes/phase7_admin_order_operations.md)。
+> **阶段状态：Phase 7.1–7.4 的工程实现、自动化与微信开发者工具 Functional 均已完成。** 7.1 已实现判别联合 Cart、版本化 Storage 和串行 mutation；7.2 已实现确认/创建、unknown 分流、服务端快照与保守 Cart 对账；7.3 已实现用户列表/详情/Pending cancel 和状态收敛；7.4 已实现 `admin` 分包、ADMIN+ 完整订单筛选/详情、Pending → Paid、Paid → Completed、前后端权限边界和命令结果收敛。2026-08-25 用户确认 7.3/7.4 两类 40921 独立客户端竞态、7.4 断网 unknown 不重发、普通用户 ADMIN API 403/不 refresh 及其余人工清单全部通过；Slow 3G 约 310 ms 返回、未触发 timeout，严格 timeout 保留为非阻断补测。完整前端 31 套件/213 项、静态检查、OpenAPI 漂移与四端 production build 通过，Order API 后端回归 107 项及完整后端 1445 项通过（9 项 MySQL-only 跳过）。
 
 学习：
 
@@ -283,14 +283,6 @@ buildOrderItem
 | 8.9 | 管理端整体 Review 与多端门槛 | 权限、上传、幂等、隐私、包体、微信 Functional、四端 Build 和真实后端回归 | 当前后端能力范围的工程 Review、自动门槛与微信 Functional 均完成；8.2 两项延期视觉问题已于 2026-08-29 关闭 |
 
 8.1 明确不包含创建、编辑、删除、Option mutation、图片上传、上下架、库存调整或审计；详情页显示“只读”说明，避免按钮暗示尚未交付的能力。后续每个 mutation 子阶段都必须先冻结请求、成功、失败、unknown/幂等与恢复语义，再开放 UI。
-
-8.3 的端点、状态机、页面、自动化、知识点与微信验收清单见 [Phase 8.3 学习笔记](learning_notes/phase8_admin_product_configuration.md)。
-
-8.4–8.5 的 multipart 上传适配、图片生命周期、readiness/状态机、结果未知恢复、知识点与合并微信验收清单见 [Phase 8.4–8.5 学习笔记](learning_notes/phase8_admin_product_images_status.md)。
-
-8.6 的 Kit 库存调整、HTTP 201/200 metadata、业务意图幂等、两类流水筛选分页、知识点与微信验收清单见 [Phase 8.6 学习笔记](learning_notes/phase8_admin_inventory.md)。
-
-8.8–8.9 的 Product Audit、ADMIN User 契约收口、禁用事务/旧 Token 阻断、总体 Review、知识点与微信验收清单见 [Phase 8.8–8.9 学习笔记](learning_notes/phase8_admin_audit_users_review.md)。
 
 完成标准：普通用户 403；上传/库存错误可解释；同次库存重试复用 key；不存在的后端功能没有按钮。
 

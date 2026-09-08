@@ -1,6 +1,6 @@
 # API Design Conventions
 
-> **Document Version:** v2.4
+> **Document Version:** v2.5
 > **Status:** Active
 > **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
 >
@@ -258,7 +258,13 @@ Authorization: Bearer <access_token>
 
 FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为上述信封。每项只包含 `location`、`message` 和 `type`，不得回显原始输入值，避免密码、Token 或其他敏感内容进入响应与日志。业务聚合状态的 HTTP 422（例如 Product `42201`）继续使用对应命名异常规定的数据结构，不套用 `data.errors`。
 
-### 6.4 字段排除规则
+### 6.4 传输压缩
+
+客户端发送 `Accept-Encoding: gzip` 时，直连 Uvicorn 和受管 Nginx 均对不小于 1024 bytes 的 JSON/文本响应启用 gzip level 6，并返回 `Content-Encoding: gzip` 及 `Vary: Accept-Encoding`。不声明 gzip 或显式请求 `identity` 的客户端仍获得未压缩的相同 JSON 契约；响应体的业务字段、状态码和签名语义不变。
+
+`/uploads/products/` 与 Nginx 的 PNG/JPEG/WebP 等已压缩图片 MIME 明确绕过 gzip，避免无效 CPU 开销和可能的体积增长。Brotli 当前未引入：固定 `nginx:1.27.5-alpine` 不包含 Brotli 模块，只有在真实链路测量证明进一步收益且新模块/镜像通过供应链 Review 后才能增加。
+
+### 6.5 字段排除规则
 
 以下字段**不得**在 API 响应中返回：
 

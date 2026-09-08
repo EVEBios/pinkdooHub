@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** Loopback、持久 Bootstrap、代表性数据、非空恢复与 M2→M7 升级入口已实现；待新 CI、持久执行、DNS/HTTPS 和真机
+> **Status:** Loopback、持久 Bootstrap、代表性数据、非空恢复与 M2→M8 升级入口已实现；待新 CI、持久执行、DNS/HTTPS 和真机
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
@@ -20,6 +20,12 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 | `nginx/loopback.conf` | SSH 隧道/宿主环回 Smoke，不构成微信 RC 证据 |
 | `nginx/tls.conf.template` | 真实 Gate A HTTPS、ACME、图片和反向代理 |
 | `config.env.example` | 非 Secret 配置模板；真实文件位于 `/etc` |
+
+App 对客户端声明支持 gzip 且不小于 1 KiB 的文本响应执行 level 6 压缩；两份 Gate A
+Nginx 配置也以相同阈值/级别压缩 JSON、JavaScript、XML、SVG、CSS 和纯文本，并通过
+`Vary: Accept-Encoding` 保持缓存正确。上游已经设置 `Content-Encoding` 时 Nginx 不会
+二次压缩，PNG/JPEG/WebP 等图片 MIME 不在压缩列表中。当前固定的标准 Nginx 镜像没有
+Brotli 模块，本次不为此更换镜像或引入第三方动态模块。
 
 共享应用镜像由 `deploy/runtime/Dockerfile` 构建，Phase 9.3 演练与 Gate A
 使用同一非 root Runtime，避免两套入口脚本漂移。
@@ -88,7 +94,7 @@ sudo python -m scripts.release.gatea_operations \
   --mode tls
 ```
 
-生命周期脚本支持空库首次部署与经批准的既有 M2→M7 升级。所有写操作都会再次验证
+生命周期脚本支持空库首次部署与经批准的既有 M2→M8 升级。所有写操作都会再次验证
 Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 和 CMD；TLS
 写操作仍被拒绝。既有库 upgrade apply 还会在停止 App/Nginx 前，以镜像默认 Entrypoint
 挂载并加载 Runtime Secret，执行一次不连接数据库的 production Settings 预检。迁移、
@@ -141,13 +147,13 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
 
 候选镜像内另有三个只供受控非空升级编排调用的执行原语：
 
-- `python -m app.tasks.gatea_migrate_step --target-version <3..7>` 在容器 `/tmp`
+- `python -m app.tasks.gatea_migrate_step --target-version <3..8>` 在容器 `/tmp`
   生成只含目标及更早迁移的短期目录，通过 Aerich 公开接口一次只应用一条迁移；当前
-  链必须精确等于目标前一版本或目标版本，未知起点、跳级、M7 以后文件均拒绝。
+  链必须精确等于目标前一版本或目标版本，未知起点、跳级、M8 以后文件均拒绝。
 - `python -m app.tasks.gatea_wallet_prepare` 只允许 production MySQL；先执行 Wallet 与
   legacy settlement 双 preview，存在 blocker 时保持零写入，再冻结 ID 上界 apply、
   二次 preview 并执行全量 reconcile。输出仅含聚合计数。
-- `python -m app.tasks.gatea_mard_publish` 默认 preview；M6 后以精确 manifest SHA-256
+- `python -m app.tasks.gatea_mard_publish` 默认 preview；M8 后以精确 manifest SHA-256
   确认 apply，将 221 槽事务更新并把 221 张 `0644` PNG 原子写入持久图片卷，失败只
   补偿本轮新文件，完全相同重放零写入。
 
@@ -189,8 +195,9 @@ sudo python -m scripts.release.gatea_upgrade \
 入口在任何数据库写入前校验 Root/Secret/目标 Image ID、新鲜 Backup 与 Restore PASS
 Record、健康的四项服务和精确 M2；随后停止 Nginx/App，并要求停写后的数据库和图片
 与备份完全一致。执行顺序固定为 M3 → M4 → Wallet 双 backfill/reconcile → M5 → M6 →
-MARD preview/apply/replay → M7。每步的 Aerich/Schema/聚合写入脱敏 evidence；最终还要
-核验 M2 核心数据不漂移、Wallet owner、221 色和 ReservationSettings 单例/约束。
+M7 → M8 → MARD preview/apply/replay。每步的 Aerich/Schema/聚合写入脱敏 evidence；
+最终还要核验 M2 核心数据不漂移、Wallet owner、221 槽精确 HEX/色卡和
+ReservationSettings 单例/约束。
 
 只有全部通过才生成
 `<target-sha>.existing-database-upgrade.json`，`app-up` 同时接受这个 Record 与空库

@@ -1,6 +1,6 @@
-# pinkdooHub 数据库设计 v2.0
+# pinkdooHub 数据库设计 v2.1
 
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-08
 
 ---
 
@@ -170,9 +170,9 @@ DB 使用 VARCHAR 存储 `product_type`、`status` 与 Kit 扩展中的 `kit_kin
 
 > `sold_count` 不存储在 Product 模块。累计销量由订单模块统计。
 
-### 3.4a bead_colors（全局拼豆颜色目录，M6）
+### 3.4a bead_colors（全局拼豆颜色目录，M6/M8）
 
-全系统固定保留 221 个颜色槽。槽位是稳定身份，不代表 221 个槽都已经配置或可销售；首次 M6 升级幂等创建 `slot_no=1..221` 的占位行，名称和业务编码可稍后补齐。色板图片属于全局颜色目录，不复制到每个商品。
+全系统固定保留 221 个颜色槽。槽位是稳定身份，不代表 221 个槽都已经配置或可销售；M6 创建 `slot_no=1..221` 的占位行，M8 再从版本化 MARD 清单按槽位精确回填数字色块 HEX。名称和业务编码在占位阶段可稍后补齐。可选实拍色样照片属于全局颜色目录，不复制到每个商品。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -180,12 +180,13 @@ DB 使用 VARCHAR 存储 `product_type`、`status` 与 Kit 扩展中的 `kit_kin
 | slot_no | SMALLINT | NOT NULL, UNIQUE | 稳定槽位，应用范围 `1..221` |
 | color_code | VARCHAR(50) | nullable, UNIQUE | 非空时全局唯一；占位槽可为空 |
 | name | VARCHAR(100) | nullable | 顾客与管理员展示名；占位槽可为空 |
-| swatch_image_url | VARCHAR(2048) | nullable | 可选全局色板图 URL；建议离线导入 192×192 或 256×256 sRGB WebP |
+| swatch_hex | VARCHAR(7) | nullable | 纯数字色块的权威值；非空时必须为大写 `#RRGGBB`；M8 回填 221 槽 |
+| swatch_image_url | VARCHAR(2048) | nullable | 可选实拍/校色色样 WebP URL；现有纯色 PNG 仅作迁移回退 |
 | sort | SMALLINT | NOT NULL, DEFAULT 0, CHECK 0..32767 | 管理/顾客展示排序；占位初始化为 slot_no，请求/响应/Model 使用相同上限 |
-| is_active | BOOLEAN | NOT NULL, DEFAULT FALSE | 全局可用开关；只有 code/name 均完整时才允许 true |
+| is_active | BOOLEAN | NOT NULL, DEFAULT FALSE | 全局可用开关；只有 code/name/`swatch_hex` 均完整时才允许 true |
 | created_at / updated_at | DATETIME | - | 技术时间 |
 
-`sort` 的单字段范围由 M6 `CHECK` 与有符号 SMALLINT 容量共同兜底。`is_active` 与 code/name 完整性、Online 商品引用保护属于 Service 规则而非跨字段数据库 `CHECK`。全局颜色维护按“引用 Product ID 升序 → BeadColor → 当前启用 ProductKitColor”锁序执行，上架和商品颜色启停也以 Product 行为共同互斥点；所有可售性判断都在锁后重载。`swatch_image_url` 本期只保存可选 URL；221 张图的离线批量导入工具应有 manifest、dry-run/apply、格式与尺寸校验，不能通过 221 次现有 Product 单图上传接口替代。
+`sort` 的单字段范围由 M6 `CHECK` 与有符号 SMALLINT 容量共同兜底。`swatch_hex` 的格式由 Schema/Model/发布工具校验；`is_active` 与 code/name/HEX 完整性、Online 商品引用保护属于 Service 规则而非跨字段数据库 `CHECK`。全局颜色维护按“引用 Product ID 升序 → BeadColor → 当前启用 ProductKitColor”锁序执行，上架和商品颜色启停也以 Product 行为共同互斥点；所有可售性判断都在锁后重载。`swatch_image_url` 只保留实拍校色照片或迁移回退 URL；纯数字色块不建新图片资源。
 
 ### 3.4b product_kit_colors（商品级颜色与库存，M6）
 

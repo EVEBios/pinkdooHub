@@ -121,9 +121,11 @@ Reservation N1 的六个页面、API/Feature、入口与工程自动化已形成
 
 认证缓存只保存 Token、过期时间和公开 User，密码不会持久化；不要用真实生产密码做本地测试，也不要打印 Storage 或完整 Token。
 
-Product 列表接口无需登录。若本地数据库没有完整且已上架的 Product，首页会正确显示 Empty。日常业务操作应通过现有 ADMIN Product API 配置并上架数据；本地 Functional 也可使用严格限定为 development + 仓库内 SQLite 的 Seed 脚本，执行条件和命令见[阶段 6 列表学习笔记](../docs/08_frontend/learning_notes/phase6_product_list.md)。Seed 会让 `[LOCAL-FE] 拼豆材料包 01` 初始库存为 8，其余 5 条 Kit 保持 0；库存通过正式 Inventory Service、流水和审计写入。不要直接修改数据库绕过 Product readiness 或 Inventory 一致性规则。
+Product 列表接口无需登录。若本地数据库没有完整且已上架的 Product，首页会正确显示 Empty。日常业务操作应通过现有 ADMIN Product API 配置并上架数据；本地 Functional 也可使用严格限定为 development + 仓库内 SQLite 的 `python -m app.tasks.product_functional_seed --operator-username <ADMIN_USERNAME> --apply --confirm-local-only`，脚本自身强制执行环境和显式确认校验。Seed 会让 `[LOCAL-FE] 拼豆材料包 01` 初始库存为 8，其余 5 条 Kit 保持 0；库存通过正式 Inventory Service、流水和审计写入。不要直接修改数据库绕过 Product readiness 或 Inventory 一致性规则。
 
-ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `app.tasks.admin_product_functional_seed` 提供，命令、固定名称与安全边界见[阶段 8.1 学习笔记](../docs/08_frontend/learning_notes/phase8_admin_product_read.md)。该 Seed 使用独立 `[LOCAL-ADMIN-FE]` 命名空间并通过正式 Product Service 写入，不影响既有 Online 样本。
+自选颜色色块以 API 的规范大写 `swatch_hex` 为首选事实，公共详情、购物车和代客下单通过共享 `BeadColorSwatch` 使用 `View.style.backgroundColor` 直接绘制，不为纯数字色块发起图片请求。迁移期若 HEX 缺失，组件才读取可选 `swatch_image_url`；图片失败或两者都缺失时显示占位。`swatch_image_url` 不得回退到商品封面，它只保留给既有兼容 PNG 与未来实拍校色 WebP。公开 API 正式契约要求 sale-ready 颜色提供非空 HEX，客户端对 null 的容忍只用于旧服务/本地缓存迁移，不得放宽管理端一致性校验。
+
+ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `python -m app.tasks.admin_product_functional_seed --operator-username <ADMIN_USERNAME> --apply --confirm-local-only` 提供；该脚本使用独立 `[LOCAL-ADMIN-FE]` 命名空间、强制执行本地环境保护，并通过正式 Product Service 写入，不影响既有 Online 样本。
 
 ## 目录约定（随阶段逐步落地）
 

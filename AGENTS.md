@@ -78,6 +78,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | 已完成能力、重要决策和已知限制 | [`docs/05_development/changelog.md`](docs/05_development/changelog.md) |
 | 完成功能后的检查项目 | [`docs/07_process/code_review_checklist.md`](docs/07_process/code_review_checklist.md) |
 | 数据库迁移生成、Review、执行与既有库基线 | [`docs/07_process/database_migration_workflow.md`](docs/07_process/database_migration_workflow.md) |
+| 容量压测设计、执行、证据与资源清理 | [`docs/09_release/capacity_load_test_runbook.md`](docs/09_release/capacity_load_test_runbook.md) |
 | 用户模块历史摘要 | [`docs/06_ai/User_Module_Summary.md`](docs/06_ai/User_Module_Summary.md) |
 
 ### 需求与业务规则

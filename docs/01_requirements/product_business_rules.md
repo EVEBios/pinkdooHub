@@ -1,11 +1,11 @@
 # Product Module Business Rules
 
-> **Document Version:** v3.0
+> **Document Version:** v3.1
 > **Module:** Product
 > **Phase:** 4.1 Product Module + M6 Color-selectable Kit
-> **Last Updated:** 2026-09-07
+> **Last Updated:** 2026-09-08
 >
-> 本文档定义 Product 模块的业务规则。Phase 4.1 固定套装为已实现基线；M6 自选颜色套装的仓库实现、客户端接入与本地回归已完成，离线迁移仍须通过一次性 MySQL 0→6 门槛，尚未部署。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
+> 本文档定义 Product 模块的业务规则。Phase 4.1 固定套装与 M6 自选颜色套装已完成仓库实现；M8 将来源 HEX 收口为正式颜色字段并将客户端切换为直接绘制。M8 已完成隔离 MySQL 候选验证、四端自动化与当前本地持久 SQLite 应用；Gate A、共享、预发布和生产 MySQL 的迁移/部署仍待完成，微信开发者工具模拟器验证也不等于真实 iOS/Android 真机验收。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
 >
 > 模块需求概要见 [product_module.md](./product_module.md)。
 
@@ -78,7 +78,7 @@ Kit 继续是 `product_type=kit`，一个 Product 对应一条 ProductKit。M6 �
 
 `kit_kind` 创建后不可修改。M6 前已经存在的所有 Kit 均解释为 `fixed`，默认值和响应行为必须向后兼容。
 
-全局 `bead_colors` 固定预留 `slot_no=1..221`；它是颜色目录，不保存任何商品的共享库存。每个 `color_selectable` Product 创建时，在同一事务中创建恰好 221 条 ProductKitColor 关联，初始 `is_enabled=false`、`stock_units=0`。颜色名称和业务编码在详细清单到达前允许为空；未配置或未启用颜色不得出现在用户可售列表或被下单。
+全局 `bead_colors` 固定预留 `slot_no=1..221`；它是颜色目录，不保存任何商品的共享库存。每个 `color_selectable` Product 创建时，在同一事务中创建恰好 221 条 ProductKitColor 关联，初始 `is_enabled=false`、`stock_units=0`。M6 占位阶段颜色名称、业务编码和 `swatch_hex` 允许为空；颜色只有在 code/name/规范 HEX 全部完整时才算已配置，未配置或未启用颜色不得出现在用户可售列表或被下单。
 
 | 属性 | 说明 |
 |------|------|
@@ -122,12 +122,17 @@ Kit 继续是 `product_type=kit`，一个 Product 对应一条 ProductKit。M6 �
 
 221 种颜色是稳定的店铺目录，名称、编码和可选色板资源不应在每个商品中复制；因此使用全局 BeadColor 槽。是否可售和当前库存则受具体商品的包装、采购和运营影响，必须保存在 ProductKitColor 中。两个商品引用同一个 BeadColor 时，扣减其中一个商品的颜色库存不得改变另一个商品。
 
-色板图片是全局 BeadColor 的可选 `swatch_image_url`，不是 Product 公共图，也不是 ProductKitColor 的库存属性。没有图片时仍可保留颜色槽；实物照片建议使用统一构图的 192×192 或 256×256 sRGB WebP，目标不超过 25 KiB/张、64 KiB/张软上限、128 KiB/张硬上限，存放在对象存储/CDN 并按需加载，不进入小程序包。
+全局 BeadColor 以 `swatch_hex` 作为纯数字色块的权威表示：非空值必须规范化为大写 `#RRGGBB`。小程序直接用 `backgroundColor` 绘制，不为纯色块发起独立图片请求。
 
-2026-09-07 指定的 MARD 221 来源页只公开 A1–M15 的 HEX/RGB CSS 色块，没有逐色原图。仓库因此冻结 `app/tasks/manifests/mard_221.json`，以来源顺序映射 `slot_no/sort=1..221`，并令 `color_code=name=页面色号`；清单保存来源 URL、抓取时间、HTML SHA-256、HEX/RGB 和确定性图片名。`scripts/local/import_mard_bead_colors.py` 用标准库生成 256×256 sRGB PNG，默认 dry-run，只有 `--apply --confirm-local-only` 才写本地 M6 SQLite 和忽略目录；冲突元数据、Online 商品引用、非 221 槽或异常图片均拒绝，数据库写前备份，事务失败补偿本轮文件，完全相同重放零写入。该本地导入不创建 ProductKitColor、不启用商品颜色、不写库存，也不构成 MySQL/对象存储发布证据。
+`swatch_image_url` 仍是全局 BeadColor 的可选展示属性，不是 Product 公共图，也不是 ProductKitColor 的库存属性。它只用于未来在统一光照、白平衡和实体校色后拍摄的真实色样照片；建议使用 192×192 或 256×256 sRGB WebP，目标不超过 25 KiB/张、64 KiB/张软上限、128 KiB/张硬上限，存放在对象存储/CDN 并按需加载，不进入小程序包。Product/Option 商品照片同样优先采用 WebP；不得为已有 HEX 的纯色块另造 WebP。
 
-Gate A 内部测试候选另提供 `app.tasks.gatea_mard_publish`：只在停写且新 Backup/Restore
-已验证的 M6 持久 MySQL 上，以 preview 的 manifest SHA-256 显式确认 apply；221 张
+2026-09-07 指定的 MARD 221 来源页只公开 A1–M15 的 HEX/RGB CSS 色块，没有逐色原图。仓库因此冻结 `app/tasks/manifests/mard_221.json`，以来源顺序映射 `slot_no/sort=1..221`，并令 `color_code=name=页面色号`；清单保存来源 URL、抓取时间、HTML SHA-256、HEX/RGB 和确定性图片名。M8 以该版本化清单将 221 个 HEX 精确回填到 `bead_colors.swatch_hex`。
+
+2026-09-07 已生成的 256×256 sRGB PNG 在客户端迁移期间保留为兼容回退，不批量转换为 WebP，也不在 M8 中删除。`scripts/local/import_mard_bead_colors.py` 继续以默认 dry-run、显式 `--apply --confirm-local-only`、写前备份、事务回滚和文件补偿管理这批兼容资源，并额外核验 HEX 与清单一致。只有在已发布客户端切换和回滚窗口结束均得到独立证据后，才能另行评估删除；该本地导入不创建 ProductKitColor、不启用商品颜色、不写库存，也不构成 MySQL/对象存储发布证据。
+
+Gate A 内部测试候选另提供 `app.tasks.gatea_mard_publish`：只在停写、新 Backup/Restore
+已验证且已按 M3→M4→Wallet→M5→M6→M7→M8 完成的持久 MySQL 上，以 preview 的
+manifest SHA-256 显式确认 apply；221 张
 确定性 PNG 原子写入受 Nginx 只读挂载的持久卷并使用 `0644`，BeadColor 元数据在单
 事务中锁定、批量更新和回读，失败补偿本轮新文件，重放零写入。它仍不创建或启用
 商品颜色、不调整库存；Gate B 正式公开环境继续要求对象存储/CDN 选型和独立验收。
@@ -652,7 +657,7 @@ product_images
 | 5 | `price <= 0` 或 `price > 99999` | `kit price must be greater than 0 and no more than 99999` |
 | 6 | `stock < 0` | `kit stock must be non-negative` |
 
-对于 `fixed`，上述既有检查保持不变；`stock = 0` 允许上架。对于 `color_selectable`，M6 还必须校验 `sale_unit_grams=10`、聚合 `stock=null`、221 条颜色关联完整，并至少存在一个已启用颜色；每个启用色均须全局激活且名称/编码完整。颜色余额 `stock_units=0` 仍允许上架，但下单会因库存不足而失败。新增 issue 依稳定顺序为：`color-selectable kit sale unit must be 10 grams`、`color-selectable kit stock must be null`、`color-selectable kit must link all 221 bead color slots`、`at least one product kit color must be enabled`、`enabled product kit colors must be active and configured`、`product kit color stock must be non-negative`。上述校验及本地回归已完成；真实 MySQL/部署状态仍为 Pending。
+对于 `fixed`，上述既有检查保持不变；`stock = 0` 允许上架。对于 `color_selectable`，M6/M8 还必须校验 `sale_unit_grams=10`、聚合 `stock=null`、221 条颜色关联完整，并至少存在一个已启用颜色；每个启用色均须全局激活且名称/编码/`swatch_hex` 完整。颜色余额 `stock_units=0` 仍允许上架，但下单会因库存不足而失败。新增 issue 依稳定顺序为：`color-selectable kit sale unit must be 10 grams`、`color-selectable kit stock must be null`、`color-selectable kit must link all 221 bead color slots`、`at least one product kit color must be enabled`、`enabled product kit colors must be active and configured`、`product kit color stock must be non-negative`。真实 MySQL/部署状态仍为 Pending。
 
 如果 ProductKit 扩展记录缺失，只追加 `kit configuration is required`，不再追加价格或库存 issue；记录不存在与字段值非法不是同一问题。Kit 的图片完整性目前只有公共封面规则，不要求 221 个颜色槽都配置图片，也不把颜色色板图算作 Product 公共封面。
 
@@ -783,13 +788,13 @@ Phase 4.3 已采用余额表 + 流水表模式：余额表保存当前值，Inve
 | 规则 | 说明 |
 |------|------|
 | KitKind | `fixed` / `color_selectable`，创建后不可修改；历史 Kit 默认 `fixed` |
-| 全局颜色槽 | `slot_no=1..221`，名称/编码可在占位阶段为空 |
+| 全局颜色槽 | `slot_no=1..221`，名称/编码/`swatch_hex` 可在 M6 占位阶段为空；M8 从冻结清单回填 HEX |
 | 商品颜色初始化 | 每个 color_selectable Product 恰有 221 条 ProductKitColor，初始禁用且 `stock_units=0` |
 | 销售单位 | color_selectable 固定 10g；Order Item `quantity=N` 表示该颜色 `N×10g` |
 | 统一价格 | 同一 color_selectable 商品所有颜色共用 `product_kits.price`，单位为每 10g |
 | 库存隔离 | ProductKitColor 按商品保存余额，同一 BeadColor 在不同商品之间不共享库存 |
-| 用户可见颜色 | 只返回已配置且 `is_enabled=true` 的颜色；下单仍锁后重检启用状态与库存 |
-| 色板图片 | 全局可选，不属于 Product 公共图库；建议 192/256 px sRGB WebP 和离线 dry-run/apply 导入 |
+| 用户可见颜色 | 只返回 code/name/规范 `#RRGGBB` 完整且 `is_enabled=true` 的颜色；下单仍锁后重检启用状态与库存 |
+| 颜色表示 | 纯数字色块以 `swatch_hex` 直绘；`swatch_image_url` 只保留未来实拍校色 WebP 和迁移回退，现有 PNG 不转 WebP、不在本迁移删除 |
 
 ### Audit Constraints
 

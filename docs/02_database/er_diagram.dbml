@@ -86,14 +86,15 @@ Table product_kits {
   updated_at datetime
 }
 
-Table bead_colors [note: 'M6 global catalog has exactly slot_no 1..221; placeholder rows may have null code/name/image'] {
+Table bead_colors [note: 'M6/M8 global catalog has exactly slot_no 1..221; placeholder rows may have null code/name/hex/image'] {
   id bigint [pk, increment]
   slot_no smallint [not null, note: 'stable global slot, application range 1..221']
   color_code varchar(50) [note: 'nullable placeholder; non-null value is globally unique']
   name varchar(100) [note: 'nullable placeholder']
-  swatch_image_url varchar(2048) [note: 'optional global swatch image; recommend 192x192 or 256x256 sRGB WebP']
+  swatch_hex varchar(7) [note: 'nullable placeholder; canonical uppercase #RRGGBB; M8 backfills the frozen MARD manifest']
+  swatch_image_url varchar(2048) [note: 'optional calibrated real-swatch WebP or migration fallback; solid digital colors use swatch_hex']
   sort smallint [not null, default: 0, note: 'range 0..32767; M6 CHECK enforces it; placeholder initialization uses slot_no']
-  is_active boolean [not null, default: false, note: 'Service only allows true when code and name are configured']
+  is_active boolean [not null, default: false, note: 'Service only allows true when code, name and swatch_hex are configured']
   created_at datetime
   updated_at datetime
 

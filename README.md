@@ -2,7 +2,7 @@
 
 pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、Tortoise ORM、Pydantic 和 Redis 构建。开发环境使用 SQLite，生产数据库设计面向 MySQL 8+。
 
-当前代码版本候选为 **v0.6.0（尚未发布）**。Phase 4.1 Product、Phase 4.2 Order、Phase 4.3 Inventory、Wallet/Payment/Refund v1、Reservation N1、M6 自选颜色 Kit 与 M7 可配置每周固定店休均已完成仓库实现；M4–M7 尚未通过 Aerich 应用到 Gate A、共享、预发布或生产 MySQL，生产资金能力仍关闭。开发 SQLite 可能由 `generate_schemas` 自动补建缺失表；这种状态不会产生 Aerich 版本记录，不能作为发布迁移证据。
+当前代码版本候选为 **v0.6.0（尚未发布）**。Phase 4.1 Product、Phase 4.2 Order、Phase 4.3 Inventory、Wallet/Payment/Refund v1、Reservation N1、M6 自选颜色 Kit、M7 可配置每周固定店休与 M8 数字色块 HEX 均已完成仓库实现；M4–M8 尚未通过 Aerich 应用到 Gate A、共享、预发布或生产 MySQL，生产资金能力仍关闭。开发 SQLite 可能由 `generate_schemas` 自动补建缺失表；这种状态不会产生 Aerich 版本记录，不能作为发布迁移证据。
 
 ## 当前能力
 
@@ -12,7 +12,8 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - 敏感操作顺序审计，以及 Product 操作历史分页查询。
 - Product、ExperienceOption、ProductKit、ProductImage，以及 M6 全局 221 槽 BeadColor/商品级 ProductKitColor 的完整业务、持久化与 API 链路。
 - Product API 包括公开查询、ADMIN+ 管理、图片上传、审计历史、全局颜色目录与商品颜色启停；库存写入仍由 Inventory API 独立承担。
-- MARD 221 标准色卡的 A1–M15 色号、来源 HEX/RGB 清单和 221 张确定性 256×256 sRGB PNG 已导入本地开发库；来源页本身使用 CSS 色块而非独立图片，生产对象存储发布仍待 Gate B。
+- M8 将 MARD 221 标准色卡的规范大写 `swatch_hex` 纳入数据库、管理/公开 API 与销售就绪校验；小程序优先用 `backgroundColor` 直绘，只有 HEX 缺失时才回退可选 `swatch_image_url`。
+- 来源页本身使用 CSS 色块而非独立图片；已存在的 221 张确定性 256×256 sRGB PNG 只在迁移期兼容，不转 WebP、不删除。商品照片和未来实拍校色色样使用 WebP，生产对象存储发布仍待 Gate B。
 - Product 图片大小、格式、MIME 和安全路径校验，以及上传失败补偿和延迟物理清理。
 - Order 的 Experience、固定 Kit、自选颜色 Kit 与混合下单、不可变 Product/Option/颜色/10g 单位/价格快照、用户/管理查询、取消、人工确认支付、完成和审计历史。
 - Pending 创建时的稳定多 Kit 行锁、库存扣减、不可变 Order 来源流水和全写集原子回滚。
@@ -23,9 +24,9 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - 普通会员的钱包摘要与不可变流水、ADMIN+ 调账和代客钱包订单、订单余额支付与资金事实查询，以及 PAID/COMPLETED 一次全额退款；PAID Kit 退款恢复库存，COMPLETED 不恢复。
 - 钱包余额和单笔充值上限均为 `1000.00`（充值下限 `1.00`）；真实微信充值、支付和退款 Provider 当前关闭并返回 503 零写入。
 - 微信小程序客户与 ADMIN+ 共 31 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory、Wallet/Payment、Reservation/店休与 User 管理流程。
-- 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约。
+- 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约；直连 App 与 Gate A/Rehearsal Nginx 对客户端协商的 ≥1 KiB 文本响应启用 gzip level 6，图片路径/MIME 不重复压缩。
 
-当前完整本地回归为后端 **2000 passed、30 skipped**（113.05s），30 项 skip 为三类显式 MySQL-only 门槛；一次性 MySQL 8.0.46 已完成 Wallet 专项 **9 passed** 与 Inventory + Reservation + Wallet 联合 **30 passed**。既有前端基线为 **83 套件、562 项 Jest**，TypeScript、ESLint、Stylelint 与 17 项 CI policy 全绿。M7 head `4d6430c...` 的旧 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 为 8/8，但 Wallet-expanded workflow 尚未 push/远端复现。M4–M7 仍未应用 Gate A 或任何持久 MySQL；CI/本地证据不等于正式 RC、真机或目标环境验收。详细记录见 [Development Changelog](docs/05_development/changelog.md)。
+当前完整本地回归为后端 **2069 passed、31 skipped**（122.64s），skip 为显式隔离的 MySQL-only 门槛；一次性 MySQL 8.0.46 已真实完成 Aerich 0→8、M8 精确 HEX 与 Gate A publish/replay **2 passed**。前端为 **84 套件、573 项 Jest**，TypeScript、ESLint、Stylelint 全绿。M7 head `4d6430c...` 的旧 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 为 8/8，但当前 M8/Wallet-expanded workflow 尚未 push/远端复现。M4–M8 仍未因本任务应用 Gate A 或任何持久 MySQL；CI/本地证据不等于正式 RC、真机或目标环境验收。详细记录见 [Development Changelog](docs/05_development/changelog.md)。
 
 Phase 4.3.1–4.3.12 已完成 Inventory 契约、领域/Schema、Model/数据库设计、MySQL 8+ 增量迁移、Repository、管理员库存调整、Kit/混合订单创建扣减、Pending 取消幂等恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/完整 HTTP 发布门槛和最终 Review。最后一件库存、反向多 Kit、同单取消、同/异 key 调整、管理员调整与下单阻塞、真实 1205 全事务重试和 EXPLAIN 均已在隔离 MySQL 8.0.46 通过；三端点完整权限/错误/边界矩阵与真实 MySQL HTTP 并发重放也已通过。最终 Review 进一步统一了 Product Kit 详情的库存上限响应校验，并清理了数据库文档中的旧 Kit 规划描述。临时实例验证后销毁，未应用持久环境。
 
@@ -113,11 +114,17 @@ uvicorn app.main:app --reload
 
 ### 4. 本地 MARD 221 色板导入
 
-仓库冻结来源清单 `app/tasks/manifests/mard_221.json`，并提供两个默认只读的本地工具。来源抓取只接受 `https://peiseka.com/pindouseka.html`，导入只接受当前项目内的 M6 SQLite、清单、图片和备份路径：
+仓库冻结来源清单 `app/tasks/manifests/mard_221.json`，并提供默认只读的本地工具。来源抓取只接受 `https://peiseka.com/pindouseka.html`；MARD 导入只接受当前项目内已完成 M8 的 SQLite、清单、图片和备份路径：
 
 ```bash
 # 抓取/校验来源页；默认不覆盖清单
 python scripts/local/fetch_mard_bead_colors.py
+
+# 预览 M8 swatch_hex 列与 221 项回填；不会写数据库或创建备份
+python scripts/local/upgrade_sqlite_m8_swatch_hex.py
+
+# 停止本地写入并复核 preview 后才显式升级；写前自动创建 0600 备份
+python scripts/local/upgrade_sqlite_m8_swatch_hex.py --apply
 
 # 预览数据库和 221 张确定性 PNG 的变化
 python scripts/local/import_mard_bead_colors.py
@@ -126,7 +133,7 @@ python scripts/local/import_mard_bead_colors.py
 python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
 ```
 
-该工具不会创建商品、启用商品颜色或写入库存，也不能应用到 MySQL。生产环境必须先完成 M6 MySQL 发布门槛和对象存储/CDN 接入，再以独立受控流程导入同一清单。
+SQLite M8 工具不会写 Aerich，也不能应用到 MySQL。当前持久 `db.sqlite3` 已于 2026-09-08 在停止本地写入后执行 M8；写前 `0600` 备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-m8-swatch-hex-20260908-130013-906106.bak`。升级后 221 槽均有唯一、规范且与冻结清单逐项相等的 HEX，完整性/外键核验与幂等 preview 均通过。该结果只代表当前本地 SQLite；其他旧库在使用包含 M8 Model 的后端前仍必须先完成 preview/apply，且不能把本地脚本结果当作 Aerich 或 MySQL 发布证据。MARD 导入不会创建商品、启用商品颜色或写入库存；已有 PNG 只作迁移回退，不转换或删除。生产环境必须按 M3→M4→Wallet 准备→M5→M6→M7→M8→MARD 的受控顺序，并在 Gate B 接入对象存储/CDN。
 
 ### 5. 本地综合演示数据
 
@@ -238,7 +245,7 @@ python -m app.tasks.product_image_cleanup \
 
 ## 数据库迁移
 
-MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ M0–M7 迁移均已离线生成并通过静态契约测试；一次性 MySQL 8.0.46 已完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 与联合 21 项真实 MySQL 门槛，随后销毁实例；当前 head 的远端 Run 34129910349 也已在 MySQL 8.0.46 完成 M5→M6→M7 重放、snapshot 与联合 21 项门槛。M3–M7 均未应用 Gate A、共享、预发布或生产 MySQL。Inventory 迁移包含正库存期初流水回填，Wallet M4 还需按冻结顺序执行历史 backfill/reconcile；正式执行前仍必须停写、扫描数据范围并备份。
+MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ M0–M8 迁移均已离线生成并通过静态契约测试；2026-09-08 又在一次性 MySQL 8.0.46 真实完成 Aerich 0→8、M8 列形状、221 项冻结 HEX 与 Gate A MARD publish/replay，随后删除容器并释放 13308。旧远端 Run 34129910349 只证明当时 M7 head 的 8/8，不是当前 M8 候选证据。M3–M8 均未因本任务应用 Gate A、共享、预发布或生产 MySQL。Inventory 迁移包含正库存期初流水回填，Wallet M4 还需按冻结顺序执行历史 backfill/reconcile；正式执行前仍必须停写、扫描数据范围并备份。
 
 本地持久 `db.sqlite3` 曾缺失目标设计已定义的 `refunds.inventory_restored` 与 `UNIQUE(order_id)`。提交 `35e8630` 提供默认预览、双显式确认、精确基线拒绝和 SQLite Backup API 的本地修复工具：
 
@@ -285,8 +292,8 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 | 前端架构决策 | [Frontend ADR](docs/08_frontend/adr/README.md) |
 | 编码与 Git 规范 | [Coding Standards](docs/05_development/coding_standards.md) |
 | AI/开发上下文 | [AI Context](docs/06_ai/AI_CONTEXT.md) |
-| AI 协作全栈项目规划与稳健交付手册 | [AI-assisted Full-stack Project Playbook](docs/07_process/ai_assisted_fullstack_project_playbook.md) |
 | 迁移流程 | [Database Migration Workflow](docs/07_process/database_migration_workflow.md) |
+| 容量与性能压测规范 | [Capacity Load Test Runbook](docs/09_release/capacity_load_test_runbook.md) |
 
 业务行为以 `docs/01_requirements/` 为准，HTTP 契约以 `docs/03_api/` 为准，表结构与索引以数据库设计和 DBML 为准；当前是否已实现必须结合代码、测试与 changelog 判断。
 
@@ -316,7 +323,7 @@ docs(readme): document local development workflow
 ## 当前限制与后续工作
 
 - v0.6.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
-- Gate A 持久环境在 2026-09-02 的最后留证为 Aerich M2 且数据库非空，当前真实状态尚未重新只读确认；现有 `initial-migrate` 只支持空库，尚无经批准的 M2→M7 非空升级入口，因此必须停止在此阻塞而不直接执行。M3–M7 只在一次性 MySQL 8.0.46 完成候选验证，尚未应用任何持久环境。
+- Gate A 持久环境的当前真实 Aerich/数据状态必须在每次操作前重新只读确认；`initial-migrate` 仍只支持空库。仓库已有受控 M2→M8 非空升级入口，但本任务没有执行它；新 SHA、Backup/Restore、停写窗口和当次明确授权缺一不可。M3–M8 的 MySQL/Aerich 链只在一次性 MySQL 8.0.46 完成当前候选验证，尚未应用 Gate A、共享、预发布或生产 MySQL；当前本地持久 SQLite 的 M8 专用升级不构成这些环境的迁移证据。
 - 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
 - Phase 9.1–9.3 已完成；9.4 中不依赖备案的服务器部署、备份恢复与运维治理已完成，真实 HTTPS/合法 Origin、正式 RC、体验版上传和 iOS/Android 真机仍等待外部条件与单独授权。Phase 9.5 不依赖外部资源的仓库实现已完成，但真实微信 AppID、集中 Secret Manager、监控告警、对象存储和隐私平台材料仍是 Gate B 阻断项。MARD 仍缺持久 MySQL/对象存储导入流程；Wallet 扩展 MySQL 本地候选门槛已关闭，但新 workflow 尚未远端复现，非空 Gate A 升级入口、目标环境迁移与 RC 仍未关闭。CI 通过也不授权微信上传、提审或发布。
