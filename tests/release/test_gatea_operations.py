@@ -103,6 +103,59 @@ def test_validate_config_accepts_loopback_and_tls_modes() -> None:
     validate_config_values(values, mode="tls")
 
 
+def test_loopback_port_probe_reuses_recently_closed_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, ...]] = []
+
+    class FakeSocket:
+        reuse_address = False
+
+        def setsockopt(self, *arguments: object) -> None:
+            calls.append(("setsockopt", *arguments))
+            self.reuse_address = arguments == (
+                gatea.socket.SOL_SOCKET,
+                gatea.socket.SO_REUSEADDR,
+                1,
+            )
+
+        def bind(self, address: tuple[str, int]) -> None:
+            calls.append(("bind", address))
+            if not self.reuse_address:
+                raise OSError("simulated TIME_WAIT conflict")
+
+        def close(self) -> None:
+            calls.append(("close",))
+
+    monkeypatch.setattr(gatea.socket, "socket", lambda *args: FakeSocket())
+
+    gatea._assert_loopback_port_available(18080)
+
+    assert calls == [
+        (
+            "setsockopt",
+            gatea.socket.SOL_SOCKET,
+            gatea.socket.SO_REUSEADDR,
+            1,
+        ),
+        ("bind", ("127.0.0.1", 18080)),
+        ("close",),
+    ]
+
+
+def test_loopback_port_probe_still_rejects_active_listener() -> None:
+    active = gatea.socket.socket(gatea.socket.AF_INET, gatea.socket.SOCK_STREAM)
+    active.setsockopt(gatea.socket.SOL_SOCKET, gatea.socket.SO_REUSEADDR, 1)
+    active.bind(("127.0.0.1", 0))
+    active.listen()
+    port = int(active.getsockname()[1])
+    try:
+        with pytest.raises(GateAError, match="already in use"):
+            gatea._assert_loopback_port_available(port)
+    finally:
+        active.close()
+
+
 def test_compose_command_binds_exact_mode_and_optional_bootstrap() -> None:
     command = compose_command(
         config_file=Path("/etc/pinkdoohub/gatea/config.env"),

@@ -4,6 +4,16 @@
 
 ---
 
+## Gate A Backup 快速重启端口误判修复（真实主机发现，2026-09-08）
+
+- M7 综合数据写入后的 Backup 已完成数据库/图片导出，但在恢复 App/Nginx 前把刚关闭的
+  `127.0.0.1:18080` TCP 回收窗口误判为仍有监听者；工具按失败契约删除未留证的导出物，
+  未写 Backup Record。等待回收窗口后，既有候选可正常启动，数据库摘要和 225 个图片
+  manifest 与综合代表数据成功 Record 精确一致。
+- loopback 可用性探针在 `bind()` 前显式设置 `SO_REUSEADDR`，允许发布入口快速重启时复用
+  最近关闭的地址，同时仍由内核拒绝真实活动监听者。新增调用顺序回归；修复必须形成新的
+  CI 成功 Operations Release 后，才允许重新创建数据后 Backup 和独立 Restore。
+
 ## Gate A M7 综合代表性测试数据入口（本地候选，2026-09-08）
 
 - 新增 `scripts.release.gatea_m7_representative_data`，只扩展已经具备历史 M2 代表数据、

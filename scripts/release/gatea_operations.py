@@ -383,6 +383,7 @@ def _run_compose(
 def _assert_loopback_port_available(port: int) -> None:
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("127.0.0.1", port))
     except OSError as error:
         raise GateAError("Gate A loopback port is already in use") from error
