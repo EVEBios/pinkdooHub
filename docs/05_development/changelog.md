@@ -4,6 +4,23 @@
 
 ---
 
+## Gate A M7 综合代表性测试数据入口（本地候选，2026-09-08）
+
+- 新增 `scripts.release.gatea_m7_representative_data`，只扩展已经具备历史 M2 代表数据、
+  当前候选 M2→M7 成功 Record、24 小时内当前候选 Backup 与独立 Restore PASS 的持久
+  Gate A；写前再次要求四项服务 Healthy、唯一 loopback publisher、数据库/图片与备份
+  完全相同，并严格匹配 M7 空扩展基线。入口必须从具有 source/CI sidecar 的版本化
+  Operations Release 执行，拒绝未版本化工作树、既有成功 Record 或既有凭据文件。
+- 工具只经正式 loopback API 创建 3 个合成 NORMAL USER、1 个含 221 关联且启用 3 色的
+  Online 自选颜色 Kit、颜色库存与幂等重放、6 个订单/5 个结算/2 个退款、钱包正负调账、
+  6 个预约状态、单日/固定店休和 Refresh family 重放撤销场景；同时要求微信充值与微信
+  订单支付保持 503，并由最终 `recharge_orders=0` 等数据库断言证明零写入。
+- 三个合成账号的随机密码只写入 Record 目录内独立 `root:root 0600` 文件；SUPER_ADMIN
+  凭据、Token、手机号、请求/响应正文均不进入成功 Record 或日志。成功前所有登录会话
+  必须撤销，最终数据库聚合、订单状态、资金余额、库存余额、预约原因和图片增量必须精确
+  匹配。多次正式 API 调用不构成一个跨请求数据库事务；失败会保留 `.pending` 凭据供
+  诊断，现场必须停止写入并从已验证 Backup 恢复，不能删除现场后盲目重跑。
+
 ## Gate A 升级 Runtime Secret 注入修复（真实主机发现，2026-09-08）
 
 - `b358ecc` 的 Gate A 正式 apply 在停写并证明数据库/图片与新 Backup 完全一致后，M3

@@ -274,6 +274,45 @@ Gate A 起点只读确认为 M2、新 Backup/Restore 通过并取得当次持久
 4. 执行管理员幂等 bootstrap，保存审计证据并按流程处置初始凭据。
 5. 执行 API Smoke、图片上传/读取、日志检索和优雅停止/再次启动。
 
+#### 4.4.2 M7 综合代表性测试数据
+
+M2 历史代表数据只证明 User/Product/Order/Inventory 的旧链路；M7 持久升级通过后，
+仍需为 Wallet/Payment/Refund、自选颜色 Kit 和 Reservation 建立可供 Gate A 人工验收的
+合成数据。先保持微信 Provider 与充值开关关闭；仅在 M4 backfill、legacy settlement
+backfill、`wallet_reconcile`、扩展 MySQL 门槛和当前候选升级 Record 全部通过后，显式
+开启以下内部 Gate A 能力并重建 App：
+
+```dotenv
+WALLET_ADMIN_WRITE_ENABLED=true
+WALLET_ORDER_PAYMENT_ENABLED=true
+WALLET_REFUND_ENABLED=true
+WALLET_TOPUP_ENABLED=false
+PAYMENT_PROVIDER=disabled
+```
+
+开关切换必须先备份 `config.env`，重建后复核 production Settings、四项 Healthy、唯一
+`127.0.0.1` publisher、liveness/readiness，以及微信充值/支付仍为 503。随后对当前 M7
+候选创建新的 Backup 并完成独立无端口 Restore；不得复用升级前 M2 Backup。把已经通过
+当前远端 CI 的 Operations commit 安装为单独版本化 Release 并保留 `.source-sha` 与
+`.ci-run-id` sidecar，再从该目录执行：
+
+```bash
+sudo python3 -m scripts.release.gatea_m7_representative_data \
+  --super-admin-username '<current-super-admin>' \
+  --confirm-super-admin-username '<current-super-admin>' \
+  --backup-id '<current-m7-backup-id>' \
+  --confirm-backup-id '<current-m7-backup-id>' \
+  --apply
+```
+
+当前 SUPER_ADMIN 密码只经 TTY 隐藏双输入，不放入参数、环境、文件或 Record。工具会创建
+三个合成账号和覆盖 M3–M7 的聚合场景；其随机密码只保存在
+`/srv/pinkdoohub/gatea/records/representative-data/gatea-m7-synthetic-credentials.json`
+（`root:root 0600`）。成功后必须再次执行 `wallet_reconcile`、新 Backup/独立 Restore、
+数据库/图片摘要和日志 Secret 扫描。工具由多次正式 API 请求组成，不是跨请求单事务：
+任何中断或失败都保留 `.pending` 凭据与现场，立即停止后续写入并从该次已验证 Backup
+恢复；禁止删除失败现场、手工补行或直接重跑。
+
 历史 M2 环境已验证 dependency-free liveness、DB/Redis dependency-aware readiness、
 故障摘流量/恢复、Bootstrap 和凭据处置。当前 M7 镜像必须在升级后的持久环境重新验证；
 旧结果只用于说明流程，不允许直接关闭当前候选项目。
