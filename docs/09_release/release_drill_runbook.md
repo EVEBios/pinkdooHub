@@ -288,13 +288,16 @@ WALLET_ORDER_PAYMENT_ENABLED=true
 WALLET_REFUND_ENABLED=true
 WALLET_TOPUP_ENABLED=false
 PAYMENT_PROVIDER=disabled
+PASSWORD_REGISTRATION_ENABLED=true
 ```
 
 开关切换必须先备份 `config.env`，重建后复核 production Settings、四项 Healthy、唯一
-`127.0.0.1` publisher、liveness/readiness，以及微信充值/支付仍为 503。随后对当前 M7
-候选创建新的 Backup 并完成独立无端口 Restore；不得复用升级前 M2 Backup。把已经通过
-当前远端 CI 的 Operations commit 安装为单独版本化 Release 并保留 `.source-sha` 与
-`.ci-run-id` sidecar，再从该目录执行：
+`127.0.0.1` publisher、liveness/readiness、六个开关的 PID 1 实际值，以及微信充值/支付
+仍为 503。`PASSWORD_REGISTRATION_ENABLED` 只为创建合成账号临时开启；成功保存随机凭据
+并确认所有合成会话撤销后必须恢复为 `false`、重建 App 并再次核验注册被拒绝，其他三个
+内部钱包开关按 Gate A 人工验收计划保留。随后对当前 M7 候选创建新的 Backup 并完成独立
+无端口 Restore；不得复用升级前 M2 Backup。把已经通过当前远端 CI 的 Operations commit
+安装为单独版本化 Release 并保留 `.source-sha` 与 `.ci-run-id` sidecar，再从该目录执行：
 
 ```bash
 sudo python3 -m scripts.release.gatea_m7_representative_data \

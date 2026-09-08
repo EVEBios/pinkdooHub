@@ -34,7 +34,7 @@ DEFAULT_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/representative-data")
 DEFAULT_CREDENTIALS_FILE = DEFAULT_RECORD_DIR / "gatea-m7-synthetic-credentials.json"
 RECORD_PREFIX = "gatea-m7-representative-data"
 EXPECTED_AERICH_VERSIONS = ",".join(gatea.APPROVED_TARGET_M7_CHAIN)
-EXPECTED_RUNTIME_FEATURE_FLAGS = "true,true,true,false,disabled"
+EXPECTED_RUNTIME_FEATURE_FLAGS = "true,true,true,false,disabled,true"
 
 COLOR_PRODUCT_NAME = "[GATEA-M7] Color-selectable Kit"
 COLOR_PRODUCT_PRICE = "3.00"
@@ -465,7 +465,8 @@ def _require_runtime_feature_flags(
         "from pathlib import Path; "
         "targets=(b'WALLET_ADMIN_WRITE_ENABLED',"
         "b'WALLET_ORDER_PAYMENT_ENABLED',b'WALLET_REFUND_ENABLED',"
-        "b'WALLET_TOPUP_ENABLED',b'PAYMENT_PROVIDER'); "
+        "b'WALLET_TOPUP_ENABLED',b'PAYMENT_PROVIDER',"
+        "b'PASSWORD_REGISTRATION_ENABLED'); "
         "pairs=(item.partition(b'=') for item in "
         "Path('/proc/1/environ').read_bytes().split(b'\\0') if b'=' in item); "
         "env={key.decode():value.decode() for key,sep,value in pairs "
@@ -475,7 +476,8 @@ def _require_runtime_feature_flags(
         "env.get('WALLET_ORDER_PAYMENT_ENABLED',''),"
         "env.get('WALLET_REFUND_ENABLED',''),"
         "env.get('WALLET_TOPUP_ENABLED',''),"
-        "env.get('PAYMENT_PROVIDER',''))))"
+        "env.get('PAYMENT_PROVIDER',''),"
+        "env.get('PASSWORD_REGISTRATION_ENABLED',''))))"
     )
     result = gatea._run_compose(
         values=values,

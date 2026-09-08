@@ -22,8 +22,11 @@
   诊断，现场必须停止写入并从已验证 Backup 恢复，不能删除现场后盲目重跑。
 - 真实 Gate A 重建 App 后发现，`docker compose exec app python` 不会继承 Entrypoint
   只注入给 PID 1 的 Runtime Secret，因而不能通过重新构造完整 `Settings` 来读取开关。
-  运行时门槛改为从同 UID 的 `/proc/1/environ` 只投影五个非 Secret 开关并做精确比较；
-  除这五项外不解析或输出其他环境值，也不把容器配置文件值误当成长期进程值。
+  运行时门槛改为从同 UID 的 `/proc/1/environ` 只投影六个非 Secret 开关并做精确比较；
+  除这六项外不解析或输出其他环境值，也不把容器配置文件值误当成长期进程值。
+- 密码注册默认关闭的 Gate A 不能经正式 API 创建合成用户；入口因此同时要求配置文件与
+  运行中 PID 1 的 `PASSWORD_REGISTRATION_ENABLED=true`。Runbook 将其冻结为仅在创建
+  合成账号期间临时开启的第六项开关，成功后必须恢复关闭并验证新注册被拒绝。
 
 ## Gate A 升级 Runtime Secret 注入修复（真实主机发现，2026-09-08）
 

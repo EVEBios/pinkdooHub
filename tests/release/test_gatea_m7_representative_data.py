@@ -84,7 +84,7 @@ def test_runtime_feature_flags_must_match_running_app(
     outputs = iter(
         (
             representative.EXPECTED_RUNTIME_FEATURE_FLAGS + "\n",
-            "false,false,false,false,disabled\n",
+            "false,false,false,false,disabled,false\n",
         )
     )
 
@@ -123,6 +123,7 @@ def test_runtime_feature_flags_must_match_running_app(
         assert isinstance(command, str)
         compile(command, "<runtime-feature-flags>", "exec")
         assert "/proc/1/environ" in command
+        assert "PASSWORD_REGISTRATION_ENABLED" in command
         assert "app.core.config" not in command
 
 
