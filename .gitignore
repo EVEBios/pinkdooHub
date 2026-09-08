@@ -90,3 +90,9 @@ spikes/
 
 # Impeccable 的本地验收截图与差异图；方向契约和定稿设计系统仍进入版本控制。
 .impeccable/review/
+
+# ==================== 本地项目交接、方法手册与学习笔记 ====================
+# 个人交接、AI 方法手册和前端学习复盘仅在本机保留，不进入版本控制。
+/PROJECT_HANDOFF_2026-08-30.md
+/docs/07_process/ai_assisted_fullstack_project_playbook.md
+/docs/08_frontend/learning_notes/
