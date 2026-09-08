@@ -140,7 +140,7 @@ App/Nginx 时，旧 Operations 用未设 `SO_REUSEADDR` 的临时 `bind()` 将�
 
 | 项目 | 结果 |
 |------|------|
-| 副本路径 | `/Users/shenyijie/Backups/pinkdoohub/gatea/20260908t021224z.pdhb` |
+| 副本路径 | `$HOME/Backups/pinkdoohub/gatea/20260908t021224z.pdhb` |
 | 算法 | AES-256-GCM；数据密钥由 RSA-3072 / OAEP-SHA256 封装 |
 | key ID | `595d864b7c45c7cfa26a03184085e36bd6f304c929fe1a9c69d0b580f6bcfcae` |
 | 副本 | `0400`；89,861 bytes；SHA-256 `c8cf3e0cabfa668f0feaa7ffcb90cf1ae7770046d8b868c7af7d5e805b17acfd` |
