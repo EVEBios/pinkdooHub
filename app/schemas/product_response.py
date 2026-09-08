@@ -14,12 +14,15 @@ from pydantic import (
     model_validator,
 )
 
+from app.common.bead_color import is_bead_color_configured
 from app.common.constants.inventory import INVENTORY_STOCK_MAX
 from app.common.constants.product import (
     BEAD_COLOR_CODE_MAX_LENGTH,
     BEAD_COLOR_NAME_MAX_LENGTH,
     BEAD_COLOR_SLOT_COUNT,
     BEAD_COLOR_SLOT_MIN,
+    BEAD_COLOR_SWATCH_HEX_LENGTH,
+    BEAD_COLOR_SWATCH_HEX_PATTERN,
     COLOR_SELECTABLE_SALE_UNIT_GRAMS,
     MAX_BEAD_COLOR_SORT,
     MIN_BEAD_COLOR_SORT,
@@ -119,6 +122,15 @@ BeadColorSortOut = Annotated[
         le=MAX_BEAD_COLOR_SORT,
     ),
 ]
+BeadColorSwatchHexOut = Annotated[
+    str,
+    Field(
+        strict=True,
+        min_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        max_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        pattern=BEAD_COLOR_SWATCH_HEX_PATTERN,
+    ),
+]
 SaleUnitGramsOut = Annotated[
     int,
     Field(
@@ -169,6 +181,7 @@ class BeadColorOut(_ProductOut):
         min_length=1,
         max_length=BEAD_COLOR_NAME_MAX_LENGTH,
     )
+    swatch_hex: BeadColorSwatchHexOut | None
     swatch_image_url: str | None = Field(
         strict=True,
         min_length=1,
@@ -180,9 +193,13 @@ class BeadColorOut(_ProductOut):
 
     @model_validator(mode="after")
     def validate_configured_flag(self) -> "BeadColorOut":
-        """is_configured 只由非空业务编码和名称派生。"""
+        """is_configured 由颜色身份与规范 HEX 数字色块共同派生。"""
 
-        configured = self.color_code is not None and self.name is not None
+        configured = is_bead_color_configured(
+            color_code=self.color_code,
+            name=self.name,
+            swatch_hex=self.swatch_hex,
+        )
         if self.is_configured != configured:
             raise ValueError("is_configured does not match color metadata")
         if self.is_active and not configured:
@@ -206,6 +223,7 @@ class KitColorOptionOut(_ProductOut):
         min_length=1,
         max_length=BEAD_COLOR_NAME_MAX_LENGTH,
     )
+    swatch_hex: BeadColorSwatchHexOut
     swatch_image_url: str | None = Field(
         strict=True,
         min_length=1,
@@ -230,6 +248,7 @@ class AdminProductKitColorOut(_ProductOut):
         min_length=1,
         max_length=BEAD_COLOR_NAME_MAX_LENGTH,
     )
+    swatch_hex: BeadColorSwatchHexOut | None
     swatch_image_url: str | None = Field(
         strict=True,
         min_length=1,
@@ -245,7 +264,11 @@ class AdminProductKitColorOut(_ProductOut):
     def validate_color_flags(self) -> "AdminProductKitColorOut":
         """只校验配置派生值，保留管理端诊断非销售就绪状态。"""
 
-        configured = self.color_code is not None and self.name is not None
+        configured = is_bead_color_configured(
+            color_code=self.color_code,
+            name=self.name,
+            swatch_hex=self.swatch_hex,
+        )
         if self.is_configured != configured:
             raise ValueError("is_configured does not match color metadata")
         return self

@@ -111,7 +111,7 @@ describe('CartPage', () => {
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/order-confirm/index' })
   })
 
-  it('把同一自选商品合成一个区块，并保留逐色图片和数量操作', async () => {
+  it('把同一自选商品合成一个区块，优先直绘 HEX 并保留图片回退', async () => {
     const firstColor = {
       productId: 3,
       experienceOptionId: null,
@@ -121,6 +121,7 @@ describe('CartPage', () => {
       productName: '221自选颜色',
       configurationLabel: 'A1',
       saleUnitGrams: 10 as const,
+      swatchHex: '#E60012',
       unitPrice: '3.00',
       imageUrl: '/uploads/bead-colors/a1.png',
       quantity: 2,
@@ -129,6 +130,7 @@ describe('CartPage', () => {
       ...firstColor,
       kitColorId: 32,
       configurationLabel: 'A2',
+      swatchHex: null,
       imageUrl: '/uploads/bead-colors/a2.png',
       quantity: 1,
     }
@@ -145,8 +147,11 @@ describe('CartPage', () => {
     expect(colorRows).toHaveLength(2)
     expect(colorRows[0].textContent).toContain('A1')
     expect(colorRows[0].textContent).toContain('20g')
-    expect(colorRows[0].querySelector('.cart-color-row__swatch')?.getAttribute('src'))
-      .toBe('https://api.example.com/uploads/bead-colors/a1.png')
+    expect((colorRows[0].querySelector('.bead-color-swatch--hex') as HTMLElement).style.backgroundColor)
+      .toBe('rgb(230, 0, 18)')
+    expect(colorRows[0].querySelector('.bead-color-swatch--image')).toBeNull()
+    expect(colorRows[1].querySelector('.bead-color-swatch--image')?.getAttribute('src'))
+      .toBe('https://api.example.com/uploads/bead-colors/a2.png')
 
     const secondColorSteps = colorRows[1].querySelectorAll('.cart-color-row__step')
     testUtils.fireEvent.click(secondColorSteps[1])
@@ -163,6 +168,7 @@ describe('CartPage', () => {
       productName: '221自选颜色',
       configurationLabel: 'A1',
       saleUnitGrams: 10 as const,
+      swatchHex: null,
       unitPrice: '3.00',
       imageUrl: null,
       quantity: 1,
@@ -189,6 +195,7 @@ describe('CartPage', () => {
       productName: '第一套自选颜色',
       configurationLabel: 'A1',
       saleUnitGrams: 10 as const,
+      swatchHex: null,
       unitPrice: '3.00',
       imageUrl: null,
       quantity: 1,

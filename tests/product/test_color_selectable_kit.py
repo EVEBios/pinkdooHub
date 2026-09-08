@@ -86,17 +86,45 @@ def test_kit_create_schema_defaults_fixed_and_accepts_color_selectable() -> None
 
 def test_bead_color_patch_allows_metadata_clear_but_not_null_flags() -> None:
     cleared = BeadColorUpdate.model_validate(
-        {"color_code": None, "name": None}
+        {"color_code": None, "name": None, "swatch_hex": None}
     )
 
     assert cleared.model_dump(exclude_unset=True) == {
         "color_code": None,
         "name": None,
+        "swatch_hex": None,
     }
     with pytest.raises(ValidationError):
         BeadColorUpdate.model_validate({"is_active": None})
     with pytest.raises(ValidationError):
         BeadColorUpdate.model_validate({})
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ["#ABC", "ABCDEF", "#ABCDEG", "#1234567", 123456],
+)
+def test_bead_color_hex_is_normalized_and_strict(invalid: object) -> None:
+    normalized = BeadColorUpdate.model_validate(
+        {"swatch_hex": "  #a1b2c3  "}
+    )
+
+    assert normalized.swatch_hex == "#A1B2C3"
+    with pytest.raises(ValidationError):
+        BeadColorUpdate.model_validate({"swatch_hex": invalid})
+
+
+def test_bead_color_hex_openapi_exposes_canonical_pattern() -> None:
+    schema = BeadColorUpdate.model_json_schema(mode="validation")
+    swatch_hex = schema["properties"]["swatch_hex"]["anyOf"][0]
+
+    assert swatch_hex == {
+        "examples": ["#F5B8C7"],
+        "maxLength": 7,
+        "minLength": 7,
+        "pattern": r"^#[0-9A-F]{6}$",
+        "type": "string",
+    }
 
 
 def test_bead_color_sort_schema_has_signed_smallint_upper_bound() -> None:
@@ -115,6 +143,7 @@ def test_bead_color_sort_schema_has_signed_smallint_upper_bound() -> None:
         "slot_no": 1,
         "color_code": None,
         "name": None,
+        "swatch_hex": None,
         "swatch_image_url": None,
         "sort": MAX_BEAD_COLOR_SORT,
         "is_active": False,
@@ -140,6 +169,14 @@ async def test_bead_color_model_has_signed_smallint_upper_bound() -> None:
         )
 
 
+async def test_bead_color_model_rejects_noncanonical_hex() -> None:
+    valid = await BeadColor.create(slot_no=1, swatch_hex="#A1B2C3")
+
+    assert valid.swatch_hex == "#A1B2C3"
+    with pytest.raises(ORMValidationError):
+        await BeadColor.create(slot_no=2, swatch_hex="#a1b2c3")
+
+
 async def test_color_selectable_create_builds_exact_atomic_zero_stock_shape() -> None:
     product = await _create_color_selectable_product()
     kit = await ProductKit.get(product_id=product.id)
@@ -157,6 +194,7 @@ async def test_color_selectable_create_builds_exact_atomic_zero_stock_shape() ->
     )
     assert all(color.color_code is None for color in slots)
     assert all(color.name is None for color in slots)
+    assert all(color.swatch_hex is None for color in slots)
     assert all(color.swatch_image_url is None for color in slots)
     assert all(not color.is_active for color in slots)
     assert [color.sort for color in slots] == list(
@@ -200,17 +238,20 @@ async def test_product_color_unique_pair_and_batch_snapshot_metadata() -> None:
 
 
 @pytest.mark.parametrize(
-    ("color_code", "name", "is_active"),
+    ("color_code", "name", "swatch_hex", "is_active", "configured"),
     [
-        ("C001", "示例红", False),
-        (None, None, False),
-        (None, None, True),
+        ("C001", "示例红", "#FF0000", False, True),
+        ("C001", "示例红", None, False, False),
+        (None, None, None, False, False),
+        (None, None, None, True, False),
     ],
 )
 def test_admin_color_output_preserves_non_sale_ready_enabled_state(
     color_code: str | None,
     name: str | None,
+    swatch_hex: str | None,
     is_active: bool,
+    configured: bool,
 ) -> None:
     """管理端必须能展示并修复非销售就绪状态。"""
 
@@ -219,6 +260,7 @@ def test_admin_color_output_preserves_non_sale_ready_enabled_state(
         slot_no=1,
         color_code=color_code,
         name=name,
+        swatch_hex=swatch_hex,
         swatch_image_url=None,
         sort=1,
         is_active=is_active,
@@ -235,9 +277,7 @@ def test_admin_color_output_preserves_non_sale_ready_enabled_state(
 
     assert mapped["is_enabled"] is True
     assert mapped["is_active"] is is_active
-    assert mapped["is_configured"] is (
-        color_code is not None and name is not None
-    )
+    assert mapped["is_configured"] is configured
 
 
 async def test_unconfigured_color_cannot_activate_or_enable() -> None:
@@ -252,10 +292,19 @@ async def test_unconfigured_color_cannot_activate_or_enable() -> None:
     with pytest.raises(BeadColorNotConfigured):
         await service.update_bead_color(
             bead_color.id,
-            updates={"is_active": True},
+            updates={
+                "color_code": "NO-HEX",
+                "name": "缺少色值",
+                "is_active": True,
+            },
             operator_id=7,
             ip_address="127.0.0.1",
         )
+    await BeadColor.filter(id=bead_color.id).update(
+        color_code="NO-HEX",
+        name="缺少色值",
+        is_active=True,
+    )
     with pytest.raises(BeadColorNotConfigured):
         await service.update_product_kit_color(
             kit_color.id,
@@ -263,6 +312,34 @@ async def test_unconfigured_color_cannot_activate_or_enable() -> None:
             operator_id=7,
             ip_address="127.0.0.1",
         )
+
+
+async def test_active_color_cannot_clear_required_hex() -> None:
+    await _create_color_selectable_product()
+    service = _service()
+    bead_color = await BeadColor.get(slot_no=1)
+    bead_color = await service.update_bead_color(
+        bead_color.id,
+        updates={
+            "color_code": "CLEAR-HEX",
+            "name": "不可清空色值",
+            "swatch_hex": "#123456",
+            "is_active": True,
+        },
+        operator_id=7,
+        ip_address="127.0.0.1",
+    )
+
+    with pytest.raises(BeadColorNotConfigured):
+        await service.update_bead_color(
+            bead_color.id,
+            updates={"swatch_hex": None},
+            operator_id=7,
+            ip_address="127.0.0.1",
+        )
+
+    await bead_color.refresh_from_db()
+    assert bead_color.swatch_hex == "#123456"
 
 
 async def test_bead_color_update_uses_stable_product_first_lock_order(
@@ -344,7 +421,11 @@ async def test_bead_color_update_recalculates_from_locked_row(
         await (
             BeadColor.filter(id=bead_color_id)
             .using_db(kwargs["using_db"])
-            .update(color_code="LOCKED-001", name="锁后元数据")
+            .update(
+                color_code="LOCKED-001",
+                name="锁后元数据",
+                swatch_hex="#112233",
+            )
         )
         return await original_lock(bead_color_id, **kwargs)
 
@@ -367,6 +448,7 @@ async def test_bead_color_update_recalculates_from_locked_row(
 
     assert updated.color_code == "LOCKED-001"
     assert updated.name == "锁后元数据"
+    assert updated.swatch_hex == "#112233"
     assert updated.is_active is True
 
 
@@ -379,6 +461,7 @@ async def test_bead_color_audit_is_valid_bounded_json_for_max_unicode() -> None:
         updates={
             "color_code": "旧" * 50,
             "name": "旧名" * 50,
+            "swatch_hex": "#123456",
             "is_active": True,
         },
         operator_id=7,
@@ -432,6 +515,7 @@ async def test_product_color_update_rechecks_online_state_after_product_lock(
         updates={
             "color_code": "RACE-001",
             "name": "并发复验色",
+            "swatch_hex": "#AA1122",
             "is_active": True,
         },
         operator_id=7,
@@ -491,6 +575,7 @@ async def test_bead_color_update_rechecks_locked_referencing_product_state(
         updates={
             "color_code": "GLOBAL-001",
             "name": "全局并发色",
+            "swatch_hex": "#BB2233",
             "is_active": True,
         },
         operator_id=7,
@@ -561,6 +646,7 @@ async def test_enabled_zero_stock_color_can_go_online_and_maps_without_leak() ->
         updates={
             "color_code": "C001",
             "name": "示例红",
+            "swatch_hex": "#FF4455",
             "is_active": True,
         },
         operator_id=7,
@@ -610,6 +696,7 @@ async def test_enabled_zero_stock_color_can_go_online_and_maps_without_leak() ->
             "slot_no": 1,
             "color_code": "C001",
             "name": "示例红",
+            "swatch_hex": "#FF4455",
             "swatch_image_url": None,
             "available": False,
         }
@@ -638,6 +725,39 @@ async def test_color_selectable_online_requires_an_enabled_color() -> None:
 
     assert exc_info.value.data == {
         "issues": ["at least one product kit color must be enabled"]
+    }
+
+
+async def test_color_selectable_online_rejects_enabled_color_without_hex() -> None:
+    product = await _create_color_selectable_product()
+    repository = ProductRepository()
+    bead_color = await BeadColor.get(slot_no=1)
+    await BeadColor.filter(id=bead_color.id).update(
+        color_code="NO-HEX",
+        name="缺少 HEX",
+        is_active=True,
+    )
+    await ProductKitColor.filter(
+        product_id=product.id,
+        bead_color_id=bead_color.id,
+    ).update(is_enabled=True)
+    await repository.create_image(
+        product=product,
+        image_url="https://example.com/selectable-cover.jpg",
+        is_cover=True,
+    )
+
+    with pytest.raises(ProductNotReadyForOnline) as exc_info:
+        await _service().online_product(
+            product.id,
+            operator_id=7,
+            ip_address="127.0.0.1",
+        )
+
+    assert exc_info.value.data == {
+        "issues": [
+            "enabled product kit colors must be active and configured"
+        ]
     }
 
 
@@ -672,14 +792,21 @@ async def test_color_admin_http_routes_form_a_minimal_configuration_flow(
     first = palette.json()["data"]["items"][0]
     assert first["slot_no"] == 1
     assert first["is_configured"] is False
+    assert first["swatch_hex"] is None
     assert first["swatch_image_url"] is None
 
     configured = await client.patch(
         f"/api/v1/admin/bead-colors/{first['id']}",
-        json={"color_code": "HTTP-001", "name": "HTTP 红", "is_active": True},
+        json={
+            "color_code": "HTTP-001",
+            "name": "HTTP 红",
+            "swatch_hex": " #12abef ",
+            "is_active": True,
+        },
     )
     assert configured.status_code == 200
     assert configured.json()["data"]["is_configured"] is True
+    assert configured.json()["data"]["swatch_hex"] == "#12ABEF"
 
     product_id = created_data["id"]
     detail = await client.get(f"/api/v1/admin/products/kit/{product_id}")

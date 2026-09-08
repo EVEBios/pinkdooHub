@@ -88,6 +88,7 @@ const colorSelectableKitDetail: KitProductDetail = {
     slot_no: 1,
     color_code: 'A01',
     name: '正红',
+    swatch_hex: '#E60012',
     swatch_image_url: '/uploads/bead-colors/a01.webp',
     available: true,
   }],
@@ -212,6 +213,31 @@ describe('ProductApi', () => {
     })
   })
 
+  it.each(['null', 'missing'] as const)(
+    '过渡期允许公开颜色 HEX 为 %s，以便客户端回退兼容色样图片',
+    async (shape) => {
+      const legacyColor = {
+        ...colorSelectableKitDetail.colors[0],
+        swatch_hex: null,
+      } as Record<string, unknown>
+      if (shape === 'missing') delete legacyColor.swatch_hex
+      const response = {
+        ...colorSelectableKitDetail,
+        colors: [legacyColor],
+      }
+      const expected = {
+        ...colorSelectableKitDetail,
+        colors: [{ ...colorSelectableKitDetail.colors[0], swatch_hex: null }],
+      }
+      const api = new ProductApi(new ApiClient({
+        baseUrl: 'https://api.example.com',
+        transport: new FakeTransport(response),
+      }))
+
+      await expect(api.getKitProduct({ productId: 3 })).resolves.toEqual(expected)
+    },
+  )
+
   it.each<[unknown, 'experience' | 'kit']>([
     [{ ...experienceDetail, product_type: { value: 'kit', label: '拼豆套装' } }, 'experience'],
     [{ ...experienceDetail, options: [{ ...experienceDetail.options[0], images: [] }] }, 'experience'],
@@ -230,6 +256,10 @@ describe('ProductApi', () => {
     [{
       ...colorSelectableKitDetail,
       colors: [{ ...colorSelectableKitDetail.colors[0], slot_no: 222 }],
+    }, 'kit'],
+    [{
+      ...colorSelectableKitDetail,
+      colors: [{ ...colorSelectableKitDetail.colors[0], swatch_hex: '#e60012' }],
     }, 'kit'],
   ])('拒绝不符合 Product 详情契约的数据：%p', async (data, type) => {
     const api = new ProductApi(new ApiClient({

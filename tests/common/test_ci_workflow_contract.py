@@ -84,6 +84,7 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     assert "INVENTORY_MYSQL_TEST_DB: pinkdoohub_inventory_4311_ci" in workflow
     assert "python scripts/ci/check_mysql_gate.py preflight" in workflow
     assert "aerich --app models upgrade" in workflow
+    assert "aerich --app models downgrade -v 8 --yes" in workflow
     assert "aerich --app models downgrade -v 7 --yes" in workflow
     assert "check_mysql_gate.py seed-m7-legacy" in workflow
     assert "aerich --app models downgrade -v 6 --yes" in workflow
@@ -103,6 +104,7 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     initial_upgrade = workflow.index(
         "aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log"
     )
+    m8_downgrade = workflow.index("aerich --app models downgrade -v 8 --yes")
     m7_downgrade = workflow.index("aerich --app models downgrade -v 7 --yes")
     m7_seed = workflow.index("check_mysql_gate.py seed-m7-legacy")
     m6_downgrade = workflow.index("aerich --app models downgrade -v 6 --yes")
@@ -114,6 +116,7 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     snapshot = workflow.index("python scripts/ci/check_mysql_gate.py snapshot")
     assert (
         initial_upgrade
+        < m8_downgrade
         < m7_downgrade
         < m7_seed
         < m6_downgrade

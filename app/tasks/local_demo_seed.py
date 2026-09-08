@@ -30,6 +30,7 @@ from typing import Final
 from tortoise import Tortoise
 from tortoise.transactions import in_transaction
 
+from app.common.bead_color import is_bead_color_configured
 from app.common.constants.reservation import (
     DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY,
     RESERVATION_AUDIT_ACTION_CANCEL,
@@ -123,6 +124,7 @@ SEED_PREFIX: Final = f"[LOCAL-DEMO:{SEED_VERSION}]"
 COLOR_PRODUCT_NAME: Final = f"{SEED_PREFIX} 自选颜色 Kit"
 OFFLINE_PRODUCT_NAME: Final = f"{SEED_PREFIX} 已下架固定 Kit"
 COLOR_COUNT: Final = 3
+DEMO_SWATCH_HEXES: Final = ("#C96F9A", "#73A8D6", "#E6BE63")
 COLOR_INITIAL_STOCK: Final = 50
 FIXED_SUPPLY_CHANGE: Final = 50
 FIXED_SUPPLY_KEY: Final = "local-demo-v1-fixed-supply"
@@ -593,15 +595,24 @@ async def _configured_colors_for_demo(
     *,
     operator_id: int,
 ) -> list[BeadColor]:
-    configured = list(
+    configured_candidates = list(
         await BeadColor.filter(
             is_active=True,
             color_code__not_isnull=True,
             name__not_isnull=True,
+            swatch_hex__not_isnull=True,
         )
         .order_by("slot_no")
-        .limit(COLOR_COUNT)
     )
+    configured = [
+        color
+        for color in configured_candidates
+        if is_bead_color_configured(
+            color_code=color.color_code,
+            name=color.name,
+            swatch_hex=color.swatch_hex,
+        )
+    ][:COLOR_COUNT]
     if len(configured) >= COLOR_COUNT:
         return configured
 
@@ -621,12 +632,16 @@ async def _configured_colors_for_demo(
             "At least three configured active or completely blank color slots "
             "are required"
         )
-    for color in blank:
+    for color_index, color in enumerate(blank, start=len(configured)):
         updated = await services.product.update_bead_color(
             color.id,
             updates={
                 "color_code": f"LOCAL{color.slot_no:03d}",
                 "name": f"本地演示色 {color.slot_no:03d}",
+                "swatch_hex": (
+                    color.swatch_hex
+                    or DEMO_SWATCH_HEXES[color_index % len(DEMO_SWATCH_HEXES)]
+                ),
                 "sort": color.slot_no,
                 "is_active": True,
             },

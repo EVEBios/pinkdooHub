@@ -79,12 +79,13 @@ APPROVED_SOURCE_M2_CHAIN = (
     "1_20260813130455_add_order_tables.py",
     "2_20260814104655_add_inventory_transactions.py",
 )
-APPROVED_TARGET_M7_CHAIN = APPROVED_SOURCE_M2_CHAIN + (
+APPROVED_TARGET_M8_CHAIN = APPROVED_SOURCE_M2_CHAIN + (
     "3_20260902125032_phase95_external_identity.py",
     "4_20260905162243_add_wallet_payment_refund.py",
     "5_20260906094653_add_reservations.py",
     "6_20260906123000_add_color_selectable_kits.py",
     "7_20260907190000_add_reservation_settings.py",
+    "8_20260908140000_add_bead_color_swatch_hex.py",
 )
 HOST_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
@@ -687,7 +688,7 @@ def _require_upgrade_record(
         or payload.get("source_aerich_versions")
         != list(APPROVED_SOURCE_M2_CHAIN)
         or payload.get("target_aerich_versions")
-        != list(APPROVED_TARGET_M7_CHAIN)
+        != list(APPROVED_TARGET_M8_CHAIN)
     ):
         raise GateAError(
             "Gate A existing-database upgrade record does not match the candidate"

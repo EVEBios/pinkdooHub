@@ -12,6 +12,10 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
+from app.common.bead_color import (
+    is_bead_color_configured,
+    normalize_bead_color_swatch_hex,
+)
 from app.common.constants.product import (
     BEAD_COLOR_AUDIT_DESCRIPTION_MAX_LENGTH,
     BEAD_COLOR_AUDIT_HASH_LENGTH,
@@ -65,6 +69,7 @@ _OPTION_DIMENSION_UPDATE_FIELDS = frozenset(
 _BEAD_COLOR_UPDATE_FIELD_ORDER = (
     "color_code",
     "name",
+    "swatch_hex",
     "sort",
     "is_active",
 )
@@ -281,6 +286,13 @@ class ProductService:
             or not update_fields.keys() <= _BEAD_COLOR_UPDATE_FIELDS
         ):
             raise ValueError("updates must contain only bead color fields")
+        if (
+            "swatch_hex" in update_fields
+            and update_fields["swatch_hex"] is not None
+        ):
+            update_fields["swatch_hex"] = normalize_bead_color_swatch_hex(
+                update_fields["swatch_hex"]
+            )
 
         attempted_color_code: str | None = None
         try:
@@ -335,14 +347,22 @@ class ProductService:
                     if "name" in update_fields
                     else bead_color.name,
                 )
+                final_swatch_hex = cast(
+                    str | None,
+                    update_fields["swatch_hex"]
+                    if "swatch_hex" in update_fields
+                    else bead_color.swatch_hex,
+                )
                 final_is_active = cast(
                     bool,
                     update_fields["is_active"]
                     if "is_active" in update_fields
                     else bead_color.is_active,
                 )
-                if final_is_active and (
-                    final_color_code is None or final_name is None
+                if final_is_active and not is_bead_color_configured(
+                    color_code=final_color_code,
+                    name=final_name,
+                    swatch_hex=final_swatch_hex,
                 ):
                     raise BeadColorNotConfigured()
 
@@ -358,6 +378,7 @@ class ProductService:
                 after = {
                     "color_code": final_color_code,
                     "name": final_name,
+                    "swatch_hex": final_swatch_hex,
                     "sort": (
                         update_fields["sort"]
                         if "sort" in update_fields
@@ -455,8 +476,11 @@ class ProductService:
                 raise OnlineProductCannotBeModified()
             if is_enabled and (
                 not locked_kit_color.bead_color.is_active
-                or locked_kit_color.bead_color.color_code is None
-                or locked_kit_color.bead_color.name is None
+                or not is_bead_color_configured(
+                    color_code=locked_kit_color.bead_color.color_code,
+                    name=locked_kit_color.bead_color.name,
+                    swatch_hex=locked_kit_color.bead_color.swatch_hex,
+                )
             ):
                 raise BeadColorNotConfigured()
 

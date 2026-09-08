@@ -51,6 +51,7 @@ async def test_gatea_mard_publish_updates_mysql_and_replays_without_writes(
         rows = await connection.execute_query_dict(
             "SELECT COUNT(*) AS total, SUM(is_active <> 0) AS active, "
             "COUNT(DISTINCT color_code) AS codes, "
+            "COUNT(DISTINCT swatch_hex) AS hex_values, "
             "COUNT(DISTINCT swatch_image_url) AS urls "
             "FROM bead_colors"
         )
@@ -58,6 +59,7 @@ async def test_gatea_mard_publish_updates_mysql_and_replays_without_writes(
             "total": 221,
             "active": 221,
             "codes": 221,
+            "hex_values": 221,
             "urls": 221,
         }
         assert len(list(image_root.glob("*.png"))) == 221

@@ -11,6 +11,7 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError, OperationalError
 from tortoise.transactions import in_transaction
 
+from app.common.bead_color import is_bead_color_configured
 from app.common.constants.order import (
     ORDER_AUDIT_ACTION_CANCEL,
     ORDER_AUDIT_ACTION_COMPLETE,
@@ -1549,8 +1550,11 @@ class OrderService:
                         or not kit_color.is_enabled
                         or bead_color is None
                         or not bead_color.is_active
-                        or bead_color.color_code is None
-                        or bead_color.name is None
+                        or not is_bead_color_configured(
+                            color_code=bead_color.color_code,
+                            name=bead_color.name,
+                            swatch_hex=bead_color.swatch_hex,
+                        )
                         or kit.sale_unit_grams != ORDER_COLOR_SALE_UNIT_GRAMS
                     ):
                         raise OrderKitColorUnavailable(

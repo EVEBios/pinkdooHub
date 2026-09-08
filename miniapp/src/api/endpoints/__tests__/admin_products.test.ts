@@ -97,6 +97,7 @@ const configuredKitColor: AdminProductKitColor = {
   slot_no: 1,
   color_code: 'A01',
   name: '正红',
+  swatch_hex: '#E60012',
   swatch_image_url: '/uploads/bead-colors/a01.webp',
   sort: 1,
   is_active: true,
@@ -110,6 +111,7 @@ const placeholderColor = {
   slot_no: 2,
   color_code: null,
   name: null,
+  swatch_hex: null,
   swatch_image_url: null,
   sort: 2,
   is_active: false,
@@ -425,6 +427,7 @@ describe('AdminProductApi', () => {
       ...placeholderColor,
       color_code: 'A02',
       name: '橙红',
+      swatch_hex: '#F15A24',
       sort: 12,
       is_active: true,
       is_configured: true,
@@ -433,6 +436,7 @@ describe('AdminProductApi', () => {
     await expect(api.updateBeadColor(2, {
       color_code: 'A02',
       name: '橙红',
+      swatch_hex: '#F15A24',
       sort: 12,
       is_active: true,
       unexpected: 'ignored',
@@ -441,7 +445,13 @@ describe('AdminProductApi', () => {
       operation: 'products.admin.bead_color.update',
       method: 'PATCH',
       url: 'https://api.example.com/api/v1/admin/bead-colors/2',
-      body: { color_code: 'A02', name: '橙红', sort: 12, is_active: true },
+      body: {
+        color_code: 'A02',
+        name: '橙红',
+        swatch_hex: '#F15A24',
+        sort: 12,
+        is_active: true,
+      },
     })
     await expect(api.updateBeadColor(2, {})).rejects.toThrow('至少需要一个改动字段')
     expect(transport.requests).toHaveLength(1)
@@ -546,6 +556,8 @@ describe('AdminProductApi', () => {
     { ...beadColorPage, items: [{ ...placeholderColor, is_active: true }] },
     { ...beadColorPage, items: [{ ...placeholderColor, is_configured: true }] },
     { ...beadColorPage, items: [{ ...placeholderColor, slot_no: 222 }] },
+    { ...beadColorPage, items: [{ ...placeholderColor, swatch_hex: '#f15a24' }] },
+    { ...beadColorPage, items: [{ ...configuredKitColor, swatch_hex: null }] },
   ])('拒绝状态自相矛盾或越界的全局色板响应：%p', async (data) => {
     await expect(createApi(data).api.listBeadColors()).rejects.toBeInstanceOf(ContractError)
   })
@@ -554,6 +566,8 @@ describe('AdminProductApi', () => {
     { ...configuredKitColor, is_enabled: true, is_active: false },
     { ...configuredKitColor, stock_units: 1_000_000 },
     { ...configuredKitColor, bead_color_id: 0 },
+    { ...configuredKitColor, swatch_hex: 'F15A24' },
+    { ...configuredKitColor, swatch_hex: null },
   ])('拒绝状态自相矛盾或越界的商品颜色响应：%p', async (data) => {
     await expect(createApi(data).api.updateProductKitColor(301, { is_enabled: true }))
       .rejects.toBeInstanceOf(ContractError)

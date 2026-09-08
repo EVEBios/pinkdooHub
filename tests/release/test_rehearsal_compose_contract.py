@@ -15,6 +15,7 @@ from scripts.release.phase93_rehearsal import IMAGE_TAGS
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = ROOT / "deploy" / "rehearsal" / "compose.yml"
 DOCKERFILE_PATH = ROOT / "deploy" / "runtime" / "Dockerfile"
+NGINX_CONFIG_PATH = ROOT / "deploy" / "rehearsal" / "nginx.conf.template"
 
 
 def _compose() -> dict:
@@ -85,6 +86,19 @@ def test_rehearsal_uses_frozen_images_and_internal_network() -> None:
         "nginx:1.27.5-alpine",
     )
     assert compose["networks"]["rehearsal"]["internal"] is True
+
+
+def test_rehearsal_nginx_compresses_text_but_not_image_formats() -> None:
+    text = NGINX_CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert "gzip on;" in text
+    assert "gzip_vary on;" in text
+    assert "gzip_min_length 1024;" in text
+    assert "gzip_comp_level 6;" in text
+    assert "application/json" in text
+    assert "image/png" not in text
+    assert "image/jpeg" not in text
+    assert "image/webp" not in text
 
 
 def test_only_https_joins_the_host_publishable_edge_network() -> None:

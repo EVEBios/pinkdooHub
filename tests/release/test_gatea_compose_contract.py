@@ -292,6 +292,23 @@ def test_nginx_overwrites_untrusted_forwarding_headers_and_omits_query_log() -> 
         assert "$args" not in text
 
 
+def test_nginx_compresses_text_responses_without_targeting_image_formats() -> None:
+    for path in (
+        GATEA_ROOT / "nginx" / "loopback.conf",
+        GATEA_ROOT / "nginx" / "tls.conf.template",
+    ):
+        text = path.read_text(encoding="utf-8")
+        assert "gzip on;" in text
+        assert "gzip_vary on;" in text
+        assert "gzip_proxied any;" in text
+        assert "gzip_min_length 1024;" in text
+        assert "gzip_comp_level 6;" in text
+        assert "application/json" in text
+        assert "image/png" not in text
+        assert "image/jpeg" not in text
+        assert "image/webp" not in text
+
+
 def test_example_config_contains_no_runtime_secret_values() -> None:
     text = (GATEA_ROOT / "config.env.example").read_text(encoding="utf-8")
 

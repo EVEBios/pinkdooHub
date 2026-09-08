@@ -1,5 +1,6 @@
 """Product 聚合状态变迁校验器。"""
 
+from app.common.bead_color import is_bead_color_configured
 from app.common.constants.product import (
     BEAD_COLOR_SLOT_COUNT,
     BEAD_COLOR_SLOT_MIN,
@@ -120,8 +121,11 @@ class ProductValidator:
             issues.append("at least one product kit color must be enabled")
         elif any(
             not color.bead_color.is_active
-            or color.bead_color.color_code is None
-            or color.bead_color.name is None
+            or not is_bead_color_configured(
+                color_code=color.bead_color.color_code,
+                name=color.bead_color.name,
+                swatch_hex=color.bead_color.swatch_hex,
+            )
             for color in enabled_colors
         ):
             issues.append(

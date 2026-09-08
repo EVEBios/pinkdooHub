@@ -1,4 +1,4 @@
-"""向 Gate A M6 MySQL 和持久图片卷发布冻结的 MARD 221 色卡。
+"""向 Gate A M8 MySQL 和持久图片卷发布冻结的 MARD 221 色卡。
 
 默认只预览；apply 必须显式确认版本化 manifest 的 SHA-256。流程拒绝销售中已启用
 颜色、部分冲突元数据和内容冲突图片。新图片以 ``0644`` 原子发布，数据库在单事务
@@ -86,6 +86,7 @@ def _desired(color: ManifestColor, base_url: str) -> tuple[object, ...]:
         color.slot_no,
         color.color_code,
         color.name,
+        color.hex,
         f"{base_url}/{color.image_filename}",
         color.sort,
         True,
@@ -97,6 +98,7 @@ def _row(row: BeadColor) -> tuple[object, ...]:
         row.slot_no,
         row.color_code,
         row.name,
+        row.swatch_hex,
         row.swatch_image_url,
         row.sort,
         row.is_active,
@@ -121,7 +123,7 @@ def _validate_rows(
             continue
         if row.is_active:
             raise GateAMardPublishError("an active bead color differs from the manifest")
-        for existing, target in zip(current[1:5], desired[1:5]):
+        for existing, target in zip(current[1:6], desired[1:6]):
             if existing is not None and existing != target:
                 raise GateAMardPublishError(
                     "bead color metadata conflicts with the manifest"
@@ -160,7 +162,7 @@ def _inspect_images(colors: tuple[ManifestColor, ...]) -> tuple[int, int, int, s
 
 
 async def plan_publish(repository: ProductRepository) -> PublishPlan:
-    """只读验证 M6 目录、manifest、HTTPS URL 和持久图片卷。"""
+    """只读验证 M8 目录、manifest、HTTPS URL 和持久图片卷。"""
 
     if (
         settings.app_env != "production"
@@ -268,6 +270,7 @@ async def apply_publish(repository: ProductRepository, plan: PublishPlan) -> int
                         _,
                         row.color_code,
                         row.name,
+                        row.swatch_hex,
                         row.swatch_image_url,
                         row.sort,
                         row.is_active,

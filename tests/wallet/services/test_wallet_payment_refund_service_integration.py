@@ -851,6 +851,7 @@ async def test_color_inventory_restores_only_for_paid_refund(
         slot_no=1,
         color_code="R001",
         name="退款红",
+        swatch_hex="#FF3344",
         sort=1,
         is_active=True,
     )

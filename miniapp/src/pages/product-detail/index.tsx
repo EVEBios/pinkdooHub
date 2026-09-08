@@ -9,6 +9,7 @@ import type {
   KitProductDetail,
 } from '@/api/endpoints/products'
 import { buildLoginUrl, useAuth } from '@/auth'
+import { BeadColorSwatch } from '@/components/bead_color_swatch'
 import { buildReservationCreateUrl } from '@/features/reservation'
 import {
   parseProductDetailRoute,
@@ -362,20 +363,16 @@ function ColorSwatch({ color, compact = false }: {
   readonly color: KitColorOption
   readonly compact?: boolean
 }) {
-  const [failed, setFailed] = useState(false)
   const className = `color-swatch${compact ? ' color-swatch--compact' : ''}`
-  if (color.swatch_image_url && !failed) {
-    return (
-      <Image
-        className={className}
-        lazyLoad
-        mode='aspectFill'
-        src={resolveAssetUrl(color.swatch_image_url)}
-        onError={() => setFailed(true)}
-      />
-    )
-  }
-  return <View className={`${className} color-swatch--empty`}><Text>#{color.slot_no}</Text></View>
+  return (
+    <BeadColorSwatch
+      className={className}
+      emptyClassName='color-swatch--empty'
+      emptyLabel={`#${color.slot_no}`}
+      swatchHex={color.swatch_hex}
+      swatchImageUrl={color.swatch_image_url}
+    />
+  )
 }
 
 function CartActions({

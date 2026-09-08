@@ -1,4 +1,4 @@
-"""Gate A 非空 M2→M7 升级编排的授权、顺序、证据与失败语义。"""
+"""Gate A 非空 M2→M8 升级编排的授权、顺序、证据与失败语义。"""
 
 from __future__ import annotations
 
@@ -98,6 +98,7 @@ def _final_snapshot() -> dict[str, object]:
         "bead_color_min_slot": 1,
         "bead_color_max_slot": 221,
         "configured_bead_colors": 221,
+        "distinct_bead_color_hex": 221,
         "active_bead_colors": 221,
         "product_kit_colors": 0,
         "reservation_settings": 1,
@@ -184,7 +185,7 @@ def test_plan_is_read_only_and_rejects_apply_confirmations(
         "restore_verified": True,
         "source_candidate_sha": SOURCE_SHA,
         "source_version": 2,
-        "target_version": 7,
+        "target_version": 8,
     }
     assert not list(tmp_path.glob("*.json"))
 
@@ -352,10 +353,11 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
         "wallet-prepare",
         "migrate-m5",
         "migrate-m6",
+        "migrate-m7",
+        "migrate-m8",
         "mard-preview",
         "mard-apply",
         "mard-replay-preview",
-        "migrate-m7",
     ]
     assert result["application_stopped"] is True
     success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
@@ -377,8 +379,9 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
         "wallet-prepare",
         "migrate-m5",
         "migrate-m6",
-        "mard-publish",
         "migrate-m7",
+        "migrate-m8",
+        "mard-publish",
     ]
     assert not any(command[:2] == ("up", "--detach") for command in compose_commands)
 
@@ -582,6 +585,7 @@ def test_final_snapshot_rejects_core_drift_wallet_or_mard_gap() -> None:
         ("orders", 1, "core invariant"),
         ("wallet_accounts", 1, "Wallet owner"),
         ("active_bead_colors", 220, "MARD invariant"),
+        ("distinct_bead_color_hex", 220, "MARD invariant"),
         ("reservation_settings_unique", 0, "ReservationSettings"),
     ):
         changed = final | {key: value}
@@ -752,7 +756,7 @@ def test_deployment_record_accepts_upgrade_and_rejects_tampering(
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
 
-    assert tuple(APPROVED_MIGRATIONS) == gatea.APPROVED_TARGET_M7_CHAIN
+    assert tuple(APPROVED_MIGRATIONS) == gatea.APPROVED_TARGET_M8_CHAIN
     loaded = gatea._require_deployment_record(
         record_dir=tmp_path,
         candidate_sha=TARGET_SHA,

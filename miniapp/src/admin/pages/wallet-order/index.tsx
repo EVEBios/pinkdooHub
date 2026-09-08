@@ -11,6 +11,7 @@ import type {
 } from '@/api/endpoints/products'
 import type { AdminUserWallet, AssistedWalletOrderResult } from '@/api/endpoints/wallet'
 import { ADMIN_USER_LIST_PATH, buildLoginUrl, isAdminRole, useAuth } from '@/auth'
+import { BeadColorSwatch } from '@/components/bead_color_swatch'
 import { buildAdminOrderDetailUrl, CART_COLOR_ITEM_LIMIT } from '@/features/order'
 import { useProductDetail } from '@/features/product/use_product_detail'
 import { type ProductTypeFilter, useProductList } from '@/features/product/use_product_list'
@@ -448,6 +449,12 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
                     aria-label={`${selected ? '取消选择' : '选择'} ${formatColorLabel(item.color_code, item.name)}`}
                     onClick={() => toggleColor(item)}
                   >
+                    <BeadColorSwatch
+                      className='wallet-order-color-option__swatch'
+                      emptyClassName='wallet-order-color-option__swatch--empty'
+                      swatchHex={item.swatch_hex}
+                      swatchImageUrl={item.swatch_image_url}
+                    />
                     <Text className='wallet-order-color-option__code'>{item.color_code}</Text>
                     {!item.available && <Text className='wallet-order-color-option__status'>无货</Text>}
                     {selected && <Text className='wallet-order-color-option__status'>已选</Text>}

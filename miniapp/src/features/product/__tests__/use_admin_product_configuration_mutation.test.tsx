@@ -109,6 +109,7 @@ function createSource(overrides: Partial<AdminProductConfigurationSource>): Admi
       slot_no: 1,
       color_code: 'A01',
       name: '白色',
+      swatch_hex: '#FFFFFF',
       swatch_image_url: null,
       sort: 1,
       is_active: true,

@@ -239,6 +239,7 @@ function kitColor(id: number, slotNo: number, colorCode: string, name: string, s
     slot_no: slotNo,
     color_code: colorCode,
     name,
+    swatch_hex: '#E60012',
     swatch_image_url: null,
     sort: slotNo,
     is_active: true,

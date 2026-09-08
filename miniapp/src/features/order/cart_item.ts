@@ -79,8 +79,9 @@ export function buildColorKitCartItem(
     productName: detail.name,
     configurationLabel: formatColorLabel(currentColor.color_code, currentColor.name),
     saleUnitGrams: COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+    swatchHex: currentColor.swatch_hex,
     unitPrice: detail.price,
-    imageUrl: currentColor.swatch_image_url ?? detail.images[0]?.image_url ?? null,
+    imageUrl: currentColor.swatch_image_url,
     quantity,
   }
 }

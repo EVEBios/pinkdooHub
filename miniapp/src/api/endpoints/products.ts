@@ -19,7 +19,11 @@ export type ProductListPage = Omit<GeneratedProductListPage, 'items'> & {
   readonly items: readonly ProductListItem[]
 }
 export type ExperienceProductDetail = components['schemas']['ExperienceProductDetailOut']
-export type KitColorOption = Omit<GeneratedKitColorOption, 'swatch_image_url'> & {
+export type KitColorOption = Omit<
+  GeneratedKitColorOption,
+  'swatch_hex' | 'swatch_image_url'
+> & {
+  readonly swatch_hex: string | null
   readonly swatch_image_url: string | null
 }
 export type KitProductDetail = Omit<
@@ -261,12 +265,18 @@ function parseKitKind(value: unknown): KitProductDetail['kit_kind'] | undefined 
 }
 
 function parseKitColorOption(value: unknown): KitColorOption | undefined {
-  if (!isRecord(value) ||
+  if (!isRecord(value)) return undefined
+  // Client-first rollout compatibility: pre-M8 public responses omit this
+  // field. Normalize omission to null so the view can use the PNG fallback;
+  // the generated current OpenAPI contract remains required non-null.
+  const swatchHex = value.swatch_hex === undefined ? null : value.swatch_hex
+  if (
     !isPositiveInteger(value.id) ||
     !isPositiveInteger(value.bead_color_id) ||
     !isPositiveInteger(value.slot_no) || value.slot_no > 221 ||
     !isNonEmptyString(value.color_code) || value.color_code.length > 50 ||
     !isNonEmptyString(value.name) || value.name.length > 100 ||
+    !(swatchHex === null || isSwatchHex(swatchHex)) ||
     !(value.swatch_image_url === null || isSupportedAssetUrl(value.swatch_image_url)) ||
     typeof value.available !== 'boolean') {
     return undefined
@@ -277,6 +287,7 @@ function parseKitColorOption(value: unknown): KitColorOption | undefined {
     slot_no: value.slot_no,
     color_code: value.color_code,
     name: value.name,
+    swatch_hex: swatchHex,
     swatch_image_url: value.swatch_image_url,
     available: value.available,
   }
@@ -389,6 +400,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function isSwatchHex(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9A-F]{6}$/.test(value)
 }
 
 function isPositiveInteger(value: unknown): value is number {

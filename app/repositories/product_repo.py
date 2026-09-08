@@ -487,6 +487,7 @@ class ProductRepository:
             fields=(
                 "color_code",
                 "name",
+                "swatch_hex",
                 "swatch_image_url",
                 "sort",
                 "is_active",

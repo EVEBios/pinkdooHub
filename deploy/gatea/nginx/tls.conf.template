@@ -1,5 +1,13 @@
 server_tokens off;
 
+gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_min_length 1024;
+gzip_comp_level 6;
+gzip_types application/json application/problem+json application/javascript
+           application/xml image/svg+xml text/css text/plain;
+
 log_format gatea '$remote_addr [$time_local] '
                  '"$request_method $uri $server_protocol" $status $body_bytes_sent '
                  'request_time=$request_time request_id=$request_id '

@@ -1810,6 +1810,8 @@ export interface components {
             readonly sort: number;
             /** Stock Units */
             readonly stock_units: number;
+            /** Swatch Hex */
+            readonly swatch_hex: string | null;
             /** Swatch Image Url */
             readonly swatch_image_url: string | null;
         };
@@ -2050,12 +2052,14 @@ export interface components {
             readonly slot_no: number;
             /** Sort */
             readonly sort: number;
+            /** Swatch Hex */
+            readonly swatch_hex: string | null;
             /** Swatch Image Url */
             readonly swatch_image_url: string | null;
         };
         /**
          * BeadColorUpdate
-         * @description 修改全局颜色槽元数据；null 可清空名称或业务编码。
+         * @description 修改全局颜色槽元数据；null 可清空展示与身份字段。
          */
         readonly BeadColorUpdate: {
             /** Color Code */
@@ -2066,6 +2070,8 @@ export interface components {
             readonly name?: string | null;
             /** Sort */
             readonly sort?: number | null;
+            /** Swatch Hex */
+            readonly swatch_hex?: string | null;
         };
         /**
          * DayType
@@ -2418,6 +2424,8 @@ export interface components {
             readonly name: string;
             /** Slot No */
             readonly slot_no: number;
+            /** Swatch Hex */
+            readonly swatch_hex: string;
             /** Swatch Image Url */
             readonly swatch_image_url: string | null;
         };

@@ -461,6 +461,20 @@
             "title": "Stock Units",
             "type": "integer"
           },
+          "swatch_hex": {
+            "anyOf": [
+              {
+                "maxLength": 7,
+                "minLength": 7,
+                "pattern": "^#[0-9A-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swatch Hex"
+          },
           "swatch_image_url": {
             "anyOf": [
               {
@@ -481,6 +495,7 @@
           "slot_no",
           "color_code",
           "name",
+          "swatch_hex",
           "swatch_image_url",
           "sort",
           "is_active",
@@ -1134,6 +1149,20 @@
             "title": "Sort",
             "type": "integer"
           },
+          "swatch_hex": {
+            "anyOf": [
+              {
+                "maxLength": 7,
+                "minLength": 7,
+                "pattern": "^#[0-9A-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swatch Hex"
+          },
           "swatch_image_url": {
             "anyOf": [
               {
@@ -1153,6 +1182,7 @@
           "slot_no",
           "color_code",
           "name",
+          "swatch_hex",
           "swatch_image_url",
           "sort",
           "is_active",
@@ -1163,7 +1193,7 @@
       },
       "BeadColorUpdate": {
         "additionalProperties": false,
-        "description": "修改全局颜色槽元数据；null 可清空名称或业务编码。",
+        "description": "修改全局颜色槽元数据；null 可清空展示与身份字段。",
         "properties": {
           "color_code": {
             "anyOf": [
@@ -1214,6 +1244,23 @@
               }
             ],
             "title": "Sort"
+          },
+          "swatch_hex": {
+            "anyOf": [
+              {
+                "examples": [
+                  "#F5B8C7"
+                ],
+                "maxLength": 7,
+                "minLength": 7,
+                "pattern": "^#[0-9A-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swatch Hex"
           }
         },
         "title": "BeadColorUpdate",
@@ -2244,6 +2291,13 @@
             "title": "Slot No",
             "type": "integer"
           },
+          "swatch_hex": {
+            "maxLength": 7,
+            "minLength": 7,
+            "pattern": "^#[0-9A-F]{6}$",
+            "title": "Swatch Hex",
+            "type": "string"
+          },
           "swatch_image_url": {
             "anyOf": [
               {
@@ -2264,6 +2318,7 @@
           "slot_no",
           "color_code",
           "name",
+          "swatch_hex",
           "swatch_image_url",
           "available"
         ],

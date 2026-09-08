@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""通过 Gate A loopback API 创建 M3--M7 综合代表性测试数据。
+"""通过 Gate A loopback API 创建 M3--M8 综合代表性测试数据。
 
-该入口只扩展已经完成 M2 代表数据、M2→M7 升级、当前候选备份和独立恢复
+该入口只扩展已经完成 M2 代表数据、M2→M8 升级、当前候选备份和独立恢复
 验证的持久 Gate A。三个合成账号的随机密码只写入独立的 root-only 文件；成功
 Record、日志和命令行均不包含账号、密码、Token 或手机号。
 """
@@ -33,7 +33,7 @@ DEFAULT_BASE_RECORD = Path(
 DEFAULT_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/representative-data")
 DEFAULT_CREDENTIALS_FILE = DEFAULT_RECORD_DIR / "gatea-m7-synthetic-credentials.json"
 RECORD_PREFIX = "gatea-m7-representative-data"
-EXPECTED_AERICH_VERSIONS = ",".join(gatea.APPROVED_TARGET_M7_CHAIN)
+EXPECTED_AERICH_VERSIONS = ",".join(gatea.APPROVED_TARGET_M8_CHAIN)
 EXPECTED_RUNTIME_FEATURE_FLAGS = "true,true,true,false,disabled,true"
 
 COLOR_PRODUCT_NAME = "[GATEA-M7] Color-selectable Kit"
@@ -101,7 +101,8 @@ SELECT JSON_OBJECT(
   'reservation_settings', (SELECT COUNT(*) FROM reservation_settings WHERE singleton_key = 1),
   'weekly_closed_weekday', (SELECT weekly_closed_weekday FROM reservation_settings WHERE singleton_key = 1),
   'bead_colors', (SELECT COUNT(*) FROM bead_colors),
-  'configured_bead_colors', (SELECT COUNT(*) FROM bead_colors WHERE color_code IS NOT NULL AND name IS NOT NULL AND swatch_image_url IS NOT NULL),
+  'configured_bead_colors', (SELECT COUNT(*) FROM bead_colors WHERE color_code IS NOT NULL AND name IS NOT NULL AND swatch_hex IS NOT NULL),
+  'distinct_bead_color_hex', (SELECT COUNT(DISTINCT swatch_hex) FROM bead_colors),
   'active_bead_colors', (SELECT COUNT(*) FROM bead_colors WHERE is_active = 1),
   'product_kit_colors', (SELECT COUNT(*) FROM product_kit_colors)
 );
@@ -124,6 +125,7 @@ EXPECTED_BASELINE_DETAILS = {
     "weekly_closed_weekday": DEFAULT_WEEKLY_CLOSED_WEEKDAY,
     "bead_colors": 221,
     "configured_bead_colors": 221,
+    "distinct_bead_color_hex": 221,
     "active_bead_colors": 221,
     "product_kit_colors": 0,
 }
@@ -947,6 +949,19 @@ def execute(
         if len(public_color.get("colors", [])) != COLOR_COUNT:
             raise M7RepresentativeDataError(
                 "Gate A M7 public color Kit has invalid enabled colors"
+            )
+        swatch_hex = public_color["colors"][0].get("swatch_hex")
+        if (
+            not isinstance(swatch_hex, str)
+            or len(swatch_hex) != 7
+            or not swatch_hex.startswith("#")
+            or any(
+                character not in "0123456789ABCDEF"
+                for character in swatch_hex[1:]
+            )
+        ):
+            raise M7RepresentativeDataError(
+                "Gate A M7 public color swatch HEX is invalid"
             )
         swatch_url = str(public_color["colors"][0]["swatch_image_url"])
         parsed_swatch = urlparse(swatch_url)

@@ -14,9 +14,12 @@ from pydantic import (
     model_validator,
 )
 
+from app.common.bead_color import normalize_bead_color_swatch_hex
 from app.common.constants.product import (
     BEAD_COLOR_CODE_MAX_LENGTH,
     BEAD_COLOR_NAME_MAX_LENGTH,
+    BEAD_COLOR_SWATCH_HEX_LENGTH,
+    BEAD_COLOR_SWATCH_HEX_PATTERN,
     MAX_BEAD_COLOR_SORT,
     MIN_DURATION_MINUTES,
     MIN_IMAGE_SORT,
@@ -141,6 +144,26 @@ BeadColorCodeInput = Annotated[
 BeadColorNameInput = Annotated[
     str,
     Field(strict=True, min_length=1, max_length=BEAD_COLOR_NAME_MAX_LENGTH),
+]
+BeadColorSwatchHexInput = Annotated[
+    str,
+    BeforeValidator(normalize_bead_color_swatch_hex),
+    Field(
+        strict=True,
+        min_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        max_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        pattern=BEAD_COLOR_SWATCH_HEX_PATTERN,
+    ),
+    WithJsonSchema(
+        {
+            "type": "string",
+            "minLength": BEAD_COLOR_SWATCH_HEX_LENGTH,
+            "maxLength": BEAD_COLOR_SWATCH_HEX_LENGTH,
+            "pattern": BEAD_COLOR_SWATCH_HEX_PATTERN,
+            "examples": ["#F5B8C7"],
+        },
+        mode="validation",
+    ),
 ]
 CoverFlagInput = Annotated[Literal[True], BeforeValidator(_parse_cover_flag)]
 ProductSearchKeyword = Annotated[
@@ -271,10 +294,11 @@ class KitPriceUpdate(_ProductRequest):
 
 
 class BeadColorUpdate(_NonEmptyPatchRequest):
-    """修改全局颜色槽元数据；null 可清空名称或业务编码。"""
+    """修改全局颜色槽元数据；null 可清空展示与身份字段。"""
 
     color_code: BeadColorCodeInput | None = None
     name: BeadColorNameInput | None = None
+    swatch_hex: BeadColorSwatchHexInput | None = None
     sort: BeadColorSortInput | None = None
     is_active: bool | None = Field(default=None, strict=True)
 

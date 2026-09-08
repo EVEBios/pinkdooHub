@@ -2,13 +2,19 @@
 
 from tortoise import fields
 from tortoise.indexes import Index
-from tortoise.validators import MaxValueValidator, MinValueValidator
+from tortoise.validators import (
+    MaxValueValidator,
+    MinValueValidator,
+    RegexValidator,
+)
 
 from app.common.constants.product import (
     BEAD_COLOR_CODE_MAX_LENGTH,
     BEAD_COLOR_NAME_MAX_LENGTH,
     BEAD_COLOR_SLOT_COUNT,
     BEAD_COLOR_SLOT_MIN,
+    BEAD_COLOR_SWATCH_HEX_LENGTH,
+    BEAD_COLOR_SWATCH_HEX_PATTERN,
     MAX_BEAD_COLOR_SORT,
     MIN_BEAD_COLOR_SORT,
     PRODUCT_IMAGE_URL_MAX_LENGTH,
@@ -32,6 +38,11 @@ class BeadColor(BaseModel):
         unique=True,
     )
     name = fields.CharField(max_length=BEAD_COLOR_NAME_MAX_LENGTH, null=True)
+    swatch_hex = fields.CharField(
+        max_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        null=True,
+        validators=[RegexValidator(BEAD_COLOR_SWATCH_HEX_PATTERN, flags=0)],
+    )
     swatch_image_url = fields.CharField(
         max_length=PRODUCT_IMAGE_URL_MAX_LENGTH,
         null=True,

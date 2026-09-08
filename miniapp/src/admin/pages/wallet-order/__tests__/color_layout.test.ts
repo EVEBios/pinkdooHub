@@ -7,7 +7,7 @@ const stylesheet = join(__dirname, '..', 'index.scss')
 describe('代客扣款自选颜色布局', () => {
   const css = compile(stylesheet).css
 
-  it('手机使用六列纯文字色号网格，宽屏扩展为十列', () => {
+  it('手机使用六列方形色样网格，宽屏扩展为十列', () => {
     expect(css).toMatch(
       /\.wallet-order-color-grid\s*\{[^}]*grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/,
     )
@@ -17,7 +17,11 @@ describe('代客扣款自选颜色布局', () => {
     expect(css).toMatch(
       /\.wallet-order-color-option::before\s*\{[^}]*padding-top: 100%/,
     )
-    expect(css).not.toMatch(/\.wallet-order-color-(?:grid|option)[^{]*\{[^}]*background-image:/)
+    expect(css).toMatch(
+      /\.wallet-order-color-option__swatch\s*\{[^}]*position: absolute;[^}]*width: 100%;[^}]*height: 100%/,
+    )
+    expect(css).not.toMatch(/\.wallet-order-color-grid\s*\{[^}]*background-image:/)
+    expect(css).not.toMatch(/\.wallet-order-color-option\s*\{[^}]*background-image:/)
   })
 
   it('已选颜色用独立列表呈现文字身份、重量与数量控件', () => {

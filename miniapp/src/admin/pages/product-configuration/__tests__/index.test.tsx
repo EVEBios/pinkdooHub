@@ -200,7 +200,7 @@ function colorSelectableKitProduct() {
 function configuredColor() {
   return {
     id: 301, bead_color_id: 1, slot_no: 1, color_code: 'A01', name: '正红',
-    swatch_image_url: null, sort: 1, is_active: true, is_configured: true,
+    swatch_hex: '#E60012', swatch_image_url: null, sort: 1, is_active: true, is_configured: true,
     is_enabled: true, stock_units: 7,
   }
 }

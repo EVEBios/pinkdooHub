@@ -50,6 +50,7 @@ async def _color_kit(
     active: bool = True,
     code: str | None = "C001",
     name: str | None = "珊瑚红",
+    swatch_hex: str | None = "#FF7F50",
 ) -> tuple[Product, ProductKitColor]:
     product = await Product.create(
         name="10g 自选拼豆",
@@ -67,6 +68,7 @@ async def _color_kit(
         slot_no=1,
         color_code=code,
         name=name,
+        swatch_hex=swatch_hex,
         sort=1,
         is_active=active,
     )
@@ -156,6 +158,7 @@ async def test_unconfigured_color_is_rejected_before_any_order_write() -> None:
         active=False,
         code=None,
         name=None,
+        swatch_hex=None,
     )
 
     with pytest.raises(OrderKitColorUnavailable):
@@ -170,6 +173,24 @@ async def test_unconfigured_color_is_rejected_before_any_order_write() -> None:
     assert await OrderItem.all().count() == 0
     assert await InventoryTransaction.all().count() == 0
     assert await AuditLog.all().count() == 0
+    await kit_color.refresh_from_db()
+    assert kit_color.stock_units == 5
+
+
+async def test_color_without_hex_is_rejected_before_any_order_write() -> None:
+    user = await _user()
+    product, kit_color = await _color_kit(swatch_hex=None)
+
+    with pytest.raises(OrderKitColorUnavailable):
+        await _service().create_order(
+            user_id=user.id,
+            items=[OrderItemInput(product.id, None, 1, kit_color.id)],
+            remark=None,
+            ip_address="127.0.0.1",
+        )
+
+    assert await Order.all().count() == 0
+    assert await InventoryTransaction.all().count() == 0
     await kit_color.refresh_from_db()
     assert kit_color.stock_units == 5
 

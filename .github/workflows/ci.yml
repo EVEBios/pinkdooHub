@@ -118,10 +118,11 @@ jobs:
           python scripts/ci/check_mysql_gate.py preflight \
             --report artifacts/mysql-preflight.json
 
-      - name: Exercise reviewed Aerich M6 and M7 migrations over legacy data
+      - name: Exercise reviewed Aerich M6 through M8 migrations over legacy data
         run: |
           set -o pipefail
           aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log
+          aerich --app models downgrade -v 8 --yes 2>&1 | tee -a artifacts/mysql-migration.log
           aerich --app models downgrade -v 7 --yes 2>&1 | tee -a artifacts/mysql-migration.log
           python scripts/ci/check_mysql_gate.py seed-m7-legacy \
             --report artifacts/mysql-m7-legacy-seed.json \

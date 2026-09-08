@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""受控编排 Gate A 既有 M2 数据库到当前 M7 候选的升级。
+"""受控编排 Gate A 既有 M2 数据库到当前 M8 候选的升级。
 
 该入口只支持经 Review 的精确 M2 起点。默认 plan 全程只读；apply 必须同时绑定
 source/target SHA、Backup ID 与 MARD manifest SHA-256。写入前验证新鲜 Backup 与
 独立 Restore PASS Record，随后停止 App/Nginx、比较停写后的数据库/图片与备份，
-依次执行 M3、M4、Wallet 准备、M5、M6、MARD 发布和 M7。任一步失败都会保留脱敏
+依次执行 M3、M4、Wallet 准备、M5、M6、M7、M8 和 MARD 发布。任一步失败都会保留脱敏
 证据并保持业务入口停止，不会 fake、downgrade、恢复或盲目重跑。
 """
 
@@ -25,11 +25,11 @@ from scripts.release import gatea_backup as backup
 from scripts.release import gatea_operations as gatea
 
 
-APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M7_CHAIN
+APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M8_CHAIN
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SUPPORTED_SOURCE_VERSION = 2
-TARGET_VERSION = 7
+TARGET_VERSION = 8
 MAX_BACKUP_AGE = timedelta(hours=24)
 FUTURE_CLOCK_TOLERANCE = timedelta(minutes=5)
 MARD_MANIFEST = (
@@ -132,8 +132,9 @@ SELECT JSON_OBJECT(
   'bead_color_max_slot', (SELECT MAX(slot_no) FROM bead_colors),
   'configured_bead_colors', (
     SELECT COUNT(*) FROM bead_colors
-    WHERE color_code IS NOT NULL AND name IS NOT NULL AND swatch_image_url IS NOT NULL
+    WHERE color_code IS NOT NULL AND name IS NOT NULL AND swatch_hex IS NOT NULL
   ),
+  'distinct_bead_color_hex', (SELECT COUNT(DISTINCT swatch_hex) FROM bead_colors),
   'active_bead_colors', (SELECT COUNT(*) FROM bead_colors WHERE is_active = 1),
   'product_kit_colors', (SELECT COUNT(*) FROM product_kit_colors),
   'reservation_settings', (SELECT COUNT(*) FROM reservation_settings),
@@ -494,7 +495,7 @@ def _validate_final_snapshot(
     final_snapshot: Mapping[str, Any],
 ) -> None:
     if final_snapshot.get("aerich_versions") != _expected_versions(TARGET_VERSION):
-        raise GateAUpgradeError("Gate A final Aerich chain is not exactly M0-M7")
+        raise GateAUpgradeError("Gate A final Aerich chain is not exactly M0-M8")
     for key in CORE_INVARIANT_KEYS:
         if final_snapshot.get(key) != source_snapshot.get(key):
             raise GateAUpgradeError(
@@ -512,6 +513,7 @@ def _validate_final_snapshot(
         "bead_color_min_slot": 1,
         "bead_color_max_slot": 221,
         "configured_bead_colors": 221,
+        "distinct_bead_color_hex": 221,
         "active_bead_colors": 221,
     }
     for key, expected in expected_color_values.items():
@@ -665,7 +667,7 @@ def upgrade_existing_database(
     confirm_backup_id: str | None,
     confirm_manifest_sha256: str | None,
 ) -> dict[str, Any]:
-    """规划或执行精确 M2→M7 升级，并生成可供 app-up 使用的成功 Record。"""
+    """规划或执行精确 M2→M8 升级，并生成可供 app-up 使用的成功 Record。"""
 
     gatea._require_loopback_write_mode(mode)
     backup_id = backup._backup_id(backup_id)
@@ -810,7 +812,7 @@ def upgrade_existing_database(
         evidence["source_image_manifest"] = _manifest_summary(stopped_images)
         backup._write_json_atomic(evidence_path, evidence, 0o644)
 
-        for target_version in (3, 4, 5, 6, 7):
+        for target_version in (3, 4, 5, 6, 7, 8):
             name = f"migrate-m{target_version}"
             step_started = _iso_now()
             migration_result = _run_task(
@@ -867,7 +869,7 @@ def upgrade_existing_database(
                     database_snapshot=database_status,
                 )
 
-            if target_version == 6:
+            if target_version == 8:
                 step_started = _iso_now()
                 preview = _run_task(
                     values=values,
@@ -1005,7 +1007,7 @@ def upgrade_existing_database(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Plan or apply the guarded Gate A M2-to-M7 upgrade",
+        description="Plan or apply the guarded Gate A M2-to-M8 upgrade",
     )
     parser.add_argument("--mode", choices=tuple(gatea.MODE_COMPOSE), required=True)
     parser.add_argument("--config-file", type=Path, default=gatea.DEFAULT_CONFIG_FILE)

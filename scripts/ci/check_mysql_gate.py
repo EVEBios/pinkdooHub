@@ -22,6 +22,14 @@ EXPECTED_DATABASE = "pinkdoohub_inventory_4311_ci"
 M5_MIGRATION = "5_20260906094653_add_reservations.py"
 M6_MIGRATION = "6_20260906123000_add_color_selectable_kits.py"
 M7_MIGRATION = "7_20260907190000_add_reservation_settings.py"
+M8_MIGRATION = "8_20260908140000_add_bead_color_swatch_hex.py"
+MARD_MANIFEST = (
+    Path(__file__).resolve().parents[2]
+    / "app"
+    / "tasks"
+    / "manifests"
+    / "mard_221.json"
+)
 EXPECTED_MIGRATIONS_THROUGH_M5 = [
     "0_20260810101218_init.py",
     "1_20260813130455_add_order_tables.py",
@@ -34,9 +42,13 @@ EXPECTED_MIGRATIONS_THROUGH_M6 = [
     *EXPECTED_MIGRATIONS_THROUGH_M5,
     M6_MIGRATION,
 ]
-EXPECTED_MIGRATIONS = [
+EXPECTED_MIGRATIONS_THROUGH_M7 = [
     *EXPECTED_MIGRATIONS_THROUGH_M6,
     M7_MIGRATION,
+]
+EXPECTED_MIGRATIONS = [
+    *EXPECTED_MIGRATIONS_THROUGH_M7,
+    M8_MIGRATION,
 ]
 MYSQL_VERSION_PREFIX = "8.0.46"
 CONTAINER_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")
@@ -134,6 +146,7 @@ M7_EXPECTED_INDEXES = {
         ["singleton_key"],
     ),
 }
+M8_EXPECTED_COLUMN = ("YES", "varchar", 7)
 
 
 class GateError(RuntimeError):
@@ -809,6 +822,94 @@ async def _read_m7_evidence(config: GateConfig) -> dict[str, object]:
     }
 
 
+def _expected_mard_hex_rows() -> tuple[tuple[int, str], ...]:
+    """Read only the frozen slot/HEX projection used by the M8 gate."""
+
+    try:
+        document = json.loads(MARD_MANIFEST.read_text(encoding="utf-8"))
+        raw_colors = document["colors"]
+        rows = tuple(
+            (int(color["slot_no"]), str(color["hex"]))
+            for color in raw_colors
+        )
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise GateError("M8 frozen MARD manifest is invalid") from error
+    if (
+        len(rows) != 221
+        or tuple(slot_no for slot_no, _ in rows) != tuple(range(1, 222))
+        or len({hex_value for _, hex_value in rows}) != 221
+        or any(
+            len(hex_value) != 7
+            or not hex_value.startswith("#")
+            or any(
+                character not in "0123456789ABCDEF"
+                for character in hex_value[1:]
+            )
+            for _, hex_value in rows
+        )
+    ):
+        raise GateError("M8 frozen MARD manifest projection is invalid")
+    return rows
+
+
+async def _read_m8_evidence(config: GateConfig) -> dict[str, object]:
+    """Verify nullable column shape and exact 221-slot MARD HEX backfill."""
+
+    import asyncmy
+
+    connection = await asyncmy.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        database=config.database,
+        connect_timeout=5,
+        autocommit=True,
+    )
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT IS_NULLABLE, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH "
+                "FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'bead_colors' "
+                "AND COLUMN_NAME = 'swatch_hex'",
+                (config.database,),
+            )
+            column_rows = await cursor.fetchall()
+            actual_column = (
+                None
+                if len(column_rows) != 1
+                else (
+                    str(column_rows[0][0]),
+                    str(column_rows[0][1]),
+                    int(column_rows[0][2]),
+                )
+            )
+            if actual_column != M8_EXPECTED_COLUMN:
+                raise GateError("M8 swatch_hex column shape does not match")
+
+            await cursor.execute(
+                "SELECT slot_no, swatch_hex FROM bead_colors ORDER BY slot_no"
+            )
+            actual_rows = tuple(
+                (int(slot_no), str(swatch_hex))
+                for slot_no, swatch_hex in await cursor.fetchall()
+            )
+            expected_rows = _expected_mard_hex_rows()
+            if actual_rows != expected_rows:
+                raise GateError("M8 did not backfill the exact MARD HEX catalog")
+    finally:
+        await connection.ensure_closed()
+
+    return {
+        "swatch_hex_nullable": True,
+        "swatch_hex_max_length": 7,
+        "backfilled_slots": 221,
+        "distinct_hex_values": len({hex_value for _, hex_value in actual_rows}),
+        "manifest_projection_matches": True,
+    }
+
+
 def seed_m6_legacy(config: GateConfig, report_path: Path) -> None:
     """为 M6 二次升级写入受控 M5 历史数据。"""
 
@@ -851,6 +952,7 @@ def snapshot(config: GateConfig, report_path: Path) -> None:
         raise GateError("Aerich did not apply the complete reviewed migration chain")
     m6_evidence = asyncio.run(_read_m6_evidence(config))
     m7_evidence = asyncio.run(_read_m7_evidence(config))
+    m8_evidence = asyncio.run(_read_m8_evidence(config))
 
     write_report(
         report_path,
@@ -862,6 +964,7 @@ def snapshot(config: GateConfig, report_path: Path) -> None:
             "aerich_versions": migrations,
             "m6_evidence": m6_evidence,
             "m7_evidence": m7_evidence,
+            "m8_evidence": m8_evidence,
             "git_sha": os.getenv("GITHUB_SHA", "local-uncommitted"),
             "workflow_run_id": os.getenv("GITHUB_RUN_ID", "local"),
         },

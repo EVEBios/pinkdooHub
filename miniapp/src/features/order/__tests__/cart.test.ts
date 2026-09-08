@@ -74,6 +74,7 @@ const colorItem = (overrides: Partial<ColorKitCartItem> = {}): ColorKitCartItem 
   productName: '自选拼豆',
   configurationLabel: 'A01 · 樱粉',
   saleUnitGrams: 10,
+  swatchHex: '#F4B7C7',
   unitPrice: '3.00',
   imageUrl: null,
   quantity: 1,
@@ -96,6 +97,7 @@ describe('CartStore', () => {
       { version: 3, items: [] },
       { version: 2, items: [experienceItem(), experienceItem()] },
       { version: 1, items: [{ ...kitItem(), experienceOptionId: 99 }] },
+      { version: 2, items: [colorItem({ swatchHex: '#f4b7c7' })] },
     ]
 
     for (const value of invalidValues) {
@@ -134,6 +136,26 @@ describe('CartStore', () => {
 
     expect(store.getSnapshot().items).toEqual([experienceItem(), kitItem()])
     expect(storage.value).toEqual({ version: 2, items: [experienceItem(), kitItem()] })
+  })
+
+  it('恢复旧 v2 颜色项时清空无法区分色样与商品封面的歧义图片', async () => {
+    const legacyColor = {
+      ...colorItem(),
+      imageUrl: '/uploads/products/legacy-cover.webp',
+    } as Record<string, unknown>
+    delete legacyColor.swatchHex
+    const storage = new FakeStorage({ version: 2, items: [legacyColor] })
+    const store = new CartStore(storage)
+
+    await store.restore()
+
+    expect(store.getSnapshot().items).toEqual([
+      colorItem({ swatchHex: null, imageUrl: null }),
+    ])
+    expect(storage.value).toEqual({
+      version: 2,
+      items: [colorItem({ swatchHex: null, imageUrl: null })],
+    })
   })
 
   it('并发重复加入同一组合时串行合并数量', async () => {

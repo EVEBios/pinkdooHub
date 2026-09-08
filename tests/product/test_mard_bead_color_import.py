@@ -48,7 +48,8 @@ def _source_html(*, first_code: str | None = None) -> str:
     return "".join(cards)
 
 
-def _create_m6_database(path: Path, *, online_reference: bool = False) -> None:
+def _create_m8_database(path: Path, *, online_reference: bool = False) -> None:
+    colors = load_manifest(MANIFEST)
     connection = sqlite3.connect(path)
     try:
         connection.executescript(
@@ -66,6 +67,7 @@ def _create_m6_database(path: Path, *, online_reference: bool = False) -> None:
                 slot_no SMALLINT NOT NULL UNIQUE,
                 color_code VARCHAR(50) UNIQUE,
                 name VARCHAR(100),
+                swatch_hex VARCHAR(7),
                 swatch_image_url VARCHAR(2048),
                 sort SMALLINT NOT NULL,
                 is_active INT NOT NULL DEFAULT 0
@@ -82,9 +84,9 @@ def _create_m6_database(path: Path, *, online_reference: bool = False) -> None:
         )
         connection.executemany(
             "INSERT INTO bead_colors "
-            "(created_at, updated_at, slot_no, sort, is_active) "
-            "VALUES ('2026-09-07', '2026-09-07', ?, ?, 0)",
-            ((slot_no, slot_no) for slot_no in range(1, 222)),
+            "(created_at, updated_at, slot_no, swatch_hex, sort, is_active) "
+            "VALUES ('2026-09-07', '2026-09-07', ?, ?, ?, 0)",
+            ((color.slot_no, color.hex, color.sort) for color in colors),
         )
         if online_reference:
             connection.execute(
@@ -132,7 +134,7 @@ def test_import_preview_apply_and_replay_are_safe(tmp_path: Path) -> None:
     database = tmp_path / "db.sqlite3"
     storage_root = tmp_path / "uploads" / "products"
     backup_dir = tmp_path / "backups"
-    _create_m6_database(database)
+    _create_m8_database(database)
 
     preview = plan_import(
         database=database,
@@ -166,12 +168,17 @@ def test_import_preview_apply_and_replay_are_safe(tmp_path: Path) -> None:
     with sqlite3.connect(database) as connection:
         assert connection.execute(
             "SELECT COUNT(*), SUM(is_active), COUNT(DISTINCT color_code), "
-            "COUNT(DISTINCT swatch_image_url) FROM bead_colors"
-        ).fetchone() == (221, 221, 221, 221)
+            "COUNT(DISTINCT swatch_hex), COUNT(DISTINCT swatch_image_url) "
+            "FROM bead_colors"
+        ).fetchone() == (221, 221, 221, 221, 221)
         assert connection.execute(
-            "SELECT slot_no, color_code, name, sort FROM bead_colors "
+            "SELECT slot_no, color_code, name, swatch_hex, sort "
+            "FROM bead_colors "
             "WHERE slot_no IN (1, 221) ORDER BY slot_no"
-        ).fetchall() == [(1, "A1", "A1", 1), (221, "M15", "M15", 221)]
+        ).fetchall() == [
+            (1, "A1", "A1", preview.colors[0].hex, 1),
+            (221, "M15", "M15", preview.colors[-1].hex, 221),
+        ]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
     replay = apply_import(
@@ -191,7 +198,7 @@ def test_import_refuses_conflicting_metadata_and_online_references(
     tmp_path: Path,
 ) -> None:
     conflicting_database = tmp_path / "conflicting.sqlite3"
-    _create_m6_database(conflicting_database)
+    _create_m8_database(conflicting_database)
     with sqlite3.connect(conflicting_database) as connection:
         connection.execute(
             "UPDATE bead_colors SET color_code='OTHER' WHERE slot_no=1"
@@ -207,7 +214,7 @@ def test_import_refuses_conflicting_metadata_and_online_references(
         )
 
     online_database = tmp_path / "online.sqlite3"
-    _create_m6_database(online_database, online_reference=True)
+    _create_m8_database(online_database, online_reference=True)
     with pytest.raises(BeadColorImportError, match="Online product"):
         plan_import(
             database=online_database,
@@ -226,7 +233,7 @@ def test_database_failure_rolls_back_and_removes_new_images(
     database = tmp_path / "db.sqlite3"
     storage_root = tmp_path / "uploads"
     backup_dir = tmp_path / "backups"
-    _create_m6_database(database)
+    _create_m8_database(database)
 
     def fail_verification(*args: object, **kwargs: object) -> None:
         raise BeadColorImportError("injected verification failure")

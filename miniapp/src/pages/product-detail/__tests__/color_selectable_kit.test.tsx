@@ -23,6 +23,10 @@ jest.mock('@/features/reservation', () => ({
   buildReservationCreateUrl: jest.fn(),
 }))
 
+jest.mock('@/utils/asset_url', () => ({
+  resolveAssetUrl: (assetUrl: string) => `https://api.example.com${assetUrl}`,
+}))
+
 describe('自选颜色 Kit 商品详情', () => {
   let testUtils: ReactTestUtil
 
@@ -114,6 +118,28 @@ describe('自选颜色 Kit 商品详情', () => {
     await flush(testUtils)
     expect(testUtils.queries.querySelector('.color-card__selected-label')).toBeNull()
   })
+
+  it('优先用 HEX 直绘色块，并在 HEX 缺失时依次回退图片和占位', async () => {
+    const detail = colorKit(3)
+    await testUtils.mount(ColorSelectableKitDetail, {
+      props: {
+        detail: {
+          ...detail,
+          colors: [
+            { ...detail.colors[0], swatch_image_url: '/uploads/swatches/c001.png' },
+            { ...detail.colors[1], swatch_hex: null, swatch_image_url: '/uploads/swatches/c002.png' },
+            { ...detail.colors[2], swatch_hex: null, swatch_image_url: null },
+          ],
+        },
+      },
+    })
+
+    const cards = testUtils.queries.querySelectorAll('.color-card')
+    expect(cards[0].querySelector('.bead-color-swatch--hex')).not.toBeNull()
+    expect(cards[0].querySelector('.bead-color-swatch--image')).toBeNull()
+    expect(cards[1].querySelector('.bead-color-swatch--image')).not.toBeNull()
+    expect(cards[2].querySelector('.color-swatch--empty')?.textContent).toBe('#3')
+  })
 })
 
 function colorKit(colorCount: number): KitProductDetail {
@@ -134,6 +160,7 @@ function colorKit(colorCount: number): KitProductDetail {
       slot_no: index + 1,
       color_code: `C${String(index + 1).padStart(3, '0')}`,
       name: `颜色 ${index + 1}`,
+      swatch_hex: `#${String(index + 1).padStart(6, '0')}`,
       swatch_image_url: null,
       available: true,
     })),

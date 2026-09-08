@@ -414,6 +414,7 @@ class _FakeClient:
                     "colors": [
                         {
                             "id": 300 + index,
+                            "swatch_hex": "#FAF4C8",
                             "swatch_image_url": (
                                 "https://api-test.pinkdoohub.cn/"
                                 f"uploads/products/colors/{index}.png"

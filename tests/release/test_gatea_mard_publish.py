@@ -16,6 +16,7 @@ def _placeholder_rows() -> list[SimpleNamespace]:
             slot_no=slot,
             color_code=None,
             name=None,
+            swatch_hex=None,
             swatch_image_url=None,
             sort=slot,
             is_active=False,
@@ -32,6 +33,7 @@ def _current_rows(base_url: str) -> list[SimpleNamespace]:
             slot_no=color.slot_no,
             color_code=color.color_code,
             name=color.name,
+            swatch_hex=color.hex,
             swatch_image_url=f"{base_url}/{color.image_filename}",
             sort=color.sort,
             is_active=True,
@@ -46,6 +48,10 @@ def test_row_validation_accepts_only_placeholders_or_exact_manifest() -> None:
     base_url = "https://api-test.pinkdoohub.cn/uploads/products"
 
     assert publisher._validate_rows(_placeholder_rows(), colors, base_url) == 221
+    m8_placeholders = _placeholder_rows()
+    for row, color in zip(m8_placeholders, colors):
+        row.swatch_hex = color.hex
+    assert publisher._validate_rows(m8_placeholders, colors, base_url) == 221
     assert publisher._validate_rows(_current_rows(base_url), colors, base_url) == 0
 
     conflicting = _placeholder_rows()

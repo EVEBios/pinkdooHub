@@ -42,6 +42,7 @@ export interface ColorKitCartItem extends CartItemBase {
   readonly kitKind: 'color_selectable'
   readonly configurationLabel: string
   readonly saleUnitGrams: typeof COLOR_SELECTABLE_SALE_UNIT_GRAMS
+  readonly swatchHex: string | null
 }
 
 export type CartItem = ExperienceCartItem | KitCartItem | ColorKitCartItem
@@ -416,9 +417,12 @@ function parseCartItem(value: unknown, allowLegacyShape: boolean): CartItem | un
       quantity: value.quantity,
     }
   }
+  const hasSwatchHex = hasOwn(value, 'swatchHex')
+  const swatchHex = hasSwatchHex ? value.swatchHex : null
   if (kitKind !== 'color_selectable' || !isPositiveInteger(kitColorId) ||
     !isBoundedText(value.configurationLabel, 200) ||
-    value.saleUnitGrams !== COLOR_SELECTABLE_SALE_UNIT_GRAMS) {
+    value.saleUnitGrams !== COLOR_SELECTABLE_SALE_UNIT_GRAMS ||
+    !(swatchHex === null || isSwatchHex(swatchHex))) {
     return undefined
   }
   return {
@@ -430,8 +434,11 @@ function parseCartItem(value: unknown, allowLegacyShape: boolean): CartItem | un
     productName: value.productName,
     configurationLabel: value.configurationLabel,
     saleUnitGrams: COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+    swatchHex,
     unitPrice: value.unitPrice,
-    imageUrl: value.imageUrl,
+    // 旧 v2 把商品封面和真实色样共用 imageUrl，无法可靠区分。缺少
+    // swatchHex 字段即视为旧形状并清空歧义图片，避免继续冒充颜色色样。
+    imageUrl: hasSwatchHex ? value.imageUrl : null,
     quantity: value.quantity,
   }
 }
@@ -458,6 +465,10 @@ function isPositiveInteger(value: unknown): value is number {
 
 function isBoundedText(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength
+}
+
+function isSwatchHex(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9A-F]{6}$/.test(value)
 }
 
 function isNullableBoundedText(value: unknown, maxLength: number): value is string | null {

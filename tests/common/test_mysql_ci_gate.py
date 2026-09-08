@@ -19,6 +19,9 @@ COLOR_SELECTABLE_KIT_MIGRATION = (
 RESERVATION_SETTINGS_MIGRATION = (
     "7_20260907190000_add_reservation_settings.py"
 )
+BEAD_COLOR_SWATCH_HEX_MIGRATION = (
+    "8_20260908140000_add_bead_color_swatch_hex.py"
+)
 EXPECTED_MIGRATION_CHAIN = [
     "0_20260810101218_init.py",
     "1_20260813130455_add_order_tables.py",
@@ -28,6 +31,7 @@ EXPECTED_MIGRATION_CHAIN = [
     RESERVATION_MIGRATION,
     COLOR_SELECTABLE_KIT_MIGRATION,
     RESERVATION_SETTINGS_MIGRATION,
+    BEAD_COLOR_SWATCH_HEX_MIGRATION,
 ]
 SAFE_ENVIRONMENT = {
     "APP_ENV": "testing",
@@ -90,7 +94,18 @@ def test_snapshot_contract_includes_complete_current_migration_chain() -> None:
     assert checker_namespace["EXPECTED_MIGRATIONS"] == EXPECTED_MIGRATION_CHAIN
 
 
-def test_m6_and_m7_snapshots_require_legacy_replay_and_schema_evidence() -> None:
+def test_m8_snapshot_uses_exact_frozen_mard_hex_projection() -> None:
+    checker_namespace = runpy.run_path(str(CHECKER))
+
+    rows = checker_namespace["_expected_mard_hex_rows"]()
+
+    assert len(rows) == 221
+    assert rows[0] == (1, "#FAF4C8")
+    assert rows[-1] == (221, "#757D78")
+    assert len({hex_value for _, hex_value in rows}) == 221
+
+
+def test_m6_through_m8_snapshots_require_replay_and_schema_evidence() -> None:
     checker_source = CHECKER.read_text(encoding="utf-8")
 
     assert '"seed-m6-legacy"' in checker_source
@@ -110,6 +125,10 @@ def test_m6_and_m7_snapshots_require_legacy_replay_and_schema_evidence() -> None
     assert '"default_weekly_closed_weekday": "monday"' in checker_source
     assert '"singleton_check_valid": True' in checker_source
     assert '"legacy_history_unchanged": True' in checker_source
+    assert "M8_EXPECTED_COLUMN" in checker_source
+    assert "_read_m8_evidence" in checker_source
+    assert '"backfilled_slots": 221' in checker_source
+    assert '"manifest_projection_matches": True' in checker_source
     assert "EXPECTED_MIGRATIONS[:-1]" not in checker_source
     assert "EXPECTED_MIGRATIONS[:-2]" not in checker_source
 

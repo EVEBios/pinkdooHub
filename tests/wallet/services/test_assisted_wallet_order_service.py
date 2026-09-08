@@ -173,6 +173,7 @@ async def test_assisted_wallet_replay_identity_includes_kit_color() -> None:
         slot_no=1,
         color_code="A001",
         name="红色",
+        swatch_hex="#FF0000",
         sort=1,
         is_active=True,
     )
@@ -180,6 +181,7 @@ async def test_assisted_wallet_replay_identity_includes_kit_color() -> None:
         slot_no=2,
         color_code="A002",
         name="蓝色",
+        swatch_hex="#0000FF",
         sort=2,
         is_active=True,
     )

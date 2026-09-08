@@ -1,4 +1,4 @@
-import { Button, Image, Text, View } from '@tarojs/components'
+import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useState } from 'react'
 
@@ -8,7 +8,7 @@ import {
   type ColorKitCartItem,
   useCart,
 } from '@/features/order'
-import { resolveAssetUrl } from '@/utils/asset_url'
+import { BeadColorSwatch } from '@/components/bead_color_swatch'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
@@ -223,22 +223,14 @@ function ColorKitCartGroup({
 }
 
 function CartColorSwatch({ item }: { readonly item: ColorKitCartItem }) {
-  const [failed, setFailed] = useState(false)
-  if (item.imageUrl && !failed) {
-    return (
-      <Image
-        className='cart-color-row__swatch'
-        lazyLoad
-        mode='aspectFill'
-        src={resolveAssetUrl(item.imageUrl)}
-        onError={() => setFailed(true)}
-      />
-    )
-  }
   return (
-    <View className='cart-color-row__swatch cart-color-row__swatch--empty'>
-      <Text>无图</Text>
-    </View>
+    <BeadColorSwatch
+      className='cart-color-row__swatch'
+      emptyClassName='cart-color-row__swatch--empty'
+      emptyLabel='无色样'
+      swatchHex={item.swatchHex}
+      swatchImageUrl={item.imageUrl}
+    />
   )
 }
 

@@ -28,22 +28,29 @@ export type BeadColorListRequest = NonNullable<operations[
 ]['parameters']['query']>
 export type BeadColor = Omit<
   GeneratedBeadColor,
-  'color_code' | 'name' | 'swatch_image_url'
+  'color_code' | 'name' | 'swatch_hex' | 'swatch_image_url'
 > & {
   readonly color_code: string | null
   readonly name: string | null
+  readonly swatch_hex: string | null
   readonly swatch_image_url: string | null
 }
 export type BeadColorListPage = Omit<GeneratedBeadColorListPage, 'items'> & {
   readonly items: readonly BeadColor[]
 }
-export type BeadColorUpdateRequest = components['schemas']['BeadColorUpdate']
+export type BeadColorUpdateRequest = Omit<
+  components['schemas']['BeadColorUpdate'],
+  'swatch_hex'
+> & {
+  readonly swatch_hex?: string | null
+}
 export type AdminProductKitColor = Omit<
   GeneratedAdminProductKitColor,
-  'color_code' | 'name' | 'swatch_image_url'
+  'color_code' | 'name' | 'swatch_hex' | 'swatch_image_url'
 > & {
   readonly color_code: string | null
   readonly name: string | null
+  readonly swatch_hex: string | null
   readonly swatch_image_url: string | null
 }
 export type ProductKitColorUpdateRequest = components['schemas']['ProductKitColorUpdate']
@@ -122,6 +129,7 @@ interface BeadColorMetadata {
   readonly slot_no: number
   readonly color_code: string | null
   readonly name: string | null
+  readonly swatch_hex: string | null
   readonly swatch_image_url: string | null
   readonly sort: number
   readonly is_active: boolean
@@ -603,6 +611,7 @@ export function parseBeadColor(value: unknown): BeadColor | undefined {
     slot_no: metadata.slot_no,
     color_code: metadata.color_code,
     name: metadata.name,
+    swatch_hex: metadata.swatch_hex,
     swatch_image_url: metadata.swatch_image_url,
     sort: metadata.sort,
     is_active: metadata.is_active,
@@ -621,6 +630,7 @@ export function parseAdminProductKitColor(value: unknown): AdminProductKitColor 
     slot_no: metadata.slot_no,
     color_code: metadata.color_code,
     name: metadata.name,
+    swatch_hex: metadata.swatch_hex,
     swatch_image_url: metadata.swatch_image_url,
     sort: metadata.sort,
     is_active: metadata.is_active,
@@ -740,16 +750,18 @@ function parseBeadColorMetadata(value: unknown): BeadColorMetadata | undefined {
     !isPositiveInteger(value.slot_no) || value.slot_no > 221 ||
     !(value.color_code === null || isBoundedNonEmptyString(value.color_code, 50)) ||
     !(value.name === null || isBoundedNonEmptyString(value.name, 100)) ||
+    !(value.swatch_hex === null || isSwatchHex(value.swatch_hex)) ||
     !(value.swatch_image_url === null || isSupportedAssetUrl(value.swatch_image_url)) ||
     !isNonNegativeInteger(value.sort) || typeof value.is_active !== 'boolean' ||
     typeof value.is_configured !== 'boolean') return undefined
-  const configured = value.color_code !== null && value.name !== null
+  const configured = value.color_code !== null && value.name !== null && value.swatch_hex !== null
   if (value.is_configured !== configured || (value.is_active && !configured)) return undefined
   return {
     id: value.id,
     slot_no: value.slot_no,
     color_code: value.color_code,
     name: value.name,
+    swatch_hex: value.swatch_hex,
     swatch_image_url: value.swatch_image_url,
     sort: value.sort,
     is_active: value.is_active,
@@ -884,6 +896,7 @@ function projectBeadColorUpdate(request: BeadColorUpdateRequest): BeadColorUpdat
   return {
     ...(request.color_code === undefined ? {} : { color_code: request.color_code }),
     ...(request.name === undefined ? {} : { name: request.name }),
+    ...(request.swatch_hex === undefined ? {} : { swatch_hex: request.swatch_hex }),
     ...(request.sort === undefined ? {} : { sort: request.sort }),
     ...(request.is_active === undefined ? {} : { is_active: request.is_active }),
   }
@@ -1003,6 +1016,10 @@ function isProductStatus(value: unknown): value is 'draft' | 'online' | 'offline
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function isSwatchHex(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9A-F]{6}$/.test(value)
 }
 
 function isBoundedNonEmptyString(value: unknown, maxLength: number): value is string {

@@ -2,6 +2,7 @@
 
 from typing import TypeVar
 
+from app.common.bead_color import is_bead_color_configured
 from app.common.constants.product import (
     COLOR_SELECTABLE_SALE_UNIT_GRAMS,
     DAY_TYPE_LABELS,
@@ -284,13 +285,18 @@ def _kit_list_metadata(product: Product) -> dict[str, object]:
 def map_bead_color(bead_color: BeadColor) -> BeadColorOut:
     """映射全局颜色槽，并显式派生配置完整性。"""
 
-    configured = bead_color.color_code is not None and bead_color.name is not None
+    configured = is_bead_color_configured(
+        color_code=bead_color.color_code,
+        name=bead_color.name,
+        swatch_hex=bead_color.swatch_hex,
+    )
     return BeadColorOut.model_validate(
         {
             "id": bead_color.id,
             "slot_no": bead_color.slot_no,
             "color_code": bead_color.color_code,
             "name": bead_color.name,
+            "swatch_hex": bead_color.swatch_hex,
             "swatch_image_url": bead_color.swatch_image_url,
             "sort": bead_color.sort,
             "is_active": bead_color.is_active,
@@ -320,7 +326,11 @@ def map_admin_product_kit_color(
     """映射管理端商品颜色配置及当前库存余额。"""
 
     bead_color = kit_color.bead_color
-    configured = bead_color.color_code is not None and bead_color.name is not None
+    configured = is_bead_color_configured(
+        color_code=bead_color.color_code,
+        name=bead_color.name,
+        swatch_hex=bead_color.swatch_hex,
+    )
     return AdminProductKitColorOut.model_validate(
         {
             "id": kit_color.id,
@@ -328,6 +338,7 @@ def map_admin_product_kit_color(
             "slot_no": bead_color.slot_no,
             "color_code": bead_color.color_code,
             "name": bead_color.name,
+            "swatch_hex": bead_color.swatch_hex,
             "swatch_image_url": bead_color.swatch_image_url,
             "sort": bead_color.sort,
             "is_active": bead_color.is_active,
@@ -345,8 +356,11 @@ def map_kit_color_option(kit_color: ProductKitColor) -> KitColorOptionOut:
     if (
         not kit_color.is_enabled
         or not bead_color.is_active
-        or bead_color.color_code is None
-        or bead_color.name is None
+        or not is_bead_color_configured(
+            color_code=bead_color.color_code,
+            name=bead_color.name,
+            swatch_hex=bead_color.swatch_hex,
+        )
     ):
         raise ValueError("Public product kit color must be active and configured")
     return KitColorOptionOut.model_validate(
@@ -356,6 +370,7 @@ def map_kit_color_option(kit_color: ProductKitColor) -> KitColorOptionOut:
             "slot_no": bead_color.slot_no,
             "color_code": bead_color.color_code,
             "name": bead_color.name,
+            "swatch_hex": bead_color.swatch_hex,
             "swatch_image_url": bead_color.swatch_image_url,
             "available": kit_color.stock_units > MIN_STOCK,
         }
@@ -565,8 +580,11 @@ def map_kit_product_detail(product: Product) -> KitProductDetailOut:
             if (
                 color.is_enabled
                 and color.bead_color.is_active
-                and color.bead_color.color_code is not None
-                and color.bead_color.name is not None
+                and is_bead_color_configured(
+                    color_code=color.bead_color.color_code,
+                    name=color.bead_color.name,
+                    swatch_hex=color.bead_color.swatch_hex,
+                )
             )
         ]
     payload = _user_detail_payload(product)

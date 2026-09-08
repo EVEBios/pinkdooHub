@@ -14,6 +14,7 @@ from app.models.product import Product
 from app.models.product_kit import ProductKit
 from app.models.product_kit_color import ProductKitColor
 from app.repositories.inventory_repo import InventoryRepository
+from app.tasks.mard_catalog import load_manifest
 
 
 pytestmark = pytest.mark.mysql
@@ -21,6 +22,7 @@ pytestmark = pytest.mark.mysql
 M6_MIGRATIONS = list(
     Path("migrations/models").glob("6_*_add_color_selectable_kits.py")
 )
+MARD_MANIFEST = Path("app/tasks/manifests/mard_221.json")
 EXPECTED_MIGRATIONS = [
     "0_20260810101218_init.py",
     "1_20260813130455_add_order_tables.py",
@@ -30,6 +32,7 @@ EXPECTED_MIGRATIONS = [
     "5_20260906094653_add_reservations.py",
     "6_20260906123000_add_color_selectable_kits.py",
     "7_20260907190000_add_reservation_settings.py",
+    "8_20260908140000_add_bead_color_swatch_hex.py",
 ]
 EXPECTED_FOREIGN_KEYS = {
     (
@@ -151,6 +154,7 @@ async def test_m6_schema_palette_fixed_default_fks_indexes_and_lock_plan() -> No
         "COUNT(DISTINCT slot_no) AS distinct_slots, "
         "SUM(color_code IS NOT NULL) AS configured_codes, "
         "SUM(name IS NOT NULL) AS configured_names, "
+        "SUM(swatch_hex IS NOT NULL) AS configured_hex, "
         "SUM(swatch_image_url IS NOT NULL) AS configured_swatches, "
         "SUM(is_active <> 0) AS active_slots, "
         "SUM(sort <> slot_no) AS unexpected_sort "
@@ -163,10 +167,19 @@ async def test_m6_schema_palette_fixed_default_fks_indexes_and_lock_plan() -> No
         "distinct_slots": 221,
         "configured_codes": 0,
         "configured_names": 0,
+        "configured_hex": 221,
         "configured_swatches": 0,
         "active_slots": 0,
         "unexpected_sort": 0,
     }
+    colors = load_manifest(MARD_MANIFEST)
+    swatch_hex_rows = await connection.execute_query_dict(
+        "SELECT slot_no, swatch_hex FROM bead_colors ORDER BY slot_no"
+    )
+    assert [
+        (int(row["slot_no"]), row["swatch_hex"])
+        for row in swatch_hex_rows
+    ] == [(color.slot_no, color.hex) for color in colors]
 
     fixed_product = await Product.create(
         name="M6 MySQL fixed default",

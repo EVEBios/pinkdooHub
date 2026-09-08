@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from app.common.bead_color import is_bead_color_configured
 from app.common.constants.reservation import (
     RESERVATION_BOOKING_WINDOW_DAYS,
     RESERVATION_MINIMUM_LEAD_HOURS,
@@ -196,8 +197,11 @@ async def verify_demo_data(
         if row.is_enabled
         and row.stock_units >= 0
         and row.bead_color.is_active
-        and row.bead_color.color_code is not None
-        and row.bead_color.name is not None
+        and is_bead_color_configured(
+            color_code=row.bead_color.color_code,
+            name=row.bead_color.name,
+            swatch_hex=row.bead_color.swatch_hex,
+        )
     ]
     if len(color_rows) != 221 or len(enabled_colors) < color_count:
         raise LocalDemoSeedError("Local demo color Product is incomplete")

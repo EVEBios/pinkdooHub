@@ -59,10 +59,15 @@ from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.users import router as users_router
 from app.api.v1.wallet import router as wallet_router
+from app.common.constants.http import (
+    API_GZIP_COMPRESSION_LEVEL,
+    API_GZIP_MINIMUM_SIZE,
+)
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.redis import close_redis, init_redis
 from app.db.database import init_db
+from app.middleware.compression import SelectiveGZipMiddleware
 from app.middleware.exception import register_exception_handlers
 from app.schemas.common import RootResponse
 
@@ -171,6 +176,16 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     lifespan=lifespan,  # ← 核心：把生命周期函数注入 FastAPI
+)
+
+# JSON/OpenAPI 等文本响应在客户端明确声明 gzip 时压缩。这同时
+# 覆盖直连 Uvicorn 的本地调试；Nginx 会透传已有 Content-Encoding，
+# 不会对同一响应二次压缩。
+app.add_middleware(
+    SelectiveGZipMiddleware,
+    minimum_size=API_GZIP_MINIMUM_SIZE,
+    compresslevel=API_GZIP_COMPRESSION_LEVEL,
+    excluded_path_prefixes=(f"{settings.product_image_base_url.rstrip('/')}/",),
 )
 
 # 本地开发存储的公开访问入口；目录在首次上传时创建。

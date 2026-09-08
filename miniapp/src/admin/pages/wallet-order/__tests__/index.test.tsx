@@ -91,6 +91,9 @@ jest.mock('@/features/product/use_product_detail', () => ({
     retry: jest.fn(),
   }),
 }))
+jest.mock('@/utils/asset_url', () => ({
+  resolveAssetUrl: (assetUrl: string) => `https://api.example.com${assetUrl}`,
+}))
 jest.mock('@/features/wallet', () => ({
   buildAdminUserWalletUrl: (userId: number) => `/admin/pages/user-wallet/index?id=${userId}`,
   parseAdminWalletOrderRoute: () => ({ userId: 7 }),
@@ -209,7 +212,7 @@ describe('AdminWalletOrderPage', () => {
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
-  it('自选颜色以纯文字网格多选，并分别调整数量后一次提交', async () => {
+  it('自选颜色网格优先直绘 HEX、兼容图片回退，并分别调整数量后一次提交', async () => {
     mockProductDetail = {
       ...mockProductDetail,
       name: '自选颜色拼豆',
@@ -224,6 +227,7 @@ describe('AdminWalletOrderPage', () => {
           slot_no: 1,
           color_code: 'A01',
           name: '白色',
+          swatch_hex: '#FFFFFF',
           swatch_image_url: '/uploads/swatches/a01.png',
           available: true,
         },
@@ -233,6 +237,7 @@ describe('AdminWalletOrderPage', () => {
           slot_no: 2,
           color_code: 'A02',
           name: '米白',
+          swatch_hex: null,
           swatch_image_url: '/uploads/swatches/a02.png',
           available: true,
         },
@@ -242,7 +247,9 @@ describe('AdminWalletOrderPage', () => {
     testUtils.fireEvent.click(requireElement(testUtils, '.wallet-order-product'))
     const colorOptions = testUtils.queries.querySelectorAll('.wallet-order-color-option')
     expect(colorOptions).toHaveLength(2)
-    expect(testUtils.queries.querySelector('img, image, taro-image-core')).toBeNull()
+    expect(colorOptions[0].querySelector('.bead-color-swatch--hex')).not.toBeNull()
+    expect(colorOptions[0].querySelector('.bead-color-swatch--image')).toBeNull()
+    expect(colorOptions[1].querySelector('.bead-color-swatch--image')).not.toBeNull()
     expect(testUtils.queries.querySelector('.wallet-order-quantity')).toBeNull()
 
     testUtils.fireEvent.click(colorOptions[0])
@@ -284,6 +291,7 @@ describe('AdminWalletOrderPage', () => {
         slot_no: index + 1,
         color_code: `A${String(index + 1).padStart(2, '0')}`,
         name: `颜色 ${index + 1}`,
+        swatch_hex: null,
         swatch_image_url: null,
         available: true,
       })),

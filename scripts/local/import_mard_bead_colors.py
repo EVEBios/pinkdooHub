@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import the frozen MARD 221 manifest into a local M6 SQLite database.
+"""Import the frozen MARD 221 manifest into a local M8 SQLite database.
 
 The command is preview-only by default.  Apply mode requires an explicit local
 confirmation, creates a consistent database backup before metadata changes,
@@ -99,12 +99,21 @@ def _database_rows(connection: sqlite3.Connection) -> tuple[tuple, ...]:
     missing = required_tables - _table_names(connection)
     if missing:
         raise BeadColorImportError(
-            "database is not an M6 target; missing tables: "
+            "database is not an M8 target; missing tables: "
             + ", ".join(sorted(missing))
+        )
+    bead_color_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(bead_colors)").fetchall()
+    }
+    if "swatch_hex" not in bead_color_columns:
+        raise BeadColorImportError(
+            "database is not an M8 target; swatch_hex is missing"
         )
     rows = tuple(
         connection.execute(
-            "SELECT slot_no, color_code, name, swatch_image_url, sort, is_active "
+            "SELECT slot_no, color_code, name, swatch_hex, swatch_image_url, "
+            "sort, is_active "
             "FROM bead_colors ORDER BY slot_no"
         ).fetchall()
     )
@@ -128,6 +137,7 @@ def _desired_row(base_url: str, color: ManifestColor) -> tuple:
         color.slot_no,
         color.color_code,
         color.name,
+        color.hex,
         _target_url(base_url, color),
         color.sort,
         1,
@@ -143,9 +153,16 @@ def _assert_safe_existing_rows(
     for existing, color in zip(rows, colors):
         desired = _desired_row(base_url, color)
         for field_name, current, target in zip(
-            ("slot_no", "color_code", "name", "swatch_image_url", "sort"),
-            existing[:5],
-            desired[:5],
+            (
+                "slot_no",
+                "color_code",
+                "name",
+                "swatch_hex",
+                "swatch_image_url",
+                "sort",
+            ),
+            existing[:6],
+            desired[:6],
         ):
             if field_name == "slot_no":
                 continue
@@ -330,12 +347,14 @@ def apply_import(
         _assert_no_online_references(connection)
         now = datetime.now(timezone.utc).isoformat(sep=" ")
         connection.executemany(
-            "UPDATE bead_colors SET color_code=?, name=?, swatch_image_url=?, "
-            "sort=?, is_active=1, updated_at=? WHERE slot_no=?",
+            "UPDATE bead_colors SET color_code=?, name=?, swatch_hex=?, "
+            "swatch_image_url=?, sort=?, is_active=1, updated_at=? "
+            "WHERE slot_no=?",
             (
                 (
                     color.color_code,
                     color.name,
+                    color.hex,
                     _target_url(base_url, color),
                     color.sort,
                     now,

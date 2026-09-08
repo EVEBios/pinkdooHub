@@ -171,6 +171,7 @@ async def test_mysql_schema_generator_matches_production_contract() -> None:
 
     assert "CREATE TABLE `bead_colors`" in ddl
     assert "`slot_no` SMALLINT NOT NULL UNIQUE" in ddl
+    assert "`swatch_hex` VARCHAR(7)" in ddl
     assert "`swatch_image_url` VARCHAR(2048)" in ddl
     assert "CREATE TABLE `product_kit_colors`" in ddl
 
