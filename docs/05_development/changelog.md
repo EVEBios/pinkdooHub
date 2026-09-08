@@ -15,6 +15,13 @@
   当前样本仍 fail closed。
 - 专项回归覆盖首次创建、同一时点零写重放、时间前进后的只读失败、仅新增两条当前样本、
   旧行保留及刷新后再次零写重放。该变更不修改业务 API、Schema 或迁移，也不触碰 Gate A。
+- 已对本地持久 `db.sqlite3` 实际 apply：因最初指定的操作者不是原 Seed 审计操作者，
+  所有权预检在任何业务写入前拒绝，并保留完整性通过的 `0600` 备份
+  `db.sqlite3.pre-local-demo-20260908-024201-529629.bak`；改用原操作者后的写前备份为
+  `db.sqlite3.pre-local-demo-20260908-024217-469378.bak`。本轮只为 pending 场景新增 1 条
+  当前预约及其 1 条 `CREATE_RESERVATION` 审计，旧行未修改；全表 reservations 7→8、
+  audit logs 583→584，其他关键表计数不变。独立 verifier、SQLite `integrity_check`/
+  `foreign_key_check` 与钱包对账 `scanned=11 / mismatches=0 / violations=0` 均通过。
 
 ## Gate A Backup 快速重启端口误判修复（真实主机发现，2026-09-08）
 

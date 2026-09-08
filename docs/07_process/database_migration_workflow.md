@@ -635,3 +635,13 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 `python -m app.tasks.local_demo_seed --apply --confirm-local-only --operator-username <ADMIN>` 是本地 development SQLite 的可恢复演示数据工具，不是迁移或发布数据入口。它在写入前创建 SQLite Backup API 快照，并把合成用户的随机凭据只写入被 Git 忽略的 `0600` 本地文件；不伪造真实微信充值、支付、退款或外部身份。
 
 2026-09-07 已实际应用，写前备份为 `backups/local-demo-data/db.sqlite3.pre-local-demo-20260907-105320-455438.bak`，凭据文件为 `backups/local-demo-data/synthetic-credentials.json`，两者权限均为 `0600`，不得输出或提交凭据值。`python -m app.tasks.local_demo_seed --verify` 通过，`wallet_reconcile` 为 `scanned=11 mismatches=0 violations=0`。最终本地表摘要：users 13、products 19、product images 24、orders 8/items 10、payments 6/settlements 6/refunds 2、inventory transactions 238、reservations 7、wallet accounts 11/transactions 9、audit logs 583、external identities 0。详细场景分布见 changelog 和根 README。
+
+2026-09-08 修复了活跃预约样本随三小时提前量自然失效的问题：旧 pending/confirmed
+合成预约作为历史保留，apply 只在当前 30 日窗口缺少对应样本时通过正式 Service 新建，
+并优先选择窗口后段的不同营业日。首次错误操作者预检零业务写入，保留的 `0600` 备份为
+`backups/local-demo-data/db.sqlite3.pre-local-demo-20260908-024201-529629.bak`；使用原 Seed
+操作者成功刷新前的 `0600` 备份为
+`backups/local-demo-data/db.sqlite3.pre-local-demo-20260908-024217-469378.bak`。本次只新增
+1 条 pending 及 1 条创建审计，当前全表为 reservations 8、audit logs 584；其他上述关键
+表计数不变。专用 verifier、SQLite 完整性/外键与钱包对账均通过。该滚动刷新仍只是本地
+演示数据操作，不写 Aerich，不是 MySQL 或发布迁移证据。
