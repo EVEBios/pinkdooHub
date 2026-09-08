@@ -30,6 +30,7 @@
 | ER 图 | [er_diagram.dbml](../02_database/er_diagram.dbml) |
 | Code Review 清单 | [code_review_checklist.md](../07_process/code_review_checklist.md) |
 | 数据库迁移流程 | [database_migration_workflow.md](../07_process/database_migration_workflow.md) |
+| AI 协作全栈项目规划与稳健交付手册 | [ai_assisted_fullstack_project_playbook.md](../07_process/ai_assisted_fullstack_project_playbook.md) |
 | 前端总体架构（Draft） | [frontend_architecture.md](../08_frontend/frontend_architecture.md) |
 | 前端多端策略 | [multi_platform_strategy.md](../08_frontend/multi_platform_strategy.md) |
 | 前端 API 集成契约 | [api_integration_contract.md](../08_frontend/api_integration_contract.md) |

@@ -285,6 +285,7 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 | 前端架构决策 | [Frontend ADR](docs/08_frontend/adr/README.md) |
 | 编码与 Git 规范 | [Coding Standards](docs/05_development/coding_standards.md) |
 | AI/开发上下文 | [AI Context](docs/06_ai/AI_CONTEXT.md) |
+| AI 协作全栈项目规划与稳健交付手册 | [AI-assisted Full-stack Project Playbook](docs/07_process/ai_assisted_fullstack_project_playbook.md) |
 | 迁移流程 | [Database Migration Workflow](docs/07_process/database_migration_workflow.md) |
 
 业务行为以 `docs/01_requirements/` 为准，HTTP 契约以 `docs/03_api/` 为准，表结构与索引以数据库设计和 DBML 为准；当前是否已实现必须结合代码、测试与 changelog 判断。
