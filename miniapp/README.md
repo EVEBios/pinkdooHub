@@ -156,9 +156,13 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `python -m
   组件链在 `legacy-peer-deps` 模式下不会自动安装的 peer dependency。
 - 未使用的百度/京东/QQ/鸿蒙/RN 平台插件、Generator、Husky/Commitlint 已移除；
   Git 提交仍遵循仓库 `AGENTS.md` 的 Conventional Commits 规则。
-- 2026-08-20 使用官方 npm registry 审计时，生产依赖仍有 10 项来自 Taro 4.2.1
-  上游链的报告（4 moderate、1 high、5 critical），主要涉及 H5 的 esbuild、
-  lodash-es 和 swiper。Taro 4.2.1 当日仍是最新版，`audit fix --force` 会破坏性
+- 2026-09-09 已将 `@tarojs/service@4.2.1` 的 `joi` 传递依赖从 `17.13.4` 更新到
+  其 `^17.12.3` 兼容范围内的 `17.13.7`，消除 `GHSA-gg4h-3hg2-grpc` 与
+  `GHSA-6w3j-5fw6-r9vr` 两条 Low 公告。`joi` 没有成为直接依赖，项目也未添加
+  `overrides`；精确版本继续只由 `package-lock.json` 冻结。
+- 官方 registry 的 production audit 仍有既有 Taro 4.2.1 上游链 10 个受影响包、
+  5 个叶子公告（4 moderate、1 high、5 critical），主要涉及 H5 的 esbuild、
+  lodash-es 和 swiper；Joi 修复不改变这组有期限策略。`audit fix --force` 会破坏性
   降级到 Taro 3.x，因此禁止执行；正式发布前必须重新审计并跟踪上游修复。
 
 ## 本阶段知识点

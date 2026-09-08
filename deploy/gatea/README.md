@@ -27,6 +27,19 @@ Run 34281512196 在干净 PR checkout 完成 8/8；完整 updater 隔离 MySQL �
 | `nginx/tls.conf.template` | 真实 Gate A HTTPS、ACME、图片和反向代理 |
 | `config.env.example` | 非 Secret 配置模板；真实文件位于 `/etc` |
 
+仓库的 `scripts/ci/gatea_m7_m8_drill.py` 是独立的 CI 编排器，不是持久部署入口。它只在
+GitHub-hosted disposable Linux Runner、root、显式 sentinel、本地 Docker daemon 且
+固定 Gate A 资源全部不存在时运行。CI 会用一次性随机 Secret 建立 source M7，真实完成
+Backup/独立 Restore、M8 plan/apply/停服 replay、target `app-up`、HEX/gzip/PNG 验收和
+M8 数据后 Backup/Restore，并在成功/失败的内部 `finally` 与 workflow `always()` 补偿步骤
+精确回收资源。上传 artifact 同时受脱敏白名单和最终安全扫描 marker 约束；dump、图片
+tar、配置、Secret、密码和 Token 不上传，扫描失败时先清空候选上传目录再重建最小安全
+失败证据。
+
+这项演练只能证明当前仓库候选在一次性 MySQL 8.0.46/Linux 上走通过完整 updater；它不
+复用或授权 `/etc/pinkdoohub/gatea`、`/srv/pinkdoohub/gatea`、真实 Gate A 卷、DNS、TLS
+或微信环境，也不能替代当次持久 Backup/Restore、目标 Image ID、RC 与真机验收。
+
 App 对客户端声明支持 gzip 且不小于 1 KiB 的文本响应执行 level 6 压缩；两份 Gate A
 Nginx 配置也以相同阈值/级别压缩 JSON、JavaScript、XML、SVG、CSS 和纯文本，并通过
 `Vary: Accept-Encoding` 保持缓存正确。上游已经设置 `Content-Encoding` 时 Nginx 不会

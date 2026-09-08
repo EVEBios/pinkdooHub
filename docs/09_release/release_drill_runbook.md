@@ -107,6 +107,22 @@ SQLite 数据也只属于开发环境，不是 Gate A 的数据或图片发布�
 
 ### 4.0 本仓库自动化入口
 
+当前 CI 另有 `scripts/ci/gatea_m7_m8_drill.py`，用于在 GitHub 托管的一次性 Ubuntu
+Runner 上自动复现完整 M7→M8 updater。它与下方历史 Phase 9.3 工具分离：source 为冻结
+M7 Runtime，target 为本次 checkout，顺序包含 source 数据/221 PNG、Backup/独立
+Restore、M8 plan/apply/停服 replay、target app-up、221 HEX/gzip/PNG Runtime，以及
+M8 数据后 Backup/Restore。`run` 内部和 workflow `always()` cleanup 均会精确回收固定
+Compose/restore 资源与两张任务镜像；Artifact 只接收脱敏白名单，并且只有 cleanup 后
+重新签发的最终安全扫描 marker 存在时才上传。
+
+Workflow 总闸为 60 分钟；主体由 40 分钟进程组 watchdog 约束，独立 cleanup 最多 8
+分钟。不得删掉内层 watchdog 或让它等于总闸，否则 Docker/Restore 卡死时可能没有补偿
+清理和安全证据时间。
+
+该入口必须拒绝本机、self-hosted、共享 Docker 或已经存在 Gate A 固定卷/网络/容器的
+环境；不得为了复用它而放宽 guard。它通过后只关闭 disposable Linux 的 updater 复现
+缺口，仍不授权持久迁移、Runtime 切换、真实 Origin/TLS、微信上传或真机操作。
+
 9.3.3–9.3.4 已把本 Runbook 固化为以下入口。`<run-id>` 必须使用 `YYYYMMDDtHHMMSS`；准备命令会先要求工作树 clean、记录 HEAD/Compose digest、确认四个回环端口空闲且同名 project 不存在，未通过时不会创建 Secret、证书或 Docker 资源。以下命令不包含 Secret 值，所有原始证据只写入 `/tmp/pinkdoohub-phase93/<run-id>/evidence`：
 
 ```bash

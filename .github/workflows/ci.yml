@@ -166,6 +166,56 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  gatea-m7-m8-updater:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PINKDOOHUB_GATEA_M7_M8_DRILL: github-hosted-disposable-linux-v1
+    steps:
+      - name: Check out the complete candidate history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install locked Python dependencies
+        run: |
+          python -m pip install --upgrade "pip==${PIP_VERSION}"
+          python -m pip install --requirement requirements.txt
+          python -m pip check
+
+      - name: Rehearse the complete Gate A M7 to M8 updater
+        run: |
+          mkdir -p artifacts/gatea-m7-m8-updater
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M8_DRILL \
+            timeout --signal=TERM --kill-after=30s 40m \
+            "$(command -v python)" scripts/ci/gatea_m7_m8_drill.py run \
+            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m8-updater"
+
+      - name: Verify disposable Gate A resources are removed
+        if: always()
+        run: |
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M8_DRILL \
+            timeout --signal=TERM --kill-after=15s 8m \
+            "$(command -v python)" scripts/ci/gatea_m7_m8_drill.py cleanup \
+            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m8-updater"
+
+      - name: Save Gate A updater rehearsal evidence
+        if: ${{ always() && hashFiles('artifacts/gatea-m7-m8-updater/artifact-scan-passed.json') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: gatea-m7-m8-updater-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gatea-m7-m8-updater/
+          if-no-files-found: error
+          retention-days: 14
+
   frontend-quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

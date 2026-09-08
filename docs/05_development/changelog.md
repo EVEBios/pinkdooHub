@@ -4,6 +4,19 @@
 
 ---
 
+## Miniapp Joi 传递依赖安全修复（2026-09-09）
+
+- Taro `@tarojs/service@4.2.1` 唯一声明的 `joi` 传递依赖范围为 `^17.12.3`；在不改变
+  Taro 版本和 `miniapp/package.json` 的前提下，仅更新 lockfile，将 `joi@17.13.4`
+  提升至同一兼容范围内的 `17.13.7`，并锁定官方 registry tarball 与 integrity。
+- 该补丁消除 `GHSA-gg4h-3hg2-grpc` 与 `GHSA-6w3j-5fw6-r9vr` 两条 Low 原型污染
+  公告；没有把 `joi` 增加为直接依赖，也没有添加 `overrides` 或执行会破坏性改变 Taro
+  依赖树的 `npm audit fix --force`。
+- 更新后的 `npm audit --omit=dev` 不再报告 `joi` 或上述两条公告，结果继续精确匹配既有
+  10 个受影响包、5 个叶子公告和 `4 moderate / 1 high / 5 critical` 的有期限策略；因此
+  `npm-policy.json` 与合成 fixture 均不扩例外、不改计数。没有应用代码、API/OpenAPI、
+  数据库 Schema/Aerich 迁移或应用版本变化。
+
 ## M8 Gate A M7→M8 入口与 Online no-op 保护（仓库候选，2026-09-09）
 
 - 新增可复用的本机可销毁容量工具与独立 Compose 拓扑：MySQL 8.0.46、Redis、单 worker
@@ -82,6 +95,20 @@
 - 该远端 PASS 关闭最终干净 SHA/新远端 CI 缺口，但不执行 `deploy/gatea` 完整生命周期；
   专用一次性 MySQL 完整 M7→M8 updater、新 Backup/Restore、持久写授权、candidate-pre
   三轮和微信 `release_eligible=true` RC 仍未完成，Gate A 继续 No-Go。
+- 当前候选新增第九类 `gatea-m7-m8-updater` CI Job：只接受 GitHub-hosted disposable
+  Linux、root、精确 sentinel、本地默认 Docker daemon、干净固定资源和完整 Git 历史；
+  source 固定为 M7 `73dca350...`，target 绑定当次 `GITHUB_SHA`。Job 从空环境真实创建
+  M7 代表业务与 221 PNG，依次完成 source Backup/同 ID 独立 Restore、M8
+  plan/apply/停服 replay、target app-up、221 HEX/gzip/小响应/PNG Runtime 验收和 M8
+  数据后 Backup/Restore。
+- 编排器在内部 `finally` 与 workflow `always()` 两次按 ownership Record 精确回收容器、
+  卷、网络、镜像、端口和工作目录。上传目录使用白名单、随机 Secret 精确扫描、凭据形状
+  扫描与 cleanup 后轮换的安全 marker；任何扫描异常都会失效 marker、清空候选上传内容，
+  只重建安全 state/cleanup/失败摘要。中断临时文件不能阻止二次 cleanup，镜像也纳入最终
+  residual 判定。本地新增 30 项隔离测试后 `tests/release` 为 `259 passed`，完整后端为
+  `2348 passed, 33 skipped in 126.83s`；前端 `84 suites / 573 tests` 与 TypeScript、
+  ESLint、Stylelint、CI policy、OpenAPI 类型均通过。真实 disposable Linux 首轮仍必须由
+  下一个远端 Run 证明，本段不预先宣称通过。
 
 ## 本地 2 核 / 4GiB / 5Mbps 容量探测（2026-09-08）
 

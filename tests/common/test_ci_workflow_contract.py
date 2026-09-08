@@ -11,6 +11,7 @@ MINIAPP_PACKAGE_PATH = REPOSITORY_ROOT / "miniapp" / "package.json"
 EXPECTED_JOBS = {
     "backend-sqlite",
     "backend-mysql-release",
+    "gatea-m7-m8-updater",
     "frontend-quality",
     "openapi-contract",
     "weapp-build",
@@ -29,7 +30,7 @@ def _top_level_job_names(workflow: str) -> set[str]:
     return set(re.findall(r"^  ([a-z][a-z0-9-]+):$", jobs_section, re.MULTILINE))
 
 
-def test_workflow_has_only_the_frozen_9_2_5_jobs_and_safe_triggers() -> None:
+def test_workflow_has_only_the_expected_jobs_and_safe_triggers() -> None:
     workflow = _workflow_text()
 
     assert "pull_request:" in workflow
@@ -135,12 +136,43 @@ def test_mysql_release_job_always_cleans_up_and_saves_evidence() -> None:
     assert "MYSQL_SERVICE_CONTAINER_ID: ${{ job.services.mysql.id }}" in workflow
     assert "python scripts/ci/check_mysql_gate.py cleanup" in workflow
     assert "if: always()" in workflow
+    assert (
+        "hashFiles('artifacts/gatea-m7-m8-updater/artifact-scan-passed.json')"
+        in workflow
+    )
     assert "artifacts/mysql-release.json" in workflow
     assert "artifacts/mysql-m6-legacy-seed.json" in workflow
     assert "artifacts/mysql-m7-legacy-seed.json" in workflow
     assert "artifacts/mysql-cleanup.json" in workflow
     assert "artifacts/backend-mysql-release.xml" in workflow
     assert "backend-mysql-release-${{ github.sha }}-${{ github.run_id }}" in workflow
+
+
+def test_gatea_updater_job_uses_only_a_disposable_github_hosted_runner() -> None:
+    workflow = _workflow_text()
+
+    assert "gatea-m7-m8-updater:" in workflow
+    assert "runs-on: ubuntu-24.04" in workflow
+    assert "timeout-minutes: 60" in workflow
+    assert "fetch-depth: 0" in workflow
+    assert (
+        "PINKDOOHUB_GATEA_M7_M8_DRILL: github-hosted-disposable-linux-v1"
+        in workflow
+    )
+    assert "GITHUB_EVENT_PATH" in workflow
+    assert "timeout --signal=TERM --kill-after=30s 40m" in workflow
+    assert "timeout --signal=TERM --kill-after=15s 8m" in workflow
+    assert "scripts/ci/gatea_m7_m8_drill.py run" in workflow
+    assert "scripts/ci/gatea_m7_m8_drill.py cleanup" in workflow
+    assert "RUNNER_ENVIRONMENT" in workflow
+    assert "if: always()" in workflow
+    assert (
+        "gatea-m7-m8-updater-${{ github.sha }}-${{ github.run_id }}-"
+        "${{ github.run_attempt }}"
+    ) in workflow
+    assert "artifacts/gatea-m7-m8-updater/" in workflow
+    assert "${{ secrets." not in workflow
+    assert "pull_request_target:" not in workflow
 
 
 def test_workflow_keeps_the_weapp_artifact_non_release_and_traceable() -> None:

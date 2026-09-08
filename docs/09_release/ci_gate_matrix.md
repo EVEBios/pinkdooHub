@@ -9,7 +9,9 @@
 9.2.1–9.2.6 的历史基线已完成：当时 `.github/workflows/ci.yml` 的 `backend-sqlite`、
 `backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、
 `repository-hygiene`、`python-dependency-audit` 和 `npm-dependency-audit` 已在真实
-Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job；加入 Wallet、
+Pull Request 的干净 checkout 全部通过。当前候选在这八类 Job 之外新增
+`gatea-m7-m8-updater`；它只允许在 GitHub 托管的一次性 Linux Runner 运行，不读取生产
+Secret，也不触碰持久 Gate A。加入 Wallet、
 Reservation、颜色 Kit 与 M7 后，head `4d6430c...` 的 Run 34129910349 已重新取得
 8/8；包含后续 Gate A Operations 和 loopback 端口快速复用修复的 M7 持久检查点 head
 `353455bb...` 又由 Run 34178908663 完成 8/8。M8 基线 head `4e745848...` 由
@@ -146,6 +148,7 @@ Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布�
 |-----|------|---------------|----------|---------------|--------|
 | `backend-sqlite` | 隔离 Redis 或 fakeredis | 安装 Python；`pytest tests/ -q` | 任一失败；除已批准 MySQL-only 外出现未知 skip | pytest 日志/JUnit | Yijie Shen |
 | `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→8；M5 fixed→M6→M7→M8 历史重放；M6/M7/M8 snapshot；联合运行 `tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql` | 迁移、版本、历史兼容、221 槽/HEX、M7 单例/默认值、FK/约束/索引、库存/预约/资金并发、1205/1213、跨域锁序、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6/M7/M8 快照、pytest/JUnit、cleanup | Yijie Shen |
+| `gatea-m7-m8-updater` | GitHub-hosted disposable Ubuntu；真实 Gate A Compose/MySQL 8.0.46/Redis/Nginx/图片卷 | 冻结 M7 Runtime 建库与 221 PNG；source Backup/独立 Restore；当前 checkout M8 plan/apply/停服 replay/app-up；221 HEX、gzip/identity 等价、PNG 不压缩；M8 Backup/Restore | Runner/资源身份、备份恢复、升级、运行时核验、Secret 扫描或精确清理任一失败 | 白名单 summary、两组 Backup/Restore Record、upgrade plan/apply/replay/Record/evidence、runtime、cleanup | Yijie Shen |
 | `frontend-quality` | 无 | `npm ci --legacy-peer-deps`；typecheck；ESLint；Stylelint；Jest；CI policy tests | 安装/检查/测试任一失败；新增未批准 warning | Jest JSON/log、版本清单 | Yijie Shen |
 | `openapi-contract` | 无外部 DB/Redis | 设置 UTF-8；真实导出到临时文件；比较固定 JSON；生成类型 `--check` | JSON/类型漂移、临时文件残留、CLI smoke 失败 | diff、paths/schemas 摘要 | Yijie Shen |
 | `weapp-build` | 无 | 注入受控 HTTPS Origin；`npm run build:weapp`；配置/包体/Secret 扫描 | 构建失败、非预期/占位/本机 Origin、Secret、微信包体越界、未批准 warning；保留 `.test` Origin 若被标成可发布也必须失败 | `dist/weapp`、manifest、checksum、构建日志 | Yijie Shen |
@@ -230,6 +233,30 @@ Wallet 的 MySQL v1 关键闭环原有单独一次性 `2 passed` 历史结果。
 随后取得 8/8，三域联合、cleanup 与 artifact 步骤均为 success；完整身份和 digest 见
 [Wallet 远端 CI 报告](reports/wallet_remote_ci_2026-09-07.md)。其后新增的 Gate A 运维与
 MARD 测试仍须由后续 SHA 重跑，不能沿用本 Run。
+
+### 3.2.1 Gate A M7→M8 Updater Rehearsal
+
+`gatea-m7-m8-updater` 是对 3.2 的补充而不是替代。它要求完整 Git 历史，source 固定为
+已留证的 M7 Runtime，target 绑定本次干净 checkout 的精确 `GITHUB_SHA`。编排器只在
+`RUNNER_ENVIRONMENT=github-hosted`、Linux、root、显式 sentinel 和本地 Docker daemon
+同时成立时运行；固定 Gate A container、volume、network 或 loopback 端口若已存在，
+必须在产生写入前拒绝。
+
+Job 的总超时为 60 分钟，但完整 `run` 另受 40 分钟进程组 watchdog 约束；超时会终止
+Python 及其 Docker 子进程，并为独立 `always()` cleanup 保留最多 8 分钟，避免卡死操作
+耗尽总闸而跳过资源补偿与证据收口。
+
+顺序固定为：M7 首次迁移/启动与代表数据 → source 221 色 PNG 发布 → source
+Backup/独立 Restore → M8 plan/apply → App/Nginx 保持停止的 plan replay → target
+`app-up` → 221 HEX/gzip/PNG Runtime 核验 → M8 数据后 Backup/独立 Restore。`run` 的
+`finally` 与 workflow 的 `if: always()` cleanup 双重回收精确资源；上传同时要求脱敏白名单
+和 cleanup 后重新签发的安全扫描 marker，MySQL dump、图片 tar、配置、Secret、合成密码
+和 Token 均不得进入 artifact。扫描异常会先失效 marker 并清空候选上传内容，只重建安全
+状态/清理/失败摘要后才允许上传。
+
+该 Job 通过只关闭“仓库候选尚未走过完整 updater”的隔离环境缺口，不构成持久 Gate A
+写入授权，也不替代真实候选 Image ID、当次持久 Backup/Restore、真实 Origin/TLS、
+`release_eligible=true` RC 或 iOS/Android 真机。
 
 ### 3.3 Frontend Quality
 

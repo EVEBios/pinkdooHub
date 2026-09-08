@@ -714,6 +714,15 @@ M8。
   `docs/09_release/reports/m8_hardening_remote_ci_2026-09-09.md`。该 PASS 仍不代表完整
   updater 已演练或 Gate A M8 已应用。
 
+当前候选把“完整 updater 尚未演练”固化为独立 `gatea-m7-m8-updater` CI Job。它只允许
+GitHub-hosted disposable Ubuntu，使用冻结 M7 Runtime 和当前 checkout M8 镜像，真实
+建立 M7 业务/221 PNG，执行 source Backup 与同 ID 独立 Restore，再运行 M8
+plan/apply/停服 plan-replay、target app-up、221 HEX/gzip/PNG Runtime 核验，并追加
+M8 数据后 Backup/Restore。任何资源预存、身份/链漂移、Restore/升级/Runtime/Secret
+扫描或精确 cleanup 失败都阻断；workflow 不读取生产 Secret，且上传白名单不含 dump、
+图片 tar、配置、密码或 Token。该 Job 即使通过也只关闭一次性 Linux 的编排风险，不能
+自动应用持久 Gate A，也不替代目标主机当次 Backup/Restore、Image ID 与写授权。
+
 ---
 
 ## 14. 本地 SQLite Refund 结构精确修复
