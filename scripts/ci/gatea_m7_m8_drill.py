@@ -177,6 +177,57 @@ class SecretBundle:
         self.bootstrap_final_password = ""
 
 
+def _safe_failure_evidence(
+    error: BaseException | None,
+    *,
+    secret_values: Sequence[str] = (),
+) -> dict[str, Any] | None:
+    """生成可上传的最小失败证据，不回显凭据或不受控异常正文。"""
+
+    if error is None:
+        return None
+
+    def safe_text(value: object, *, limit: int = 4096) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        rendered = value
+        for secret_value in secret_values:
+            if secret_value:
+                rendered = rendered.replace(secret_value, "[REDACTED]")
+        rendered = rendered[-limit:]
+        encoded = rendered.encode("utf-8", errors="replace")
+        if any(pattern.search(encoded) for pattern in SENSITIVE_TEXT_PATTERNS):
+            return None
+        return rendered
+
+    evidence: dict[str, Any] = {"error_type": type(error).__name__}
+    if isinstance(error, subprocess.CalledProcessError):
+        evidence["returncode"] = error.returncode
+        raw_command = error.cmd
+        command = (
+            [str(part) for part in raw_command]
+            if isinstance(raw_command, (list, tuple))
+            else [str(raw_command)]
+        )
+        safe_command = [safe_text(part, limit=1024) for part in command]
+        if all(part is not None for part in safe_command):
+            evidence["command"] = safe_command
+        elif command:
+            evidence["command"] = [Path(command[0]).name]
+            evidence["command_details_omitted"] = True
+        stdout_tail = safe_text(error.stdout)
+        stderr_tail = safe_text(error.stderr)
+        if stdout_tail is not None:
+            evidence["stdout_tail"] = stdout_tail
+        if stderr_tail is not None:
+            evidence["stderr_tail"] = stderr_tail
+    elif isinstance(error, (DrillError, gatea.GateAError)):
+        message = safe_text(str(error), limit=1024)
+        if message is not None:
+            evidence["message"] = message
+    return evidence
+
+
 @dataclass(slots=True)
 class DrillPaths:
     artifact_dir: Path
@@ -2143,6 +2194,7 @@ def run_command(
     operation_error: BaseException | None = None
     cleanup_payload: dict[str, Any] | None = None
     scan_payload: dict[str, Any] | None = None
+    failure_evidence: dict[str, Any] | None = None
     started_at = _utc_now()
     failed_stage = "preflight"
     try:
@@ -2190,6 +2242,10 @@ def run_command(
                 }
         else:
             secret_values = state.secrets.values() if state.secrets is not None else ()
+            failure_evidence = _safe_failure_evidence(
+                operation_error,
+                secret_values=secret_values,
+            )
             finalization_stage = "cleanup"
             try:
                 cleanup_payload = cleanup_owned_state(state)
@@ -2213,6 +2269,7 @@ def run_command(
                     "error_type": (
                         None if operation_error is None else type(operation_error).__name__
                     ),
+                    "failure_evidence": failure_evidence,
                     "source_sha": SOURCE_SHA,
                     "target_sha": state.target_sha,
                     "reported_pr_head_sha": state.pr_head_sha,
@@ -2277,6 +2334,12 @@ def run_command(
                     state.secrets.clear()
 
     if operation_error is not None:
+        if failure_evidence is not None:
+            print(
+                "Gate A M7-to-M8 drill failure evidence: "
+                + json.dumps(failure_evidence, ensure_ascii=True, sort_keys=True),
+                file=sys.stderr,
+            )
         return 1
     if cleanup_payload is None or cleanup_payload.get("passed") is not True:
         return 1

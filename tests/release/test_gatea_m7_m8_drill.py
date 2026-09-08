@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 from typing import Mapping, Sequence
 
 import pytest
@@ -568,6 +569,48 @@ def test_run_failure_stops_pipeline_but_still_cleans_and_records_stage(
     assert summary["status"] == "failed"
     assert summary["failed_stage"] == "apply-target"
     assert summary["error_type"] == "DrillError"
+    assert summary["failure_evidence"] == {
+        "error_type": "DrillError",
+        "message": "safe failure",
+    }
+
+
+def test_called_process_failure_evidence_redacts_ephemeral_secrets() -> None:
+    secret = "ephemeral-value-that-must-not-leak"
+    error = subprocess.CalledProcessError(
+        17,
+        ("docker", "compose", "run", secret),
+        output=f"safe prefix {secret}",
+        stderr="migration command failed",
+    )
+
+    payload = drill._safe_failure_evidence(error, secret_values=(secret,))
+    rendered = json.dumps(payload)
+
+    assert payload == {
+        "error_type": "CalledProcessError",
+        "returncode": 17,
+        "command": ["docker", "compose", "run", "[REDACTED]"],
+        "stdout_tail": "safe prefix [REDACTED]",
+        "stderr_tail": "migration command failed",
+    }
+    assert secret not in rendered
+
+
+def test_called_process_failure_evidence_omits_credential_shaped_text() -> None:
+    error = subprocess.CalledProcessError(
+        1,
+        ("python", "worker.py"),
+        stderr="mysql://operator:credential@database.invalid/app",
+    )
+
+    payload = drill._safe_failure_evidence(error)
+
+    assert payload == {
+        "error_type": "CalledProcessError",
+        "returncode": 1,
+        "command": ["python", "worker.py"],
+    }
 
 
 def test_exact_secret_scan_failure_purges_all_candidate_artifacts(
