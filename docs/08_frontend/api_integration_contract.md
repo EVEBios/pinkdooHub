@@ -2,7 +2,7 @@
 
 > **Document Version:** v0.13
 > **Status:** Draft
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 > **Source of Truth:** 实际 FastAPI OpenAPI、路由/Schema/测试及对应业务/API 文档
 
 本文档是 Taro 客户端与现有 FastAPI 后端之间的适配契约。它不复制各模块完整 API 文档，而是冻结所有前端模块必须共同遵守的解析、认证、类型、错误、上传和幂等规则。
@@ -33,7 +33,7 @@
 
 账号密码注册/登录、Product 浏览、Cart、用户/ADMIN Order，以及 Phase 8 当前后端能力范围的 ADMIN Product、Inventory、Product Audit 和 ADMIN User 均已完成微信开发者工具 Functional。Phase 8.2 验收后延期的管理页白色图案和登录下划线闪烁已于 2026-08-29 复测关闭：白色图案通过把白色卡片视觉层从原生 `Form` 移到外层 `View` 解决，登录 `_` 闪烁后续无法复现并由用户确认消失。该修复不改变任何 HTTP 请求、响应或授权契约。H5 真实跨域联调仍受后端尚未注册 CORS allowlist 限制；微信登录仓库链已实现但真实 AppID/受控 Secret/真机尚未启用或验收，真实微信支付仍未交付。
 
-Reservation N1 后端契约与仓库实现已完成，M5 已在一次性 MySQL 8.0.46 完成 0→5 与核心并发/重试/索引验证；前端 Endpoint、Runtime Guard、Feature、页面与 Functional 必须以 [Reservation API](../03_api/reservation_api.md)、实际代码、自动化和 changelog 共同判断。M5 尚未应用持久数据库，真实客户端/目标环境验收仍未完成。N1 的顾客可见结果以“我的预约/详情”中的状态和 `customer_message` 为准，店方可从管理详情读取当前手机号人工联系；N1 不主动发送微信通知，N2 继续 Deferred。
+Reservation N1/M7 后端契约与仓库实现已完成，M5/M7 已通过一次性 MySQL 核心并发/重试/索引验证并进入当前持久 Gate A M7；前端 Endpoint、Runtime Guard、Feature、页面与 Functional 必须以 [Reservation API](../03_api/reservation_api.md)、实际代码、自动化和 changelog 共同判断。共享、预发布、生产及真实客户端验收仍未因此自动完成。N1 的顾客可见结果以“我的预约/详情”中的状态和 `customer_message` 为准，店方可从管理详情读取当前手机号人工联系；N1 不主动发送微信通知，N2 继续 Deferred。
 
 ---
 
@@ -434,7 +434,7 @@ confirm/reject/cancel 与店休 DELETE 均使用 empty-body 请求，连 `{}` �
 | 管理员启用用户 | 未实现 | 不创建伪功能 |
 | 管理员用户详情 | 实际 OpenAPI 未提供 | 列表只用现有字段 |
 | Order 创建幂等 | 未提供客户端 key | 禁止自动重试；发布前补齐 |
-| Reservation N1 后端 | 仓库实现完成；M5 一次性 MySQL 8.0.46 核心门槛通过，但未应用持久环境 | 部署前确认目标数据库版本、迁移记录与发布验收 |
+| Reservation N1 后端 | N1/M7 仓库与一次性 MySQL 核心门槛完成；M5/M7 已进入当前 Gate A M7，其他环境未自动迁移 | 部署前确认各目标数据库版本、迁移记录与发布验收 |
 | Reservation N1 前端 | 六个页面、Endpoint/Guard/Feature、入口与登录回跳已形成工程候选；Functional 状态仍以真实环境证据和 changelog 为准 | 作为独立纵向切片，不复用 Order 创建语义 |
 | Reservation N2 主动通知 | Deferred，未实现/未启用/未授权 | 不创建订阅、发送状态或已通知 UI |
 | 生产图片 | 当前开发本地/相对 URL | 开发 resolver；生产对象存储/CDN |

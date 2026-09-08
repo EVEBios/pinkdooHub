@@ -3,9 +3,9 @@
 > **Document Version:** v3.1
 > **Module:** Product
 > **Phase:** 4.1 Product Module + M6 Color-selectable Kit
-> **Last Updated:** 2026-09-08
+> **Last Updated:** 2026-09-09
 >
-> 本文档定义 Product 模块的业务规则。Phase 4.1 固定套装与 M6 自选颜色套装已完成仓库实现；M8 将来源 HEX 收口为正式颜色字段并将客户端切换为直接绘制。M8 已完成隔离 MySQL 候选验证、四端自动化与当前本地持久 SQLite 应用；Gate A、共享、预发布和生产 MySQL 的迁移/部署仍待完成，微信开发者工具模拟器验证也不等于真实 iOS/Android 真机验收。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
+> 本文档定义 Product 模块的业务规则。Phase 4.1 固定套装与 M6 自选颜色套装已完成仓库实现；M8 将来源 HEX 收口为正式颜色字段并将客户端切换为直接绘制。M8 已完成隔离 MySQL 候选验证、四端自动化与当前本地持久 SQLite 应用；持久 Gate A 已到 M7并含 221 色/兼容 PNG，只有 M8 仍待受控应用，且共享、预发布和生产 MySQL 均未因该证据迁移。微信开发者工具模拟器验证也不等于真实 iOS/Android 真机验收。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
 >
 > 模块需求概要见 [product_module.md](./product_module.md)。
 
@@ -65,7 +65,7 @@ GET /products/1
 
 **未来扩展：** 新增 3 人配置只需创建一条 ExperienceOption；如果相同组合曾被逻辑删除，则恢复原记录。无需重建其他组合。
 
-**模块边界：** Product 只定义 ExperienceOption 的时长、人数、`day_type` 与当前价格，不拥有具体日期、时段或营业日历。Reservation N1 已负责未来第 0–30 日、半小时时段、周一固定店休、自定义店休和完整 Option 创建快照；详见 [Reservation Module](reservation_module.md)。Product 当前仍不考虑多种体验主题和包场模式。
+**模块边界：** Product 只定义 ExperienceOption 的时长、人数、`day_type` 与当前价格，不拥有具体日期、时段或营业日历。Reservation N1 已负责未来第 0–30 日、半小时时段、默认周一但可由 ADMIN+ 配置的每周固定店休、自定义单日店休和完整 Option 创建快照；详见 [Reservation Module](reservation_module.md)。Product 当前仍不考虑多种体验主题和包场模式。
 
 ### 1.2 Kit Product（拼豆套装）
 
@@ -657,7 +657,7 @@ product_images
 | 5 | `price <= 0` 或 `price > 99999` | `kit price must be greater than 0 and no more than 99999` |
 | 6 | `stock < 0` | `kit stock must be non-negative` |
 
-对于 `fixed`，上述既有检查保持不变；`stock = 0` 允许上架。对于 `color_selectable`，M6/M8 还必须校验 `sale_unit_grams=10`、聚合 `stock=null`、221 条颜色关联完整，并至少存在一个已启用颜色；每个启用色均须全局激活且名称/编码/`swatch_hex` 完整。颜色余额 `stock_units=0` 仍允许上架，但下单会因库存不足而失败。新增 issue 依稳定顺序为：`color-selectable kit sale unit must be 10 grams`、`color-selectable kit stock must be null`、`color-selectable kit must link all 221 bead color slots`、`at least one product kit color must be enabled`、`enabled product kit colors must be active and configured`、`product kit color stock must be non-negative`。真实 MySQL/部署状态仍为 Pending。
+对于 `fixed`，上述既有检查保持不变；`stock = 0` 允许上架。对于 `color_selectable`，M6/M8 还必须校验 `sale_unit_grams=10`、聚合 `stock=null`、221 条颜色关联完整，并至少存在一个已启用颜色；每个启用色均须全局激活且名称/编码/`swatch_hex` 完整。颜色余额 `stock_units=0` 仍允许上架，但下单会因库存不足而失败。新增 issue 依稳定顺序为：`color-selectable kit sale unit must be 10 grams`、`color-selectable kit stock must be null`、`color-selectable kit must link all 221 bead color slots`、`at least one product kit color must be enabled`、`enabled product kit colors must be active and configured`、`product kit color stock must be non-negative`。Gate A 已完成 M6/M7 的真实 MySQL/目录部署；M8 HEX 迁移与 Runtime 现场验收仍为 Pending。
 
 如果 ProductKit 扩展记录缺失，只追加 `kit configuration is required`，不再追加价格或库存 issue；记录不存在与字段值非法不是同一问题。Kit 的图片完整性目前只有公共封面规则，不要求 221 个颜色槽都配置图片，也不把颜色色板图算作 Product 公共封面。
 
@@ -737,10 +737,10 @@ Phase 4.3 已采用余额表 + 流水表模式：余额表保存当前值，Inve
 | Product（体验/套装） | Draft → Online → Offline → 逻辑删除 | Phase 4.1 |
 | ExperienceOption | 创建 / 恢复 → 修改 → 逻辑删除（无独立状态，跟随 Product） | Phase 4.1 |
 | fixed Kit | 与 Product 相同，共用 Product 生命周期；历史 Kit 默认归入该类 | Phase 4.1 已实现，M6 保持兼容 |
-| color_selectable Kit / ProductKitColor | 创建 221 个禁用零库存槽 → 配置/启用 → 随 Product 对用户可见 | M6 仓库实现与本地验证已完成；真实 MySQL/部署待完成 |
+| color_selectable Kit / ProductKitColor | 创建 221 个禁用零库存槽 → 配置/启用 → 随 Product 对用户可见 | M6 仓库、本地/真实 MySQL 验证与当前 Gate A M7 已完成；其他环境待单独部署 |
 | Order | Pending → Paid → Completed；Pending → Cancelled | Phase 4.2 已实现 |
-| Kit 当前库存值 | fixed 按套；color_selectable 按商品颜色的 10g 单位 | fixed 与 M6 颜色库存均已完成仓库实现；M6 真实 MySQL/部署待完成 |
-| Inventory 流水与自动变更 | 管理调整、下单扣减、取消/PAID 退款恢复 | fixed 与 M6 颜色流水均已完成仓库实现；M6 真实 MySQL/部署待完成 |
+| Kit 当前库存值 | fixed 按套；color_selectable 按商品颜色的 10g 单位 | fixed 与 M6 颜色库存均已完成仓库/真实 MySQL 验证并进入当前 Gate A M7 |
+| Inventory 流水与自动变更 | 管理调整、下单扣减、取消/PAID 退款恢复 | fixed 与 M6 颜色流水均已完成仓库/真实 MySQL 验证并进入当前 Gate A M7 |
 
 > **关于 ExperienceOption 的 status：** 当前不设独立状态。Option 仅作为 Product 的配置项存在，Product 的状态（draft/online/offline）已覆盖了"该配置是否对用户可见"的需求。如需独立控制某个 Option 的可见性，后续再扩展。
 
@@ -823,14 +823,14 @@ Phase 4.3 已采用余额表 + 流水表模式：余额表保存当前值，Inve
 - 套装商品：创建多款套装、独立定价
 - 商品搜索、排序、分页
 
-M6 已完成仓库实现与本地验证的增量：`fixed` / `color_selectable` KitKind、221 个全局颜色槽、商品级颜色启用/库存、10g 销售单位、颜色订单快照与库存流水。真实 MySQL 0→6 门槛、目标环境迁移和部署仍未完成，不得把该段描述为已部署能力。
+M6 已完成仓库实现、本地/真实 MySQL 门槛及当前 Gate A 持久发布：`fixed` / `color_selectable` KitKind、221 个全局颜色槽、商品级颜色启用/库存、10g 销售单位、颜色订单快照与库存流水。该事实仅覆盖当前 Gate A M7；共享、预发布、生产及 M8 HEX 仍须分别迁移、部署和验收。
 
 **当前不由 Product 负责或将在后续业务版本扩展：**
 
 | 功能 | 所属模块 | 计划版本 |
 |------|----------|----------|
 | 多种体验主题 | Product | 待定 |
-| 具体预约日期 / 时间段、营业日历 | Reservation | N1 仓库实现完成；M5 已在一次性 MySQL 8.0.46 验证但未应用持久环境 |
+| 具体预约日期 / 时间段、营业日历 | Reservation | N1 仓库实现完成；M5 已进入当前 Gate A M7，其他持久环境仍须分别执行 |
 | 包场模式 | Product | 待定 |
 | 库存流水、并发扣减与库存调整单 | Inventory | Phase 4.3 |
 | 商品评价 | Review | 待定 |

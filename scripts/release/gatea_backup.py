@@ -27,6 +27,43 @@ DEFAULT_BACKUP_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/backups")
 DEFAULT_RESTORE_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/restores")
 BACKUP_ID_PATTERN = re.compile(r"^[0-9]{8}t[0-9]{6}z$")
 RESTORE_PROJECT_PREFIX = "pinkdoohub-gatea-restore-"
+M7_CONTENT_SNAPSHOT_PROFILE = "m7-preserved-business-v1"
+M7_CONTENT_SNAPSHOT_SCHEMA_VERSION = 1
+M7_CONTENT_SNAPSHOT_KEYS = frozenset(
+    {
+        "content_sha256",
+        "profile",
+        "schema_version",
+    }
+)
+M7_CONTENT_SNAPSHOT_AERICH_CHAINS = frozenset(
+    {
+        ",".join(gatea.APPROVED_TARGET_M7_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
+    }
+)
+M7_PRESERVED_TABLES = (
+    "audit_logs",
+    "experience_options",
+    "external_identities",
+    "inventory_transactions",
+    "order_items",
+    "orders",
+    "payment_settlements",
+    "payments",
+    "product_images",
+    "product_kit_colors",
+    "product_kits",
+    "products",
+    "recharge_orders",
+    "refunds",
+    "reservation_settings",
+    "reservations",
+    "store_business_days",
+    "users",
+    "wallet_accounts",
+    "wallet_transactions",
+)
 MYSQL_DUMP_COMMAND = (
     'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" '
     "exec mysqldump --host=127.0.0.1 --user=root "
@@ -61,6 +98,45 @@ SELECT JSON_OBJECT(
   'audit_logs', (SELECT COUNT(*) FROM audit_logs)
 );
 SQL"""
+M7_CONTENT_SNAPSHOT_COMMAND = f'''MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+umask 077
+snapshot_file="$(mktemp /tmp/pinkdoohub-m7-content.XXXXXX)"
+chmod 0600 "$snapshot_file"
+trap 'rm -f "$snapshot_file"' EXIT HUP INT TERM
+LC_ALL=C mysqldump --host=127.0.0.1 --user=root \
+  --single-transaction --hex-blob --set-gtid-purged=OFF --no-tablespaces \
+  --default-character-set=utf8mb4 --no-create-info --skip-triggers --compact \
+  --order-by-primary --skip-extended-insert "$MYSQL_DATABASE" \
+  {" ".join(M7_PRESERVED_TABLES)} > "$snapshot_file"
+printf '\\n-- bead-colors-m7-projection-v1 --\\n' >> "$snapshot_file"
+mysql --batch --skip-column-names --raw --host=127.0.0.1 --user=root \
+  "$MYSQL_DATABASE" >> "$snapshot_file" <<'SQL'
+SELECT CONCAT_WS(':',
+  `id`,
+  DATE_FORMAT(`created_at`, '%Y-%m-%dT%H:%i:%s.%f'),
+  DATE_FORMAT(`updated_at`, '%Y-%m-%dT%H:%i:%s.%f'),
+  `slot_no`,
+  COALESCE(HEX(CAST(`color_code` AS BINARY)), '<NULL>'),
+  COALESCE(HEX(CAST(`name` AS BINARY)), '<NULL>'),
+  COALESCE(HEX(CAST(`swatch_image_url` AS BINARY)), '<NULL>'),
+  `sort`,
+  `is_active` + 0
+)
+FROM `bead_colors`
+ORDER BY `id`;
+SQL
+content_sha256="$(sha256sum "$snapshot_file" | awk '{{print $1}}')"
+case "$content_sha256" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]* ) ;;
+  * ) exit 1 ;;
+esac
+if [ "${{#content_sha256}}" -ne 64 ]; then
+  exit 1
+fi
+printf '{{"content_sha256":"%s","profile":"{M7_CONTENT_SNAPSHOT_PROFILE}","schema_version":{M7_CONTENT_SNAPSHOT_SCHEMA_VERSION}}}\\n' \
+  "$content_sha256"
+'''
 IMAGE_MANIFEST_COMMAND = (
     "find /data/images -type f -exec sha256sum {} + | "
     "sed 's# /data/images/# #' | sort"
@@ -204,6 +280,49 @@ def _parse_snapshot(output: str) -> dict[str, Any]:
     if not isinstance(payload, dict) or not payload:
         raise gatea.GateAError("Gate A database snapshot output has an invalid shape")
     return payload
+
+
+def _requires_m7_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
+    return snapshot.get("aerich_versions") in M7_CONTENT_SNAPSHOT_AERICH_CHAINS
+
+
+def _validate_m7_content_snapshot(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != M7_CONTENT_SNAPSHOT_KEYS:
+        raise gatea.GateAError("Gate A M7 content snapshot is invalid")
+    content_sha256 = payload.get("content_sha256")
+    if (
+        type(payload.get("schema_version")) is not int
+        or payload.get("schema_version") != M7_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        or payload.get("profile") != M7_CONTENT_SNAPSHOT_PROFILE
+        or not isinstance(content_sha256, str)
+        or gatea.SHA256_PATTERN.fullmatch(content_sha256) is None
+    ):
+        raise gatea.GateAError("Gate A M7 content snapshot is invalid")
+    return dict(payload)
+
+
+def _source_m7_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-tty",
+            "mysql",
+            "sh",
+            "-ec",
+            M7_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m7_content_snapshot(_parse_snapshot(result.stdout))
 
 
 def _source_snapshot(
@@ -366,6 +485,7 @@ def create_backup(
     started_at = datetime.now(timezone.utc).isoformat()
     backup_error: BaseException | None = None
     snapshot: dict[str, Any] = {}
+    m7_content_snapshot: dict[str, Any] | None = None
     image_manifest: list[str] = []
     try:
         gatea._run_compose(
@@ -376,6 +496,13 @@ def create_backup(
             arguments=("stop", "--timeout", "30", "nginx", "app"),
         )
         snapshot = _source_snapshot(values, config_file, secret_dir, mode)
+        if _requires_m7_content_snapshot(snapshot):
+            m7_content_snapshot = _source_m7_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                mode,
+            )
         image_manifest = _source_image_manifest(
             values, config_file, secret_dir, mode
         )
@@ -447,6 +574,11 @@ def create_backup(
         "completed_at": datetime.now(timezone.utc).isoformat(),
         "consistency": "nginx-and-app-stopped",
         "database_snapshot": snapshot,
+        **(
+            {"m7_content_snapshot": m7_content_snapshot}
+            if m7_content_snapshot is not None
+            else {}
+        ),
         "image_manifest": image_manifest,
         "artifacts": {
             "mysql": {
@@ -492,8 +624,17 @@ def _load_backup_record(
             payload.get("schema_version") != 1
             or payload.get("backup_id") != backup_id
             or payload.get("passed") is not True
+            or not isinstance(payload.get("database_snapshot"), dict)
         ):
             raise ValueError
+        database_snapshot = payload["database_snapshot"]
+        m7_content_snapshot = payload.get("m7_content_snapshot")
+        if _requires_m7_content_snapshot(database_snapshot):
+            if m7_content_snapshot is None:
+                raise ValueError
+            _validate_m7_content_snapshot(m7_content_snapshot)
+        elif m7_content_snapshot is not None:
+            _validate_m7_content_snapshot(m7_content_snapshot)
         for name, path in expected.items():
             metadata = artifacts[name]
             if metadata.get("path") != str(path):
@@ -564,6 +705,30 @@ def _restore_snapshot(
         capture_output=True,
     )
     return _parse_snapshot(result.stdout)
+
+
+def _restored_m7_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> dict[str, Any]:
+    result = _run_restore(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        project=project,
+        arguments=(
+            "exec",
+            "--no-tty",
+            "mysql-restore",
+            "sh",
+            "-ec",
+            M7_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m7_content_snapshot(_parse_snapshot(result.stdout))
 
 
 def _restored_image_manifest(
@@ -649,6 +814,8 @@ def verify_restore(
     )
     started_at = datetime.now(timezone.utc).isoformat()
     restored_snapshot: dict[str, Any] = {}
+    restored_m7_content_snapshot: dict[str, Any] | None = None
+    expected_m7_content_snapshot = payload.get("m7_content_snapshot")
     restored_images: list[str] = []
     redis_size = "unknown"
     passed = False
@@ -725,6 +892,13 @@ def verify_restore(
         restored_snapshot = _restore_snapshot(
             values, config_file, secret_dir, project
         )
+        if expected_m7_content_snapshot is not None:
+            restored_m7_content_snapshot = _restored_m7_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                project,
+            )
         restored_images = _restored_image_manifest(
             values, config_file, secret_dir, project
         )
@@ -761,6 +935,10 @@ def verify_restore(
         )
         if restored_snapshot != payload["database_snapshot"]:
             raise gatea.GateAError("Gate A restored database snapshot does not match")
+        if restored_m7_content_snapshot != expected_m7_content_snapshot:
+            raise gatea.GateAError(
+                "Gate A restored M7 content snapshot does not match"
+            )
         if restored_images != payload["image_manifest"]:
             raise gatea.GateAError("Gate A restored image manifest does not match")
         if redis_size != "0":
@@ -814,6 +992,14 @@ def verify_restore(
             "started_at": started_at,
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "database_matches": True,
+            **(
+                {
+                    "m7_content_matches": True,
+                    "m7_content_snapshot": restored_m7_content_snapshot,
+                }
+                if restored_m7_content_snapshot is not None
+                else {}
+            ),
             "images_match": True,
             "restore_app_ready": True,
             "redis_started_empty": True,

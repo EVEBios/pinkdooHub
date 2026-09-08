@@ -2,7 +2,7 @@
 
 > **Document Version:** v0.3
 > **Status:** Phase 9.1–9.3 Complete; Phase 9.4 等待备案外部项；Phase 9.5 仓库内可实施范围已完成（Gate A/Gate B 均仍为 No-Go）
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 > **Release Scope:** 本版只发布微信小程序（`weapp`）
 
 本文把“多端、CI 与发布”收敛为本版可执行的微信单平台路线。Phase 9 不是一次性把代码上传到微信，而是依次建立发布目标、可重复门槛、隔离演练、内部测试版和公开发布门。每一阶段都必须产生可复核证据；历史测试通过、单次本机构建或开发者工具 Functional 不能替代当前候选版本的发布证据。
@@ -186,7 +186,7 @@ HMAC、结构化安全事件、Secret 文件注入边界、图片存储 Protocol
 | Job | 关键动作 | 阻断条件 | 证据 |
 |-----|----------|----------|------|
 | backend-sqlite | Python 3.10、锁定依赖、`pytest tests/ -q` | 任一失败；MySQL-only 以外出现跳过且无批准 | pytest 日志与汇总 |
-| backend-mysql-release | 启动隔离 MySQL 8+、执行 Aerich 0→当前（当前为 0→6）、重放 M5 fixed 样本并联合运行 Inventory + Reservation 18 项 MySQL 候选门槛 | 迁移、历史兼容、221 槽、颜色 FK/索引、并发、1205/1213 重试、HTTP smoke、店休一致性或 EXPLAIN 任一失败 | MySQL 版本、迁移/M6 快照、pytest 报告 |
+| backend-mysql-release | 启动隔离 MySQL 8+、执行完整 Aerich 0→8，重放 M6/M7 历史样本和 M8 幂等升级，并运行 Inventory + Reservation + Wallet MySQL 门槛 | 迁移、历史兼容、221 槽/精确 HEX、颜色 FK/索引、并发、1205/1213 重试、HTTP smoke、店休/资金一致性或 EXPLAIN 任一失败 | MySQL 版本、迁移/M6–M8 快照、pytest 报告 |
 | frontend-quality | `npm ci --legacy-peer-deps`、typecheck、ESLint、Stylelint、Jest | error、warning 超过已批准白名单、测试失败 | Node/npm 版本和测试报告 |
 | openapi-contract | 从 FastAPI 导出 OpenAPI、比较固定 JSON、运行类型漂移检查 | OpenAPI 或生成类型有未提交漂移 | diff 和 schema 统计 |
 | weapp-build | 使用受控 Origin 执行 `npm run build:weapp` | 构建失败、Secret/开发 Origin 命中、包体越界、未批准 warning | `dist/weapp` artifact、大小清单、Git SHA |

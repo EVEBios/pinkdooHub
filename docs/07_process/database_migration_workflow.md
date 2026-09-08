@@ -5,7 +5,7 @@
 > **迁移工具：** Aerich 0.9.3
 >
 > **生产权威方言：** MySQL；SQLite 仅用于本地快速开发和自动化测试
-> **Last Updated:** 2026-09-08
+> **Last Updated:** 2026-09-09
 
 ---
 
@@ -162,7 +162,7 @@ Product 的正数、金额范围、库存和图片排序规则当前由 Schema �
 
 ## 8. Inventory 期初流水迁移
 
-`2_20260814104655_add_inventory_transactions.py` 是 MySQL 8+ 离线生成并人工 Review 的 Inventory 增量迁移。它先创建 `inventory_transactions`，再为每条正库存 ProductKit 写一条 `opening_balance`；零库存不生成零变化流水。该文件已在一次性 MySQL 8.0.46 实例完成演练，但尚未应用到任何持久、共享或生产数据库。
+`2_20260814104655_add_inventory_transactions.py` 是 MySQL 8+ 离线生成并人工 Review 的 Inventory 增量迁移。它先创建 `inventory_transactions`，再为每条正库存 ProductKit 写一条 `opening_balance`；零库存不生成零变化流水。该文件已在一次性 MySQL 8.0.46 实例完成演练，该次隔离演练本身未写持久库；Inventory M2 后续已随当前 Gate A 的 M0–M7 链应用，其他持久环境仍须分别核验和授权。
 
 ### 8.1 执行前硬门槛
 
@@ -243,7 +243,7 @@ WHERE (pk.stock > 0 AND (
 
 ### 8.8 Phase 9.2.4 CI 门槛本地演练（2026-08-31）
 
-- `.github/workflows/ci.yml` 的 `backend-mysql-release` 固定 `mysql:8.0.46`、`127.0.0.1:13306` 和 `pinkdoohub_inventory_4311_ci`。Phase 9.5 起真实执行 Aerich 0→1→2→3 后运行现有 9 项 MySQL release gate；禁止 `--fake`、`init-db`、运行时自动建表和默认 3306。Gate A 已部署候选仍停留在 0→2，未获得发布授权前不得套用该 CI 迁移结论更新持久环境。
+- `.github/workflows/ci.yml` 的 `backend-mysql-release` 固定 `mysql:8.0.46`、`127.0.0.1:13306` 和 `pinkdoohub_inventory_4311_ci`。Phase 9.5 起真实执行 Aerich 0→1→2→3 后运行现有 9 项 MySQL release gate；禁止 `--fake`、`init-db`、运行时自动建表和默认 3306。在 2026-08-31 这个历史检查点，Gate A 已部署候选仍停留在 0→2，未获得发布授权前不得套用该 CI 迁移结论更新持久环境；Gate A 后续已于 2026-09-08 受控升级到 M7，当前待执行的是 M7→M8。
 - `scripts/ci/check_mysql_gate.py` 在连接前要求 `APP_ENV=testing`，并证明 Aerich `DB_*` 与 pytest `INVENTORY_MYSQL_TEST_*` 完全指向同一个 disposable target；snapshot 只记录安全目标、MySQL 版本、三条 Aerich 版本、Git SHA 和 run ID，不写密码或连接串。
 - 本地使用唯一命名 Docker 容器按同配置真实演练：MySQL 8.0.46、三条迁移和 9 项并发/1205/EXPLAIN/HTTP 门槛全部通过。cleanup 删除专用 Schema、停止容器并确认非运行和 13306 关闭；随后删除容器对象与临时证据目录，未连接 3306 或任何持久/共享数据库。固定 Docker image 只作为共享缓存保留。
 - 9.2.6 已由 Draft PR #2 的 GitHub Actions Run 33355935212 在真实 MySQL 8.0.46 service 上重跑并通过，保存了 preflight、迁移日志、版本快照、JUnit 与 cleanup JSON，Phase 9.2 的 MySQL CI 风险据此关闭。该证据仍不替代 9.3 的生产相似备份恢复和失败处置演练。
@@ -254,7 +254,7 @@ WHERE (pk.stock > 0 AND (
 
 `4_20260905162243_add_wallet_payment_refund.py` 是 MySQL 8+ 离线生成并人工 Review 的资金增量迁移。它创建 `wallet_accounts`、`recharge_orders`、`payments`、`payment_settlements`、`refunds`、`wallet_transactions`，并把 InventoryTransaction 的数据库注释补充为包含 `order_refund_restore`。`RUN_IN_TRANSACTION=False` 明确承认 MySQL DDL 隐式提交。
 
-截至 2026-09-07，M4 已在一次性 MySQL 8.0.46 完成 Wallet `9 passed` 与 Inventory + Reservation + Wallet `30 passed`，覆盖关键资金/库存闭环、四个资金幂等列的 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务回滚重试、可观测资金库存锁等待和关键 `EXPLAIN`。新的 Wallet-expanded workflow 尚待远端干净 SHA 复现；M4 仍没有通过 Aerich 应用到本地持久 `db.sqlite3`、Gate A、共享、预发布或生产数据库。development 的 `generate_schemas` 会在应用启动或热重载时为 SQLite 自动补建缺失表，却不会写入 Aerich 版本记录；因此“表已存在”不等于 M4 已迁移，也不能作为可追溯的发布证据。
+截至 2026-09-07，M4 已在一次性 MySQL 8.0.46 完成 Wallet `9 passed` 与 Inventory + Reservation + Wallet `30 passed`，覆盖关键资金/库存闭环、四个资金幂等列的 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务回滚重试、可观测资金库存锁等待和关键 `EXPLAIN`。在该历史检查点，新的 Wallet-expanded workflow 尚待远端干净 SHA 复现，M4 也尚未通过 Aerich 应用到任何持久环境；后续 workflow 已远端通过，当前持久 Gate A 已于 2026-09-08 完成 M4、两个历史 backfill 与 reconcile。共享、预发布和生产数据库仍须分别核验与授权。development 的 `generate_schemas` 会在应用启动或热重载时为 SQLite 自动补建缺失表，却不会写入 Aerich 版本记录；因此“表已存在”不等于本地持久 `db.sqlite3` 已按 Aerich 迁移，也不能作为可追溯的发布证据。
 
 ### 9.1 执行前硬门槛
 
@@ -369,7 +369,7 @@ MySQL M4 不得应用到 SQLite。development 启动或热重载调用 `generate
 - 环境：一次性 `mysql:8.0.46`、回环 `127.0.0.1:13316`，分别使用 Wallet 专用 Schema 与 CI 冻结 `pinkdoohub_inventory_4311_ci`，均真实执行 Aerich M0→M7。
 - 验证：Wallet 专项 `9 passed in 4.35s`，Inventory + Reservation + Wallet 联合 `30 passed in 13.33s`。覆盖并发不同/相同 key 调账、并发余额支付与退款只提交一次、真实 1205 后全新事务重试、首轮写后注入 1213 的完整回滚重试、`performance_schema.data_lock_waits` 可观测资金/库存等待，以及五个冻结资金索引的 `EXPLAIN`。
 - CI：`backend-mysql-release` 候选加入 `tests/wallet/mysql`，SQLite Job 显式忽略该目录；Wallet fixture 可复用统一受保护的 `INVENTORY_MYSQL_TEST_*`，仍拒绝远端地址、3306 和非专用 Schema。
-- 清理与边界：任务容器精确停止并由 `--rm` 删除，13316 已释放；未访问任何持久数据库。完整记录见 `docs/09_release/reports/wallet_mysql_release_gate_2026-09-07.md`。本地候选尚未 push/远端复现，且不替代 M4 持久迁移、两个 backfill、reconcile 或生产开关授权。
+- 清理与边界：任务容器精确停止并由 `--rm` 删除，13316 已释放；未访问任何持久数据库。完整记录见 `docs/09_release/reports/wallet_mysql_release_gate_2026-09-07.md`。该候选随后由 Run 34134341829 远端 8/8；Gate A 又于 2026-09-08 完成 M4、两个 backfill 与 reconcile。该历史证据仍不授权生产资金开关。
 
 ### 9.9 M4 资金幂等键排序规则复验（2026-09-05）
 
@@ -387,7 +387,7 @@ MySQL M4 不得应用到 SQLite。development 启动或热重载调用 `generate
 
 M5 不创建 Order/Payment 关联，不保存手机号，不回填历史预约，也不包含 N2 通知 Outbox/Subscription/Recipient/Delivery 表。`RUN_IN_TRANSACTION=False` 明确承认 MySQL DDL 隐式提交。
 
-截至 2026-09-06，M5 已在仓库中离线生成，并在一次性 MySQL 8.0.46 专用 Schema 真实完成 Aerich 0→5、Reservation 核心并发、事务回滚、1205/1213 重试与 EXPLAIN 门槛；详细记录见 §10.8。M5 尚未通过 Aerich 应用到本地持久 `db.sqlite3`、Gate A、共享、预发布或生产数据库。development 的 `generate_schemas()` 可能给 SQLite 补建缺失表，但不会 ALTER 既有表或写 Aerich 版本，不能视为目标环境 M5 发布证据。
+截至 2026-09-06，M5 已在仓库中离线生成，并在一次性 MySQL 8.0.46 专用 Schema 真实完成 Aerich 0→5、Reservation 核心并发、事务回滚、1205/1213 重试与 EXPLAIN 门槛；详细记录见 §10.8。当时 M5 尚未通过 Aerich 应用到本地持久 `db.sqlite3`、Gate A、共享、预发布或生产数据库。2026-09-08 的后续受控执行已将 M5/M7 应用到当前持久 Gate A M7；共享、预发布和生产数据库仍须分别核验和授权。development 的 `generate_schemas()` 可能给 SQLite 补建缺失表，但不会 ALTER 既有表或写 Aerich 版本，不能视为目标环境迁移证据。
 
 ### 10.1 迁移链与执行顺序
 
@@ -522,7 +522,7 @@ fixture 不负责执行迁移。为防止函数级清理把迁移种子抹掉后
 
 ### 11.3 当前证据边界
 
-2026-09-07，本地提交 `58d8435` 的候选已在一次性 MySQL 8.0.46 中完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 及 Inventory + Reservation 联合 `21 passed`。专用 Schema、容器和端口均已清理。该结果同时覆盖 M6，但提交尚未 push/远端重跑，M6 也仍未应用 Gate A、共享、预发布或生产 MySQL。SQLite 专用 M6 脚本已应用本地持久 `db.sqlite3`，但不是发布迁移证据。
+2026-09-07，本地提交 `58d8435` 的候选已在一次性 MySQL 8.0.46 中完成 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 及 Inventory + Reservation 联合 `21 passed`。专用 Schema、容器和端口均已清理。该结果随后由 head `4d6430c...` / Run 34129910349 远端 8/8；持久 Gate A 又于 2026-09-08 完成 M2→M7 与 M6 色卡发布。SQLite 专用 M6 脚本的本地结果仍不是发布迁移证据，其他共享、预发布或生产环境也不因这些证据自动迁移。
 
 ### 11.4 保留数据的本地 SQLite M6 升级
 
@@ -560,8 +560,8 @@ python scripts/local/import_mard_bead_colors.py --apply --confirm-local-only
 
 候选镜像包含 `app.tasks.gatea_mard_publish`，只允许 production MySQL、固定
 `/data/images` 和无凭据 HTTPS `/uploads/products` URL。默认 preview 会只读核验
-221 个已经完成 M8 HEX 回填的槽、版本化 manifest SHA-256、全部目标图片内容、现有元数据冲突与
-Online 已启用颜色；apply 必须复用 preview 的精确 manifest SHA-256：
+221 个已经完成 M8 HEX 回填的槽、版本化 manifest SHA-256、全部目标图片内容、现有元数据
+冲突与 Online 已启用颜色；apply 必须复用 preview 的精确 manifest SHA-256：
 
 ```bash
 python -m app.tasks.gatea_mard_publish
@@ -572,12 +572,21 @@ python -m app.tasks.gatea_mard_publish \
 
 新 PNG 通过同目录 hard-link 原子发布并固定为公开只读 `0644`；数据库在一个事务中
 锁定 221 槽、复查销售引用、批量更新并回读核验。数据库失败删除本轮新图片，已有
-文件不删除；完全相同重放为零写入。任务不创建 ProductKitColor、不启用商品颜色、
-不写库存，也不自行证明 App/Nginx 已停写或 Backup/Restore 已通过，因此只能由受控
-Gate A 非空升级入口在 M8 后调用，不能独立执行到持久环境。
+文件不删除。已有 Online 自选色商品时只允许严格 no-op：preview 必须同时为
+`database_changes=0`、`images_to_create=0`、`images_reused=221`；apply 仍在事务内锁定
+并重新读取完整目录、重新检查 221 图片与 Online 引用，任何漂移都会在写入前失败，
+精确一致时不更新数据库或图片。任务不创建 ProductKitColor、不启用商品颜色、不写库存，
+也不自行证明 App/Nginx 已停写或 Backup/Restore 已通过，因此只能由受控 Gate A 非空
+升级入口在 M8 后调用，不能独立执行到持久环境。
 
 该路径已在一次性 MySQL 8.0.46 完成 221 行真实事务更新、221 文件发布及 no-op 重放，
 未修改 Gate A；Gate B 公开环境仍须使用经批准的对象存储/CDN，而不是沿用单主机卷。
+
+持久 Gate A 随后已经在 M6 阶段发布 221 色元数据和 221 张 PNG，并存在 Online 自选色
+商品/启用色。M7→M8 候选使用上述精确 no-op 分支，要求 M8 按 slot 回填 HEX 后 221 个
+目录项与 manifest 一致、既有 PNG 全部复用且数据库/图片零写入；不能从编排中拆出直接
+运行，也不能为通过 preview 临时修改商品状态。该分支已有本地自动化，仍须由新干净
+SHA 的远端 CI 和专用一次性 MySQL 场景复现后才能进入持久执行评审。
 
 ---
 
@@ -590,24 +599,55 @@ Gate A 非空升级入口在 M8 后调用，不能独立执行到持久环境。
 - 候选代码对应本地提交 `58d8435`；在专用、可销毁 MySQL 8.0.46 中真实完成空库 Aerich 0→7，未使用 `--fake`、`init-db` 或运行时自动建表。
 - M0–M6 各历史起点均重放到 M7；M6 的历史 fixed Kit 与 M7 的历史 Reservation/单日店休样本保留，第二次 `upgrade` 是 no-op。
 - M6/M7 snapshot 核验迁移版本、221 色槽、颜色列/FK/索引、`reservation_settings` 单例、默认周一及 CHECK/UNIQUE。随后 Inventory + Reservation 联合 MySQL 门槛为 `21 passed`。
-- 专用 Schema、容器及非默认端口已销毁/释放。此证据不代表持久环境已迁移；该提交尚未 push，因此当前 SHA 还没有远端 8/8 结果。
+- 专用 Schema、容器及非默认端口已销毁/释放。该提交随后随 head `4d6430c...` 由 Run 34129910349 远端 8/8；持久 Gate A 又于 2026-09-08 完成 M2→M7。以上都是 M7 历史检查点，不代表 M8 已应用。
 
-### 12.2 Gate A 停止条件
+### 12.2 当前 Gate A M7→M8 停止条件
 
-Gate A 持久环境在 2026-09-02 的最后留证是有业务数据的 M2，当前真实 Aerich 状态尚未
-重新只读确认。`gatea_operations.py initial-migrate` 仍只支持空库首次迁移；非空库必须
-使用 `scripts.release.gatea_upgrade`。该入口只批准精确 M2，要求 24 小时内的新
-Backup/独立 Restore、source/target SHA 与 MARD checksum 四重确认，在停写后再次比较
-数据库/图片与备份，按 M3→M4→Wallet 准备→M5→M6→M7→M8→MARD 执行并逐步留证。只有
-最终核心数据、Wallet owner、221 个精确 HEX/色卡、ReservationSettings 与精确 Aerich 链全部通过才
-写成功 Record；失败保持入口停止并阻断盲目重跑。入口实现与一次性 MySQL 通过仍不
-等于 Gate A 写入授权；恢复 SSH 并取得当前只读事实、新 Backup/Restore 与当次授权前
-必须停止，不得手工补表/列、删除失败 evidence、直接重跑或使用 `--fake`。
+持久 Gate A 已于 2026-09-08 从只读确认的 M2 受控升级到 M7，并完成 Wallet
+backfill/reconcile、221 色/持久 PNG、综合数据及数据后 Backup/Restore；权威事实见
+`docs/09_release/reports/gatea_m7_upgrade_and_data_2026-09-08.md`。后续不能继续把
+2026-09-02 的 M2 当作当前起点。
 
-M8 可销毁 MySQL 与非空升级入口通过不会自动关闭以下发布门槛：MARD 221 与 Wallet
-backfill/reconcile 仍未应用持久 Gate A，测试商品颜色/库存尚未配置；新增运维 SHA 尚待
-远端 8/8，当前真实数据库起点/镜像和新 Backup/Restore 仍未取得，真实 Origin/RC、
-iOS/Android 真机与微信外部条件也均未完成。当前发布判定仍为 No-Go。
+`gatea_operations.py initial-migrate` 仍只支持空库。仓库候选已为
+`scripts.release.gatea_upgrade` 增加显式 `--source-version 7`：它复用目标 SHA/Image、
+新 Backup/独立 Restore、停写快照、逐步 evidence、部分 DDL 失败处置和成功 Record 绑定，
+但只应用 M8，不重复 M3–M7、Wallet backfill 或代表数据；旧调用仍默认 M2，M7 未显式
+选择时在读取 Backup、停写和写入前 fail closed。入口以版本化
+`m7-preserved-business-v1` 保护 20 个非 `bead_colors` 业务表的确定性内容 dump 与
+`bead_colors` 的 M7 字段投影，共 21 个业务表；M8 的 `swatch_hex` 被有意排除，使该摘要
+在合法 M7→M8 前后保持不变。Aerich 精确链、完整图片 manifest 和原有聚合摘要仍分别
+核验，其中聚合只作诊断，不能替代内容摘要。M7/M8 Backup 和独立 Restore 必须携带并
+重算同一 profile；旧 M7 Backup 缺失时拒绝升级。
+
+在 App/Nginx 停止、live DB/图片与该 Backup 精确匹配后，入口先执行只使用 M7 字段的
+raw source preflight：`information_schema` 必须确认不存在 `swatch_hex`，221 条
+slot/code/name/URL/sort/active 必须逐项匹配冻结 manifest，221 张预期 PNG 必须为普通
+非软链接文件、内容 SHA-256 匹配且权限 `0644`；额外 Product 图片允许存在，但完整图片
+manifest 不得相对 Backup 漂移。以上任一失败都发生在 M8 原语前。之后三次 MARD
+preview/apply/replay 均须为精确 no-op，最终再比较同一 21 表内容摘要。
+
+成功 Record 生成后 App/Nginx 继续停止；执行人必须以同一显式 source version、source
+SHA 和 Backup ID 紧邻重放 upgrade plan。该 replay 会验证 evidence 路径/哈希、当前
+完整数据库摘要、图片 manifest、M7 内容摘要，并重新运行只读 MARD preview；只有
+`already_current=true` 才能调用 `app-up`。`app-up` 本身只验证 Record、target SHA/Image
+和合法迁移组合，不重读 live DB/图片/MARD，不能替代该 replay。本轮本地完整
+`tests/release` 为 `229 passed`，但 Run 34242753255 早于这些改动，不能作为新入口的
+远端证据，也不授予 Gate A 写入。
+
+独立只读代码审查曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态
+fail-closed 矩阵后，复核无未解决 P0–P3。该结论只绑定本地 diff。
+执行前还必须形成最终干净 SHA，并完成该 SHA 的远端 CI 和专用一次性 MySQL 完整
+M7→M8 updater 复现，
+并取得当前 M7 只读事实、当次 Backup/Restore、明确停写/写入授权与目标镜像；
+执行后核验 M0–M8、221 个精确 HEX、既有色卡/商品库存/21 表内容摘要零漂移、gzip Runtime，
+并建立新的 M8 数据后 Backup/Restore/加密异机副本。不得手工补表/列、删除失败
+evidence、直接调用内部原语、临时改商品状态、盲目重跑或使用 `--fake`。真实 Origin/RC、
+iOS/Android 真机与微信外部条件也均未完成，当前发布判定仍为 No-Go。
+
+`m7-preserved-business-v1` 的 20 表 dump 与 `bead_colors` 投影是先后两次数据库读取，
+数据库事务与图片文件操作也不能组成跨系统原子提交。此保护明确依赖整个 Backup、迁移、
+replay 到 `app-up` 的维护窗口内 App/Nginx 停止，且没有直接 SQL、另一个迁移进程或宿主
+图片旁路写入；无法排除这些写入时必须保持 No-Go。
 
 ---
 
@@ -665,6 +705,13 @@ M8。
 - 容器 `pinkdoohub-m8-codex-20260908` 已删除，临时端口 `13308` 已确认释放；该一次性
   MySQL 验证没有连接或修改持久、共享、Gate A、预发布或生产 MySQL。本地 `db.sqlite3`
   后续已通过 §13.1 的专用 SQLite 工具独立升级，不属于这次 MySQL/Aerich 证据。
+- 2026-09-08 M8 基线 head `4e745848315aab56805a872ecf5b9f5e3c10135b`、merge-ref `3ddda81...` 已由
+  Run 34242753255 在干净 checkout 完成 8/8；MySQL Job 的 M6→M7→M8、联合门槛和
+  cleanup 均 success。首轮 Run 34242022911 因 Reservation 测试迁移清单漏列 M8 而
+  7/8，修复后完整重跑；详见
+  `docs/09_release/reports/m8_remote_ci_2026-09-08.md`。远端 PASS 仍不代表 Gate A M8
+  已应用，也不覆盖其后新增的 M7→M8/Online exact no-op 发布保护；后者必须取得新的
+  干净 SHA 与 Run。
 
 ---
 

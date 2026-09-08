@@ -3,8 +3,8 @@
 > **Document Version:** v1.2
 > **Module:** Product
 > **Phase:** 4.1 Product Module + M6 Color-selectable Kit + M8 HEX Swatch
-> **Status:** Phase 4.1/M6 Implemented；M8 仓库实现及一次性 MySQL 8.0.46 候选验证完成，持久 MySQL/部署待完成
-> **Last Updated:** 2026-09-08
+> **Status:** Phase 4.1/M6 Implemented and present in current Gate A M7；M8 repository/MySQL candidate verified but not applied to Gate A
+> **Last Updated:** 2026-09-09
 >
 > 本文档是 Product 模块 API 的正式设计规范。所有 Schema、Service、Repository 实现必须以此为准。
 >
@@ -12,7 +12,7 @@
 >
 > 业务规则见 [Product Business Rules](../01_requirements/product_business_rules.md)。
 >
-> **当前实现：** 既有 Phase 4.1 的 21 个 Product 端点保持 Implemented。M6 的 `fixed` / `color_selectable`、221 槽目录、商品颜色关联和三个管理端颜色接口已形成仓库实现并通过 Product 定向与本地跨模块回归；真实 MySQL 0→6、目标环境迁移和部署仍未执行，因此不得视为已部署。Phase 4.3.10 移除的 Product 直接设置库存端点不恢复；两类 Kit 的库存变化均由 Inventory API 负责。
+> **当前实现：** 既有 Phase 4.1 的 21 个 Product 端点保持 Implemented。M6 的 `fixed` / `color_selectable`、221 槽目录、商品颜色关联和三个管理端颜色接口已完成仓库实现、Product 定向/本地跨模块回归与真实 MySQL 0→6 门槛，并已进入当前 Gate A M7；共享、预发布和生产环境不因此自动迁移。M8 HEX 仍未应用 Gate A。Phase 4.3.10 移除的 Product 直接设置库存端点不恢复；两类 Kit 的库存变化均由 Inventory API 负责。
 
 ---
 
@@ -170,7 +170,7 @@ Authorization: Bearer <access_token>
 - Product `name=null` 拒绝；`description=null`、空字符串或纯空白表示清空。Option 和 Image PATCH 中显式 `null` 均拒绝。
 - 用户端 Out Schema 是严格的已上架完整形状；管理端 Out Schema 允许 Draft 的空图片、空 Option 和空维度。Out Schema 只输出声明字段，防止内部关联、删除标记或类型专属字段跨接口泄漏。
 
-> **API 集成状态：** Phase 4.1 的 21 个路由已完成端点或契约测试。M6 路由/Schema/Mapper 已落盘但仍处于候选验证；完整 HTTP、Mapper 零 SQL/零修改、OpenAPI 与 MySQL 门槛完成后才能标记 Implemented。`RequestValidationError` 继续使用统一 422 信封且不回显原始输入值。
+> **API 集成状态：** Phase 4.1 的 21 个路由与 M6 颜色扩展均已完成端点/契约、完整 HTTP、Mapper 零 SQL/零修改、OpenAPI 和真实 MySQL 门槛，并已进入当前持久 Gate A M7；共享、预发布和生产环境仍须分别迁移与验收。`RequestValidationError` 继续使用统一 422 信封且不回显原始输入值。
 
 ---
 
@@ -1028,7 +1028,7 @@ POST /api/v1/admin/products/kit
 
 **Service 事务：** `create_kit_product()` 在同一连接内创建 Kit/Draft Product、按 KitKind 创建 ProductKit、必要时幂等补齐全局 1..221 槽并批量创建商品关联，最后写 `CREATE_PRODUCT` 审计；任一步失败全部回滚。Schema 与 Service 均不接收库存。
 
-> **实现状态：** fixed 创建保持 Implemented；M6 的 kit_kind、221 槽关联与扩展响应已落盘，完整回归与真实迁移验证前保持候选状态。
+> **实现状态：** fixed 创建保持 Implemented；M6 的 kit_kind、221 槽关联与扩展响应已完成完整回归和真实 MySQL 迁移验证，并已进入当前持久 Gate A M7。其他环境不因该证据自动迁移。
 
 ---
 
@@ -2064,7 +2064,7 @@ await audit_service.list_logs(
 
 ## 8. M6/M8 全局颜色与商品颜色管理
 
-> 本节契约和仓库候选已落盘、测试正在收口。三个端点均要求 ADMIN+；成功结果先经对应 Out Schema 白名单投影后进入统一信封。
+> 本节 M6 契约与仓库实现已经完成验证并进入当前持久 Gate A M7；M8 `swatch_hex` 代码候选已落盘但尚未应用 Gate A。三个端点均要求 ADMIN+；成功结果先经对应 Out Schema 白名单投影后进入统一信封。
 
 ### 8.1 分页查询全局颜色目录
 

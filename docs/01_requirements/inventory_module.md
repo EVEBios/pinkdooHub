@@ -2,9 +2,9 @@
 
 > **Contract Version:** v0.8
 >
-> **Status:** Phase 4.3.12 fixed-Kit inventory implemented and Final-Review Complete；M6 repository implementation and local regression complete, real MySQL verification/deployment pending
+> **Status:** Phase 4.3.12 fixed-Kit and M6 color-selectable inventory implemented and Final-Review Complete；real MySQL gates and current Gate A M7 complete；other environments pending
 >
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 
 ---
 
@@ -12,24 +12,24 @@
 
 Inventory 负责 Kit 当前可售库存、不可变库存流水、管理员调整，以及 Order 创建、Pending 取消和 PAID 全额退款引发的自动扣减/恢复。本文是库存业务行为的权威来源；HTTP 契约见 [Inventory API](../03_api/inventory_api.md)，退款资金规则见 [Wallet Module](wallet_module.md)。
 
-M6 增加 `color_selectable` Kit 的商品级颜色库存：每条 ProductKitColor 拥有独立 `stock_units`，一个单位固定为 10g。全局 BeadColor 只定义颜色身份，绝不保存或共享库存。既有 `fixed` Kit 的 `product_kits.stock`、API 与历史流水语义保持兼容。M6 仓库实现、本地回归和迁移 6 已完成，真实 MySQL 门槛与部署尚未完成。
+M6 增加 `color_selectable` Kit 的商品级颜色库存：每条 ProductKitColor 拥有独立 `stock_units`，一个单位固定为 10g。全局 BeadColor 只定义颜色身份，绝不保存或共享库存。既有 `fixed` Kit 的 `product_kits.stock`、API 与历史流水语义保持兼容。M6 仓库实现、本地回归、真实 MySQL 门槛与当前 Gate A M7 应用均已完成；共享、预发布和生产环境仍须分别核验、迁移和验收。
 
-Phase 4.3.1–4.3.12 已完成契约、领域/Schema、Model/数据库设计、离线 MySQL 迁移、Repository、管理员调整、Kit/混合订单创建扣减、Pending 取消恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/HTTP 发布门槛和最终 Review。Order Service 现在拥有创建和取消的库存外层事务：创建写 `order_deduction`，取消按 OrderItem 快照恢复并写 `order_cancellation_restore`；余额、流水、Order、Audit 与响应重载原子提交。Inventory Router 已接入调整、指定 Kit 流水和全局流水，统一使用严格 Schema、Mapper、成功/错误信封和 JWT ADMIN+ 权限。旧直接设置库存端点与 Kit 创建请求中的 `stock` 已按冻结破坏性契约移除；fixed Kit 从 0 开始并经 adjustment 入库。完整迁移链、正/零库存回填、Repository smoke、真实竞争与查询计划已在隔离 MySQL 8.0.46 实例通过；最终 Review 同步收紧 Product Kit 详情响应的库存上限并清理数据库文档的旧规划描述。M6 在此基线上为每个 color_selectable 商品的 221 个颜色余额分别从 0 开始；仓库实现、本地 SQLite/HTTP/跨模块回归与迁移候选已完成，但 M6 真实 MySQL 迁移、锁等待/查询计划门槛尚未执行，也未应用持久环境。
+Phase 4.3.1–4.3.12 已完成契约、领域/Schema、Model/数据库设计、离线 MySQL 迁移、Repository、管理员调整、Kit/混合订单创建扣减、Pending 取消恢复、查询 Service/Mapper、三个 ADMIN+ Inventory API、真实 MySQL/HTTP 发布门槛和最终 Review。Order Service 现在拥有创建和取消的库存外层事务：创建写 `order_deduction`，取消按 OrderItem 快照恢复并写 `order_cancellation_restore`；余额、流水、Order、Audit 与响应重载原子提交。Inventory Router 已接入调整、指定 Kit 流水和全局流水，统一使用严格 Schema、Mapper、成功/错误信封和 JWT ADMIN+ 权限。旧直接设置库存端点与 Kit 创建请求中的 `stock` 已按冻结破坏性契约移除；fixed Kit 从 0 开始并经 adjustment 入库。完整迁移链、正/零库存回填、Repository smoke、真实竞争与查询计划已在隔离 MySQL 8.0.46 实例通过；最终 Review 同步收紧 Product Kit 详情响应的库存上限并清理数据库文档的旧规划描述。M6 在此基线上为每个 color-selectable 商品的 221 个颜色余额分别从 0 开始；仓库实现、本地 SQLite/HTTP/跨模块回归、真实 MySQL 门槛与当前 Gate A M7 应用均已完成，其他持久环境不因此自动迁移。
 
 ## 2. 现状审计
 
-| 边界 | Phase 4.3 fixed-Kit 基线 | M6 color-selectable 仓库候选 |
+| 边界 | Phase 4.3 fixed-Kit 基线 | M6 color-selectable 当前实现 |
 |------|---------------------------|-------------------------------|
 | 权威余额 | `product_kits.stock` 是 fixed Kit 的唯一当前可售余额 | `product_kit_colors.stock_units` 是商品颜色的唯一当前可售余额；全局 BeadColor 不保存库存 |
-| 管理维护 | ADMIN+ fixed adjustment API 已接入；旧直接设置端点已移除；完整 HTTP/MySQL 门槛已通过 | 颜色 adjustment/指定颜色流水端点与本地回归已完成；真实 MySQL 门槛待执行 |
+| 管理维护 | ADMIN+ fixed adjustment API 已接入；旧直接设置端点已移除；完整 HTTP/MySQL 门槛已通过 | 颜色 adjustment/指定颜色流水端点与本地/真实 MySQL 门槛已完成；当前 Gate A M7 已应用 |
 | Order Item | Experience 必填 Option；fixed Kit 省略/null Option；支持混合请求 | 增加 nullable `kit_color_id` 与颜色快照，并严格区分 Experience/fixed/color 三态 |
-| 创建订单 | Pending 创建事务原子扣减全部 fixed Kit Item，最后一件与交叉多 Kit 真实竞争通过 | 同一外层事务按稳定 Product/颜色顺序扣减 ProductKitColor；本地门槛通过，真实 MySQL 门槛待执行 |
+| 创建订单 | Pending 创建事务原子扣减全部 fixed Kit Item，最后一件与交叉多 Kit 真实竞争通过 | 同一外层事务按稳定 Product/颜色顺序扣减 ProductKitColor；本地与真实 MySQL 门槛均已通过 |
 | 取消订单 | Pending 取消原子、幂等恢复全部 fixed Kit Item，同单真实取消竞争通过 | 按 OrderItem 颜色快照幂等恢复相应 ProductKitColor |
 | 支付/完成 | 对已存在订单只修改 Order/资金事实/Audit | 保持相同规则，不再次扣减 fixed 或颜色库存 |
 | ADMIN+ 代客钱包订单 | 新订单在单事务内扣减 fixed Kit 并直接提交为 Paid | 颜色 Kit 同样视为创建扣减，不是既有 Pending 支付再次扣减 |
 | 全额退款 | Wallet/Payment/Refund v1 对 PAID fixed Kit 按快照恢复；COMPLETED 不恢复 | PAID 颜色 Kit 按颜色快照恢复；COMPLETED 不恢复 |
 | 流水/幂等 | 管理调整、Order 扣减/恢复均写不可变流水并由数据库唯一键兜底 | 流水增加 `kit_color_id`；自动幂等身份增加颜色维度 |
-| 并发 | 管理调整、创建和取消均使用行锁、锁后校验和有限重试；真实 MySQL 竞争、1205 重试和 EXPLAIN 已通过 | 延续稳定顺序锁、锁后校验及同事务余额/流水/Order/Audit；真实门槛待完成 |
+| 并发 | 管理调整、创建和取消均使用行锁、锁后校验和有限重试；真实 MySQL 竞争、1205 重试和 EXPLAIN 已通过 | 延续稳定顺序锁、锁后校验及同事务余额/流水/Order/Audit；真实 MySQL 门槛已完成 |
 
 现有 `fixed` Kit 使用 nullable Experience Option 字段。M6 为颜色订单新增 ProductKitColor 外键和颜色/销售单位快照，属于明确的表结构增量；不能仅依赖现有 nullable Option 字段区分颜色。
 
@@ -271,7 +271,7 @@ Order 状态机是正常重复请求的第一道保护，Inventory restore UNIQU
 
 Wallet/Payment/Refund v1 新增独立退款恢复路径：Refund Service 在同一事务内锁定普通 USER、Order、PaymentSettlement 与 Payment，并确认订单是 PAID 后读取不可变 OrderItem 快照。只聚合 Kit Item，按 Product ID 升序一次锁定全部 ProductKit，使用 `inventory:refund:{refund_id}:restore:product:{product_id}` 检查唯一业务身份，再批量更新余额并写 `order_refund_restore` 流水。
 
-恢复使用下单数量快照，不重新要求 Product Online，也不读取当前价格。恢复后库存仍必须位于 `0..999999`；任一 Kit 缺失、幂等身份冲突、余额越界、钱包退款、Refund 状态或 Audit 写入失败时整笔事务回滚。COMPLETED 退款和纯 Experience 退款零 Inventory 写入。该路径属于 M4 仓库实现，已通过可销毁 MySQL 8 的单链路原子闭环，但 M4 尚未应用持久库，且既有 Phase 4.3.11 证据不能替代新增资金路径的完整并发/查询计划门槛。
+恢复使用下单数量快照，不重新要求 Product Online，也不读取当前价格。恢复后库存仍必须位于 `0..999999`；任一 Kit 缺失、幂等身份冲突、余额越界、钱包退款、Refund 状态或 Audit 写入失败时整笔事务回滚。COMPLETED 退款和纯 Experience 退款零 Inventory 写入。该路径属于 M4 仓库实现，已通过可销毁 MySQL 8 的单链路及后续扩展并发/查询计划门槛；M4 已进入当前 Gate A M7，其他持久环境仍须分别迁移和验收。
 
 ### 9.8 查询 Service 与 Mapper 实现边界
 
@@ -312,7 +312,7 @@ Phase 4.3.11 在独立临时数据目录、`127.0.0.1:13306` 的 MySQL Community
 
 该门槛没有修改业务实现、物理 Schema、迁移或依赖；测试安全护栏只允许显式启用的 `127.0.0.1`、非 3306 端口和 `pinkdoohub_inventory_4311` 前缀 Schema。fixture 在跨 SQLite/MySQL 前后清理 Tortoise 1.1.7 不区分后端的 Executor SQL 缓存，使两套测试可在同一 pytest 进程中稳定共存。隔离实例验证后销毁，现有 `MySQL80` 服务和所有持久数据库未被访问或修改。
 
-### 9.11 M6 颜色库存实现边界（Pending）
+### 9.11 M6 颜色库存实现边界（Implemented）
 
 M6 沿用既有分层和事务所有权，不新建第二套 Inventory Service：
 
@@ -321,7 +321,7 @@ M6 沿用既有分层和事务所有权，不新建第二套 Inventory Service�
 - fixed 余额仍锁 ProductKit；颜色余额锁 ProductKitColor。混合订单必须使用全局一致的 Product/颜色排序，创建、取消、退款和管理员调整不得各自发明锁序。
 - 流水 `product_id` 继续保留对外商品身份，`kit_color_id` 精确标识余额行；两者归属不一致是内部数据冲突，不能降级成 fixed 流水。
 - 颜色管理 adjustment、下单扣减、Pending 取消和 PAID 退款恢复与 Order/Wallet/Audit 保持同一事务；任何一色失败整笔回滚。
-- M6 完成前必须增加 SQLite 原子回滚/接口矩阵，以及真实 MySQL 同色最后一份、异色并发、fixed+颜色稳定锁序、1205/1213 全用例重试和新索引 EXPLAIN 门槛。Phase 4.3.11 的 fixed 证据不能替代这些新增路径。
+- M6 已增加 SQLite 原子回滚/接口矩阵，以及真实 MySQL 同色最后一份、异色并发、fixed+颜色稳定锁序、1205/1213 全用例重试和新索引 EXPLAIN 门槛；Phase 4.3.11 的 fixed 证据没有被当作这些新增路径的替代品。
 
 ## 10. 错误与优先级
 
@@ -360,14 +360,14 @@ GET  /api/v1/admin/products/kit/{product_id}/inventory-transactions
 GET  /api/v1/admin/inventory-transactions
 ```
 
-M6 计划在相同 ADMIN+、严格 adjustment 和幂等语义下增加：
+M6 已在相同 ADMIN+、严格 adjustment 和幂等语义下增加：
 
 ```text
 POST /api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments
 GET  /api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions
 ```
 
-全局流水查询增加可选 `kit_color_id` 筛选。上述颜色端点与筛选在路由、Schema、Mapper、HTTP 测试落地前保持 Pending；不得把本段当作现网接口。
+全局流水查询增加可选 `kit_color_id` 筛选。上述颜色端点与筛选已在路由、Schema、Mapper、HTTP 测试落地并进入当前 Gate A M7；其他环境仍须以各自部署和验收结果为准。
 
 全部为 ADMIN+。fixed Product 管理详情返回当前 stock；颜色详情按颜色返回 `stock_units`，因此不增加单独只读余额端点。流水支持 Product、可选 KitColor、类型、Order source和 UTC 时间范围筛选，使用 `created_at DESC, id DESC` 稳定分页。用户不访问流水，只通过 Product 详情读取当前余额/available，并通过 Order API 间接触发库存变化。
 
@@ -379,9 +379,9 @@ GET  /api/v1/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-tra
 - 静态 `select_for_update()`、SQLite 原子回滚和 MySQL 8+ 真实并发测试均已通过。
 - MySQL “最后一件库存”、交叉多 Kit 锁序、取消竞争、管理员调整与下单竞争均已通过。
 - MySQL `EXPLAIN` 已验证锁定和 Product/全局流水分页索引。
-- 上述既有真实 MySQL 证据只覆盖 Phase 4.3 fixed Kit；M6 颜色库存的 SQLite/HTTP 门槛已通过，但仍须取得新的 MySQL 0→6/锁等待/EXPLAIN 结果后才能标为已完成发布验证。
+- Phase 4.3 fixed Kit 与 M6 颜色库存的 SQLite/HTTP、MySQL 0→6、锁等待和 EXPLAIN 门槛均已通过；当前 Gate A 已包含 M6，其他持久环境仍须单独执行迁移和发布验收。
 - 未经明确授权不执行迁移、不重建开发数据库、不 push/tag/release/deploy。
 
 ## 13. 后续实施顺序
 
-已完成 4.3.2 领域语言与 Schema → 4.3.3 Model/数据库设计 → 4.3.4 离线迁移 → 4.3.5 Repository → 4.3.6 管理调整 → 4.3.7 Kit/混合下单 → 4.3.8 取消恢复 → 4.3.9 查询/Mapper → 4.3.10 API → 4.3.11 并发与 HTTP 矩阵 → 4.3.12 最终 Review 与 v0.6.0 候选收口。M6 颜色库存的领域/Schema、Model/M6 迁移、Repository/Service、Order/Wallet/Refund 联动、API/Mapper、SQLite/HTTP/本地回归与文档对齐已完成；下一步是执行受控的真实 MySQL 0→6/并发/EXPLAIN 门槛，再决定持久环境迁移与部署。
+已完成 4.3.2 领域语言与 Schema → 4.3.3 Model/数据库设计 → 4.3.4 离线迁移 → 4.3.5 Repository → 4.3.6 管理调整 → 4.3.7 Kit/混合下单 → 4.3.8 取消恢复 → 4.3.9 查询/Mapper → 4.3.10 API → 4.3.11 并发与 HTTP 矩阵 → 4.3.12 最终 Review 与 v0.6.0 候选收口。M6 颜色库存的领域/Schema、Model/M6 迁移、Repository/Service、Order/Wallet/Refund 联动、API/Mapper、SQLite/HTTP/真实 MySQL 回归、当前 Gate A M7 应用与文档对齐均已完成；后续只按明确授权推进其他持久环境迁移、M8 与发布验收。

@@ -712,3 +712,166 @@ def test_status_outputs_only_sanitized_service_fields(
     assert '"service": "app"' in output
     assert '"health": "healthy"' in output
     assert "must-not-appear" not in output
+
+
+def _upgrade_record_payload(
+    *,
+    source_versions: list[str],
+    target_versions: list[str],
+    source_version: int | None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "record_type": "existing-database-upgrade",
+        "candidate_sha": "b" * 40,
+        "image_id": "sha256:target",
+        "passed": True,
+        "completed_at": "2026-09-08T12:00:00+00:00",
+        "backup_id": "20260908t120000z",
+        "manifest_sha256": "c" * 64,
+        "source_candidate_sha": "a" * 40,
+        "source_image_id": "sha256:source",
+        "source_aerich_versions": source_versions,
+        "target_aerich_versions": target_versions,
+    }
+    if source_version is not None:
+        payload["source_version"] = source_version
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("source_versions", "target_versions", "source_version"),
+    (
+        (
+            list(gatea.APPROVED_SOURCE_M2_CHAIN),
+            list(gatea.APPROVED_TARGET_M7_CHAIN),
+            None,
+        ),
+        (
+            list(gatea.APPROVED_SOURCE_M2_CHAIN),
+            list(gatea.APPROVED_TARGET_M8_CHAIN),
+            None,
+        ),
+        (
+            list(gatea.APPROVED_SOURCE_M2_CHAIN),
+            list(gatea.APPROVED_TARGET_M8_CHAIN),
+            2,
+        ),
+        (
+            list(gatea.APPROVED_SOURCE_M7_CHAIN),
+            list(gatea.APPROVED_TARGET_M8_CHAIN),
+            7,
+        ),
+    ),
+)
+def test_deployment_record_accepts_only_approved_upgrade_transitions(
+    tmp_path: Path,
+    source_versions: list[str],
+    target_versions: list[str],
+    source_version: int | None,
+) -> None:
+    payload = _upgrade_record_payload(
+        source_versions=source_versions,
+        target_versions=target_versions,
+        source_version=source_version,
+    )
+    gatea._upgrade_marker(tmp_path, "b" * 40).write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    assert gatea._require_deployment_record(
+        record_dir=tmp_path,
+        candidate_sha="b" * 40,
+        image_id="sha256:target",
+    ) == payload
+
+
+@pytest.mark.parametrize(
+    ("source_versions", "target_versions", "source_version"),
+    (
+        (
+            list(gatea.APPROVED_SOURCE_M7_CHAIN),
+            list(gatea.APPROVED_TARGET_M8_CHAIN),
+            None,
+        ),
+        (
+            list(gatea.APPROVED_SOURCE_M7_CHAIN),
+            list(gatea.APPROVED_TARGET_M8_CHAIN),
+            2,
+        ),
+        (
+            list(gatea.APPROVED_SOURCE_M7_CHAIN),
+            list(gatea.APPROVED_TARGET_M7_CHAIN),
+            7,
+        ),
+        (
+            list(gatea.APPROVED_SOURCE_M2_CHAIN),
+            list(gatea.APPROVED_TARGET_M7_CHAIN[:-1]),
+            2,
+        ),
+        (
+            list(gatea.APPROVED_TARGET_M7_CHAIN[:4]),
+            list(gatea.APPROVED_TARGET_M8_CHAIN),
+            3,
+        ),
+    ),
+)
+def test_deployment_record_rejects_unapproved_or_inconsistent_transition(
+    tmp_path: Path,
+    source_versions: list[str],
+    target_versions: list[str],
+    source_version: int | None,
+) -> None:
+    payload = _upgrade_record_payload(
+        source_versions=source_versions,
+        target_versions=target_versions,
+        source_version=source_version,
+    )
+    gatea._upgrade_marker(tmp_path, "b" * 40).write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateAError, match="does not match"):
+        gatea._require_deployment_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:target",
+        )
+
+
+@pytest.mark.parametrize(
+    ("source_versions", "source_version"),
+    (
+        (list(gatea.APPROVED_SOURCE_M2_CHAIN), None),
+        (list(gatea.APPROVED_SOURCE_M2_CHAIN), 2.0),
+        (list(gatea.APPROVED_SOURCE_M2_CHAIN), True),
+        (list(gatea.APPROVED_SOURCE_M2_CHAIN), "2"),
+        (list(gatea.APPROVED_SOURCE_M7_CHAIN), 7.0),
+        (list(gatea.APPROVED_SOURCE_M7_CHAIN), True),
+        (list(gatea.APPROVED_SOURCE_M7_CHAIN), "7"),
+    ),
+)
+def test_upgrade_record_rejects_present_non_exact_integer_source_version(
+    tmp_path: Path,
+    source_versions: list[str],
+    source_version: object,
+) -> None:
+    payload = _upgrade_record_payload(
+        source_versions=source_versions,
+        target_versions=list(gatea.APPROVED_TARGET_M8_CHAIN),
+        source_version=None,
+    )
+    payload["source_version"] = source_version
+    gatea._upgrade_marker(tmp_path, "b" * 40).write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateAError, match="does not match"):
+        gatea._require_upgrade_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:target",
+        )

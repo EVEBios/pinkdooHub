@@ -79,12 +79,15 @@ APPROVED_SOURCE_M2_CHAIN = (
     "1_20260813130455_add_order_tables.py",
     "2_20260814104655_add_inventory_transactions.py",
 )
-APPROVED_TARGET_M8_CHAIN = APPROVED_SOURCE_M2_CHAIN + (
+APPROVED_TARGET_M7_CHAIN = APPROVED_SOURCE_M2_CHAIN + (
     "3_20260902125032_phase95_external_identity.py",
     "4_20260905162243_add_wallet_payment_refund.py",
     "5_20260906094653_add_reservations.py",
     "6_20260906123000_add_color_selectable_kits.py",
     "7_20260907190000_add_reservation_settings.py",
+)
+APPROVED_SOURCE_M7_CHAIN = APPROVED_TARGET_M7_CHAIN
+APPROVED_TARGET_M8_CHAIN = APPROVED_TARGET_M7_CHAIN + (
     "8_20260908140000_add_bead_color_swatch_hex.py",
 )
 HOST_PATTERN = re.compile(
@@ -672,6 +675,25 @@ def _require_upgrade_record(
         ) from error
     source_candidate_sha = str(payload.get("source_candidate_sha", ""))
     source_image_id = payload.get("source_image_id")
+    source_aerich_versions = payload.get("source_aerich_versions")
+    source_version_is_present = "source_version" in payload
+    source_version = payload.get("source_version")
+    target_aerich_versions = payload.get("target_aerich_versions")
+    source_target_transition_is_valid = (
+        source_aerich_versions == list(APPROVED_SOURCE_M2_CHAIN)
+        and (
+            not source_version_is_present
+            or (type(source_version) is int and source_version == 2)
+        )
+        and target_aerich_versions
+        in (list(APPROVED_TARGET_M7_CHAIN), list(APPROVED_TARGET_M8_CHAIN))
+    ) or (
+        source_aerich_versions == list(APPROVED_SOURCE_M7_CHAIN)
+        and source_version_is_present
+        and type(source_version) is int
+        and source_version == 7
+        and target_aerich_versions == list(APPROVED_TARGET_M8_CHAIN)
+    )
     if (
         payload.get("schema_version") != 1
         or payload.get("record_type") != "existing-database-upgrade"
@@ -685,10 +707,7 @@ def _require_upgrade_record(
         or not source_image_id
         or BACKUP_ID_PATTERN.fullmatch(str(payload.get("backup_id", ""))) is None
         or SHA256_PATTERN.fullmatch(str(payload.get("manifest_sha256", ""))) is None
-        or payload.get("source_aerich_versions")
-        != list(APPROVED_SOURCE_M2_CHAIN)
-        or payload.get("target_aerich_versions")
-        != list(APPROVED_TARGET_M8_CHAIN)
+        or not source_target_transition_is_valid
     ):
         raise GateAError(
             "Gate A existing-database upgrade record does not match the candidate"

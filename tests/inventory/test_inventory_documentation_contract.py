@@ -69,7 +69,7 @@ def test_inventory_contract_freezes_error_privacy_locking_and_release_gate() -> 
 
 
 def test_phase_4312_records_final_review_and_persistent_database_boundary() -> None:
-    """最终 Review 已完成，但不能误报持久迁移或正式发布。"""
+    """最终 Review 与当前 Gate A M7 事实明确，且不外推其他环境。"""
 
     requirements = _read(INVENTORY_REQUIREMENTS)
     api = _read(INVENTORY_API)
@@ -79,7 +79,10 @@ def test_phase_4312_records_final_review_and_persistent_database_boundary() -> N
     assert "Phase 4.3.12" in requirements
     assert "order_cancellation_restore" in requirements
     assert "MySQL 8.0.46 隔离 Schema 使用真实 Aerich 0 → 1 → 2" in api
-    assert "未应用任何持久、共享或生产环境" in api
+    assert "当前 Gate A M7 已应用" in requirements
+    assert "当前 Gate A M7 已部署" in api
+    assert "其他持久环境" in requirements
+    assert "其他持久环境" in api
     assert "三个管理端点均已注册" in api
     assert "真实 MySQL 竞争/1205 重试/EXPLAIN" in api
     assert "v0.6.0 未发布候选" in api

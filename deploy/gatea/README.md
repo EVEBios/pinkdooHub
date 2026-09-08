@@ -1,12 +1,18 @@
 # Gate A 持久部署
 
-> **Status:** Loopback、持久 Bootstrap、代表性数据、非空恢复与 M2→M8 升级入口已实现；待新 CI、持久执行、DNS/HTTPS 和真机
+> **Status:** 持久 Gate A 当前为 M7；M8 基线 CI 8/8，M7→M8 候选入口已本地实现但待新 CI/MySQL，持久执行、DNS/HTTPS 和真机待完成
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
 环境。数据库、Redis、应用和图片只在 internal Docker network 中通信；仅
 Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 发布到
 宿主公网。
+
+2026-09-08 的持久成功点是 M7 Runtime `73dca350...` 和数据后 Backup
+`20260908t021224z`；M8 基线 head `4e745848...` 虽已由 Run 34242753255 完成远端 8/8，
+但尚未应用 Gate A。其后仓库候选已实现显式 `--source-version 7` 的 M7→M8 与 Online
+目录 exact no-op 保护；该实现只有本地 Release 测试，旧 Run 不覆盖，且本文不构成
+Gate A 写入授权。
 
 ## 文件
 
@@ -94,7 +100,10 @@ sudo python -m scripts.release.gatea_operations \
   --mode tls
 ```
 
-生命周期脚本支持空库首次部署与经批准的既有 M2→M8 升级。所有写操作都会再次验证
+生命周期脚本支持空库首次部署，以及经批准的既有 M2→M8 升级。仓库候选已经提供
+显式 `gatea_upgrade --source-version 7` 的 M7→M8 入口，但它尚未绑定新的干净 SHA、
+远端 CI、完整隔离 MySQL updater 证据或 Gate A 当次授权，因此当前只能 Review，不能
+在持久环境执行。所有已有写操作都会再次验证
 Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 和 CMD；TLS
 写操作仍被拒绝。既有库 upgrade apply 还会在停止 App/Nginx 前，以镜像默认 Entrypoint
 挂载并加载 Runtime Secret，执行一次不连接数据库的 production Settings 预检。迁移、
@@ -102,7 +111,7 @@ Wallet 和 MARD 一次性任务同样保留该 Entrypoint，禁止用 `--entrypo
 Secret 注入。
 
 ```bash
-# 只读输出精确 Aerich 链、Schema 数量/指纹和 M2 关键业务聚合。
+# 只读输出精确 Aerich 链、Schema 数量/指纹和关键业务聚合。
 sudo python -m scripts.release.gatea_operations \
   database-status \
   --mode loopback
@@ -118,6 +127,8 @@ sudo python -m scripts.release.gatea_operations \
   --mode loopback
 
 # 必须存在与候选 SHA/Image ID 匹配的首次迁移或既有库升级 Record；复核唯一发布端口。
+# 对 M7→M8，调用本命令前还必须按下文重放同一 gatea_upgrade plan 并取得
+# already_current=true；app-up 本身不会重读 live DB、图片卷或运行 MARD preview。
 sudo python -m scripts.release.gatea_operations \
   app-up \
   --mode loopback
@@ -155,25 +166,33 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
   二次 preview 并执行全量 reconcile。输出仅含聚合计数。
 - `python -m app.tasks.gatea_mard_publish` 默认 preview；M8 后以精确 manifest SHA-256
   确认 apply，将 221 槽事务更新并把 221 张 `0644` PNG 原子写入持久图片卷，失败只
-  补偿本轮新文件，完全相同重放零写入。
+  补偿本轮新文件。已有 Online 引用时仅允许目录/图片严格一致的 no-op，apply 仍在
+  事务内锁定、重读和复验，零数据库/图片写入。
 
 这些模块不自行验证目标主机、停写、Backup/Restore Record 或候选镜像身份，因此
-不得脱离 `scripts.release.gatea_upgrade` 单独在持久环境运行。
+不得脱离经批准的宿主编排单独在持久环境运行。尤其不能用内部 M8 单步原语绕过
+`gatea_upgrade --source-version 7` 的完整保护。
 
 宿主机上的 `scripts.release.gatea_*` 编排入口只能依赖 Python 标准库和 Docker CLI；
 不得在模块导入阶段加载 Aerich、Tortoise 或其他应用 Runtime 依赖。迁移、Wallet 与
 MARD 任务只允许通过目标 App 镜像内的 `app.tasks.*` 执行。
 
-### 既有 M2 数据库升级
+### M2/M7→M8 非空升级候选（当前仍未授权）
 
-`gatea_upgrade.py` 是当前唯一批准的既有库升级入口，只接受精确 M0–M2 Aerich 链，
-不把一次性 MySQL 的其他历史起点自动批准为持久起点。执行前必须先在 source 配置下
-生成 24 小时内的新 Backup，并完成相同 Backup ID 的无端口独立 Restore；随后把受保护
-配置切换为已经构建和检查的目标 SHA 镜像。默认命令只读输出冻结项：
+`gatea_upgrade.py` 是既有库升级的受保护入口。旧调用为兼容历史流程默认只接受精确
+M0–M2 Aerich 链；当前 M7 必须显式提供 `--source-version 7`，否则在读取 Backup、停止
+业务入口或产生写入前 fail closed。它不把一次性 MySQL 的其他历史起点自动批准为
+持久起点。执行前必须先在 source 配置下生成 24 小时内的新 Backup，并完成相同 Backup
+ID 的无端口独立 Restore；随后把受保护配置切换为已经构建和检查的目标 SHA 镜像。
+
+下面只展示当前 M7 路径的参数形状，用于 Review；在新干净 SHA 的远端/完整 updater
+隔离 MySQL 门槛、
+当次 Backup/Restore 和明确写授权关闭前，**不得在持久 Gate A 执行**。plan 默认只读：
 
 ```bash
 sudo python -m scripts.release.gatea_upgrade \
   --mode loopback \
+  --source-version 7 \
   --source-candidate-sha <source-40位-sha> \
   --backup-id <YYYYMMDDtHHMMSSz>
 ```
@@ -183,6 +202,7 @@ sudo python -m scripts.release.gatea_upgrade \
 ```bash
 sudo python -m scripts.release.gatea_upgrade \
   --mode loopback \
+  --source-version 7 \
   --source-candidate-sha <source-40位-sha> \
   --backup-id <YYYYMMDDtHHMMSSz> \
   --apply \
@@ -193,17 +213,66 @@ sudo python -m scripts.release.gatea_upgrade \
 ```
 
 入口在任何数据库写入前校验 Root/Secret/目标 Image ID、新鲜 Backup 与 Restore PASS
-Record、健康的四项服务和精确 M2；随后停止 Nginx/App，并要求停写后的数据库和图片
-与备份完全一致。执行顺序固定为 M3 → M4 → Wallet 双 backfill/reconcile → M5 → M6 →
-M7 → M8 → MARD preview/apply/replay。每步的 Aerich/Schema/聚合写入脱敏 evidence；
-最终还要核验 M2 核心数据不漂移、Wallet owner、221 槽精确 HEX/色卡和
-ReservationSettings 单例/约束。
+Record、健康的四项服务和显式起点；随后停止 Nginx/App，并要求停写后的数据库和图片
+与备份完全一致。M7/M8 Backup 还必须带版本化 `m7-preserved-business-v1` 内容摘要：它对
+20 个非 `bead_colors` 业务表做稳定主键顺序的数据 dump，再追加 `bead_colors` 的 M7
+字段投影（含 ID/时间戳、slot/code/name/URL/sort/active，不含 M8 `swatch_hex`），共覆盖
+21 个业务表；Aerich 精确链和完整图片 manifest 仍分别绑定。Restore 必须重算并精确匹配
+同一摘要，旧的 M7 Backup 若没有该字段会被拒绝。
 
-只有全部通过才生成
-`<target-sha>.existing-database-upgrade.json`，`app-up` 同时接受这个 Record 与空库
-`initial-migration` Record。成功后应用仍保持停止，须由执行人复核 Record，再单独调用
-`gatea_operations app-up`。失败不自动恢复服务、不 downgrade、不 fake；失败或中断的
-evidence 会阻断盲目重跑，必须先人工确认实际 Schema/Aerich 并另行批准处置。
+停写源与 Backup 匹配后、运行 M8 原语前，M7 路径还执行 raw source preflight：
+`information_schema` 必须证明 `swatch_hex` 列为 0；只读取 M7 已有字段的 raw SQL 必须按
+slot 逐项精确匹配冻结 manifest 的 221 条 code/name/URL/sort/active；221 张预期兼容 PNG
+必须是普通文件而非软链接，内容 SHA-256 精确匹配且权限为 `0644`。额外 Product 图片可
+存在，但完整图片 manifest 已先与 Backup 精确比较。任一检查失败都发生在 M8 迁移任务
+之前。M7 路径随后只执行 M8 → MARD preview/apply/replay，不重复 M3–M7、Wallet backfill
+或代表数据；三次 MARD 结果都必须为 `already_current=true`、`database_changes=0`、
+`images_to_create=0`、`images_reused=221`、`created_images=0`。迁移结束后再次计算同一
+21 表 M7 保留内容摘要，并要求与停写源完全一致。历史 M2 路径仍按 M3 → M4 → Wallet
+→ M5 → M6 → M7 → M8 → MARD 执行。
+
+只有全部通过才生成 `<target-sha>.existing-database-upgrade.json`；Record 必须绑定合法的
+M2→M7、M2→M8 或 M7→M8 组合，M7→M8 还必须明确 `source_version=7`。成功后 App/Nginx
+继续保持停止。执行人复核 Record 后，必须在无旁路写入的同一停写窗口立即以完全相同的
+`--source-version 7`、source SHA 和 Backup ID 重跑上方 plan 命令；已有成功 Record 的
+重放会校验证据路径/哈希、当前最终数据库摘要、完整图片 manifest、21 表 M7 保留内容
+摘要，并再次运行只读 MARD preview，只有返回 `already_current=true` 才能继续：
+
+```bash
+# 使用与成功 apply 完全相同的 source SHA、Backup ID 和目标 config；不得增加 --apply。
+sudo python -m scripts.release.gatea_upgrade \
+  --mode loopback \
+  --source-version 7 \
+  --source-candidate-sha <source-40位-sha> \
+  --backup-id <YYYYMMDDtHHMMSSz>
+
+# 上一命令必须成功且输出 already_current=true、mode=plan-replay 后才能执行。
+sudo python -m scripts.release.gatea_operations \
+  app-up \
+  --mode loopback
+```
+
+`app-up` 同时接受该 Record 与空库 `initial-migration` Record，但它只验证 Record 与当前
+target SHA/Image ID/合法迁移组合并启动服务；它**不会**重读 live DB、图片卷、M7 内容
+摘要或 MARD 状态。因此 M7→M8 的上述紧邻 replay verification 是强制前置条件，不能用
+“Record 已存在”代替。replay 与 `app-up` 之间也必须维持 App/Nginx 停止且不存在直接
+SQL、迁移原语或宿主图片写入。失败不自动恢复服务、不 downgrade、不 fake；失败或中断
+的 evidence 会阻断盲目重跑，必须先人工确认实际 Schema/Aerich 并另行批准处置。
+
+当前 Gate A 有 Online 自选色 Kit 与启用色。publisher 候选只有在迁移后 221 个 HEX 与
+manifest 逐项相等、既有 221 张兼容 PNG 内容/权限不变且无需创建时才允许 no-op；任何
+变化仍拒绝。不能为了通过 preview 临时下架商品或修改启用态，也不能脱离升级编排直接
+调用。纯数字色块不转 WebP、不删除这批回退文件。该 M7 路径及 publisher 安全分支已
+通过本轮本地 `tests/release` `229 passed`，完整后端为
+`2317 passed, 33 skipped in 125.31s`；但 Run 34242753255 早于实现，新远端/完整 updater
+隔离 MySQL 证据、持久执行和现场验收均未完成。独立只读代码审查曾发现成功重放没有
+重新证明 App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3，
+但仍需由最终干净 SHA 重新绑定上述自动化证据。
+
+上述一致性依赖受控维护窗口：App/Nginx 停止后，不得有直接 SQL、另一个迁移进程、容器
+外脚本或宿主机图片写入。数据库内容摘要、MySQL 事务锁与图片 manifest/原子文件替换是
+相互补强的边界，但不构成跨数据库与文件系统的绝对原子事务；发现旁路写入可能性时必须
+保持 No-Go，不能把本流程描述为可抵御任意外部写入。
 
 ## 受控 SUPER_ADMIN Bootstrap
 
@@ -276,6 +345,12 @@ Online Experience/Option、一个 Online Kit、三张真实 PNG、库存调整/�
 并再次验证 health。SQL/Tar 为 `root:root 0600`，Record 只保存摘要、计数、路径、
 checksum 和 Redis 策略，不保存 Secret 值。
 
+M7/M8 的 `m7-preserved-business-v1` 由一次 20 表 `mysqldump --single-transaction` 与随后
+一次 `bead_colors` M7 投影查询组成，临时内容文件为 `0600` 并在正常/错误/信号退出时
+清理，Record 只保存版本、profile 和 SHA-256，不保存业务行或 PII。两次读取并不是同一个
+数据库事务；其一致性前提是 App/Nginx 已停止且没有任何直接数据库写入。若无法排除旁路
+写入，Backup 不得作为升级依据。
+
 ```bash
 backup_id=20260902t120000z
 
@@ -292,10 +367,11 @@ sudo python -m scripts.release.gatea_backup \
 ```
 
 恢复只写入精确确认的独立 project、internal network 和两个临时 named volumes；
-不加入来源 project、不挂载来源卷、不发布宿主端口。工具比较数据库 Schema/业务
-摘要与图片内容 manifest，启动 Restore App 验证 readiness，并在成功、失败和
-中断路径执行精确 `down --volumes` 后复核恢复容器/卷消失。来源 Gate A 服务和
-三个持久卷不属于清理目标。
+不加入来源 project、不挂载来源卷、不发布宿主端口。工具比较数据库 Schema/诊断摘要、
+图片内容 manifest；对精确 M7/M8 链还重算并比较 `m7-preserved-business-v1` 内容摘要，
+覆盖 20 个非 `bead_colors` 表与 `bead_colors` M7 投影。随后启动 Restore App 验证
+readiness，并在成功、失败和中断路径执行精确 `down --volumes` 后复核恢复容器/卷消失。
+来源 Gate A 服务和三个持久卷不属于清理目标。
 
 同机备份只能证明流程和恢复能力，不能覆盖服务器或系统盘故障。Gate A Go 前仍需
 定义保留期，并把批准备份加密复制到独立故障域；工具不自动上传或删除备份。
@@ -361,14 +437,21 @@ sudo python -m scripts.release.gatea_resilience --apply
 
 1. 从干净 Git SHA 构建 `pinkdoohub-gatea:<40位SHA>` 并记录 image ID。
 2. Root 创建配置/Secret/持久运维目录；运行 loopback preflight。
-3. 空库使用 `initial-migrate`；既有库先在 source 候选完成新 Backup/Restore，再切换目标
-   配置并用 `gatea_upgrade` plan/apply。两条路径不得混用。
-4. 复核精确 initial/upgrade Record 后使用 `app-up` 启动 App/Nginx loopback；验证
-   liveness/readiness 与端口边界。
-5. 临时注入 Bootstrap Secret，执行首次/严格重放、登录和凭据轮换后删除。
-6. 使用受控工具验证 MySQL/图片独立备份、恢复和校验和；再定义保留和加密异机副本。
-7. ICP 通过后再配置 DNS、证书、80/443 和 TLS override。
-8. 将同一 SHA 绑定后端、OpenAPI 和微信 RC，配置合法域名并执行真机矩阵。
+3. 只读重新确认当前 Gate A 为精确 M7，并与 M7 upgrade/Backup/图片 Record 比较；任何
+   不一致先停止。空库才可使用 `initial-migrate`，两条路径不得混用。
+4. 当前 M7 场景的未提交差异在修复独立审查发现的 replay 停服复验缺口后，已复核为
+   无未解决 P0–P3；仍须先
+   形成最终干净 SHA，并让 `--source-version 7` 候选通过该 SHA 的完整 CI 与专用一次性
+   MySQL 完整 updater，再创建新的 MySQL/图片 Backup 并完成同 ID 独立 Restore。
+5. 取得明确写授权后，只通过该编排应用 M8 并核验 Aerich M0–M8、221 个精确 HEX、
+   MARD/PNG 与 `m7-preserved-business-v1` 零漂移；成功后保持停写，以相同参数重放
+   `gatea_upgrade` plan，确认 live DB、图片、M7 内容摘要和 MARD preview 全部匹配，再
+   紧邻使用 `app-up`。仅复核 upgrade Record 不足以启动。
+6. 验证 liveness/readiness、唯一 loopback publisher、HEX API/小程序直绘，以及 gzip
+   只压文本且不重复编码；再创建 M8 数据后 Backup/Restore 和加密异机副本。
+7. 既有 Bootstrap 与 M7 综合数据不重复创建；只执行必要的登录/只读 reconcile/Smoke。
+8. ICP 通过后再配置 DNS、证书、80/443 和 TLS override。
+9. 将同一 SHA 绑定后端、OpenAPI 和微信 RC，配置合法域名并执行真机矩阵。
 
 任一步失败都保持 Gate A `No-Go`。本目录不授权体验版上传、分发、提审或公开
 发布。

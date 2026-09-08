@@ -2,7 +2,7 @@
 
 > **Document Version:** v0.11
 > **Status:** Draft
-> **Last Updated:** 2026-09-07
+> **Last Updated:** 2026-09-09
 > **Applies To:** 正式 `miniapp/` 与其 FastAPI 集成边界
 
 本文档定义测试层级、Mock 边界、四端矩阵、CI 与发布门槛。Spike 已固定：Jest 29.7.0 + `jest-environment-jsdom` 29.7.0 + `@tarojs/test-utils-react` 0.1.1（详见 [ADR-001](adr/ADR-001-use-taro-react-typescript.md) 与架构文档 §4.1）。
@@ -353,7 +353,7 @@ Phase 9.2 先采用全量门槛。只有在采集到稳定 CI 时长并证明路
 | Job | 内容 | 当前 PR | RC |
 |-----|------|---------|----|
 | Backend SQLite | `pytest tests/ -q`，明确报告 MySQL-only 状态 | 必须 | 必须 |
-| Backend MySQL | 隔离 MySQL 8+、Aerich 0→当前（当前为 0→6）、M5 fixed 重放、Inventory + Reservation 联合 18 项 MySQL-only 候选 | 必须 | 必须 |
+| Backend MySQL | 隔离 MySQL 8+、完整 Aerich 0→8、M6/M7 历史样本与 M8 幂等升级重放、Inventory + Reservation + Wallet MySQL-only 门槛 | 必须 | 必须 |
 | Frontend quality | `npm ci --legacy-peer-deps`、TypeScript、ESLint、Stylelint、Jest | 必须 | 必须 |
 | OpenAPI contract | 真实导出、固定 JSON、生成类型和干净 diff | 必须 | 必须 |
 | WeChat build | production mode `npm run build:weapp`、Origin/Secret/包体/artifact 检查 | 必须 | 必须 |

@@ -2,9 +2,9 @@
 
 > **Contract Version:** v1.0
 >
-> **Status:** Repository implementation complete；MySQL M4 migration generated offline but not applied to any persistent database
+> **Status:** Repository implementation and Gate A M4/backfill/reconcile complete；WeChat Provider disabled；other persistent environments pending
 >
-> **Last Updated:** 2026-09-07
+> **Last Updated:** 2026-09-09
 
 ---
 
@@ -12,7 +12,7 @@
 
 本模块为 pinkdooHub 自营商品和体验服务提供封闭式会员钱包、余额支付、ADMIN+ 调账、支付结算事实与全额退款。钱包不是通用支付账户：余额不可转账、不可提现、不可兑换现金，也不能购买第三方商品或服务。
 
-当前仓库已经实现 Wallet、Payment、PaymentSettlement、RechargeOrder 和 Refund 的领域、Model、Repository、Service、Mapper、FastAPI 路由及离线 MySQL 迁移 M4。2026-09-07 已在一次性 `mysql:8.0.46` 容器完成 Wallet 专项 `9 passed` 与 Inventory + Reservation + Wallet 联合 `30 passed`，覆盖关键资金/库存闭环、四个资金幂等列的 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务回滚重试、可观测资金库存锁等待和关键 `EXPLAIN`。安全 fixture 只允许回环地址、非 3306 端口和受控专用 Schema 前缀；容器与端口已清理。新的 Wallet-expanded workflow 尚待远端干净 SHA 复现；M4 仍未应用到本地持久 `db.sqlite3`、Gate A、共享或生产数据库，既有普通用户尚需受控 backfill 后才能使用钱包。
+当前仓库已经实现 Wallet、Payment、PaymentSettlement、RechargeOrder 和 Refund 的领域、Model、Repository、Service、Mapper、FastAPI 路由及离线 MySQL 迁移 M4。2026-09-07 已在一次性 `mysql:8.0.46` 容器完成 Wallet 专项 `9 passed` 与 Inventory + Reservation + Wallet 联合 `30 passed`，覆盖关键资金/库存闭环、四个资金幂等列的 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务回滚重试、可观测资金库存锁等待和关键 `EXPLAIN`；该次隔离门槛本身未触碰持久库。后续 Wallet-expanded workflow 已远端通过，持久 Gate A 又于 2026-09-08 受控应用 M4、完成两个历史 backfill 与只读 reconcile。该事实不表示本地持久 `db.sqlite3` 已按 Aerich 应用 M4，也不自动迁移共享、预发布或生产数据库；真实资金 Provider 和生产开关仍须单独授权。
 
 真实微信支付当前明确关闭。商户号、小程序 AppID 关联、HTTPS 通知域名、商户证书、API v3 Key、商户私钥以及经营主体进件资料均不写入仓库；正式接入时再通过受控 Secret 和发布记录填写真实值。在此之前，充值和微信订单支付/退款稳定返回 HTTP 503，且不得创建 RechargeOrder、Payment、Refund、流水或审计等任何数据库记录。
 
@@ -214,7 +214,7 @@ User → Order/RechargeOrder → Payment/Settlement/Refund → WalletAccount →
 
 外部 Provider 调用不得发生在持有数据库事务或行锁期间。
 
-2026-09-07 的扩展 MySQL 候选门槛已在一次性 MySQL 8.0.46 上验证上述约束：Wallet 专项 9 项、Inventory + Reservation + Wallet 联合 30 项通过。覆盖并发调账/余额支付/退款、真实 1205、首轮已写后的 1213 整事务回滚重试、Wallet/Inventory 可观测行锁等待，以及钱包 owner/幂等/分页和 Payment 幂等/用户分页的 `EXPLAIN` 索引命中。该结果只证明仓库候选；M4、backfill、reconcile 和任何资金开关均未应用 Gate A 或持久环境，且本次新增 workflow 尚待远端干净 SHA 复现。
+2026-09-07 的扩展 MySQL 候选门槛已在一次性 MySQL 8.0.46 上验证上述约束：Wallet 专项 9 项、Inventory + Reservation + Wallet 联合 30 项通过。覆盖并发调账/余额支付/退款、真实 1205、首轮已写后的 1213 整事务回滚重试、Wallet/Inventory 可观测行锁等待，以及钱包 owner/幂等/分页和 Payment 幂等/用户分页的 `EXPLAIN` 索引命中。该次结果只证明当时的隔离仓库候选且本身未写持久库；后续 workflow 已远端通过，持久 Gate A 已于 2026-09-08 完成 M4、两个 backfill 与 reconcile。共享、预发布和生产环境仍未因此自动迁移，任何生产资金开关也仍未获授权。
 
 ## 11. 功能开关与发布边界
 

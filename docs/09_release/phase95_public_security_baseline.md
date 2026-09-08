@@ -1,8 +1,8 @@
 # Phase 9.5 公开身份、安全与隐私基线
 
 > **Status:** Repository implementation complete; external Gate B evidence pending
-> **Last Updated:** 2026-09-07
-> **External Changes:** None — 未启用微信登录、未创建付费云资源、未迁移 Gate A、未配置正式 Secret/监控/对象存储
+> **Last Updated:** 2026-09-09
+> **External Changes:** 本阶段实施时未启用微信登录、未创建付费云资源、未配置正式 Secret/监控/对象存储；M3 后续已随 2026-09-08 的持久 Gate A M3→M7 升级应用，但不代表任何微信或 Gate B 外部能力已启用
 
 ## 1. 本阶段结论边界
 
@@ -115,12 +115,13 @@ Redis 键不含明文 IP、账号或 Token。Redis 故障时身份敏感请求�
 迁移 3 新增 `external_identities`，增加 `users.auth_version/deleted_at` 并让 password/phone 可空。MySQL DDL 隐式提交，`RUN_IN_TRANSACTION=False`；正式执行必须：停写 → 备份/独立恢复 → 只读扫描 → 迁移 0→3 或受支持起点→3 → 表/索引/NULL/版本核验 → App 切换。降级会删除全部外部绑定，并要求所有保留用户重新拥有非 NULL password/phone，属于破坏性恢复，不作为普通回滚。
 
 本节在 2026-09-02 留证时，Gate A 运行迁移 0→2，且用户未授权对 Gate A 执行迁移 3，
-因此本阶段只做离线与可销毁 MySQL 验证。2026-09-07 的当前仓库迁移链已到 M7，
-但这不改变该历史事实；任何持久写入前必须重新只读查询 Gate A 的真实 Aerich 状态，
-并按当前 [Go/No-Go Checklist](go_no_go_checklist.md) 与
-[Release Drill Runbook](release_drill_runbook.md) 完成从只读确认的实际起点到 M7 的
-新证据；如果实际状态仍与最后记录一致为 M2，则须使用尚待实现和批准的非空库入口
-依次应用 M3–M7，不能调用只支持空库的 `initial-migrate`。
+因此当时只做离线与可销毁 MySQL 验证。此历史事实已由 2026-09-08 的受控 M2→M7
+持久执行推进：当前权威检查点为 M7，不再是 M2；M8 尚未应用。任何后续持久写入前仍
+必须重新只读查询 Gate A 的真实 Aerich 状态，并按当前
+[Go/No-Go Checklist](go_no_go_checklist.md) 与
+[Release Drill Runbook](release_drill_runbook.md) 关闭显式 M7→M8 候选的新干净 SHA、
+隔离 MySQL、Backup/Restore、停写和当次写授权门槛。不能调用只支持空库的
+`initial-migrate`，也不能用默认 M2 路径、旧 Record 或旧 Run 冒充当前 M7 起点证据。
 
 ## 9. 剩余 Gate B 验收
 

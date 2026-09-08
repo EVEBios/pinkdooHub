@@ -1,6 +1,6 @@
 # pinkdooHub 数据库设计 v2.1
 
-> **Last Updated:** 2026-09-08
+> **Last Updated:** 2026-09-09
 
 ---
 
@@ -47,7 +47,7 @@ audit_logs
 
 ### 2.1 数据完整性约束边界
 
-Product、Order、Inventory、Wallet/Payment/Refund 与 Reservation 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成。M6 新增字段与表仍属于未应用的仓库增量：
+Product、Order、Inventory、Wallet/Payment/Refund 与 Reservation 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成。M6 新增字段与表已随当前持久 Gate A 的 M0–M7 链应用；M8 `swatch_hex` 尚未应用 Gate A，其他环境也不因 Gate A 证据自动迁移：
 
 | 层级 | 当前保证 |
 |------|----------|
@@ -312,7 +312,7 @@ M6 后每单总计 1 至 30 行，其中颜色行最多 20、非颜色行最多 
 
 **来源设计：** `source_id` 故意不关联 Order 外键，避免把通用来源列伪装为只属于订单。查询层只允许 `source_id` 与 `source_type=order` 组合，并在 Repository/Mapper 阶段按需加载安全订单号。
 
-**增量迁移：** `2_20260814104655_add_inventory_transactions.py` 建立既有 fixed 流水并回填正库存期初余额；M6 候选迁移 `6_20260906123000_add_color_selectable_kits.py` 新增颜色目录、商品颜色余额、Order/Inventory FK 与快照字段，依靠 `kit_kind` 的 `DEFAULT 'fixed'` 保持历史 ProductKit 语义，并插入 1..221 占位槽。该迁移已离线生成但尚未通过真实 MySQL 0→6 门槛，也未应用任何持久环境；正式迁移必须在停写与备份后核对 221 槽、历史 fixed 余额不变、外键/索引和 Aerich 版本链。MySQL DDL 隐式提交使整个升级不能承诺原子回滚；downgrade 会删除颜色库存/关联并把 null 聚合库存转为 0，属于数据破坏操作。
+**增量迁移：** `2_20260814104655_add_inventory_transactions.py` 建立既有 fixed 流水并回填正库存期初余额；M6 迁移 `6_20260906123000_add_color_selectable_kits.py` 新增颜色目录、商品颜色余额、Order/Inventory FK 与快照字段，依靠 `kit_kind` 的 `DEFAULT 'fixed'` 保持历史 ProductKit 语义，并插入 1..221 占位槽。M6 已通过真实 MySQL 0→6/并发/查询计划门槛并进入当前持久 Gate A M7；共享、预发布和生产环境仍须分别受控迁移。任何新目标迁移都必须在停写与备份后核对 221 槽、历史 fixed 余额不变、外键/索引和 Aerich 版本链。MySQL DDL 隐式提交使整个升级不能承诺原子回滚；downgrade 会删除颜色库存/关联并把 null 聚合库存转为 0，属于数据破坏操作。
 
 ---
 
@@ -333,7 +333,7 @@ M6 后每单总计 1 至 30 行，其中颜色行最多 20、非颜色行最多 
 
 ---
 
-### 3.10 wallet_accounts（会员钱包余额表，M4 离线迁移未应用）
+### 3.10 wallet_accounts（会员钱包余额表，M4；当前 Gate A M7 已应用）
 
 为可用普通客户保存权威钱包余额；新建 USER 原子创建，历史 backfill 只覆盖 NORMAL/DISABLED USER。历史 DELETED USER 可没有钱包且禁止补建；ADMIN/SUPER_ADMIN 不创建钱包。
 
@@ -350,7 +350,7 @@ M6 后每单总计 1 至 30 行，其中颜色行最多 20、非颜色行最多 
 
 余额硬上限为 `1000.00`，但不新增“预留余额”列。尚可全额退款的钱包支付敞口由 `payment_settlements`、`payments`、`orders` 和 `refunds` 的权威状态在锁内查询派生：PAID wallet Settlement，以及完成未满 30 天的 COMPLETED wallet Settlement，在 Refund succeeded 前占用敞口。ADMIN 正向调账及未来真实充值成功必须保持 `调整后余额 + 派生敞口 ≤ 1000.00`；退款成功与同额钱包入账原子提交后，该 Settlement 自然退出敞口集合。
 
-### 3.11 wallet_transactions（钱包流水表，M4 离线迁移未应用）
+### 3.11 wallet_transactions（钱包流水表，M4；当前 Gate A M7 已应用）
 
 记录每次已提交余额变化；WalletAccount.balance 仍是当前余额，不通过实时 SUM 流水提供在线余额。
 
@@ -372,7 +372,7 @@ M6 后每单总计 1 至 30 行，其中颜色行最多 20、非颜色行最多 
 
 同一钱包的流水以 `(created_at ASC, id ASC)` 形成确定的余额链：每条记录变化量非零且满足 `after = before + change`，前后余额均在 `0.00..1000.00`，相邻记录的前后余额衔接，末条 `after_balance` 等于 WalletAccount.balance。没有流水是合法的零余额初始状态，但此时权威余额必须为 `0.00`；发布前由只读 `wallet_reconcile` 同时核验这些不变量和流水净额。
 
-### 3.12 recharge_orders（充值业务单，M4 离线迁移未应用）
+### 3.12 recharge_orders（充值业务单，M4；当前 Gate A M7 已应用）
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -388,7 +388,7 @@ M6 后每单总计 1 至 30 行，其中颜色行最多 20、非颜色行最多 
 
 真实 Provider 当前关闭，运行时不会创建充值单；该表仅建立未来可信支付的结构边界。
 
-### 3.13 payments（支付记录，M4 离线迁移未应用）
+### 3.13 payments（支付记录，M4；当前 Gate A M7 已应用）
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -410,7 +410,7 @@ purpose 与可空业务外键的组合由 Service 校验；数据库不使用当
 
 ADMIN+ 代客钱包订单同样写 `purpose=order`、`method=wallet`、`status=succeeded`；其 Payment 幂等身份绑定管理员、目标普通 USER、Item 与 remark，Order/Items、Kit 库存扣减、钱包扣减、Payment/Settlement、直接 Paid 与双审计在一个事务中提交。该能力不增加专用订单或扣款表。
 
-### 3.14 payment_settlements（成功订单结算，M4 离线迁移未应用）
+### 3.14 payment_settlements（成功订单结算，M4；当前 Gate A M7 已应用）
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -422,7 +422,7 @@ ADMIN+ 代客钱包订单同样写 `purpose=order`、`method=wallet`、`status=s
 
 M4 前经人工入口进入 PAID/COMPLETED 的历史 Order 尚无 Payment/Settlement。正式发布在钱包 backfill 收敛后运行 `legacy_manual_settlement_backfill`：只有唯一 `MARK_ORDER_PAID` Audit 且无矛盾资金事实的冻结范围旧单，才补一条同 User/Order/amount、`purpose=order`、`method=manual`、`status=succeeded` 的 Payment 与唯一 Settlement；成功时间取历史 Audit.created_at。命令默认 preview，apply 强制复用 preview 的 `through_order_id`，不新增或改写 Order/Audit，冲突阻断并人工裁决。
 
-### 3.15 refunds（全额退款，M4 离线迁移未应用）
+### 3.15 refunds（全额退款，M4；当前 Gate A M7 已应用）
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -444,11 +444,11 @@ Refund 状态独立于 OrderStatus；成功退款不修改 Paid/Completed。PAID
 
 Refund `succeeded` 同时表示对应 wallet Settlement 的退款预留敞口已释放；`pending`、`failed` 或没有 Refund 的可退款 Settlement 仍占用敞口。退款窗口由当前业务规则在查询中使用 UTC 时间计算，不在 Settlement/Refund 表冗余保存动态布尔标记。
 
-### 3.16 store_business_days（门店营业日锁点，M5 离线迁移未应用）
+### 3.16 store_business_days（门店营业日锁点，M5；当前 Gate A M7 已应用）
 
 为预约创建与管理员设置单日店休提供“一日一行”的权威状态和共同并发锁点。行按需创建，不是预生成的完整日历；预约创建过但没有单日店休的日期也会保留 `is_closed=false` 行。每周固定店休由 `reservation_settings` 配置，不依赖这里存在一行。
 
-### 3.16.1 reservation_settings（预约日历单例设置，M7 候选）
+### 3.16.1 reservation_settings（预约日历单例设置，M7；当前 Gate A M7 已应用）
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
@@ -457,7 +457,7 @@ Refund `succeeded` 同时表示对应 wallet Settlement 的退款预留敞口已
 | weekly_closed_weekday | VARCHAR(32) | NOT NULL, DEFAULT `monday` | 每周固定店休日 |
 | created_at / updated_at | DATETIME(6) | NOT NULL | 创建与更新时间 |
 
-M7 建表并写入默认周一单例；更换固定店休与命中预约的 `store_closed` 批量取消在同一业务事务中提交。M7 尚未应用任何持久数据库，也尚未完成真实 MySQL 0→7 门槛。
+M7 建表并写入默认周一单例；更换固定店休与命中预约的 `store_closed` 批量取消在同一业务事务中提交。M7 已完成真实 MySQL 0→7 门槛并进入当前持久 Gate A；共享、预发布和生产数据库仍未因此自动迁移。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -468,7 +468,7 @@ M7 建表并写入默认周一单例；更换固定店休与命中预约的 `sto
 
 命名唯一索引 `uidx_store_business_day_date(business_date)` 既兜底日期唯一性，也支持创建营业日并发竞态的精确识别。创建预约、设置店休和恢复营业必须在同一事务中锁定该行。恢复营业只把 `is_closed` 改为 false，不删除行，也不恢复任何历史预约。
 
-### 3.17 reservations（独立体验预约，M5 离线迁移未应用）
+### 3.17 reservations（独立体验预约，M5；当前 Gate A M7 已应用）
 
 Reservation 与 Order/Payment 相互独立，保存一个顾客选择的 ExperienceOption、UTC 排期、完整创建快照和人工确认状态。手机号不写入本表；管理列表/详情读取 User 当前手机号并分别输出掩码/完整值。
 
@@ -500,13 +500,13 @@ N1 刻意不建立 `(user_id, experience_option_id, scheduled_start_at)` 或任�
 
 数据库不独立表达以下跨字段规则，必须由 Reservation Service/Validator 在锁内维护：
 
-- 上海时区、周一固定店休、今天到第 30 日、开始前至少 3 小时、半小时粒度和完整落在 11:00–20:00；
-- 周二至周五 `weekday`、周末 `holiday` 的 Option 日期类型匹配；
+- 上海时区、独立可配置的每周固定店休、今天到第 30 日、开始前至少 3 小时、半小时粒度和完整落在 11:00–20:00；
+- 周一至周五 `weekday`、周末 `holiday` 的 Option 日期类型匹配；每周店休日只禁用对应日期，不改变日期类型；
 - pending/confirmed/rejected/cancelled 的原因与三个状态时间组合；
 - 管理员开始后不可确认/拒绝，顾客取消截止时间和店休批量取消范围；
 - `store_business_days.is_closed` 与新建 Reservation 的并发互斥。
 
-M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2026-09-06 在一次性 MySQL 8.0.46 专用 Schema 真实完成 0→5、并发关店/创建、事务回滚、1205/1213 重试与六个索引查询计划验证；Reservation 专项 `7 passed`，与 Inventory 联合门槛 `16 passed`。该验证实例已销毁，M5 尚未应用到本地持久 SQLite、Gate A、共享、预发布或生产数据库。
+M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2026-09-06 在一次性 MySQL 8.0.46 专用 Schema 真实完成 0→5、并发关店/创建、事务回滚、1205/1213 重试与六个索引查询计划验证；Reservation 专项 `7 passed`，与 Inventory 联合门槛 `16 passed`。该次验证实例已销毁且本身未触碰持久库；M5/M7 后续已随当前 Gate A 的 M2→M7 受控升级应用，本地持久 SQLite、共享、预发布和生产数据库仍未因此自动迁移。
 
 ---
 
@@ -797,7 +797,7 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 
 `wallet_accounts.user_id`、`payment_settlements.payment_id/order_id` 与 `refunds.order_id/settlement_id` 已由 UNIQUE 约束提供索引，不重复创建普通索引。
 
-2026-09-07 的一次性 MySQL 8.0.46 扩展门槛以 2,000 条合法 WalletTransaction 与 2,000 条 Payment 样本执行 `ANALYZE TABLE` 后，`EXPLAIN` 确认：`wallet_accounts.user_id` owner 锁命中唯一索引，钱包/Payment 幂等查询分别命中 `uidx_wallet_transaction_idempotency` / `uidx_payment_idempotency`，钱包流水分页命中 `idx_wallet_transaction_wallet_created_id`，用户支付分页命中 `idx_payment_user_created_id`。因此当前无需新增索引或迁移；该证据尚未应用 Gate A 或任何持久数据库。
+2026-09-07 的一次性 MySQL 8.0.46 扩展门槛以 2,000 条合法 WalletTransaction 与 2,000 条 Payment 样本执行 `ANALYZE TABLE` 后，`EXPLAIN` 确认：`wallet_accounts.user_id` owner 锁命中唯一索引，钱包/Payment 幂等查询分别命中 `uidx_wallet_transaction_idempotency` / `uidx_payment_idempotency`，钱包流水分页命中 `idx_wallet_transaction_wallet_created_id`，用户支付分页命中 `idx_payment_user_created_id`。因此当前无需新增索引或迁移；该次隔离证据本身未写持久库，M4 与历史准备后续已进入当前 Gate A M7，其他持久环境仍须分别迁移和验收。
 
 #### store_business_days
 
@@ -887,7 +887,7 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 
 ## 8. 后续扩展计划
 
-M6 自选颜色 Kit 的仓库实现、离线迁移候选与本地定向/全量验证已经完成，真实 MySQL 0→6 验证仍待执行；本章描述已冻结目标结构，不代表迁移已应用到本地持久、共享、预发布或生产数据库。历史 Kit 必须保持 `fixed` 默认值与原库存语义。
+M6 自选颜色 Kit 的仓库实现、离线迁移、本地定向/全量验证和真实 MySQL 0→6 门槛已经完成，并已进入当前持久 Gate A M7；本章描述的是冻结结构，但不表示本地持久 SQLite、共享、预发布或生产数据库已因此自动迁移。历史 Kit 必须保持 `fixed` 默认值与原库存语义；M8 `swatch_hex` 仍未应用 Gate A。
 
 | 版本 | 新增内容 |
 |------|----------|

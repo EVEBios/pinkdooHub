@@ -4,6 +4,81 @@
 
 ---
 
+## M8 Gate A M7→M8 入口与 Online no-op 保护（仓库候选，2026-09-09）
+
+- 新增可复用的本机可销毁容量工具与独立 Compose 拓扑：MySQL 8.0.46、Redis、单 worker
+  App、Nginx 和唯一 TBF shaper 共享 CPU `0-1`，五个稳态容器禁用 swap 后内存上限合计
+  `4096MiB`，唯一 client-facing 出口固定为十进制 5Mbps。工具具备宿主/端口/路径/Compose
+  所有权预检、M0→M8/MARD/合成数据准备、原始样本有界保存、日志/statement/业务对账、
+  fail-closed continuation 与精确资源回收；没有连接或修改 Gate A。
+- A/B/C/D 冻结流量分别覆盖 221 色详情 identity/gzip、认证浏览、C v3 的 221 PNG 冷/热
+  完整页面加载，以及颜色订单取消/钱包支付/代客订单幂等写链路。C v3 保留完整启动窗口，
+  每个实际阶段另加 6 秒 completion drain，drain 后 incomplete 仍 terminal FAIL；取消路径会
+  显式 await 聚合 Future，避免遗留异步异常。提交前又将监控提前退出、日志/statement 缺证据、
+  TBF 实际参数漂移、清理判定优先级、D cadence/幂等身份、C Origin 和 A `Vary` 全部改为
+  fail-closed；最终性能工具回归为 `190 passed`。
+- Run `20260909t042800` 完整执行 12/12 个 5/10 VU Profile，共 `73,027` 请求且请求失败为
+  0，最终 150 个写旅程和订单/库存/钱包/Audit 严格对账通过。gzip 色板、认证浏览、PNG
+  冷/热和写链路的 5/10 VU 均通过；唯一失败是 A identity/10：51,063-byte 未压缩色板把
+  出口压至 4.992Mbps，产生 428 个 qdisc drops，P95/P99 为 1,510/2,442ms。整轮因此保持
+  `FAIL`，不能被其余结果覆盖；gzip 线传为 10,023 bytes、减少 80.371%，同一 10 VU 的
+  P95/P99 为 271/290ms 且零 drops。报告见
+  [M8 本地容量报告](../09_release/reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md)。
+- 本轮只是 dirty-tree、单轮、ARM64 Docker Desktop 下的 2 核/4GiB **服务容器包络**探索，
+  不包含宿主内核/daemon/Runner、TLS/公网 RTT、真实商品 WebP 或微信真机；不冒充独立
+  2 vCPU/4GiB Linux 主机、candidate-pre 三轮或发布容量证据。专属容器、网络、卷、唯一
+  镜像标签、临时工作目录和端口已清理并复核，原始忽略 artifact 以 `0700/0600` 保留。
+
+- `scripts.release.gatea_upgrade` 新增显式 `--source-version {2,7}`，旧调用仍默认 M2；当前
+  Gate A 的 M7 路径必须显式选择 7，遗漏时在读取 Backup、停止 App/Nginx 和任何写入前
+  fail closed。M7 路径只执行 M8，不重复 M3–M7、Wallet backfill 或代表数据；plan、apply、
+  replay、evidence 和成功 Record 均交叉校验精确 source/target 迁移链与 source version，
+  Deployment Record 只接受历史 M2→M7、M2→M8 和新 M7→M8 三种组合。
+- `gatea_backup` 新增版本化 `m7-preserved-business-v1` 内容摘要：20 个非 `bead_colors`
+  业务表使用稳定主键顺序的确定性 data dump，`bead_colors` 追加不含 M8 `swatch_hex` 的
+  M7 字段投影，共覆盖 21 个业务表；Aerich 精确链和完整图片 manifest 分别校验。M7/M8
+  Backup Record 必须携带该摘要，独立 Restore 重算并要求完全一致；旧 M7 Backup 缺少
+  此字段时 fail closed。停止源和 M8 最终态也重算同一摘要，替代仅靠旧聚合计数判断
+  业务内容未漂移；聚合计数继续只作诊断信息。
+- M7 停写且已与 Backup 对齐后，在 M8 任务前新增 raw source preflight：Schema 必须完全
+  没有 `swatch_hex` 列，221 条 M7 code/name/URL/sort/active 必须逐槽匹配冻结 manifest，
+  221 张预期兼容 PNG 必须为非软链接普通文件、内容 SHA-256 精确且权限 `0644`；额外商品
+  图片允许存在但完整 manifest 必须与 Backup 一致。任一部分 M8、目录或文件漂移均在迁移
+  原语调用前失败。
+- MARD preview/apply/replay 都必须为 221 项精确 no-op，包括 `database_changes=0`、
+  `images_to_create=0`、`images_reused=221`、`created_images=0`。升级成功后 App/Nginx 继续
+  停止；再次以相同参数调用 plan 会验证成功 Record/evidence 哈希、live 数据库、图片、
+  M7 内容摘要并重跑只读 MARD preview。运行 `app-up` 前必须紧邻完成这次
+  `already_current=true` replay，因为 `app-up` 本身只验证 Record/候选身份，不重读上述
+  live 状态。失败继续保留脱敏 evidence 和停服状态，不自动 downgrade、恢复或盲目重跑。
+- `app.tasks.gatea_mard_publish` 现允许已有 Online 自选色商品仅在数据库与 221 图片完全
+  一致时通过。apply 即使 no-op 也进入事务，锁定并重读完整 BeadColor、图片和 Online
+  引用；preview 后的目录/图片/引用漂移全部在写入前拒绝。精确 no-op 不调用批量更新、
+  不改变 `updated_at`、文件内容或 mtime；非 no-op 仍拒绝 Online 场景。
+- `gatea_backup`/Operations/upgrade 定向测试为 `94 passed`，完整 `tests/release` 为
+  `229 passed`；一次性 MySQL 8.0.46 的 MARD 并发/锁序门槛为 `3 passed`，另一个一次性
+  MySQL 还证明 M7 内容摘要重复计算一致、M8 前后不变且任一受保护业务值变化都会改变摘要。
+  临时容器、端口和内容文件已清理。本轮没有连接 Gate A 或持久 MySQL，也没有迁移、
+  Runtime 切换、持久数据写入、新依赖或版本提升；完整 updater 尚无新干净 SHA 的隔离
+  MySQL/远端执行证据。
+- 本轮本地候选的完整后端回归为 `2317 passed, 33 skipped in 125.31s`，compileall
+  通过；该结果不属于 `4e745848...` 或任何既有远端 Run，也不能替代完整 updater 的 MySQL
+  与 Gate A 证据。
+- 独立只读代码审查先发现成功 Record 重放没有在 live 数据核验前重新证明 App/Nginx
+  仍然停服；现已改为先检查 MySQL/Redis healthy 与 App/Nginx stopped/exited，并为运行中、
+  缺失、unhealthy 和状态读取失败补齐 fail-closed 矩阵。修复后复核无未解决 P0–P3；该结论
+  只绑定当前本地 diff，不能提前绑定尚未形成的最终干净 SHA。剩余仓库门槛是最终干净
+  SHA、完整远端 8/8 与同 SHA 的完整 M7→M8 updater 隔离 MySQL 复现。
+- 内容摘要由 20 表单事务 dump 与随后一次 `bead_colors` 投影查询组成，数据库与图片也
+  不是同一个原子事务；保护依赖 App/Nginx 停写窗口内不存在直接 SQL、其他迁移进程或
+  宿主图片旁路写入，不宣称跨数据库/文件系统的绝对原子性。
+- 此前 M8 基线 head `4e745848315aab56805a872ecf5b9f5e3c10135b`、merge-ref
+  `3ddda81bc15986f0531c4887311611b7473d0d4b` 的 Run 34242753255 已完整 8/8；首轮
+  Run 34242022911 因 Reservation MySQL 测试漏列 M8 而 7/8，修复后全部 Job重跑。
+  但上述 M7→M8/Online no-op 改动晚于该 SHA，仍须形成新的干净 SHA，并由远端 8/8、
+  专用一次性 MySQL 完整 M7→M8 updater、新 Backup/Restore 与当次明确写授权关闭后，
+  才能规划持久 Gate A 执行。
+
 ## 本地 2 核 / 4GiB / 5Mbps 容量探测（2026-09-08）
 
 - 使用当前工作区构建原生 ARM64 临时镜像，在完全隔离的 SQLite M8 副本、Redis、单
@@ -59,8 +134,9 @@
   Stylelint 与 OpenAPI 生成链均通过。完整后端为 `2069 passed, 31 skipped`（122.64s），
   skip 均为显式隔离的 MySQL-only 门槛。另在一次性 MySQL
   8.0.46 真实执行 Aerich 0→8，并通过 M8 精确 HEX 和 Gate A publish/replay `2 passed`；
-  容器已删除、13308 已释放。没有新增依赖或版本提升；当前 SHA 的远端 CI、持久 MySQL
-  迁移和微信真机仍未执行。
+  容器已删除、13308 已释放。没有新增依赖或版本提升；该 M8 基线随后由 head
+  `4e745848...` 的 Run 34242753255 远端 8/8。持久 M8 迁移和微信真机仍未执行；其后
+  M7→M8/Online no-op 候选的远端证据见上方独立条目。
 - 本地前两阶段验收另通过后端 M8/压缩/颜色订单定向 `46 passed`、小程序 11 套件
   `146 passed` 与钱包只读对账 `scanned=11 mismatches=0 violations=0`。真实本地 API
   管理目录返回 221 项并与清单一致；100 项目录响应经 gzip 从 20,200 bytes 降至
@@ -236,6 +312,9 @@
 
 ## Wallet 扩展 MySQL 发布门槛（本地候选，2026-09-07）
 
+> **历史状态说明：** 本节记录 2026-09-07 当时的本地/远端门槛；Wallet workflow、
+> Gate A M4/backfill/reconcile 与后续 M7 持久检查点现已完成，真实资金能力仍关闭。
+
 - `backend-mysql-release` 现将 `tests/wallet/mysql` 与既有 Inventory/Reservation 门槛放在同一个 MySQL 8.0.46、同一 M0→M7 Schema 中执行；SQLite Job 显式忽略三类 MySQL-only 目录，CI 契约测试同步冻结该边界。
 - Wallet 专项从 2 项扩为 9 项：覆盖并发不同 key 调账无丢失、同 key 调账重放、并发余额支付只扣一次、并发退款只退款/恢复一次、真实 InnoDB 1205 后新事务重试、首轮已写资金与库存后模拟 1213 的整事务回滚重试，以及 Inventory 调账先持有 Kit 行锁时退款产生可观测 `performance_schema.data_lock_waits`、释放后双方无锁反转完成。
 - `EXPLAIN` 使用 2,000 条合法 WalletTransaction 与 2,000 条 Payment 基数样本，确认钱包 owner 锁、资金幂等查询、钱包流水分页、支付幂等查询和用户支付分页分别命中冻结唯一/组合索引；既有 `ascii_bin` 大小写敏感回归继续保留。
@@ -249,12 +328,18 @@
 
 ## M7 当前候选远端 CI 8/8 收口（2026-09-07）
 
-- `feature/phase9-ci` 当前 PR head `4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf` 已推送；PR #2 的 merge-ref `ccbbe9dcb675a99369867814386051befc5922f2` 在 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 完成 8/8 success。
+> **历史状态说明：** 本节的“当前”和剩余阻断项均以 2026-09-07 为时间点；Gate A
+> 后续已受控到 M7。M8、新候选 SHA/CI、真实 HTTPS RC 与真机仍按最新条目判断。
+
+- `feature/phase9-ci` 当时的 M7 PR head `4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf` 已推送；PR #2 的 merge-ref `ccbbe9dcb675a99369867814386051befc5922f2` 在 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 完成 8/8 success。
 - 远端 `backend-sqlite` 为 `2000 passed, 2 skipped in 736.46s`；`backend-mysql-release` 在 MySQL 8.0.46 完成 M5→M6→M7 历史重放、M6/M7 snapshot、联合 `21 passed in 10.65s` 和 cleanup。前端质量、OpenAPI、微信构建、双依赖审计与仓库卫生同一 Run 全部通过。
 - Run 保存 7 组 artifact；名称绑定 merge-ref 与 Run ID，GitHub SHA-256 digest、大小和到期时间已冻结在 `docs/09_release/reports/m7_remote_ci_2026-09-07.md`。`openapi-contract` 不上传 artifact，8 个 Job 对应 7 组 artifact 符合 workflow 设计。
 - 旧 Run 34104680282 继续保留为 7/8 失败回归记录；R-026 已关闭。整体发布仍为 **No-Go**：Wallet 扩展 MySQL、Gate A 只读盘点与非空升级入口、backfill/reconcile、MARD 持久发布、真实 RC/HTTPS/合法域名和真机均未关闭。
 
 ## M7 MySQL 候选门槛与本地综合演示基线（2026-09-07）
+
+> **历史状态说明：** 本节冻结 2026-09-07 候选形成时的证据与阻断项；其中“未应用
+> Gate A / 尚无升级入口”已由 2026-09-08 的持久 M2→M7 检查点关闭，不是当前状态。
 
 - 本地提交 `58d8435` 将 MySQL CI/release gate 收口到 M7，对 `reservation_settings` 单例、默认周一、约束/索引与历史 Reservation 重放加入结构及真实并发验证。在一次性 MySQL 8.0.46 中完成空库 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 和 Inventory + Reservation 联合 `21 passed`；专用 Schema、容器与端口已清理。包含该修复的当前候选后续已由 Run 34129910349 远端 8/8；任何迁移仍未应用 Gate A、共享、预发布或生产 MySQL。
 - 本地持久 `db.sqlite3` 的结构对比只发现 `refunds.inventory_restored` 和一单一退款 `UNIQUE(order_id)` 缺失。提交 `35e8630` 新增精确、默认预览、双显式确认的 SQLite 修复脚本；实际 apply 写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-refunds-repair-20260907-105304-874045.bak`，权限 `0600`，修复后完整性、外键、目标字段/唯一索引和幂等重放均通过。该脚本不写 Aerich，不是 MySQL/发布迁移证据；数据库设计和 API 文档已是目标形状，无需修改契约。
@@ -267,11 +352,17 @@
 
 ## Reservation 可配置固定店休（仓库实现候选，2026-09-07）
 
+> **历史状态说明：** 本节记录 M7 应用前的候选状态；M7 后续已进入当前持久 Gate A，
+> 但共享、预发布、生产和真机仍不因该结果自动通过。
+
 - 管理端店休页拆分为“每周固定店休”和“添加单日店休”两个独立操作，按钮、说明、确认弹窗和恢复动作均明确表达作用范围；顾客预约页动态展示当前固定店休日。
 - 新增 `ReservationSettings` 单例、星期枚举、管理查询/更换 API 与 M7 候选迁移。固定店休默认周一；更换后旧星期立即恢复可预约，未来 30 天内命中新星期且尚未开始的 pending/confirmed 预约原子取消为 `store_closed`，单日店休与历史取消记录不变。
 - M7 未应用持久环境；其一次性 MySQL 8.0.46 候选门槛已由上述 `58d8435` 证据完成，当前候选也已远端 8/8，但目标环境部署验收仍未完成；N2 微信主动通知仍未实现。
 
 ## M6 Color-selectable Kit — 仓库实现与本地验证完成 / 真实 MySQL 待验（2026-09-06–07）
+
+> **历史状态说明：** 标题与正文冻结 M6 候选当时的门槛；真实 MySQL 门槛和当前 Gate A
+> M6/MARD 发布已于后续阶段完成。M8 HEX 仍未应用 Gate A，其他环境仍须分别授权。
 
 - 冻结 `KitKind = fixed | color_selectable`。省略仍创建既有 fixed Kit，历史 ProductKit 迁移时保持 fixed 与原 `stock` 语义；自选颜色 Kit 使用 `stock=NULL`、`sale_unit_grams=10`，`price` 表示每 10g 单价，KitKind 创建后不可修改。
 - 冻结全局 `bead_colors` 221 槽与商品级 `product_kit_colors`：全局槽可暂缺 code/name/色板图，非空 code 唯一；每个自选颜色商品原子关联全部槽，初始禁用/零库存。`is_enabled/stock_units` 属于商品，不同商品引用同一颜色时库存不共享。
@@ -291,6 +382,10 @@
 
 ## Reservation N1 — 仓库实现候选（2026-09-06）
 
+> **历史状态说明：** 本节冻结 M5/M7 之前的 N1 规则与证据；其中“周一固定店休、周二至
+> 周五 weekday”是当时规则。当前规则为周一至周五始终映射 `weekday`，再由可配置的每周
+> 固定店休独立禁用一天；M5/M7 已进入当前持久 Gate A。
+
 - 新增独立体验预约，不要求下单或付款，也不创建 Order、Payment 或 Wallet 流水。正常普通 `USER` 以 `experience_option_id + reservation_date + start_time` 创建 `pending`；服务端按 `Asia/Shanghai` 返回未来第 0–30 日的合法日期/半小时时段，并统一执行 11:00–20:00、周一固定店休、周二至周五 weekday、周末 holiday、完整体验不跨营业结束时间和开始前至少 3 小时规则。
 - 冻结 Reservation 四状态 `pending/confirmed/rejected/cancelled`，不新增 `completed`、到店或支付状态。ADMIN+ 只可在开始前确认 pending 或以固定 `no_capacity` 拒绝；用户在精确开始前至少 3 小时可取消 pending/confirmed，改期必须取消旧预约后创建新记录，原记录、快照和审计不被覆盖。
 - N1 不维护座位容量、占座或同槽唯一约束。同一用户、同一 Option、同一开始时间允许重复成功提交并生成不同 Reservation ID，由店员逐条人工确认或拒绝；创建 POST 没有客户端幂等键，结果未知时客户端先查“我的预约”，不得自动重发。
@@ -304,6 +399,9 @@
 - 同步新增 Reservation 需求/API 权威文档并更新 User/Product、数据库设计/DBML、API 通用约定、架构、AI Context、迁移流程及前端集成/架构/测试/路线/多端/发布契约。N2 详细规划独立保留，不纳入本次实现范围。本条记录的是未发布仓库候选；M5 仍未应用本地持久 SQLite、Gate A、共享、预发布或生产环境，不代表主动微信通知已启用、目标环境已验收或版本已经发布。
 
 ## Wallet / Payment / Refund v1 — 仓库实现（2026-09-05）
+
+> **历史状态说明：** 本节冻结 M4 候选形成时的门槛；M4、两个历史补齐、只读对账和远端
+> workflow 后续已在当前持久 Gate A M7 / 对应候选中完成。真实 Provider 与其他环境仍关闭。
 
 - 新增封闭式会员钱包：新建普通 `USER` 创建一个 `0.00–1000.00` 权威余额账户，历史 backfill 仅补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补；ADMIN/SUPER_ADMIN 始终不建钱包，均只能查询和调整普通客户。单笔充值金额冻结为 `1.00–1000.00`，资金写请求只接受固定两位小数字符串。
 - 密码注册和微信首次登录现将 `User + WalletAccount(0.00) + Audit/ExternalIdentity` 放在同一事务；runtime seed 只给合成 USER 建钱包。账号注销新增处理中资金、可退款钱包结算敞口和非零余额检查并关闭已有钱包；即使余额为零，未成功退款的 PAID 或 30 天内 COMPLETED 钱包结算仍阻断注销，历史资金事实继续由 RESTRICT 外键保留。注销以 DB commit 为权威成功点；提交后 Redis refresh-family 清理改为 best-effort，失败仍返回成功，依靠 `status/auth_version` 阻断会话，并记录不含 Token/JTI 的高优先级安全事件供运维重试清理。

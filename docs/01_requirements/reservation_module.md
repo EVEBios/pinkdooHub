@@ -2,9 +2,9 @@
 
 > **Contract Version:** v1.0（N1）
 >
-> **Status:** N1 repository implementation complete；M5 generated offline and verified on disposable MySQL 8.0.46；not applied to any persistent database；deployment/real-client acceptance pending
+> **Status:** N1/M7 repository and MySQL gates complete；M5/M7 present in current Gate A M7；other environments and real-client acceptance pending
 >
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 
 ---
 
@@ -59,11 +59,11 @@ N1 的核心取舍：
 
 ### 3.3 工作日 / 节假日 MVP
 
-- 周二至周五使用 `weekday` Option。
+- 周一至周五使用 `weekday` Option；当前配置为每周店休日的日期会被独立禁用，不改变日期类型。
 - 周六、周日使用 `holiday` Option。
 - 当前配置的每周固定店休日不进入任何可预约日期；首次部署默认周一。
 - 更换固定店休日立即生效：预约窗口内命中新星期、尚未开始的 `pending/confirmed` 预约在同一事务中以 `store_closed` 取消；旧星期恢复可预约，已有单日店休保持不变，历史取消预约不恢复。
-- N1 不接入法定节假日、调休或第三方日历。因此周二至周五即使是法定节假日仍按 `weekday`，周末调班仍按 `holiday`。
+- N1 不接入法定节假日、调休或第三方日历。因此周一至周五即使是法定节假日仍按 `weekday`，周末调班仍按 `holiday`。
 - 创建时所选 Option 的 `day_type` 必须与预约日期分类一致，否则返回 `42253`，`data.reason=option_day_type_mismatch`。
 
 ## 4. ExperienceOption 可预约性与不可变快照
@@ -287,7 +287,7 @@ Pydantic 请求形状错误继续使用通用 HTTP 422 / code `422`，不能与�
 7. 对用户列表、活跃预约注销阻断、管理组合筛选和店休日批量取消运行 `EXPLAIN`；
 8. 迁移后核对 `store_business_days` / `reservations` 行数与约束，并保留回滚或前向修复方案。
 
-上述一次性验证不等于目标环境迁移。M5 当前没有应用到本地持久 SQLite、Gate A、共享、预发布或生产数据库。开发环境 `generate_schemas` 只能补建缺失表，不能 ALTER 既有表，也不会写 Aerich 版本；它不是发布迁移证据。MySQL DDL 会隐式提交，因此 M5 不能承诺整份 DDL 原子回滚；执行前必须备份、停写并准备按实际完成步骤恢复。
+上述一次性验证本身不等于目标环境迁移。M5/M7 后续已随当前持久 Gate A 的 M2→M7 受控升级应用；本地持久 SQLite、共享、预发布和生产数据库不因该证据自动迁移。开发环境 `generate_schemas` 只能补建缺失表，不能 ALTER 既有表，也不会写 Aerich 版本；它不是发布迁移证据。MySQL DDL 会隐式提交，因此任何新目标执行 M5/M7 都不能承诺整份 DDL 原子回滚，执行前必须备份、停写并准备按实际完成步骤恢复。
 
 ## 16. 明确不在 N1
 

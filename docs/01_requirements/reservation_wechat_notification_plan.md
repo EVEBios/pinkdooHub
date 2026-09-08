@@ -70,7 +70,7 @@ Notification delivery 投递状态
 
 仓库已经具备以下可复用边界：
 
-- Reservation N1 已冻结四状态、`no_capacity`、`customer_request/store_closed`、自定义店休、原子批量取消、逐预约审计、管理详情当前手机号与 M5 两表候选；N1 站内状态不依赖任何通知设施；
+- Reservation N1 已冻结四状态、`no_capacity`、`customer_request/store_closed`、自定义店休、原子批量取消、逐预约审计、管理详情当前手机号与 M5 两表；M5/M7 已进入当前持久 Gate A M7，N1 站内状态不依赖任何通知设施；
 - 后端存在微信小程序 `code2Session` Provider 适配器、HTTP 超时和平台错误映射；
 - 微信 AppID/AppSecret 已有配置和 Secret 文件注入边界；
 - 用户与微信身份通过 `ExternalIdentity` 绑定；
@@ -410,7 +410,7 @@ Payload 不保存：
 
 ## 8. 数据模型候选
 
-以下全部是 N2 通知扩展的设计候选，不是已经存在的通知表。Reservation N1 的 `store_business_days` / `reservations`、字段、外键、索引和 Enum 已由主契约与 M5 候选冻结；N2 表的最终字段长度、数据库类型、外键动作、索引顺序和 Enum 表示仍必须结合 N1 Tortoise Model、MySQL 8 DDL 与查询计划另行评审。
+以下全部是 N2 通知扩展的设计候选，不是已经存在的通知表。Reservation N1 的 `store_business_days` / `reservations`、字段、外键、索引和 Enum 已由主契约与已实施的 M5 冻结；N2 表的最终字段长度、数据库类型、外键动作、索引顺序和 Enum 表示仍必须结合 N1 Tortoise Model、MySQL 8 DDL 与查询计划另行评审。
 
 ### 8.1 `wechat_notification_recipients`
 
@@ -1193,4 +1193,4 @@ N2 仍是 Deferred 规划时，只新增本文，不修改现有数据库/API/�
 - `miniapp/src/platform/wechat_identity.ts`：当前仅有 `Taro.login` 平台封装
 - `requirements.txt` 与 `app/tasks/`：当前没有可靠通知 Worker/队列依赖
 
-本文没有把任何 N2 候选误报为现状。Reservation N1 已完成仓库实现，M5 也已在一次性 MySQL 8.0.46 完成 0→5 与核心并发/重试/索引验证，但尚未应用持久数据库；本期仍以站内状态为权威、管理员使用当前手机号人工联系。微信订阅消息、通知 Outbox、Worker、重试与主动送达均不在 N1，也未实现、未启用、未授权。
+本文没有把任何 N2 候选误报为现状。Reservation N1/M7 已完成仓库实现与 MySQL 门槛，M5/M7 也已进入当前持久 Gate A M7；共享、预发布和生产环境仍未因此自动迁移。本期仍以站内状态为权威、管理员使用当前手机号人工联系。微信订阅消息、通知 Outbox、Worker、重试与主动送达均不在 N1，也未实现、未启用、未授权。

@@ -2,9 +2,9 @@
 
 > **Contract Version:** v1.4
 >
-> **Status:** Existing Experience/fixed-Kit/Mixed Inventory + Wallet Settlement/Full Refund implemented；M6 repository implementation and local regression complete, real MySQL verification/deployment pending
+> **Status:** Experience/fixed/color-selectable Kit/Mixed Inventory + Wallet Settlement/Full Refund implemented；M1/M4/M6 present in current Gate A M7；other environments pending
 >
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 
 ---
 
@@ -12,9 +12,9 @@
 
 Phase 4.2 建立可追溯的订单、商品与 Experience Option 快照、用户/管理员查询、权限隔离，以及明确的订单状态生命周期。本文是 Order 业务行为的权威来源；HTTP 形状见 [Order API](../03_api/order_api.md)，表结构见 [Database Design](../02_database/database_design.md)。
 
-Phase 4.3.7–4.3.8 已在既有订单边界上接入 Kit/混合下单、创建时库存扣减及 Pending 取消幂等恢复。Wallet/Payment/Refund v1 进一步接入余额支付、人工付款结算事实、PAID/COMPLETED 全额退款和订单资金查询；真实微信 Provider 仍关闭，M4 尚未应用持久数据库。资金权威规则见 [Wallet Module](wallet_module.md)。
+Phase 4.3.7–4.3.8 已在既有订单边界上接入 Kit/混合下单、创建时库存扣减及 Pending 取消幂等恢复。Wallet/Payment/Refund v1 进一步接入余额支付、人工付款结算事实、PAID/COMPLETED 全额退款和订单资金查询；M4 与历史准备已进入当前持久 Gate A M7，但共享、预发布和生产数据库不因此自动迁移，真实微信 Provider 仍关闭。资金权威规则见 [Wallet Module](wallet_module.md)。
 
-M6 在不破坏既有 Experience 与 `fixed` Kit 的前提下增加 `color_selectable` Kit：每个颜色选择是一条独立 OrderItem，`quantity` 表示 10g 单位数，并在订单中快照颜色和销售单位。代码、客户端、本地跨模块回归与迁移候选已完成，但真实 MySQL 迁移/并发门槛和部署仍待完成，因此不得描述为已部署。
+M6 在不破坏既有 Experience 与 `fixed` Kit 的前提下增加 `color_selectable` Kit：每个颜色选择是一条独立 OrderItem，`quantity` 表示 10g 单位数，并在订单中快照颜色和销售单位。代码、客户端、本地跨模块回归与真实 MySQL 门槛均已完成，M6 已进入当前持久 Gate A M7；其他持久环境仍须分别核验、迁移和验收。
 
 ---
 
@@ -40,7 +40,7 @@ M6 在不破坏既有 Experience 与 `fixed` Kit 的前提下增加 `color_selec
 
 ### 2.2 明确不在本阶段
 
-- Wallet/Payment/Refund 的持久 M4 应用、历史 backfill/reconcile、生产开关与真实微信 Provider；资金路径的扩展并发、1205/1213、锁序与 EXPLAIN 仓库门槛已于 2026-09-07 在一次性 MySQL 8.0.46 通过，但不等于目标环境已启用。
+- Wallet/Payment/Refund 在共享、预发布和生产环境的 M4 应用，以及生产开关与真实微信 Provider；资金路径的扩展并发、1205/1213、锁序与 EXPLAIN 仓库门槛已于 2026-09-07 在一次性 MySQL 8.0.46 通过，当前 Gate A 也已完成 M4/backfill/reconcile，但这些证据不等于其他目标环境已启用。
 - 真实微信下单、支付通知、查单、关单、退款和对账；当前微信路径稳定 503 且零写入。
 - 超时自动取消、已支付订单取消、部分退款和用户自助退款。
 - 订单删除、订单修改、后台任意状态设置。
@@ -48,7 +48,7 @@ M6 在不破坏既有 Experience 与 `fixed` Kit 的前提下增加 `color_selec
 
 任何 Kit 不可售或库存不足时整个请求失败，不允许部分创建或部分扣减。
 
-### 2.3 M6 已冻结、实现中的增量
+### 2.3 M6 已冻结、已实现的增量
 
 - 接受 `color_selectable` Kit 的颜色行；客户端提交 ProductKitColor 的 `kit_color_id`，不直接提交全局 BeadColor ID、颜色名称、颜色编码或价格。
 - 一个颜色对应一条 OrderItem；同一商品的同一颜色不能重复行，客户端需要先合并数量。
@@ -299,8 +299,8 @@ ADMIN+ 代客钱包订单由管理员作为操作者，按顺序同时写 `CREAT
 | 阶段 | 内容 |
 |------|------|
 | Phase 4.3 Inventory | 4.3.1–4.3.12 创建扣减、Pending 取消恢复、查询/Mapper、管理 API、真实 MySQL 门槛与 Final Review 均已完成 |
-| Wallet/Payment/Refund v1 | 余额支付、ADMIN+ 代客钱包订单、人工结算事实、订单资金查询、一次全额退款已在仓库实现；M4 未应用持久数据库 |
-| M6 Color-selectable Kit | 每色一 Item、10g 单位、20/10/30 行边界、颜色槽号/编码/名称快照、总克重派生和商品颜色库存扣减/恢复；仓库实现与本地验证已完成，真实 MySQL/部署待完成 |
+| Wallet/Payment/Refund v1 | 余额支付、ADMIN+ 代客钱包订单、人工结算事实、订单资金查询、一次全额退款已在仓库实现；M4/backfill/reconcile 已进入当前 Gate A M7，其他持久环境与生产开关仍待单独授权 |
+| M6 Color-selectable Kit | 每色一 Item、10g 单位、20/10/30 行边界、颜色槽号/编码/名称快照、总克重派生和商品颜色库存扣减/恢复；仓库、本地/真实 MySQL 验证与当前 Gate A M7 已完成，其他持久环境仍待单独迁移 |
 | 后续 Payment | 真实微信下单、签名/验签、通知幂等、查单、关单、退款和对账 |
 | 后续 Order | 超时取消、部分退款、用户自助退款、取消原因、统计、报表与订单删除策略 |
 
@@ -308,7 +308,7 @@ ADMIN+ 代客钱包订单由管理员作为操作者，按顺序同时写 `CREAT
 
 ---
 
-## 12. Inventory 联动契约（fixed 已实现，M6 颜色增量 Pending）
+## 12. Inventory 联动契约（fixed 与 M6 颜色增量均已实现）
 
 Phase 4.3.1 已冻结 Order v1.1 的 Inventory 联动方向，权威细节见 [Inventory Module](inventory_module.md)：
 
@@ -319,4 +319,4 @@ Phase 4.3.1 已冻结 Order v1.1 的 Inventory 联动方向，权威细节见 [I
 - 自动扣减/恢复使用数据库唯一幂等键；重复取消同时由 Order 状态机和 Inventory 唯一约束保护。
 - Order Service 拥有创建/取消外层事务并协调 Inventory Repository，不调用 Inventory Service。
 
-Phase 4.3.7–4.3.8 已实现 fixed Kit 请求形状、创建扣减、流水、快照、响应和取消恢复；Wallet/Payment/Refund v1 已增加代客 Paid 创建扣减与 PAID 全额退款恢复。M6 在相同事务所有权和幂等语义上增加 ProductKitColor 锁与流水，当前仍为实现中增量；既有 fixed 行为、错误码和请求兼容性不得退化。
+Phase 4.3.7–4.3.8 已实现 fixed Kit 请求形状、创建扣减、流水、快照、响应和取消恢复；Wallet/Payment/Refund v1 已增加代客 Paid 创建扣减与 PAID 全额退款恢复。M6 已在相同事务所有权和幂等语义上实现 ProductKitColor 锁与流水，并进入当前 Gate A M7；既有 fixed 行为、错误码和请求兼容性不得退化。

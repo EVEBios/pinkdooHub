@@ -2,7 +2,7 @@
 
 > **Status:** Active reusable methodology；本文件本身不构成环境写入或发布授权
 >
-> **Last Updated:** 2026-09-08
+> **Last Updated:** 2026-09-09
 >
 > **Scope:** 本地容量探测、候选版本性能验证、生产相似发布容量验收
 >
@@ -12,10 +12,16 @@
 证据和资源回收规则。它解决的是“怎样得到可比较、可复核且不会误伤现有环境的结果”，
 不为任何共享、Gate A、预发布或生产环境授予写入或施压权限。
 
-已执行的本地 `2 核 / 4GiB / 聚合 5Mbps` 探索性测试可作为填写示例，见
-[2026-09-08 本地容量探测报告](reports/local_2c4g_5mbps_load_test_2026-09-08.md)。报告是当次
-不可变证据，并已披露与当前规范的偏差，不是完整合规样本。本 Runbook 是后续可迭代的规范；
-两者结论不得互相替代。
+本地执行证据分两代保留：
+
+- [2026-09-08 初版容量探测](reports/local_2c4g_5mbps_load_test_2026-09-08.md)使用
+  SQLite/简化只读模型，先于本规范成文，属于不可追溯重算的历史样本。
+- [2026-09-09 M8 A/B/C/D 完整探索矩阵](reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md)
+  使用 MySQL 8、M8、认证读、C v3 PNG 冷/热页面和真实本地写链路；12/12 Profile 已采齐，
+  但 10 VU 未压缩色板 JSON 触发读延迟和 qdisc drop，因此整体严格记为 `FAIL`。
+
+两份报告都是各自当次的不可变证据，不互相覆盖，也不能替代干净 SHA 的 candidate-pre
+三轮或独立 2 vCPU / 4 GiB Linux 主机验收。本 Runbook 才是后续可迭代的方法规范。
 
 ---
 
@@ -105,6 +111,45 @@ Docker Desktop 结果推广成目标云主机的最终容量。
 停止并不等于立即删除现场。先记录时间、Profile、最后一组指标和错误摘要；确认无需进一步
 诊断后，再按第 14 节精确回收任务资源。
 
+### 2.4 允许继续采集的测后容量失败
+
+“继续采集”与“通过门槛”是两个独立维度。一个 Profile 只有在稳态窗口正常完整结束、零请求/
+传输/业务断言错误、证据完整且失败项全部命中 Test Card 事前冻结的精确白名单时，才允许在
+安全检查后继续剩余矩阵。失败 Profile 必须进入汇总且保持 `FAIL`；即使矩阵最终完整，整轮也
+必须是 `FAIL`，不能用 `matrix_complete`、后续成功轮或 aggregate 平均值覆盖它。
+
+当前 `observational-capacity-v1` 白名单如下：
+
+| 类别 | 可继续采集但仍失败的 gate |
+|------|--------------------------------|
+| 延迟 | `read_p95_gate`、`per_operation_read_p95_gate`、`write_p95_gate`、`per_operation_write_p95_gate`、`json_latency_gate`、`per_operation_json_tail_gate` |
+| 被测栈 CPU | `average_cpu_gate`、`sustained_cpu_gate` |
+| 正常网络 | `normal_network_above_85_percent`、`normal_network_sustained_above_90_percent` |
+| 可排空拥塞 | `qdisc_drop`；请求必须全部成功，继续前 backlog 必须归零 |
+| A 未压满 | `aggregate_5mbps_not_demonstrated`、`qdisc_overlimits_not_increasing`；仅当 bytes 正增长且平均值是有限数并满足 `0 < Mbps < 4.75` |
+
+白名单之外的失败全部 terminal-by-default。特别是以下情况不得继续：
+
+- Profile 异常或结果不完整，任意请求、HTTP、连接、超时、响应契约或业务断言失败；
+- ramp、warm-up、cache prime、数据发现、目标/路由/源码身份或限速配置失败；
+- readiness、容器退出/重启/OOM、cgroup `high/max/oom/oom_kill` 增长或 swap 非零；
+- 指标、operation、延迟、qdisc、MySQL、Redis、主机安全证据缺失或采样断档；
+- qdisc 字节不增长，A 平均速率超过 `5.05Mbps` 或为 NaN/Infinity/其他非法值；
+- 内存峰值、内存增长、Runner CPU/RSS、宿主内存/磁盘安全门槛失败；Runner CPU 超线意味着
+  负载发生器可能成为瓶颈，不能继续积累并误解为服务端容量；
+- MySQL slow query、锁未排空、死锁或其他错误，Redis eviction/rejection，日志/statement error，严格数据
+  对账或 cooldown 失败，以及任何未来新增但尚未加入白名单的 gate。
+
+继续前必须按累计完成旅程执行与最终阶段相同的严格数据核验，并确认日志和 MySQL statement
+零错误；随后 cooldown 连续两次确认 readiness、宿主安全水位、所有长期容器/cgroup、零 swap、
+Redis、qdisc backlog、MySQL 运行线程和当前锁等待均安全。只有该 checkpoint 全部通过才能
+进入下一 Profile。最后一个 Profile 若发生白名单失败仍要完成 checkpoint/cooldown，但报告应
+只记 `cooldown_passed=true`，不得虚构“已经执行了后续 Profile”。
+
+本策略只对 Test Card 已冻结 `observational-capacity-v1` 的新执行生效，不追溯重算旧 artifact。
+历史 run `20260909t030853` 由旧 fail-fast Runner 在 A identity 10 VU 的 P95/qdisc drop 失败后
+终止；它仍是未采齐的 `FAIL`，不得补写 continuation 字段、拼接后续结果或改判。
+
 ---
 
 ## 3. 冻结 Test Card 与执行身份
@@ -124,8 +169,9 @@ Docker Desktop 结果推广成目标云主机的最终容量。
 | 存储 | 数据库/图片卷或云盘类型、文件系统、容量、可用空间、IOPS/吞吐/延迟配额和 fsync 策略 |
 | 网络语义 | Mbps 定义、限速方向/接口、burst/latency、TLS、RTT、丢包、gzip/Brotli 和缓存 |
 | 数据集 | 来源、快照时间、行数/图片数、最大响应、图片尺寸、合成 persona 与清理策略 |
-| 负载 | VU/RPS、权重、思考时间、随机种子、预热、稳态、冷却、轮数和执行顺序 |
+| 负载 | VU/RPS、权重、思考时间、随机种子、预热、稳态、冷却、轮数和执行顺序；C v3 各阶段的 options 启动窗口、completion drain 和总阶段时长 |
 | 门槛 | 正确性、P95/P99、错误、CPU、内存、网络、数据库、Redis 和数据完整性阈值 |
+| 失败处置 | continuation policy 版本、精确可继续白名单、条件式网络规则、terminal-by-default、继续前 checkpoint/cooldown 及整轮失败保持规则 |
 | 安全 | 授权范围、禁止目标、停止条件、Secret 策略、资源所有者和清理负责人 |
 
 测量开始后不得修改 Profile 来“修正”结果。需要改变 worker 数、图片大小、缓存、压缩、
@@ -259,6 +305,11 @@ Profile 必须冻结宿主与容器 swap 策略。用于判断“4GiB 是否够�
 - 时长和延迟使用单调时钟计算，墙钟只用于把容器日志、采样和报告时间对齐，并记录时区。
 - 负载端的 CPU、内存、连接数和失败也要采集。它必须能在无带宽限制控制组中产生高于目标
   的吞吐；否则服务端“没有打满”可能只是客户端不够快。
+- 本项目当前机器字段 `load_generator.process_cpu_percent_of_one_core` 保持兼容命名，但它
+  实际采集的是整个 Runner Python 进程在测量窗口内的单核 CPU 口径：包含进程内负载
+  生成和采样/编排开销，不是只计 HTTP 协程；`time.process_time()` 不包含 Runner 启动的
+  Docker/`ps` 等子进程 CPU。新报告必须显式写明该口径，不得因字段旧名而将其解释为
+  “纯负载协程 CPU”，也不得借口径澄清放宽已冻结的 `< 70%` 门槛。历史报告保持当时原文和结论。
 - 本地探索可把负载端放在宿主机、服务放在 Docker cgroup 中；若同在一个 Linux 内核，至少
   使用不相交 cpuset。候选/发布级优先使用独立负载主机，并记录它到目标入口的 RTT、带宽和
   丢包，避免与服务端争用同一宿主资源。
@@ -306,17 +357,26 @@ tc -d -s qdisc show dev <client-facing-interface>
 client-facing interface。若确有多条客户端出口，应先把拓扑收口到单一 edge 接口，或使用
 能够对多接口聚合整形的方案；不能给每个接口各挂 5Mbps 后把合计称为 5Mbps。
 
-标准 Nginx 镜像通常没有 `tc`，也不应长期获得 `NET_ADMIN`。推荐使用只在测试期存在的
-helper 镜像：通过 `network_mode: "service:<edge-service>"` 共享网络命名空间，以
-`NET_ADMIN` 应用 qdisc 后立即退出。qdisc 随 edge 网络命名空间销毁，不修改宿主网络。
+标准 Nginx 镜像通常没有 `tc`，也不应直接获得 `NET_ADMIN`。本项目的可执行 Harness
+使用只在当次测试期存在的 shaper helper：它通过
+`network_mode: "service:<edge-service>"` 共享可销毁 edge 网络命名空间，以 `NET_ADMIN`
+应用 TBF，并为 Runner 在测量期间持续读取 `tc -s -j qdisc` 状态而全程存活。这是为了
+保留运行中 qdisc 证据而作的有意权限生命周期取舍，不是应用或 Nginx 容器的权限。
+helper 不使用宿主网络、不发布端口，`NET_ADMIN` 的影响范围只限于该任务的
+edge 网络命名空间，不得将其解读为宿主级网络权限。shaper 必须纳入当次
+Compose project 的资源包络和回收清单；精确 Compose cleanup 会停止 helper，优雅退出时删除
+qdisc，而 edge 网络命名空间销毁也会清除其中的限速状态，全程不修改宿主网络。
 
 ### 5.3 限速生效验证
 
 仅看到配置命令返回 0 不算验证。正式测量前必须：
 
-1. 保存 `tc -d -s qdisc` 初始输出；
+1. 保存 `tc -d -s qdisc` 的人类可读初始输出和 `tc -s -j qdisc` 的机器可读初始输出；
+   Runner 必须解析并逐样本核对内核实际回报的 `rate=625000 B/s`（5mbit）、
+   `burst=16000 B`（128kbit）与约 `400ms` latency；参数缺失、非法或漂移，或采样到的
+   `bytes/packets/drops/overlimits/requeues` 累计计数回退，必须立即终止；
 2. 对一个累计响应足够大的场景持续至少 30–60 秒；
-3. 保存相同 qdisc 的结束输出；
+3. 保存相同 qdisc 的结束输出和已解析参数；
 4. 计算网络层实际平均速率；
 5. 确认 `overlimits` 增长、`dropped=0`，并验证 5→10 并发不会让聚合吞吐翻倍。
 
@@ -396,6 +456,7 @@ Mbps = (after_bytes - before_bytes) × 8 ÷ elapsed_seconds ÷ 1,000,000
 | LT-SAT-10 | 10 个持续在途最大响应、无思考时间 | 验证吞吐平台与排队增长 | 探索性 60 秒；候选/发布级稳态 300 秒 |
 | LT-IMAGE-COLD | 代表尺寸 WebP、冷缓存、客户端并行度受控 | 测真实图片冷启动体验 | 5/10 用户分别执行，至少三轮 |
 | LT-IMAGE-WARM | 相同图片、暖缓存 | 验证缓存/CDN收益 | 与冷缓存配对 |
+| LT-COMPAT-PNG-C/W-v3 | 旧客户端 221 色 PNG 页面加载，cold/warm 配对 | 验证兼容回退在 5/10 VU 的页面加载可用性，不负责饱和出口 | 每 VU 每 6 秒最多一次，每次严格 221 图、最多 4 连接；5/10 VU 配对 |
 | LT-WRITE | MySQL 8 隔离写事务 | 验证事务、锁、幂等、吞吐与对账 | 独立 Profile，不与只读结论混写 |
 
 不是每次都必须执行全部场景，但报告必须把未执行项标为 `Not Run`，不能留空或暗示覆盖。
@@ -442,6 +503,42 @@ Mbps = (after_bytes - before_bytes) × 8 ÷ elapsed_seconds ÷ 1,000,000
 
 221 个纯数字色块继续通过 API 的 HEX 和客户端 `backgroundColor` 绘制，不应在正常 Profile
 中人为请求 221 张兼容 PNG。只有专门验证旧客户端回退时，才建立独立兼容 Profile。
+当前可执行 C v3（`palette-page-load-v3`）将它冻结为“页面加载旅程”：每个 VU 每 6 秒
+最多启动一次，一次
+严格遍历 221 张冻结 PNG 且每图恰好一次，同一 VU 内不重叠两次页面加载，每 VU 最多
+4 个图片连接，因此 5/10 VU 全局最多 20/40 个请求在途。cold 要求逐图 `200`、
+PNG 类型、长度和 SHA-256 与冻结内容精确一致；warm 的 prime 排除在测量窗口外，窗口内
+逐图要求 `304` 且正文严格为空。时间窗口到期或取消时必须 cancel/await 全部未完成图片请求，
+只有完整 221 图旅程才计入完成数。
+C v3 中，options 的 `ramp_seconds`、`warmup_seconds` 和 `duration_seconds` 始终表示完整的
+palette-load 启动窗口，不包含 drain。编排器只对 C 的每个实际存在阶段在原启动窗口之后增加
+最多 6 秒 completion drain：候选前 ramp/warm-up/measured 因此分别是 `20+6`、`60+6`、
+`300+6` 秒。启动窗口结束后不得开始新 palette load，已经启动的旅程可以在 drain 内完成；
+到 completion deadline 仍未完成时必须 cancel/await、保留部分证据并 terminal `FAIL`，不能
+把它软化为容量门槛失败。drain 不从原窗口扣除，不减少 VU、6 秒启动节奏或请求负载。
+A/B/D 不增加该 drain。
+
+Test Card 和报告必须分开记录 options 中的启动窗口、Profile setup 的
+`palette_start_window_seconds`/`completion_drain_seconds`，以及实际总阶段时长。C measured 的
+资源监控覆盖启动窗口和 drain；只允许启动窗口截止前已经开始的整页旅程在 drain 内继续，
+这些请求仍属于原 measured Profile，不得另建或混入下一 Profile。
+
+plan 和新报告必须在配置内矩阵时长下界中计入每个实际存在 C 阶段的 6 秒：默认探索完整
+矩阵从 780 秒增加到 804 秒；候选前 36 Profile/三轮固定矩阵从 14,832 秒增加到 14,976 秒
+（`4:09:36`）。该估算仍不包含构建、迁移、prime、最终对账和冷却扩展。
+
+C v1 的每 VU 四连接无停顿 `304` 无限循环不是真实旧客户端页面重载节奏。零正文响应
+没有打满 5Mbps，却将主要压力放在 Runner 响应头、时序与采样处理上，因此不能作为
+服务端容量证据。历史 run `20260909t022930` 的 FAIL 和原始 artifact 保持不变，不得以 v2/v3
+语义追溯改写，也不得与新轮次拼接成 PASS。
+
+C v2（`palette-page-load-v2`）专指已有真实页面旅程、但 warm-up/measured 没有 completion
+drain 的历史策略。run `20260909t040400` 先保留了 A identity/10 的容量失败并继续，随后
+C-cold/10 在完整 60 秒启动窗口共启动 80 个整页旅程，只完成 70 个并在边界留下 10 个未完成，
+因此作为不完整 Profile 立即终止；该 run 的 `FAIL`、8/12 已记录 Profile 和 artifact 必须
+原样保留。这是工具 deadline 边界发现，不是可以回算的服务容量结论。
+聚合 5Mbps 饱和由 A 的持续大 JSON 请求单独证明；C v3 只回答兼容 PNG 页面加载是否在
+5/10 VU 下保持可用。
 
 带宽下界应直接写入报告。例如 `N` 个用户同时下载每人一张 `S` byte 图片：
 
@@ -589,6 +686,10 @@ Profile 的端点级门槛，不机械套用 JSON 延迟。
 门槛一旦失败，报告结论为 Fail 或 Inconclusive。不得用全局平均延迟、删除最差轮、缩短窗口
 或提高客户端超时来改成 Pass。
 
+第 2.4 节白名单内的“测后容量失败”可以在严格 checkpoint/cooldown 后继续采齐诊断矩阵，
+但这不改变上句的判定：Profile 和整轮仍为 Fail。`profile_execution.matrix_complete` 只回答
+是否采齐，`verdict` 才回答是否达到门槛。terminal 失败或安全检查失败仍须立即停止。
+
 ---
 
 ## 11. 瓶颈诊断矩阵
@@ -662,13 +763,15 @@ Git 中只提交脱敏后的 Test Card、汇总、必要日志摘要、结论和
 > **执行规范：** capacity_load_test_runbook.md @ <Last Updated>
 > **执行身份：** HEAD / diff digest / image ID / architecture / CI artifact
 > **执行时间：** 开始–结束，含时区
+> **矩阵执行：** recorded / scheduled、matrix_complete、capacity_failed_profile_count
+> **失败处置：** continuation policy 版本；继续采集不等于通过
 
 ## 1. 目标、授权与隔离边界
 ## 2. Test Card 与相对 Runbook 的偏差
 ## 3. 拓扑、资源和网络限额的生效证据
 ## 4. 数据集、响应大小、缓存和压缩
 ## 5. 场景、断言、预热、稳态、轮数和顺序
-## 6. 逐场景/逐端点结果
+## 6. 逐场景/逐端点结果、失败 gate 与 disposition
 ## 7. CPU、内存、网络、数据库、Redis 和日志
 ## 8. 数据完整性与写事务对账
 ## 9. 通过门槛逐项判定
@@ -678,7 +781,11 @@ Git 中只提交脱敏后的 Test Card、汇总、必要日志摘要、结论和
 ```
 
 报告中资源表至少包含配置上限、实测平均/峰值和阈值；结果表同时给出样本量、RPS、错误、
-P50/P95/P99/max、wire body 和 network Mbps。任何 Runbook 偏差都在结果前披露。
+P50/P95/P99/max、wire body、network Mbps、Profile verdict、failure disposition 和失败 gate。
+C Profile 还必须分列 options 启动窗口、setup 的 completion drain、总阶段时长、started/
+completed/incomplete palette loads；任何 incomplete 都是 terminal failure，不能仅从完成数中扣除。
+顶层还必须列出计划/已记录 Profile 数、矩阵是否完整、容量失败 Profile 数，以及每项的
+Profile/round/VU/checkpoint/cooldown/是否实际进入后续 Profile。任何 Runbook 偏差都在结果前披露。
 
 ---
 
@@ -746,6 +853,7 @@ lsof -nP -iTCP:<exact-test-port> -sTCP:LISTEN
 - [ ] gzip/Brotli、TLS、RTT、缓存、图片大小和随机种子已冻结
 - [ ] 负载发生器与采样器是否计入资源包络已写明
 - [ ] 停止条件、数据对账和清理路径可执行
+- [ ] continuation policy 已事前冻结；未知 gate 默认终止，继续采集不改变最终失败
 
 ### 执行中
 
@@ -754,11 +862,14 @@ lsof -nP -iTCP:<exact-test-port> -sTCP:LISTEN
 - [ ] readiness 独立持续探测
 - [ ] 每秒采集 CPU、内存、网络、restart/OOM 及依赖指标
 - [ ] 逐端点记录样本量、延迟、错误和 wire body bytes
+- [ ] C v3 分列 options 启动窗口、setup drain、配置/实测总阶段与 started/completed/incomplete；drain 未从原窗口扣除
 - [ ] 未出现停止条件；若出现，已先停负载并保留证据
+- [ ] 白名单容量失败继续前已完成严格对账、日志/statement 检查和连续两次安全 cooldown
 
 ### 执行后
 
 - [ ] 三轮中位数与最差轮均保留，失败轮未删除
+- [ ] Profile verdict 与执行 disposition 分列；matrix_complete 未被写成 PASS 的同义词
 - [ ] qdisc 实际速率、overlimits、drops 与流量公式已核验
 - [ ] 只读数据不变，或写事务余额/库存/状态/流水/Audit 全量对账
 - [ ] 报告明确首个瓶颈、适用结论和不可外推范围

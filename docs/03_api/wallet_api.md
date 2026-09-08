@@ -2,9 +2,9 @@
 
 > **API Version:** v1.0
 >
-> **Status:** Implemented in repository；M4 not applied to persistent databases；WeChat Provider disabled
+> **Status:** Implemented；M4/backfill/reconcile present in current Gate A M7；WeChat Provider disabled；other environments pending
 >
-> **Last Updated:** 2026-09-07
+> **Last Updated:** 2026-09-09
 
 ---
 
@@ -24,7 +24,7 @@
 - 用户取消与余额支付、管理端完成与退款属于互斥命令；客户端从确认弹窗开始同步加锁，任一请求处于提交中或结果未知时冻结另一命令，并以重新读取的 Order 与资金事实收敛状态。该 UI 门禁不替代服务端行锁、状态校验和唯一约束。
 - 无请求体端点会拒绝任何 body，包括 `{}`。
 - 响应使用项目统一信封；下文只展示 `data`。
-- 一次性 MySQL 8.0.46 已完成 Wallet `9 passed` 与三域联合 `30 passed`，覆盖关键资金闭环、四个资金幂等列 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务重试、资金库存锁等待与关键 `EXPLAIN`；容器已清理且未触碰持久库。新的 Wallet-expanded workflow 尚待远端干净 SHA 复现。
+- 一次性 MySQL 8.0.46 已完成 Wallet `9 passed` 与三域联合 `30 passed`，覆盖关键资金闭环、四个资金幂等列 `ascii_bin`、并发调账/余额支付/退款、真实 1205、1213 整事务重试、资金库存锁等待与关键 `EXPLAIN`；容器已清理且该次门槛未触碰持久库。Wallet-expanded workflow 后续已远端通过，持久 Gate A 已完成 M4、两个历史 backfill 与 reconcile；共享、预发布和生产环境仍须分别核验与授权。
 
 ## 2. 路由总览
 
@@ -439,4 +439,4 @@ python -m app.tasks.wallet_reconcile
 
 ## 11. 发布验证状态
 
-2026-09-07 已在一次性 MySQL 8.0.46 完成 Wallet 专项 `9 passed` 和 Inventory + Reservation + Wallet 联合 `30 passed`，覆盖并发调账、余额支付、退款、真实 1205、模拟 1213 整事务重试、Wallet/Inventory 行锁等待及关键资金查询 `EXPLAIN`。CI 候选已把 `tests/wallet/mysql` 接入统一 `backend-mysql-release` Job；在新的干净 SHA 远端复现前，本结果只属于本地候选证据。API 请求/响应、错误码与数据模型没有因该门槛发生变化；M4、两个历史 backfill、reconcile 和生产资金开关仍未应用任何持久环境。
+2026-09-07 已在一次性 MySQL 8.0.46 完成 Wallet 专项 `9 passed` 和 Inventory + Reservation + Wallet 联合 `30 passed`，覆盖并发调账、余额支付、退款、真实 1205、模拟 1213 整事务重试、Wallet/Inventory 行锁等待及关键资金查询 `EXPLAIN`。该次结果只属于当时的本地隔离候选证据；CI workflow 后续已在干净远端通过，持久 Gate A 又于 2026-09-08 完成 M4、两个历史 backfill 与 reconcile。API 请求/响应、错误码与数据模型没有因这些门槛发生变化；共享、预发布和生产环境不因此自动迁移，生产资金开关仍未获授权。

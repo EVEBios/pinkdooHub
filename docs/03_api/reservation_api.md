@@ -1,8 +1,8 @@
 # Reservation API v1.0（N1）
 
-> **Status:** Implemented repository candidate；M5 verified on disposable MySQL 8.0.46 but not applied to persistent environments；real-client/deployment acceptance pending
+> **Status:** N1/M7 implemented and verified；M5/M7 present in current Gate A M7；other environments and real-client acceptance pending
 >
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 >
 > **Base URL:** `/api/v1`
 
@@ -421,7 +421,7 @@ GET /api/v1/admin/store-closures?page=1&page_size=20&date_from=2026-09-06&date_t
 }
 ```
 
-注意：该表是一日一行的并发锁点，不是完整自然日历。预约创建过的日期也可能有 `is_closed=false` 行。周一固定店休不依赖此表，因此不会因为固定规则自动出现在列表中。
+注意：该表是一日一行的并发锁点，不是完整自然日历。预约创建过的日期也可能有 `is_closed=false` 行。当前配置的每周固定店休日不依赖此表，因此不会因为每周规则自动出现在列表中。
 
 ### 6.2 设置店休
 
@@ -522,7 +522,7 @@ Store reopened; previously cancelled reservations remain cancelled
 | `outside_booking_window` | 日期早于上海当地今天或晚于第 30 日 |
 | `invalid_slot_increment` | 不是半小时开始粒度 |
 | `outside_business_hours` | 开始早于 11:00、结束晚于 20:00 或跨日 |
-| `weekly_closed` | 周一固定店休 |
+| `weekly_closed` | 命中当前配置的每周固定店休日（首次部署默认周一） |
 | `store_closed` | 管理员已将日期设为自定义店休 |
 | `option_day_type_mismatch` | Option 工作日/节假日类型与日期不匹配 |
 
@@ -531,7 +531,7 @@ Store reopened; previously cancelled reservations remain cancelled
 | reason | 含义 |
 |--------|------|
 | `past_date` | 目标日期早于上海当地今天 |
-| `weekly_closed` | 周一固定店休，不能自定义设置或恢复 |
+| `weekly_closed` | 命中当前配置的每周固定店休日，不能再作为单日店休设置或恢复 |
 
 请求 Schema、Path 或 Query 形状错误使用通用 HTTP 422 / code `422`，`data.errors` 遵循项目统一格式。
 
@@ -550,4 +550,4 @@ Reservation 的 mutation 除店休 PUT replay 外都不提供幂等重放成功�
 
 ## 9. 发布状态
 
-仓库已生成 M5 离线迁移与 N1 后端候选。2026-09-06 的一次性 MySQL 8.0.46 验证已真实执行 Aerich 0→5，并通过 Reservation `7` 项并发、回滚、1205/1213 与 EXPLAIN 专项；与 Inventory 联合门槛共 `16 passed`。该结果不代表 M5 已应用到本地持久 SQLite、Gate A、共享、预发布或生产数据库。运行时是否可用仍必须同时以目标环境迁移版本、OpenAPI、客户端验收和发布记录为准；开发 SQLite 的 `generate_schemas` 不能作为持久迁移证据。
+仓库已完成 M5 离线迁移与 N1 后端实现。2026-09-06 的一次性 MySQL 8.0.46 验证真实执行 Aerich 0→5，并通过 Reservation `7` 项并发、回滚、1205/1213 与 EXPLAIN 专项；与 Inventory 联合门槛共 `16 passed`。该次隔离结果在当时不代表任何持久环境已应用 M5；2026-09-08 的后续受控执行已将 M5/M7 应用到当前持久 Gate A M7。共享、预发布和生产数据库不因此自动迁移，运行时是否可用仍必须同时以各目标环境迁移版本、OpenAPI、客户端验收和发布记录为准；开发 SQLite 的 `generate_schemas` 不能作为持久迁移证据。

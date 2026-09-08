@@ -1,7 +1,7 @@
 # 微信 Gate A Functional / Smoke / E2E 验收矩阵
 
-> **Status:** Current Operations candidate CI/server data A passed — release-eligible RC/M evidence blocked
-> **Last Updated:** 2026-09-08
+> **Status:** Current M7 server data A passed；M8 baseline CI passed，later upgrade candidate/new RC/M evidence blocked
+> **Last Updated:** 2026-09-09
 > **Scope:** 微信小程序内部测试版（Gate A）
 
 本矩阵冻结“必须证明什么”和证据等级。2026-08-29 的本地自动化基线证明当前源码质量，但不等于未来 RC 在真实 HTTPS、MySQL、Redis 和微信真机上已经通过。
@@ -21,20 +21,20 @@
 历史自动化参考证据：Operations `c4d27a8...` 的 Run 33584789525 从干净 checkout
 完成 8/8 Job，但只覆盖当时的 Aerich M0→M2、前端 61 suites/387 tests 和旧业务面。
 持久 Gate A 的代表数据、异机加密备份、依赖故障、重启、数据/图片保持和日志脱敏也
-绑定该旧基线。历史表项中的 `A PASS` 不得解释为当前 M7 候选已经通过。
+绑定该旧基线。历史表项中的 `A PASS` 不得解释为后续 M7/M8 候选已经通过。
 
-当前审计起点 `c6778e7...` 的 Run 34104680282 保留为 7/8 失败记录；当前 PR head
+当时的审计起点 `c6778e7...` 的 Run 34104680282 保留为 7/8 失败记录；随后 M7 PR head
 `4d6430c...` 的 [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349)
 已在干净 merge-ref checkout 上取得 8/8。远端后端为 `2000 passed, 2 skipped`、MySQL
 为 `21 passed`，前端 typecheck、ESLint、Stylelint、`83 suites / 562 tests` 和 17 项
-CI policy 均通过。当前本地完整后端为 `2000 passed, 30 skipped in 113.05s`，三类
-MySQL-only 门槛另以一次性 MySQL 联合 `30 passed` 覆盖。当前
+CI policy 均通过。当时本地完整后端为 `2000 passed, 30 skipped in 113.05s`，三类
+MySQL-only 门槛另以一次性 MySQL 联合 `30 passed` 覆盖。该 M7
 自动化覆盖已经包含 M4 Wallet、M5 Reservation、M6 自选颜色、M7 固定店休、代客多颜色
-和头像布局；其中仓库 CI 已绑定当前 Run，但仍不是 RC 真机结果。微信
+和头像布局；其中仓库 CI 已绑定该 Run，但仍不是 RC 真机结果。微信
 production-mode 代码检查产物为 141 个文件、主包 649,739 bytes、分包 407,624 bytes、
 总计 1,057,363 bytes，manifest SHA-256 为
 `693fb673df044e03c2865af2827e39ac7a5d6de86dbb1b3214f0b4237eeb69b4`，但仍为
-`release_eligible=false`。当前候选的仓库 CI `A` 已通过，但 release-eligible RC 与
+`release_eligible=false`。该 M7 候选的仓库 CI `A` 已通过，但 release-eligible RC 与
 完整功能矩阵仍为 `BLOCKED`；下面各功能的自动化证据也不能替代真实 HTTPS、微信合法域名和
 iOS/Android 的 `M` 证据。
 
@@ -47,7 +47,7 @@ Wallet-expanded head `62f807a...` 随后由
 
 补充的 [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md) 已在提交前
 dirty 工作树完成 MySQL 0→7、M0–M6→M7 历史矩阵、M6/M7 snapshot 和联合
-`21 passed`；同内容随后记录为提交 `58d8435...`，并由当前 Run 远端复现 workflow
+`21 passed`；同内容随后记录为提交 `58d8435...`，并由该 M7 Run 远端复现 workflow
 门槛。精确证据见 [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。这不把
 任何当前 RC 的 `M BLOCKED`、Wallet 扩展门槛或持久环境项目改为 PASS。
 
@@ -61,6 +61,15 @@ MySQL、持久数据、图片、日志和服务端生命周期相关的 `A` 部�
 解释为 `PASS`；所有 `M`、真实 HTTPS Origin、微信合法域名和 release-eligible RC
 仍为 `BLOCKED`。详见
 [Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
+
+M8 基线 head `4e745848...` 随后由
+[Run 34242753255](https://github.com/EVEBios/pinkdooHub/actions/runs/34242753255) 在干净
+checkout 完成 8/8；首轮 7/8、修复和 artifact 见
+[M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。其后新增的显式 M7→M8 入口与
+Online exact no-op publisher 与 M7→M8 内容保护已有本轮本地 `tests/release` `229 passed`；
+完整后端为 `2317 passed, 33 skipped in 125.31s`，均不在该 Run 中。
+因此 M7 服务端数据项可继续使用既有 `A PASS`，但 M8 持久迁移、HEX/gzip Runtime、
+新候选 CI、真实 RC 和所有 `M` 证据仍为 `BLOCKED`/`NOT RUN`。
 
 ## 2. 身份、角色与权限
 
@@ -97,6 +106,7 @@ MySQL、持久数据、图片、日志和服务端生命周期相关的 `A` 部�
 | US-14 | Reservation | 当前固定店休日、未来 0–30 日合法日期/半小时时段、手机号补录和创建 pending | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | US-15 | Reservation | 我的预约分页/详情、pending/confirmed/rejected/cancelled 文案与提前三小时取消 | `A+M` | 当前 `A PASS`；`M BLOCKED` |
 | US-16 | Reservation | 无空位/店休结果可从权威状态收敛；首版不声称主动微信通知或自动容量 | `A+M` | 当前 `A PASS`；`M BLOCKED`；N2 `N/A` |
+| US-17 | Color swatch | M8 公开颜色返回规范 HEX；小程序用 `backgroundColor` 直绘且不为数字色块请求兼容 PNG | `A+M` | 基线 CI/本地模拟器 `A PASS`；持久 M8/真实 RC `NOT RUN`；`M BLOCKED` |
 
 ## 4. 管理业务链路
 
@@ -116,7 +126,7 @@ MySQL、持久数据、图片、日志和服务端生命周期相关的 `A` 部�
 | AD-12 | Wallet adjustment | 正负调账、余额/退款敞口上限、Idempotency-Key 首次/重放/冲突和 Audit | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-13 | Assisted wallet order | 为 NORMAL USER 创建 fixed/多颜色订单并直接 Paid；库存/余额/资金事实/双 Audit 原子一致 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-14 | Refund | manual/wallet 一次全额退款；PAID Kit 恢复、COMPLETED 不恢复、重复与窗口边界 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
-| AD-15 | Color catalog | 221 色分页/搜索/全局启停、商品颜色启停、零库存与上架校验、色板图片读取 | `A+M` | Gate A 221 色/图片/三启用色/库存 `A PASS`；`M BLOCKED` |
+| AD-15 | Color catalog | 221 色分页/搜索/全局启停、商品颜色启停、零库存与上架校验、M8 HEX/可选色样读取 | `A+M` | Gate A M7 的 221 色/图片/三启用色/库存 `A PASS`；持久 HEX `NOT RUN`；`M BLOCKED` |
 | AD-16 | Reservation Admin | 组合筛选/详情、当前手机号隐私投影、pending 确认与 `no_capacity` 拒绝 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-17 | Store day closure | 单日关闭原子取消活跃预约、重放、恢复营业但不复活历史预约 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-18 | Weekly closure | M7 读取/更换固定店休、旧星期恢复、新星期未来预约原子取消、单日店休保持 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
@@ -138,22 +148,23 @@ MySQL、持久数据、图片、日志和服务端生命周期相关的 `A` 部�
 | RT-11 | 快速操作 | 双击、连点、重复进入、返回前台不会重复 mutation | `A+M` | 当前客户端 `A PASS`；`M BLOCKED` |
 | RT-12 | 版本来源 | 体验版 artifact、Git SHA、OpenAPI、环境和版本记录一致 | `A+M` | 历史 M2 预 RC `A PASS`；当前真实 RC/体验版 `BLOCKED` |
 | RT-13 | 最新界面回归 | 会员缺省头像在小屏/大字体双轴居中；代客多颜色手机六列/宽屏十列可读可操作 | `A+M` | 本地 `PASS`；真实设备 `BLOCKED` |
+| RT-14 | 文本压缩 | ≥1 KiB 文本按协商只 gzip 一次、可解码且 `Vary` 正确；小响应和 PNG/JPEG/WebP 不压缩 | `A+M` | 基线自动化 `A PASS`；Gate A M8 Runtime/HTTPS `NOT RUN`；`M BLOCKED` |
 
 ## 6. 安全、隐私与可观测性
 
 | ID | 场景 | Gate A 断言 | 证据 | 当前 RC |
 |----|------|-------------|------|---------|
-| SE-01 | Secret 扫描 | 源码、日志、artifact、source map 无 Secret/私钥/连接串 | `A` | 当前 Run 42 与 M7 持久日志 `PASS`；真实 RC 待域名 |
+| SE-01 | Secret 扫描 | 源码、日志、artifact、source map 无 Secret/私钥/连接串 | `A` | M8 基线 Run 34242753255 与 M7 持久日志 `PASS`；后续候选/真实 RC 待重验 |
 | SE-02 | 产物 Origin | 无 `.example.invalid`、开发 Origin 或意外主机 | `A` | 预 RC 保留 `.test` Origin `PASS` 且不可发布；真实 Origin `BLOCKED` |
 | SE-03 | 权限 | UI 隐藏不替代后端 ADMIN+/owner 校验 | `A+M` | 当前 `A PASS`；`M BLOCKED` |
 | SE-04 | 日志脱敏 | 无密码、Token、完整 Redis URL、reason/key 和个人敏感信息 | `A+M` | 当前 M7 日志精确 Secret/高置信模式 0 命中 `A PASS`；`M BLOCKED` |
-| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | 当前 Run 42 `PASS`；现有例外 2026-11-30 到期 |
+| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | M8 基线 Run 34242753255 `PASS`；现有例外 2026-11-30 到期 |
 | SE-06 | 内部声明 | 体验版明确受邀、不可公开、无微信支付/登录误导 | `M` | 规则已冻结；体验版 `BLOCKED` |
 | SE-07 | 隐私 | Gate A 使用合成/受控账号，数据保留、反馈和停用日期明确 | `M` | 治理已冻结；实际体验版 `BLOCKED` |
 
 ## 7. Gate A 最小验收数据集
 
-Gate A 已通过当前后端 API/受控任务在**升级后的 Gate A MySQL 与持久图片存储**
+Gate A 已通过 M7 后端 API/受控任务在**升级后的 Gate A MySQL 与持久图片存储**
 中建立合成数据，并保存不含密码、Token、手机号或请求/响应正文的成功摘要。
 开发机 `db.sqlite3` 中的数据仍只是本地功能测试资产，没有被复制为 Gate A 证据。
 
@@ -166,13 +177,13 @@ Gate A 已通过当前后端 API/受控任务在**升级后的 Gate A MySQL 与�
 |--------|----------|----------|
 | 身份 | NORMAL USER、DISABLED USER、ADMIN、SUPER_ADMIN；需要时使用不可登录的历史 DELETED 事实 | 角色/状态/权限/Token 边界，全部使用合成身份 |
 | Product | Online/Draft/Offline Experience 与 weekday/holiday Option；fixed Kit；color-selectable Kit | 公共隐藏、管理查询、价格/快照、上架校验 |
-| 颜色与图片 | 全部 221 个来源槽和持久 HTTPS 图片；至少若干启用有货色、启用零库存色、禁用色 | DB 的 slot/code/name/URL、manifest 的 HEX/RGB/checksum、按商品独立库存和失败占位 |
+| 颜色与图片 | 全部 221 个来源槽和持久图片；至少若干启用有货色、启用零库存色、禁用色；M8 后再验 HEX 直绘 | M7 DB 的 slot/code/name/URL、manifest 的 HEX/RGB/checksum、按商品独立库存；M8 DB/API 的逐槽 HEX、零色块 PNG 请求 |
 | Order/Inventory | Pending/Cancelled/Paid/Completed；Experience/fixed/color/mixed；admin adjustment/order deduction/cancel restore/refund restore | 状态机、金额/重量快照、扣减/恢复、流水/Audit 和幂等 |
 | Wallet/Payment/Refund | 零余额与非零余额、调账、wallet/manual settlement、可退款和已退款样本 | 权威余额链、资金关联、上限/敞口、真实微信 provider 仍 503 零写入 |
 | Reservation | pending/confirmed/rejected/cancelled，`no_capacity`、customer/store_closed，单日店休和当前固定店休 | 用户/管理员投影、提前三小时、M7 更换与历史不复活 |
 
-数据创建后的只读一致性检查、非空 Backup/Restore 和加密异机副本已完成；
-域名可用后以这套数据开始真机矩阵。
+M7 数据创建后的只读一致性检查、非空 Backup/Restore 和加密异机副本已完成；M8 应用后
+必须重新完成数据后 Backup/Restore，域名可用后再以同一不漂移数据开始真机矩阵。
 任何为了凑状态而直接改表的数据都不能作为验收样本。
 
 ## 8. Gate B 追加域（本次不执行）

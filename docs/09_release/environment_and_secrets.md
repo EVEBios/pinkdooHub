@@ -1,7 +1,7 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** Current M7 persistent server controls passed；real HTTPS Origin still blocked
-> **Last Updated:** 2026-09-08
+> **Status:** Current M7 persistent server controls passed；M8 candidate/new backup and real HTTPS Origin remain blocked
+> **Last Updated:** 2026-09-09
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
 2026-09-02 的持久主机、Secret、备份和日志证据绑定 M2 Runtime `51ad315...`；
@@ -11,7 +11,13 @@ Backup/Restore/加密异机副本。当前 Runtime 为 `73dca350...`，Operation
 `353455bb...` / Run 34178908663。服务器数据、图片、Secret 文件、备份和 loopback
 运行控制现可作为当前候选证据；真实 HTTPS Origin、微信合法域名、
 release-eligible RC 和真机仍必须在域名可用后单独重验。详见
-[Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
+[Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。M8
+基线 `4e745848...` 的 Run 34242753255 已 8/8；其后 M7→M8/Online no-op 发布保护已有
+本地候选，但尚未形成新远端/完整 updater 隔离 MySQL 证据，也未应用当前环境。M8 写前必须另建当次
+一致 Backup 并完成独立 Restore；该新 M7 Backup 必须携带
+`m7-preserved-business-v1`，由 20 个非 `bead_colors` 表和该表 M7 投影组成的 21 表内容
+SHA-256，Restore 必须重算并精确匹配。不能把下述旧 M7 备份冒充 M8 检查点；任何文档、
+CI 或本地测试都不授权读取 Secret、停写、迁移、切换 Runtime 或写入 Gate A。
 
 ## 1. 环境矩阵
 
@@ -204,7 +210,16 @@ FileVault 已开启。脱敏 Record 只保存 key ID、算法、大小/checksum�
 2026-09-08 已对包含当前 M7 综合数据和 225 图片的 Backup `20260908t021224z`
 重复同一链路：服务器 `0600` 资产、无端口独立 Restore、管理电脑 `0400`
 AES-256-GCM/RSA-OAEP-SHA256 副本、`0600` 副本 Record 和立即解密/成员/来源 checksum
-复核均通过。私钥与副本分离，没有进入服务器或仓库。
+复核均通过。私钥与副本分离，没有进入服务器或仓库。该资产是 M7 数据后检查点；
+M7→M8 必须先创建新的写前 Backup/Restore，成功运行后再创建新的 M8 数据后
+Backup/Restore/加密异机副本，并分别记录精确候选 SHA、Image ID 和 Record。新写前与
+数据后 Backup 均须包含版本化 `m7-preserved-business-v1` 内容摘要，不能只比较聚合计数；
+独立 Restore Record 须同时保存 `m7_content_matches=true` 和相同摘要。
+
+该摘要的 20 表单事务 dump 和随后 `bead_colors` 投影不是同一个数据库事务，MySQL 与
+图片 Artifact 也不构成跨系统原子提交；因此 Backup、升级、replay 到 `app-up` 必须处于
+App/Nginx 停止且没有直接 SQL、其他迁移或宿主图片旁路写入的维护窗口。若不能排除旁路
+写入，保持 No-Go。
 
 ## 4. 微信网络与域名清单
 

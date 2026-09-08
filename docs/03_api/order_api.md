@@ -2,9 +2,9 @@
 
 > **Document Version:** v1.4
 >
-> **M6 Status:** Color-selectable Kit repository candidate landed; full regression and real migration verification pending, not deployed
+> **M6 Status:** Color-selectable Kit implemented and verified；present in current Gate A M7；other environments pending
 >
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 >
 > 本文遵循 [API Design Conventions](api_design_conventions.md)，业务规则以 [Order Module](../01_requirements/order_module.md) 为准。
 
@@ -155,7 +155,7 @@ HTTP 状态由异常类型决定，不能根据 code 的数字范围猜测。Ord
 
 `OrderStatusConflict.data.operation` 对三条状态用例分别固定为 `cancel`、`mark_paid`、`complete`；它是稳定的业务操作标识，不等同于大写审计 action。
 
-> **实现状态：** Phase 4.2 与 Phase 4.3 的 Experience/fixed-Kit 全链保持完成。M6 的 Schema、42233/42234、持久化、Service/Mapper/Router、客户端与本地回归已完成；真实 MySQL 0→6/并发门槛和部署完成前仍不能视为已部署能力。
+> **实现状态：** Phase 4.2 与 Phase 4.3 的 Experience/fixed-Kit 全链保持完成。M6 的 Schema、42233/42234、持久化、Service/Mapper/Router、客户端、本地回归与真实 MySQL 0→6/并发门槛均已完成，并已进入当前 Gate A M7；其他环境是否可用仍以各自迁移和部署验收为准。
 
 错误示例：
 
@@ -534,8 +534,8 @@ Phase 4.3.7 已在原 `POST /api/v1/orders` 实现 Experience/Kit/混合创建�
 
 库存不足使用 `40931 InsufficientStock`，普通用户只收到 `product_id` 和 `requested_quantity`。仅用于阶段门禁的 `40922 KitOrderingRequiresInventory` 已从代码和当前错误注册表移除。具体事务、幂等和并发规则见 [Inventory Module](../01_requirements/inventory_module.md) 与 [Inventory API](inventory_api.md)。
 
-### 9.2 M6 Color-selectable Kit（实现中）
+### 9.2 M6 Color-selectable Kit（已实现）
 
 M6 不新增另一套订单端点，而是扩展 `OrderItemCreate` / `OrderItemOut`。请求通过 `kit_color_id` 引用 ProductKitColor；响应和历史查询固定返回颜色槽号、编码、名称、10g 单位及总克重。新增 `42233` 表达颜色缺失/归属/启用不可用，`42234` 在写数据库前表达总金额超过 `DECIMAL(10,2)` 契约上限。现有 Experience/fixed Kit 行新增颜色字段时全部为 null，旧请求不必提交新字段。
 
-本节当前为冻结契约：只有在 M6 Model/迁移、创建/取消/代客/退款 Service、Mapper、HTTP 矩阵与真实 MySQL 颜色并发门槛完成后，才能把状态改为 Implemented。
+M6 Model/迁移、创建/取消/代客/退款 Service、Mapper、HTTP 矩阵与真实 MySQL 颜色并发门槛均已完成，本节状态为 Implemented；当前 Gate A M7 已包含该能力，其他持久环境仍须分别迁移和验收。

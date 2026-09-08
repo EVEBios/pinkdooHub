@@ -2,7 +2,7 @@
 
 > **Document Version:** v0.10
 > **Status:** Draft
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 > **Scope:** 正式 `miniapp/` 架构；既有前端链路已落地；Reservation N1 前端工程已形成候选，真实环境 Functional 状态仍以测试证据与 changelog 为准
 > **Decision Owners:** pinkdooHub
 
@@ -19,7 +19,7 @@
 
 ## 1. 背景与当前边界
 
-pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Order 与 Inventory 的核心契约和 FastAPI 端点；Reservation N1 后端仓库实现已完成，M5 已在一次性 MySQL 8.0.46 完成 0→5 与核心并发/重试/索引验证，但尚未应用持久库。Reservation 前端已有创建、我的预约、顾客详情、管理列表、管理详情和店休设置六个页面的工程候选；真实环境 Functional 状态仍以测试证据与 changelog 为准。客户端必须与现有 `/api/v1`、Bearer JWT、统一响应信封和各模块业务边界配合，不得在前端重新定义权威价格、库存、预约时间、权限或状态机。
+pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Order 与 Inventory 的核心契约和 FastAPI 端点；Reservation N1/M7 后端仓库与一次性 MySQL 核心门槛已完成，M5/M7 已进入当前持久 Gate A M7，其他环境仍须分别迁移和验收。Reservation 前端已有创建、我的预约、顾客详情、管理列表、管理详情和店休设置六个页面的工程候选；真实环境 Functional 状态仍以测试证据与 changelog 为准。客户端必须与现有 `/api/v1`、Bearer JWT、统一响应信封和各模块业务边界配合，不得在前端重新定义权威价格、库存、预约时间、权限或状态机。
 
 已冻结的产品决策：
 

@@ -455,6 +455,20 @@ class ProductRepository:
             .order_by("slot_no")
         )
 
+    async def list_all_products_for_update(
+        self,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[Product]:
+        """稳定锁定全部 Product，作为离线颜色目录发布的聚合写屏障。"""
+
+        return await (
+            Product.all()
+            .using_db(using_db)
+            .order_by("id")
+            .select_for_update()
+        )
+
     async def list_bead_colors_for_update(
         self,
         *,

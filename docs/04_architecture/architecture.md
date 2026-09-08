@@ -276,9 +276,9 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 Product 与 Phase 4.2/4.3 Order/Inventory 的既有能力保持 Implemented。M6 自选颜色 Kit 以及 M8 `swatch_hex` 运行时、客户端和候选迁移均已完成仓库实现；一次性 MySQL M8 门槛与当前本地持久 SQLite 的专用 M8 升级均已完成，Gate A、共享、预发布和生产 MySQL 的迁移/部署仍待完成。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 Product 与 Phase 4.2/4.3 Order/Inventory 的既有能力保持 Implemented。M6 自选颜色 Kit 以及 M8 `swatch_hex` 运行时、客户端和候选迁移均已完成仓库实现；一次性 MySQL M8 门槛与当前本地持久 SQLite 的专用 M8 升级均已完成。持久 Gate A 当前为 M7且已包含 M6，只有 M8 仍待受控应用；共享、预发布和生产 MySQL 不因这些证据自动迁移。
 
-Reservation N1 已冻结并完成仓库实现：独立预约的 Enum/常量/异常、严格 Schema、`StoreBusinessDay`/`Reservation` Model、Repository、纯时间 Validator、事务 Service、零 SQL Mapper、5 个顾客端与 8 个 ADMIN+ 端点，以及 M5 离线迁移均已落地。2026-09-06 已在一次性 MySQL 8.0.46 完成 Aerich 0→5，Reservation 专项 `7 passed`、与 Inventory 联合门槛 `16 passed`，覆盖核心并发、事务重试与索引计划；验证容器已销毁。M5 尚未应用任何持久、Gate A、共享、预发布或生产数据库，因此目录和一次性验证都不等于部署环境已可用。N2 微信主动店休通知仍为 Deferred，当前架构没有 Reservation 通知 Outbox 或 Worker。
+Reservation N1 已冻结并完成仓库实现：独立预约的 Enum/常量/异常、严格 Schema、`StoreBusinessDay`/`Reservation` Model、Repository、纯时间 Validator、事务 Service、零 SQL Mapper、5 个顾客端与 8 个 ADMIN+ 端点，以及 M5 离线迁移均已落地。2026-09-06 已在一次性 MySQL 8.0.46 完成 Aerich 0→5，Reservation 专项 `7 passed`、与 Inventory 联合门槛 `16 passed`，覆盖核心并发、事务重试与索引计划；该次验证容器已销毁且本身未写持久库。M5/M7 后续已随当前 Gate A 的 M2→M7 受控升级应用；共享、预发布和生产数据库及真实客户端验收仍须分别完成。N2 微信主动店休通知仍为 Deferred，当前架构没有 Reservation 通知 Outbox 或 Worker。
 
 Phase 9.5 已增加外部身份和账号生命周期边界，但公开平台仍未启用：`ExternalAuthService` 只消费 `ExternalIdentityProvider` 返回的最小凭据，并通过 User/ExternalIdentity Repository 与共享审计完成事务；微信适配器是基础设施层，不进入 Service/Repository。原始 OpenID/UnionID 进入数据库前使用独立 Pepper HMAC，`session_key` 不越过适配器。`AccountLifecycleService` 锁定 User 后重检二次凭据、活跃订单、未来 `pending/confirmed` 且尚未结束的预约、处理中资金、可退款钱包结算敞口和余额；余额即使为零，只要 PAID 或完成未满 30 天的 COMPLETED 钱包结算尚未成功退款，仍拒绝注销。通过后删除绑定、关闭钱包并匿名化 User；Order 与 Reservation 创建都锁同一 User 行，封闭注销竞态。
 
@@ -506,7 +506,7 @@ Phase 4.2 的历史边界曾禁止 OrderService/OrderRepository 读取或修改 
 
 Phase 4.3.1 已完成上述契约冻结。事务所有权固定为：Order 创建/取消 Service 拥有包含 Inventory 写入在内的外层事务，并直接协调 `InventoryRepository`，不得调用 `InventoryService`；管理员调整由 `InventoryService` 拥有事务。所有 Kit 按 Product ID 升序锁定，余额、不可变流水、Order/Items 与 Audit 使用同一事务连接。Inventory Repository 只提供锁定、查询和持久化原语，不判断可售状态、库存充足性或抛业务异常。管理员调整、创建扣减和取消恢复现均已实现。
 
-Phase 4.3.3 已建立持久化形状：`InventoryTransaction` 关联业务 `Product.id` 与可空触发用户，通用 `source_id` 不伪造多态 FK；幂等键由命名 UNIQUE 索引兜底，Product/source/type/全局流水查询各有稳定分页索引。Model 只表达字段、关系、单字段校验和索引，不实现余额计算或业务状态判断。Phase 4.3.4 已离线生成 MySQL 8+ 增量迁移并补齐正库存期初流水；完整链与回填曾在一次性 MySQL 8.0.46 实例验证后销毁，尚未应用任何持久、共享或生产数据库。
+Phase 4.3.3 已建立持久化形状：`InventoryTransaction` 关联业务 `Product.id` 与可空触发用户，通用 `source_id` 不伪造多态 FK；幂等键由命名 UNIQUE 索引兜底，Product/source/type/全局流水查询各有稳定分页索引。Model 只表达字段、关系、单字段校验和索引，不实现余额计算或业务状态判断。Phase 4.3.4 已离线生成 MySQL 8+ 增量迁移并补齐正库存期初流水；完整链与回填曾在一次性 MySQL 8.0.46 实例验证后销毁，该次验证本身未写持久库。Inventory M2 后续已进入当前 Gate A M7，其他持久环境仍须分别迁移和验收。
 
 M6 的 InventoryTransaction 增加 nullable `kit_color_id`：fixed 流水保持 NULL 并继续锁 `product_kits.stock`；颜色流水必须指向 ProductKitColor 并锁 `stock_units`。两套管理端点显式区分余额权威，路径/KitKind 不匹配抛 `InventoryKitKindMismatch(40031)`。自动幂等键在颜色路径加入 `:color:{kit_color_id}`，全局流水可按 kit_color_id 过滤；响应通过预加载的 BeadColor 输出槽号、code/name 和 10g 单位，不在 Mapper 补查。
 

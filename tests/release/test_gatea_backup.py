@@ -20,6 +20,21 @@ def _values(backup_root: Path) -> dict[str, str]:
     }
 
 
+def _m7_database_snapshot() -> dict[str, object]:
+    return {
+        "aerich_versions": ",".join(gatea.APPROVED_TARGET_M7_CHAIN),
+        "tables": 23,
+    }
+
+
+def _m7_content_snapshot(digest: str = "7" * 64) -> dict[str, object]:
+    return {
+        "content_sha256": digest,
+        "profile": backup.M7_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": backup.M7_CONTENT_SNAPSHOT_SCHEMA_VERSION,
+    }
+
+
 def _directories(tmp_path: Path) -> tuple[Path, Path, Path]:
     backup_root = tmp_path / "backups"
     backup_record_dir = tmp_path / "records" / "backups"
@@ -155,6 +170,30 @@ def test_snapshot_parser_rejects_non_object_or_invalid_json() -> None:
             backup._parse_snapshot(value)
 
 
+def test_m7_content_snapshot_contract_is_versioned_sanitized_and_pre_m8_safe() -> None:
+    snapshot = _m7_content_snapshot()
+
+    assert backup._validate_m7_content_snapshot(snapshot) == snapshot
+    assert "umask 077" in backup.M7_CONTENT_SNAPSHOT_COMMAND
+    assert 'chmod 0600 "$snapshot_file"' in backup.M7_CONTENT_SNAPSHOT_COMMAND
+    assert "swatch_hex" not in backup.M7_CONTENT_SNAPSHOT_COMMAND
+    assert "bead_colors" not in backup.M7_PRESERVED_TABLES
+    for table in backup.M7_PRESERVED_TABLES:
+        assert table in backup.M7_CONTENT_SNAPSHOT_COMMAND
+
+    for invalid in (
+        {},
+        snapshot | {"schema_version": 2},
+        snapshot | {"schema_version": 1.0},
+        snapshot | {"schema_version": True},
+        snapshot | {"profile": "other"},
+        snapshot | {"content_sha256": "not-a-digest"},
+        snapshot | {"extra": True},
+    ):
+        with pytest.raises(gatea.GateAError, match="content snapshot"):
+            backup._validate_m7_content_snapshot(invalid)
+
+
 def test_create_backup_stops_writes_records_artifacts_and_restarts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -183,7 +222,12 @@ def test_create_backup_stops_writes_records_artifacts_and_restarts(
         lambda **kwargs: compose_commands.append(tuple(kwargs["arguments"]))
         or subprocess.CompletedProcess([], 0, stdout=""),
     )
-    monkeypatch.setattr(backup, "_source_snapshot", lambda *args: {"tables": 10})
+    monkeypatch.setattr(backup, "_source_snapshot", lambda *args: _m7_database_snapshot())
+    monkeypatch.setattr(
+        backup,
+        "_source_m7_content_snapshot",
+        lambda *args: _m7_content_snapshot(),
+    )
     monkeypatch.setattr(backup, "_source_image_manifest", lambda *args: [])
 
     def fake_stream(**kwargs: object) -> None:
@@ -214,7 +258,8 @@ def test_create_backup_stops_writes_records_artifacts_and_restarts(
         (backup_records / "20260902t120000z.json").read_text(encoding="utf-8")
     )
     assert payload["passed"] is True
-    assert payload["database_snapshot"] == {"tables": 10}
+    assert payload["database_snapshot"] == _m7_database_snapshot()
+    assert payload["m7_content_snapshot"] == _m7_content_snapshot()
     assert payload["redis_recovery_policy"] == (
         "start-empty-and-invalidate-refresh-sessions"
     )
@@ -228,6 +273,9 @@ def _write_backup_fixture(
     backup_root: Path,
     backup_records: Path,
     backup_id: str,
+    *,
+    database_snapshot: dict[str, object] | None = None,
+    m7_content_snapshot: dict[str, object] | None = None,
 ) -> dict[str, object]:
     database_path, image_path = backup._backup_paths(backup_root, backup_id)
     database_path.write_bytes(b"sql")
@@ -238,7 +286,7 @@ def _write_backup_fixture(
         "schema_version": 1,
         "backup_id": backup_id,
         "candidate_sha": "a" * 40,
-        "database_snapshot": {"tables": 10},
+        "database_snapshot": database_snapshot or {"tables": 10},
         "image_manifest": [],
         "artifacts": {
             "mysql": {
@@ -254,6 +302,8 @@ def _write_backup_fixture(
         },
         "passed": True,
     }
+    if m7_content_snapshot is not None:
+        payload["m7_content_snapshot"] = m7_content_snapshot
     (backup_records / f"{backup_id}.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
@@ -281,13 +331,51 @@ def test_load_backup_record_rejects_tampered_artifact(tmp_path: Path) -> None:
         )
 
 
+def test_load_m7_backup_record_requires_exact_content_snapshot(tmp_path: Path) -> None:
+    backup_root, backup_records, _ = _directories(tmp_path)
+    backup_id = "20260902t120000z"
+    _write_backup_fixture(
+        backup_root,
+        backup_records,
+        backup_id,
+        database_snapshot=_m7_database_snapshot(),
+    )
+
+    with pytest.raises(gatea.GateAError, match="record is invalid"):
+        backup._load_backup_record(
+            backup_id=backup_id,
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+        )
+
+    payload = json.loads(
+        (backup_records / f"{backup_id}.json").read_text(encoding="utf-8")
+    )
+    payload["m7_content_snapshot"] = _m7_content_snapshot()
+    (backup_records / f"{backup_id}.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+    loaded, _, _ = backup._load_backup_record(
+        backup_id=backup_id,
+        backup_root=backup_root,
+        backup_record_dir=backup_records,
+    )
+    assert loaded["m7_content_snapshot"] == _m7_content_snapshot()
+
+
 def test_verify_restore_compares_and_always_removes_temporary_resources(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     backup_root, backup_records, restore_records = _directories(tmp_path)
     backup_id = "20260902t120000z"
-    _write_backup_fixture(backup_root, backup_records, backup_id)
+    _write_backup_fixture(
+        backup_root,
+        backup_records,
+        backup_id,
+        database_snapshot=_m7_database_snapshot(),
+        m7_content_snapshot=_m7_content_snapshot(),
+    )
     values = _values(backup_root)
     commands: list[tuple[str, ...]] = []
     absence_checks: list[str] = []
@@ -299,7 +387,16 @@ def test_verify_restore_compares_and_always_removes_temporary_resources(
         "_restore_project_absent",
         lambda project: absence_checks.append(project),
     )
-    monkeypatch.setattr(backup, "_restore_snapshot", lambda *args: {"tables": 10})
+    monkeypatch.setattr(
+        backup,
+        "_restore_snapshot",
+        lambda *args: _m7_database_snapshot(),
+    )
+    monkeypatch.setattr(
+        backup,
+        "_restored_m7_content_snapshot",
+        lambda *args: _m7_content_snapshot(),
+    )
     monkeypatch.setattr(backup, "_restored_image_manifest", lambda *args: [])
 
     def fake_restore(**kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -337,6 +434,8 @@ def test_verify_restore_compares_and_always_removes_temporary_resources(
     assert record["passed"] is True
     assert record["temporary_resources_removed"] is True
     assert record["refresh_sessions_invalidated"] is True
+    assert record["m7_content_matches"] is True
+    assert record["m7_content_snapshot"] == _m7_content_snapshot()
 
 
 def test_restore_confirmation_fails_before_docker(
@@ -368,13 +467,19 @@ def test_restore_confirmation_fails_before_docker(
     assert called is False
 
 
-def test_restore_mismatch_still_removes_isolated_project(
+def test_restore_m7_content_mismatch_still_removes_isolated_project(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     backup_root, backup_records, restore_records = _directories(tmp_path)
     backup_id = "20260902t120000z"
-    _write_backup_fixture(backup_root, backup_records, backup_id)
+    _write_backup_fixture(
+        backup_root,
+        backup_records,
+        backup_id,
+        database_snapshot=_m7_database_snapshot(),
+        m7_content_snapshot=_m7_content_snapshot(),
+    )
     commands: list[tuple[str, ...]] = []
 
     monkeypatch.setattr(
@@ -384,7 +489,16 @@ def test_restore_mismatch_still_removes_isolated_project(
     )
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(backup, "_restore_project_absent", lambda project: None)
-    monkeypatch.setattr(backup, "_restore_snapshot", lambda *args: {"tables": 9})
+    monkeypatch.setattr(
+        backup,
+        "_restore_snapshot",
+        lambda *args: _m7_database_snapshot(),
+    )
+    monkeypatch.setattr(
+        backup,
+        "_restored_m7_content_snapshot",
+        lambda *args: _m7_content_snapshot("8" * 64),
+    )
     monkeypatch.setattr(backup, "_restored_image_manifest", lambda *args: [])
 
     def fake_restore(**kwargs: object) -> subprocess.CompletedProcess[str]:

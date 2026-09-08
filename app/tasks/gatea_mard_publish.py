@@ -1,8 +1,9 @@
 """向 Gate A M8 MySQL 和持久图片卷发布冻结的 MARD 221 色卡。
 
-默认只预览；apply 必须显式确认版本化 manifest 的 SHA-256。流程拒绝销售中已启用
-颜色、部分冲突元数据和内容冲突图片。新图片以 ``0644`` 原子发布，数据库在单事务
-内批量更新；数据库失败时删除本轮新图片，完全相同重放保持零写入。
+默认只预览；apply 必须显式确认版本化 manifest 的 SHA-256。销售中已启用颜色时仅
+允许数据库与图片均精确一致的 no-op，任何目录变化、部分冲突元数据和内容冲突图片
+都会被拒绝。新图片以 ``0644`` 原子发布，数据库在单事务内批量更新；数据库失败时
+删除本轮新图片，完全相同重放保持零写入。
 """
 
 from __future__ import annotations
@@ -56,7 +57,12 @@ class PublishPlan:
 
     @property
     def already_current(self) -> bool:
-        return self.database_changes == 0 and self.images_to_create == 0
+        return (
+            len(self.colors) == EXPECTED_COLOR_COUNT
+            and self.database_changes == 0
+            and self.images_to_create == 0
+            and self.images_reused == EXPECTED_COLOR_COUNT
+        )
 
 
 def _manifest_sha256() -> str:
@@ -179,14 +185,10 @@ async def plan_publish(repository: ProductRepository) -> PublishPlan:
     base_url = _base_url()
     rows = await repository.list_all_bead_colors()
     database_changes = _validate_rows(rows, colors, base_url)
-    if await repository.has_online_product_with_enabled_colors():
-        raise GateAMardPublishError(
-            "refuse catalog publication while an Online product enables colors"
-        )
     images_to_create, images_reused, total_bytes, image_digest = _inspect_images(
         colors
     )
-    return PublishPlan(
+    plan = PublishPlan(
         colors=colors,
         manifest_sha256=_manifest_sha256(),
         database_changes=database_changes,
@@ -195,6 +197,14 @@ async def plan_publish(repository: ProductRepository) -> PublishPlan:
         total_image_bytes=total_bytes,
         image_set_sha256=image_digest,
     )
+    if (
+        await repository.has_online_product_with_enabled_colors()
+        and not plan.already_current
+    ):
+        raise GateAMardPublishError(
+            "refuse catalog changes while an Online product enables colors"
+        )
+    return plan
 
 
 def _publish_images(colors: tuple[ManifestColor, ...]) -> tuple[Path, ...]:
@@ -246,23 +256,50 @@ def _publish_images(colors: tuple[ManifestColor, ...]) -> tuple[Path, ...]:
 async def apply_publish(repository: ProductRepository, plan: PublishPlan) -> int:
     """原子发布图片并事务更新 221 槽；失败时补偿本轮文件。"""
 
-    if plan.already_current:
-        return 0
     base_url = _base_url()
-    created = _publish_images(plan.colors)
+    created: tuple[Path, ...] = ()
     try:
-        if plan.database_changes:
-            async with in_transaction() as connection:
-                rows = await repository.list_bead_colors_for_update(
+        async with in_transaction() as connection:
+            # 所有受支持的 Product 状态和颜色配置写链都先锁 Product；发布器遵循
+            # 同一顺序，再锁 BeadColor，避免 Online 检查与目录写入之间的竞态。
+            await repository.list_all_products_for_update(using_db=connection)
+            rows = await repository.list_bead_colors_for_update(
+                using_db=connection
+            )
+            database_changes = _validate_rows(rows, plan.colors, base_url)
+            (
+                images_to_create,
+                images_reused,
+                _,
+                _,
+            ) = _inspect_images(plan.colors)
+            is_still_current = (
+                database_changes == 0
+                and images_to_create == 0
+                and images_reused == EXPECTED_COLOR_COUNT
+            )
+            has_online_references = (
+                await repository.has_online_product_with_enabled_colors(
                     using_db=connection
                 )
-                _validate_rows(rows, plan.colors, base_url)
-                if await repository.has_online_product_with_enabled_colors(
-                    using_db=connection
-                ):
-                    raise GateAMardPublishError(
-                        "an Online product enabled colors after preview"
-                    )
+            )
+            if has_online_references and (
+                not plan.already_current or not is_still_current
+            ):
+                raise GateAMardPublishError(
+                    "catalog changed after preview while an Online product "
+                    "enables colors"
+                )
+            if plan.already_current and not is_still_current:
+                raise GateAMardPublishError(
+                    "MARD catalog changed after the no-op preview"
+                )
+
+            if is_still_current:
+                return 0
+
+            created = _publish_images(plan.colors)
+            if database_changes:
                 now = timezone.now()
                 for row, color in zip(rows, plan.colors):
                     desired = _desired(color, base_url)

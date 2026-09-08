@@ -31,7 +31,7 @@ fail closed；备案、DNS/HTTPS、微信合法域名、release-eligible artifac
 
 ### 0.2 M7 候选检查点（2026-09-07）
 
-当前仓库已经新增 M4 Wallet/Payment/Refund、M5 Reservation N1、M6 自选颜色 Kit、
+当时的仓库已经新增 M4 Wallet/Payment/Refund、M5 Reservation N1、M6 自选颜色 Kit、
 M7 可配置固定店休，以及代客钱包订单多颜色和会员头像布局修复。该扩展没有自动改变
 Gate A 的身份、资金或分发决定：仍使用账号密码；只有 M4 迁移、历史补齐、只读对账
 和扩展 MySQL 门槛全部关闭后，才可用合成钱包余额/人工结算验证。Gate A 不接真实微信
@@ -39,10 +39,10 @@ Gate A 的身份、资金或分发决定：仍使用账号密码；只有 M4 迁
 
 审计起点 `c6778e7...` 的远端 Run 34104680282 为 7/8，旧 MySQL gate 没有正确纳入 M7。
 本地提交 `58d8435...` 修复该 gate，提交前 dirty-tree 一次性 MySQL 报告完成 0→7、
-历史矩阵、snapshot 和 21 项联合门槛。包含该修复的当前 PR head `4d6430c...` 随后在
+历史矩阵、snapshot 和 21 项联合门槛。包含该修复的当时 PR head `4d6430c...` 随后在
 Run 34129910349 的干净 merge-ref checkout 上取得 8/8，并保存 7 组 artifact；旧失败
 Run 仍保留为历史回归依据。
-Gate A 最后留证版本仍是 M2，但当前真实状态只能重新只读确认；仓库没有获批的非空
+该历史检查点的 Gate A 最后留证版本仍是 M2，当时真实状态只能重新只读确认；仓库没有获批的非空
 M2→M7 升级入口。钱包 backfill/reconcile、221 色持久发布、真实 RC 与真机均未执行。
 本检查点只更新 No-Go 依据，不授予持久迁移、微信后台修改、上传、
 分发、提审或发布权限。完整当前门槛见
@@ -73,6 +73,49 @@ AES-256-GCM/RSA-OAEP-SHA256 异机副本。合成密码只保留在服务器上
 `release_eligible=true` RC、体验版上传授权、iOS/Android 真机和最终签署仍未完成；
 Gate A 继续为 **No-Go / Not Authorized**。
 
+### 0.4 M8 HEX/gzip 候选检查点（2026-09-08）
+
+M8 候选将 MARD 221 色的规范 `swatch_hex` 纳入正式 Schema/API/销售就绪规则，让小程序
+直接绘制数字色块，并为 App 与 Nginx 增加协商式 gzip。首轮 head `06b5502...` 的
+[Run 34242022911](https://github.com/EVEBios/pinkdooHub/actions/runs/34242022911) 为 7/8：
+Reservation MySQL 门槛仍按 M0–M7 枚举迁移文件，漏列已经应用的 M8。修复提交
+`4e745848315aab56805a872ecf5b9f5e3c10135b` 把 M8 纳入该测试的存在性和顺序断言；
+对应 merge-ref `3ddda81...` 的
+[Run 34242753255](https://github.com/EVEBios/pinkdooHub/actions/runs/34242753255) 已重新执行
+全部八类 Job并取得 8/8。完整身份、Job 与 artifact 见
+[M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。
+
+该检查点只批准把 M8 作为下一发布候选继续准备，不批准任何持久写入。Gate A 的当前
+权威状态仍是 §0.3 的 M7；M8 migration、目标 Runtime、HEX/gzip 现场验收及 M8 数据后
+Backup/Restore 尚未执行。`4e745848...` 之后的仓库候选已新增显式 M7→M8 编排：只执行
+M8；以 `m7-preserved-business-v1` 对 20 个非 `bead_colors` 表和该表 M7 投影（共 21 个
+业务表）做内容级摘要，另绑定 Aerich 精确链与完整图片 manifest。停写后、M8 原语前，
+raw preflight 必须确认没有 `swatch_hex` 列、221 条 M7 色卡元数据逐槽等于冻结 manifest，
+以及 221 张预期 PNG 为普通非软链接文件、内容 SHA-256 精确且权限 `0644`。随后 MARD
+preview/apply/replay 必须为精确 221 项 no-op；publisher 只允许已有 Online 引用在事务
+锁定后仍完全一致时零写通过。成功 Record 生成后还必须保持停写，在 `app-up` 前用相同
+参数完成 live replay verification；`app-up` 自身只验证 Record/候选身份，不复核 live
+DB、图片或 MARD。本轮本地 `tests/release` 为 `229 passed`，完整后端为
+`2317 passed, 33 skipped in 125.31s`。独立只读代码审查曾发现成功重放没有重新证明
+App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3，但该结论
+只绑定本地 diff；该新增路径不在 Run 34242753255 中，
+仍须形成最终干净 SHA，并绑定该 SHA 的远端 CI 与完整 updater 隔离 MySQL 复现。
+
+2026-09-09 的本地 2 核/4GiB 容器包络/共享 5Mbps 探索轮已经完成 12/12 个 A/B/C/D
+Profile：gzip 色板、认证浏览、兼容 PNG 冷/热页和 150 个真实本地写旅程在 5/10 VU
+均通过，最终业务对账、日志/statement 与资源清理也通过；但 10 VU 持续请求未压缩的
+51,063-byte 色板产生 428 个 qdisc drops，P95/P99 为 1,510/2,442ms。因此整轮严格为
+`FAIL`，只能说明正常压缩客户端路径有余量，不能关闭容量 Gate。该单轮 dirty-tree ARM64
+Docker 证据也不替代干净 SHA candidate-pre、独立 Linux 主机、TLS/公网或真机验收。详见
+[M8 本地容量报告](reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md)。
+
+进入 Gate A 前还必须绑定新 Backup/独立 Restore、目标 SHA/Image、停写窗口和当次明确
+写授权；文档、CI 或本地测试均不构成授权。禁止用默认 M2 路径处理 M7、拆跑内部原语、
+手工改表、临时改变商品状态或使用 `--fake`。同样不授权 Runtime 切换、DNS、微信后台、
+体验版上传、分发、提审或公开发布。上述保护依赖 App/Nginx 停止且没有直接 SQL、其他
+迁移或宿主图片旁路写入，不构成跨数据库/文件系统绝对原子事务。Gate A 继续为
+**No-Go / Not Authorized**。
+
 ## 1. 决策
 
 本版发布目标冻结为微信小程序，不同时发布支付宝、抖音或 H5。发布采用两道门：
@@ -90,7 +133,7 @@ Gate A 是当前唯一获准推进的发布目标。Gate B 的设计审计可以
 | 分发 | 微信开发版/体验版；仅受邀测试人员 |
 | 普通用户身份 | 暂时沿用用户名密码 |
 | 管理员身份 | 沿用用户名密码与后端 ADMIN+/SUPER_ADMIN 权限链 |
-| 支付 | 不接真实微信支付；默认由 ADMIN+ 人工确认 Paid。M4 发布门槛关闭后可用无现金价值的合成钱包余额验证余额支付/代客扣款/退款 |
+| 支付 | 不接真实微信支付；默认由 ADMIN+ 人工确认 Paid。当前 M7 检查点已关闭 M4/backfill/reconcile，可继续用无现金价值的合成钱包余额验证余额支付/代客扣款/退款 |
 | 数据 | 隔离、可恢复、非生产业务数据；不得复用开发者个人 SQLite 作为发布环境 |
 | API | 真实 HTTPS 测试 Origin；微信合法域名开启校验 |
 | 数据库 | 生产相似的隔离 MySQL 8+ |

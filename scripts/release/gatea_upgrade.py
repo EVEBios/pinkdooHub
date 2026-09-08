@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""受控编排 Gate A 既有 M2 数据库到当前 M8 候选的升级。
+"""受控编排 Gate A 既有 M2 或 M7 数据库到当前 M8 候选的升级。
 
-该入口只支持经 Review 的精确 M2 起点。默认 plan 全程只读；apply 必须同时绑定
-source/target SHA、Backup ID 与 MARD manifest SHA-256。写入前验证新鲜 Backup 与
-独立 Restore PASS Record，随后停止 App/Nginx、比较停写后的数据库/图片与备份，
-依次执行 M3、M4、Wallet 准备、M5、M6、M7、M8 和 MARD 发布。任一步失败都会保留脱敏
-证据并保持业务入口停止，不会 fake、downgrade、恢复或盲目重跑。
+未指定 source version 的旧调用继续只接受经 Review 的精确 M2 起点；M7 起点必须显式
+指定 ``--source-version 7``。默认 plan 全程只读；apply 必须同时绑定 source/target SHA、
+Backup ID 与 MARD manifest SHA-256。写入前验证新鲜 Backup 与独立 Restore PASS Record，
+随后停止 App/Nginx、比较停写后的数据库/图片与备份，并只执行 source 后尚未应用的迁移
+及其数据任务。任一步失败都会保留脱敏证据并保持业务入口停止，不会 fake、downgrade、
+恢复或盲目重跑。
 """
 
 from __future__ import annotations
@@ -21,6 +22,12 @@ import subprocess
 import sys
 from typing import Any, Mapping, Sequence
 
+from app.tasks.mard_catalog import (
+    EXPECTED_COLOR_COUNT,
+    MardCatalogError,
+    build_swatch_png,
+    load_manifest,
+)
 from scripts.release import gatea_backup as backup
 from scripts.release import gatea_operations as gatea
 
@@ -28,7 +35,8 @@ from scripts.release import gatea_operations as gatea
 APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M8_CHAIN
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-SUPPORTED_SOURCE_VERSION = 2
+DEFAULT_SOURCE_VERSION = 2
+SUPPORTED_SOURCE_VERSIONS = (2, 7)
 TARGET_VERSION = 8
 MAX_BACKUP_AGE = timedelta(hours=24)
 FUTURE_CLOCK_TOLERANCE = timedelta(minutes=5)
@@ -48,6 +56,30 @@ CORE_INVARIANT_KEYS = (
     "inventory_transactions",
     "inventory_change",
     "audit_logs",
+)
+M7_INVARIANT_KEYS = (
+    "external_identities",
+    "eligible_wallet_users",
+    "wallet_accounts",
+    "ineligible_wallet_accounts",
+    "wallet_balance",
+    "wallet_transactions",
+    "recharge_orders",
+    "payments",
+    "payment_settlements",
+    "refunds",
+    "store_business_days",
+    "reservations",
+    "bead_colors",
+    "bead_color_slots",
+    "bead_color_min_slot",
+    "bead_color_max_slot",
+    "active_bead_colors",
+    "product_kit_colors",
+    "reservation_settings",
+    "reservation_settings_invalid",
+    "reservation_settings_check",
+    "reservation_settings_unique",
 )
 RESTORE_TRUE_FIELDS = (
     "database_matches",
@@ -160,6 +192,86 @@ SELECT JSON_OBJECT(
 );
 SQL"""
 
+M7_INVARIANT_STATUS_COMMAND = r"""MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+mysql --batch --skip-column-names --raw --host=127.0.0.1 --user=root "$MYSQL_DATABASE" <<'SQL'
+SELECT JSON_OBJECT(
+  'external_identities', (SELECT COUNT(*) FROM external_identities),
+  'eligible_wallet_users', (SELECT COUNT(*) FROM users WHERE role = 1 AND status IN (1, 2)),
+  'wallet_accounts', (SELECT COUNT(*) FROM wallet_accounts),
+  'ineligible_wallet_accounts', (
+    SELECT COUNT(*) FROM wallet_accounts wa
+    JOIN users u ON u.id = wa.user_id
+    WHERE u.role <> 1 OR u.status NOT IN (1, 2)
+  ),
+  'wallet_balance', (SELECT CAST(COALESCE(SUM(balance), 0) AS CHAR) FROM wallet_accounts),
+  'wallet_transactions', (SELECT COUNT(*) FROM wallet_transactions),
+  'recharge_orders', (SELECT COUNT(*) FROM recharge_orders),
+  'payments', (SELECT COUNT(*) FROM payments),
+  'payment_settlements', (SELECT COUNT(*) FROM payment_settlements),
+  'refunds', (SELECT COUNT(*) FROM refunds),
+  'store_business_days', (SELECT COUNT(*) FROM store_business_days),
+  'reservations', (SELECT COUNT(*) FROM reservations),
+  'bead_colors', (SELECT COUNT(*) FROM bead_colors),
+  'bead_color_slots', (SELECT COUNT(DISTINCT slot_no) FROM bead_colors),
+  'bead_color_min_slot', (SELECT MIN(slot_no) FROM bead_colors),
+  'bead_color_max_slot', (SELECT MAX(slot_no) FROM bead_colors),
+  'active_bead_colors', (SELECT COUNT(*) FROM bead_colors WHERE is_active = 1),
+  'product_kit_colors', (SELECT COUNT(*) FROM product_kit_colors),
+  'reservation_settings', (SELECT COUNT(*) FROM reservation_settings),
+  'reservation_settings_invalid', (
+    SELECT COUNT(*) FROM reservation_settings
+    WHERE singleton_key <> 1 OR weekly_closed_weekday NOT IN
+      ('monday','tuesday','wednesday','thursday','friday','saturday','sunday')
+  ),
+  'reservation_settings_check', (
+    SELECT COUNT(*) FROM information_schema.table_constraints
+    WHERE constraint_schema = DATABASE()
+      AND table_name = 'reservation_settings'
+      AND constraint_name = 'ck_reservation_settings_singleton'
+      AND constraint_type = 'CHECK'
+  ),
+  'reservation_settings_unique', (
+    SELECT COUNT(*) FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND table_name = 'reservation_settings'
+      AND index_name = 'uidx_reservation_settings_singleton'
+      AND non_unique = 0
+  )
+);
+SQL"""
+M7_MARD_CATALOG_STATUS_COMMAND = r"""MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+mysql --batch --skip-column-names --raw --host=127.0.0.1 --user=root "$MYSQL_DATABASE" <<'SQL'
+SELECT
+  CAST(`slot_no` AS CHAR),
+  COALESCE(HEX(`color_code`), '<NULL>'),
+  COALESCE(HEX(`name`), '<NULL>'),
+  COALESCE(HEX(`swatch_image_url`), '<NULL>'),
+  CAST(`sort` AS CHAR),
+  CAST(`is_active` + 0 AS CHAR)
+FROM `bead_colors`
+ORDER BY `slot_no`;
+SQL"""
+M7_SCHEMA_STATUS_COMMAND = r"""MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+mysql --batch --skip-column-names --raw --host=127.0.0.1 --user=root "$MYSQL_DATABASE" <<'SQL'
+SELECT JSON_OBJECT(
+  'swatch_hex_columns', (
+    SELECT COUNT(*)
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'bead_colors'
+      AND column_name = 'swatch_hex'
+  )
+);
+SQL"""
+M7_IMAGE_MODE_MANIFEST_COMMAND = (
+    "find /data/images -type f -exec stat -c '%a %n' {} + | "
+    "sed 's# /data/images/# #' | sort"
+)
+M7_MARD_PREFLIGHT_PROFILE = "m7-mard-source-v1"
+
 
 class GateAUpgradeError(gatea.GateAError):
     """不包含 Secret、PII、业务明细或外部命令原始输出的升级错误。"""
@@ -236,6 +348,79 @@ def _manifest_summary(lines: Sequence[str]) -> dict[str, object]:
     }
 
 
+def _m7_manifest_contract(
+    values: Mapping[str, str],
+) -> tuple[tuple[str, ...], dict[str, str], str]:
+    try:
+        colors = load_manifest(MARD_MANIFEST)
+    except MardCatalogError as error:
+        raise GateAUpgradeError("Gate A MARD manifest is invalid") from error
+    base_url = values.get("PRODUCT_IMAGE_BASE_URL", "").rstrip("/")
+    if not base_url:
+        raise GateAUpgradeError("Gate A MARD image base URL is unavailable")
+
+    expected_rows: list[str] = []
+    expected_images: dict[str, str] = {}
+    image_set_digest = hashlib.sha256()
+    for color in colors:
+        expected_rows.append(
+            "\t".join(
+                (
+                    str(color.slot_no),
+                    color.color_code.encode("utf-8").hex().upper(),
+                    color.name.encode("utf-8").hex().upper(),
+                    f"{base_url}/{color.image_filename}"
+                    .encode("utf-8")
+                    .hex()
+                    .upper(),
+                    str(color.sort),
+                    "1",
+                )
+            )
+        )
+        image_sha256 = hashlib.sha256(build_swatch_png(color.rgb)).hexdigest()
+        expected_images[color.image_filename] = image_sha256
+        image_set_digest.update(color.image_filename.encode("ascii"))
+        image_set_digest.update(b"\0")
+        image_set_digest.update(bytes.fromhex(image_sha256))
+    if (
+        len(expected_rows) != EXPECTED_COLOR_COUNT
+        or len(expected_images) != EXPECTED_COLOR_COUNT
+    ):
+        raise GateAUpgradeError("Gate A MARD manifest cardinality is invalid")
+    return tuple(expected_rows), expected_images, image_set_digest.hexdigest()
+
+
+def _parse_hash_manifest(lines: Sequence[str]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for line in lines:
+        parts = line.split(maxsplit=1)
+        if (
+            len(parts) != 2
+            or SHA256_PATTERN.fullmatch(parts[0]) is None
+            or not parts[1]
+            or parts[1] in parsed
+        ):
+            raise GateAUpgradeError("Gate A image hash manifest is invalid")
+        parsed[parts[1]] = parts[0]
+    return parsed
+
+
+def _parse_mode_manifest(lines: Sequence[str]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for line in lines:
+        parts = line.split(maxsplit=1)
+        if (
+            len(parts) != 2
+            or re.fullmatch(r"[0-7]{3,4}", parts[0]) is None
+            or not parts[1]
+            or parts[1] in parsed
+        ):
+            raise GateAUpgradeError("Gate A image mode manifest is invalid")
+        parsed[parts[1]] = parts[0]
+    return parsed
+
+
 def _write_json_exclusive(path: Path, payload: Mapping[str, Any]) -> None:
     descriptor: int | None = None
     try:
@@ -253,6 +438,15 @@ def _write_json_exclusive(path: Path, payload: Mapping[str, Any]) -> None:
 
 def _expected_versions(version: int) -> list[str]:
     return list(APPROVED_MIGRATIONS[: version + 1])
+
+
+def _validate_source_version(source_version: object) -> int:
+    if (
+        type(source_version) is not int
+        or source_version not in SUPPORTED_SOURCE_VERSIONS
+    ):
+        raise GateAUpgradeError("Gate A source version must be explicitly M2 or M7")
+    return source_version
 
 
 def _validate_confirmations(
@@ -285,6 +479,7 @@ def _load_restore_record(
     restore_record_dir: Path,
     backup_completed_at: datetime,
     now: datetime,
+    expected_m7_content_snapshot: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     path = restore_record_dir / f"{backup_id}.json"
     try:
@@ -301,6 +496,21 @@ def _load_restore_record(
         or any(payload.get(field) is not True for field in RESTORE_TRUE_FIELDS)
     ):
         raise GateAUpgradeError("Gate A restore PASS record is invalid")
+    if expected_m7_content_snapshot is not None:
+        try:
+            expected_m7_content = backup._validate_m7_content_snapshot(
+                expected_m7_content_snapshot
+            )
+            restored_m7_content = backup._validate_m7_content_snapshot(
+                payload.get("m7_content_snapshot")
+            )
+        except gatea.GateAError as error:
+            raise GateAUpgradeError("Gate A restore PASS record is invalid") from error
+        if (
+            payload.get("m7_content_matches") is not True
+            or restored_m7_content != expected_m7_content
+        ):
+            raise GateAUpgradeError("Gate A restore PASS record is invalid")
     completed_at = _parse_utc_timestamp(
         payload.get("completed_at"), "restore completion"
     )
@@ -352,6 +562,11 @@ def _load_verified_backup(
         restore_record_dir=restore_record_dir,
         backup_completed_at=completed_at,
         now=now,
+        expected_m7_content_snapshot=(
+            payload.get("m7_content_snapshot")
+            if backup._requires_m7_content_snapshot(payload["database_snapshot"])
+            else None
+        ),
     )
     return payload
 
@@ -490,9 +705,178 @@ def _read_final_snapshot(
     )
 
 
+def _read_m7_invariant_snapshot(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-tty",
+            "mysql",
+            "sh",
+            "-ec",
+            M7_INVARIANT_STATUS_COMMAND,
+        ),
+        capture_output=True,
+    )
+    snapshot = _parse_json_object(result.stdout, "M7 invariant status")
+    if any(key not in snapshot for key in M7_INVARIANT_KEYS):
+        raise GateAUpgradeError("Gate A M7 invariant status is incomplete")
+    return snapshot
+
+
+def _read_m7_mard_catalog(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> tuple[str, ...]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-tty",
+            "mysql",
+            "sh",
+            "-ec",
+            M7_MARD_CATALOG_STATUS_COMMAND,
+        ),
+        capture_output=True,
+    )
+    rows = tuple(result.stdout.splitlines())
+    for row in rows:
+        fields = row.split("\t")
+        if len(fields) != 6:
+            raise GateAUpgradeError("Gate A M7 MARD catalog output is invalid")
+    return rows
+
+
+def _read_m7_schema_status(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-tty",
+            "mysql",
+            "sh",
+            "-ec",
+            M7_SCHEMA_STATUS_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _parse_json_object(result.stdout, "M7 schema status")
+
+
+def _read_m7_image_mode_manifest(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> tuple[str, ...]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "run",
+            "--rm",
+            "--no-deps",
+            "--entrypoint",
+            "/bin/sh",
+            "image-init",
+            "-ec",
+            M7_IMAGE_MODE_MANIFEST_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return tuple(result.stdout.splitlines())
+
+
+def _run_m7_source_preflight(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    stopped_image_manifest: Sequence[str],
+    manifest_sha256: str,
+) -> dict[str, Any]:
+    expected_rows, expected_images, image_set_sha256 = _m7_manifest_contract(values)
+    schema_status = _read_m7_schema_status(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+    )
+    if schema_status != {"swatch_hex_columns": 0}:
+        raise GateAUpgradeError("Gate A M7 source schema is partially upgraded")
+    actual_rows = _read_m7_mard_catalog(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+    )
+    if actual_rows != expected_rows:
+        raise GateAUpgradeError("Gate A M7 MARD catalog differs from the manifest")
+
+    image_hashes = _parse_hash_manifest(stopped_image_manifest)
+    image_modes = _parse_mode_manifest(
+        _read_m7_image_mode_manifest(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+        )
+    )
+    for filename, expected_sha256 in expected_images.items():
+        if (
+            image_hashes.get(filename) != expected_sha256
+            or image_modes.get(filename) != "644"
+        ):
+            raise GateAUpgradeError(
+                "Gate A M7 MARD image set differs from the manifest"
+            )
+
+    return {
+        "catalog_rows": len(actual_rows),
+        "catalog_sha256": _manifest_summary(actual_rows)["sha256"],
+        "image_set_sha256": image_set_sha256,
+        "images": len(expected_images),
+        "manifest_sha256": manifest_sha256,
+        "profile": M7_MARD_PREFLIGHT_PROFILE,
+        "swatch_hex_columns": 0,
+    }
+
+
 def _validate_final_snapshot(
     source_snapshot: Mapping[str, Any],
     final_snapshot: Mapping[str, Any],
+    *,
+    source_version: int = DEFAULT_SOURCE_VERSION,
+    source_m7_invariants: Mapping[str, Any] | None = None,
 ) -> None:
     if final_snapshot.get("aerich_versions") != _expected_versions(TARGET_VERSION):
         raise GateAUpgradeError("Gate A final Aerich chain is not exactly M0-M8")
@@ -501,6 +885,18 @@ def _validate_final_snapshot(
             raise GateAUpgradeError(
                 f"Gate A final core invariant changed unexpectedly: {key}"
             )
+    if source_version == 7:
+        if source_m7_invariants is None:
+            raise GateAUpgradeError("Gate A M7 source invariants are unavailable")
+        for key in M7_INVARIANT_KEYS:
+            if (
+                key not in source_m7_invariants
+                or key not in final_snapshot
+                or final_snapshot[key] != source_m7_invariants[key]
+            ):
+                raise GateAUpgradeError(
+                    f"Gate A final M7 invariant changed unexpectedly: {key}"
+                )
     if (
         final_snapshot.get("wallet_accounts")
         != final_snapshot.get("eligible_wallet_users")
@@ -526,6 +922,49 @@ def _validate_final_snapshot(
         or final_snapshot.get("reservation_settings_unique") != 1
     ):
         raise GateAUpgradeError("Gate A final ReservationSettings invariant failed")
+
+
+def _validate_mard_result(
+    result: Mapping[str, Any],
+    *,
+    expected_mode: str,
+    manifest_sha256: str,
+    require_noop: bool,
+) -> None:
+    if (
+        result.get("mode") != expected_mode
+        or result.get("colors") != 221
+        or result.get("manifest_sha256") != manifest_sha256
+    ):
+        raise GateAUpgradeError(f"Gate A MARD {expected_mode} result is invalid")
+    if require_noop:
+        expected_noop = {
+            "already_current": True,
+            "created_images": 0,
+            "database_changes": 0,
+            "images_reused": 221,
+            "images_to_create": 0,
+        }
+        if any(result.get(key) != value for key, value in expected_noop.items()):
+            raise GateAUpgradeError(
+                f"Gate A MARD {expected_mode} result is not an exact no-op"
+            )
+
+
+def _validate_final_image_manifest(
+    *,
+    source_version: int,
+    stopped_manifest: Sequence[str],
+    final_manifest: Sequence[str],
+) -> None:
+    if source_version == 7:
+        if list(final_manifest) != list(stopped_manifest):
+            raise GateAUpgradeError(
+                "Gate A M7-to-M8 image manifest changed unexpectedly"
+            )
+        return
+    if _manifest_summary(final_manifest)["files"] < 221:
+        raise GateAUpgradeError("Gate A final image manifest is incomplete")
 
 
 def _record_step(
@@ -569,7 +1008,10 @@ def _plan(
     backup_record_dir: Path,
     restore_record_dir: Path,
     release_record_dir: Path,
+    source_version: int = DEFAULT_SOURCE_VERSION,
 ) -> tuple[str, str, dict[str, Any], dict[str, Any], str]:
+    source_version = _validate_source_version(source_version)
+    expected_source_versions = _expected_versions(source_version)
     candidate_sha = gatea._candidate_sha(values)
     if (
         SHA_PATTERN.fullmatch(candidate_sha) is None
@@ -581,38 +1023,128 @@ def _plan(
         release_record_dir, 0o755, "Gate A release record directory"
     )
     image_id = gatea.validate_app_image(values)
+    manifest_sha256 = _manifest_sha256()
     success_path, evidence_path = _upgrade_paths(release_record_dir, candidate_sha)
     if success_path.exists():
-        gatea._require_upgrade_record(
+        replay_rows = gatea._compose_ps(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            services=("mysql", "redis", "app", "nginx"),
+        )
+        gatea._ensure_services_healthy(replay_rows, "mysql", "redis")
+        _ensure_stopped(replay_rows, "app", "nginx")
+        success_record = gatea._require_upgrade_record(
             record_dir=release_record_dir,
             candidate_sha=candidate_sha,
             image_id=image_id,
         )
-        try:
-            success_record = json.loads(success_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise GateAUpgradeError(
-                "Gate A existing-database upgrade record is invalid"
-            ) from error
+        recorded_source_version = success_record.get(
+            "source_version", DEFAULT_SOURCE_VERSION
+        )
         if (
             success_record.get("source_candidate_sha") != source_candidate_sha
             or success_record.get("backup_id") != backup_id
-            or success_record.get("manifest_sha256") != _manifest_sha256()
+            or success_record.get("manifest_sha256") != manifest_sha256
+            or success_record.get("source_aerich_versions")
+            != expected_source_versions
+            or type(recorded_source_version) is not int
+            or recorded_source_version != source_version
+            or success_record.get("evidence_path") != str(evidence_path)
+            or SHA256_PATTERN.fullmatch(
+                str(success_record.get("evidence_sha256", ""))
+            )
+            is None
+            or not isinstance(success_record.get("final_database_snapshot"), dict)
+            or not isinstance(success_record.get("final_image_manifest"), dict)
         ):
             raise GateAUpgradeError(
                 "Gate A recorded upgrade does not match the requested replay"
             )
+        try:
+            if _sha256(evidence_path) != success_record["evidence_sha256"]:
+                raise GateAUpgradeError(
+                    "Gate A recorded upgrade evidence digest does not match"
+                )
+            replay_evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise GateAUpgradeError(
+                "Gate A recorded upgrade evidence is unavailable"
+            ) from error
+        if (
+            not isinstance(replay_evidence, dict)
+            or replay_evidence.get("schema_version") != 1
+            or replay_evidence.get("record_type")
+            != "existing-database-upgrade-evidence"
+            or replay_evidence.get("status") != "succeeded"
+            or replay_evidence.get("candidate_sha") != candidate_sha
+            or replay_evidence.get("source_candidate_sha") != source_candidate_sha
+            or replay_evidence.get("backup_id") != backup_id
+            or replay_evidence.get("final_database_snapshot")
+            != success_record["final_database_snapshot"]
+            or replay_evidence.get("final_image_manifest")
+            != success_record["final_image_manifest"]
+        ):
+            raise GateAUpgradeError("Gate A recorded upgrade evidence is invalid")
         final_snapshot = _read_final_snapshot(
             values=values,
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
         )
-        if final_snapshot.get("aerich_versions") != _expected_versions(TARGET_VERSION):
+        if (
+            final_snapshot.get("aerich_versions")
+            != _expected_versions(TARGET_VERSION)
+            or final_snapshot != success_record["final_database_snapshot"]
+        ):
             raise GateAUpgradeError(
                 "Gate A recorded upgrade no longer matches the database"
             )
-        return candidate_sha, image_id, {}, final_snapshot, _manifest_sha256()
+        final_images = backup._source_image_manifest(
+            values, config_file, secret_dir, mode
+        )
+        if _manifest_summary(final_images) != success_record["final_image_manifest"]:
+            raise GateAUpgradeError(
+                "Gate A recorded upgrade no longer matches the image volume"
+            )
+        if source_version == 7:
+            try:
+                recorded_m7_content = backup._validate_m7_content_snapshot(
+                    success_record.get("final_m7_content_snapshot")
+                )
+            except gatea.GateAError as error:
+                raise GateAUpgradeError(
+                    "Gate A recorded M7 content snapshot is invalid"
+                ) from error
+            if replay_evidence.get("final_m7_content_snapshot") != recorded_m7_content:
+                raise GateAUpgradeError("Gate A recorded upgrade evidence is invalid")
+            current_m7_content = backup._source_m7_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                mode,
+            )
+            if current_m7_content != recorded_m7_content:
+                raise GateAUpgradeError(
+                    "Gate A recorded upgrade no longer matches preserved M7 content"
+                )
+        replay_mard_result = _run_task(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            service="app",
+            module="app.tasks.gatea_mard_publish",
+            description="recorded-upgrade-mard-preview",
+        )
+        _validate_mard_result(
+            replay_mard_result,
+            expected_mode="preview",
+            manifest_sha256=manifest_sha256,
+            require_noop=True,
+        )
+        return candidate_sha, image_id, {}, final_snapshot, manifest_sha256
     if evidence_path.exists():
         raise GateAUpgradeError(
             "Gate A prior upgrade evidence requires manual review before retry"
@@ -632,10 +1164,10 @@ def _plan(
         secret_dir=secret_dir,
         mode=mode,
     )
-    if source_status.get("aerich_versions") != _expected_versions(
-        SUPPORTED_SOURCE_VERSION
-    ):
-        raise GateAUpgradeError("Gate A database is not the approved M2 source")
+    if source_status.get("aerich_versions") != expected_source_versions:
+        raise GateAUpgradeError(
+            f"Gate A database is not the explicitly approved M{source_version} source"
+        )
     backup_record = _load_verified_backup(
         values=values,
         backup_id=backup_id,
@@ -645,9 +1177,11 @@ def _plan(
         restore_record_dir=restore_record_dir,
     )
     backup_versions = backup_record["database_snapshot"].get("aerich_versions")
-    if backup_versions != ",".join(_expected_versions(SUPPORTED_SOURCE_VERSION)):
-        raise GateAUpgradeError("Gate A verified backup is not from exact M2")
-    return candidate_sha, image_id, backup_record, source_status, _manifest_sha256()
+    if backup_versions != ",".join(expected_source_versions):
+        raise GateAUpgradeError(
+            f"Gate A verified backup is not from exact M{source_version}"
+        )
+    return candidate_sha, image_id, backup_record, source_status, manifest_sha256
 
 
 def upgrade_existing_database(
@@ -666,10 +1200,12 @@ def upgrade_existing_database(
     confirm_source_sha: str | None,
     confirm_backup_id: str | None,
     confirm_manifest_sha256: str | None,
+    source_version: int = DEFAULT_SOURCE_VERSION,
 ) -> dict[str, Any]:
-    """规划或执行精确 M2→M8 升级，并生成可供 app-up 使用的成功 Record。"""
+    """规划或执行精确 M2/M7→M8 升级，生成 app-up 成功 Record。"""
 
     gatea._require_loopback_write_mode(mode)
+    source_version = _validate_source_version(source_version)
     backup_id = backup._backup_id(backup_id)
     values = gatea._validated_inputs(
         config_file=config_file,
@@ -688,6 +1224,7 @@ def upgrade_existing_database(
         backup_record_dir=backup_record_dir,
         restore_record_dir=restore_record_dir,
         release_record_dir=release_record_dir,
+        source_version=source_version,
     )
     success_path, evidence_path = _upgrade_paths(release_record_dir, candidate_sha)
     if success_path.exists():
@@ -708,6 +1245,9 @@ def upgrade_existing_database(
             "candidate_sha": candidate_sha,
             "manifest_sha256": manifest_sha256,
             "mode": "apply-replay" if apply else "plan-replay",
+            "source_aerich_versions": _expected_versions(source_version),
+            "source_version": source_version,
+            "target_aerich_versions": _expected_versions(TARGET_VERSION),
             "target_version": TARGET_VERSION,
         }
     if not apply:
@@ -728,8 +1268,10 @@ def upgrade_existing_database(
             "manifest_sha256": manifest_sha256,
             "mode": "plan",
             "restore_verified": True,
+            "source_aerich_versions": _expected_versions(source_version),
             "source_candidate_sha": source_candidate_sha,
-            "source_version": SUPPORTED_SOURCE_VERSION,
+            "source_version": source_version,
+            "target_aerich_versions": _expected_versions(TARGET_VERSION),
             "target_version": TARGET_VERSION,
         }
 
@@ -760,11 +1302,14 @@ def upgrade_existing_database(
         "record_type": "existing-database-upgrade-evidence",
         "runtime_preflight": runtime_preflight,
         "schema_version": 1,
+        "source_aerich_versions": _expected_versions(source_version),
         "source_candidate_sha": source_candidate_sha,
         "source_database_status": source_status,
+        "source_version": source_version,
         "started_at": started_at,
         "status": "in_progress",
         "steps": [],
+        "target_aerich_versions": _expected_versions(TARGET_VERSION),
     }
     _write_json_exclusive(evidence_path, evidence)
     business_stopped = False
@@ -772,6 +1317,11 @@ def upgrade_existing_database(
     final_image_manifest: list[str] = []
     wallet_result: dict[str, Any] = {}
     mard_result: dict[str, Any] = {}
+    source_m7_invariants: dict[str, Any] | None = None
+    source_m7_content_snapshot: dict[str, Any] | None = None
+    final_m7_content_snapshot: dict[str, Any] | None = None
+    m7_source_preflight: dict[str, Any] = {}
+    stopped_images: list[str] = []
     try:
         evidence["current_stage"] = "stop-business-entry"
         backup._write_json_atomic(evidence_path, evidence, 0o644)
@@ -810,9 +1360,40 @@ def upgrade_existing_database(
             )
         evidence["stopped_source_verified"] = True
         evidence["source_image_manifest"] = _manifest_summary(stopped_images)
+        if source_version == 7:
+            expected_m7_content_snapshot = backup._validate_m7_content_snapshot(
+                backup_record.get("m7_content_snapshot")
+            )
+            source_m7_content_snapshot = backup._source_m7_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                mode,
+            )
+            if source_m7_content_snapshot != expected_m7_content_snapshot:
+                raise GateAUpgradeError(
+                    "Gate A stopped M7 content no longer matches the verified backup"
+                )
+            source_m7_invariants = _read_m7_invariant_snapshot(
+                values=values,
+                config_file=config_file,
+                secret_dir=secret_dir,
+                mode=mode,
+            )
+            m7_source_preflight = _run_m7_source_preflight(
+                values=values,
+                config_file=config_file,
+                secret_dir=secret_dir,
+                mode=mode,
+                stopped_image_manifest=stopped_images,
+                manifest_sha256=manifest_sha256,
+            )
+            evidence["source_m7_content_snapshot"] = source_m7_content_snapshot
+            evidence["source_m7_invariants"] = source_m7_invariants
+            evidence["source_m7_mard_preflight"] = m7_source_preflight
         backup._write_json_atomic(evidence_path, evidence, 0o644)
 
-        for target_version in (3, 4, 5, 6, 7, 8):
+        for target_version in range(source_version + 1, TARGET_VERSION + 1):
             name = f"migrate-m{target_version}"
             step_started = _iso_now()
             migration_result = _run_task(
@@ -880,12 +1461,12 @@ def upgrade_existing_database(
                     module="app.tasks.gatea_mard_publish",
                     description="mard-preview",
                 )
-                if (
-                    preview.get("mode") != "preview"
-                    or preview.get("colors") != 221
-                    or preview.get("manifest_sha256") != manifest_sha256
-                ):
-                    raise GateAUpgradeError("Gate A MARD preview result is invalid")
+                _validate_mard_result(
+                    preview,
+                    expected_mode="preview",
+                    manifest_sha256=manifest_sha256,
+                    require_noop=source_version == 7,
+                )
                 mard_result = _run_task(
                     values=values,
                     config_file=config_file,
@@ -900,6 +1481,12 @@ def upgrade_existing_database(
                     ),
                     description="mard-apply",
                 )
+                _validate_mard_result(
+                    mard_result,
+                    expected_mode="apply",
+                    manifest_sha256=manifest_sha256,
+                    require_noop=source_version == 7,
+                )
                 replay = _run_task(
                     values=values,
                     config_file=config_file,
@@ -909,15 +1496,12 @@ def upgrade_existing_database(
                     module="app.tasks.gatea_mard_publish",
                     description="mard-replay-preview",
                 )
-                if (
-                    mard_result.get("mode") != "apply"
-                    or mard_result.get("colors") != 221
-                    or mard_result.get("manifest_sha256") != manifest_sha256
-                    or replay.get("already_current") is not True
-                    or replay.get("database_changes") != 0
-                    or replay.get("images_to_create") != 0
-                ):
-                    raise GateAUpgradeError("Gate A MARD apply did not converge")
+                _validate_mard_result(
+                    replay,
+                    expected_mode="preview",
+                    manifest_sha256=manifest_sha256,
+                    require_noop=True,
+                )
                 _record_step(
                     evidence_path=evidence_path,
                     evidence=evidence,
@@ -933,17 +1517,38 @@ def upgrade_existing_database(
             secret_dir=secret_dir,
             mode=mode,
         )
-        _validate_final_snapshot(backup_record["database_snapshot"], final_snapshot)
+        _validate_final_snapshot(
+            backup_record["database_snapshot"],
+            final_snapshot,
+            source_version=source_version,
+            source_m7_invariants=source_m7_invariants,
+        )
         final_image_manifest = backup._source_image_manifest(
             values, config_file, secret_dir, mode
         )
-        if _manifest_summary(final_image_manifest)["files"] < 221:
-            raise GateAUpgradeError("Gate A final image manifest is incomplete")
+        _validate_final_image_manifest(
+            source_version=source_version,
+            stopped_manifest=stopped_images,
+            final_manifest=final_image_manifest,
+        )
+        if source_version == 7:
+            final_m7_content_snapshot = backup._source_m7_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                mode,
+            )
+            if final_m7_content_snapshot != source_m7_content_snapshot:
+                raise GateAUpgradeError(
+                    "Gate A M7 preserved content changed during the M8 upgrade"
+                )
 
         evidence["completed_at"] = _iso_now()
         evidence["current_stage"] = "completed"
         evidence["final_database_snapshot"] = final_snapshot
         evidence["final_image_manifest"] = _manifest_summary(final_image_manifest)
+        if final_m7_content_snapshot is not None:
+            evidence["final_m7_content_snapshot"] = final_m7_content_snapshot
         evidence["status"] = "succeeded"
         backup._write_json_atomic(evidence_path, evidence, 0o644)
 
@@ -955,19 +1560,29 @@ def upgrade_existing_database(
             "evidence_sha256": _sha256(evidence_path),
             "final_database_snapshot": final_snapshot,
             "final_image_manifest": _manifest_summary(final_image_manifest),
+            **(
+                {
+                    "final_m7_content_snapshot": final_m7_content_snapshot,
+                    "source_m7_content_snapshot": source_m7_content_snapshot,
+                    "source_m7_mard_preflight": m7_source_preflight,
+                }
+                if final_m7_content_snapshot is not None
+                else {}
+            ),
             "image_id": image_id,
             "manifest_sha256": manifest_sha256,
             "passed": True,
             "record_type": "existing-database-upgrade",
             "runtime_preflight": runtime_preflight,
             "schema_version": 1,
-            "source_aerich_versions": _expected_versions(SUPPORTED_SOURCE_VERSION),
+            "source_aerich_versions": _expected_versions(source_version),
             "source_candidate_sha": source_candidate_sha,
             "source_image_id": backup_record["image_id"],
             "source_database_snapshot": backup_record["database_snapshot"],
             "source_image_manifest": _manifest_summary(
                 backup_record["image_manifest"]
             ),
+            "source_version": source_version,
             "started_at": started_at,
             "target_aerich_versions": _expected_versions(TARGET_VERSION),
             "wallet_preparation": wallet_result,
@@ -999,20 +1614,35 @@ def upgrade_existing_database(
         "manifest_sha256": manifest_sha256,
         "mode": "apply",
         "record": str(success_path),
+        "source_aerich_versions": _expected_versions(source_version),
         "source_candidate_sha": source_candidate_sha,
-        "source_version": SUPPORTED_SOURCE_VERSION,
+        "source_version": source_version,
+        "target_aerich_versions": _expected_versions(TARGET_VERSION),
         "target_version": TARGET_VERSION,
     }
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Plan or apply the guarded Gate A M2-to-M8 upgrade",
+        description=(
+            "Plan or apply the guarded Gate A M2/M7-to-M8 upgrade; "
+            "M7 requires explicit --source-version 7"
+        ),
     )
     parser.add_argument("--mode", choices=tuple(gatea.MODE_COMPOSE), required=True)
     parser.add_argument("--config-file", type=Path, default=gatea.DEFAULT_CONFIG_FILE)
     parser.add_argument("--secret-dir", type=Path, default=gatea.DEFAULT_SECRET_DIR)
     parser.add_argument("--source-candidate-sha", required=True)
+    parser.add_argument(
+        "--source-version",
+        type=int,
+        choices=SUPPORTED_SOURCE_VERSIONS,
+        default=DEFAULT_SOURCE_VERSION,
+        help=(
+            "approved source checkpoint; defaults to M2 only for legacy command "
+            "compatibility, and M7 must be selected explicitly"
+        ),
+    )
     parser.add_argument("--backup-id", required=True)
     parser.add_argument("--backup-root", type=Path, default=backup.DEFAULT_BACKUP_ROOT)
     parser.add_argument(
@@ -1050,6 +1680,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             confirm_source_sha=args.confirm_source_sha,
             confirm_backup_id=args.confirm_backup_id,
             confirm_manifest_sha256=args.confirm_manifest_sha256,
+            source_version=args.source_version,
         )
     except (gatea.GateAError, subprocess.SubprocessError) as error:
         print(f"Gate A existing-database upgrade failed: {error}", file=sys.stderr)

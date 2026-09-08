@@ -2,11 +2,11 @@
 
 > **Document Version:** v0.7
 >
-> **Status:** Implemented and Final-Review Complete（Phase 4.3.12；v0.6.0 未发布候选；未应用持久环境）
+> **Status:** Implemented and Final-Review Complete（Phase 4.3.12 + M6；v0.6.0 未发布候选；当前 Gate A M7 已应用）
 >
-> **M6 Status:** Color-selectable Kit repository implementation and local regression complete; real MySQL verification/deployment pending
+> **M6 Status:** Color-selectable Kit repository/HTTP/MySQL verification complete；current Gate A M7 deployed；other environments pending
 >
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 >
 > 本文遵循 [API Design Conventions](api_design_conventions.md)，业务规则以 [Inventory Module](../01_requirements/inventory_module.md) 为准。
 
@@ -14,9 +14,9 @@
 
 ## 1. 概述
 
-Base URL 为 `/api/v1`。Inventory 三个管理端点均已注册并要求 JWT Bearer Token 与 ADMIN+；普通用户不直接访问流水。领域类型、Schema、Model/数据库设计、MySQL 增量迁移、Repository、管理员调整与查询 Service、Mapper、组合根，以及 Order 创建扣减/取消恢复均已实现。完整迁移链、Repository smoke、真实 MySQL 竞争/1205 重试/EXPLAIN、真实 MySQL HTTP smoke、完整 SQLite HTTP 矩阵与 Phase 4.3.12 最终 Review 均已通过；代码收口为 v0.6.0 未发布候选，但未应用任何持久、共享或生产环境。
+Base URL 为 `/api/v1`。Inventory 三个管理端点均已注册并要求 JWT Bearer Token 与 ADMIN+；普通用户不直接访问流水。领域类型、Schema、Model/数据库设计、MySQL 增量迁移、Repository、管理员调整与查询 Service、Mapper、组合根，以及 Order 创建扣减/取消恢复均已实现。完整迁移链、Repository smoke、真实 MySQL 竞争/1205 重试/EXPLAIN、真实 MySQL HTTP smoke、完整 SQLite HTTP 矩阵与 Phase 4.3.12 最终 Review 均已通过；Inventory M2 已存在于当前持久 Gate A M7，代码仍是 v0.6.0 未发布候选，其他持久环境不因 Gate A 证据自动迁移。
 
-M6 在相同权限、幂等和事务边界上为 `color_selectable` Kit 增加颜色 adjustment/流水查询，并扩展全局流水筛选。颜色库存按 ProductKitColor 独立保存，一个库存单位固定为 10g；全局 BeadColor 不共享余额。路由/Schema/Service/Mapper 与本地 SQLite/HTTP 回归已完成，但真实 MySQL 0→6/并发/EXPLAIN 门槛及部署未完成，不可视为已部署接口。
+M6 在相同权限、幂等和事务边界上为 `color_selectable` Kit 增加颜色 adjustment/流水查询，并扩展全局流水筛选。颜色库存按 ProductKitColor 独立保存，一个库存单位固定为 10g；全局 BeadColor 不共享余额。路由/Schema/Service/Mapper、本地 SQLite/HTTP 回归、真实 MySQL 0→6/并发/EXPLAIN 门槛与当前 Gate A M7 应用均已完成；共享、预发布和生产环境仍须分别部署和验收。
 
 所有响应使用统一 `{code, message, data}` 信封。成功输出必须先经专用 Out Schema 显式投影；不得返回 ORM Model、内部幂等键、用户名、手机号、Token 或订单备注。
 
@@ -97,8 +97,8 @@ HTTP 状态由异常类型决定，不根据 code 号段推断。认证失败使
 | POST | `/admin/products/kit/{product_id}/inventory-adjustments` | 调整 Kit 库存 | ADMIN+ | 已实现 |
 | GET | `/admin/products/kit/{product_id}/inventory-transactions` | 指定 Kit 流水 | ADMIN+ | 已实现 |
 | GET | `/admin/inventory-transactions` | 全局流水筛选 | ADMIN+ | 已实现 |
-| POST | `/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments` | 调整指定商品颜色的 10g 单位库存 | ADMIN+ | M6 已实现；真实 MySQL/部署待完成 |
-| GET | `/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions` | 指定商品颜色流水 | ADMIN+ | M6 已实现；真实 MySQL/部署待完成 |
+| POST | `/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-adjustments` | 调整指定商品颜色的 10g 单位库存 | ADMIN+ | M6 已实现并进入当前 Gate A M7；其他环境待单独部署 |
+| GET | `/admin/products/kit/{product_id}/colors/{kit_color_id}/inventory-transactions` | 指定商品颜色流水 | ADMIN+ | M6 已实现并进入当前 Gate A M7；其他环境待单独部署 |
 
 不新增单独余额端点；Product 管理详情继续承担 fixed 当前余额和各颜色 `stock_units` 读取。
 
@@ -151,7 +151,7 @@ Draft、Online、Offline 的未删除 Kit 均可调整。成功时余额、`admi
 
 Router 根据 Phase 4.3.6 Service 返回的不可变 `is_replay` 选择首次 HTTP 201 或重放 HTTP 200；Service 本身不依赖 HTTP。两种成功响应均先通过 `InventoryAdjustmentOut`，且重放返回首次提交的流水与 after 余额。
 
-### 5.1 创建颜色库存调整（M6 仓库候选）
+### 5.1 创建颜色库存调整（M6 已实现）
 
 ```http
 POST /api/v1/admin/products/kit/9/colors/701/inventory-adjustments
@@ -201,7 +201,7 @@ Body 与 fixed adjustment 完全相同：`change` 表示 10g 单位变化，`cha
 }
 ```
 
-上述字段名已落入 M6 Out Schema；完整回归和真实迁移验证完成前仍不构成已部署的可调用承诺。
+上述字段名已落入 M6 Out Schema，完整回归与真实 MySQL 迁移验证均已完成；当前 Gate A M7 已部署，其他环境是否可调用仍以各自迁移和运行时验收为准。
 
 ## 6. 指定 Kit 流水
 
@@ -244,7 +244,7 @@ Phase 4.3.9 已实现指定 Kit 与全局查询 Service，以及流水/分页/�
 
 `POST /api/v1/admin/users/{user_id}/wallet-orders` 为状态正常的普通 USER 创建真实代客钱包订单。它复用相同 Item/快照规则，并在单事务内创建 Order、扣减 Kit 和钱包、写 `order_deduction`（operator 为 ADMIN+）及钱包流水、创建成功 Payment/唯一 Settlement、直接提交 Paid 和双审计；余额不足、库存不足、disabled/deleted 目标或任一步失败时全部回滚。该路由、`Idempotency-Key` 与响应详见 [Wallet API §6.4](wallet_api.md#64-按商品创建代客钱包订单)。
 
-ADMIN+ 全额退款是独立资金端点：PAID Kit/混合订单按 OrderItem 数量快照恢复全部 Kit 并写 `order_refund_restore`，COMPLETED 或纯 Experience 不写库存。退款、钱包返还、库存恢复和 `REFUND_ORDER` Audit 原子提交；恢复越界返回 `40932`，恢复幂等矛盾返回 `40933`。该 M4 新路径已在一次性 MySQL 8.0.46 的真实 Aerich 0→4 Schema 通过一条调账→代客 Kit 订单→PAID 退款/幂等闭环；M4 尚未应用持久数据库，且该 smoke 不能替代新增资金路径的并发、1205/1213 与 EXPLAIN 扩展门槛。
+ADMIN+ 全额退款是独立资金端点：PAID Kit/混合订单按 OrderItem 数量快照恢复全部 Kit 并写 `order_refund_restore`，COMPLETED 或纯 Experience 不写库存。退款、钱包返还、库存恢复和 `REFUND_ORDER` Audit 原子提交；恢复越界返回 `40932`，恢复幂等矛盾返回 `40933`。该 M4 新路径先在一次性 MySQL 8.0.46 的真实 Aerich 0→4 Schema 通过调账→代客 Kit 订单→PAID 退款/幂等闭环，后续并发、1205/1213 与 EXPLAIN 扩展门槛也已完成；M4 已进入当前 Gate A M7，其他持久环境仍须分别迁移和验收。
 
 库存不足响应示例：
 
@@ -286,4 +286,4 @@ M6 不改变上述 fixed 路径。历史 Kit 迁移为 `kit_kind=fixed`，原三
 
 测试实例使用独立临时数据目录和 `127.0.0.1:13306`，验证后销毁；未连接现有 3306 `MySQL80` 服务，也未修改任何持久数据库。最终 Review 没有新增迁移或依赖；应用默认版本与示例环境已收口为 v0.6.0 未发布候选。
 
-以上验证结果仅覆盖 fixed Kit。M6 颜色端点、筛选、同色/异色并发、混合锁序和新索引查询计划尚待专项验证，完成前状态保持 Pending。
+本节上述 Phase 4.3.11–4.3.12 验证当时只覆盖 fixed Kit；后续 M6 已补齐颜色端点、筛选、同色/异色并发、混合锁序和新索引查询计划专项验证，并已进入当前 Gate A M7。该后续结果仍不自动覆盖其他持久环境。
