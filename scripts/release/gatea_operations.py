@@ -777,7 +777,7 @@ def read_database_snapshot(
         mode=mode,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",
@@ -930,7 +930,7 @@ def initial_migrate(
             mode=mode,
             arguments=(
                 "exec",
-                "--no-tty",
+                "--no-TTY",
                 "mysql",
                 "sh",
                 "-ec",

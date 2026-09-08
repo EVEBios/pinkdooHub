@@ -692,7 +692,7 @@ def _read_final_snapshot(
         mode=mode,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",
@@ -719,7 +719,7 @@ def _read_m7_invariant_snapshot(
         mode=mode,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",
@@ -747,7 +747,7 @@ def _read_m7_mard_catalog(
         mode=mode,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",
@@ -777,7 +777,7 @@ def _read_m7_schema_status(
         mode=mode,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",

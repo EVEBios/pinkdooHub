@@ -369,7 +369,7 @@ def _database_details(
         config_file=config_file,
         secret_dir=secret_dir,
         mode="loopback",
-        arguments=("exec", "--no-tty", "mysql", "sh", "-ec", command),
+        arguments=("exec", "--no-TTY", "mysql", "sh", "-ec", command),
         capture_output=True,
     )
     return backup._parse_snapshot(result.stdout)
@@ -486,7 +486,7 @@ def _require_runtime_feature_flags(
         config_file=config_file,
         secret_dir=secret_dir,
         mode="loopback",
-        arguments=("exec", "--no-tty", "app", "python", "-c", command),
+        arguments=("exec", "--no-TTY", "app", "python", "-c", command),
         capture_output=True,
     )
     if result.stdout.strip() != EXPECTED_RUNTIME_FEATURE_FLAGS:

@@ -1652,7 +1652,7 @@ def test_m7_invariant_snapshot_uses_pre_m8_safe_aggregate_query(
     assert result == _m7_invariants()
     arguments = calls[0]["arguments"]
     assert isinstance(arguments, tuple)
-    assert arguments[:5] == ("exec", "--no-tty", "mysql", "sh", "-ec")
+    assert arguments[:5] == ("exec", "--no-TTY", "mysql", "sh", "-ec")
     assert "swatch_hex" not in str(arguments[-1])
 
     monkeypatch.setattr(
@@ -1699,7 +1699,7 @@ def test_m7_mard_catalog_reader_uses_only_pre_m8_columns(
     ) == expected_rows
     arguments = calls[0]["arguments"]
     assert isinstance(arguments, tuple)
-    assert arguments[:5] == ("exec", "--no-tty", "mysql", "sh", "-ec")
+    assert arguments[:5] == ("exec", "--no-TTY", "mysql", "sh", "-ec")
     assert "swatch_hex" not in str(arguments[-1])
 
 

@@ -375,7 +375,7 @@ def test_database_status_is_read_only_and_normalizes_aerich_versions(
     assert commands == [
         (
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",
@@ -435,7 +435,7 @@ def test_initial_migrate_requires_empty_schema_and_records_candidate(
         arguments = tuple(kwargs["arguments"])
         profiles = tuple(kwargs.get("profiles", ()))
         commands.append((arguments, profiles))
-        stdout = "0\n" if arguments[:3] == ("exec", "--no-tty", "mysql") else ""
+        stdout = "0\n" if arguments[:3] == ("exec", "--no-TTY", "mysql") else ""
         return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout)
 
     monkeypatch.setattr(gatea, "_run_compose", fake_run_compose)

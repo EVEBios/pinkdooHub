@@ -314,7 +314,7 @@ def _source_m7_content_snapshot(
         mode=mode,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",
@@ -338,7 +338,7 @@ def _source_snapshot(
         mode=mode,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",
@@ -513,7 +513,7 @@ def create_backup(
             mode=mode,
             arguments=(
                 "exec",
-                "--no-tty",
+                "--no-TTY",
                 "mysql",
                 "sh",
                 "-ec",
@@ -696,7 +696,7 @@ def _restore_snapshot(
         project=project,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql-restore",
             "sh",
             "-ec",
@@ -720,7 +720,7 @@ def _restored_m7_content_snapshot(
         project=project,
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql-restore",
             "sh",
             "-ec",
@@ -845,7 +845,7 @@ def verify_restore(
                 project=project,
                 arguments=(
                     "exec",
-                    "--no-tty",
+                    "--no-TTY",
                     "mysql-restore",
                     "sh",
                     "-ec",
@@ -909,7 +909,7 @@ def verify_restore(
             project=project,
             arguments=(
                 "exec",
-                "--no-tty",
+                "--no-TTY",
                 "redis",
                 "/bin/sh",
                 "-ec",
@@ -925,7 +925,7 @@ def verify_restore(
             project=project,
             arguments=(
                 "exec",
-                "--no-tty",
+                "--no-TTY",
                 "restore-app",
                 "python",
                 "-c",

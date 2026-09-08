@@ -324,7 +324,7 @@ def _representative_details(context: PreparedContext) -> dict[str, Any]:
         mode="loopback",
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",

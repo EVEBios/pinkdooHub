@@ -295,7 +295,7 @@ def _bootstrap_snapshot(
         mode="loopback",
         arguments=(
             "exec",
-            "--no-tty",
+            "--no-TTY",
             "mysql",
             "sh",
             "-ec",

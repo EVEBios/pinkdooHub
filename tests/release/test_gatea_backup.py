@@ -403,7 +403,7 @@ def test_verify_restore_compares_and_always_removes_temporary_resources(
         arguments = tuple(kwargs["arguments"])
         commands.append(arguments)
         stdout = ""
-        if arguments[:3] == ("exec", "--no-tty", "redis"):
+        if arguments[:3] == ("exec", "--no-TTY", "redis"):
             stdout = "0\n"
         elif arguments[:3] == ("ps", "--all", "--format"):
             stdout = json.dumps(
@@ -504,7 +504,7 @@ def test_restore_m7_content_mismatch_still_removes_isolated_project(
     def fake_restore(**kwargs: object) -> subprocess.CompletedProcess[str]:
         arguments = tuple(kwargs["arguments"])
         commands.append(arguments)
-        stdout = "0\n" if arguments[:3] == ("exec", "--no-tty", "redis") else ""
+        stdout = "0\n" if arguments[:3] == ("exec", "--no-TTY", "redis") else ""
         return subprocess.CompletedProcess([], 0, stdout=stdout)
 
     monkeypatch.setattr(backup, "_run_restore", fake_restore)
