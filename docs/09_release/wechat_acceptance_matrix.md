@@ -1,6 +1,6 @@
 # 微信 Gate A Functional / Smoke / E2E 验收矩阵
 
-> **Status:** Current M7 server data A passed；M8 baseline CI passed，later upgrade candidate/new RC/M evidence blocked
+> **Status:** Current M7 persistent server data A passed；M7→M8 disposable full-updater CI A passed；persistent M8/new RC/M evidence blocked
 > **Last Updated:** 2026-09-09
 > **Scope:** 微信小程序内部测试版（Gate A）
 
@@ -71,7 +71,21 @@ Online exact no-op publisher 与 M7→M8 内容保护，本地 `tests/release` �
 [Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净
 远端完成 8/8。详见
 [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。因此 M7 服务端
-数据项可继续使用既有 `A PASS`，但完整 updater、M8 持久迁移、HEX/gzip Runtime、真实
+数据项可继续使用既有 `A PASS`。
+
+其后 PR head `62b1b15...` 的
+[Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644) 最终 attempt 2
+在干净 merge-ref `a9ff3d24...` 上取得现行 9/9 required Job；其中
+`gatea-m7-m8-updater` 首个 attempt 已在 GitHub-hosted disposable Linux 完成 14/14 阶段，
+覆盖非空 M7 source Backup/同 ID Restore、M7→M8、221 个规范且唯一的 HEX、内容/图片保持、
+Runtime identity `63,445` bytes 与 gzip `10,948` bytes、PNG 兼容回退、M8 target
+Backup/同 ID Restore、artifact allowlist/Secret scan、第二次 cleanup 成功及零残留。首个
+attempt 唯一失败的 `openapi-contract` 是依赖安装阶段 pip bundled truststore TLS 瞬态异常，
+契约命令当时尚未执行；相同提交 failed-job rerun 通过。详见
+[Gate A M7→M8 完整更新器远端 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
+这把一次性候选 A 演练及 M8 disposable Runtime 证据改为 `PASS`，但该 Job 明确
+`persistent_gatea_authorized=false`、`production_secrets_used=false`，不能替代持久 Gate A
+的当次备份、恢复、迁移与 HTTPS 验证。因此 M8 持久迁移、真实
 `release_eligible=true` RC 和所有 `M` 证据仍为 `BLOCKED`/`NOT RUN`。
 
 ## 2. 身份、角色与权限
@@ -109,7 +123,7 @@ Online exact no-op publisher 与 M7→M8 内容保护，本地 `tests/release` �
 | US-14 | Reservation | 当前固定店休日、未来 0–30 日合法日期/半小时时段、手机号补录和创建 pending | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | US-15 | Reservation | 我的预约分页/详情、pending/confirmed/rejected/cancelled 文案与提前三小时取消 | `A+M` | 当前 `A PASS`；`M BLOCKED` |
 | US-16 | Reservation | 无空位/店休结果可从权威状态收敛；首版不声称主动微信通知或自动容量 | `A+M` | 当前 `A PASS`；`M BLOCKED`；N2 `N/A` |
-| US-17 | Color swatch | M8 公开颜色返回规范 HEX；小程序用 `backgroundColor` 直绘且不为数字色块请求兼容 PNG | `A+M` | 基线 CI/本地模拟器 `A PASS`；持久 M8/真实 RC `NOT RUN`；`M BLOCKED` |
+| US-17 | Color swatch | M8 公开颜色返回规范 HEX；小程序用 `backgroundColor` 直绘且不为数字色块请求兼容 PNG | `A+M` | 基线、本地联调及 disposable updater/Runtime `A PASS`；持久 M8/真实 RC `NOT RUN`；`M BLOCKED` |
 
 ## 4. 管理业务链路
 
@@ -129,7 +143,7 @@ Online exact no-op publisher 与 M7→M8 内容保护，本地 `tests/release` �
 | AD-12 | Wallet adjustment | 正负调账、余额/退款敞口上限、Idempotency-Key 首次/重放/冲突和 Audit | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-13 | Assisted wallet order | 为 NORMAL USER 创建 fixed/多颜色订单并直接 Paid；库存/余额/资金事实/双 Audit 原子一致 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-14 | Refund | manual/wallet 一次全额退款；PAID Kit 恢复、COMPLETED 不恢复、重复与窗口边界 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
-| AD-15 | Color catalog | 221 色分页/搜索/全局启停、商品颜色启停、零库存与上架校验、M8 HEX/可选色样读取 | `A+M` | Gate A M7 的 221 色/图片/三启用色/库存 `A PASS`；持久 HEX `NOT RUN`；`M BLOCKED` |
+| AD-15 | Color catalog | 221 色分页/搜索/全局启停、商品颜色启停、零库存与上架校验、M8 HEX/可选色样读取 | `A+M` | Gate A M7 的 221 色/图片/三启用色/库存及 disposable M8 HEX `A PASS`；持久 HEX `NOT RUN`；`M BLOCKED` |
 | AD-16 | Reservation Admin | 组合筛选/详情、当前手机号隐私投影、pending 确认与 `no_capacity` 拒绝 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-17 | Store day closure | 单日关闭原子取消活跃预约、重放、恢复营业但不复活历史预约 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
 | AD-18 | Weekly closure | M7 读取/更换固定店休、旧星期恢复、新星期未来预约原子取消、单日店休保持 | `A+M` | 当前 CI/MySQL/Gate A 数据 `A PASS`；`M BLOCKED` |
@@ -151,17 +165,17 @@ Online exact no-op publisher 与 M7→M8 内容保护，本地 `tests/release` �
 | RT-11 | 快速操作 | 双击、连点、重复进入、返回前台不会重复 mutation | `A+M` | 当前客户端 `A PASS`；`M BLOCKED` |
 | RT-12 | 版本来源 | 体验版 artifact、Git SHA、OpenAPI、环境和版本记录一致 | `A+M` | 历史 M2 预 RC `A PASS`；当前真实 RC/体验版 `BLOCKED` |
 | RT-13 | 最新界面回归 | 会员缺省头像在小屏/大字体双轴居中；代客多颜色手机六列/宽屏十列可读可操作 | `A+M` | 本地 `PASS`；真实设备 `BLOCKED` |
-| RT-14 | 文本压缩 | ≥1 KiB 文本按协商只 gzip 一次、可解码且 `Vary` 正确；小响应和 PNG/JPEG/WebP 不压缩 | `A+M` | 基线自动化 `A PASS`；Gate A M8 Runtime/HTTPS `NOT RUN`；`M BLOCKED` |
+| RT-14 | 文本压缩 | ≥1 KiB 文本按协商只 gzip 一次、可解码且 `Vary` 正确；小响应和 PNG/JPEG/WebP 不压缩 | `A+M` | 基线及 disposable M8 Runtime `A PASS`；持久 Gate A Runtime/HTTPS `NOT RUN`；`M BLOCKED` |
 
 ## 6. 安全、隐私与可观测性
 
 | ID | 场景 | Gate A 断言 | 证据 | 当前 RC |
 |----|------|-------------|------|---------|
-| SE-01 | Secret 扫描 | 源码、日志、artifact、source map 无 Secret/私钥/连接串 | `A` | M8 加固 Run 34281512196 与 M7 持久日志 `PASS`；真实 RC 待重验 |
+| SE-01 | Secret 扫描 | 源码、日志、artifact、source map 无 Secret/私钥/连接串 | `A` | M8 加固、Run 34288613644 的 20 文件 updater artifact 与 M7 持久日志 `PASS`；真实 RC 待重验 |
 | SE-02 | 产物 Origin | 无 `.example.invalid`、开发 Origin 或意外主机 | `A` | 预 RC 保留 `.test` Origin `PASS` 且不可发布；真实 Origin `BLOCKED` |
 | SE-03 | 权限 | UI 隐藏不替代后端 ADMIN+/owner 校验 | `A+M` | 当前 `A PASS`；`M BLOCKED` |
 | SE-04 | 日志脱敏 | 无密码、Token、完整 Redis URL、reason/key 和个人敏感信息 | `A+M` | 当前 M7 日志精确 Secret/高置信模式 0 命中 `A PASS`；`M BLOCKED` |
-| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | M8 加固 Run 34281512196 `PASS`；现有例外 2026-11-30 到期 |
+| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | 现行 9-Job Run 34288613644 `PASS`；既有批准例外 2026-11-30 到期，Joi Low 已升级移除且未扩入例外 |
 | SE-06 | 内部声明 | 体验版明确受邀、不可公开、无微信支付/登录误导 | `M` | 规则已冻结；体验版 `BLOCKED` |
 | SE-07 | 隐私 | Gate A 使用合成/受控账号，数据保留、反馈和停用日期明确 | `M` | 治理已冻结；实际体验版 `BLOCKED` |
 

@@ -1,6 +1,6 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** Current M7 persistent server controls passed；M8 candidate/new backup and real HTTPS Origin remain blocked
+> **Status:** Current M7 persistent server controls passed；disposable M7→M8 updater CI passed；persistent M8 and real Origin/TLS/RC remain blocked
 > **Last Updated:** 2026-09-09
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
@@ -12,9 +12,11 @@ Backup/Restore/加密异机副本。当前 Runtime 为 `73dca350...`，Operation
 运行控制现可作为当前候选证据；真实 HTTPS Origin、微信合法域名、
 release-eligible RC 和真机仍必须在域名可用后单独重验。详见
 [Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。M8
-基线 `4e745848...` 的 Run 34242753255 已 8/8；其后 M7→M8/Online no-op 发布保护已由
-head `fa6fce05...` / Run 34281512196 在干净远端完成 8/8，但尚未形成完整 updater 隔离
-MySQL 证据，也未应用当前环境。M8 写前必须另建当次
+基线 `4e745848...` 的 Run 34242753255 与加固 head `fa6fce05...` 的 Run
+34281512196 历史 8/8 证据继续有效。完整 updater 的受测实现 head `62b1b15f...` / checkout
+`a9ff3d24...` 的 Run 34288613644 attempt 2 已完成包含完整 updater 的
+9/9 required Jobs。新 Job 仅使用 GitHub-hosted disposable Linux 内当次生成的
+Secret，无生产 Secret 和持久写授权；因此它并未应用当前环境。M8 持久写前必须另建当次
 一致 Backup 并完成独立 Restore；该新 M7 Backup 必须携带
 `m7-preserved-business-v1`，由 20 个非 `bead_colors` 表和该表 M7 投影组成的 21 表内容
 SHA-256，Restore 必须重算并精确匹配。不能把下述旧 M7 备份冒充 M8 检查点；任何文档、
@@ -25,14 +27,14 @@ CI 或本地测试都不授权读取 Secret、停写、迁移、切换 Runtime �
 | 层级 | 前端环境 | 后端环境 | 数据库 | Redis | 网络 | 数据性质 |
 |------|----------|----------|--------|-------|------|----------|
 | Local | `TARO_APP_APP_ENV=development` | `APP_ENV=development` | SQLite | 本地 Redis | HTTP localhost/局域网；开发工具可临时关闭域名校验 | 可丢弃开发数据，不产生发布证据 |
-| CI | `testing` | `testing` | 临时 SQLite + 专用 MySQL 8+ Job | CI 隔离实例 | Job 内部网络 | 每次重建，禁止访问共享资源 |
+| CI | `testing`；微信 Job 为不可发布的 production-mode 代码检查 | `testing`；updater 使用 production 配置语义 | 临时 SQLite + 专用 MySQL 8+ Job + 可销毁 Gate A MySQL | CI 隔离实例 | Job 内部网络 | 每次重建，禁止访问共享资源 |
 | Release Rehearsal | `production` 构建模式 | `production` 配置语义 | 生产相似、可销毁 MySQL 8+ | 生产相似隔离 Redis | 真实 HTTPS 测试域名；开启微信域名校验 | 合成/脱敏数据，可完整备份恢复 |
 | Gate A Experience | `production` 构建模式 | `production` 配置语义 | 独立持久 MySQL 8+ | 独立持久 Redis | 微信体验版 + 测试 HTTPS 域名 | 仅受邀测试数据，有保留和清理期限 |
 | Production | `production` | `production` | 持久 MySQL 8+ | 持久 Redis | 正式 HTTPS 域名 | 仅 Gate B 授权后启用 |
 
 发布演练和 Gate A 都必须走与生产相同的安全配置语义，才能发现 debug、SQLite、弱 Secret 等配置差异；“staging/experience”属于部署层级和数据分类，不应靠放宽 `APP_ENV` 表示。若需要在监控或运维界面区分层级，应使用独立、非安全开关的部署元数据，不能把测试数据环境误当作正式商业生产。
 
-9.2.4 的 CI MySQL 密码是仓库内明确标识的 disposable test credential，只用于每次新建的 service container，不是 Gate A/生产 Secret。安全脚本要求 Aerich 的 `DB_*` 与 pytest 的 `INVENTORY_MYSQL_TEST_*` 完全相同，并固定 `127.0.0.1:13306` 和精确专用 Schema；任何远端地址、3306、目标漂移或未显式启用都会在连接前失败。真实 Gate A 数据库凭据仍必须由受保护 Secret 系统注入，不能沿用该测试值。
+9.2.4 的 CI MySQL 密码是仓库内明确标识的 disposable test credential，只用于每次新建的 service container，不是 Gate A/生产 Secret。安全脚本要求 Aerich 的 `DB_*` 与 pytest 的 `INVENTORY_MYSQL_TEST_*` 完全相同，并固定 `127.0.0.1:13306` 和精确专用 Schema；任何远端地址、3306、目标漂移或未显式启用都会在连接前失败。完整 updater Job 同样只在经严格身份与 clean-start 检查的 GitHub-hosted disposable Linux 内随机生成凭据，扫描后只允许脱敏白名单证据上传。真实 Gate A 数据库凭据仍必须由受保护 Secret 系统注入，不能沿用任何 CI 测试值。
 
 ## 2. 当前已有配置键
 
@@ -217,6 +219,16 @@ Backup/Restore/加密异机副本，并分别记录精确候选 SHA、Image ID �
 数据后 Backup 均须包含版本化 `m7-preserved-business-v1` 内容摘要，不能只比较聚合计数；
 独立 Restore Record 须同时保存 `m7_content_matches=true` 和相同摘要。
 
+Run 34288613644 已在无生产 Secret/持久权限的可销毁 Runner 中完成这一
+契约的隔离实演：M7 source Backup/Restore 为 `20260908t230214z`，M8 target
+Backup/Restore 为 `20260908t230329z`。两组原始备份实体随 Runner 资源回收，
+ID 和脱敏 Record 仅通过 20 文件 allowlist/Secret scan 后的证据保留；它们不是
+服务器备份，不得
+写入持久 Gate A 的备份清单或替代上述当次写前/数据后备份。workflow 在
+`run` 内清理后又执行第二次幂等 cleanup，最终证明固定容器、卷、网络、镜像、
+端口和临时工作区零残留。详见
+[Gate A M7→M8 完整更新器远端 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
+
 该摘要的 20 表单事务 dump 和随后 `bead_colors` 投影不是同一个数据库事务，MySQL 与
 图片 Artifact 也不构成跨系统原子提交；因此 Backup、升级、replay 到 `app-up` 必须处于
 App/Nginx 停止且没有直接 SQL、其他迁移或宿主图片旁路写入的维护窗口。若不能排除旁路
@@ -243,6 +255,7 @@ Gate A 前由发布负责人 Yijie Shen 填写实际值并附微信后台截图/
 - [ ] 测试和正式 Origin 不混入同一个 RC；
 - [ ] 证书到期负责人、提前告警和续期流程明确；
 - [ ] 微信后台变更有操作者、时间和回滚记录。
+- [ ] 真实 RC 在 iOS/Android 真机通过后，再按独立授权执行微信上传、灰度和发布；CI 成功不自动授权这些外部动作。
 
 ## 5. 日志与敏感信息
 

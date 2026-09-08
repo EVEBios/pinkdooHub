@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 持久 Gate A 已到 M7；M7→M8 加固候选 `fa6fce05...` 远端 CI 8/8，完整 updater 隔离 MySQL 仍未执行；本地 5Mbps 完整探索轮因 10 VU 未压缩色板容量门槛为 FAIL，持久升级、真实 HTTPS RC 与真机仍阻断 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** 持久 Gate A 仍为 M7；最近完整 updater 证据点 head `62b1b15f...` / CI checkout `a9ff3d24...` 的 Run 34288613644 attempt 2 已完成 9/9 required Jobs，包含完整 M7→M8 updater 的 GitHub-hosted 可销毁隔离演练；本地 5Mbps 完整探索轮仍因 10 VU 未压缩色板容量门槛为 FAIL，持久 M8、真实 Origin/TLS/RC、真机与微信上传灰度发布仍阻断 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-09
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -26,9 +26,9 @@ checkout 完成 8/8，保留 7 组 artifact。详细证据见
 长期 App 已恢复 `PASSWORD_REGISTRATION_ENABLED=false`，微信 Provider 和 Wallet Top-up
 仍关闭；三个 Wallet 管理/内部测试开关只支持无真实资金的 Gate A 验收。
 在这个 M7 检查点形成时，剩余外部主链依赖是备案生效后的真实 HTTPS Origin、微信
-request/upload/download 合法域名、`release_eligible=true` RC、体验版上传授权与
-iOS/Android 真机矩阵；下方 M8 候选的干净 SHA/CI 已关闭，但仍叠加完整 updater、当次
-Backup/Restore、持久 M8 和 Runtime 现场验收门槛。因此 Gate A 仍是
+request/upload/download 合法域名、`release_eligible=true` RC、体验版上传/灰度发布授权与
+iOS/Android 真机矩阵。下方 M8 候选已关闭干净 SHA/CI 和可销毁完整 updater 演练缺口，
+但这不会把隔离 Runner 的 Backup/Restore 或 Runtime 验收转换为持久环境证据。因此 Gate A 仍是
 **No-Go / Not Authorized**。
 
 ## 0.1 M8 候选检查点（尚未应用 Gate A，2026-09-08）
@@ -59,9 +59,21 @@ MARD preview；`app-up` 自身不做这些 live 检查。本轮本地 `tests/rel
 曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐状态矩阵后复核无未解决
 P0–P3。这些改动现已收口为 head `fa6fce05...`、merge-ref `b2f02ebc...`，并由
 [Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净
-PR checkout 完成 8/8、保存 7 组 artifact，关闭最终干净 SHA/远端 CI 缺口。完整 updater
-隔离 MySQL 仍未执行；详见
+PR checkout 完成 8/8、保存 7 组 artifact，关闭当时的干净 SHA/远端 CI 缺口；详见
 [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。
+这份 8/8 记录按原边界保留，其后的完整 updater 缺口由下述新 Run 关闭。
+
+2026-09-09，PR head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、真实
+CI checkout/merge-ref `a9ff3d246c61a4aeede062596c32817a69834d7a` 的
+[Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644) 最终
+attempt 2 为 9/9 Success。attempt 1 唯一失败是 `openapi-contract` 在依赖安装阶段遇到
+pip truststore TLS 瞬态错误，契约命令尚未运行；仅重跑该失败 Job 后 51 秒通过，
+不是代码或契约失败。新增 `gatea-m7-m8-updater` 在无生产 Secret、无持久写授权的
+GitHub-hosted disposable Linux 上完成 14/14 stages：M7 source Backup/Restore
+`20260908t230214z`、M8 target Backup/Restore `20260908t230329z`、221 HEX 精确
+验证、gzip `63445 → 10948` bytes、PNG 兼容回退、20 文件 artifact
+allowlist/Secret scan，以及 workflow 第二次幂等 cleanup 零残留复核。该 PASS
+只关闭隔离完整 updater 和当前 9-Job CI 缺口。
 
 2026-09-09 又在本机 MySQL 8/M8、共享双 CPU、五容器 4096MiB 上限和唯一 5Mbps TBF
 出口下执行了 A/B/C/D、5/10 VU 的完整探索矩阵。12/12 Profile 均已采集，gzip 色板、
@@ -152,15 +164,16 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 | Release Decision Record | [release_decision_record.md](release_decision_record.md) | Gate A 决策已冻结；Gate B 未授权 |
 | 当前基线审计 | [baseline_audit_2026-08-29.md](baseline_audit_2026-08-29.md) | 已采集本地证据；MySQL/真机/外部环境未执行 |
 | Environment Matrix + Secret Inventory | [environment_and_secrets.md](environment_and_secrets.md) | Gate A 文件 Secret、轮换、备份密钥和日志策略已落地；真实域名待备案 |
-| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | M8 加固 head `fa6fce05...` 的 Run 34281512196 为 8/8，7 组 artifact 可复核；完整 updater 仍待演练 |
+| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | 完整 updater 的受测实现 head `62b1b15f...` / checkout `a9ff3d24...` 的 Run 34288613644 attempt 2 为 9/9；完整 M7→M8 updater 隔离演练 14/14 stages 通过 |
 | M7 一次性 MySQL 报告 | [reports/m7_mysql_release_gate_2026-09-07.md](reports/m7_mysql_release_gate_2026-09-07.md) | 本地 dirty-tree M0–M7/历史矩阵/21 项通过，并已补记远端后续结果 |
 | M7 当前候选远端 CI 报告 | [reports/m7_remote_ci_2026-09-07.md](reports/m7_remote_ci_2026-09-07.md) | Head `4d6430c...` / merge-ref `ccbbe9d...` / Run 34129910349 / 8/8 / 7 artifacts |
 | Wallet 扩展远端 CI 报告 | [reports/wallet_remote_ci_2026-09-07.md](reports/wallet_remote_ci_2026-09-07.md) | Head `62f807a...` / merge-ref `6675b4f...` / Run 34134341829 / 8/8 / 7 artifacts |
 | Gate A M2→M7 升级与综合数据报告 | [reports/gatea_m7_upgrade_and_data_2026-09-08.md](reports/gatea_m7_upgrade_and_data_2026-09-08.md) | Runtime `73dca350...` / Operations `353455b...` / Run 34178908663 / Backup `20260908t021224z` / 不依赖域名范围 PASS |
 | M8 HEX 与压缩候选远端 CI 报告 | [reports/m8_remote_ci_2026-09-08.md](reports/m8_remote_ci_2026-09-08.md) | Head `4e745848...` / merge-ref `3ddda81...` / Run 34242753255 / 8/8 / 7 artifacts；Gate A 仍为 M7 |
-| M8 发布加固候选远端 CI 报告 | [reports/m8_hardening_remote_ci_2026-09-09.md](reports/m8_hardening_remote_ci_2026-09-09.md) | Head `fa6fce05...` / merge-ref `b2f02ebc...` / Run 34281512196 / 8/8 / 7 artifacts；完整 updater 与 Gate A M8 仍未执行 |
+| M8 发布加固候选远端 CI 报告 | [reports/m8_hardening_remote_ci_2026-09-09.md](reports/m8_hardening_remote_ci_2026-09-09.md) | Head `fa6fce05...` / merge-ref `b2f02ebc...` / Run 34281512196 / 历史 8/8 / 7 artifacts；其后的隔离完整 updater 由 Run 34288613644 关闭，持久 Gate A M8 仍未执行 |
+| Gate A M7→M8 完整 updater 远端 CI 演练报告 | [reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md) | Head `62b1b15f...` / checkout `a9ff3d24...` / Run 34288613644 attempt 2 / 9/9；可销毁 updater 14/14，持久 Gate A 仍为 M7 |
 | Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
-| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | M2→M7 历史执行已通过；M7→M8 候选远端 CI 已通过，完整 updater/MySQL 与 HEX/gzip/恢复未获持久写授权 |
+| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | M2→M7 历史执行已通过；M7→M8 完整 updater/MySQL、HEX/gzip/PNG 与两组恢复已在可销毁 CI 通过，未获持久写授权 |
 | 容量与性能压测 Runbook | [capacity_load_test_runbook.md](capacity_load_test_runbook.md) | 长期复用的隔离、资源限额、流量、指标、门槛、证据与清理规范；不单独构成环境授权 |
 | M8 本地 2 核/4GiB/5Mbps 完整探索矩阵 | [reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md](reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md) | MySQL 8 + A/B/C/D 共 12/12 Profile；11 项通过，10 VU 未压缩色板 JSON 因丢包/P95 超线而使整轮 FAIL |
 | 本地 2 核/4GiB/5Mbps 探索报告 | [reports/local_2c4g_5mbps_load_test_2026-09-08.md](reports/local_2c4g_5mbps_load_test_2026-09-08.md) | 5/10 人只读与带宽饱和单轮证据；SQLite/占位图片/本机 ARM64，不是发布门槛 |
@@ -182,7 +195,7 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 - 当前目标是受控内部测试版，不是公开发布。
 - Phase 9.1 已完成仓库级证据采集、交付物建档、责任人映射和项目负责人 Review，状态为 `Complete`。
 - Phase 9.2 **历史基线**的 CI 与可重复构建已完成：Draft PR #2 的 Run 33355935212 在真实干净 checkout 上 8/8 Job 通过并保存 7 组 artifact。该结果不覆盖当前 M7 候选，也不授权微信后台变更、持久迁移、上传、提审或发布。
-- Phase 9.3 **历史 M2 演练**已完成：候选 SHA `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success；Run ID `20260831t221625` 在可销毁双 MySQL/Redis/Nginx/App/图片卷环境完成当时的 DR-01～DR-07 与 DR-09 服务端部分，53 项发布工具契约通过，全部任务资源已清理。详见[演练报告](reports/phase93_rehearsal_2026-08-31.md)。M7 的后续持久演练已由 2026-09-08 当前报告关闭；M8 仍须单独完成 M7→M8、HEX/gzip、数据后恢复和候选 Runtime 证据。当前仍未授权上传、分发、提审或发布。
+- Phase 9.3 **历史 M2 演练**已完成：候选 SHA `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success；Run ID `20260831t221625` 在可销毁双 MySQL/Redis/Nginx/App/图片卷环境完成当时的 DR-01～DR-07 与 DR-09 服务端部分，53 项发布工具契约通过，全部任务资源已清理。详见[演练报告](reports/phase93_rehearsal_2026-08-31.md)。M7 的后续持久演练已由 2026-09-08 当前报告关闭；M8 的完整 M7→M8、HEX/gzip/PNG、数据后恢复和候选 Runtime 已由 Run 34288613644 在可销毁环境关闭仓库演练缺口，但尚未在持久 Gate A 执行。当前仍未授权上传、分发、提审或发布。
 - Phase 9.4 **历史 M2 持久主机** loopback 首次部署已通过：Runtime `51ad315...` 的 Run 33568184860 与 Operations `17114d7...` 的 Run 33568983950 均为 8/8 success；真实腾讯云主机完成空库 Aerich 0→1→2、10 表核验、持久 MySQL/Redis/图片卷、非 root App、只读根文件系统、Healthy Nginx 和 liveness/readiness。MySQL/Redis/App 不发布宿主端口，唯一边界是 `127.0.0.1:18080`，公网 18080 不可达。完整脱敏证据见 [9.4 Loopback 报告](reports/phase94_gatea_loopback_2026-09-02.md)。该条中“待只读确认/待升级”的当时状态已由 2026-09-08 M2→M7 当前报告关闭；DNS/证书、微信合法域名、真实 RC 和 iOS/Android 真机仍未执行，Gate A 保持 No-Go。
 - Phase 9.4 **历史 M2 空数据**持久备份/隔离恢复已通过：Operations `d1f3379...` 的 Run 33570862787 为 8/8 success；Backup `20260901t232740z` 在停写窗口生成 `0600` MySQL/图片 Artifact，独立无端口 Restore project 完成数据库摘要、图片 manifest、空 Redis 和 Restore App readiness 验证，并删除全部临时容器/网络/卷。该记录由后续非空恢复证据补充，详见[备份恢复报告](reports/phase94_gatea_backup_restore_2026-09-02.md)。
 - Phase 9.4 **历史 M2 持久 Bootstrap** 已真实通过：Runtime `51ad315...`、Operations `0ebe25a...` 和 Run 33574718103 绑定；唯一 SUPER_ADMIN 首次创建、严格重放、唯一 Audit、初始/最终登录、密码轮换、旧密码拒绝、两个 Refresh 会话撤销和临时 Secret/容器/投放文件清理均为 PASS。成功 Record 为 `root:root 0644` 且不含 PII、密码、Token 或 hash；完整脱敏证据见 [9.4 Bootstrap 报告](reports/phase94_gatea_bootstrap_2026-09-02.md)。

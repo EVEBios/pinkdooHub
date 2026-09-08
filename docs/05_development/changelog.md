@@ -4,6 +4,36 @@
 
 ---
 
+## M8 Gate A 完整 updater 远端 CI 证据（2026-09-09）
+
+- 完整 updater 的受测实现 head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、真实 CI checkout/merge-ref
+  `a9ff3d246c61a4aeede062596c32817a69834d7a` 已由 GitHub Actions
+  [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644) 最终
+  attempt 2 完成现行 9/9 required Job。第九个 `gatea-m7-m8-updater` 首 attempt 用时
+  4m02s，完整执行 14/14 阶段并通过。
+- updater 严格运行于 GitHub-hosted disposable Ubuntu/Linux root、本地 Unix Docker
+  daemon，未读取生产 Secret，也未使用 `/etc/pinkdoohub/gatea`、
+  `/srv/pinkdoohub/gatea`、持久卷或任何持久环境授权。source 固定为 M7 Runtime SHA
+  `73dca350505d43775fb1ff1158ccf6aabc221998`；M7 source Backup
+  `20260908t230214z` 及同 ID 独立 Restore、M8 target Backup `20260908t230329z` 及同 ID
+  独立 Restore 均 PASS。
+- Runtime 验收确认 221 个规范 HEX、现有 PNG 兼容回退，以及色板响应 gzip 从
+  `63445` bytes 降为 `10948` bytes、减少 `52497` bytes。安全 artifact 只有 20 个
+  allowlist 文件，上传前白名单和 Secret 扫描均通过；dump、图片 tar、配置、密码、Token
+  均不在上传集合。
+- 内部 cleanup 第一次 `compose-down` 遇到瞬态失败，编排器按有界策略第二次成功，并最终
+  证明容器、卷、网络、镜像、端口和任务工作目录零残留。Run attempt 1 的唯一整体失败是
+  `openapi-contract` 在安装工具链时触发 pip bundled truststore
+  `AttributeError: 'NoneType' object has no attribute 'get_unverified_chain'`；同一提交重跑
+  后通过，OpenAPI 导出、字节比较和类型检查没有漂移，不能把该瞬态安装错误记为 Schema
+  失败。
+- 此结果关闭了一次性 Linux/MySQL 8.0.46 完整 M7→M8 updater 与现行 9 Job 干净远端
+  证据缺口，但不改变发布权限或持久状态。持久 Gate A 仍以 2026-09-08 的 M7 Runtime
+  `73dca350...` / Backup `20260908t021224z` 为权威成功点；M8 尚未应用，下一步仍需重新
+  只读确认真实 M7、绑定目标 SHA/Image、创建当次 Backup/同 ID 独立 Restore、停写并取得
+  明确写授权。共享、预发布、生产数据库均未触碰，微信 upload/gray/release 也未授权，
+  当前继续 No-Go。
+
 ## Miniapp Joi 传递依赖安全修复（2026-09-09）
 
 - Taro `@tarojs/service@4.2.1` 唯一声明的 `joi` 传递依赖范围为 `^17.12.3`；在不改变

@@ -119,8 +119,11 @@ Redis 键不含明文 IP、账号或 Token。Redis 故障时身份敏感请求�
 持久执行推进：当前权威检查点为 M7，不再是 M2；M8 尚未应用。任何后续持久写入前仍
 必须重新只读查询 Gate A 的真实 Aerich 状态，并按当前
 [Go/No-Go Checklist](go_no_go_checklist.md) 与
-[Release Drill Runbook](release_drill_runbook.md) 关闭显式 M7→M8 候选的新干净 SHA、
-隔离 MySQL、Backup/Restore、停写和当次写授权门槛。不能调用只支持空库的
+[Release Drill Runbook](release_drill_runbook.md) 执行持久环境的 Backup/Restore、停写、
+目标 SHA/Image 和当次写授权门槛。head `62b1b15f...` / checkout `a9ff3d24...` 的
+Run 34288613644 attempt 2 已在无生产 Secret 和持久权限的 GitHub-hosted disposable
+Linux 上完成 9/9 required Jobs，其中完整 M7→M8 updater 为 14/14 stages。
+这只关闭候选的隔离演练缺口，不会将 M8 应用到持久 Gate A。不能调用只支持空库的
 `initial-migrate`，也不能用默认 M2 路径、旧 Record 或旧 Run 冒充当前 M7 起点证据。
 
 ## 9. 剩余 Gate B 验收
@@ -143,4 +146,7 @@ Redis 键不含明文 IP、账号或 Token。Redis 故障时身份敏感请求�
 - 微信构建：以 `TARO_APP_AUTH_MODE=wechat` 和保留 CI HTTPS Origin 编译，97 文件、主包 427,289 bytes、分包 178,092 bytes、总计 605,381 bytes；产物扫描无占位 Origin/source map/H5 marker/Secret marker，并明确为 `release_eligible=false`。
 - OpenAPI：从真实 FastAPI 应用重新导出为 50 paths / 124 component schemas，再生成只读 TypeScript 类型。
 
-这些是功能提交 `94325fa...` 对应的本地证据。当前分支头已由 Run 34129910349 取得远端干净 checkout 8/8，但这只补齐当前组合候选的仓库 CI；它们仍不是正式微信、备案域名或 Gate B 发布证据。
+这些是功能提交 `94325fa...` 对应的本地历史证据；Run 34129910349 的历史干净
+checkout 8/8 边界也按原样保留。当前仓库候选的最新证据是 Run 34288613644
+attempt 2 的 9/9，但其可销毁 updater 未使用生产 Secret 或持久授权；它仍不是正式
+Origin/TLS/RC、微信后台上传/灰度发布、iOS/Android 真机或 Gate B 发布证据。

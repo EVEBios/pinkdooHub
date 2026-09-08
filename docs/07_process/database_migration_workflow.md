@@ -585,8 +585,9 @@ python -m app.tasks.gatea_mard_publish \
 持久 Gate A 随后已经在 M6 阶段发布 221 色元数据和 221 张 PNG，并存在 Online 自选色
 商品/启用色。M7→M8 候选使用上述精确 no-op 分支，要求 M8 按 slot 回填 HEX 后 221 个
 目录项与 manifest 一致、既有 PNG 全部复用且数据库/图片零写入；不能从编排中拆出直接
-运行，也不能为通过 preview 临时修改商品状态。该分支已有本地自动化，仍须由新干净
-SHA 的远端 CI 和专用一次性 MySQL 场景复现后才能进入持久执行评审。
+运行，也不能为通过 preview 临时修改商品状态。该分支已由 head `62b1b15...`、真实
+CI checkout/merge-ref `a9ff3d2...` 的 Run 34288613644 在专用一次性 Linux/MySQL 完整
+updater 中复现；进入持久执行评审仍须取得目标环境当次只读盘点、Backup/Restore 和写授权。
 
 ---
 
@@ -631,14 +632,17 @@ SHA 和 Backup ID 紧邻重放 upgrade plan。该 replay 会验证 evidence 路�
 完整数据库摘要、图片 manifest、M7 内容摘要，并重新运行只读 MARD preview；只有
 `already_current=true` 才能调用 `app-up`。`app-up` 本身只验证 Record、target SHA/Image
 和合法迁移组合，不重读 live DB/图片/MARD，不能替代该 replay。本轮本地完整
-`tests/release` 为 `229 passed`；新入口已收口为 head `fa6fce05...`、merge-ref
-`b2f02ebc...`，并由 Run 34281512196 在干净 PR checkout 完成远端 8/8。该结果不执行
-完整 updater，也不授予 Gate A 写入。
+`tests/release` 为 `229 passed`；新入口的历史加固点已收口为 head `fa6fce05...`、
+merge-ref `b2f02ebc...`，并由 Run 34281512196 在干净 PR checkout 完成远端 8/8。
+完整 updater 的受测实现 head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、真实 CI checkout/merge-ref
+`a9ff3d246c61a4aeede062596c32817a69834d7a` 又由 Run 34288613644 最终 attempt 2 完成
+现行 9/9 required Job；其中 `gatea-m7-m8-updater` 首 attempt 用时 4m02s，14/14 阶段
+通过。该结果仍不授予 Gate A 写入。
 
 独立只读代码审查曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态
 fail-closed 矩阵后，复核无未解决 P0–P3。该结论现已绑定上述干净候选与远端 Run。
-执行前还必须完成同一候选的专用一次性 MySQL 完整 M7→M8 updater 复现，
-并取得当前 M7 只读事实、当次 Backup/Restore、明确停写/写入授权与目标镜像；
+一次性 MySQL 完整 M7→M8 updater 已复现；持久执行前仍必须取得当前 M7 只读事实、
+当次 Backup/Restore、明确停写/写入授权与目标镜像；
 执行后核验 M0–M8、221 个精确 HEX、既有色卡/商品库存/21 表内容摘要零漂移、gzip Runtime，
 并建立新的 M8 数据后 Backup/Restore/加密异机副本。不得手工补表/列、删除失败
 evidence、直接调用内部原语、临时改商品状态、盲目重跑或使用 `--fake`。真实 Origin/RC、
@@ -711,10 +715,10 @@ M8。
   7/8，修复后完整重跑；详见
   `docs/09_release/reports/m8_remote_ci_2026-09-08.md`。其后新增的 M7→M8/Online exact
   no-op 发布保护现已由 head `fa6fce05...` / Run 34281512196 在干净远端完成 8/8，详见
-  `docs/09_release/reports/m8_hardening_remote_ci_2026-09-09.md`。该 PASS 仍不代表完整
-  updater 已演练或 Gate A M8 已应用。
+  `docs/09_release/reports/m8_hardening_remote_ci_2026-09-09.md`。这是不可变的历史 8/8
+  加固证据；当前完整 updater 证据见下文，二者都不表示 Gate A M8 已应用。
 
-当前候选把“完整 updater 尚未演练”固化为独立 `gatea-m7-m8-updater` CI Job。它只允许
+当前候选把完整 updater 固化为独立 `gatea-m7-m8-updater` CI Job。它只允许
 GitHub-hosted disposable Ubuntu，使用冻结 M7 Runtime 和当前 checkout M8 镜像，真实
 建立 M7 业务/221 PNG，执行 source Backup 与同 ID 独立 Restore，再运行 M8
 plan/apply/停服 plan-replay、target app-up、221 HEX/gzip/PNG Runtime 核验，并追加
@@ -722,6 +726,18 @@ M8 数据后 Backup/Restore。任何资源预存、身份/链漂移、Restore/�
 扫描或精确 cleanup 失败都阻断；workflow 不读取生产 Secret，且上传白名单不含 dump、
 图片 tar、配置、密码或 Token。该 Job 即使通过也只关闭一次性 Linux 的编排风险，不能
 自动应用持久 Gate A，也不替代目标主机当次 Backup/Restore、Image ID 与写授权。
+
+2026-09-09，head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、真实 CI
+checkout/merge-ref `a9ff3d246c61a4aeede062596c32817a69834d7a` 已由
+Run 34288613644 最终 attempt 2 完成现行 9/9 required Job。updater 在 GitHub-hosted
+disposable Ubuntu/Linux root 和本地 Unix Docker daemon 上执行 14/14 阶段：source SHA
+为 `73dca350505d43775fb1ff1158ccf6aabc221998`，M7 source Backup/同 ID Restore
+`20260908t230214z`、M8 target Backup/同 ID Restore `20260908t230329z` 均 PASS；221 个
+HEX、gzip `63445→10948` bytes（减少 `52497`）及 PNG 回退通过。20 个 allowlist artifact
+文件通过 Secret 扫描；第一次 `compose-down` 瞬态失败，第二次清理成功且最终零残留。
+Run 首 attempt 的 `openapi-contract` 只在 pip truststore 安装阶段瞬态失败，相同提交重跑
+通过，不能解释为 Schema 漂移。该环境未使用生产 Secret 或持久授权，也未触碰 Gate A、
+共享、预发布或生产数据库；持久 Gate A 仍为 M7，M8 仍须按 §12.2 取得当次授权后执行。
 
 ---
 

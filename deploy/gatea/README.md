@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** 持久 Gate A 当前为 M7；M7→M8 加固候选远端 CI 8/8，完整 updater 隔离 MySQL、持久执行、DNS/HTTPS 和真机待完成
+> **Status:** 持久 Gate A 当前为 M7；M7→M8 完整 updater 已在一次性 Linux 远端 CI 验证，持久执行、DNS/HTTPS 和真机待完成
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
@@ -10,9 +10,11 @@ Nginx 可以加入 edge network。任何命令都不得把 3306、6379 或 8000 
 
 2026-09-08 的持久成功点是 M7 Runtime `73dca350...` 和数据后 Backup
 `20260908t021224z`；M8 尚未应用 Gate A。显式 `--source-version 7` 的 M7→M8、Online
-目录 exact no-op 和成功后停服 live replay 保护已收口为 head `fa6fce05...`，并由
-Run 34281512196 在干净 PR checkout 完成 8/8；完整 updater 隔离 MySQL 和持久现场仍未
-执行，本文与远端 CI 都不构成 Gate A 写入授权。
+目录 exact no-op、成功后停服 live replay 与完整 updater 已收口为 head
+`62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`，真实 CI checkout/merge-ref
+`a9ff3d246c61a4aeede062596c32817a69834d7a`，并由 Run 34288613644 最终 attempt 2 在
+干净 PR checkout 完成现行 9/9 required Job。本文与远端 disposable CI 都不构成 Gate A
+写入授权。
 
 ## 文件
 
@@ -36,7 +38,15 @@ M8 数据后 Backup/Restore，并在成功/失败的内部 `finally` 与 workflo
 tar、配置、Secret、密码和 Token 不上传，扫描失败时先清空候选上传目录再重建最小安全
 失败证据。
 
-这项演练只能证明当前仓库候选在一次性 MySQL 8.0.46/Linux 上走通过完整 updater；它不
+Run 34288613644 的 `gatea-m7-m8-updater` Job 已在 GitHub-hosted disposable Ubuntu/Linux
+root、本地 Unix Docker daemon 上走通 14/14 阶段：source SHA
+`73dca350505d43775fb1ff1158ccf6aabc221998`，M7 source Backup/同 ID Restore
+`20260908t230214z`、M8 target Backup/同 ID Restore `20260908t230329z` 均通过；Runtime
+核验 221 个 HEX、gzip `63445→10948` bytes（减少 `52497`）和 PNG 回退。上传 artifact
+只有 20 个白名单文件并通过 Secret 扫描；首次 `compose-down` 瞬态失败后第二次清理成功，
+最终零残留。Run 首 attempt 的 OpenAPI Job 只在安装阶段遇到 pip truststore 瞬态异常，
+相同提交重跑通过，不是 OpenAPI Schema 漂移。该演练只能证明当前仓库候选在一次性
+MySQL 8.0.46/Linux 上走通过完整 updater；它不
 复用或授权 `/etc/pinkdoohub/gatea`、`/srv/pinkdoohub/gatea`、真实 Gate A 卷、DNS、TLS
 或微信环境，也不能替代当次持久 Backup/Restore、目标 Image ID、RC 与真机验收。
 
@@ -114,9 +124,10 @@ sudo python -m scripts.release.gatea_operations \
 ```
 
 生命周期脚本支持空库首次部署，以及经批准的既有 M2→M8 升级。仓库候选已经提供
-显式 `gatea_upgrade --source-version 7` 的 M7→M8 入口；其干净 head `fa6fce05...` 已由
-Run 34281512196 完成远端 8/8，但尚未取得完整隔离 MySQL updater 证据或 Gate A 当次
-授权，因此当前只能 Review，不能在持久环境执行。所有已有写操作都会再次验证
+显式 `gatea_upgrade --source-version 7` 的 M7→M8 入口；其 head `62b1b15...` / merge-ref
+`a9ff3d2...` 已由 Run 34288613644 完成一次性远端完整 updater 与 9/9 required Job，但
+尚未取得 Gate A 当次只读状态、Backup/Restore 和写授权，因此当前只能 Review，不能在
+持久环境执行。所有已有写操作都会再次验证
 Root 配置/Secret、完整 SHA 镜像、镜像 revision、UID/GID、Entrypoint 和 CMD；TLS
 写操作仍被拒绝。既有库 upgrade apply 还会在停止 App/Nginx 前，以镜像默认 Entrypoint
 挂载并加载 Runtime Secret，执行一次不连接数据库的 production Settings 预检。迁移、
@@ -198,9 +209,9 @@ M0–M2 Aerich 链；当前 M7 必须显式提供 `--source-version 7`，否则�
 持久起点。执行前必须先在 source 配置下生成 24 小时内的新 Backup，并完成相同 Backup
 ID 的无端口独立 Restore；随后把受保护配置切换为已经构建和检查的目标 SHA 镜像。
 
-下面只展示当前 M7 路径的参数形状，用于 Review；干净 SHA/远端 CI 已由
-`fa6fce05...` / Run 34281512196 关闭，但在完整 updater 隔离 MySQL、当次
-Backup/Restore 和明确写授权关闭前，**不得在持久 Gate A 执行**。plan 默认只读：
+下面只展示当前 M7 路径的参数形状，用于 Review；干净 SHA、现行 9/9 required Job 与
+一次性完整 updater 已由 `62b1b15...` / `a9ff3d2...` / Run 34288613644 关闭，但在当次
+持久 Backup/Restore 和明确写授权关闭前，**不得在持久 Gate A 执行**。plan 默认只读：
 
 ```bash
 sudo python -m scripts.release.gatea_upgrade \
@@ -279,8 +290,9 @@ manifest 逐项相等、既有 221 张兼容 PNG 内容/权限不变且无需创
 通过本轮本地 `tests/release` `229 passed`，完整后端为
 `2317 passed, 33 skipped in 125.31s`。独立只读代码审查发现成功重放没有重新证明
 App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3。上述
-实现与复核现已绑定 head `fa6fce05...`、merge-ref `b2f02ebc...` 和 Run 34281512196 的
-远端 8/8；完整 updater 隔离 MySQL、持久执行和现场验收仍未完成。
+实现与复核的历史加固点绑定 head `fa6fce05...`、merge-ref `b2f02ebc...` 和
+Run 34281512196 的远端 8/8；当前完整 updater 证据进一步绑定 head `62b1b15...`、
+merge-ref `a9ff3d2...` 和 Run 34288613644 的 9/9。持久执行和现场验收仍未完成。
 
 上述一致性依赖受控维护窗口：App/Nginx 停止后，不得有直接 SQL、另一个迁移进程、容器
 外脚本或宿主机图片写入。数据库内容摘要、MySQL 事务锁与图片 manifest/原子文件替换是
@@ -453,9 +465,10 @@ sudo python -m scripts.release.gatea_resilience --apply
 3. 只读重新确认当前 Gate A 为精确 M7，并与 M7 upgrade/Backup/图片 Record 比较；任何
    不一致先停止。空库才可使用 `initial-migrate`，两条路径不得混用。
 4. M7→M8 加固候选在修复独立审查发现的 replay 停服复验缺口后，已复核为无未解决
-   P0–P3，并由 head `fa6fce05...` / Run 34281512196 完成干净远端 8/8；仍须先让同一
-   候选通过专用一次性 MySQL 完整 updater，再创建新的 MySQL/图片 Backup 并完成同 ID
-   独立 Restore。
+   P0–P3；历史 head `fa6fce05...` / Run 34281512196 完成干净远端 8/8，当前 head
+   `62b1b15...` / merge-ref `a9ff3d2...` 又由 Run 34288613644 完成专用一次性 MySQL
+   完整 updater 与现行 9/9 required Job。下一步是对持久目标重新只读盘点，再创建新的
+   MySQL/图片 Backup 并完成同 ID 独立 Restore。
 5. 取得明确写授权后，只通过该编排应用 M8 并核验 Aerich M0–M8、221 个精确 HEX、
    MARD/PNG 与 `m7-preserved-business-v1` 零漂移；成功后保持停写，以相同参数重放
    `gatea_upgrade` plan，确认 live DB、图片、M7 内容摘要和 MARD preview 全部匹配，再

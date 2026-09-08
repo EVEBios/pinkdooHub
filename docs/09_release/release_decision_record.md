@@ -104,6 +104,9 @@ PR checkout 完成 8/8；最终干净 SHA/远端 CI 已关闭，完整 updater �
 身份、Job 和 artifact 见
 [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。
 
+上述“完整 updater 隔离 MySQL 仍未执行”是该检查点当时的边界；该一次性证据缺口现已由
+§0.5 的 Run 34288613644 关闭，但不改变持久 Gate A 仍为 M7 的结论。
+
 2026-09-09 的本地 2 核/4GiB 容器包络/共享 5Mbps 探索轮已经完成 12/12 个 A/B/C/D
 Profile：gzip 色板、认证浏览、兼容 PNG 冷/热页和 150 个真实本地写旅程在 5/10 VU
 均通过，最终业务对账、日志/statement 与资源清理也通过；但 10 VU 持续请求未压缩的
@@ -117,6 +120,39 @@ Docker 证据也不替代干净 SHA candidate-pre、独立 Linux 主机、TLS/�
 手工改表、临时改变商品状态或使用 `--fake`。同样不授权 Runtime 切换、DNS、微信后台、
 体验版上传、分发、提审或公开发布。上述保护依赖 App/Nginx 停止且没有直接 SQL、其他
 迁移或宿主图片旁路写入，不构成跨数据库/文件系统绝对原子事务。Gate A 继续为
+**No-Go / Not Authorized**。
+
+### 0.5 M7→M8 完整更新器一次性检查点（2026-09-09）
+
+候选 head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、实际 PR checkout
+`a9ff3d246c61a4aeede062596c32817a69834d7a` 的
+[Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644)
+已将 `gatea-m7-m8-updater` 作为第 9 个 CI Job 在 GitHub-hosted disposable
+Linux/Unix-socket Docker 中完整执行。Source 为冻结 M7
+`73dca350505d43775fb1ff1158ccf6aabc221998`，不是手工伪造的 Schema 或 Record。
+
+演练 14/14 阶段通过：建立 M7 代表数据/221 纯色 PNG/Online 三色商品，
+完成 M7 Backup `20260908t230214z` 与同 ID 独立 Restore，再执行
+M7→M8 plan/apply/停服 replay/app-up。升级成功点的 21 表内容摘要和
+225 图片 manifest 与 source 一致；MARD 在已有 Online 引用下为 221 项
+exact no-op。Runtime 又验证 221 个规范 HEX、identity JSON 63,445 bytes
+与 gzip 10,948 bytes（减少 52,497 bytes）、正确 `Vary`、小响应不压缩和
+PNG 兼容回退，最后完成 M8 Backup `20260908t230329z` 与同 ID 独立
+Restore。上传的 20 个演练文件通过白名单和 Secret 扫描，有界清理第 2 次
+成功并确认容器、网络、卷、镜像、端口和 workspace 全部零残留。
+
+Run attempt 1 的其余 8 个 Job 通过，`openapi-contract` 在契约命令执行前
+遭遇 `pip` TLS/truststore 一次性异常；同一 clean checkout 原样重跑后 51 秒通过，
+Run 最终为 9/9 Success。这是依赖安装失败，不是 OpenAPI Schema 漂移。
+完整证据见
+[Gate A M7→M8 完整更新器远程 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
+
+该检查点关闭了一次性完整 updater 复现缺口，不改变 §0.3 的持久环境事实。
+当次运行明确记录 `persistent_gatea_authorized=false` 和
+`production_secrets_used=false`；持久 Gate A 仍为 M7，仍须冻结精确目标、当次
+只读预检、新 Backup/Restore、source/target SHA 和 Image ID、停写窗口与明确
+写授权。真实 HTTPS Origin、微信合法域名、`release_eligible=true` RC、上传/
+灰度授权与 iOS/Android 真机也仍未完成，故 Gate A 继续为
 **No-Go / Not Authorized**。
 
 ## 1. 决策

@@ -42,7 +42,9 @@ npm run dev:weapp      # 开发构建（watch，加载 .env.development）
 0.0.0.0 与 `[::1]`。`.env.production` 当前是不可发布的占位域名，部署前必须替换。
 Gate A 微信上传关闭 source map；9.2.3 检查器分别校验干净生成的 `dist/weapp`
 和项目根 `project.config.json`，并把上传配置的 SHA-256 写入 manifest。远端 CI
-和真实 RC 仍须分别重跑并保留证据。
+已在 head `62b1b15f...` / checkout `a9ff3d24...` 的 Run 34288613644 attempt 2 作为
+当前 9 个 required Jobs 之一通过；真实 Origin/TLS/`release_eligible=true` RC 仍须
+独立重建并保留证据。
 
 `build:weapp:check` 要求显式提供 `WEAPP_EXPECTED_ORIGIN` 和
 `WEAPP_RELEASE_ELIGIBLE=0|1`。GitHub Actions 基础 Job 固定使用保留的
@@ -125,6 +127,11 @@ Product 列表接口无需登录。若本地数据库没有完整且已上架的
 
 自选颜色色块以 API 的规范大写 `swatch_hex` 为首选事实，公共详情、购物车和代客下单通过共享 `BeadColorSwatch` 使用 `View.style.backgroundColor` 直接绘制，不为纯数字色块发起图片请求。迁移期若 HEX 缺失，组件才读取可选 `swatch_image_url`；图片失败或两者都缺失时显示占位。`swatch_image_url` 不得回退到商品封面，它只保留给既有兼容 PNG 与未来实拍校色 WebP。公开 API 正式契约要求 sale-ready 颜色提供非空 HEX，客户端对 null 的容忍只用于旧服务/本地缓存迁移，不得放宽管理端一致性校验。
 
+Run 34288613644 的可销毁完整 updater 已在 M8 Runtime 精确验证 221 个 HEX、
+同一色板的 gzip `63445 → 10948` bytes 和既有 PNG 兼容回退。这是无生产 Secret/
+持久授权的 GitHub-hosted disposable Linux 证据；持久 Gate A 仍为 M7，真实
+Origin/TLS/RC、iOS/Android 真机及微信上传、灰度和发布尚未授权。
+
 ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `python -m app.tasks.admin_product_functional_seed --operator-username <ADMIN_USERNAME> --apply --confirm-local-only` 提供；该脚本使用独立 `[LOCAL-ADMIN-FE]` 命名空间、强制执行本地环境保护，并通过正式 Product Service 写入，不影响既有 Online 样本。
 
 ## 目录约定（随阶段逐步落地）
@@ -162,7 +169,8 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `python -m
   `overrides`；精确版本继续只由 `package-lock.json` 冻结。
 - 官方 registry 的 production audit 仍有既有 Taro 4.2.1 上游链 10 个受影响包、
   5 个叶子公告（4 moderate、1 high、5 critical），主要涉及 H5 的 esbuild、
-  lodash-es 和 swiper；Joi 修复不改变这组有期限策略。`audit fix --force` 会破坏性
+  lodash-es 和 swiper；该 `R-007` 例外集合已批准至 2026-11-30。Joi Low 已升级
+  移除且不进入该例外，因此不改变 10 包/5 叶子公告的精确策略。`audit fix --force` 会破坏性
   降级到 Taro 3.x，因此禁止执行；正式发布前必须重新审计并跟踪上游修复。
 
 ## 本阶段知识点

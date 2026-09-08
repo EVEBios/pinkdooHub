@@ -1,8 +1,8 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；M8 M7→M8/Online no-op hardening candidate remote gate passed (8/8)，full updater rehearsal remains pending
+> **Status:** Phase 9.2 historical baseline complete；current M8 candidate passed all 9 required Jobs, including the disposable full M7→M8 updater rehearsal；persistent Gate A remains M7
 > **Last Updated:** 2026-09-09
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196)）
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
@@ -16,7 +16,9 @@ Reservation、颜色 Kit 与 M7 后，head `4d6430c...` 的 Run 34129910349 已�
 8/8；包含后续 Gate A Operations 和 loopback 端口快速复用修复的 M7 持久检查点 head
 `353455bb...` 又由 Run 34178908663 完成 8/8。M8 基线 head `4e745848...` 由
 Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布保护已由 head
-`fa6fce05...` 的 Run 34281512196 完成 8/8。历史结论只关闭当时 Phase 9.2 的 CI 与
+`fa6fce05...` 的 Run 34281512196 完成 8/8。这些历史 8/8 证据继续保留；当前 head
+`62b1b15f...` / checkout `a9ff3d24...` 的 Run 34288613644 attempt 2 又把新增完整
+updater 在内的 9 个 required Jobs 全部关闭。历史结论只关闭当时 Phase 9.2 的 CI 与
 可重复构建范围，不替代 9.3 的生产相似演练、9.4 的微信真机 RC 或后续模块的重新留证。
 
 ## 0. Phase 9.2.6 远端证据
@@ -113,7 +115,8 @@ Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布�
   精确预检、成功 Record 的 live replay verification，以及已有 Online 引用下 publisher
   的事务内 exact no-op；本轮完整 `tests/release` 为 `229 passed`，MARD 一次性 MySQL
   并发/锁序为 `3 passed`。这些变更晚于 `4e745848...`，不能复用本节 PASS；其干净
-  SHA/远端重跑结果见 §0.5，专用一次性 MySQL 完整 M7→M8 updater 仍为独立门槛。
+  SHA/远端重跑结果见 §0.5；当时仍独立的一次性完整 M7→M8 updater 门槛
+  已由后续 §0.6 关闭。
 
 ### 0.5 M8 发布加固候选（2026-09-09）
 
@@ -127,9 +130,34 @@ Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布�
   及 fail-closed 容量工具，关闭了最终干净 SHA/新远端 CI 缺口。完整身份、Job 时长和
   artifact 清单见
   [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。
-- workflow 的 `backend-mysql-release` 不执行 `deploy/gatea` 完整生命周期；专用一次性
-  MySQL 完整 updater、Gate A 持久 M8、candidate-pre 三轮、`release_eligible=true` RC
-  与真机仍为独立阻断项，CI 不授予任何写入或发布权限。
+- 在该 8/8 检查点，workflow 的 `backend-mysql-release` 不执行 `deploy/gatea`
+  完整生命周期，因此当时的一次性完整 updater 仍为独立阻断项；该项已由
+  下方 §0.6 的新 Job 关闭。Gate A 持久 M8、candidate-pre 三轮、
+  `release_eligible=true` RC 与真机仍为独立阻断项，CI 不授予任何写入或发布权限。
+
+### 0.6 M8 完整 updater 隔离 CI（2026-09-09）
+
+- PR head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、真实 GitHub Actions
+  checkout/merge-ref `a9ff3d246c61a4aeede062596c32817a69834d7a` 由
+  [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644) 验证。
+  最终 attempt 2 为 9/9 Success，所有当前 required Jobs 都是阻断项。
+- attempt 1 的唯一失败是 `openapi-contract` 在依赖安装阶段遇到 pip
+  truststore TLS 瞬态错误；OpenAPI 契约命令尚未运行，因此不记为契约失败。对该
+  failed Job 的 rerun 用时 51 秒并通过，形成最终 attempt 2。
+- `gatea-m7-m8-updater` 在 GitHub-hosted disposable Linux 上完成 14/14 stages，
+  未获取生产 Secret，也没有持久环境读写授权。source M7 Backup 与同 ID
+  独立 Restore 为 `20260908t230214z`；target M8 数据后 Backup 与同 ID 独立
+  Restore 为 `20260908t230329z`。
+- Runtime 精确验证 221 个规范 HEX，同一 221 色响应的 identity/gzip 大小为
+  `63445 → 10948` bytes，同时验证 PNG 兼容回退。最终上传边界为 20 文件
+  allowlist/Secret scan；`run` 清理后，workflow 第二次幂等 cleanup 再次通过并确认
+  container/volume/network/image/port/workspace 零残留。
+- 这个 PASS 关闭的是仓库候选的完整 updater 可执行性和隔离恢复证据；持久
+  Gate A 权威检查点仍为 M7，M8 尚未应用。真实 Origin/TLS/RC、iOS/Android
+  真机、微信上传、灰度和发布授权仍是独立阻断项。
+
+完整身份、Job、阶段、Backup/Restore、artifact 和 cleanup 数值见
+[Gate A M7→M8 完整更新器远端 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
 
 ## 1. 全局规则
 
@@ -143,6 +171,9 @@ Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布�
 - CI 成功不自动上传微信、提审、发布或迁移持久数据库。
 
 ## 2. Job 矩阵
+
+当前 workflow 共有 9 个 required Jobs；历史报告中的 8/8 是当时尚未加入
+`gatea-m7-m8-updater` 时的完整集合，应保留其原有证据边界。
 
 | Job | 服务 | 关键命令/动作 | 阻断规则 | Artifact/证据 | 负责人 |
 |-----|------|---------------|----------|---------------|--------|
@@ -254,9 +285,13 @@ Backup/独立 Restore → M8 plan/apply → App/Nginx 保持停止的 plan repla
 和 Token 均不得进入 artifact。扫描异常会先失效 marker 并清空候选上传内容，只重建安全
 状态/清理/失败摘要后才允许上传。
 
-该 Job 通过只关闭“仓库候选尚未走过完整 updater”的隔离环境缺口，不构成持久 Gate A
-写入授权，也不替代真实候选 Image ID、当次持久 Backup/Restore、真实 Origin/TLS、
-`release_eligible=true` RC 或 iOS/Android 真机。
+Run 34288613644 attempt 2 已将这一顺序在精确 checkout
+`a9ff3d246c61a4aeede062596c32817a69834d7a` 上真实执行并完成 14/14 stages；
+两组 Backup/Restore ID、221 HEX、`63445 → 10948` bytes gzip、PNG 回退、20 文件
+安全扫描和二次零残留 cleanup 见 §0.6。该 Job 的通过只关闭“仓库候选尚未走过完整
+updater”的隔离环境缺口，不构成持久 Gate A 写入授权，也不替代真实候选
+Image ID、当次持久 Backup/Restore、真实 Origin/TLS、`release_eligible=true` RC
+或 iOS/Android 真机。
 
 ### 3.3 Frontend Quality
 
@@ -330,7 +365,14 @@ reachability。结论不是整批 H5-only：
 - `@tarojs/components`/`swiper` 的 npm swiper 实现没有被业务源码使用，当前微信 artifact 使用原生 swiper 映射而非该 JS 运行库；新增 Swiper 使用会触发重新评估；
 - Taro 4.2.1 仍是官方 registry 当前版本，npm 建议的“修复”是破坏性降级 Taro 3.x，因此未执行 `audit fix --force` 或未经上游验证的 override。
 
-全部 npm 例外由 Yijie Shen 分别以安全负责人和项目负责人记录，2026-11-30 自动到期。检查器要求精确 10 包、5 公告和 4 moderate/1 high/5 critical；新增、消失、版本/严重性/路径变化、registry 错误或例外到期均失败。
+风险 `R-007` 的现状保持不变：全部 npm 例外由 Yijie Shen 分别以安全负责人和
+项目负责人记录，精确覆盖既有 10 个受影响包/5 个叶子公告，并于 2026-11-30
+自动到期。检查器要求精确 10 包、5 公告和 4 moderate/1 high/5 critical；新增、
+消失、版本/严重性/路径变化、registry 错误或例外到期均失败。
+
+2026-09-09 出现的 Joi Low 公告已通过在 `@tarojs/service@4.2.1` 允许范围内将
+传递依赖升级到 `joi@17.13.7` 移除；Joi 不进入 `R-007` 例外，也不扩大上述
+10 包/5 叶子公告的批准集合。
 
 Python 选用 Apache-2.0 的 `pip-audit==2.10.1`，仅安装在隔离 CI venv。首次扫描的 4 包/9 条报告中，asyncmy、cryptography、python-jose 均存在可用安全版本，已分别升级到 0.2.14、50.0.1、3.5.0；复扫只剩 `ecdsa==0.19.2` 的 `GHSA-wj6h-64fc-37mp`。上游无 patched release，且项目 production 固定 HS256，不生成 ECDSA 私钥或执行 ECDSA/ECDH，因此在 `python-policy.json` 记录到 2026-11-30 的不可达例外。任何 JWT 算法、依赖、公告或到期变化都会使 Job 失败。
 
@@ -341,7 +383,7 @@ Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装�
 
 | 事件 | 必须 Job | Secret 权限 | 外部动作 |
 |------|----------|-------------|----------|
-| 普通 PR | 全部非发布 Job；MySQL Job | 无生产 Secret | 无 |
+| 普通 PR | 全部 9 个 required Jobs | 无生产 Secret | 无 |
 | Fork PR | 同上；使用无 Secret 的隔离服务 | 无 | 无 |
 | 集成分支 | 全部 Job | 仅测试环境 Secret | 生成 artifact，不上传微信 |
 | Gate A RC | 全部 Job重跑 | 受保护测试环境 Secret | 经批准后可人工上传体验版 |
@@ -350,7 +392,8 @@ Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装�
 
 ## 6. 历史 9.2 完成定义与当前候选重开项
 
-以下 `[x]` 仅表示 Phase 9.2 的 M0–M2 历史基线完成；不表示当前 M8 候选已经通过：
+以下第一组 `[x]` 仅表示 Phase 9.2 的 M0–M2 历史基线完成；当前 M8
+候选的 9-Job 结论必须另外由本节后半部和 §0.6 的 Run 34288613644 证据支持：
 
 - [x] CI 配置已提交并经过至少一个 PR 真实运行；
 - [x] 所有 Job 从干净 checkout 通过；
@@ -378,5 +421,12 @@ M8 基线与后续候选结果：
   `229 passed`，本轮完整后端为 `2317 passed, 33 skipped in 125.31s`；
 - [x] 后续候选已绑定 head `fa6fce05...` / merge-ref `b2f02ebc...`，并由 Run 34281512196
   完整远端 8/8 与 7 组 artifact 复现；
-- [ ] 同一候选仍须由专用一次性 MySQL 完整执行 M7→M8 updater 并保存独立 evidence；
-- [ ] Gate A M7→M8、真实 RC、微信后台和真机继续由后续 Gate 单独授权，CI 不自动执行。
+- [x] 完整 updater 的受测实现 head `62b1b15f...` / checkout `a9ff3d24...` 已由 Run 34288613644 attempt 2
+  完成当前 9/9 required Jobs；新增一次性 M7→M8 updater 为 14/14 stages，两组
+  Backup/Restore、Runtime 和二次 cleanup 证据均完整；
+- [x] attempt 1 的 `openapi-contract` 仅在安装依赖时遇到 pip truststore TLS 瞬态
+  错误，contract 命令未运行；failed-job rerun 在 51 秒内通过并形成最终 attempt 2；
+- [ ] 持久 Gate A 仍需当次授权、新 Backup/独立 Restore、停写窗口、目标 Image
+  与 Runtime 验收后才能应用 M8；
+- [ ] Gate A M7→M8、真实 Origin/TLS/RC、iOS/Android 真机、微信上传灰度发布继续由
+  后续 Gate 单独授权，CI 不自动执行。

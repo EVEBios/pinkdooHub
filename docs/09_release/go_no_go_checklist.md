@@ -1,6 +1,6 @@
 # 微信发布 Go/No-Go Checklist
 
-> **Status:** No-Go / Not Authorized — M7 持久检查点已关闭，M7→M8 加固候选 `fa6fce05...` 远端 CI 8/8；完整 updater 隔离 MySQL、本地 5Mbps 容量失败处置、持久升级、真实 HTTPS RC 与真机仍阻断
+> **Status:** No-Go / Not Authorized — GitHub-hosted disposable M7→M8 完整 updater 与最终 9/9 CI 已通过；持久 Gate A 仍为 M7，5Mbps 容量失败处置、持久升级、真实 HTTPS RC 与真机仍阻断
 > **Last Updated:** 2026-09-09
 > **Current Scope:** 微信小程序内部测试版（Gate A）
 
@@ -34,8 +34,20 @@ workflow 覆盖并保存证据，详见
 [Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净
 PR checkout 完成 8/8；详见
 [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。M8 尚未应用
-Gate A；下方除 HTTPS/微信平台/真机/签署外，还保留完整 updater、持久 M7→M8、
+Gate A；下方除 HTTPS/微信平台/真机/签署外，还保留持久 M7→M8、
 HEX/gzip、M8 数据后恢复等未勾选项。
+
+2026-09-09，仓库新增第 9 个必需 CI Job，在 GitHub-hosted disposable Linux
+上从冻结 M7 source 完整执行代表数据、221 PNG、M7 Backup/同 ID Restore、
+M7→M8 plan/apply/replay、M8 Runtime 的 221 HEX/gzip/PNG 和 M8 Backup/同 ID Restore。
+Head `62b1b15...` / merge-ref `a9ff3d2...` 的
+[Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644) 最终 9/9
+Success；首次 OpenAPI Job 在还未执行契约检查时遭遇一次性 `pip`
+TLS/truststore 异常，同一 clean checkout 原样重跑后 51 秒通过。Gate A Job
+14/14 阶段、artifact 脱敏扫描和零残留均通过，详见
+[Gate A M7→M8 完整更新器远程 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
+这关闭了一次性完整 updater 门槛，不关闭持久 Gate A 的当次只读预检、
+新 Backup/Restore、写授权、Runtime 切换和数据后恢复。
 
 ## 1. Gate A：内部微信测试版
 
@@ -53,6 +65,7 @@ HEX/gzip、M8 数据后恢复等未勾选项。
 - [x] M8 基线已绑定 PR head `4e745848...`、merge-ref `3ddda81...` 和 Run 34242753255；该项只关闭该 SHA 的仓库 CI；
 - [x] M8 Run 的后端、前端与非发布 `weapp` artifact 来自同一 merge-ref，7 组大小与 GitHub digest 已记录；
 - [x] M7→M8/Online no-op 保护已绑定干净 head `fa6fce05...`、merge-ref `b2f02ebc...` 与 Run 34281512196；后端、前端、OpenAPI、非发布 `weapp`、依赖审计和仓库卫生均来自同一完整 8/8；
+- [x] 完整 updater 已绑定 head `62b1b15...`、实际 checkout `a9ff3d2...` 和 Run 34288613644；最终 9/9，并单独保留 OpenAPI 依赖安装瞬时失败/重跑边界；
 - [ ] OpenAPI 摘要、运行时版本、微信开发者工具/上传工具版本已记录；
 - [ ] 体验版名称、界面和测试说明明确标识“内部测试”，无公开承诺。
 - [x] 备案前预 RC 已绑定 `c4d27a8...`、Node 24.13.0/npm 11.6.2、开发者工具 Stable 2.02.2608060、不可发布 `.test` Origin、97 文件/603,624 bytes、0 source map 和 manifest `aeb81ef...`；该项不替代上面的真实 RC；
@@ -78,7 +91,7 @@ HEX/gzip、M8 数据后恢复等未勾选项。
 - [x] 2026-09-09 本地 2 核/4GiB 容器包络/共享 5Mbps 探索轮已完整采集 A/B/C/D、5/10 VU 共 12/12 个 Profile，150 个写旅程、最终对账、日志/statement 和资源清理均有独立报告；
 - [ ] 上述探索轮的全部冻结容量门槛通过，或已对 10 VU 持续未压缩色板的 P95/428 drops 形成有时限、可监控且由风险接受人签署的处置；其余 11 项通过不能覆盖整轮 `FAIL`；
 - [x] 上述后续候选已由新干净 head `fa6fce05...` / merge-ref `b2f02ebc...` 的 Run 34281512196 完整远端 8/8 复现并保存 7 组 artifact；
-- [ ] 同一干净 SHA 在专用一次性 MySQL 完整执行 M7→M8 updater 场景并保存 artifact；不得用仅 publisher 的 `3 passed` 冒充；
+- [x] 同一干净候选在 GitHub-hosted disposable Linux/MySQL 完整执行 M7→M8 updater；Run 34288613644 的 14/14 阶段、M7/M8 双 Backup/Restore、Runtime 和脱敏 artifact 已保存；
 - [x] Node/npm/Python/Taro 支持版本由仓库和 CI 固定。
 
 ### 1.3 环境、HTTPS 与 Secret
@@ -114,11 +127,12 @@ HEX/gzip、M8 数据后恢复等未勾选项。
 - [x] M8 原语前的停写 source preflight 已实现：`swatch_hex` 列必须为 0，221 条 M7 slot/code/name/URL/sort/active 必须逐项等于冻结 manifest，221 张预期 PNG 必须为普通非软链接文件、SHA-256 精确且权限 `0644`；任一失败不得调用迁移任务；
 - [x] 独立只读代码审查发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3，且已绑定 `fa6fce05...` / Run 34281512196；
 - [x] M7→M8 加固已形成最终干净 head `fa6fce05...`，并完成该 SHA 的完整远端 CI；
-- [ ] 同一 SHA 在专用一次性 MySQL 完整执行 updater 场景并保存独立 evidence；不得伪造 source Record、拆跑内部迁移原语或把 publisher/既有 workflow MySQL 专项证据当成完整入口证据；
-- [ ] M8 后 `swatch_hex` 列形状、221 槽逐项 HEX/唯一性通过，且颜色 code/name/URL/active/sort、商品颜色库存、订单快照和 `m7-preserved-business-v1` 保护的其他业务内容不漂移；
+- [x] 候选在 GitHub-hosted disposable Linux/MySQL 完整执行 updater 并保存独立 evidence；source 为真实 M7 Runtime/代表数据而非伪造 Record，且未拆跑内部原语；
+- [x] 一次性完整 updater 的 M8 列形状、221 槽逐项 HEX/唯一性、`m7-preserved-business-v1` 内容零迁移漂移和 225 图片 manifest 通过；
+- [ ] 持久 Gate A 的 M8 `swatch_hex` 列形状、221 槽逐项 HEX/唯一性通过，且颜色 code/name/URL/active/sort、商品颜色库存、订单快照和 `m7-preserved-business-v1` 保护的其他业务内容不漂移；
 - [x] publisher 候选已允许已有 Online 自选色商品在事务锁定后仍为精确 no-op 时通过，并在任何数据库/图片漂移时写前拒绝；本地自动化覆盖 221 张全部复用、零数据库/图片写入；
-- [ ] 在受控 M7→M8 编排内取得 Gate A 的精确 no-op 证据；不得脱离编排直接运行 publisher、临时改商品状态或把 PNG 转 WebP；
-- [ ] 成功升级后继续保持 App/Nginx 停止，以完全相同的 source version/SHA/Backup ID 紧邻重放 upgrade plan；只有 live DB、完整图片 manifest、21 表内容摘要和只读 MARD preview 均匹配且输出 `already_current=true` 才可 `app-up`。不得误认为 `app-up` 自身会执行这些 live 检查；
+- [ ] 在持久 Gate A 受控 M7→M8 编排内取得精确 no-op 证据；不得脱离编排直接运行 publisher、临时改商品状态或把 PNG 转 WebP；
+- [ ] 持久 Gate A 成功升级后继续保持 App/Nginx 停止，以完全相同的 source version/SHA/Backup ID 紧邻重放 upgrade plan；只有 live DB、完整图片 manifest、21 表内容摘要和只读 MARD preview 均匹配且输出 `already_current=true` 才可 `app-up`。不得误认为 `app-up` 自身会执行这些 live 检查；
 - [ ] 整个 Backup→升级→replay→`app-up` 维护窗口已证明没有直接 SQL、其他迁移进程或宿主图片旁路写入；不能把 DB 锁/内容摘要/图片原子替换描述为跨 DB/文件系统绝对原子事务；
 - [ ] M8 数据后创建新的 Backup/独立 Restore/加密异机副本，并把 Runtime、Operations、upgrade、backup 与 restore Record 精确绑定。
 
@@ -132,6 +146,7 @@ HEX/gzip、M8 数据后恢复等未勾选项。
 - [x] 日志可按精确 Compose project 查询；24 小时请求/4xx/5xx/时延聚合、MySQL/Redis 摘流量与恢复、App 重启和敏感扫描已真实通过；
 - [x] 初始测试人员、allowlist、反馈入口、14 日窗口/停用规则、数据清理和事故联系人已冻结。
 - [x] 当前 M7 镜像在升级后 Gate A 重新验证 liveness/readiness、MySQL/Redis 故障恢复、图片持久化、日志脱敏与 App 重启，并生成候选 SHA 级不可覆盖 Record；
+- [x] 一次性 M8 Runtime 已实测 221 HEX、identity 63,445 bytes 与 gzip 10,948 bytes（减少 52,497 bytes）、正确 `Vary`、小响应不压缩和 PNG 不重复压缩；
 - [ ] M8 Runtime 在 Gate A 启动后重新验证 liveness/readiness、数据库/图片无漂移、日志脱敏、故障恢复与重启；
 - [ ] Gate A 实测协商 gzip：大于等于 1 KiB 的文本只压缩一次且可解码/含正确 `Vary`，小响应和 PNG/JPEG/WebP 不压缩；
 
