@@ -575,6 +575,93 @@ def test_run_failure_stops_pipeline_but_still_cleans_and_records_stage(
     }
 
 
+def test_run_retries_a_transient_cleanup_result_before_failing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _state(tmp_path)
+    cleanup_results = iter(
+        (
+            {
+                "schema_version": 1,
+                "record_type": "gatea-m7-m8-drill-cleanup",
+                "passed": False,
+                "errors": ["main-compose-down"],
+                "residual": {"main_networks": ["pinkdoohub-gatea-backend"]},
+            },
+            {
+                "schema_version": 1,
+                "record_type": "gatea-m7-m8-drill-cleanup",
+                "passed": True,
+                "errors": [],
+                "residual": {"main_networks": []},
+            },
+        )
+    )
+    sleep_calls: list[int] = []
+
+    class FakeDrill:
+        def __init__(self, value: drill.DrillState) -> None:
+            self.state = value
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return lambda: {"method": name}
+
+        def _stage(self, name: str, method):  # type: ignore[no-untyped-def]
+            method()
+            self.state.stages.append({"name": name, "passed": True})
+
+    monkeypatch.setattr(
+        drill,
+        "_initial_state",
+        lambda artifact_dir, environment, runner: (state, {}, {}),
+    )
+    monkeypatch.setattr(drill, "prepare_workspace", lambda value: None)
+    monkeypatch.setattr(
+        drill,
+        "cleanup_owned_state",
+        lambda value: next(cleanup_results),
+    )
+    monkeypatch.setattr(drill.time, "sleep", sleep_calls.append)
+    monkeypatch.setattr(
+        drill,
+        "scan_artifacts",
+        lambda path, secret_values=(): {
+            "secret_scan_passed": True,
+            "allowlist_passed": True,
+            "file_count": 0,
+        },
+    )
+
+    result = drill.run_command(
+        state.paths.artifact_dir,
+        environment=state.environment,
+        runner=state.command_runner,
+        drill_factory=FakeDrill,
+    )
+
+    assert result == 0
+    assert sleep_calls == [1]
+    summary = json.loads(
+        (state.paths.artifact_dir / "summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["cleanup_passed"] is True
+    assert summary["cleanup_attempts"] == [
+        {
+            "attempt": 1,
+            "errors": ["main-compose-down"],
+            "passed": False,
+            "residual": {"main_networks": ["pinkdoohub-gatea-backend"]},
+        },
+        {
+            "attempt": 2,
+            "errors": [],
+            "passed": True,
+            "residual": {"main_networks": []},
+        },
+    ]
+
+
 def test_called_process_failure_evidence_redacts_ephemeral_secrets() -> None:
     secret = "ephemeral-value-that-must-not-leak"
     error = subprocess.CalledProcessError(

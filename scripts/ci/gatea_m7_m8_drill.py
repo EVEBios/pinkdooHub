@@ -2193,6 +2193,7 @@ def run_command(
     git_evidence: dict[str, Any] = {}
     operation_error: BaseException | None = None
     cleanup_payload: dict[str, Any] | None = None
+    cleanup_attempts: list[dict[str, Any]] = []
     scan_payload: dict[str, Any] | None = None
     failure_evidence: dict[str, Any] | None = None
     started_at = _utc_now()
@@ -2248,7 +2249,20 @@ def run_command(
             )
             finalization_stage = "cleanup"
             try:
-                cleanup_payload = cleanup_owned_state(state)
+                for attempt in range(1, 3):
+                    cleanup_payload = cleanup_owned_state(state)
+                    cleanup_attempts.append(
+                        {
+                            "attempt": attempt,
+                            "errors": cleanup_payload.get("errors", []),
+                            "passed": cleanup_payload.get("passed") is True,
+                            "residual": cleanup_payload.get("residual", {}),
+                        }
+                    )
+                    if cleanup_payload.get("passed") is True:
+                        break
+                    if attempt == 1:
+                        time.sleep(1)
                 finalization_stage = "cleanup-report-write"
                 _write_json(
                     state.paths.artifact_dir / "cleanup-report.json",
@@ -2278,6 +2292,7 @@ def run_command(
                     "source_backup_id": state.source_backup_id,
                     "target_backup_id": state.target_backup_id,
                     "stages": state.stages,
+                    "cleanup_attempts": cleanup_attempts,
                     "cleanup_passed": cleanup_payload.get("passed") is True,
                     "production_secrets_used": False,
                     "persistent_gatea_authorized": False,
