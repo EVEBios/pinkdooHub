@@ -97,9 +97,12 @@ preview/apply/replay 必须为精确 221 项 no-op；publisher 只允许已有 O
 参数完成 live replay verification；`app-up` 自身只验证 Record/候选身份，不复核 live
 DB、图片或 MARD。本轮本地 `tests/release` 为 `229 passed`，完整后端为
 `2317 passed, 33 skipped in 125.31s`。独立只读代码审查曾发现成功重放没有重新证明
-App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3，但该结论
-只绑定本地 diff；该新增路径不在 Run 34242753255 中，
-仍须形成最终干净 SHA，并绑定该 SHA 的远端 CI 与完整 updater 隔离 MySQL 复现。
+App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3。该新增
+路径现已收口为 head `fa6fce05...`、merge-ref `b2f02ebc...`，并由
+[Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净
+PR checkout 完成 8/8；最终干净 SHA/远端 CI 已关闭，完整 updater 隔离 MySQL 仍未执行。
+身份、Job 和 artifact 见
+[M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。
 
 2026-09-09 的本地 2 核/4GiB 容器包络/共享 5Mbps 探索轮已经完成 12/12 个 A/B/C/D
 Profile：gzip 色板、认证浏览、兼容 PNG 冷/热页和 150 个真实本地写旅程在 5/10 VU

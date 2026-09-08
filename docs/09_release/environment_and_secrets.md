@@ -12,8 +12,9 @@ Backup/Restore/加密异机副本。当前 Runtime 为 `73dca350...`，Operation
 运行控制现可作为当前候选证据；真实 HTTPS Origin、微信合法域名、
 release-eligible RC 和真机仍必须在域名可用后单独重验。详见
 [Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。M8
-基线 `4e745848...` 的 Run 34242753255 已 8/8；其后 M7→M8/Online no-op 发布保护已有
-本地候选，但尚未形成新远端/完整 updater 隔离 MySQL 证据，也未应用当前环境。M8 写前必须另建当次
+基线 `4e745848...` 的 Run 34242753255 已 8/8；其后 M7→M8/Online no-op 发布保护已由
+head `fa6fce05...` / Run 34281512196 在干净远端完成 8/8，但尚未形成完整 updater 隔离
+MySQL 证据，也未应用当前环境。M8 写前必须另建当次
 一致 Backup 并完成独立 Restore；该新 M7 Backup 必须携带
 `m7-preserved-business-v1`，由 20 个非 `bead_colors` 表和该表 M7 投影组成的 21 表内容
 SHA-256，Restore 必须重算并精确匹配。不能把下述旧 M7 备份冒充 M8 检查点；任何文档、

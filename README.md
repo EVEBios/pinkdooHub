@@ -26,7 +26,7 @@ pinkdooHub 是一个面向拼豆门店的后端管理系统，基于 FastAPI、T
 - 微信小程序客户与 ADMIN+ 共 31 个已注册页面已完成 “Ribbon Ledger” 视觉统一：保留全部既有功能，以紧凑排版、邻近莓色渐变、受控透明层和 44 px H5 触控基线覆盖认证、Product、Cart、Order、Inventory、Wallet/Payment、Reservation/店休与 User 管理流程。
 - 统一成功/错误响应、全局异常处理和精确 OpenAPI 响应契约；直连 App 与 Gate A/Rehearsal Nginx 对客户端协商的 ≥1 KiB 文本响应启用 gzip level 6，图片路径/MIME 不重复压缩。
 
-M8 基线的完整本地回归为后端 **2069 passed、31 skipped**（122.64s），skip 为显式隔离的 MySQL-only 门槛；一次性 MySQL 8.0.46 已真实完成 Aerich 0→8、M8 精确 HEX 与 Gate A publish/replay **2 passed**。前端为 **84 套件、573 项 Jest**，TypeScript、ESLint、Stylelint 全绿。M8 head `4e745848...`、merge-ref `3ddda81...` 的 GitHub Actions [Run 34242753255](https://github.com/EVEBios/pinkdooHub/actions/runs/34242753255) 已在干净 checkout 完成 8/8；首轮 Run 34242022911 因 Reservation MySQL 门槛漏列 M8 而 7/8，修复后完整重跑。其后仓库候选又新增显式 M7→M8 入口、21 表版本化内容摘要、Online 自选色目录的严格 no-op 复验和可复用性能工具；本轮本地 `tests/release` 为 **229 passed**，完整后端为 **2317 passed、33 skipped（125.31s）**，性能工具为 **190 passed**。这些后续改动不属于 `4e745848...`，仍须由新的干净 SHA、远端 CI 和完整 updater 隔离 MySQL 门槛复现。持久 Gate A 仍为 M7，M8 与目标 Runtime/gzip 尚未应用；CI/本地证据不等于正式 RC、真机或目标环境验收。详细记录见 [M8 远端 CI 报告](docs/09_release/reports/m8_remote_ci_2026-09-08.md)和 [Development Changelog](docs/05_development/changelog.md)。
+M8 基线的完整本地回归为后端 **2069 passed、31 skipped**（122.64s），skip 为显式隔离的 MySQL-only 门槛；一次性 MySQL 8.0.46 已真实完成 Aerich 0→8、M8 精确 HEX 与 Gate A publish/replay **2 passed**。前端为 **84 套件、573 项 Jest**，TypeScript、ESLint、Stylelint 全绿。M8 基线 head `4e745848...` 的 Run 34242753255 已在干净 checkout 完成 8/8；其后新增显式 M7→M8 入口、21 表版本化内容摘要、Online 自选色目录严格 no-op 复验和可复用性能工具，本地 `tests/release` 为 **229 passed**、完整后端为 **2317 passed、33 skipped（125.31s）**、性能工具为 **190 passed**。这些后续改动现已收口为 head `fa6fce05...`、merge-ref `b2f02ebc...`，并由 GitHub Actions [Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净 PR checkout 完整取得 8/8、保存 7 组 artifact；这关闭了新候选的干净 SHA/远端 CI 缺口。完整 updater 隔离 MySQL、持久 Gate A M8、目标 Runtime/gzip、candidate-pre 三轮、正式 RC 和真机仍未完成。详细记录见 [M8 发布加固远端 CI 报告](docs/09_release/reports/m8_hardening_remote_ci_2026-09-09.md)和 [Development Changelog](docs/05_development/changelog.md)。
 
 2026-09-09 的新版本地容量工具在 MySQL 8/M8、共享 2 CPU、五容器 4096MiB 上限和唯一
 5Mbps TBF 出口下完整采集 A/B/C/D、5/10 VU 共 12 个 Profile：gzip 色板、认证浏览、221
@@ -253,7 +253,7 @@ python -m app.tasks.product_image_cleanup \
 
 ## 数据库迁移
 
-MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ M0–M8 迁移均已离线生成并通过静态契约测试；2026-09-08 又在一次性 MySQL 8.0.46 真实完成 Aerich 0→8、M8 列形状、221 项冻结 HEX 与 Gate A MARD publish/replay，随后删除容器并释放 13308。M8 基线 Run 34242753255 已 8/8。持久 Gate A 已完成 M3–M7、Wallet backfill/reconcile 和 M6 色卡发布，只有 M8 仍待受控应用；共享、预发布和生产环境不因这些 Gate A 证据自动迁移。仓库候选现以显式 `--source-version 7` 支持精确 M7→M8：只运行 M8，并以 `m7-preserved-business-v1` 对 20 个非色卡表和 `bead_colors` M7 投影（共 21 个业务表）做内容级摘要，另保持完整图片 manifest；停写后先用 raw M7 字段精确预检无 `swatch_hex`、221 条目录和 221 张 `0644` PNG，再要求 MARD preview/apply/replay 全部为严格 no-op。旧调用仍默认 M2，防止误把当前 M7 当成历史起点。成功后、`app-up` 前还必须在同一停写窗口重放 upgrade plan，实时复核数据库、图片、内容摘要和 MARD preview；`app-up` 自身不做这些 live 检查。独立只读代码审查曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3，但该结论只绑定本地 diff，尚未由 `4e745848...` 的旧 Run 覆盖。正式执行前仍须形成最终干净 SHA，并完成该 SHA 的远端 CI、完整 updater 隔离 MySQL 复现、只读盘点、停写、新备份与独立恢复。
+MySQL 是生产迁移的权威方言，SQLite 只用于本地开发与自动化测试。当前 MySQL 8+ M0–M8 迁移均已离线生成并通过静态契约测试；2026-09-08 又在一次性 MySQL 8.0.46 真实完成 Aerich 0→8、M8 列形状、221 项冻结 HEX 与 Gate A MARD publish/replay，随后删除容器并释放 13308。M8 基线 Run 34242753255 已 8/8。持久 Gate A 已完成 M3–M7、Wallet backfill/reconcile 和 M6 色卡发布，只有 M8 仍待受控应用；共享、预发布和生产环境不因这些 Gate A 证据自动迁移。仓库候选现以显式 `--source-version 7` 支持精确 M7→M8：只运行 M8，并以 `m7-preserved-business-v1` 对 20 个非色卡表和 `bead_colors` M7 投影（共 21 个业务表）做内容级摘要，另保持完整图片 manifest；停写后先用 raw M7 字段精确预检无 `swatch_hex`、221 条目录和 221 张 `0644` PNG，再要求 MARD preview/apply/replay 全部为严格 no-op。旧调用仍默认 M2，防止误把当前 M7 当成历史起点。成功后、`app-up` 前还必须在同一停写窗口重放 upgrade plan，实时复核数据库、图片、内容摘要和 MARD preview；`app-up` 自身不做这些 live 检查。独立只读代码审查发现并修复的停服复验缺口已由 head `fa6fce05...` / Run 34281512196 的干净远端 8/8 覆盖。正式执行前仍须完成同一候选的完整 updater 隔离 MySQL 复现、只读盘点、停写、新备份与独立恢复；CI 不授予持久写入权限。
 
 本地持久 `db.sqlite3` 曾缺失目标设计已定义的 `refunds.inventory_restored` 与 `UNIQUE(order_id)`。提交 `35e8630` 提供默认预览、双显式确认、精确基线拒绝和 SQLite Backup API 的本地修复工具：
 
@@ -303,6 +303,7 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 | 迁移流程 | [Database Migration Workflow](docs/07_process/database_migration_workflow.md) |
 | 容量与性能压测规范 | [Capacity Load Test Runbook](docs/09_release/capacity_load_test_runbook.md) |
 | 最新 2C/4GiB/5Mbps 本地压测 | [M8 A/B/C/D 探索矩阵报告](docs/09_release/reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md) |
+| 最新远端 CI 证据 | [M8 发布加固候选远端 CI 报告](docs/09_release/reports/m8_hardening_remote_ci_2026-09-09.md) |
 
 业务行为以 `docs/01_requirements/` 为准，HTTP 契约以 `docs/03_api/` 为准，表结构与索引以数据库设计和 DBML 为准；当前是否已实现必须结合代码、测试与 changelog 判断。
 
@@ -332,10 +333,10 @@ docs(readme): document local development workflow
 ## 当前限制与后续工作
 
 - v0.6.0 仍是未发布候选版本，尚未创建 Git tag 或 GitHub Release。
-- Gate A 持久环境当前权威成功点为 M7；每次操作前仍须重新只读确认。`initial-migrate` 只支持空库；仓库候选的 `gatea_upgrade --source-version 7` 已收口 M7→M8，并让已有 Online 自选色商品只在数据库/221 图片完全匹配时通过事务内严格 no-op 复验。独立只读代码审查曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3，但该结论只绑定本地 diff。该路径尚未形成最终干净 SHA，也未完成该 SHA 的远端 CI 和完整 updater 隔离 MySQL 复现，更没有持久写入授权。必须先关闭这些门槛，再绑定新 SHA/Image、带 `m7-preserved-business-v1` 的 Backup/独立 Restore、停写窗口和当次明确授权。成功升级后必须保持 App/Nginx 停止并紧邻重放 upgrade plan，只有实时数据库、图片、21 表摘要与 MARD preview 全部匹配才可 `app-up`；后者自身不会重做这些检查。整个保护依赖维护窗口不存在直接 SQL 或宿主图片旁路写入，不是跨数据库/文件系统的绝对原子事务。不得使用默认 M2 路径、拆跑内部迁移任务、直接改表或为通过核验临时改变商品状态。本地 SQLite 与旧 Run 都不构成 Gate A M8 证据。
+- Gate A 持久环境当前权威成功点为 M7；每次操作前仍须重新只读确认。`initial-migrate` 只支持空库；仓库候选的 `gatea_upgrade --source-version 7` 已收口 M7→M8，并让已有 Online 自选色商品只在数据库/221 图片完全匹配时通过事务内严格 no-op 复验。独立代码审查发现并修复的成功重放停服复验缺口，现已绑定 head `fa6fce05...` / Run 34281512196 的干净远端 8/8；最终干净 SHA/远端 CI 已关闭，但完整 updater 隔离 MySQL、持久写入授权仍未完成。必须先完成该演练，再绑定新 SHA/Image、带 `m7-preserved-business-v1` 的 Backup/独立 Restore、停写窗口和当次明确授权。成功升级后必须保持 App/Nginx 停止并紧邻重放 upgrade plan，只有实时数据库、图片、21 表摘要与 MARD preview 全部匹配才可 `app-up`；后者自身不会重做这些检查。整个保护依赖维护窗口不存在直接 SQL 或宿主图片旁路写入，不是跨数据库/文件系统的绝对原子事务。不得使用默认 M2 路径、拆跑内部迁移任务、直接改表或为通过核验临时改变商品状态。远端 CI、本地 SQLite 与既有 workflow MySQL Job 都不构成 Gate A M8 或完整 updater 证据。
 - 真实 MySQL 演练曾发现 `OrderStatus` 通过普通 `SmallIntField` 被 asyncmy 编码为 Enum 字符串并触发 1366；现已在 Model 默认值及 Repository 更新/筛选边界统一转换为原生整数，并通过 MySQL 8.0.46 创建、筛选和状态更新回归，不再是发布阻断项。
 - 邮件验证、OAuth、管理员启用用户和头像上传尚未实现。
-- Phase 9.1–9.3 已完成；9.4 中不依赖备案的 M7 持久部署、MARD/Wallet 数据、备份恢复与运维治理已完成，真实 HTTPS/合法 Origin、正式 RC、体验版上传和 iOS/Android 真机仍等待外部条件与单独授权。M8 基线由 Run 34242753255 远端 8/8；其后的 M7→M8/Online no-op 发布保护已实现为本地候选，但新 SHA 的远端与完整 updater 隔离 MySQL 证据、目标 Runtime/HEX/gzip 现场验收和 M8 数据后恢复尚未关闭。Gate A 继续使用单主机持久图片卷；Gate B 的对象存储/CDN、真实微信 AppID、集中 Secret Manager、监控告警和隐私平台材料仍是后续阻断项。CI 通过也不授权数据库写入、微信上传、提审或发布。
+- Phase 9.1–9.3 已完成；9.4 中不依赖备案的 M7 持久部署、MARD/Wallet 数据、备份恢复与运维治理已完成，真实 HTTPS/合法 Origin、正式 RC、体验版上传和 iOS/Android 真机仍等待外部条件与单独授权。M7→M8/Online no-op 发布保护已由 `fa6fce05...` / Run 34281512196 在干净远端完成 8/8；完整 updater 隔离 MySQL、目标 Runtime/HEX/gzip 现场验收和 M8 数据后恢复尚未关闭。Gate A 继续使用单主机持久图片卷；Gate B 的对象存储/CDN、真实微信 AppID、集中 Secret Manager、监控告警和隐私平台材料仍是后续阻断项。CI 通过也不授权数据库写入、微信上传、提审或发布。
 - Phase 4.3.1–4.3.12 已完成并通过最终 Review；当前 Gate A 已包含 Inventory M2，但其他持久环境迁移、M8、发布与下一业务 Phase 仍需单独规划和授权。
 - Wallet/Payment/Refund v1 已完成仓库实现、扩展 MySQL 门槛和 Gate A M4/backfill/reconcile；Gate A 只允许无真实资金的内部合成余额验收，真实充值/支付/退款 Provider 与生产开关仍关闭。历史 DELETED USER 与 ADMIN/SUPER_ADMIN 不补建钱包。
 - Reservation N1 与 M7 可配置每周固定店休已完成仓库实现并已应用当前 Gate A M7，但尚未执行真实微信小程序真机验收；N2 微信订阅消息主动通知、可逆加密投递地址、durable outbox、worker、重试与监控均未实现，当前仅通过“我的预约/详情”展示状态和文案，并由管理端当前手机号提供人工联系兜底。

@@ -14,7 +14,8 @@ head `4d6430c...` 的 Run 34129910349 已 8/8 并关闭 R-026。持久 Gate A �
 在 Runtime `73dca350...` 上完成 M2→M7、Wallet/MARD、韧性、综合数据和
 数据后 Backup/Restore；Operations `353455bb...` 的 Run 34178908663 为 8/8。M8 基线
 head `4e745848...` 的 Run 34242753255 也已 8/8，但持久 Gate A 仍为 M7；其后新增的
-M7→M8/Online no-op 保护只有本地测试，尚未形成新的远端/完整 updater 隔离 MySQL 证据或持久执行授权。
+M7→M8/Online no-op 保护现已由 head `fa6fce05...` / Run 34281512196 在干净远端完成
+8/8，仍缺完整 updater 隔离 MySQL 证据与持久执行授权。
 因此 Gate A 同时受 M8 升级、真实 HTTPS/微信合法域名、RC、真机与最终签署阻断。
 
 ## 1. 活跃风险
@@ -38,7 +39,7 @@ M7→M8/Online no-op 保护只有本地测试，尚未形成新的远端/完整 
 | R-015 | P1 | Gate A Secret 的保管、读取主体、轮换和泄漏响应未落地 | 中×高 | Root 文件型 Secret 的路径、`0700/0400/0440` 权限、容器 UID/GID 读取边界、人工 TTY Bootstrap、轮换/泄漏触发、备份私钥隔离和日志零精确命中均已验证；详细证据见备案前收口报告 | Yijie Shen | Gate A（测试） | closed |
 | R-016 | P1 | Python/Node/npm/pip 固定缺少远端干净 CI 证据 | 高×中 | Run 33355935212 验证版本文件、engines 和 CI 精确版本 | Yijie Shen | 9.2 | closed |
 | R-017 | P1 | pip-audit 修复可升级项后只剩 ecdsa 无修复的 P-256 时序公告 | 中×高 | 固定 pip-audit 2.10.1；production HS256 不可达策略 fail-closed，算法/版本变化重审，2026-11-30 到期 | Yijie Shen | 2026-11-30 | accepted-until |
-| R-018 | P1 | 当前远端微信 artifact 仍为 `release_eligible=false`，尚缺真实 HTTPS Origin 的 RC | 中×中 | Run 34178908663 已保存同一干净 merge-ref 的微信 artifact/checksum；域名可用后以真实 Origin 重建并复核 `release_eligible=true`、0 source map 与上传入口 | Yijie Shen | Gate A | open |
+| R-018 | P1 | 当前远端微信 artifact 仍为 `release_eligible=false`，尚缺真实 HTTPS Origin 的 RC | 中×中 | Run 34281512196 已保存当前干净 merge-ref 的微信 artifact/checksum；域名可用后以真实 Origin 重建并复核 `release_eligible=true`、0 source map 与上传入口 | Yijie Shen | Gate A | open |
 | R-019 | P1 | 管理分包是否随公开包发布未决定 | 中×中 | Gate B 前评估包体、审核面、运营入口和后端授权 | Yijie Shen | Gate B | deferred |
 | R-020 | P1 | 认证安全和监控告警缺口 | 中×高 | 9.5 已实现 refresh family 轮换/重放撤销、Redis 原子限流/fail-closed 和结构化安全事件；仍需正式监控接入、送达与恢复演练 | Yijie Shen | Gate B | mitigating |
 | R-021 | P2 | OpenAPI CLI UTF-8/CP1252 回归缺少 CI 运行证据 | 高×低 | Run 33355935212 的 OpenAPI Job 完成 `--help`、真实导出、字节比较和类型漂移检查 | Yijie Shen | 9.2 | closed |
@@ -55,9 +56,9 @@ M7→M8/Online no-op 保护只有本地测试，尚未形成新的远端/完整 
 | R-032 | P1 | Gate A 的 Wallet 历史用户/legacy manual Order 需要 backfill/reconcile，否则启用资金入口可能形成缺账户或矛盾结算 | 高×极高 | 按冻结上界完成 wallet `would_create=1 → created=1 → 0`、legacy settlement `would_create=1 → created=1 → 0`，升级对账 `1/0/0`；综合数据后二次对账为 `scanned=4, mismatches=0, violations=0`，真实充值/Provider 仍关闭 | Yijie Shen | Gate A | closed |
 | R-033 | P2 | Reservation N1 只在页面展示状态，店休取消没有主动微信通知 | 高×中 | Gate A 明确 N1 边界并保留人工电话兜底；若 Gate B 要求通知，完成订阅授权、加密投递地址、durable outbox/worker/重试/监控和真机验收 | Yijie Shen | Gate B / N2 | deferred |
 | R-034 | P2 | MARD 网页 HEX/RGB 未经实体拼豆样本校色，图片是确定性纯色而非实物照片 | 中×中 | Gate A 内部说明来源限制；公开使用前按批准色样校准并更新 manifest/图片/checksum/验收记录 | Yijie Shen | Gate B 或正式销售前 | deferred |
-| R-035 | P0 | 持久 Gate A 已是 M7，而 M8 基线 Run 早于显式 M7→M8 入口；误用默认 M2、旧 Run/Record、缺少内容级恢复证明或未演练入口可能造成部分 DDL 和不可发布状态 | 确定×极高 | 仓库候选已要求 `--source-version 7`、只执行 M8；以 `m7-preserved-business-v1` 覆盖 20 个非 `bead_colors` 表及该表 M7 投影（共 21 表），并由 Backup/Restore/停写源/最终态精确比较；M8 前 raw 预检还拒绝已有 `swatch_hex`、221 条目录或 221 PNG 漂移。成功 Record 后必须在 `app-up` 前紧邻完成 live replay，因为后者只验证 Record。独立只读 Review 发现并修复 replay 停服复验缺口，修复后无未解决 P0–P3，但只绑定本地 diff；关闭仍需最终干净 SHA 远端 8/8、该 SHA 的专用一次性 MySQL 完整 updater、当次只读盘点、新 Backup/Restore、明确写授权及 M8 数据后恢复 | Yijie Shen | Gate A M8 前 | mitigating |
-| R-036 | P1 | 已有 Online 自选色商品下的 exact no-op publisher 与 M8 HEX/gzip 尚未在持久 Runtime 现场验证；直接 SQL 或宿主图片旁路写入会越过应用锁边界 | 确定×高 | 候选已在事务内锁定重读并仅允许 221 图片/目录完全一致的 no-op；维护窗口必须停止 App/Nginx 且排除 DB/文件旁路 writer，不宣称跨 DB/文件系统绝对原子。关闭需新 CI/完整 updater MySQL、Gate A 三次 no-op 与紧邻 replay、221 HEX/API/零 PNG 请求、单次 gzip/正确 `Vary`/图片不压缩及数据后 Backup/Restore 证据 | Yijie Shen | Gate A M8 前 | mitigating |
-| R-037 | P1 | 共享 5Mbps 下，10 VU 持续请求未压缩 51,063-byte 色板 JSON 会形成出口队列和尾延迟 | 确定×高 | 本地完整探索矩阵已把该路径稳定复现为 428 qdisc drops、P95/P99 1,510/2,442ms；gzip 后 10,023 bytes、减少 80.371%，同一 10 VU 为 271/290ms 且零 drops。保持 App/Nginx gzip、客户端不禁用压缩并监控 gzip 命中/drops/尾延迟；关闭仍需干净 SHA candidate-pre 三轮和独立 2 vCPU/4GiB Linux/真实网络复现全部门槛，或由风险接受人签署有期限处置 | Yijie Shen | Gate A M8 前 | mitigating |
+| R-035 | P0 | 持久 Gate A 已是 M7，而 M8 基线 Run 早于显式 M7→M8 入口；误用默认 M2、旧 Run/Record、缺少内容级恢复证明或未演练入口可能造成部分 DDL 和不可发布状态 | 确定×极高 | 仓库候选已要求 `--source-version 7`、只执行 M8；以 `m7-preserved-business-v1` 覆盖 20 个非 `bead_colors` 表及该表 M7 投影（共 21 表），并由 Backup/Restore/停写源/最终态精确比较；M8 前 raw 预检还拒绝已有 `swatch_hex`、221 条目录或 221 PNG 漂移。成功 Record 后必须在 `app-up` 前紧邻完成 live replay，因为后者只验证 Record。独立 Review 发现并修复 replay 停服复验缺口，修复后无未解决 P0–P3；实现与结论已绑定 `fa6fce05...` / Run 34281512196 的远端 8/8。风险继续 mitigating；关闭仍需同一候选的专用一次性 MySQL 完整 updater、当次只读盘点、新 Backup/Restore、明确写授权及 M8 数据后恢复 | Yijie Shen | Gate A M8 前 | mitigating |
+| R-036 | P1 | 已有 Online 自选色商品下的 exact no-op publisher 与 M8 HEX/gzip 尚未在持久 Runtime 现场验证；直接 SQL 或宿主图片旁路写入会越过应用锁边界 | 确定×高 | 候选已在事务内锁定重读并仅允许 221 图片/目录完全一致的 no-op，且 `fa6fce05...` / Run 34281512196 已关闭远端 CI；维护窗口必须停止 App/Nginx 且排除 DB/文件旁路 writer，不宣称跨 DB/文件系统绝对原子。关闭仍需完整 updater MySQL、Gate A 三次 no-op 与紧邻 replay、221 HEX/API/零 PNG 请求、单次 gzip/正确 `Vary`/图片不压缩及数据后 Backup/Restore 证据 | Yijie Shen | Gate A M8 前 | mitigating |
+| R-037 | P1 | 共享 5Mbps 下，10 VU 持续请求未压缩 51,063-byte 色板 JSON 会形成出口队列和尾延迟 | 确定×高 | 本地完整探索矩阵已把该路径稳定复现为 428 qdisc drops、P95/P99 1,510/2,442ms；gzip 后 10,023 bytes、减少 80.371%，同一 10 VU 为 271/290ms 且零 drops。代码已由 `fa6fce05...` / Run 34281512196 关闭干净远端 CI，但该 Run 不执行容量矩阵；保持 App/Nginx gzip、客户端不禁用压缩并监控 gzip 命中/drops/尾延迟。关闭仍需基于干净候选的 candidate-pre 三轮和独立 2 vCPU/4GiB Linux/真实网络复现全部门槛，或由风险接受人签署有期限处置 | Yijie Shen | Gate A M8 前 | mitigating |
 
 ## 2. 风险例外规则
 

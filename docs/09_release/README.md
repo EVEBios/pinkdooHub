@@ -1,6 +1,6 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 持久 Gate A 已到 M7；M8 基线远端 CI 8/8，M7→M8 受控入口已本地实现但待新远端/完整 updater 隔离 MySQL；本地 5Mbps 完整探索轮因 10 VU 未压缩色板容量门槛为 FAIL，持久升级、真实 HTTPS RC 与真机仍阻断 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** 持久 Gate A 已到 M7；M7→M8 加固候选 `fa6fce05...` 远端 CI 8/8，完整 updater 隔离 MySQL 仍未执行；本地 5Mbps 完整探索轮因 10 VU 未压缩色板容量门槛为 FAIL，持久升级、真实 HTTPS RC 与真机仍阻断 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-09
 > **Release Scope:** 微信小程序内部测试版（Gate A）
@@ -27,7 +27,7 @@ checkout 完成 8/8，保留 7 组 artifact。详细证据见
 仍关闭；三个 Wallet 管理/内部测试开关只支持无真实资金的 Gate A 验收。
 在这个 M7 检查点形成时，剩余外部主链依赖是备案生效后的真实 HTTPS Origin、微信
 request/upload/download 合法域名、`release_eligible=true` RC、体验版上传授权与
-iOS/Android 真机矩阵；下方 M8 候选又叠加了新 SHA/CI、完整 updater、当次
+iOS/Android 真机矩阵；下方 M8 候选的干净 SHA/CI 已关闭，但仍叠加完整 updater、当次
 Backup/Restore、持久 M8 和 Runtime 现场验收门槛。因此 Gate A 仍是
 **No-Go / Not Authorized**。
 
@@ -57,9 +57,11 @@ preview/apply/replay 全部必须为严格 no-op；`gatea_mard_publish` 也只�
 MARD preview；`app-up` 自身不做这些 live 检查。本轮本地 `tests/release` 为 `229 passed`，
 完整后端为 `2317 passed, 33 skipped in 125.31s`。独立只读代码审查
 曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐状态矩阵后复核无未解决
-P0–P3。该 Review 结论只绑定当前本地 diff。这些改动不在
-`4e745848...` / Run 34242753255 中，仍待形成最终干净 SHA，并由该 SHA 的远端 CI 与
-完整 updater 隔离 MySQL 复现关闭自动化门槛。
+P0–P3。这些改动现已收口为 head `fa6fce05...`、merge-ref `b2f02ebc...`，并由
+[Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净
+PR checkout 完成 8/8、保存 7 组 artifact，关闭最终干净 SHA/远端 CI 缺口。完整 updater
+隔离 MySQL 仍未执行；详见
+[M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。
 
 2026-09-09 又在本机 MySQL 8/M8、共享双 CPU、五容器 4096MiB 上限和唯一 5Mbps TBF
 出口下执行了 A/B/C/D、5/10 VU 的完整探索矩阵。12/12 Profile 均已采集，gzip 色板、
@@ -150,14 +152,15 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 | Release Decision Record | [release_decision_record.md](release_decision_record.md) | Gate A 决策已冻结；Gate B 未授权 |
 | 当前基线审计 | [baseline_audit_2026-08-29.md](baseline_audit_2026-08-29.md) | 已采集本地证据；MySQL/真机/外部环境未执行 |
 | Environment Matrix + Secret Inventory | [environment_and_secrets.md](environment_and_secrets.md) | Gate A 文件 Secret、轮换、备份密钥和日志策略已落地；真实域名待备案 |
-| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | M7 持久检查点 Operations head `353455b...` 的 Run 34178908663 为 8/8，7 组 artifact 可复核 |
+| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | M8 加固 head `fa6fce05...` 的 Run 34281512196 为 8/8，7 组 artifact 可复核；完整 updater 仍待演练 |
 | M7 一次性 MySQL 报告 | [reports/m7_mysql_release_gate_2026-09-07.md](reports/m7_mysql_release_gate_2026-09-07.md) | 本地 dirty-tree M0–M7/历史矩阵/21 项通过，并已补记远端后续结果 |
 | M7 当前候选远端 CI 报告 | [reports/m7_remote_ci_2026-09-07.md](reports/m7_remote_ci_2026-09-07.md) | Head `4d6430c...` / merge-ref `ccbbe9d...` / Run 34129910349 / 8/8 / 7 artifacts |
 | Wallet 扩展远端 CI 报告 | [reports/wallet_remote_ci_2026-09-07.md](reports/wallet_remote_ci_2026-09-07.md) | Head `62f807a...` / merge-ref `6675b4f...` / Run 34134341829 / 8/8 / 7 artifacts |
 | Gate A M2→M7 升级与综合数据报告 | [reports/gatea_m7_upgrade_and_data_2026-09-08.md](reports/gatea_m7_upgrade_and_data_2026-09-08.md) | Runtime `73dca350...` / Operations `353455b...` / Run 34178908663 / Backup `20260908t021224z` / 不依赖域名范围 PASS |
 | M8 HEX 与压缩候选远端 CI 报告 | [reports/m8_remote_ci_2026-09-08.md](reports/m8_remote_ci_2026-09-08.md) | Head `4e745848...` / merge-ref `3ddda81...` / Run 34242753255 / 8/8 / 7 artifacts；Gate A 仍为 M7 |
+| M8 发布加固候选远端 CI 报告 | [reports/m8_hardening_remote_ci_2026-09-09.md](reports/m8_hardening_remote_ci_2026-09-09.md) | Head `fa6fce05...` / merge-ref `b2f02ebc...` / Run 34281512196 / 8/8 / 7 artifacts；完整 updater 与 Gate A M8 仍未执行 |
 | Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
-| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | M2→M7 历史执行已通过；M7→M8 候选入口已本地实现，待新 CI/MySQL；HEX/gzip/恢复未获持久写授权 |
+| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | M2→M7 历史执行已通过；M7→M8 候选远端 CI 已通过，完整 updater/MySQL 与 HEX/gzip/恢复未获持久写授权 |
 | 容量与性能压测 Runbook | [capacity_load_test_runbook.md](capacity_load_test_runbook.md) | 长期复用的隔离、资源限额、流量、指标、门槛、证据与清理规范；不单独构成环境授权 |
 | M8 本地 2 核/4GiB/5Mbps 完整探索矩阵 | [reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md](reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md) | MySQL 8 + A/B/C/D 共 12/12 Profile；11 项通过，10 VU 未压缩色板 JSON 因丢包/P95 超线而使整轮 FAIL |
 | 本地 2 核/4GiB/5Mbps 探索报告 | [reports/local_2c4g_5mbps_load_test_2026-09-08.md](reports/local_2c4g_5mbps_load_test_2026-09-08.md) | 5/10 人只读与带宽饱和单轮证据；SQLite/占位图片/本机 ARM64，不是发布门槛 |
@@ -170,7 +173,7 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 | 9.4 备案前收口报告 | [reports/phase94_pre_icp_completion_2026-09-02.md](reports/phase94_pre_icp_completion_2026-09-02.md) | 加密异机副本、持久故障/重启、日志、预 RC 与开发者工具 PASS；域名/真机待完成 |
 | Gate A 内部测试运维规则 | [gatea_test_operations.md](gatea_test_operations.md) | 测试人员、反馈、14 日窗口、停用、数据清理与事故职责已冻结 |
 | Functional/Smoke/E2E Matrix | [wechat_acceptance_matrix.md](wechat_acceptance_matrix.md) | 已扩展到 Wallet、颜色 Kit、Reservation、M7 与最新界面；当前 RC 真机结果待填 |
-| Risk Register | [risk_register.md](risk_register.md) | 已登记当前 M7 CI、持久升级、钱包、色板和 RC 重验风险 |
+| Risk Register | [risk_register.md](risk_register.md) | 已登记 M8 远端 CI、完整 updater、持久升级、容量和 RC 重验风险 |
 | Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | 当前候选 CI 已关闭；Wallet/持久迁移/RC/真机仍未关闭，未授权发布 |
 
 ## 2. 当前结论

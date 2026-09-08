@@ -1,8 +1,8 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；M8 baseline remote gate passed (8/8)，later M7→M8/Online no-op candidate awaits a new run
+> **Status:** Phase 9.2 historical baseline complete；M8 M7→M8/Online no-op hardening candidate remote gate passed (8/8)，full updater rehearsal remains pending
 > **Last Updated:** 2026-09-09
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34242753255](https://github.com/EVEBios/pinkdooHub/actions/runs/34242753255)）
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
@@ -12,9 +12,9 @@
 Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job；加入 Wallet、
 Reservation、颜色 Kit 与 M7 后，head `4d6430c...` 的 Run 34129910349 已重新取得
 8/8；包含后续 Gate A Operations 和 loopback 端口快速复用修复的 M7 持久检查点 head
-`353455bb...` 又由 Run 34178908663 完成 8/8。M8 基线 head `4e745848...` 最后由
-Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布保护只有本地测试
-证据，不能挂到该 Run。历史结论只关闭当时 Phase 9.2 的 CI 与
+`353455bb...` 又由 Run 34178908663 完成 8/8。M8 基线 head `4e745848...` 由
+Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布保护已由 head
+`fa6fce05...` 的 Run 34281512196 完成 8/8。历史结论只关闭当时 Phase 9.2 的 CI 与
 可重复构建范围，不替代 9.3 的生产相似演练、9.4 的微信真机 RC 或后续模块的重新留证。
 
 ## 0. Phase 9.2.6 远端证据
@@ -110,8 +110,24 @@ Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布�
   `m7-preserved-business-v1` 21 表内容摘要、停写后的 raw M7 schema/221 色/221 PNG
   精确预检、成功 Record 的 live replay verification，以及已有 Online 引用下 publisher
   的事务内 exact no-op；本轮完整 `tests/release` 为 `229 passed`，MARD 一次性 MySQL
-  并发/锁序为 `3 passed`。这些变更晚于 `4e745848...`，必须形成新干净 SHA 并完整重跑
-  八类 Job 和专用一次性 MySQL 完整 M7→M8 updater 场景，不能复用本节 PASS。
+  并发/锁序为 `3 passed`。这些变更晚于 `4e745848...`，不能复用本节 PASS；其干净
+  SHA/远端重跑结果见 §0.5，专用一次性 MySQL 完整 M7→M8 updater 仍为独立门槛。
+
+### 0.5 M8 发布加固候选（2026-09-09）
+
+- head `fa6fce05a153321d5c4079cb50f123c7996695f2`、merge-ref
+  `b2f02ebc65bedf736197d54ed65228320d9962a4` 已由
+  [Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196)
+  在 `2026-09-08T21:36:11Z`–`21:41:27Z` 从头执行八类 Job并取得 8/8。
+- Run 保留 7 组未过期且带 GitHub digest 的 artifact；`openapi-contract` 按 workflow
+  只做阻断检查、不上传 artifact，因此 7 组符合设计。
+- 该候选包含显式 M7→M8、21 表内容保护、Online exact no-op、成功后停服 live replay
+  及 fail-closed 容量工具，关闭了最终干净 SHA/新远端 CI 缺口。完整身份、Job 时长和
+  artifact 清单见
+  [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。
+- workflow 的 `backend-mysql-release` 不执行 `deploy/gatea` 完整生命周期；专用一次性
+  MySQL 完整 updater、Gate A 持久 M8、candidate-pre 三轮、`release_eligible=true` RC
+  与真机仍为独立阻断项，CI 不授予任何写入或发布权限。
 
 ## 1. 全局规则
 
@@ -333,6 +349,7 @@ M8 基线与后续候选结果：
 - [x] `4e745848...` 的前端/OpenAPI/微信 production artifact、依赖审计与仓库卫生都绑定 Run 34242753255；
 - [x] 后续 M7→M8/21 表内容保护/Online exact no-op 候选在本地完成 `tests/release`
   `229 passed`，本轮完整后端为 `2317 passed, 33 skipped in 125.31s`；
-- [ ] 后续候选绑定新干净 SHA，并由完整远端 8/8、专用一次性 MySQL 完整 M7→M8
-  updater 和 artifact 复现；
+- [x] 后续候选已绑定 head `fa6fce05...` / merge-ref `b2f02ebc...`，并由 Run 34281512196
+  完整远端 8/8 与 7 组 artifact 复现；
+- [ ] 同一候选仍须由专用一次性 MySQL 完整执行 M7→M8 updater 并保存独立 evidence；
 - [ ] Gate A M7→M8、真实 RC、微信后台和真机继续由后续 Gate 单独授权，CI 不自动执行。

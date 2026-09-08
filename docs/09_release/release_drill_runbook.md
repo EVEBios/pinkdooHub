@@ -16,8 +16,9 @@
 升级到 M7，再完成 Wallet/MARD、候选韧性、综合数据、数据后 Backup/Restore
 和加密异机副本。本文保留操作规范；实际结果见
 [Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
-M8 head `4e745848...` 的远端候选 Run 34242753255 已 8/8，但 M8 尚未应用 Gate A；
-详见 [M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。
+M8 基线 head `4e745848...` 的 Run 34242753255 已 8/8；后续 M7→M8 加固 head
+`fa6fce05...` 的 Run 34281512196 也已在干净远端完成 8/8，但完整 updater 与 Gate A M8
+仍未执行。详见 [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。
 
 ## 1. 安全边界
 
@@ -56,7 +57,7 @@ M8 head `4e745848...` 的远端候选 Run 34242753255 已 8/8，但 M8 尚未应
 
 | ID | 场景 | 核心断言 | 状态 |
 |----|------|----------|------|
-| DR-01 | 全新空库 0→当前 | 当前要求为精确 0→8，并核验 M3–M8 表/约束/索引/默认数据/HEX | 一次性与 Run 34242753255 的 MySQL 8.0.46 PASS；持久 Gate A 仍为 M7 |
+| DR-01 | 全新空库 0→当前 | 当前要求为精确 0→8，并核验 M3–M8 表/约束/索引/默认数据/HEX | 一次性与当前 Run 34281512196 的 MySQL 8.0.46 PASS；持久 Gate A 仍为 M7 |
 | DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；当前候选必须继续到 M8 | 一次性 0→8 PASS；持久 Gate A 的 M2→M7 历史 PASS，M7→M8 NOT RUN |
 | DR-03 | 历史版本代表性数据升级 | M5 fixed/Reservation 样本经 M6→M7→M8，已有数据不漂移 | M6→M7→M8 远端步骤 PASS；持久 M7→M8 NOT RUN |
 | DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | 当前数据后 Backup `20260908t021224z` / 独立 Restore /加密异机副本 PASS |
@@ -77,14 +78,14 @@ M8 head `4e745848...` 的远端候选 Run 34242753255 已 8/8，但 M8 尚未应
 
 历史 M2 执行的 SHA、CI、结果、耗时、修复项和资源清理记录见
 [Phase 9.3 隔离发布演练报告](reports/phase93_rehearsal_2026-08-31.md)。该报告不修改，
-当前候选的每次新执行必须另建独立报告并列出 DR-01～DR-13 的适用/不适用项。
+当前候选的每次新执行必须另建独立报告并列出 DR-01～DR-14 的适用/不适用项。
 
 M7 的本地可销毁迁移与联合门槛见
 [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。该报告运行于提交前
 dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430c...` 在
 [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 取得远端
 8/8。远端证据见 [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)，但仍不包含
-持久部署、备份恢复、应用/图片/Redis Smoke 或微信真机，因此不能把 DR-01～DR-13
+持久部署、备份恢复、应用/图片/Redis Smoke 或微信真机，因此不能把 DR-01～DR-14
 整体标成 M8 候选 PASS。M8 的远端身份、首轮失败与修复、8 Job/artifact 见
 [M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。
 
@@ -92,12 +93,12 @@ dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430
 
 | 版本 | 仓库/历史事实 | 当前候选一次性 MySQL | 持久 Gate A 必需动作 |
 |------|---------------|----------------------|----------------------|
-| M3 | 外部身份与认证安全仓库实现完成 | M8 workflow 保留 M3；Run 34242753255 远端 8/8 | 持久 Gate A 已应用；仍保持 password 模式 |
+| M3 | 外部身份与认证安全仓库实现完成 | M8 workflow 保留 M3；当前 Run 34281512196 远端 8/8 | 持久 Gate A 已应用；仍保持 password 模式 |
 | M4 | 钱包/支付/退款代码完成 | Wallet `9 passed`、三域联合 `30 passed`；当前 M8 workflow 远端 success | 持久 Gate A 已应用，两个 backfill/reconcile 已零差异 |
 | M5 | Reservation N1 完成 | 历史/当前 MySQL workflow 均通过 | 持久 Gate A 已应用；已有预约/单日店休继续作为 M8 不漂移基线 |
 | M6 | 221 色目录、商品颜色库存和兼容 PNG 完成 | M6 snapshot/锁等待及 M8 迁移重放通过 | 持久 Gate A 已发布 221 色/PNG 与三启用色；M8 不得改这些事实 |
 | M7 | 固定店休完成 | 单例/约束/并发及 M6→M7→M8 远端步骤通过 | 当前持久成功点；作为 M8 唯一允许规划的 source 起点 |
-| M8 | HEX/API/小程序直绘/gzip 仓库实现完成；显式 M7→M8、21 表内容保护与 Online exact no-op 候选已本地验证 | 基线一次性 0→8、M8 snapshot/publisher 与 Run 34242753255 8/8；新增入口的 Release 测试 229 passed、本轮完整后端 2317 passed/33 skipped；独立 Review 发现并修复 replay 停服复验缺口，修复后无未解决 P0–P3，但旧 Run 不覆盖 | NOT RUN；先形成最终干净 SHA，并完成该 SHA 的 CI/完整 updater 隔离 MySQL，再走新 Backup/Restore 和明确授权 |
+| M8 | HEX/API/小程序直绘/gzip 仓库实现完成；显式 M7→M8、21 表内容保护与 Online exact no-op 候选已本地验证 | 基线一次性 0→8、M8 snapshot/publisher 与 Run 34242753255 8/8；加固 head `fa6fce05...` / Run 34281512196 远端 8/8；Release 229 passed、完整后端 2317 passed/33 skipped；独立 Review 缺口已修复并绑定该候选 | NOT RUN；先完成同一候选的完整 updater 隔离 MySQL，再走新 Backup/Restore 和明确授权 |
 
 任何“一次性 MySQL PASS”只关闭候选迁移实现风险，不等于已应用 Gate A。任何本地
 SQLite 数据也只属于开发环境，不是 Gate A 的数据或图片发布证据。
@@ -210,8 +211,8 @@ python -m scripts.release.phase93_operations cleanup \
 默认 plan 只读；apply 必须同时确认 source SHA、target SHA、Backup ID 与 MARD manifest
 SHA-256。M7 起点必须显式选择，且 Record 同时绑定 `source_version=7`、精确 M0–M7 source
 链和 M0–M8 target 链；只有 M2→M7、M2→M8、M7→M8 三种组合可被部署入口接受。新增
-实现当前只有本地 Release 测试，尚未进入新的干净 SHA/远端 Run 或专用一次性 MySQL
-完整 updater 场景；Run 34242753255 只覆盖实现前基线。关闭这些门槛前不得对持久 Gate A 运行，也不得
+实现已由 head `fa6fce05...` / Run 34281512196 完成干净远端 8/8，但尚未进入专用一次性
+MySQL 完整 updater 场景。关闭该门槛前不得对持久 Gate A 运行，也不得
 用临时 SQL、删除旧 Record、伪造 Record 或绕过保护逻辑。
 
 候选镜像已提供 `app.tasks.gatea_migrate_step` 与 `app.tasks.gatea_wallet_prepare` 两个
@@ -230,7 +231,7 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 事务，锁定并重读完整 BeadColor，重新检查图片和 Online 引用，最终必须为
 `database_changes=0`、`images_to_create=0`、`images_reused=221`、`created_images=0`；
 任何漂移都会在写入前拒绝。不得为通过它临时下架商品或修改启用态，也不得脱离 M7→M8
-编排单独运行；新增安全分支仍须取得新远端/完整 updater 隔离 MySQL 证据。
+编排单独运行；新增安全分支的远端 CI 已通过，但仍须取得完整 updater 隔离 MySQL 证据。
 
 ### 4.1 预检（只读）
 
@@ -263,11 +264,10 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 
 ### 4.3 数据库迁移
 
-以下是 M7→M8 已由仓库候选固化的验收顺序，不是可以人工拆跑的现场命令。只有该
-`--source-version 7` 路径的当前未提交差异已修复独立只读代码审查发现的 replay 停服
-复验缺口，修复后复核无未解决 P0–P3；该结论只绑定本地 diff。只有形成最终干净 SHA，
-并由该 SHA 的完整 updater 一次性
-MySQL 与远端 CI 通过，
+以下是 M7→M8 已由仓库候选固化的验收顺序，不是可以人工拆跑的现场命令。该
+`--source-version 7` 路径已修复独立只读代码审查发现的 replay 停服复验缺口，修复后
+复核无未解决 P0–P3；结论已绑定 head `fa6fce05...` / Run 34281512196 的干净远端 8/8。
+只有该 SHA 的完整 updater 一次性 MySQL 也通过，
 并且 Gate A 的只读状态、新 Backup/Restore、目标 Image 与当次持久写入授权全部绑定后，
 才可执行。截至本文更新，这些外部门槛尚未关闭，本节仍为 **BLOCKED / NOT AUTHORIZED**。
 
@@ -436,9 +436,9 @@ python -m app.tasks.super_admin_bootstrap \
 - readiness、Redis、图片持久化或管理员初始化失败；
 - 越权、凭据泄漏、数据破坏、重复订单/扣库存或无法恢复；
 - artifact 与已测试 SHA 不一致；
-- 当前远端 CI 未达 8/8，或 MySQL snapshot 未精确覆盖 M0–M8（当前受测 head
-  `4e745848...` / Run 34242753255 已满足；任何后续业务 SHA 必须重验）；
-- M7→M8 候选尚未形成最终干净 SHA，或该 SHA 的 CI/完整 updater 一次性 MySQL 尚未通过，
+- 当前远端 CI 未达 8/8，或 MySQL snapshot 未精确覆盖 M0–M8（当前加固 head
+  `fa6fce05...` / Run 34281512196 已满足；任何后续业务 SHA 必须重验）；
+- M7→M8 候选的完整 updater 一次性 MySQL 尚未通过，
   候选 upgrade Record 缺失，或试图对当前 M7 Gate A 使用空库 `initial-migrate`、省略显式
   source 选择、退回默认 M2 路径或直接运行内部原语；
 - 新 M7 Backup/Restore 缺少或不匹配 `m7-preserved-business-v1`，raw source preflight

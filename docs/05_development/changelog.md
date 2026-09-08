@@ -59,25 +59,29 @@
   `229 passed`；一次性 MySQL 8.0.46 的 MARD 并发/锁序门槛为 `3 passed`，另一个一次性
   MySQL 还证明 M7 内容摘要重复计算一致、M8 前后不变且任一受保护业务值变化都会改变摘要。
   临时容器、端口和内容文件已清理。本轮没有连接 Gate A 或持久 MySQL，也没有迁移、
-  Runtime 切换、持久数据写入、新依赖或版本提升；完整 updater 尚无新干净 SHA 的隔离
-  MySQL/远端执行证据。
+  Runtime 切换、持久数据写入、新依赖或版本提升；完整 updater 尚无独立 MySQL 执行证据。
 - 本轮本地候选的完整后端回归为 `2317 passed, 33 skipped in 125.31s`，compileall
-  通过；该结果不属于 `4e745848...` 或任何既有远端 Run，也不能替代完整 updater 的 MySQL
-  与 Gate A 证据。
+  通过；该结果随后收口进 `fa6fce05...`，但本地计数不冒充远端日志，也不能替代完整
+  updater 的 MySQL 与 Gate A 证据。
 - 独立只读代码审查先发现成功 Record 重放没有在 live 数据核验前重新证明 App/Nginx
   仍然停服；现已改为先检查 MySQL/Redis healthy 与 App/Nginx stopped/exited，并为运行中、
   缺失、unhealthy 和状态读取失败补齐 fail-closed 矩阵。修复后复核无未解决 P0–P3；该结论
-  只绑定当前本地 diff，不能提前绑定尚未形成的最终干净 SHA。剩余仓库门槛是最终干净
-  SHA、完整远端 8/8 与同 SHA 的完整 M7→M8 updater 隔离 MySQL 复现。
+  已绑定下述 `fa6fce05...` 干净候选。剩余自动化门槛是同一候选的完整 M7→M8 updater
+  隔离 MySQL 复现。
 - 内容摘要由 20 表单事务 dump 与随后一次 `bead_colors` 投影查询组成，数据库与图片也
   不是同一个原子事务；保护依赖 App/Nginx 停写窗口内不存在直接 SQL、其他迁移进程或
   宿主图片旁路写入，不宣称跨数据库/文件系统的绝对原子性。
-- 此前 M8 基线 head `4e745848315aab56805a872ecf5b9f5e3c10135b`、merge-ref
-  `3ddda81bc15986f0531c4887311611b7473d0d4b` 的 Run 34242753255 已完整 8/8；首轮
-  Run 34242022911 因 Reservation MySQL 测试漏列 M8 而 7/8，修复后全部 Job重跑。
-  但上述 M7→M8/Online no-op 改动晚于该 SHA，仍须形成新的干净 SHA，并由远端 8/8、
-  专用一次性 MySQL 完整 M7→M8 updater、新 Backup/Restore 与当次明确写授权关闭后，
-  才能规划持久 Gate A 执行。
+- M7→M8/Online no-op 加固现已收口为 head
+  `fa6fce05a153321d5c4079cb50f123c7996695f2`、merge-ref
+  `b2f02ebc65bedf736197d54ed65228320d9962a4`；
+  [Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 于
+  2026-09-09 05:36–05:41（Asia/Shanghai）从头执行八类 Job并取得 8/8，7 组应上传
+  artifact 均带 GitHub digest。`openapi-contract` 按 workflow 只做阻断检查，因此没有
+  第八组 artifact。完整身份与边界见
+  [M8 发布加固远端 CI 报告](../09_release/reports/m8_hardening_remote_ci_2026-09-09.md)。
+- 该远端 PASS 关闭最终干净 SHA/新远端 CI 缺口，但不执行 `deploy/gatea` 完整生命周期；
+  专用一次性 MySQL 完整 M7→M8 updater、新 Backup/Restore、持久写授权、candidate-pre
+  三轮和微信 `release_eligible=true` RC 仍未完成，Gate A 继续 No-Go。
 
 ## 本地 2 核 / 4GiB / 5Mbps 容量探测（2026-09-08）
 

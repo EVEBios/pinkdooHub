@@ -65,11 +65,14 @@ MySQL、持久数据、图片、日志和服务端生命周期相关的 `A` 部�
 M8 基线 head `4e745848...` 随后由
 [Run 34242753255](https://github.com/EVEBios/pinkdooHub/actions/runs/34242753255) 在干净
 checkout 完成 8/8；首轮 7/8、修复和 artifact 见
-[M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。其后新增的显式 M7→M8 入口与
-Online exact no-op publisher 与 M7→M8 内容保护已有本轮本地 `tests/release` `229 passed`；
-完整后端为 `2317 passed, 33 skipped in 125.31s`，均不在该 Run 中。
-因此 M7 服务端数据项可继续使用既有 `A PASS`，但 M8 持久迁移、HEX/gzip Runtime、
-新候选 CI、真实 RC 和所有 `M` 证据仍为 `BLOCKED`/`NOT RUN`。
+[M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。其后新增的显式 M7→M8 入口、
+Online exact no-op publisher 与 M7→M8 内容保护，本地 `tests/release` 为 `229 passed`、
+完整后端为 `2317 passed, 33 skipped in 125.31s`；现已收口为 head `fa6fce05...` 并由
+[Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净
+远端完成 8/8。详见
+[M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。因此 M7 服务端
+数据项可继续使用既有 `A PASS`，但完整 updater、M8 持久迁移、HEX/gzip Runtime、真实
+`release_eligible=true` RC 和所有 `M` 证据仍为 `BLOCKED`/`NOT RUN`。
 
 ## 2. 身份、角色与权限
 
@@ -154,11 +157,11 @@ Online exact no-op publisher 与 M7→M8 内容保护已有本轮本地 `tests/r
 
 | ID | 场景 | Gate A 断言 | 证据 | 当前 RC |
 |----|------|-------------|------|---------|
-| SE-01 | Secret 扫描 | 源码、日志、artifact、source map 无 Secret/私钥/连接串 | `A` | M8 基线 Run 34242753255 与 M7 持久日志 `PASS`；后续候选/真实 RC 待重验 |
+| SE-01 | Secret 扫描 | 源码、日志、artifact、source map 无 Secret/私钥/连接串 | `A` | M8 加固 Run 34281512196 与 M7 持久日志 `PASS`；真实 RC 待重验 |
 | SE-02 | 产物 Origin | 无 `.example.invalid`、开发 Origin 或意外主机 | `A` | 预 RC 保留 `.test` Origin `PASS` 且不可发布；真实 Origin `BLOCKED` |
 | SE-03 | 权限 | UI 隐藏不替代后端 ADMIN+/owner 校验 | `A+M` | 当前 `A PASS`；`M BLOCKED` |
 | SE-04 | 日志脱敏 | 无密码、Token、完整 Redis URL、reason/key 和个人敏感信息 | `A+M` | 当前 M7 日志精确 Secret/高置信模式 0 命中 `A PASS`；`M BLOCKED` |
-| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | M8 基线 Run 34242753255 `PASS`；现有例外 2026-11-30 到期 |
+| SE-05 | 依赖 | 微信运行时可达高风险均关闭或获有期限例外 | `A` | M8 加固 Run 34281512196 `PASS`；现有例外 2026-11-30 到期 |
 | SE-06 | 内部声明 | 体验版明确受邀、不可公开、无微信支付/登录误导 | `M` | 规则已冻结；体验版 `BLOCKED` |
 | SE-07 | 隐私 | Gate A 使用合成/受控账号，数据保留、反馈和停用日期明确 | `M` | 治理已冻结；实际体验版 `BLOCKED` |
 

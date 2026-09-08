@@ -631,13 +631,13 @@ SHA 和 Backup ID 紧邻重放 upgrade plan。该 replay 会验证 evidence 路�
 完整数据库摘要、图片 manifest、M7 内容摘要，并重新运行只读 MARD preview；只有
 `already_current=true` 才能调用 `app-up`。`app-up` 本身只验证 Record、target SHA/Image
 和合法迁移组合，不重读 live DB/图片/MARD，不能替代该 replay。本轮本地完整
-`tests/release` 为 `229 passed`，但 Run 34242753255 早于这些改动，不能作为新入口的
-远端证据，也不授予 Gate A 写入。
+`tests/release` 为 `229 passed`；新入口已收口为 head `fa6fce05...`、merge-ref
+`b2f02ebc...`，并由 Run 34281512196 在干净 PR checkout 完成远端 8/8。该结果不执行
+完整 updater，也不授予 Gate A 写入。
 
 独立只读代码审查曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态
-fail-closed 矩阵后，复核无未解决 P0–P3。该结论只绑定本地 diff。
-执行前还必须形成最终干净 SHA，并完成该 SHA 的远端 CI 和专用一次性 MySQL 完整
-M7→M8 updater 复现，
+fail-closed 矩阵后，复核无未解决 P0–P3。该结论现已绑定上述干净候选与远端 Run。
+执行前还必须完成同一候选的专用一次性 MySQL 完整 M7→M8 updater 复现，
 并取得当前 M7 只读事实、当次 Backup/Restore、明确停写/写入授权与目标镜像；
 执行后核验 M0–M8、221 个精确 HEX、既有色卡/商品库存/21 表内容摘要零漂移、gzip Runtime，
 并建立新的 M8 数据后 Backup/Restore/加密异机副本。不得手工补表/列、删除失败
@@ -709,9 +709,10 @@ M8。
   Run 34242753255 在干净 checkout 完成 8/8；MySQL Job 的 M6→M7→M8、联合门槛和
   cleanup 均 success。首轮 Run 34242022911 因 Reservation 测试迁移清单漏列 M8 而
   7/8，修复后完整重跑；详见
-  `docs/09_release/reports/m8_remote_ci_2026-09-08.md`。远端 PASS 仍不代表 Gate A M8
-  已应用，也不覆盖其后新增的 M7→M8/Online exact no-op 发布保护；后者必须取得新的
-  干净 SHA 与 Run。
+  `docs/09_release/reports/m8_remote_ci_2026-09-08.md`。其后新增的 M7→M8/Online exact
+  no-op 发布保护现已由 head `fa6fce05...` / Run 34281512196 在干净远端完成 8/8，详见
+  `docs/09_release/reports/m8_hardening_remote_ci_2026-09-09.md`。该 PASS 仍不代表完整
+  updater 已演练或 Gate A M8 已应用。
 
 ---
 

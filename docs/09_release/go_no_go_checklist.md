@@ -1,6 +1,6 @@
 # 微信发布 Go/No-Go Checklist
 
-> **Status:** No-Go / Not Authorized — M7 持久检查点已关闭，M8 基线远端 CI 8/8；M7→M8 候选已本地实现但待新远端/完整 updater 隔离 MySQL，本地 5Mbps 完整探索轮仍有一项容量失败，持久升级、真实 HTTPS RC 与真机仍阻断
+> **Status:** No-Go / Not Authorized — M7 持久检查点已关闭，M7→M8 加固候选 `fa6fce05...` 远端 CI 8/8；完整 updater 隔离 MySQL、本地 5Mbps 容量失败处置、持久升级、真实 HTTPS RC 与真机仍阻断
 > **Last Updated:** 2026-09-09
 > **Current Scope:** 微信小程序内部测试版（Gate A）
 
@@ -30,9 +30,12 @@ workflow 覆盖并保存证据，详见
 [Run 34242753255](https://github.com/EVEBios/pinkdooHub/actions/runs/34242753255) 完整
 取得 8/8；首轮 Run 34242022911 的 7/8 与 Reservation 迁移清单漏 M8 修复均保留在
 [M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。其后新增的 M7→M8/Online no-op
-保护不在该 Run 中，只有本地 Release 测试证据，仍待新干净 SHA 的远端与隔离 MySQL
-复现。M8 尚未应用 Gate A；所以下方除 HTTPS/微信平台/真机/签署外，还保留新候选 CI、
-持久 M7→M8、HEX/gzip、M8 数据后恢复等未勾选项。
+保护现已收口为 head `fa6fce05...`、merge-ref `b2f02ebc...`，并由
+[Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 在干净
+PR checkout 完成 8/8；详见
+[M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)。M8 尚未应用
+Gate A；下方除 HTTPS/微信平台/真机/签署外，还保留完整 updater、持久 M7→M8、
+HEX/gzip、M8 数据后恢复等未勾选项。
 
 ## 1. Gate A：内部微信测试版
 
@@ -49,7 +52,7 @@ workflow 覆盖并保存证据，详见
 - [x] 后端与 `weapp` artifact 均来自同一已通过 Run，并记录 GitHub digest；
 - [x] M8 基线已绑定 PR head `4e745848...`、merge-ref `3ddda81...` 和 Run 34242753255；该项只关闭该 SHA 的仓库 CI；
 - [x] M8 Run 的后端、前端与非发布 `weapp` artifact 来自同一 merge-ref，7 组大小与 GitHub digest 已记录；
-- [ ] M7→M8/Online no-op 保护形成新的干净 Git SHA，并将后端、前端、OpenAPI 与 `weapp` artifact 重新绑定同一成功 Run；
+- [x] M7→M8/Online no-op 保护已绑定干净 head `fa6fce05...`、merge-ref `b2f02ebc...` 与 Run 34281512196；后端、前端、OpenAPI、非发布 `weapp`、依赖审计和仓库卫生均来自同一完整 8/8；
 - [ ] OpenAPI 摘要、运行时版本、微信开发者工具/上传工具版本已记录；
 - [ ] 体验版名称、界面和测试说明明确标识“内部测试”，无公开承诺。
 - [x] 备案前预 RC 已绑定 `c4d27a8...`、Node 24.13.0/npm 11.6.2、开发者工具 Stable 2.02.2608060、不可发布 `.test` Origin、97 文件/603,624 bytes、0 source map 和 manifest `aeb81ef...`；该项不替代上面的真实 RC；
@@ -71,10 +74,10 @@ workflow 覆盖并保存证据，详见
 - [x] M8 Run 34242753255 的 8 个 Job 全部 success；`backend-mysql-release` 的 M6→M7→M8、联合 MySQL gate 与 cleanup 均 success；
 - [x] M8 本地完整后端为 `2069 passed, 31 skipped`，前端为 `84 suites / 573 tests`，并通过 TypeScript、ESLint、Stylelint、OpenAPI drift、compileall、pip check 与 17 项 CI policy；本地计数不冒充远端日志；
 - [x] 后续 M7→M8/Online no-op 候选的完整 `tests/release` 为 `229 passed`，覆盖显式 source、Record 组合、版本化 21 表内容摘要/Restore、停写 raw 预检、live replay、图片不漂移与事务内 no-op；
-- [x] 本轮本地候选的完整后端为 `2317 passed, 33 skipped in 125.31s`，编译检查通过；该数字只证明本地工作树，不冒充干净 SHA、远端或 Gate A 证据；
+- [x] 本轮本地候选的完整后端为 `2317 passed, 33 skipped in 125.31s`，编译检查通过；该本地计数已收口进 `fa6fce05...`，但不冒充远端日志、完整 updater 或 Gate A 证据；
 - [x] 2026-09-09 本地 2 核/4GiB 容器包络/共享 5Mbps 探索轮已完整采集 A/B/C/D、5/10 VU 共 12/12 个 Profile，150 个写旅程、最终对账、日志/statement 和资源清理均有独立报告；
 - [ ] 上述探索轮的全部冻结容量门槛通过，或已对 10 VU 持续未压缩色板的 P95/428 drops 形成有时限、可监控且由风险接受人签署的处置；其余 11 项通过不能覆盖整轮 `FAIL`；
-- [ ] 上述后续候选由新干净 SHA 的完整远端 8/8 复现；不得用 Run 34242753255 冒充；
+- [x] 上述后续候选已由新干净 head `fa6fce05...` / merge-ref `b2f02ebc...` 的 Run 34281512196 完整远端 8/8 复现并保存 7 组 artifact；
 - [ ] 同一干净 SHA 在专用一次性 MySQL 完整执行 M7→M8 updater 场景并保存 artifact；不得用仅 publisher 的 `3 passed` 冒充；
 - [x] Node/npm/Python/Taro 支持版本由仓库和 CI 固定。
 
@@ -109,8 +112,9 @@ workflow 覆盖并保存证据，详见
 - [ ] 为当次 M7→M8 创建新的同点 MySQL/图片 Backup；M7/M8 Record 必须包含 `m7-preserved-business-v1`，对 20 个非 `bead_colors` 表和该表 M7 投影（共 21 个业务表）做内容 SHA-256，独立无端口 Restore 必须重算并精确匹配，同时验证 Schema、225 图片、空 Redis 和 Restore App；不得仅复用 `20260908t021224z` 或只比较聚合计数；
 - [x] 受保护的 M7→M8 仓库候选已经实现：必须显式 `--source-version 7`，只执行 M8，比较版本化 21 表内容摘要、Aerich 精确链与完整图片 manifest，并要求三次 MARD 结果精确 no-op；旧调用默认 M2 且误用时在写前 fail closed；
 - [x] M8 原语前的停写 source preflight 已实现：`swatch_hex` 列必须为 0，221 条 M7 slot/code/name/URL/sort/active 必须逐项等于冻结 manifest，221 张预期 PNG 必须为普通非软链接文件、SHA-256 精确且权限 `0644`；任一失败不得调用迁移任务；
-- [x] 独立只读代码审查发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3。该结论只绑定本地 diff，不替代干净提交与远端/真实 MySQL 证据；
-- [ ] 形成最终干净 SHA，并完成该 SHA 的远端 CI 和专用一次性 MySQL 完整 updater 复现；不得伪造 source Record、拆跑内部迁移原语或把 publisher 专项证据当成完整入口证据；
+- [x] 独立只读代码审查发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态 fail-closed 矩阵后复核无未解决 P0–P3，且已绑定 `fa6fce05...` / Run 34281512196；
+- [x] M7→M8 加固已形成最终干净 head `fa6fce05...`，并完成该 SHA 的完整远端 CI；
+- [ ] 同一 SHA 在专用一次性 MySQL 完整执行 updater 场景并保存独立 evidence；不得伪造 source Record、拆跑内部迁移原语或把 publisher/既有 workflow MySQL 专项证据当成完整入口证据；
 - [ ] M8 后 `swatch_hex` 列形状、221 槽逐项 HEX/唯一性通过，且颜色 code/name/URL/active/sort、商品颜色库存、订单快照和 `m7-preserved-business-v1` 保护的其他业务内容不漂移；
 - [x] publisher 候选已允许已有 Online 自选色商品在事务锁定后仍为精确 no-op 时通过，并在任何数据库/图片漂移时写前拒绝；本地自动化覆盖 221 张全部复用、零数据库/图片写入；
 - [ ] 在受控 M7→M8 编排内取得 Gate A 的精确 no-op 证据；不得脱离编排直接运行 publisher、临时改商品状态或把 PNG 转 WebP；
@@ -185,7 +189,7 @@ Gate A 全部重新绑定公开 RC 后，还必须：
 - artifact、Git SHA、OpenAPI 或环境来源不能证明一致；
 - CI 必需 Job 未运行、被无批准跳过或结果不可复核；
 - 连接目标身份不明、备份未恢复验证或迁移状态无法解释；
-- 当前数据库为 M7 却省略显式 `--source-version 7`、新 Backup/Restore 缺少或不匹配 `m7-preserved-business-v1`、raw M7 色板/schema/PNG 预检失败、新候选尚未通过所绑定 SHA 的远端/完整 updater 隔离 MySQL 门槛，或绕过编排直接执行 M8 内部原语/独立 publisher；
+- 当前数据库为 M7 却省略显式 `--source-version 7`、新 Backup/Restore 缺少或不匹配 `m7-preserved-business-v1`、raw M7 色板/schema/PNG 预检失败、所绑定候选未通过完整 updater 隔离 MySQL 门槛，或绕过编排直接执行 M8 内部原语/独立 publisher；
 - 成功 Record 后未在同一停写窗口紧邻完成 live replay verification、把 `app-up` 的 Record 校验误当实时 DB/图片/MARD 校验，或存在不能排除的直接 SQL/宿主图片旁路写入；
 - 存在越权、Secret/个人敏感信息泄漏、数据破坏或不可恢复风险；
 - 订单/库存/支付出现重复、伪造、金额不一致或 unknown 无安全处置；
