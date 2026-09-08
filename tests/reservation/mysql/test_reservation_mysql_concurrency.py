@@ -53,6 +53,9 @@ COLOR_SELECTABLE_KIT_MIGRATIONS = list(
 RESERVATION_SETTINGS_MIGRATIONS = list(
     Path("migrations/models").glob("7_*_add_reservation_settings.py")
 )
+BEAD_COLOR_SWATCH_HEX_MIGRATIONS = list(
+    Path("migrations/models").glob("8_*_add_bead_color_swatch_hex.py")
+)
 
 
 class _HoldingBusinessDayRepository(ReservationRepository):
@@ -760,6 +763,7 @@ async def test_mysql_migrations_and_explain_use_all_reservation_indexes() -> Non
     assert len(RESERVATION_MIGRATIONS) == 1
     assert len(COLOR_SELECTABLE_KIT_MIGRATIONS) == 1
     assert len(RESERVATION_SETTINGS_MIGRATIONS) == 1
+    assert len(BEAD_COLOR_SWATCH_HEX_MIGRATIONS) == 1
     product, option = await _create_option()
     users = [await _create_user(100 + number) for number in range(50)]
     business_days = [
@@ -876,6 +880,7 @@ async def test_mysql_migrations_and_explain_use_all_reservation_indexes() -> Non
         RESERVATION_MIGRATIONS[0].name,
         COLOR_SELECTABLE_KIT_MIGRATIONS[0].name,
         RESERVATION_SETTINGS_MIGRATIONS[0].name,
+        BEAD_COLOR_SWATCH_HEX_MIGRATIONS[0].name,
     ]
     assert day_lock_plan[0]["key"] == "uidx_store_business_day_date"
     assert user_page_plan[0]["key"] == "idx_reservations_user_start_id"
