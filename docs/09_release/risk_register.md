@@ -1,7 +1,7 @@
 # Phase 9 微信发布风险登记
 
 > **Status:** Active
-> **Last Updated:** 2026-09-07
+> **Last Updated:** 2026-09-08
 > **Current Gate:** Gate A — 内部微信测试版
 
 风险状态使用 `open`、`mitigating`、`accepted-until`、`closed`、`deferred`。只有满足“关闭证据”才能标记 `closed`；降低优先级或口头接受不等于关闭。
@@ -10,7 +10,10 @@
 `23a0f08...`、Phase 9.3 `136a8bd...`、Phase 9.4 Runtime `51ad315...` / Operations
 `c4d27a8...` 等旧 SHA 与 Aerich M0–M2；它们证明对应流程曾有效，不自动关闭当前 M4–M7 候选的
 后续风险。审计起点 `c6778e7...` 的远端 Run 34104680282 保留为 7/8 失败记录；当前
-head `4d6430c...` 的 Run 34129910349 已 8/8 并关闭 R-026，但 Gate A 因其余风险仍是 No-Go。
+head `4d6430c...` 的 Run 34129910349 已 8/8 并关闭 R-026。持久 Gate A 随后
+在 Runtime `73dca350...` 上完成 M2→M7、Wallet/MARD、韧性、综合数据和
+数据后 Backup/Restore；Operations `353455bb...` 的 Run 34178908663 为 8/8。
+Gate A 只因真实 HTTPS/微信合法域名、RC、真机与最终签署仍是 No-Go。
 
 ## 1. 活跃风险
 
@@ -29,11 +32,11 @@ head `4d6430c...` 的 Run 34129910349 已 8/8 并关闭 R-026，但 Gate A 因�
 | R-011 | P1 | dependency-aware readiness 已实现但尚未在生产相似 MySQL/Redis 验证摘流量与恢复 | 中×高 | DR-06 分别中断 MySQL/Redis，Readiness 安全返回 503，恢复后重新 200；Liveness、优雅重启与脱敏均通过 | Yijie Shen | 9.3 | closed |
 | R-012 | P1 | Redis 初始化日志可能泄露连接凭据 | 中×高 | Run 33355935212 的后端契约证明 username、password、query 不输出 | Yijie Shen | Gate A | closed |
 | R-013 | P1 | production fail-fast 与 Secret 隐藏缺少干净 CI 证据 | 中×高 | Run 33355935212 覆盖 debug/MySQL/JWT/Redis/HTTPS 图片配置的接受与拒绝路径 | Yijie Shen | Gate A | closed |
-| R-014 | P1 | Gate A 图片依赖本地卷，主机/系统盘故障可能同时损坏来源与同机备份 | 高×高 | 3 张真实图片已完成持久卷、`0600` 归档、checksum 和无端口独立恢复；Backup `20260902t014211z` 已生成管理电脑 FileVault 上的 AES-256-GCM/RSA-OAEP-SHA256 异机副本并立即完整解密复核，私钥与副本分离 | Yijie Shen | Gate A 保管 | closed |
+| R-014 | P1 | Gate A 图片依赖本地卷，主机/系统盘故障可能同时损坏来源与同机备份 | 高×高 | 当前 225 图片的 Backup `20260908t021224z` 已完成 `0600` 归档、checksum、无端口独立恢复，并在管理电脑 FileVault 上形成 AES-256-GCM/RSA-OAEP-SHA256 异机副本后立即解密复核；私钥与副本分离 | Yijie Shen | Gate A 保管 | closed |
 | R-015 | P1 | Gate A Secret 的保管、读取主体、轮换和泄漏响应未落地 | 中×高 | Root 文件型 Secret 的路径、`0700/0400/0440` 权限、容器 UID/GID 读取边界、人工 TTY Bootstrap、轮换/泄漏触发、备份私钥隔离和日志零精确命中均已验证；详细证据见备案前收口报告 | Yijie Shen | Gate A（测试） | closed |
 | R-016 | P1 | Python/Node/npm/pip 固定缺少远端干净 CI 证据 | 高×中 | Run 33355935212 验证版本文件、engines 和 CI 精确版本 | Yijie Shen | 9.2 | closed |
 | R-017 | P1 | pip-audit 修复可升级项后只剩 ecdsa 无修复的 P-256 时序公告 | 中×高 | 固定 pip-audit 2.10.1；production HS256 不可达策略 fail-closed，算法/版本变化重审，2026-11-30 到期 | Yijie Shen | 2026-11-30 | accepted-until |
-| R-018 | P1 | 当前候选只有 `release_eligible=false` 本地产物，尚缺同 SHA 的远端产物与真实 RC | 中×中 | 新 SHA 8/8 保存微信 artifact/checksum；真实 Origin 重建并复核 0 source map/上传入口 | Yijie Shen | Gate A | open |
+| R-018 | P1 | 当前远端微信 artifact 仍为 `release_eligible=false`，尚缺真实 HTTPS Origin 的 RC | 中×中 | Run 34178908663 已保存同一干净 merge-ref 的微信 artifact/checksum；域名可用后以真实 Origin 重建并复核 `release_eligible=true`、0 source map 与上传入口 | Yijie Shen | Gate A | open |
 | R-019 | P1 | 管理分包是否随公开包发布未决定 | 中×中 | Gate B 前评估包体、审核面、运营入口和后端授权 | Yijie Shen | Gate B | deferred |
 | R-020 | P1 | 认证安全和监控告警缺口 | 中×高 | 9.5 已实现 refresh family 轮换/重放撤销、Redis 原子限流/fail-closed 和结构化安全事件；仍需正式监控接入、送达与恢复演练 | Yijie Shen | Gate B | mitigating |
 | R-021 | P2 | OpenAPI CLI UTF-8/CP1252 回归缺少 CI 运行证据 | 高×低 | Run 33355935212 的 OpenAPI Job 完成 `--help`、真实导出、字节比较和类型漂移检查 | Yijie Shen | 9.2 | closed |
@@ -43,11 +46,11 @@ head `4d6430c...` 的 Run 34129910349 已 8/8 并关闭 R-026，但 Gate A 因�
 | R-025 | P1 | Gate B 缺少集中 Secret Manager、访问审计和自动轮换 | 中×高 | Phase 9.5 已冻结 Secret inventory、文件注入边界和 Pepper 轮换约束；仍需选择集中系统并验证最小权限、版本、轮换、撤销和审计 | Yijie Shen | Gate B | mitigating |
 | R-026 | P0 | M7 修复前远端 CI 只有 7/8；失败 Run 的 MySQL Job 把 M6 当最新版本 | 确定×高 | `4d6430c...` / merge-ref `ccbbe9d...` 的 Run 34129910349 已 8/8；MySQL 21 项、cleanup 步骤和 7 组 artifact 可复核；旧 Run 保留 | Yijie Shen | 当前候选 / Gate A | closed |
 | R-027 | P0 | M7 最初只有本地 dirty-tree 一次性 MySQL 完整证据，未绑定干净 commit/远端 Runner | 中×高 | [本地报告](reports/m7_mysql_release_gate_2026-09-07.md)保留完整历史矩阵；当前 [远端报告](reports/m7_remote_ci_2026-09-07.md)绑定 head/merge-ref，在干净 Runner 复现 workflow、21 项 MySQL 与 cleanup | Yijie Shen | 当前候选 / Gate A | closed |
-| R-028 | P0 | 持久 Gate A 最后记录为 M2，但当前真实版本尚未重新读取；错误起点或部分 DDL 失败会造成不可发布状态 | 确定×极高 | 已实现只接受精确 M2 的 `gatea_upgrade`：绑定 source/target SHA、新鲜 Backup/Restore、停写快照、M3–M7/Wallet/MARD 和成功 Record，失败留证且不自动重跑；一次性 MySQL 已通过。仍须恢复 SSH 后只读确认并在当次授权窗口真实执行 | Yijie Shen | Gate A | mitigating |
+| R-028 | P0 | 持久 Gate A 最后历史记录为 M2，错误起点或部分 DDL 失败可能造成不可发布状态 | 确定×极高 | 2026-09-08 写前只读确认真实 M2，Backup/Restore 后依次执行 M3–M7、Wallet/MARD 并生成绑定 Runtime `73dca350...` 的成功 Record；最终 22 表/217 列/83 约束/173 索引统计行及业务摘要通过 | Yijie Shen | Gate A | closed |
 | R-029 | P1 | Wallet 曾只有有限 MySQL 关键闭环，缺少扩展并发/瞬态错误/查询计划与跨资金库存门槛 | 中×极高 | 一次性 MySQL 8.0.46 已完成 Wallet `9 passed`、三域联合 `30 passed`；head `62f807a...` 的 Run 34134341829 远端 8/8，三域联合、cleanup 和 artifact 步骤成功，覆盖并发、真实 1205/1213、锁等待与关键 `EXPLAIN` | Yijie Shen | 2026-09-07 | closed |
-| R-030 | P1 | 本地 SQLite 的 221 色与图片未发布到 Gate A MySQL/持久图片存储，商品颜色启用/库存也未配置 | 确定×高 | 已实现默认 preview、checksum apply、MySQL 事务、`0644` 持久图片原子发布/补偿和重放入口，并在一次性 MySQL 8.0.46 通过；仍须由升级编排应用 Gate A、配置测试商品启用色/库存并完成 HTTPS 真机读取 | Yijie Shen | Gate A | mitigating |
+| R-030 | P1 | 本地 SQLite 的 221 色与图片不能作为 Gate A MySQL/持久图片证据 | 确定×高 | Gate A 已根据冻结 manifest 写入 221 色、原子发布/checksum 核验 221 张图片，并建立启用 3 色与库存 148 的测试商品；数据后 225 图片 Backup/Restore 通过。HTTPS/真机读取另由 R-002/R-003/R-031 跟踪 | Yijie Shen | Gate A | closed |
 | R-031 | P1 | 旧微信验收只覆盖 M2 业务面，M4–M7、代客多颜色和头像布局没有当前 RC 真机证据 | 确定×高 | 当前矩阵全部绑定同一 release-eligible RC，在至少一台 iOS 和 Android 完成 Wallet、颜色 Kit、Reservation、固定/单日店休和最新布局验收 | Yijie Shen | Gate A | open |
-| R-032 | P1 | Gate A 的 Wallet 历史用户/legacy manual Order 尚未 backfill/reconcile，启用资金入口可能形成缺账户或矛盾结算 | 高×极高 | M4 后按冻结上界依次完成 wallet preview/apply/二次 preview、legacy settlement preview/apply 与只读 reconcile；所有差异为零后再启用 | Yijie Shen | Gate A | open |
+| R-032 | P1 | Gate A 的 Wallet 历史用户/legacy manual Order 需要 backfill/reconcile，否则启用资金入口可能形成缺账户或矛盾结算 | 高×极高 | 按冻结上界完成 wallet `would_create=1 → created=1 → 0`、legacy settlement `would_create=1 → created=1 → 0`，升级对账 `1/0/0`；综合数据后二次对账为 `scanned=4, mismatches=0, violations=0`，真实充值/Provider 仍关闭 | Yijie Shen | Gate A | closed |
 | R-033 | P2 | Reservation N1 只在页面展示状态，店休取消没有主动微信通知 | 高×中 | Gate A 明确 N1 边界并保留人工电话兜底；若 Gate B 要求通知，完成订阅授权、加密投递地址、durable outbox/worker/重试/监控和真机验收 | Yijie Shen | Gate B / N2 | deferred |
 | R-034 | P2 | MARD 网页 HEX/RGB 未经实体拼豆样本校色，图片是确定性纯色而非实物照片 | 中×中 | Gate A 内部说明来源限制；公开使用前按批准色样校准并更新 manifest/图片/checksum/验收记录 | Yijie Shen | Gate B 或正式销售前 | deferred |
 

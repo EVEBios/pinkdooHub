@@ -1,14 +1,17 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** Historical pre-ICP server controls passed；current M7 deployment/Origin still blocked
-> **Last Updated:** 2026-09-07
+> **Status:** Current M7 persistent server controls passed；real HTTPS Origin still blocked
+> **Last Updated:** 2026-09-08
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
-2026-09-02 的持久主机、Secret、备份和日志证据绑定 M2 Runtime `51ad315...` 及对应
-旧 Operations SHA；当前 M4–M7 候选尚未部署。Gate A 最后记录为 M2，但写前必须重新
-只读确认真实 Aerich 状态；现有候选也没有
-真实 HTTPS Origin、微信合法域名或 release-eligible RC。旧 Secret 文件与基础设施控制
-可以作为流程输入，不能替代当前候选的迁移、镜像、颜色图片和真机重验。
+2026-09-02 的持久主机、Secret、备份和日志证据绑定 M2 Runtime `51ad315...`；
+它们保留为历史流程证据。2026-09-08 已通过真实只读查询确认 M2 起点，随后
+把持久 Gate A 升级到 M7，并完成 Wallet/MARD、候选韧性、综合数据和数据后
+Backup/Restore/加密异机副本。当前 Runtime 为 `73dca350...`，Operations 最新留证为
+`353455bb...` / Run 34178908663。服务器数据、图片、Secret 文件、备份和 loopback
+运行控制现可作为当前候选证据；真实 HTTPS Origin、微信合法域名、
+release-eligible RC 和真机仍必须在域名可用后单独重验。详见
+[Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
 
 ## 1. 环境矩阵
 
@@ -45,6 +48,8 @@
 | `JWT_ACCESS_TOKEN_EXPIRE` | 否 | 已有 | 与测试/运营策略一致 | Yijie Shen |
 | `JWT_REFRESH_TOKEN_EXPIRE` | 否 | 已有 | Gate A 可沿用；Gate B 与轮换设计一起冻结 | Yijie Shen |
 | `PASSWORD_REGISTRATION_ENABLED` | 否 | Phase 9.5 已有 | Gate B 小程序公开入口设为 `false`；管理/既有密码登录不受影响 | Yijie Shen |
+| `WALLET_ADMIN_WRITE_ENABLED` / `WALLET_ORDER_PAYMENT_ENABLED` / `WALLET_REFUND_ENABLED` | 否 | M4 已有，默认关闭 | Gate A 只在历史补齐/对账和 MySQL 门槛全部通过后用于无真实资金验收 | Yijie Shen |
+| `WALLET_TOPUP_ENABLED` / `PAYMENT_PROVIDER` | 否 | 真实 Provider 未接入 | Gate A 保持 `false` / `disabled`，充值和真实微信支付必须 503 且零写入 | Yijie Shen |
 | `WECHAT_LOGIN_ENABLED` | 否 | Phase 9.5 已有，默认 false | 仅真实 Secret/真机门槛通过后启用 | Yijie Shen |
 | `WECHAT_APP_ID` | 否 | Phase 9.5 已有 | 与目标正式小程序账号一致 | Yijie Shen |
 | `WECHAT_APP_SECRET` | 是 | Phase 9.5 已有 | 只从后端集中 Secret 注入，不进入环境模板值/日志/前端 | Yijie Shen |
@@ -130,16 +135,32 @@ Gate A 持久 Bootstrap 只允许 `gatea_bootstrap.py` 从人工 TTY 隐藏读�
 Secret、一次性容器和投放文件已清理。脱敏证据见
 [`reports/phase94_gatea_bootstrap_2026-09-02.md`](reports/phase94_gatea_bootstrap_2026-09-02.md)。
 
-Gate A 代表性备份数据工具不创建新的持久 Secret。执行人当前 SUPER_ADMIN 密码只经
-TTY 隐藏读取并保留在宿主进程内存；合成 USER 密码由进程使用 `secrets` 随机生成，
-只保留在同一进程内存。完成正式 API 数据链后，两个会话均注销并验证 Refresh 撤销，
-合成 USER 固定禁用；成功 Record 不保存任何身份字段、密码、Token 或 hash。
+Gate A 代表性数据工具不把凭据写入配置、日志或脱敏成功 Record。执行人
+当前 SUPER_ADMIN 密码只经 TTY 隐藏读取并保留在宿主进程内存；合成 USER 密码由
+`secrets` 随机生成，只保存到 Record 目录下不输出内容的 `root:root 0600` 凭据文件。
+成功前必须撤销全部合成会话和 SUPER_ADMIN 会话；成功 Record 不保存密码、Token、
+手机号、请求/响应正文或 SUPER_ADMIN 凭据。
 
 2026-09-02 真实 Gate A 已完成该流程及后续非空备份/隔离恢复：2 个受控用户、2 个
 Product、3 张图片、2 笔终态订单和 3 条库存流水均通过只读摘要；Backup
 `20260902t014211z` 的 MySQL/图片 Artifact 为 `root:root 0600`，独立 Restore 使用
 空 Redis、无宿主端口并在验证后删除全部临时资源。脱敏证据见
 [`reports/phase94_gatea_representative_restore_2026-09-02.md`](reports/phase94_gatea_representative_restore_2026-09-02.md)。
+
+2026-09-08 当前 M7 数据已生成 3 个合成账号的 `0600` 凭据文件，全部会话撤销，
+密码注册开关也已恢复为 `false`。长期 App PID 1 的当前非 Secret 开关组合为：
+
+```text
+WALLET_ADMIN_WRITE_ENABLED=true
+WALLET_ORDER_PAYMENT_ENABLED=true
+WALLET_REFUND_ENABLED=true
+WALLET_TOPUP_ENABLED=false
+PAYMENT_PROVIDER=disabled
+PASSWORD_REGISTRATION_ENABLED=false
+```
+
+前三项只用于 Gate A 内部测试，不改变不接真实资金的决策。完整脱敏证据见
+[`reports/gatea_m7_upgrade_and_data_2026-09-08.md`](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
 
 ### 3.2 Gate A 备份保管与 Redis 恢复策略
 
@@ -179,6 +200,11 @@ Record 为 `0600`、私钥为 `0600`，密钥目录与副本目录分别为 `070
 FileVault 已开启。脱敏 Record 只保存 key ID、算法、大小/checksum、来源文件摘要和
 验证布尔值，不保存私钥、Secret 或 PII。详细证据见
 [`reports/phase94_pre_icp_completion_2026-09-02.md`](reports/phase94_pre_icp_completion_2026-09-02.md)。
+
+2026-09-08 已对包含当前 M7 综合数据和 225 图片的 Backup `20260908t021224z`
+重复同一链路：服务器 `0600` 资产、无端口独立 Restore、管理电脑 `0400`
+AES-256-GCM/RSA-OAEP-SHA256 副本、`0600` 副本 Record 和立即解密/成员/来源 checksum
+复核均通过。私钥与副本分离，没有进入服务器或仓库。
 
 ## 4. 微信网络与域名清单
 

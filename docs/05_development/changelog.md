@@ -13,6 +13,14 @@
 - loopback 可用性探针在 `bind()` 前显式设置 `SO_REUSEADDR`，允许发布入口快速重启时复用
   最近关闭的地址，同时仍由内核拒绝真实活动监听者。新增调用顺序回归；修复必须形成新的
   CI 成功 Operations Release 后，才允许重新创建数据后 Backup 和独立 Restore。
+- 修复提交 `353455b` 已由 GitHub Actions Run 34178908663 在干净 PR checkout 完成
+  8/8；版本化 Operations Release 投放后，新 Backup `20260908t021224z` 已快速
+  恢复长期 App/Nginx，其独立无端口 Restore 的数据库、225 个图片、空 Redis、Restore
+  App 和临时资源清理全部通过。数据后对账为 `scanned=4 / mismatches=0 /
+  violations=0`，日志精确 Secret/高置信敏感模式匹配均为 0。详细脱敏证据见
+  `docs/09_release/reports/gatea_m7_upgrade_and_data_2026-09-08.md`。当次 Backup 同时已生成
+  AES-256-GCM/RSA-OAEP-SHA256 管理电脑异机副本，并立即完成解密、成员与
+  来源 checksum 复核；私钥与副本分离，不进入服务器或仓库。
 
 ## Gate A M7 综合代表性测试数据入口（本地候选，2026-09-08）
 

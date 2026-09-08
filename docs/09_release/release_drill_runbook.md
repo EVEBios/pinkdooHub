@@ -1,7 +1,7 @@
 # 微信 Gate A 隔离发布演练 Runbook
 
-> **Status:** Historical M2 drill passed — M2→M7 tooling ready；persistent execution/RC blocked
-> **Last Updated:** 2026-09-07
+> **Status:** Current M2→M7 persistent/server drill passed；HTTPS RC/device blocked
+> **Last Updated:** 2026-09-08
 > **Scope:** 微信小程序内部测试版（Gate A）
 
 本文定义 Phase 9.3 的安全执行顺序、证据和失败处置。它不是生产操作授权，也不包含任何真实连接信息。首次实际演练必须在专用、可销毁、与共享环境隔离的 MySQL 8+、Redis 和图片存储中执行。
@@ -11,6 +11,11 @@
 固定店休。旧报告、旧工具输出和旧候选迁移 Record 不得重命名或复用为当前结果。
 Gate A 在 2026-09-02 的最后记录是非空 M2；这不是当前数据库事实，任何写操作前仍须
 以只读查询确认真实状态。
+
+2026-09-08 的当前执行已遵循该顺序：只读确认 M2，新 Backup/独立 Restore 后
+升级到 M7，再完成 Wallet/MARD、候选韧性、综合数据、数据后 Backup/Restore
+和加密异机副本。本文保留操作规范；实际结果见
+[Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
 
 ## 1. 安全边界
 
@@ -49,19 +54,19 @@ Gate A 在 2026-09-02 的最后记录是非空 M2；这不是当前数据库事�
 
 | ID | 场景 | 核心断言 | 状态 |
 |----|------|----------|------|
-| DR-01 | 全新空库 0→当前 | 历史要求为 0→2；当前要求为精确 0→7，并核验 M3–M7 表/约束/索引/默认数据 | 历史 M2 PASS；本地 dirty-tree M7 PASS；远端/Gate A 待证据 |
-| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；当前必须继续到 M7 | 历史 M2 PASS；本地 dirty-tree M0→M7 PASS；Gate A 待证据 |
-| DR-03 | 历史版本代表性数据升级 | 历史 M1 Order/库存样本；当前增加 1/2/3/4/5/6→7 与各领域不漂移 | 本地 dirty-tree M0–M6→M7 矩阵 PASS；远端/Gate A 待证据 |
-| DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | 历史 M2 PASS（9.3 Report）；当前候选待重演 |
+| DR-01 | 全新空库 0→当前 | 历史要求为 0→2；当前要求为精确 0→7，并核验 M3–M7 表/约束/索引/默认数据 | 一次性与当前远端 MySQL 8.0.46 PASS |
+| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；当前必须继续到 M7 | 一次性 M0→M7 PASS；持久 Gate A M2→M7 额外 PASS |
+| DR-03 | 历史版本代表性数据升级 | 历史 M1 Order/库存样本；当前增加 1/2/3/4/5/6→7 与各领域不漂移 | 一次性 M0–M6→M7 矩阵 PASS；持久 M2→M7 PASS |
+| DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | 当前数据后 Backup `20260908t021224z` / 独立 Restore /加密异机副本 PASS |
 | DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | 历史 M2 PASS（9.3 Report）；当前既有库路径待实现/重演 |
-| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | 历史 M2 PASS（9.3 Report）；当前镜像待重演 |
-| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | 历史 M2 PASS（9.3 Report）；当前环境待复核 |
+| DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | 当前 M7 Runtime 候选级韧性 PASS |
+| DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | 历史 Bootstrap PASS；当前账号登录、轮换密码和会话撤销在 M7 Seed 重验 PASS |
 | DR-08 | 微信真机网络 | request/upload/download、证书、Token、图片和错误信封通过 | BLOCKED：备案/Origin/RC |
-| DR-09 | Gate A 纵向 Smoke | 旧最小链路加 Wallet、颜色 Kit、Reservation、M7 和最新界面 | 历史 M2 服务端 32 请求 PASS；当前候选待重演 |
-| DR-10 | M4 钱包补齐与对账 | wallet/legacy preview 与冻结上界 apply、二次 preview、只读 reconcile 全零差异 | NOT RUN（Gate A） |
-| DR-11 | M5 Reservation | 预约四状态、单日店休、隐私、并发/1205/1213/索引与历史数据 | 一次性 M5 MySQL 历史 PASS；Gate A NOT RUN |
-| DR-12 | M6 颜色目录与库存 | M5 fixed 重放到 M6/M7；221 槽/列/FK/索引；持久图、商品启用色/库存与 HTTPS | 一次性 M6 snapshot PASS；SQLite 色板仅开发证据；Gate A NOT RUN |
-| DR-13 | M7 固定店休 | 单例/默认周一/唯一约束，历史预约/单日店休不漂移，更换的事务/锁序/批量取消 | 本地 dirty-tree 一次性 MySQL/21 项联合门槛 PASS；远端/Gate A 待证据 |
+| DR-09 | Gate A 纵向 Smoke | 旧最小链路加 Wallet、颜色 Kit、Reservation、M7 和最新界面 | 当前服务端 82 请求及数据聚合 PASS；真机界面继续属于 DR-08 |
+| DR-10 | M4 钱包补齐与对账 | wallet/legacy preview 与冻结上界 apply、二次 preview、只读 reconcile 全零差异 | 持久 Gate A PASS；综合数据后复核 `4/0/0` |
+| DR-11 | M5 Reservation | 预约四状态、单日店休、隐私、并发/1205/1213/索引与历史数据 | MySQL 门槛与 Gate A 六预约聚合 PASS；真机待 DR-08 |
+| DR-12 | M6 颜色目录与库存 | M5 fixed 重放到 M6/M7；221 槽/列/FK/索引；持久图、商品启用色/库存与 HTTPS | MySQL/持久图/三启用色/库存/Backup 已 PASS；HTTPS 真机待 DR-08 |
+| DR-13 | M7 固定店休 | 单例/默认周一/唯一约束，历史预约/单日店休不漂移，更换的事务/锁序/批量取消 | 一次性/远端 MySQL 与持久 Gate A 结构/聚合 PASS；真机待 DR-08 |
 
 对最后留证为非空 M2 的当前 Gate A，以及未来任何需要接管的既有数据库，都必须先执行
 只读审计，确认 Schema、Aerich 版本、数据质量和备份；未审计的库不自动成为“受支持

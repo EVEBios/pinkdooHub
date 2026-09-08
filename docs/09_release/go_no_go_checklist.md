@@ -1,7 +1,7 @@
 # 微信发布 Go/No-Go Checklist
 
-> **Status:** No-Go / Not Authorized — 当前 M7 候选 CI、持久迁移、真实 RC 与真机均未关闭
-> **Last Updated:** 2026-09-07
+> **Status:** No-Go / Not Authorized — M7 服务端/持久数据已关闭；域名/HTTPS、真实 RC 与真机仍阻断
+> **Last Updated:** 2026-09-08
 > **Current Scope:** 微信小程序内部测试版（Gate A）
 
 本清单是发布决策索引，不替代 CI、演练或验收证据。勾选项必须附证据链接、执行时间和责任人；“本机试过”“历史通过”“应该没问题”不能勾选。Phase 9.1 只建立清单，不授权微信上传、体验版分发、提审或公开发布。
@@ -19,6 +19,14 @@ MySQL 报告完成 0→7、M0–M6→M7 和联合 `21 passed`。当前远端 Run
 workflow 覆盖并保存证据，详见
 [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。
 
+2026-09-08 当前覆盖说明：持久 Gate A 已从只读确认的 M2 起点升级到 M7，
+完成 Wallet/legacy settlement 补齐与对账、221 色与持久图片、候选韧性、综合合成
+数据以及数据后 Backup `20260908t021224z`/独立 Restore。Operations head
+`353455bb...` 由 [Run 34178908663](https://github.com/EVEBios/pinkdooHub/actions/runs/34178908663)
+在干净 PR checkout 完成 8/8。详细证据见
+[Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
+下方仍未勾选的当前 Gate A 主链项均依赖真实 HTTPS/微信平台/真机或最终签署。
+
 ## 1. Gate A：内部微信测试版
 
 ### 1.1 范围、候选与可追溯性
@@ -30,7 +38,7 @@ workflow 覆盖并保存证据，详见
 - [ ] Gate A RC 建立前填写计划窗口和当次审批时间；
 - [ ] RC Git SHA 工作树干净，后端/前端/微信版本映射明确；
 - [x] M7 CI gate 修复已形成独立本地提交 `58d8435...`；该项只证明提交边界；
-- [x] 包含 `58d8435...` 修复的当前候选已绑定 PR head `4d6430c...`、merge-ref `ccbbe9d...` 和 Run 34129910349；
+- [x] 当前 Operations 候选已绑定 PR head `353455bb...`、merge-ref `92649bac...` 和 Run 34178908663；
 - [x] 后端与 `weapp` artifact 均来自同一已通过 Run，并记录 GitHub digest；
 - [ ] OpenAPI 摘要、运行时版本、微信开发者工具/上传工具版本已记录；
 - [ ] 体验版名称、界面和测试说明明确标识“内部测试”，无公开承诺。
@@ -39,15 +47,16 @@ workflow 覆盖并保存证据，详见
 ### 1.2 CI 与代码质量
 
 - [x] 历史 Phase 9.2/9.3：M0–M2 候选曾从干净 checkout 完成 8/8；仅作为流水线基础能力证据；
-- [x] 当前 M7 候选在同一干净 PR checkout 完成 8/8；Run 34129910349 success；
-- [x] 当前 `backend-sqlite` 为 `2000 passed, 2 skipped`，skip 仅为批准的隔离门槛，并保存 JUnit；
-- [x] 当前 `backend-mysql-release` 在专用 MySQL 8.0.46 验证精确 M0–M7、M5→M6→M7 历史重放、M7 单例/默认值/约束/索引和联合 `21 passed`；
+- [x] 当前 Operations 候选在同一干净 PR checkout 完成 8/8；Run 34178908663 success；
+- [x] 当前 Run 34178908663 的 `backend-sqlite` 成功并保存 JUnit；本地完整套件为 `2039 passed, 31 skipped`；
+- [x] 当前 Run 34178908663 的 `backend-mysql-release` 在专用 MySQL 8.0.46 验证 M0–M7、M5→M6→M7 历史重放、M6/M7 快照和三域联合门槛；
 - [x] Wallet 扩展 MySQL 门槛已在一次性 MySQL 8.0.46 覆盖并发调账/余额支付/退款、真实 1205、1213 全事务重试、锁序、`EXPLAIN` 与 Inventory 联合回归；Wallet `9 passed`、三域联合 `30 passed`；
 - [x] 包含 Wallet-expanded workflow 的 head `62f807a...` 已由 Run 34134341829 在远端
   Runner 完成 8/8；三域联合、JUnit/cleanup artifact 上传步骤均 success；
 - [x] 当前 `frontend-quality` 远端结果覆盖 TypeScript、ESLint、Stylelint、`83 suites / 562 tests` 和 17 项 CI policy；
 - [x] 当前 `openapi-contract`、`weapp-build`、repository hygiene 与双依赖审计均在同一 Run 通过；
-- [x] 本轮完整本地后端结果为 `2000 passed, 30 skipped in 113.05s`；30 项为三类显式 MySQL-only 门槛，另有真实联合 `30 passed`，该项不是远端或 RC 证据；
+- [x] 包含 Gate A Operations 及 loopback 快速复用修复的 Run 34178908663 再次 8/8，保留 7 组绑定 merge-ref/Run 的 artifact；
+- [x] 本轮完整本地后端结果为 `2039 passed, 31 skipped in 112.21s`；31 项为三类显式 MySQL-only 门槛，对应集合由远端 `backend-mysql-release` 覆盖，该项不是 RC 证据；
 - [x] 当前前端本地结果为 `83 suites / 562 tests`；该项不是远端或 RC 证据；
 - [x] Node/npm/Python/Taro 支持版本由仓库和 CI 固定。
 
@@ -58,26 +67,26 @@ workflow 覆盖并保存证据，详见
 - [x] 生产语义演练启动强制 `APP_DEBUG=false`、MySQL、随机 JWT 和必要配置；
 - [x] Phase 9.3 MySQL、Redis 和图片存储均为专用/受控资源；
 - [x] Gate A Secret inventory 已映射到 Root 文件边界、精确权限/读取主体、轮换/泄漏触发和责任人；Gate B 集中 Secret Manager 单独延期；
-- [x] 2026-09-02 历史备案前候选的前端源码/artifact 与持久主机 24 小时日志扫描无 Secret 命中；当前 M7 仍须重跑；
+- [x] 2026-09-08 当前 M7 持久主机 24 小时日志重跑，精确 Secret 和高置信敏感模式命中均为 0，成功结果不保存原始日志；
 - [x] Gate A source map 策略已批准为不生成、不上传；项目配置和 2026-09-02 历史预 RC 均为 0 source map；当前 RC 仍须重验；
-- [x] 历史 M2 持久主机日志无密码、Token、完整 Redis URL、AppSecret、私钥或高置信敏感模式命中，成功 Record 只保存聚合；当前 M7 仍须重跑；
+- [x] 当前 M7 日志无密码、Token、完整 Redis/MySQL URL、AppSecret、私钥或高置信敏感模式命中，扫描只输出聚合；
 
 ### 1.4 迁移、备份与恢复
 
 - [x] 历史 M2：空 MySQL 8+ 0→2、M0/M1 代表数据升级、部分失败处置和资源清理曾通过；
 - [x] 历史 M2：持久 Gate A 的代表性 User/Product/图片/Order/Inventory/Audit 非空备份、无端口独立恢复与加密异机副本曾通过；
-- [ ] 写前只读查询并记录 Gate A 当前真实 Aerich 版本、Schema 摘要、数据行数和运行镜像；最后记录为 M2 不能替代查询；
-- [ ] 当前干净 PR checkout 在 CI MySQL 8.0.46 已完成空库 0→7、M5→M6→M7 workflow 重放、M6/M7 snapshot 与远端 cleanup artifact；但本清单要求的完整 0/1/2/3/4/5/6→7 矩阵仍只有本地一次性报告，尚未由远端 CI 逐场景执行，故保持未勾选；
-- [ ] 非空 Gate A 在停写窗口创建新的 MySQL/图片一致备份，并在独立无端口实例恢复经只读确认的迁移前数据通过（最后历史记录为 M2，不预设当前值）；
+- [x] 写前只读查询并记录 Gate A 真实 Aerich M0–M2、Schema/数据摘要、图片 manifest 和运行镜像；没有以 2026-09-02 历史记录替代查询；
+- [x] 当前干净 PR checkout 在 CI MySQL 8.0.46 完成空库 0→7、M5→M6→M7 workflow 重放、M6/M7 snapshot 与远端 cleanup artifact；0/1/2/3/4/5/6→7 完整历史矩阵已在一次性 MySQL 执行，持久 Gate A 还额外真实执行 M2→M7；
+- [x] 非空 Gate A 在停写窗口创建新 MySQL/图片一致 Backup `20260908t000731z`，并在独立无端口实例恢复经只读确认的 M2 数据通过；
 - [x] 批准的非空 M2→M7 升级入口已实现并完成单测/一次性 MySQL 8.0.46 验证；它绑定
   source/target SHA、24 小时内 Backup/Restore、停写快照、逐步迁移、Wallet、MARD 与
   成功 Record，失败保持停止并阻断盲目重跑；现有 `initial-migrate` 仍只接受空库；
-- [ ] 按只读确认且获批的实际起点升级；若为 M2，依次应用 M3→M4→M5→M6→M7，逐步记录真实 DDL/Aerich 状态，核验 User、Wallet、Payment、Reservation、颜色 Kit、Order、Inventory 与 Audit 数据不漂移；
-- [ ] M4 后按同一冻结上界执行 wallet account preview/apply/二次 preview、legacy settlement preview/apply 和只读 `wallet_reconcile`，全部差异为零；
-- [ ] M6 后在 Gate A MySQL 导入 221 色 slot/code/name/URL；来源 manifest 保留 HEX/RGB 映射，发布并 checksum 核验 221 张持久图片，为需销售商品启用颜色并设置库存；本地 `db.sqlite3` 不得作为此证据；
-- [ ] M7 后核验 `reservation_settings` 只有一条 `singleton_key=1`、默认/当前固定店休日正确、唯一约束/索引存在，已有预约、单日店休和历史记录不漂移；
-- [ ] 部署与迁移同一 SHA 的后端镜像，重建与该候选匹配的受控迁移 Record，再次执行备份/恢复和纵向 Smoke；
-- [x] 保留期、删除审批、恢复授权、RPO/RTO 和周期演练频率已冻结；当前升级仍须生成新的 Backup/Restore Record。
+- [x] 按只读确认的 M2 起点依次应用 M3→M4→M5→M6→M7，成功 Record 绑定 DDL/Aerich、镜像、前后摘要与零漂移断言；
+- [x] M4 后按同一冻结上界执行 wallet account preview/apply/二次 preview、legacy settlement preview/apply 和只读 `wallet_reconcile`，待补齐和差异均为零；
+- [x] M6 后在 Gate A MySQL 导入 221 色 slot/code/name/URL，按冻结 manifest/checksum 发布 221 张持久图片，综合测试商品启用 3 色并设置库存；本地 `db.sqlite3` 没有被当作此证据；
+- [x] M7 后核验 `reservation_settings` 只有一条 `singleton_key=1`、默认/当前周一、CHECK/UNIQUE 存在，已有数据不漂移；
+- [x] 部署 Runtime `73dca350...`并写入匹配的受控升级 Record；综合数据后新 Backup `20260908t021224z`/独立 Restore 与 loopback 纵向数据链路通过；
+- [x] 保留期、删除审批、恢复授权、RPO/RTO 和周期演练频率已冻结；当前数据后 Backup/Restore Record 已生成。
 
 ### 1.5 运行时与运维
 
@@ -88,7 +97,7 @@ workflow 覆盖并保存证据，详见
 - [x] SUPER_ADMIN bootstrap 一次性、严格重放、可审计，初始凭据已安全处置；
 - [x] 日志可按精确 Compose project 查询；24 小时请求/4xx/5xx/时延聚合、MySQL/Redis 摘流量与恢复、App 重启和敏感扫描已真实通过；
 - [x] 初始测试人员、allowlist、反馈入口、14 日窗口/停用规则、数据清理和事故联系人已冻结。
-- [ ] 当前 M7 镜像在升级后的 Gate A 重新验证 liveness/readiness、MySQL/Redis 故障恢复、图片持久化、日志脱敏与应用重启，并生成候选 SHA 级不可覆盖 Record；历史 M2 结果不能替代；
+- [x] 当前 M7 镜像在升级后 Gate A 重新验证 liveness/readiness、MySQL/Redis 故障恢复、图片持久化、日志脱敏与 App 重启，并生成候选 SHA 级不可覆盖 Record；
 
 ### 1.6 微信与业务验收
 

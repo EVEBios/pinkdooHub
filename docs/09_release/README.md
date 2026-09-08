@@ -1,13 +1,38 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** Wallet 扩展 MySQL 已远端通过；Gate A 运维候选待新 CI，持久升级/回填、色板、RC 与外部条件仍阻断 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** Gate A M2→M7、Wallet 准备、221 色、韧性、综合数据及数据后恢复已通过；域名/HTTPS、真实 RC 与真机仍阻断 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
-> **Last Updated:** 2026-09-07
+> **Last Updated:** 2026-09-08
 > **Release Scope:** 微信小程序内部测试版（Gate A）
 
 本目录保存可以直接用于后续 CI、演练和发布决策的操作文档。长期路线与公开发布门槛仍以 [Phase 9 微信小程序发布规划](../08_frontend/phase9_wechat_release_plan.md) 为总纲；本目录负责记录当前版本的决定、证据、责任和可执行清单。
 
-## 0. 当前候选覆盖层（2026-09-07）
+## 0. 当前持久 Gate A 检查点（2026-09-08）
+
+持久 Gate A 已从只读确认的 M2 起点受控升级到 M7，并完成 Wallet account/
+legacy manual settlement 冻结上界补齐与零差异对账、221 色 MySQL/持久图片发布、
+M7 单例店休、当前候选的 MySQL/Redis/App 韧性与日志脱敏。综合数据经 82 个
+正式 loopback API 请求建立，覆盖合成用户、Product/图片、fixed/自选色 Kit、
+Order/Inventory、Wallet/Payment/Refund、Reservation/单日和每周店休。
+
+数据后 `wallet_reconcile` 为 `scanned=4, mismatches=0, violations=0`。Backup
+`20260908t021224z` 与独立无端口 Restore 已通过：数据库、225 个图片、空 Redis、
+Restore App 与临时资源清理全部匹配。Runtime 为 `73dca350...`，数据后备份使用
+Operations `353455bb...`；后者已由
+[Run 34178908663](https://github.com/EVEBios/pinkdooHub/actions/runs/34178908663) 在干净 PR
+checkout 完成 8/8，保留 7 组 artifact。详细证据见
+[Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
+
+长期 App 已恢复 `PASSWORD_REGISTRATION_ENABLED=false`，微信 Provider 和 Wallet Top-up
+仍关闭；三个 Wallet 管理/内部测试开关只支持无真实资金的 Gate A 验收。
+当前唯一剩余主链依赖是备案生效后的真实 HTTPS Origin、微信 request/upload/download
+合法域名、`release_eligible=true` RC、体验版上传授权与 iOS/Android 真机矩阵。
+因此 Gate A 仍是 **No-Go / Not Authorized**。
+
+## 0.1 升级前候选覆盖层（历史，2026-09-07）
+
+本节冻结了真实持久执行前的阻断状态，用于审计规划与实际结果的差异；
+其中“未应用 Gate A”等表述已被上方 2026-09-08 真实检查点取代，不再是当前事实。
 
 2026-09-02 以前的 Phase 9.2/9.3/9.4 报告仍是有效的**历史证据**，但它们绑定旧 SHA、
 旧 OpenAPI、Aerich M0–M2 和旧微信产物，不能证明当前 M7 候选可发布。审计起点
@@ -78,12 +103,13 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 | Release Decision Record | [release_decision_record.md](release_decision_record.md) | Gate A 决策已冻结；Gate B 未授权 |
 | 当前基线审计 | [baseline_audit_2026-08-29.md](baseline_audit_2026-08-29.md) | 已采集本地证据；MySQL/真机/外部环境未执行 |
 | Environment Matrix + Secret Inventory | [environment_and_secrets.md](environment_and_secrets.md) | Gate A 文件 Secret、轮换、备份密钥和日志策略已落地；真实域名待备案 |
-| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | Phase 9.2 历史基线完成；Wallet-expanded 候选 Run 34134341829 为 8/8，后续运维 SHA 与持久 Gate 仍阻断 |
+| CI Gate Matrix | [ci_gate_matrix.md](ci_gate_matrix.md) | 当前 Operations head `353455b...` 的 Run 34178908663 为 8/8，7 组 artifact 可复核 |
 | M7 一次性 MySQL 报告 | [reports/m7_mysql_release_gate_2026-09-07.md](reports/m7_mysql_release_gate_2026-09-07.md) | 本地 dirty-tree M0–M7/历史矩阵/21 项通过，并已补记远端后续结果 |
 | M7 当前候选远端 CI 报告 | [reports/m7_remote_ci_2026-09-07.md](reports/m7_remote_ci_2026-09-07.md) | Head `4d6430c...` / merge-ref `ccbbe9d...` / Run 34129910349 / 8/8 / 7 artifacts |
 | Wallet 扩展远端 CI 报告 | [reports/wallet_remote_ci_2026-09-07.md](reports/wallet_remote_ci_2026-09-07.md) | Head `62f807a...` / merge-ref `6675b4f...` / Run 34134341829 / 8/8 / 7 artifacts |
+| Gate A M2→M7 升级与综合数据报告 | [reports/gatea_m7_upgrade_and_data_2026-09-08.md](reports/gatea_m7_upgrade_and_data_2026-09-08.md) | Runtime `73dca350...` / Operations `353455b...` / Run 34178908663 / Backup `20260908t021224z` / 不依赖域名范围 PASS |
 | Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
-| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | 历史 M2 的 DR-01～DR-07、DR-09 服务端部分通过；当前 M4–M7 持久升级与重演未执行 |
+| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | 当前 M2→M7、Wallet/MARD、韧性、综合数据和数据后恢复通过；HTTPS/RC/真机仍阻断 |
 | 9.3 演练环境 | [rehearsal_environment_2026-08-31.md](rehearsal_environment_2026-08-31.md) | 双 MySQL/Redis/HTTPS/图片恢复拓扑已真实执行并清理 |
 | 9.3 演练报告 | [reports/phase93_rehearsal_2026-08-31.md](reports/phase93_rehearsal_2026-08-31.md) | SHA `136a8bd...` / Run 33408135841 / DR 服务端范围 PASS |
 | 9.4 Gate A Loopback 报告 | [reports/phase94_gatea_loopback_2026-09-02.md](reports/phase94_gatea_loopback_2026-09-02.md) | Runtime `51ad315...` / Operations `17114d7...` / 持久主机 lifecycle PASS |
@@ -103,10 +129,10 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 - Phase 9.1 已完成仓库级证据采集、交付物建档、责任人映射和项目负责人 Review，状态为 `Complete`。
 - Phase 9.2 **历史基线**的 CI 与可重复构建已完成：Draft PR #2 的 Run 33355935212 在真实干净 checkout 上 8/8 Job 通过并保存 7 组 artifact。该结果不覆盖当前 M7 候选，也不授权微信后台变更、持久迁移、上传、提审或发布。
 - Phase 9.3 **历史 M2 演练**已完成：候选 SHA `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success；Run ID `20260831t221625` 在可销毁双 MySQL/Redis/Nginx/App/图片卷环境完成当时的 DR-01～DR-07 与 DR-09 服务端部分，53 项发布工具契约通过，全部任务资源已清理。详见[演练报告](reports/phase93_rehearsal_2026-08-31.md)。当前 M7 必须新建演练证据；当前仍未授权上传、分发、提审或发布。
-- Phase 9.4 **历史 M2 持久主机** loopback 首次部署已通过：Runtime `51ad315...` 的 Run 33568184860 与 Operations `17114d7...` 的 Run 33568983950 均为 8/8 success；真实腾讯云主机完成空库 Aerich 0→1→2、10 表核验、持久 MySQL/Redis/图片卷、非 root App、只读根文件系统、Healthy Nginx 和 liveness/readiness。MySQL/Redis/App 不发布宿主端口，唯一边界是 `127.0.0.1:18080`，公网 18080 不可达。完整脱敏证据见 [9.4 Loopback 报告](reports/phase94_gatea_loopback_2026-09-02.md)。当前实际版本只可重新只读确认；既有库升级、DNS/证书、微信合法域名、真实 RC 和 iOS/Android 真机仍未执行，Gate A 保持 No-Go。
+- Phase 9.4 **历史 M2 持久主机** loopback 首次部署已通过：Runtime `51ad315...` 的 Run 33568184860 与 Operations `17114d7...` 的 Run 33568983950 均为 8/8 success；真实腾讯云主机完成空库 Aerich 0→1→2、10 表核验、持久 MySQL/Redis/图片卷、非 root App、只读根文件系统、Healthy Nginx 和 liveness/readiness。MySQL/Redis/App 不发布宿主端口，唯一边界是 `127.0.0.1:18080`，公网 18080 不可达。完整脱敏证据见 [9.4 Loopback 报告](reports/phase94_gatea_loopback_2026-09-02.md)。该条中“待只读确认/待升级”的当时状态已由 2026-09-08 M2→M7 当前报告关闭；DNS/证书、微信合法域名、真实 RC 和 iOS/Android 真机仍未执行，Gate A 保持 No-Go。
 - Phase 9.4 **历史 M2 空数据**持久备份/隔离恢复已通过：Operations `d1f3379...` 的 Run 33570862787 为 8/8 success；Backup `20260901t232740z` 在停写窗口生成 `0600` MySQL/图片 Artifact，独立无端口 Restore project 完成数据库摘要、图片 manifest、空 Redis 和 Restore App readiness 验证，并删除全部临时容器/网络/卷。该记录由后续非空恢复证据补充，详见[备份恢复报告](reports/phase94_gatea_backup_restore_2026-09-02.md)。
 - Phase 9.4 **历史 M2 持久 Bootstrap** 已真实通过：Runtime `51ad315...`、Operations `0ebe25a...` 和 Run 33574718103 绑定；唯一 SUPER_ADMIN 首次创建、严格重放、唯一 Audit、初始/最终登录、密码轮换、旧密码拒绝、两个 Refresh 会话撤销和临时 Secret/容器/投放文件清理均为 PASS。成功 Record 为 `root:root 0644` 且不含 PII、密码、Token 或 hash；完整脱敏证据见 [9.4 Bootstrap 报告](reports/phase94_gatea_bootstrap_2026-09-02.md)。
-- Phase 9.4 **历史 M2 代表性数据与二次隔离恢复**已真实通过：Operations `3511491...` 的 Run 33576453364 为 8/8 success；工具经 loopback 正式 API 创建最终禁用的合成 USER、两个 Online Product、三张图片、两种终态订单和完整库存流水，管理员/合成用户 Refresh 均撤销。非空 Backup `20260902t014211z` 在独立无端口 project 中完成数据库、三图片、空 Redis 和 Restore App 验证，临时 Docker 资源归零且来源服务 Healthy。完整脱敏证据见[代表性数据二次恢复报告](reports/phase94_gatea_representative_restore_2026-09-02.md)；当前 M4–M7 数据必须新建 Backup/Restore 证据。
+- Phase 9.4 **历史 M2 代表性数据与二次隔离恢复**已真实通过：Operations `3511491...` 的 Run 33576453364 为 8/8 success；工具经 loopback 正式 API 创建最终禁用的合成 USER、两个 Online Product、三张图片、两种终态订单和完整库存流水，管理员/合成用户 Refresh 均撤销。非空 Backup `20260902t014211z` 在独立无端口 project 中完成数据库、三图片、空 Redis 和 Restore App 验证，临时 Docker 资源归零且来源服务 Healthy。完整脱敏证据见[代表性数据二次恢复报告](reports/phase94_gatea_representative_restore_2026-09-02.md)。当时要求为 M4–M7 新建证据；该要求现已由 `20260908t021224z` 的当前数据后 Backup/Restore 关闭。
 - Phase 9.4 **历史 M2 备案前运维和自动化范围**已真实通过：Backup `20260902t014211z` 已形成经解密复核的 AES-256-GCM/RSA-OAEP-SHA256 异机副本；MySQL/Redis 故障和 App 重启证明 readiness 摘流量、liveness、数据/三图片保持、四容器日志轮转及 24 小时脱敏聚合查询。实现 `b69ee74...` Run 33584388085 和恢复修复 `c4d27a8...` Run 33584789525 均为 8/8 success；首次演练工具假失败、修复和重跑均留有证据。Node 24.13.0/npm 11.6.2 的备案前微信预 RC 为 97 文件/603,624 bytes/0 source map，manifest `aeb81ef...` 明确不可发布。开发者工具 Stable 2.02.2608060 已加载/编译并修正本机 `urlCheck` 覆盖，域名校验按预期拒绝保留 Origin。完整证据见[备案前收口报告](reports/phase94_pre_icp_completion_2026-09-02.md)。当前 M7 的备案/DNS/HTTPS、微信合法域名、真实 RC、iOS/Android 真机和上传授权仍未执行，Gate A 保持 No-Go。
 - Phase 9.5 不依赖备案的仓库实现已完成：微信身份/绑定、Refresh 轮换、认证限流、注销匿名化、HMAC 标识最小化、安全事件、Secret 注入边界、存储端口和迁移均有自动化；真实微信 AppID、集中 Secret Manager、告警送达、对象存储和隐私平台材料仍未执行，Gate B 保持 No-Go。详见 [9.5 基线](phase95_public_security_baseline.md)。
 

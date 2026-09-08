@@ -50,6 +50,29 @@ M2→M7 升级入口。钱包 backfill/reconcile、221 色持久发布、真实 
 [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)与
 [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。
 
+### 0.3 Gate A M7 持久服务端检查点（2026-09-08）
+
+当次授权窗口内，真实只读起点确认为 M2；在新 Backup/独立 Restore 后，
+持久 Gate A 已受控完成 M3→M4→M5→M6→M7、Wallet account/legacy settlement
+补齐与零差异对账、221 色与持久图片发布、M7 结构核验、当前 Runtime
+韧性和脱敏扫描。Runtime 为 `73dca350...`，Image ID 为 `sha256:d508e9d9...`。
+
+综合数据经 82 个正式 loopback API 请求建立，覆盖 M3–M7 新业务链路；数据后
+`wallet_reconcile` 为 `4/0/0`。Backup `20260908t021224z` 已完成数据库/
+225 图片的独立无端口 Restore，并在管理电脑形成立即解密复核通过的
+AES-256-GCM/RSA-OAEP-SHA256 异机副本。合成密码只保留在服务器上
+`root:root 0600` 凭据文件，密码注册已重新关闭，真实充值/微信 Provider 仍关闭。
+
+数据后备份工具的快速 loopback 端口复用修复位于 Operations `353455bb...`，
+[Run 34178908663](https://github.com/EVEBios/pinkdooHub/actions/runs/34178908663) 已 8/8。
+完整脱敏证据见
+[Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
+
+该检查点关闭所有不依赖域名的当前 Gate A 服务端 P0/P1 项，但仍不是 RC
+或 Go 决定。真实 HTTPS Origin、微信 request/upload/download 合法域名、
+`release_eligible=true` RC、体验版上传授权、iOS/Android 真机和最终签署仍未完成；
+Gate A 继续为 **No-Go / Not Authorized**。
+
 ## 1. 决策
 
 本版发布目标冻结为微信小程序，不同时发布支付宝、抖音或 H5。发布采用两道门：

@@ -1,8 +1,8 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；Wallet-expanded candidate remote gate passed (8/8)
-> **Last Updated:** 2026-09-07
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34134341829](https://github.com/EVEBios/pinkdooHub/actions/runs/34134341829)）
+> **Status:** Phase 9.2 historical baseline complete；current Operations candidate remote gate passed (8/8)
+> **Last Updated:** 2026-09-08
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34178908663](https://github.com/EVEBios/pinkdooHub/actions/runs/34178908663)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
@@ -10,8 +10,9 @@
 `backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、
 `repository-hygiene`、`python-dependency-audit` 和 `npm-dependency-audit` 已在真实
 Pull Request 的干净 checkout 全部通过。当前 workflow 仍保留八类 Job；加入 Wallet、
-Reservation、颜色 Kit 与 M7 后，当前 head `4d6430c...` 的 Run 34129910349 已重新取得
-8/8。历史结论只关闭当时 Phase 9.2 的 CI 与
+Reservation、颜色 Kit 与 M7 后，head `4d6430c...` 的 Run 34129910349 已重新取得
+8/8；包含后续 Gate A Operations 和 loopback 端口快速复用修复的当前 head
+`353455bb...` 又由 Run 34178908663 完成 8/8。历史结论只关闭当时 Phase 9.2 的 CI 与
 可重复构建范围，不替代 9.3 的生产相似演练、9.4 的微信真机 RC 或后续模块的重新留证。
 
 ## 0. Phase 9.2.6 远端证据
@@ -69,6 +70,23 @@ Reservation、颜色 Kit 与 M7 后，当前 head `4d6430c...` 的 Run 341299103
   8/8 success。远端 SQLite 为 `2000 passed, 2 skipped`，MySQL 为 `21 passed`，7 组
   artifact 均绑定 merge-ref/Run ID 并有 GitHub digest。详见
   [M7 当前候选远端 CI 报告](reports/m7_remote_ci_2026-09-07.md)。
+
+### 0.3 Gate A Operations 当前候选（2026-09-08）
+
+- PR head `353455bbd05d658bc7b99753d790149d3ce48041`、merge-ref
+  `92649bac7dc90aa3098c57d55aba05782e194e96` 的
+  [Run 34178908663](https://github.com/EVEBios/pinkdooHub/actions/runs/34178908663)
+  于 `02:06:28Z`–`02:10:50Z` 完成 8/8；所有 Job 均为 `success`。
+- 该 head 包含 M2→M7、Wallet/MARD、韧性、M7 综合数据与 loopback 快速端口
+  复用工具。本地发布套件为 `169 passed`，完整后端为
+  `2039 passed, 31 skipped`；远端 `backend-mysql-release` 继续完成 MySQL 8.0.46
+  的 M0–M7、三域联合门槛和 cleanup。
+- Run 保留 7 组绑定 merge-ref/Run ID 且带 GitHub digest 的 artifact；
+  `openapi-contract` 按 workflow 只做阻断检查，因此没有第八组 artifact。
+- 该 Run 通过后，`353455bb...` 作为不切换 Runtime 的版本化 Operations Release
+  投放，并成功生成数据后 Backup/Restore 证据。完整 Job/artifact 清单与服务器
+  证据边界见
+  [Gate A M2→M7 升级与综合数据报告](reports/gatea_m7_upgrade_and_data_2026-09-08.md)。
 
 ## 1. 全局规则
 
