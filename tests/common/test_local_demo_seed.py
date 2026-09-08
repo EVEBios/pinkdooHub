@@ -337,6 +337,77 @@ async def test_comprehensive_seed_is_idempotent_and_verifiable(
     assert os.access(credentials_file, os.R_OK | os.W_OK)
 
 
+async def test_seed_refreshes_expired_active_reservation_samples(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(local_demo_support, "REPOSITORY_ROOT", tmp_path)
+    operator = await _create_operator()
+    fixed_now = datetime(2026, 9, 8, 0, 0, tzinfo=timezone.utc)
+    credentials_file = (
+        tmp_path / "backups/local-demo-data/synthetic-credentials.json"
+    )
+    storage_root = tmp_path / "uploads/products"
+    kwargs = {
+        "operator_username": operator.username,
+        "credentials_file": credentials_file,
+        "storage_root": storage_root,
+        "storage_base_url": "/uploads/products",
+        "now_provider": lambda: fixed_now,
+    }
+    image_storage = local_demo_seed.LocalImageStorage(
+        root=storage_root,
+        base_url=kwargs["storage_base_url"],
+    )
+
+    await local_demo_seed.seed_local_demo_data(**kwargs)
+    active_usernames = (
+        "localdemo_v1_res_pending",
+        "localdemo_v1_res_confirmed",
+    )
+    original_rows = list(
+        await Reservation.filter(user__username__in=active_usernames).order_by("id")
+    )
+    assert len(original_rows) == 2
+    later_now = max(row.scheduled_start_at for row in original_rows) + timedelta(
+        minutes=1
+    )
+    with pytest.raises(
+        local_demo_seed.LocalDemoSeedError,
+        match="outside the current booking window",
+    ):
+        await local_demo_seed.verify_demo_data(
+            now_utc=later_now,
+            image_storage=image_storage,
+        )
+
+    counts_before_refresh = await _seed_counts()
+    refresh_kwargs = {**kwargs, "now_provider": lambda: later_now}
+    refreshed = await local_demo_seed.seed_local_demo_data(**refresh_kwargs)
+    counts_after_refresh = await _seed_counts()
+
+    assert counts_after_refresh[Reservation._meta.db_table] == (
+        counts_before_refresh[Reservation._meta.db_table] + 2
+    )
+    assert refreshed.reservations_by_status == {
+        "cancelled": 3,
+        "confirmed": 1,
+        "pending": 1,
+        "rejected": 1,
+    }
+    for username in active_usernames:
+        rows = list(
+            await Reservation.filter(user__username=username).order_by("id")
+        )
+        assert len(rows) == 2
+        assert rows[0].id in {row.id for row in original_rows}
+        assert rows[1].scheduled_start_at > later_now + timedelta(hours=3)
+
+    replay = await local_demo_seed.seed_local_demo_data(**refresh_kwargs)
+    assert replay == refreshed
+    assert await _seed_counts() == counts_after_refresh
+
+
 async def test_seed_refuses_to_overwrite_existing_weekly_closure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

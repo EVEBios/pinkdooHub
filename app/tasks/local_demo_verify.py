@@ -344,46 +344,90 @@ async def verify_demo_data(
     reservations: list[Reservation] = []
     reservation_by_username: dict[str, Reservation] = {}
     for username, expectation in reservation_expectations.items():
-        matches = list(await Reservation.filter(user_id=user_by_name[username].id))
-        if len(matches) != 1:
+        matches = list(
+            await Reservation.filter(user_id=user_by_name[username].id).order_by(
+                "id"
+            )
+        )
+        if not matches:
             raise LocalDemoSeedError(
                 f"Reservation scenario is incomplete: {username}"
             )
-        reservation = matches[0]
         expected_status, expected_rejection, expected_cancellation = expectation
-        actual_rejection = (
-            ReservationRejectionReason(reservation.rejection_reason)
-            if reservation.rejection_reason is not None
-            else None
-        )
-        actual_cancellation = (
-            ReservationCancellationReason(reservation.cancellation_reason)
-            if reservation.cancellation_reason is not None
-            else None
-        )
-        if (
-            ReservationStatus(reservation.status) is not expected_status
-            or actual_rejection is not expected_rejection
-            or actual_cancellation is not expected_cancellation
-        ):
-            raise LocalDemoSeedError(
-                f"Reservation scenario is invalid: {username}"
-            )
         if expected_status in (
             ReservationStatus.PENDING,
             ReservationStatus.CONFIRMED,
         ):
-            business_date = reservation.scheduled_start_at.astimezone(
-                STORE_TIMEZONE
-            ).date()
-            if (
-                reservation.scheduled_start_at < minimum_start
-                or business_date < local_today
-                or business_date > last_bookable_date
-            ):
+            current_matches: list[Reservation] = []
+            for candidate in matches:
+                actual_status = ReservationStatus(candidate.status)
+                actual_rejection = (
+                    ReservationRejectionReason(candidate.rejection_reason)
+                    if candidate.rejection_reason is not None
+                    else None
+                )
+                actual_cancellation = (
+                    ReservationCancellationReason(candidate.cancellation_reason)
+                    if candidate.cancellation_reason is not None
+                    else None
+                )
+                allowed_historical_statuses = {expected_status}
+                if expected_status is ReservationStatus.CONFIRMED:
+                    allowed_historical_statuses.add(ReservationStatus.PENDING)
+                if (
+                    actual_status not in allowed_historical_statuses
+                    or actual_rejection is not None
+                    or actual_cancellation is not None
+                ):
+                    raise LocalDemoSeedError(
+                        f"Reservation scenario is invalid: {username}"
+                    )
+                business_date = candidate.scheduled_start_at.astimezone(
+                    STORE_TIMEZONE
+                ).date()
+                if (
+                    candidate.scheduled_start_at >= minimum_start
+                    and local_today <= business_date <= last_bookable_date
+                ):
+                    if actual_status is not expected_status:
+                        raise LocalDemoSeedError(
+                            f"Reservation scenario is incomplete: {username}"
+                        )
+                    current_matches.append(candidate)
+                elif candidate.scheduled_start_at >= minimum_start:
+                    raise LocalDemoSeedError(
+                        f"Active Reservation scenario is beyond the current "
+                        f"booking window: {username}"
+                    )
+            if len(current_matches) != 1:
                 raise LocalDemoSeedError(
                     f"Active Reservation scenario is outside the current "
                     f"booking window: {username}"
+                )
+            reservation = current_matches[0]
+        else:
+            if len(matches) != 1:
+                raise LocalDemoSeedError(
+                    f"Reservation scenario is incomplete: {username}"
+                )
+            reservation = matches[0]
+            actual_rejection = (
+                ReservationRejectionReason(reservation.rejection_reason)
+                if reservation.rejection_reason is not None
+                else None
+            )
+            actual_cancellation = (
+                ReservationCancellationReason(reservation.cancellation_reason)
+                if reservation.cancellation_reason is not None
+                else None
+            )
+            if (
+                ReservationStatus(reservation.status) is not expected_status
+                or actual_rejection is not expected_rejection
+                or actual_cancellation is not expected_cancellation
+            ):
+                raise LocalDemoSeedError(
+                    f"Reservation scenario is invalid: {username}"
                 )
         reservations.append(reservation)
         reservation_by_username[username] = reservation

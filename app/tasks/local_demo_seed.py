@@ -8,7 +8,9 @@ accounts only* in an ignored, mode-0600 JSON file.  Passwords are never logged.
 The seed is resumable rather than globally atomic: every scenario owns a stable
 username, order remark, or idempotency key.  A complete matching scenario is
 reused, an incomplete scenario is advanced through the public service method,
-and conflicting reserved data stops the command without rewriting it.
+and conflicting reserved data stops the command without rewriting it.  Expired
+active Reservation samples remain as history; apply creates one new current
+sample through ReservationService when the booking window has moved forward.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from app.common.constants.reservation import (
     DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY,
     RESERVATION_AUDIT_ACTION_CANCEL,
     RESERVATION_BOOKING_WINDOW_DAYS,
+    RESERVATION_MINIMUM_LEAD_HOURS,
     RESERVATION_SETTINGS_AUDIT_ACTION_UPDATE_WEEKLY_CLOSED_DAY,
     RESERVATION_SETTINGS_AUDIT_TARGET_TYPE,
     RESERVATION_WEEKDAY_NUMBERS,
@@ -125,6 +128,9 @@ FIXED_SUPPLY_CHANGE: Final = 50
 FIXED_SUPPLY_KEY: Final = "local-demo-v1-fixed-supply"
 FIXED_SUPPLY_REASON: Final = "Local demo fixed Kit supply"
 DEMO_WEEKLY_CLOSED_WEEKDAY: Final = ReservationWeekday.WEDNESDAY
+ACTIVE_RESERVATION_STATUSES: Final = frozenset(
+    {ReservationStatus.PENDING, ReservationStatus.CONFIRMED}
+)
 
 
 ORDER_REMARKS: Final = {
@@ -1060,11 +1066,20 @@ def _reservation_local_date(reservation: Reservation) -> date:
     return reservation.scheduled_start_at.astimezone(STORE_TIMEZONE).date()
 
 
-async def _one_reservation_for_user(user_id: int) -> Reservation | None:
-    reservations = list(await Reservation.filter(user_id=user_id).order_by("id"))
-    if len(reservations) > 1:
-        raise LocalDemoSeedError("Reserved Reservation user owns multiple rows")
-    return reservations[0] if reservations else None
+def _is_in_current_booking_window(
+    reservation: Reservation,
+    *,
+    now_utc: datetime,
+) -> bool:
+    local_today = now_utc.astimezone(STORE_TIMEZONE).date()
+    business_date = _reservation_local_date(reservation)
+    return (
+        reservation.scheduled_start_at
+        >= now_utc + timedelta(hours=RESERVATION_MINIMUM_LEAD_HOURS)
+        and local_today
+        <= business_date
+        <= local_today + timedelta(days=RESERVATION_BOOKING_WINDOW_DAYS)
+    )
 
 
 async def _assert_store_day_close_is_demo_only(
@@ -1099,6 +1114,7 @@ async def _create_reservation_on_unused_date(
     used_dates: set[date],
     required_weekday: ReservationWeekday | None = None,
     excluded_weekdays: frozenset[ReservationWeekday] = frozenset(),
+    prefer_latest_date: bool = False,
 ) -> Reservation:
     required_number = (
         RESERVATION_WEEKDAY_NUMBERS[required_weekday]
@@ -1112,7 +1128,10 @@ async def _create_reservation_on_unused_date(
         booking = await service.get_booking_options(
             experience_option_id=option_id,
         )
-        for booking_date in booking.dates:
+        booking_dates = (
+            reversed(booking.dates) if prefer_latest_date else booking.dates
+        )
+        for booking_date in booking_dates:
             weekday_number = booking_date.date.weekday()
             if (
                 booking_date.date in used_dates
@@ -1141,11 +1160,67 @@ async def _ensure_reservation(
     user: User,
     option_ids: tuple[int, ...],
     used_dates: set[date],
+    expected_status: ReservationStatus,
+    now_utc: datetime,
     required_weekday: ReservationWeekday | None = None,
     excluded_weekdays: frozenset[ReservationWeekday] = frozenset(),
 ) -> Reservation:
-    existing = await _one_reservation_for_user(user.id)
-    if existing is not None:
+    reservations = list(await Reservation.filter(user_id=user.id).order_by("id"))
+    if expected_status in ACTIVE_RESERVATION_STATUSES:
+        resumable_statuses = {expected_status}
+        if expected_status is ReservationStatus.CONFIRMED:
+            resumable_statuses.add(ReservationStatus.PENDING)
+        current_reservations: list[Reservation] = []
+        minimum_start = now_utc + timedelta(
+            hours=RESERVATION_MINIMUM_LEAD_HOURS
+        )
+        for existing in reservations:
+            business_date = _reservation_local_date(existing)
+            if (
+                required_weekday is not None
+                and business_date.weekday()
+                != RESERVATION_WEEKDAY_NUMBERS[required_weekday]
+            ) or business_date.weekday() in {
+                RESERVATION_WEEKDAY_NUMBERS[weekday]
+                for weekday in excluded_weekdays
+            }:
+                raise LocalDemoSeedError("Reserved Reservation date is conflicting")
+            current_status = ReservationStatus(existing.status)
+            if (
+                current_status not in resumable_statuses
+                or existing.rejection_reason is not None
+                or existing.cancellation_reason is not None
+            ):
+                raise LocalDemoSeedError(
+                    "Reserved active Reservation history is conflicting"
+                )
+            if _is_in_current_booking_window(existing, now_utc=now_utc):
+                current_reservations.append(existing)
+            elif existing.scheduled_start_at >= minimum_start:
+                raise LocalDemoSeedError(
+                    "Reserved active Reservation is beyond the booking window"
+                )
+            used_dates.add(business_date)
+        if len(current_reservations) > 1:
+            raise LocalDemoSeedError(
+                "Reserved active Reservation user owns multiple current rows"
+            )
+        if current_reservations:
+            return current_reservations[0]
+        return await _create_reservation_on_unused_date(
+            services.reservation,
+            user_id=user.id,
+            option_ids=option_ids,
+            used_dates=used_dates,
+            required_weekday=required_weekday,
+            excluded_weekdays=excluded_weekdays,
+            prefer_latest_date=True,
+        )
+
+    if len(reservations) > 1:
+        raise LocalDemoSeedError("Reserved Reservation user owns multiple rows")
+    if reservations:
+        existing = reservations[0]
         business_date = _reservation_local_date(existing)
         if (
             required_weekday is not None
@@ -1192,6 +1267,8 @@ async def ensure_demo_reservations(
             user=users[username],
             option_ids=option_ids,
             used_dates=used_dates,
+            expected_status=RESERVATION_EXPECTATIONS[username][0],
+            now_utc=now_utc,
             required_weekday=(
                 DEMO_WEEKLY_CLOSED_WEEKDAY if is_weekly_scenario else None
             ),
