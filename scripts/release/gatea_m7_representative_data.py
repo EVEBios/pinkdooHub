@@ -462,13 +462,20 @@ def _require_runtime_feature_flags(
     """确认当前长期 App 进程实际加载了已批准的非 Secret 开关。"""
 
     command = (
-        "from app.core.config import settings; "
+        "from pathlib import Path; "
+        "targets=(b'WALLET_ADMIN_WRITE_ENABLED',"
+        "b'WALLET_ORDER_PAYMENT_ENABLED',b'WALLET_REFUND_ENABLED',"
+        "b'WALLET_TOPUP_ENABLED',b'PAYMENT_PROVIDER'); "
+        "pairs=(item.partition(b'=') for item in "
+        "Path('/proc/1/environ').read_bytes().split(b'\\0') if b'=' in item); "
+        "env={key.decode():value.decode() for key,sep,value in pairs "
+        "if sep and key in targets}; "
         "print(','.join(("
-        "str(settings.wallet_admin_write_available).lower(),"
-        "str(settings.wallet_order_payment_available).lower(),"
-        "str(settings.wallet_refund_available).lower(),"
-        "str(settings.wallet_topup_available).lower(),"
-        "settings.payment_provider)))"
+        "env.get('WALLET_ADMIN_WRITE_ENABLED',''),"
+        "env.get('WALLET_ORDER_PAYMENT_ENABLED',''),"
+        "env.get('WALLET_REFUND_ENABLED',''),"
+        "env.get('WALLET_TOPUP_ENABLED',''),"
+        "env.get('PAYMENT_PROVIDER',''))))"
     )
     result = gatea._run_compose(
         values=values,

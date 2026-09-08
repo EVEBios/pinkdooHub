@@ -80,18 +80,24 @@ def test_feature_flags_fail_closed() -> None:
 def test_runtime_feature_flags_must_match_running_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    calls: list[dict[str, object]] = []
     outputs = iter(
         (
             representative.EXPECTED_RUNTIME_FEATURE_FLAGS + "\n",
             "false,false,false,false,disabled\n",
         )
     )
+
+    def fake_run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=next(outputs), stderr=""
+        )
+
     monkeypatch.setattr(
         gatea,
         "_run_compose",
-        lambda **kwargs: subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=next(outputs), stderr=""
-        ),
+        fake_run_compose,
     )
 
     representative._require_runtime_feature_flags(
@@ -108,6 +114,16 @@ def test_runtime_feature_flags_must_match_running_app(
             config_file=Path("/config.env"),
             secret_dir=Path("/secrets"),
         )
+
+    assert len(calls) == 2
+    for call in calls:
+        arguments = call["arguments"]
+        assert isinstance(arguments, tuple)
+        command = arguments[-1]
+        assert isinstance(command, str)
+        compile(command, "<runtime-feature-flags>", "exec")
+        assert "/proc/1/environ" in command
+        assert "app.core.config" not in command
 
 
 def test_prepare_binds_upgrade_base_data_current_backup_and_empty_m7_baseline(
