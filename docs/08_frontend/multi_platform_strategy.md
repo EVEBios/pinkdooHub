@@ -1,8 +1,8 @@
 # pinkdooHub 前端多端策略
 
-> **Document Version:** v0.2
+> **Document Version:** v0.3
 > **Status:** Draft
-> **Last Updated:** 2026-09-06
+> **Last Updated:** 2026-09-09
 > **Scope:** 微信小程序、支付宝小程序、抖音小程序、H5
 
 本文档定义同一 Taro 应用在四个目标平台上的共享边界、差异隔离、构建配置与验收方式。总体依赖方向见 [前端架构](frontend_architecture.md)。
@@ -40,6 +40,8 @@ Taro 可以统一大量 React、组件、路由和 API 用法，但不能保证�
 | 文件上传 | Spike 验证 | Spike 验证 | Spike 验证 | Spike 验证 |
 | Storage | Taro Adapter | Taro Adapter | Taro Adapter | Taro Adapter；公开发布前安全 Review |
 | 分包 | order/admin | order/admin | order/admin | Taro 合并为页面，不依赖分包保证安全 |
+| 四根页导航 | 自定义瓷白丝带托盘 | 原生 TabBar 降级 | 原生 TabBar 降级 | 原生 TabBar 降级 |
+| ADMIN+ 默认入口 | 无底栏店铺工作台 | 同一路由结构 | 同一路由结构 | 同一路由结构 |
 | 分享 | 微信 Adapter | 支付宝 Adapter | 抖音 Adapter | Web Share/链接，后续冻结 |
 | 请求域名 | 微信合法域名 | 支付宝白名单 | 抖音白名单 | HTTPS + FastAPI CORS allowlist |
 | 当前发布验证级别 | Build + Functional + 真机 | 本版延后 | 本版延后 | 本版延后 |
@@ -60,6 +62,8 @@ Taro 可以统一大量 React、组件、路由和 API 用法，但不能保证�
 - 金额、日期、Enum 和分页格式化；
 - Experience Option 有效组合算法；
 - 表单字段规则与通用页面四态；
+- 商城、预约、订单、会员中心四项的顺序、文案、路径、图标语义和根页 `switchTab` 行为；
+- 无底栏启动分流、角色相容的登录落点、ADMIN+ 店铺工作台和顾客根页管理角色守卫；
 - 大部分项目 React 组件；
 - 测试夹具和安全 DTO。
 
@@ -72,7 +76,8 @@ Taro 可以统一大量 React、组件、路由和 API 用法，但不能保证�
 - 项目配置和 AppID；
 - 平台开发者工具自动化；
 - Taro 无法统一的上传/文件 API 行为；
-- 必要的样式或组件兼容实现。
+- 必要的样式或组件兼容实现；
+- 微信自定义 TabBar 的瓷白托盘材质、选中圆座与安全区实现；其他端使用 Taro 原生 TabBar，不复制微信私有组件。
 
 禁止整页复制为 `page-weapp.tsx`、`page-alipay.tsx`，除非 Spike 或真实缺陷证明页面主体无法共享，并通过新的 ADR 批准。
 
@@ -119,6 +124,7 @@ interface SharePort {
 - `platform/index.ts` 的 Adapter 选择；
 - 平台配置工厂；
 - 经批准的平台专属资源入口；
+- `app.config.ts` 中 `tabBar.custom` 的目标平台差异；
 - 测试中设置目标环境。
 
 禁止在以下位置使用：
@@ -227,6 +233,18 @@ Spike 实测（2026-08-15，`spikes/taro-four-end-spike/tools/cors_check.py`）�
 
 Spike 结果写回 [ADR-005](adr/ADR-005-cross-platform-ui-strategy.md)。
 
+### 8.3 四根页导航降级
+
+四个平台共享同一信息架构和路由契约：
+
+- 四项固定为“商城 / 预约 / 订单 / 会员中心”，对应 `pages/index/index`、`pages/reservations/index`、`pages/orders/index`、`pages/member/index`；顾客导航本身不按身份重排，ADMIN+ 不消费这套 Tab，而从无底栏启动页进入独立工作台。
+- 所有平台必须在 `app.config.ts` 保留标准 `tabBar.list`。微信编译目标设置 `custom: true`，并由 `src/custom-tab-bar/` 实现方案 1“瓷白丝带托盘”；支付宝、抖音和 H5 设置 `custom: false`，由平台原生 TabBar 负责布局和安全区。
+- `src/navigation/root_tabs.ts` 是共享文案、路径、索引和 `switchTab` 边界；微信自定义栏不建立第二份路由配置。根路径不带 query，详情和表单继续使用普通页面栈。
+- 本地导航 PNG 来自同一授权图标库。轮廓灰用于未选中态，实心白用于微信深莓圆座，实心莓用于其他平台原生选中态；平台差异只选择已批准的状态资产，不在业务 Page 拼图标。
+- 微信、抖音和 H5 默认从共享无底栏 `pages/entry/index` 等待服务端确认角色：Guest/USER 进入商城、ADMIN+ 进入 `admin/pages/workbench/index`。支付宝要求第一个 Tab 同时是首页，因此编译时保持商城在 `pages[0]`，由商城同一 ADMIN+ 守卫完成分流。四个顾客根页仍在业务 Hook 挂载前提供工作台重定向兜底。
+- 店铺工作台与管理子页不在 `tabBar.list`，所以四端依靠普通路由层级自然隐藏顾客底栏；不使用运行时替换 Tab、平台专属 `hideTabBar` 或只在微信实现的管理员栏。平台导航不能改变权限或请求数据，FastAPI 仍是最终授权边界。
+- 支付宝、抖音和 H5 的降级目标是结构正确、可识别、可触达，不承诺复刻微信悬浮材质；它们仍不进入本版发布范围，历史构建也不能替代未来各自重新验收。
+
 ---
 
 ## 9. 登录与支付演进
@@ -253,10 +271,11 @@ Reservation N1 在所有平台共享相同后端契约：上海营业日历、bo
 ### Smoke
 
 - 应用可启动；
-- 首页可打开；
+- 商城与其他三个根 Tab 可打开并正确选中；
 - 可访问健康检查；
 - 登录页可输入并提交；
 - 页面导航、Storage、网络错误和一项 UI 组件可用。
+- 二级详情/表单不显示底栏，返回根 Tab 使用正确页面栈；
 
 ### Functional
 
@@ -274,6 +293,9 @@ Reservation N1 在所有平台共享相同后端契约：上海营业日历、bo
 - [ ] 没有在 Page/Feature 新增平台条件分支；
 - [ ] 新依赖已检查微信运行时支持、安全和许可证；
 - [ ] 新组件完成微信开发者工具与真机验证；
+- [ ] 微信自定义栏四项、安全区、选中态、减少动态和内容尾部遮挡已验证；
+- [ ] ADMIN+ 冷启动、登录和顾客根页兜底均进入无底栏店铺工作台，角色确认前不挂载顾客业务请求；
+- [ ] 其他端若运行非阻断构建，确认 `custom: false` 且没有编译微信自定义栏为运行入口；
 - [ ] 微信生产构建、包体和产物扫描通过；
 - [ ] 微信行为测试、真实 HTTPS 和合法域名通过；
 - [ ] 非微信平台没有被写入本版发布承诺；

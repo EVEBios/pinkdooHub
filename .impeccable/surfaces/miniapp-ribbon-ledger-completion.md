@@ -1,8 +1,8 @@
 ---
-version: 1
+version: 2
 slug: "miniapp-ribbon-ledger-completion"
 primary_target: "miniapp/src/styles/theme.scss"
-related_targets: ["miniapp/src/pages","miniapp/src/admin/pages","miniapp/src/admin/styles"]
+related_targets: ["miniapp/src/pages","miniapp/src/admin/pages","miniapp/src/admin/styles","miniapp/src/styles/_customer.scss","miniapp/src/styles/_ribbon.scss","miniapp/src/assets/admin/workbench-header-texture.jpg"]
 ---
 
 # Ribbon Ledger — Complete Product Surface
@@ -17,7 +17,7 @@ Operate
 
 ## Visual thesis
 
-让暖纸白成为安静工作台，让真实商品图、紧凑中文层级和可核对数字成为视觉主体；深莓果只标记当前选择、权威结果与明确下一步。
+让真实深莓分块纹理统一标记每页顶部身份区，让暖纸白承载正文、真实商品图、紧凑中文层级和可核对数字；纹理与品牌色不覆盖业务状态或操作后果。
 
 ## Content plan
 
@@ -28,7 +28,7 @@ Operate
 
 ## Interaction thesis
 
-- 所有按钮、筛选与列表记录共享 160ms 的颜色、边线、阴影和按压位移反馈，并服从减少动态偏好。
+- 所有按钮、筛选与列表记录共享 160ms 的颜色、边线、阴影和按压位移反馈，并服从减少动态偏好；工作台整行动作和登录主按钮显式使用自定义小程序按压态，避免平台默认整块变暗或绿色反馈。
 - 筛选选择只在浅粉轨道与窄域莓果选中态之间过渡，不使用装饰动画。
 - 可点击记录在按下时轻微收紧阴影，输入聚焦时由浅粉实底切换为白底和强一档腮红边线。
 

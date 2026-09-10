@@ -1,6 +1,6 @@
 # pinkdooHub 前端测试策略
 
-> **Document Version:** v0.11
+> **Document Version:** v0.12
 > **Status:** Draft
 > **Last Updated:** 2026-09-09
 > **Applies To:** 正式 `miniapp/` 与其 FastAPI 集成边界
@@ -153,6 +153,30 @@ Phase 8.8–8.9 自动化固定以下高风险边界：Product Audit 动态路�
 - 店休列表日期范围、首次 PUT 201/重放 200 metadata、计数相加、重复点击、unknown 核对；DELETE empty body、40452、恢复后不复活本地历史预约；
 - N1 页面不出现订阅授权、消息投递状态或“已通知”文案。
 
+### 4.6 四根页与底部导航
+
+本次导航改造的自动化必须固定用户可观察行为和生命周期边界，不把样式快照当成全部证据：
+
+- `root_tabs` 的四项顺序、中文文案、绝对根路径和选中索引完全固定，且路径与 `app.config.ts` 的 `tabBar.list` 一致；
+- 微信 `custom: true`，支付宝、抖音和 H5 `custom: false`；三端原生降级与微信自定义栏使用同一信息架构和相应本地图标资产；
+- 自定义栏能渲染四个未选中/选中状态；点击其他项只调用一次 `switchTab`，点击当前项不堆叠页面或重复触发导航；
+- 商城、预约、订单、会员中心各自在显示时同步正确选中索引；不得假设不同根页的自定义栏组件实例共享内部 state；
+- Guest 进入预约、订单或会员中心只显示登录引导且不挂载受保护请求；普通 USER 挂载自己的预约、订单、资料和钱包；ADMIN+ 进入四个顾客根页都只触发一次工作台重定向，且不挂载 Product、顾客 Reservation、顾客 Order 或普通客户 Wallet Hook；
+- 商城首次显示与 Tab 回切不重复加载或清空筛选；预约、订单和会员中心首次挂载只请求一次，再次显示保留已有内容并刷新权威第一页/资料/余额；
+- 登录成功只返回与实际角色相容的固定白名单目标：普通 USER 可回顾客目标，ADMIN+ 默认进入工作台或保留固定管理列表 redirect；不相容目标回角色默认落点。退出、禁用或身份变化后，旧角色的受保护数据不可继续显示，迟到响应不可写回新身份；
+- 所有跳往四个根页的入口使用 `switchTab`，动态详情和表单页继续使用普通页面栈；底栏只在四个根页出现；
+- 图标资产存在、尺寸与包体策略合规并保留来源/许可证；选中态同时有图形、填充、字重或位置线索，不能只靠颜色；
+- 自动化运行结果、suite/test 总数和构建结果只在实际执行后写入 changelog，不从本测试计划推定为通过。
+
+### 4.7 ADMIN+ 独立店铺工作台与顾客深链隔离
+
+- 启动分流至少覆盖 `initializing/error/guest/user/admin/super_admin/authenticated-without-user/unknown-role`，验证服务端角色确认前不导航、不挂载业务请求，应用级 Cart 只为 Guest/普通 USER 挂载；共享导航器覆盖重复目标、旧目标失败、快速角色切换、A→B→A 成功回跳和 reset，确认原生导航不并发、迟到结果不覆盖最新落点；
+- 工作台严格包含三组、六项、固定文案和固定 URL，全部使用普通管理页面栈；自身不调用列表/汇总 API，不出现顾客钱包、购买入口、虚假红点或数字；
+- 六个管理顶层页面均提供稳定“店铺工作台”入口；重复点击只发起一次导航，失败有反馈并可重试，显式管理 redirect 登录后不会形成无出口的页面栈；预约审核↔营业日历的对等捷径使用 `redirectTo` 且失败可恢复，不互相 `navigateTo` 堆栈；
+- 商品详情、购物车、下单确认、顾客订单详情、预约创建/详情和钱包页面都覆盖 ADMIN/SUPER_ADMIN 深链，必须在 Product/Cart/Order/Reservation/Wallet 业务 Hook 前重定向工作台；authenticated-without-user 与未知角色保持 fail closed；
+- 工作台退出覆盖服务端成功/失败、Storage remove 失败后的 tombstone、remove/set 双失败的全局认证 error、重复点击和登录页重启失败；双失败后再次初始化必须先重试失效持久凭据，不得恢复退出前的有效 Session。损坏/旧版 Session 恢复也复用同一删除/tombstone 约束。使用 deferred Storage 分别交错 profile 更新与 Token refresh 的迟到 `set`、同步 clear，断言最终内存/Storage 均无旧 Token、不再发布 authenticated；另覆盖旧 refresh Promise 不被新登录复用、条件 clear 不清除替代会话。UI 只有在设备持久凭据确实失效时才能声称本机会话已清除；
+- 微信 artifact checker 固定默认 entry、工作台 `admin` 分包归属、两页四件套和顾客四 Tab 不变；支付宝构建必须额外确认商城仍为 `pages[0]` 且第一 Tab 为首页。
+
 ---
 
 ## 5. API Client 测试矩阵
@@ -165,8 +189,10 @@ Phase 8.8–8.9 自动化固定以下高风险边界：Product Audit 动态路�
 - HTTP 403 不触发 refresh；
 - HTTP 400 + code 1006；
 - 三个并发 1006 只有一次 refresh；
+- 同一 Session 已被其他请求刷新时，迟到 1006 直接用当前 Token 重放且不重复 refresh；
+- 新登录不复用旧 Session 的在途 refresh，旧 1006/1005/1009/refresh failure 不得清理替代会话；
 - refresh 成功后每项最多重放一次；
-- refresh 失败清理会话；
+- refresh 失败只清理发起刷新且仍为当前的同一 Session；
 - refresh 自身 1006 不递归；
 - HTTP 422 `data.errors`；
 - Product 42201 `data.issues`；
@@ -260,11 +286,12 @@ npm run build:weapp
 
 至少覆盖：
 
-- 启动与首页；
+- Guest、普通 USER 与 ADMIN+ 的启动落点；微信/抖音/H5 经过无底栏 entry，支付宝从首个商城 Tab 角色分流；
+- ADMIN+ 店铺工作台三组六入口、子页返回和无顾客 TabBar；误入顾客根页或二级深链时不挂载顾客业务 Hook；
 - 健康检查；
 - 登录输入与提交；
 - Storage；
-- 页面导航/返回；
+- 四根页 `switchTab`、选中态、二级页无底栏与返回；
 - 一项 Dialog/Toast；
 - 一次图片或上传验证；
 - 网络失败提示。
@@ -275,30 +302,33 @@ npm run build:weapp
 
 ### 9.1 用户路径
 
-1. 游客浏览 Product；
-2. 注册/登录；
+1. 游客从商城依次切换预约、订单、会员中心，三个受保护根页只显示登录引导且不发受保护请求；
+2. 从原目标根页注册/登录并返回该 Tab，确认选中态和身份内容；
 3. Experience 选择有效 Option 并下单；
 4. Kit 下单与库存不足；
-5. 查看订单；
+5. 切换到订单根页查看服务端最新结果；
 6. 取消 Pending；
-7. Token 过期刷新；
-8. 登出并清理会话。
-9. Experience 查询 booking options，创建 pending 预约，查看详情，在精确截止时间内取消；
-10. 手机号缺失 42254、无合法 dates、创建 unknown 与他人预约 40451。
+7. 从 Experience 查询 booking options，创建 pending 预约，再切换预约根页核对、查看详情并在精确截止时间内取消；
+8. 手机号缺失 42254、无合法 dates、创建 unknown 与他人预约 40451；
+9. 会员中心核对资料/余额，再显示时刷新，登出后清理受保护数据；
+10. Token 过期刷新，并确认二级详情/表单无底栏、返回根页不堆叠页面。
 
 ### 9.2 管理路径
 
-1. 普通用户进入管理入口失败；
-2. ADMIN 创建 Product 草稿；
-3. 配置 Option/价格/图片；
-4. 上架失败完整展示 issues；
-5. 上架成功；
-6. Kit Inventory 调整首次/重放；
-7. 管理订单 Pending → Paid → Completed；
-8. 查看审计历史。
-9. 查看预约掩码手机号与详情当前完整手机号；
-10. pending 确认/无空位拒绝，开始后 40953；
-11. 设置店休批量取消、201/200 replay、恢复不复活历史、重复恢复 40452，并完成 N1 人工联系。
+1. ADMIN 冷启动、历史会话恢复和无 redirect 登录均进入无底栏店铺工作台；
+2. 核对三组、六个真实入口、子页返回关系和工作台零摘要请求；ADMIN 误入四个顾客根页及顾客二级深链时自动回工作台且零顾客业务请求；
+3. 普通用户进入管理入口失败；
+4. ADMIN 创建 Product 草稿；
+5. 配置 Option/价格/图片；
+6. 上架失败完整展示 issues；
+7. 上架成功；
+8. Kit Inventory 调整首次/重放；
+9. 管理订单 Pending → Paid → Completed；
+10. 查看审计历史；
+11. 查看预约掩码手机号与详情当前完整手机号；
+12. pending 确认/无空位拒绝，开始后 40953；
+13. 设置店休批量取消、201/200 replay、恢复不复活历史、重复恢复 40452，并完成 N1 人工联系；
+14. 工作台退出在服务端成功或失败时都让本地身份安全失效并进入裸登录页，持久化删除失败不得静默伪装成功。
 
 E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数据库中的手工数据。
 
@@ -319,6 +349,8 @@ E2E 使用隔离测试账号和可重复种子。不得依赖开发者个人数�
 - 小程序冷启动和分包首次加载；
 - 微信 request/upload/download 合法域名和证书；
 - 无障碍基础：点击区域、对比度、非纯颜色提示。
+- 微信 iOS/Android 底部安全区、Home Indicator、四项文字不换行、键盘弹出和最后一条内容不被瓷白托盘遮挡；
+- `prefers-reduced-motion`/平台等价偏好下取消选中项位移和非必要过渡，但保留明确选中状态；
 
 性能以测量为准：首屏时间、列表滚动、请求数、包体积和图片体积。没有测量证据不做预优化。
 

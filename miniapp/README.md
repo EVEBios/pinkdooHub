@@ -75,42 +75,74 @@ npm run api:types:check
 - `src/api/factory.ts`：组合环境配置、Transport 与可选 AuthSession。
 
 HTTP Client 不默认重试写请求。只有后端已明确返回 Token 失效 code `1006` 时，
-才通过共享 refresh Promise 刷新并重放一次；普通超时不会自动重新 POST/PATCH。
-受保护请求若收到已禁用 code `1005`，立即清理本地 Session，且不尝试 refresh。
+才在同一登录周期内共享 refresh Promise 并重放一次；若另一请求已经刷新了同一会话，
+迟到的 `1006` 直接使用当前 Token 重放，不再重复 refresh。普通超时不会自动重新 POST/PATCH。
+每次请求、上传和 refresh 都绑定发起时的 Session identity；旧会话迟到的 `1005`、`1009`、
+`1006` 或 refresh 失败不能刷新、清理或覆盖刚建立的新会话。同一会话收到 `1005`/`1009`
+则立即清理本地 Session，且不尝试 refresh。
+
+## 顾客四个一级入口
+
+顾客侧一级信息架构固定为“商城 / 预约 / 订单 / 会员中心”，对应：
+
+| 顺序 | 路径 | 页面职责 |
+|------|------|----------|
+| 商城 | `pages/index/index` | Guest 可访问的商品搜索、筛选、分页与详情入口 |
+| 预约 | `pages/reservations/index` | 普通 USER 的预约列表；Guest 登录引导；ADMIN+ 自动回到工作台 |
+| 订单 | `pages/orders/index` | 普通 USER 的订单列表；Guest 登录引导；ADMIN+ 自动回到工作台 |
+| 会员中心 | `pages/member/index` | Guest 登录入口、普通 USER 资料/钱包；ADMIN+ 自动回到工作台 |
+
+- `src/navigation/root_tabs.ts` 是四项顺序、文案、路径和选中同步的共享边界；跳往根页必须使用 `Taro.switchTab()`，不能用 `navigateTo`/`redirectTo`，也不能携带 query。
+- 微信端由 `src/custom-tab-bar/` 实现 Ribbon Ledger 的“瓷白丝带托盘”，`app.config.ts` 仍声明标准 `tabBar.list` 并在 `weapp` 设置 `custom: true`；支付宝、抖音和 H5 使用 `custom: false` 的原生 TabBar 兼容降级。
+- 三组本地 PNG 图标状态族统一位于 `src/assets/tab-bar/`：轮廓灰服务未选中态，实心白服务微信深莓圆座，实心莓服务其他平台原生选中态；资产来自同一授权图标库并保留来源/许可证。
+- 底栏只属于这四个根页面。商品详情、购物车、下单确认、订单/预约详情、登录注册、钱包充值/流水和全部 `admin` 页面保持无底栏二级流程。
+- 商城保留筛选和滚动上下文；预约、订单和会员中心在再次显示时读取新鲜服务端事实，但首次挂载不得与首次显示形成双请求。ADMIN+ 误入任一顾客根页时自动回到工作台；角色确认前及跳转期间不得挂载商城、顾客预约、顾客订单或普通客户钱包请求。应用级 `CartProvider` 也只在 Guest 或已确认的普通 USER 身份下挂载。
+- 这次变更只重组前端路由和挂载边界，不改变 FastAPI API、OpenAPI、数据库 Schema/Aerich 迁移、依赖或应用版本。
+
+## 管理员店铺工作台
+
+- `pages/entry/index` 是微信、抖音和 H5 的默认首个页面。它没有底栏和业务请求，只等待 AuthProvider 用 `/users/me` 确认身份：Guest/普通 USER 通过 `switchTab` 进入商城，ADMIN/SUPER_ADMIN 通过 `reLaunch` 进入 `admin/pages/workbench/index`。支付宝要求第一个 Tab 同时是首页，因此该端编译时保持商城为 `pages[0]`，并由商城同一 ADMIN+ 守卫分流。
+- 店铺工作台不是 Tab 页面，按“今日处理 / 商品与库存 / 门店与权限”三组展示预约审核、订单处理、商品管理、库存流水、营业日历、用户与权限六项真实入口；首版不展示虚假待办数字，也不为摘要并发请求六个列表。
+- 六项使用 `navigateTo` 进入既有 `admin` 分包页面，系统返回键自然回到工作台。预约审核与营业日历的对等捷径使用 `redirectTo` 替换当前子页，避免往返切换堆高页栈。管理员底部导航和顾客商城预览不在当前范围。
+- 登录与注册页中的已有会话统一使用 `resolveAuthenticatedLanding()`：只保留与当前角色相容的固定白名单 redirect；没有目标或目标不相容时，普通 USER 回商城、ADMIN+ 回工作台。根 Tab 用 `switchTab`，非 Tab/管理目标用 `reLaunch`；Entry、登录、注册共用串行最新目标导航，旧请求不与新请求并发且不能覆盖新角色落点。登录/注册互换使用 `redirectTo`，不累积往返页栈。
+- 工作台在初始化、认证错误、Guest、资料缺失和普通 USER 状态下 fail closed，不渲染管理入口。退出即使遇到服务端失败也会先废弃内存 Token/User，再删除持久 Session 或写入无凭据 tombstone；只有持久凭据确实失效后才发布 Guest 并回到裸登录页。若两种持久操作都失败，AuthProvider 进入全局可见 error，明确要求用户清理小程序数据，不误报已清除或强行跳转；“重新检查”会先重试失效旧凭据，不会重新恢复退出前 Session。会话写入/删除串行并用 epoch 废弃旧身份的迟到资料更新与 Token refresh，避免退出后凭据被反向写回。路由失败保留重试。
 
 ## 当前认证、Product、Order、Reservation 与 ADMIN 链路
 
 - `src/api/endpoints/auth.ts`：register/login/refresh/logout/getMe/updateProfile 与响应 Runtime Guard；预约前补充手机号通过同一 Profile PATCH 链写入，不把手机号塞进预约请求；
 - `src/platform/storage.ts`：跨端 Storage Port 和 Taro Adapter；
+- `src/platform/use_refresh_after_page_return.ts`：只在页面真实经历 hide→show 后触发再次显示刷新，避免首次挂载与首次显示重复请求；
 - `src/auth/session.ts`：Token 内存状态、版本化持久化、过期时间和并发 refresh；
 - `src/auth/context.tsx`：注册用例、启动恢复、`/users/me` 验证及全局认证状态；注册成功不会凭空建立 Session；
-- `src/pages/login/`、`src/pages/register/`：受控账号密码登录/注册表单，双向保留白名单 redirect；公开首页按认证状态展示登录、昵称或登出，游客不再被强制跳转；
+- `src/pages/login/`、`src/pages/register/`：受控账号密码登录/注册表单，双向保留与角色相容的白名单 redirect；普通 USER 的账户与登出入口归入会员中心，ADMIN+ 的身份与登出入口归入店铺工作台，游客浏览商城不依赖认证；
+- `src/pages/entry/`：无底栏启动分流页，在服务端确认角色后进入商城或店铺工作台，不挂载业务 Feature；
 - `src/api/endpoints/products.ts`：公开 Product 列表生成类型、运行时 Guard 与白名单投影；
 - `src/features/product/`：第一页/下一页、Loading/Empty/Error/Content 和迟到响应隔离；
 - `src/utils/asset_url.ts`：绝对图片 URL 保留、`/uploads/...` 相对 API Origin 补全；
-- `src/pages/index/`：公开商品卡片、Experience 起价、Kit 固定价格、图片失败占位和分页按钮。
+- `src/pages/index/`：商城根页，专注公开商品卡片、Experience 起价、Kit 固定价格、图片失败占位和分页按钮，不再承载账户或店铺管理面板。
 - `src/features/order/cart.ts`：Experience/Kit 判别联合、版本化本地购物车、串行持久化和 Order Item 最小映射；
-- `src/features/order/context.tsx`：游客/登录用户共享的 CartProvider，不与 Auth Session 混存；
+- `src/features/order/context.tsx`：Guest/普通 USER 共享的 CartProvider，不与 Auth Session 混存；应用根边界在角色确认后决定是否挂载，ADMIN+ 不恢复顾客购物车；
 - `src/api/endpoints/orders.ts`：严格的用户/ADMIN Order 请求投影、认证调用，以及 Detail/Page/Status Runtime Guard；
 - `src/features/order/submission.ts`：一次提交快照、重复点击合并、失败/结果未知区分，以及成功后的保守 Cart 对账；
 - `src/features/order/use_order_list.ts`：状态筛选、服务端分页、重复加载保护和迟到响应隔离；
 - `src/features/order/use_order_detail.ts`：owner-only 详情读取、Pending empty-body cancel、unknown/40921 状态收敛和成功后重拉；
 - `src/features/order/use_admin_order_list.ts`：ADMIN 完整筛选、服务端分页、重复加载保护和迟到响应隔离；
 - `src/features/order/use_admin_order_detail.ts`：Pending → Paid、Paid → Completed 的唯一命令派生，以及 unknown/40921/成功后重拉收敛；
-- `src/auth/login_route.ts`：只允许已注册确认页、用户订单列表或管理列表的固定登录/注册回跳，拒绝动态详情、外部或任意内部地址；
+- `src/auth/login_route.ts`：只允许已登记确认页、顾客列表/钱包或管理列表/工作台的固定登录回跳，并按角色过滤不相容目标；拒绝动态详情、外部或任意内部地址；`src/navigation/use_latest_destination_navigation.ts` 负责角色落点的串行、最新目标重放和失败重试；
 - `src/pages/product-detail/`：把当前真实 Experience Option 或 Kit 加入购物车；
 - `src/pages/cart/`：购物车恢复四态、预览字段、数量修改、移除和进入确认页；同一自选颜色商品在界面合并为一个区块，卡内仍按色样逐色编辑并保持下单明细独立；
 - `src/pages/order-confirm/`：登录守卫、受控备注、确认提交、权威下单结果与未知结果核对入口；
-- `src/pages/orders/`：当前账号订单列表、状态筛选、分页和详情入口；
+- `src/pages/orders/`：订单根页；普通 USER 展示当前账号订单列表、状态筛选、分页和详情入口，Guest/ADMIN+ 不挂载顾客订单请求；
 - `src/pages/order-detail/`：服务端历史快照、Pending 取消确认及结果反馈。
 - `src/admin/pages/orders/`、`src/admin/pages/order-detail/`：ADMIN 分包的完整筛选、管理详情和人工 Paid/Completed；普通用户在挂载管理请求前被拦截，后端 ADMIN+ 仍负责最终授权。
+- `src/admin/pages/workbench/`：ADMIN+ 默认无底栏落点，以三组账簿行连接六项既有管理链路；自身不请求任何业务列表或汇总。
 - `src/api/endpoints/admin_products.ts`、`src/features/product/use_admin_product_*`：ADMIN Product 列表/详情与写入的认证 Endpoint、管理草稿 Runtime Guard、筛选分页、类型专属详情读取，以及基本信息/配置 mutation 状态机；
 - `src/platform/image_picker.ts`：跨端选图 Port/Taro Adapter，页面不直接依赖平台原生选图 API；
 - `src/admin/pages/products/`、`src/admin/pages/product-detail/`、`src/admin/pages/product-create/`、`src/admin/pages/product-edit/`、`src/admin/pages/product-configuration/`、`src/admin/pages/product-images/`：可查看 Draft/Online/Offline 与逻辑删除聚合，可创建 Experience/Kit 草稿、编辑名称/描述、逻辑删除 Draft/Offline、管理 Experience Option/Kit 价格、Product/Option 图片，并执行上下架/readiness 核对。Product 删除恢复仍未开放。
 - `src/api/endpoints/inventory.ts`、`src/features/inventory/`：Kit 调整、指定 Kit/全局流水、筛选分页、201/200 判别和幂等业务意图；unknown 不自动重发，安全重试复用原 key 与 payload。
 - `src/admin/pages/product-inventory/`、`src/admin/pages/inventory-transactions/`：未删除 Kit 的库存管理与两类 ADMIN+ 流水页；动态 Kit 页不进入登录 redirect 白名单。
 - `src/api/endpoints/reservations.ts`、`src/features/reservation/`：服务端预约日历、创建/查询/取消、ADMIN 审核与店休 API 的白名单投影、Runtime Guard、请求竞态和 unknown 结果收敛；pending/confirmed 的取消窗口由服务端最终裁决。
-- `src/pages/reservation-create/`、`src/pages/reservations/`、`src/pages/reservation-detail/`：从 Experience 当前 Option 可达的预约创建、我的预约和详情/取消；严格登录回跳只允许精确的创建参数组合。
+- `src/pages/reservation-create/`、`src/pages/reservations/`、`src/pages/reservation-detail/`：从 Experience 当前 Option 可达的预约创建、预约根页和详情/取消；普通 USER 才挂载自己的预约请求，严格登录回跳只允许精确的创建参数组合。
 - `src/admin/pages/reservations/`、`src/admin/pages/reservation-detail/`、`src/admin/pages/store-closures/`：ADMIN+ 预约筛选/详情、确认或固定“无空位”拒绝，以及店休批量取消/恢复；列表只显示掩码手机号，完整号码按需在详情读取。
 - `src/api/endpoints/audit.ts`、`src/features/audit/`、`src/admin/pages/product-audit/`：ADMIN+ Product 操作历史的目标绑定 Runtime Guard、服务端分页和只读页面；逻辑删除商品仍可追溯。
 - `src/api/endpoints/admin_users.ts`、`src/features/admin_user/`、`src/admin/pages/users/`：ADMIN+ 用户角色/状态筛选、安全摘要列表与幂等禁用；不提供后端尚不存在的详情、启用或头像上传。
@@ -142,6 +174,10 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `python -m
 - `../design-qa.md`：最近一次参考稿与真实页面的视觉、交互和可访问性验收记录。
 - `src/pages/`：页面（TSX + 页面配置）。
 - `src/admin/pages/`：`admin` 分包的 ADMIN+ 页面。
+- `src/custom-tab-bar/`：微信四根页的瓷白丝带托盘；只承担根页导航，不读取业务 API。
+- `src/navigation/root_tabs.ts`：跨平台共享的顾客根 Tab 配置、选中索引和 `switchTab` 边界。
+- `src/navigation/admin_workbench_redirect.tsx`：顾客根页共用的 ADMIN+ 无业务请求重定向状态。
+- `src/assets/tab-bar/`：同一授权图标库导出的本地导航 PNG 状态族及资产说明。
 - `src/components/`：项目共享组件。
 - `src/api/`：生成类型、HTTP Client、Transport 与模块 Endpoint。
 - `src/auth/`：认证 Context、Session Manager 与运行时组合。
@@ -152,7 +188,7 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `python -m
 - `src/styles/_patterns.scss`：页面壳、标题、面板、卡片、按钮、反馈和空状态等共享 Sass mixin，不承载业务状态。
 - `src/utils/`：无状态纯函数。
 
-当前主题已覆盖 31 条已注册页面路由，包括客户侧登录、注册、商品、购物车、订单与预约，以及 ADMIN+ 商品、配置、图片、库存、订单、预约、店休和用户管理。页面继续使用各自业务语义类名；新增界面应优先复用上述 Token 与模式，并对 390 px 移动视口和关键 768 px 宽屏状态做视觉检查。
+当前主题覆盖 33 条已注册页面路由（15 个主包页面、18 个 `admin` 分包页面），包括无底栏启动分流、客户侧四个根页、登录注册、商品详情、购物车、订单/预约详情和钱包，以及 ADMIN+ 独立店铺工作台、商品、配置、图片、库存、订单、预约、店休和用户管理。页面继续使用各自业务语义类名；新增界面应优先复用上述 Token 与模式，并对 390 px 移动视口和关键 768 px 宽屏状态做视觉检查。
 
 依赖方向：Page → Component/Feature → Service → HTTP Client → JSON/Upload Transport → Taro 平台 API。
 页面禁止直接调用 `Taro.request`、`Taro.uploadFile` 或平台原生选图 API。
@@ -186,9 +222,12 @@ ADMIN Product 的 Draft 空配置和逻辑删除 Functional 样本由 `python -m
 - readiness 必须完整展示服务端 `42201.data.issues`，前端不复制 ProductValidator；下架不重写历史订单、Option、图片或库存；
 - 受控表单的输入值来自 React State；Context 只放跨页面共享的认证状态；
 - Effect 用于启动恢复等副作用，缓存 User 必须经 `/users/me` 验证后才视为已认证；
+- 角色默认落点与根页守卫属于前端导航边界，不替代后端 ADMIN+ 权限；ADMIN+ 顾客根页分支必须在业务 Hook 挂载前完成隔离。
 - Port/Adapter 与依赖注入让 Storage、时钟和网络刷新在 Jest 中可替换；
 - 数据库 `IntEnum` 和 HTTP 字符串 Enum 是不同表示，OpenAPI 必须描述真正的网络输出。
 - Product Page 是服务端状态，使用互斥四态而不是多个可能矛盾的 boolean；
+- Tab 根页与普通页面的路由语义不同：根页用 `switchTab`，详情/表单继续使用普通栈导航；微信自定义 TabBar 的不同页面实例必须在页面显示时各自同步选中索引。
+- Taro Tab 页面可保留实例；订单、预约和会员中心的再次显示刷新要与首次挂载去重，并在身份切换时清理旧角色数据，商城则保留筛选和浏览上下文。
 - 分页事实来自后端 `page/pages/total`，客户端不根据数组长度猜测总页数；
 - 请求发出顺序不保证响应顺序，使用请求序号阻止迟到旧响应覆盖新数据；
 - TypeScript DOM 类型不证明所有小程序运行时都支持同名 Web API，跨端 Feature 避免无验证地依赖 `AbortController`；

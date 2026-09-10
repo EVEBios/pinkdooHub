@@ -1,6 +1,6 @@
 # pinkdooHub 前端 API 集成契约
 
-> **Document Version:** v0.13
+> **Document Version:** v0.14
 > **Status:** Draft
 > **Last Updated:** 2026-09-09
 > **Source of Truth:** 实际 FastAPI OpenAPI、路由/Schema/测试及对应业务/API 文档
@@ -20,7 +20,7 @@
 - `miniapp/src/api/factory.ts`：消费严格校验后的 `TARO_APP_API_ORIGIN`；
 - `miniapp/src/api/endpoints/auth.ts`：register/password login/WeChat login/refresh/logout/getMe 薄 Endpoint，以及认证数据 Runtime Guard + 白名单投影；
 - `miniapp/src/auth/`：Session Manager、启动恢复、Context 与运行时组合；`miniapp/src/platform/storage.ts` 提供 Taro Storage Adapter；
-- `miniapp/src/pages/login/`、`pages/register/`：按编译期 `TARO_APP_AUTH_MODE` 选择受控密码入口或 `wx.login` 一次性 code 入口；公开微信模式不显示密码注册链接，Gate A 保留密码链路。注册成功不自动建立 Session，登录和注册之间只保留白名单 redirect；公开首页按认证状态显示登录、当前用户或登出，但游客浏览不依赖认证；
+- `miniapp/src/pages/login/`、`pages/register/`：按编译期 `TARO_APP_AUTH_MODE` 选择受控密码入口或 `wx.login` 一次性 code 入口；公开微信模式不显示密码注册链接，Gate A 保留密码链路。注册成功不自动建立 Session，登录和注册之间只保留与实际角色相容的白名单 redirect；普通 USER 的身份/登出在会员中心，ADMIN+ 的身份/登出在独立店铺工作台，游客浏览商城不依赖认证；
 - `miniapp/src/api/endpoints/products.ts`：公开列表 Query/响应生成类型、运行时 Guard 与白名单投影；
 - `miniapp/src/api/endpoints/admin_products.ts`：认证管理列表/详情、Experience/Kit 创建、基本信息与 Kit 价格 PATCH、Product/Option 逻辑删除、Option 新增/恢复/修改、Product/Option 图片生命周期及上下架，以及对应 Runtime Guard 与白名单投影；
 - `miniapp/src/api/endpoints/audit.ts`、`features/audit/`：Product Audit 分页、目标绑定 Runtime Guard 与只读管理页；
@@ -28,12 +28,32 @@
 - `miniapp/src/api/endpoints/inventory.ts`、`features/inventory/`：Kit 调整、指定 Kit/全局流水、201/200 判别、幂等业务意图、筛选分页与 Runtime Guard；
 - `miniapp/src/features/product/`：第一页、下一页、四态、重复加载保护、迟到响应隔离与图片/状态 mutation；`miniapp/src/platform/image_picker.ts` 隔离跨端选图，`miniapp/src/utils/asset_url.ts` 是相对图片 URL 的唯一解析点；
 - `miniapp/src/api/endpoints/orders.ts`：用户创建/列表/详情/取消与 ADMIN 列表/详情/paid/complete 的最小请求投影，以及 Detail/Page/Status Runtime Guard；
-- `miniapp/src/features/order/`：本地 Cart、一次提交状态机、用户/管理列表竞态隔离、详情命令 unknown/40921 状态收敛；`miniapp/src/auth/login_route.ts` 只允许登录返回已注册的固定确认页、用户列表或管理列表；
+- `miniapp/src/features/order/`：本地 Cart、一次提交状态机、用户/管理列表竞态隔离、详情命令 unknown/40921 状态收敛；`miniapp/src/auth/login_route.ts` 只允许登录返回已登记的固定顾客目标、店铺工作台或管理列表，再按角色过滤不相容目标；
 - `miniapp/src/pages/order-confirm/`、`pages/orders/`、`pages/order-detail/`：用户创建、核对、查询与 Pending 取消；`miniapp/src/admin/pages/`：ADMIN+ Order 查询/状态操作，Product 完整管理与操作历史、Kit Inventory，以及用户列表/禁用。
 
 账号密码注册/登录、Product 浏览、Cart、用户/ADMIN Order，以及 Phase 8 当前后端能力范围的 ADMIN Product、Inventory、Product Audit 和 ADMIN User 均已完成微信开发者工具 Functional。Phase 8.2 验收后延期的管理页白色图案和登录下划线闪烁已于 2026-08-29 复测关闭：白色图案通过把白色卡片视觉层从原生 `Form` 移到外层 `View` 解决，登录 `_` 闪烁后续无法复现并由用户确认消失。该修复不改变任何 HTTP 请求、响应或授权契约。H5 真实跨域联调仍受后端尚未注册 CORS allowlist 限制；微信登录仓库链已实现但真实 AppID/受控 Secret/真机尚未启用或验收，真实微信支付仍未交付。
 
 Reservation N1/M7 后端契约与仓库实现已完成，M5/M7 已通过一次性 MySQL 核心并发/重试/索引验证并进入当前持久 Gate A M7；前端 Endpoint、Runtime Guard、Feature、页面与 Functional 必须以 [Reservation API](../03_api/reservation_api.md)、实际代码、自动化和 changelog 共同判断。共享、预发布、生产及真实客户端验收仍未因此自动完成。N1 的顾客可见结果以“我的预约/详情”中的状态和 `customer_message` 为准，店方可从管理详情读取当前手机号人工联系；N1 不主动发送微信通知，N2 继续 Deferred。
+
+### 0.1 启动分流、顾客路由与请求挂载边界
+
+四根页只重组已有客户端入口，不增加、删除或改变任何 FastAPI 路径、请求/响应字段、错误码、OpenAPI Schema 或授权规则：
+
+| 根页 | Guest | 普通 USER | ADMIN+ |
+|------|-------|-----------|--------|
+| 商城 | 挂载公开 Product 列表 | 同 Guest | 业务 Hook 前 `reLaunch` 工作台，零 Product 请求 |
+| 预约 | 登录引导，不请求用户预约 | 挂载 owner-only 预约列表 | 业务 Hook 前 `reLaunch` 工作台，零顾客预约请求 |
+| 订单 | 登录引导，不请求用户订单 | 挂载 owner-only 订单列表 | 业务 Hook 前 `reLaunch` 工作台，零顾客订单请求 |
+| 会员中心 | 登录入口，不请求资料/钱包 | 挂载当前资料与自己的钱包摘要 | 钱包 Hook 前 `reLaunch` 工作台，零普通客户钱包请求 |
+
+- 四项路径固定为 `/pages/index/index`、`/pages/reservations/index`、`/pages/orders/index`、`/pages/member/index`；根页间只用 `switchTab`，路径不携带 query。
+- 微信、抖音和 H5 默认从无底栏、无业务请求的 `/pages/entry/index` 等待 `/users/me` 确认角色：Guest/普通 USER 进入商城，ADMIN+ 进入 `/admin/pages/workbench/index`。支付宝因平台要求首个 Tab 同时是首页而保留商城在 `pages[0]`，由商城同一 ADMIN+ 守卫完成分流。
+- 商品详情、购物车、下单确认、订单/预约详情、钱包等顾客二级页和全部 ADMIN+ 页面继续使用普通页面栈且无底栏；顾客二级页同样在 Product/Cart/Order/Reservation/Wallet 业务 Hook 前拦截 ADMIN+，动态 ID/Option 参数继续经过现有路由 Guard。
+- 店铺工作台只展示预约审核、订单处理、商品管理、库存流水、营业日历、用户与权限六个已有页面入口，不调用任何新增 API或并发拼接列表摘要；六个管理顶层页提供稳定“店铺工作台”返回入口。
+- 登录后只有与实际角色相容的固定白名单 redirect 会保留；无目标或不相容目标分别回商城/工作台，动态详情、外部 URL 和任意内部地址继续拒绝。导航失败必须提供显式重试，不能要求重新发起登录请求。
+- 订单和预约再次显示时保留当前筛选并刷新第一页，会员中心重读当前资料与普通 USER 钱包；首次挂载与首次显示不得双请求。商城保留搜索/类型/分页上下文。
+- 登录、退出、禁用和角色变化必须先按 AuthContext 收敛挂载资格，并清理旧身份数据；请求序号继续阻止迟到响应越过身份或筛选边界。
+- 微信 custom TabBar 与其他平台原生 TabBar 都不能直接调用 Endpoint，也不能缓存、推导或扩大角色权限；后端认证、owner-only 与 ADMIN+ 依赖仍是最终裁决。
 
 ---
 
@@ -149,9 +169,10 @@ Authorization: Bearer <access_token>
 |------|----------|----------|
 | 缺少 Bearer | HTTP 401 / code 401 | 未登录；必要时转登录 |
 | 权限不足 | HTTP 403 / code 403 | 显示无权限；不刷新 Token |
-| 无效/过期 Token | HTTP 400 / code 1006 | 触发一次 refresh 流程 |
-| 已禁用账号 | HTTP 400 / code 1005 | 受保护 JSON/上传请求立即清理 Session，不 refresh；登录保持明确业务错误 |
-| refresh 失败 | 业务/认证错误 | 清理会话并要求重新登录 |
+| 无效/过期 Token | HTTP 400 / code 1006 | 同一 Session identity 内触发一次 refresh；同会话已有新 Token 时直接重放 |
+| 已禁用/已删除账号 | HTTP 400 / code 1005 / 1009 | 受保护 JSON/上传请求只清理发起请求的同一 Session，不 refresh；登录保持明确业务错误 |
+| refresh 失败 | 业务/认证错误 | 只在发起 refresh 的 Session identity 仍是当前身份时清理，并要求重新登录 |
+| 旧会话鉴权结果迟到 | 1005 / 1006 / 1009 / refresh failure | 结束旧请求，不刷新、清理或覆盖新登录 |
 
 不得只监听 HTTP 401，否则无法处理当前 `1006` 契约。
 
@@ -159,12 +180,13 @@ Authorization: Bearer <access_token>
 
 多个并发请求同时遇到 `1006` 时：
 
-1. 第一项创建共享 refresh Promise；
-2. 后续等待同一 Promise；
-3. 成功后各自仅重放一次原请求；
-4. 失败时只清理一次会话；
-5. refresh 请求本身不进入 refresh 循环；
-6. 重放后仍 `1006` 直接失败。
+1. 请求记录发起时的 Session identity 与 access token；
+2. 同一 identity 的第一项创建共享 refresh Promise，后续请求等待它；新登录不复用旧 identity 的 Promise；
+3. 若同会话的其他请求已经先刷新 Token，迟到 `1006` 直接使用当前 Token 重放，不重复 refresh；
+4. refresh 成功后各项仅重放一次原请求；
+5. refresh 失败只允许清理发起 refresh 的同一 identity；旧会话失败不得清掉新登录；
+6. refresh 请求本身不进入 refresh 循环；
+7. 重放后仍 `1006` 直接失败。
 
 写请求只有在明确知道首次未被业务执行时才允许由该流程重放。正式实现前必须测试 Taro transport 在认证失败返回点的行为。
 
@@ -451,7 +473,7 @@ confirm/reject/cancel 与店休 DELETE 均使用 empty-body 请求，连 `{}` �
 | 注册 | `POST /auth/register` | Guest |
 | 登录 | `POST /auth/login` | Guest |
 | 恢复会话 | `POST /auth/refresh`、`GET /users/me` | Refresh/User |
-| 商品列表 | `GET /products` | Guest |
+| 商城商品列表 | `GET /products` | Guest |
 | 本地购物车 | 无网络请求；Taro Storage | Guest/User |
 | Experience 详情 | `GET /products/experience/{id}` | Guest |
 | Kit 详情 | `GET /products/kit/{id}` | Guest |

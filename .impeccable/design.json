@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-02T20:53:56Z",
+  "generatedAt": "2026-09-09T14:17:18Z",
   "title": "Design System: pinkdooHub",
   "extensions": {
     "colorMeta": {
@@ -312,7 +312,7 @@
       },
       "display": {
         "displayName": "Display / 展示标题",
-        "purpose": "首页与认证入口的短行主标题。"
+        "purpose": "商城与认证入口的短行主标题。"
       },
       "price": {
         "displayName": "Price / 价格数字",
@@ -369,7 +369,7 @@
       {
         "name": "ambient-small",
         "value": "0 8px 22px rgb(83 31 49 / 8%)",
-        "purpose": "账户托盘、筛选与普通操作容器。"
+        "purpose": "瓷白底部托盘、筛选与普通操作容器。"
       },
       {
         "name": "ambient-medium",
@@ -409,9 +409,14 @@
         "purpose": "商品卡片边线、阴影与 2px 按下位移的局部节奏。"
       },
       {
+        "name": "root-tab-selection",
+        "value": "120ms ease",
+        "purpose": "根 Tab 只对颜色、边线、阴影和按压 transform 做短反馈；width、height、top、margin 等布局几何瞬时切换。"
+      },
+      {
         "name": "reduced-motion",
         "value": "none",
-        "purpose": "系统偏好减少动态时取消按钮过渡。"
+        "purpose": "系统偏好减少动态时取消非必要过渡，并禁用根 Tab 的按压位移与缩放。"
       }
     ],
     "breakpoints": [
@@ -421,9 +426,11 @@
       }
     ],
     "coverage": {
-      "completedBusinessRoutes": 20,
-      "mobileVerification": "All 20 registered routes at 390px",
-      "wideVerification": "Representative customer and ADMIN+ workflows at 768px",
+      "registeredRoutes": 33,
+      "mainPackageRoutes": 15,
+      "adminSubpackageRoutes": 18,
+      "mobileVerification": "Required: all 33 registered routes at 390px",
+      "wideVerification": "Required: representative customer, admin workbench, and ADMIN+ workflows at 768px",
       "touchTargetH5": "44px"
     }
   },
@@ -477,12 +484,28 @@
       "css": ".ds-filter-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 5px; background: #f8eef2; border-radius: 15px; } .ds-filter-chip { display: inline-flex; min-width: 0; min-height: 44px; align-items: center; justify-content: center; padding: 0 8px; overflow: hidden; color: #67575f; font-family: -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif; font-size: 14px; font-weight: 650; line-height: 1.2; white-space: nowrap; text-overflow: ellipsis; background: transparent; border: 0; border-radius: 11px; transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; } .ds-filter-chip--active { color: #fff; background: linear-gradient(135deg, #a92d55 0%, #b4345a 54%, #ba3c61 100%); box-shadow: 0 6px 16px rgb(143 35 70 / 16%); } .ds-filter-chip:hover:not(.ds-filter-chip--active) { color: #8f2346; background: #fffdfd; } .ds-filter-chip:focus-visible { outline: 3px solid rgb(183 53 93 / 28%); outline-offset: 2px; } .ds-filter-chip:active:not([disabled='true']) { transform: translateY(1px); } .ds-filter-chip[disabled='true'] { opacity: 0.62; } @media (prefers-reduced-motion: reduce) { .ds-filter-chip { transition: none; } }"
     },
     {
-      "name": "Account Navigation",
+      "name": "Root Tab Tray",
       "kind": "nav",
-      "refersTo": "nav-account",
-      "description": "首页上不横向滚动的账户分组账簿；“我的”和“店铺管理”使用有间距的独立圆角模块，左侧动作、右侧提示，退出在模块外降级为安静操作。",
-      "html": "<div class=\"ds-account\"><nav class=\"ds-account-nav\" aria-label=\"账户与管理入口\"><section class=\"ds-account-nav__group\"><h3 class=\"ds-account-nav__section\">我的</h3><button class=\"ds-account-nav__action\" type=\"button\"><span>我的订单</span><small>查看</small></button></section><section class=\"ds-account-nav__group\"><h3 class=\"ds-account-nav__section\">店铺管理</h3><button class=\"ds-account-nav__action\" type=\"button\"><span>库存流水</span><small>管理</small></button><button class=\"ds-account-nav__action\" type=\"button\"><span>管理商品</span><small>管理</small></button><button class=\"ds-account-nav__action\" type=\"button\"><span>管理订单</span><small>管理</small></button><button class=\"ds-account-nav__action\" type=\"button\"><span>管理用户</span><small>管理</small></button></section></nav><button class=\"ds-account__logout\" type=\"button\">退出</button></div>",
-      "css": ".ds-account { display: grid; width: 100%; max-width: 560px; gap: 12px; } .ds-account-nav { display: grid; width: 100%; gap: 8px; } .ds-account-nav__group { width: 100%; overflow: hidden; background: #fffdfd; border: 1px solid rgb(171 101 126 / 17%); border-radius: 18px; box-shadow: 0 8px 22px rgb(83 31 49 / 8%); } .ds-account-nav__section { margin: 0; padding: 14px 20px 10px; color: #8f2346; font-size: 12px; font-weight: 750; letter-spacing: 1px; background: linear-gradient(135deg, rgb(250 231 237 / 78%), rgb(255 248 250 / 74%)); border-radius: 18px 18px 0 0; } .ds-account-nav__action { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: space-between; gap: 20px; margin: 0; padding: 0 20px; color: #8f2346; font-family: -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif; font-size: 14px; font-weight: 650; line-height: 1.2; text-align: left; background: rgb(255 255 255 / 48%); border: 0; border-bottom: 1px solid rgb(234 216 223 / 76%); border-radius: 0; box-sizing: border-box; } .ds-account-nav__action:last-child { border-bottom: 0; border-radius: 0 0 18px 18px; } .ds-account-nav__action small { color: #806b74; font-size: 12px; font-weight: 600; } .ds-account-nav__action:hover { background: #fae7ed; } .ds-account-nav__action:focus-visible, .ds-account__logout:focus-visible { outline: 3px solid rgb(183 53 93 / 28%); outline-offset: 3px; } .ds-account__logout { min-width: 60px; min-height: 44px; padding: 0 4px; color: #806b74; font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, \"PingFang SC\", sans-serif; text-align: left; background: transparent; border: 0; } @supports (backdrop-filter: blur(1px)) { .ds-account-nav__group { background: rgb(255 253 253 / 66%); backdrop-filter: blur(18px) saturate(120%); } }"
+      "refersTo": "tab-tray",
+      "description": "商城、预约、订单、会员中心共享的安全瓷白丝带托盘；微信各根页实例独立，当前项只由当前路由或页面显示生命周期确认。源 dock 顶部保留 30px 透明抬升区，独立 surface 绘制其下 128px 托盘并直接承载四项，圆座绝对定位但不越真实边界。",
+      "html": "<nav class=\"ds-tab-tray\" aria-label=\"主导航\"><div class=\"ds-tab-tray__surface\"><button class=\"ds-tab ds-tab--active\" type=\"button\" aria-current=\"page\"><span class=\"ds-tab__seat\"><img src=\"miniapp/src/assets/tab-bar/mall-solid-white.png\" alt=\"\"></span><span class=\"ds-tab__label\">商城</span></button><button class=\"ds-tab\" type=\"button\"><span class=\"ds-tab__seat\"><img src=\"miniapp/src/assets/tab-bar/reservations-outline.png\" alt=\"\"></span><span class=\"ds-tab__label\">预约</span></button><button class=\"ds-tab\" type=\"button\"><span class=\"ds-tab__seat\"><img src=\"miniapp/src/assets/tab-bar/orders-outline.png\" alt=\"\"></span><span class=\"ds-tab__label\">订单</span></button><button class=\"ds-tab\" type=\"button\"><span class=\"ds-tab__seat\"><img src=\"miniapp/src/assets/tab-bar/member-outline.png\" alt=\"\"></span><span class=\"ds-tab__label\">会员中心</span></button></div></nav>",
+      "css": ".ds-tab-tray { position: relative; width: min(100%, 560px); height: 79px; padding: 0; background: transparent; box-sizing: border-box; } .ds-tab-tray__surface { position: absolute; inset: 15px 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: stretch; background: #fffdfd; border: 1px solid #ead8df; border-radius: 19px; box-shadow: 0 18px 48px rgb(83 31 49 / 16%); box-sizing: border-box; overflow: visible; } .ds-tab { position: relative; display: flex; min-width: 0; min-height: 44px; align-items: center; justify-content: flex-end; padding: 0 2px 6px; color: #67575f; font-family: -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif; font-size: 11px; font-weight: 560; line-height: 1.15; white-space: nowrap; background: transparent; border: 0; flex-direction: column; } .ds-tab__seat { position: absolute; top: 7px; left: 50%; display: flex; width: 31px; height: 29px; align-items: center; justify-content: center; border: 2px solid transparent; border-radius: 999px; box-sizing: border-box; transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease; } .ds-tab__seat img { display: block; width: 21px; height: 21px; } .ds-tab__label { max-width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; transition: color 120ms ease; } .ds-tab--active { color: #8f2346; font-weight: 760; } .ds-tab--active .ds-tab__seat { top: -14px; width: 43px; height: 43px; background: linear-gradient(145deg, #c14369 0%, #b7355d 48%, #8f2346 100%); border-color: #fffdfd; box-shadow: 0 10px 24px rgb(143 35 70 / 27%); transform: translateX(-50%); } .ds-tab:focus-visible { outline: 3px solid rgb(183 53 93 / 28%); outline-offset: 2px; } .ds-tab:active .ds-tab__seat { transform: translateX(-50%) scale(.96); } .ds-tab--active:active .ds-tab__seat { transform: translateX(-50%) scale(.97); } @media (prefers-reduced-motion: reduce) { .ds-tab__seat, .ds-tab__label { transition: none; } .ds-tab:active .ds-tab__seat, .ds-tab--active:active .ds-tab__seat { transform: translateX(-50%); } }"
+    },
+    {
+      "name": "Textured Identity Header",
+      "kind": "custom",
+      "refersTo": "header-textured",
+      "description": "管理员与顾客页面共享的真实深莓分块纹理身份区；页面只调整取景位置，正文、业务状态和商品图保持独立。管理顶层页头最多容纳一个右上角工作台小按钮。",
+      "html": "<header class=\"ds-textured-header\"><div><strong>管理预约</strong><small>待确认预约可确认或因无空位拒绝</small></div><button type=\"button\">店铺工作台</button></header>",
+      "css": ".ds-textured-header { position: relative; display: flex; min-height: 148px; align-items: flex-start; justify-content: space-between; gap: 20px; overflow: hidden; padding: 34px 28px; color: #fff; font-family: -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif; background-color: #7e2042; background-image: url(\"miniapp/src/assets/admin/workbench-header-texture.jpg\"), linear-gradient(145deg, #8e2448 0%, #a62f54 52%, #b83f61 100%); background-position: center 45%; background-repeat: no-repeat; background-size: cover; box-shadow: 0 16px 36px rgb(91 25 51 / 16%); box-sizing: border-box; } .ds-textured-header div { min-width: 0; } .ds-textured-header strong, .ds-textured-header small { display: block; } .ds-textured-header strong { max-width: 12ch; font-size: 28px; font-weight: 700; line-height: 1.25; } .ds-textured-header small { max-width: 30em; margin-top: 11px; color: rgb(255 244 248 / 88%); font-size: 14px; line-height: 1.58; } .ds-textured-header button { flex: 0 0 auto; min-height: 44px; padding: 0 16px; color: #8f2346; font: inherit; font-size: 12px; font-weight: 700; background: rgb(255 253 253 / 94%); border: 1px solid rgb(255 255 255 / 42%); border-radius: 999px; box-shadow: 0 8px 20px rgb(62 11 32 / 14%); }"
+    },
+    {
+      "name": "Admin Workbench Ledger",
+      "kind": "nav",
+      "refersTo": "workbench-ledger-group",
+      "description": "Option 2 店铺工作台以真实深莓分块纹理页头确认 ADMIN+ 身份，三组瓷白账簿使用同一基底形成无业务语义且转角连续的 L 形装饰脊线；完整宽度的任务行仍是触控目标，小型白字莓果渐变“进入”胶囊只提示去向。按压与导航中只有当前胶囊反馈，整行背景、文字和其余入口保持原样。手机单列，768px 起同组两列，六条路由与并发保护不变。",
+      "html": "<article class=\"ds-workbench\"><header class=\"ds-workbench__header\"><div class=\"ds-workbench__heading\"><strong>店铺工作台</strong><b>pinkdooHub</b></div><span class=\"ds-workbench__identity\">小粉 · @pinkdoo · 管理员</span><small class=\"ds-workbench__subtitle\">处理今日事务，维护商品与门店。</small></header><div class=\"ds-workbench__groups\"><section class=\"ds-workbench-group ds-workbench-group--ink\"><header class=\"ds-workbench-group__heading\"><strong>今日处理</strong><span>先完成需要及时回应的门店事务</span></header><div class=\"ds-workbench-group__actions\"><button type=\"button\"><span><strong>预约审核</strong><small>确认、拒绝与联系顾客</small></span><b class=\"ds-workbench-group__enter\">进入</b></button><button type=\"button\"><span><strong>订单处理</strong><small>支付确认与履约</small></span><b class=\"ds-workbench-group__enter\">进入</b></button></div></section><section class=\"ds-workbench-group ds-workbench-group--berry\"><header class=\"ds-workbench-group__heading\"><strong>商品与库存</strong><span>维护在售内容和库存变动记录</span></header><div class=\"ds-workbench-group__actions\"><button type=\"button\"><span><strong>商品管理</strong><small>商品、价格与配置</small></span><b class=\"ds-workbench-group__enter\">进入</b></button><button type=\"button\"><span><strong>库存流水</strong><small>变动记录与来源</small></span><b class=\"ds-workbench-group__enter\">进入</b></button></div></section><section class=\"ds-workbench-group ds-workbench-group--rose\"><header class=\"ds-workbench-group__heading\"><strong>门店与权限</strong><span>安排营业时间并管理工作人员账号</span></header><div class=\"ds-workbench-group__actions\"><button type=\"button\"><span><strong>营业日历</strong><small>固定店休与单日店休</small></span><b class=\"ds-workbench-group__enter\">进入</b></button><button type=\"button\"><span><strong>用户与权限</strong><small>账号状态与资金入口</small></span><b class=\"ds-workbench-group__enter\">进入</b></button></div></section></div></article>",
+      "css": ".ds-workbench { --pd-gradient-stock: linear-gradient(145deg, #8e2448 0%, #a62f54 52%, #b83f61 100%); --pd-gradient-primary: linear-gradient(135deg, #a92d55 0%, #b4345a 54%, #ba3c61 100%); width: min(100%, 960px); color: #2d2429; font-family: -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", sans-serif; } .ds-workbench__header { margin-bottom: 14px; padding: 19px 14px 16px; color: #fff; background-color: #8e2448; background-image: url(\"miniapp/src/assets/admin/workbench-header-texture.jpg\"), var(--pd-gradient-stock); background-position: center; background-repeat: no-repeat; background-size: cover; box-shadow: 0 18px 42px rgb(103 24 54 / 18%); } .ds-workbench__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 9px; } .ds-workbench__heading strong { color: #fff; font-size: 24px; line-height: 1.25; } .ds-workbench__heading b { flex: 0 0 auto; color: #fff; font-size: 13px; } .ds-workbench__identity, .ds-workbench__subtitle { display: block; max-width: 34em; overflow-wrap: anywhere; } .ds-workbench__identity { margin-top: 11px; color: #fff; font-size: 14px; font-weight: 650; line-height: 1.55; } .ds-workbench__subtitle { margin-top: 4px; color: #fbeef3; font-size: 14px; line-height: 1.55; } .ds-workbench__groups { display: grid; gap: 12px; } .ds-workbench-group { --workbench-group-accent: #8f2346; position: relative; overflow: hidden; padding-top: 8px; background: var(--workbench-group-accent); border: 1px solid #ead8df; border-radius: 22px; box-shadow: 0 8px 22px rgb(83 31 49 / 8%); } .ds-workbench-group--ink { --workbench-group-accent: #68213f; } .ds-workbench-group--berry { --workbench-group-accent: var(--pd-color-primary, #b7355d); } .ds-workbench-group--rose { --workbench-group-accent: #c97991; } .ds-workbench-group__heading { position: relative; display: grid; gap: 4px; padding: 11px 12px 10px 14px; background: #fffdfd; border-bottom: 1px solid #ead8df; } .ds-workbench-group__heading::before { position: absolute; top: -8px; bottom: 0; left: 0; width: 7px; content: \"\"; background: var(--workbench-group-accent); } .ds-workbench-group__heading strong { font-size: 18px; line-height: 1.35; } .ds-workbench-group__heading span { color: #67575f; font-size: 12px; line-height: 1.5; } .ds-workbench-group__actions { display: grid; background: #fffdfd; } .ds-workbench-group__actions button { display: flex; width: 100%; min-height: 59px; align-items: center; justify-content: space-between; gap: 9px; padding: 10px 12px; color: #2d2429; text-align: left; background: #fffdfd; border: 0; border-radius: 0; } .ds-workbench-group__actions button + button { border-top: 1px solid #ead8df; } .ds-workbench-group__actions strong, .ds-workbench-group__actions small { display: block; } .ds-workbench-group__actions strong { color: #8f2346; font-size: 14px; line-height: 1.4; } .ds-workbench-group__actions small { margin-top: 3px; color: #67575f; font-size: 12px; line-height: 1.5; } .ds-workbench-group__enter { display: inline-flex; min-width: 56px; min-height: 27px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 0 9px; color: #fff; font-size: 12px; font-weight: 700; line-height: 1; background: var(--pd-gradient-primary); border-radius: 999px; box-shadow: 0 7px 17px rgb(143 35 70 / 16%); } .ds-workbench-group__actions button:hover, .ds-workbench-group__actions button:active { background: #fffdfd; } .ds-workbench-group__actions button:active .ds-workbench-group__enter { background: linear-gradient(135deg, #7e1f42 0%, #92264a 100%); box-shadow: 0 4px 10px rgb(82 20 45 / 16%); transform: scale(.96); } .ds-workbench-group__actions button:focus-visible { outline: 3px solid rgb(183 53 93 / 28%); outline-offset: -3px; } .ds-workbench-group__actions button.is-pending .ds-workbench-group__enter { color: #67575f; background: #f8eef2; box-shadow: none; transform: none; } @media (min-width: 768px) { .ds-workbench-group__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ds-workbench-group__actions button + button { border-top: 0; border-left: 1px solid #ead8df; } }"
     },
     {
       "name": "Record Card",
@@ -511,13 +534,13 @@
   ],
   "narrative": {
     "northStar": "Ribbon Ledger / 丝带账簿",
-    "overview": "pinkdooHub 把移动拼豆店组织成一本轻盈但可核对的丝带账簿：暖纸白承载真实商品与运营事实，克制莓果色只标记品牌、当前选择、权威结果和明确下一步。系统已经落到顾客与 ADMIN+ 的 20 条已注册页面路由；登录、注册等认证入口沿用同一视觉语法，业务状态、金额、库存和操作后果始终先于装饰。\n\n系统以紧凑中文层级、短行标题和可扫读数字连接选购与运营。邻近莓色渐变像窄丝带一样组织关键动作，透明与模糊只用于导航、筛选和操作层级，普通内容继续是可读、可核对的实色纸面。首页页头保留 `pinkdooHub` 品牌与主标题，已移除右上角冗余“拼豆店”文字；真实商品图片仍是顾客界面的主要视觉内容。",
+    "overview": "pinkdooHub 把移动拼豆店组织成一本轻盈但可核对的丝带账簿：同一张真实深莓分块纹理标记顾客与 ADMIN+ 页面的顶部身份区，暖纸白承载真实商品与运营事实，克制莓果色只标记品牌、当前选择、权威结果和明确下一步。应用配置共包含顾客与 ADMIN+ 的 33 条已注册页面路由；登录、注册、启动分流和独立店铺工作台沿用同一视觉语法，业务状态、金额、库存和操作后果始终先于装饰。\n\n系统以紧凑中文层级、短行标题和可扫读数字连接选购与运营。顾客一级导航固定为商城、预约、订单和会员中心；瓷白丝带托盘只常驻四个顾客根页面。商城只保留商品任务，普通 USER 的账户与退出归入会员中心；ADMIN+ 经无底栏启动分流直接进入按三组组织六项真实入口的独立店铺工作台，详情、认证、钱包和管理流程继续是无底栏页面。管理顶层页头最多一个小型工作台入口，顾客与管理正文都保持瓷白高可读面板。",
     "keyCharacteristics": [
       "暖纸白、瓷白表面与莓墨形成低刺激、高辨识的工作台。",
       "邻近莓色渐变只强调品牌、选中态、主操作和权威库存。",
       "中文标题以平衡短行呈现，价格、库存、订单和流水使用表格数字。",
       "玻璃层稀少且有实色回退；卡片主要依靠色调、边线和轻阴影分层。",
-      "390px 手机视口覆盖 20 条已注册页面路由，关键工作流同时在 768px 宽屏复核。"
+      "33 条已注册页面路由共享同一视觉世界；四个顾客根页面共享瓷白丝带托盘，ADMIN+ 店铺工作台与管理页保持无底栏，视觉验收以 390px 手机为基线并在 768px 宽屏复核关键工作流。"
     ],
     "rules": [
       {
@@ -539,6 +562,7 @@
     "dos": [
       "Do 用暖白、浅粉与邻近莓色组织页面，让真实内容、状态和下一步先被看见。",
       "Do 把玻璃效果限制在导航、筛选、认证和关键操作层，并始终保留实色回退。",
+      "Do 保持四个根 Tab 的固定顺序、等宽触控与非纯颜色选中态，并为底部安全区和内容尾部预留空间。",
       "Do 为价格、库存、订单和流水数字使用表格数字与稳定对齐。",
       "Do 保持源 88px／H5 44px 的触控高度，并提供焦点、按下、禁用和减少动态状态。",
       "Do 在 390px 检查每条完成态业务路由，并为关键流程补做 768px 宽屏复核。",
@@ -550,7 +574,8 @@
       "Don't 加入 Hello Kitty、角色图案、装饰图案、emoji、手绘 SVG 或虚构商品图作为视觉捷径。",
       "Don't 让普通中文逐字断行，也不要让订单号、ID、时间等长标识符制造页面横向溢出。",
       "Don't 用颜色作为状态的唯一线索；状态必须同时具有文字、数字或明确动作语义。",
-      "Don't 让装饰压过价格、库存、权限、订单状态、幂等结果与操作后果。"
+      "Don't 让装饰压过价格、库存、权限、订单状态、幂等结果与操作后果。",
+      "Don't 在二级详情、认证、钱包或管理工作流重复显示底栏，也不要在商城重新加入账户与店铺管理面板。"
     ]
   }
 }

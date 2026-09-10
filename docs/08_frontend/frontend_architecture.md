@@ -1,9 +1,9 @@
 # pinkdooHub 前端架构
 
-> **Document Version:** v0.10
+> **Document Version:** v0.11
 > **Status:** Draft
 > **Last Updated:** 2026-09-09
-> **Scope:** 正式 `miniapp/` 架构；既有前端链路已落地；Reservation N1 前端工程已形成候选，真实环境 Functional 状态仍以测试证据与 changelog 为准
+> **Scope:** 正式 `miniapp/` 架构；既有前端链路与四根页信息架构已落地；Reservation N1 真实环境 Functional 状态仍以测试证据与 changelog 为准
 > **Decision Owners:** pinkdooHub
 
 本文档定义 pinkdooHub 跨端客户端的目标架构、依赖方向、职责边界和实施门槛。首发目标为微信小程序，并要求同一套核心代码在 6–12 个月内扩展到 H5、支付宝小程序和抖音小程序。
@@ -33,6 +33,8 @@ pinkdooHub 当前后端版本候选为 `v0.6.0`，已实现 User、Product、Ord
 | MVP 支付 | ADMIN+ 人工确认订单已支付 |
 | 正式商业发布前 | 增加服务端闭环的微信支付 |
 | 首版管理端 | 同一 Taro 应用的 `admin` 分包 |
+| 顾客一级导航 | 商城 / 预约 / 订单 / 会员中心四个固定根 Tab；微信自定义瓷白丝带托盘，其他端原生降级 |
+| 管理员默认入口 | 无底栏“店铺工作台”；六项既有管理能力按三组进入，首版不设管理员底部导航 |
 | 未来复杂管理端 | 同仓库增加独立 `admin-web/` |
 | GitHub | 继续使用当前仓库，不嵌套第二个 Git 仓库 |
 
@@ -145,7 +147,7 @@ Reservation 的前端范围是顾客预约选项/创建/列表/详情/取消和 
 - 正式 `miniapp/` 已用官方 npm registry 完成依赖收敛：清理 16 个未声明的 NutUI/React Spring 残留包，并显式安装 `solid-js@1.9.15`，补齐 `legacy-peer-deps` 模式跳过的 Taro H5 peer dependency；`npm ls --depth=0` 与生产依赖树均为零错误。
 - 只保留规划中的 weapp/alipay/tt/h5 平台插件；百度、京东、QQ、鸿蒙、RN、已完成使命的 Taro Generator，以及未配置实际 Hook 的 Husky/Commitlint/Lint Staged 均移除，避免扩大安装面和安全审计面。
 - `scripts/export_openapi.py` 从真实 `app.openapi()` 原子导出稳定 JSON；`openapi-typescript@7.13.0` 以 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并提供 `--check` 漂移门槛。Phase 9.5 历史基线为 50 条路径、124 个组件 Schema；Reservation N1 后当前生成输入为 73 条路径、179 个组件 Schema。
-- 正式 HTTP Client 已实现环境 Origin、Query、JSON、Bearer、统一信封 Runtime Guard、Network/Timeout/HTTP/Business/Contract/Session 错误、取消、code `1006` single-flight refresh 以及一次受控重放；普通写请求和超时不自动重试，empty-body PATCH 不设置 data。
+- 正式 HTTP Client 已实现环境 Origin、Query、JSON、Bearer、统一信封 Runtime Guard、Network/Timeout/HTTP/Business/Contract/Session 错误、取消、同一 Session identity 内的 code `1006` single-flight refresh 以及一次受控重放；同会话已有请求先完成 refresh 时，迟到 `1006` 直接用当前 Token 重放。旧会话的迟到鉴权响应或 refresh 失败不能刷新或清除新登录；普通写请求和超时不自动重试，empty-body PATCH 不设置 data。
 - 官方 registry 的 Gate A production tree 仍报告 10 个受影响包/5 个叶子公告（4 moderate、1 high、5 critical）。9.2.5 已确认其中包含未启用受影响 serve API 的构建链、H5-only 链，以及当前微信源码/产物未使用的 npm swiper 实现，并以 2026-11-30 到期的精确策略跟踪；不能把它们笼统称为已修复或全是 H5-only。Taro 4.2.1 仍为当前版本，`audit fix --force` 会破坏性降级到 Taro 3.x，因此不执行；未来 H5 Gate、新增 Swiper 或上游版本变化必须重新审计。
 - 无 NutUI 的正式 H5 空应用入口仍为 281 KiB，超过 Webpack 244 KiB 建议线；这是当前 Taro H5 基线告警，后续每次引入 UI/业务依赖都必须重新测量，不能以“尚未引入 NutUI”为由忽略。
 
@@ -169,8 +171,30 @@ Reservation 的前端范围是顾客预约选项/创建/列表/详情/取消和 
 - `api/endpoints/products.ts` 直接消费 OpenAPI 生成的 Query/Page/Product 类型，同时把网络数据视为 `unknown`，运行时校验并白名单重建分页项；ID、两位小数金额、Product 字符串 Enum、图片地址与分页字段不合约时抛 `ContractError`。
 - `features/product/use_product_list.ts` 拥有服务端列表状态：首屏固定 10 条、按服务端 `page/pages/total` 追加下一页、首屏/下一页分别处理错误，并用请求序号阻止迟到旧响应覆盖新结果。共享逻辑不依赖 `AbortController` 等不保证存在于所有小程序运行时的浏览器全局对象。
 - `utils/asset_url.ts` 是开发期相对图片路径的唯一解析点：HTTP(S) URL 原样保留，`/uploads/...` 相对 API Origin，其他路径拒绝。首页 ProductCard 使用图片懒加载和失败占位。
-- 首页现在是公开 Product 入口，明确渲染 Loading/Empty/Error/Content 四态；Experience 依据 `product_type.value` 展示“起”，Kit 展示固定价格。认证状态只影响账号操作，不阻断游客 Product 请求。
+- 商城的顾客内容分支是公开 Product 入口，明确渲染 Loading/Empty/Error/Content 四态；Experience 依据 `product_type.value` 展示“起”，Kit 展示固定价格。Guest/普通 USER 都能进入该分支，ADMIN+ 则在 Product Hook 挂载前回到店铺工作台。
 - Product 新增 Endpoint、Resolver、Feature 和 Page 测试；Jest setup 集中处理 Taro router 循环依赖及 jsdom `IntersectionObserver`。阶段 6 最终门禁为完整 Jest 11 套件 / 70 项、后端 SQLite 1442 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移检查与四端生产构建通过。2026-08-22 微信开发者工具已通过游客、Content、相对图片、第二页、筛选/组合搜索、Empty、Error 恢复、登录/退出后继续浏览、Experience/Kit 详情及真实多配置 Option 切换。
+
+### 4.5 顾客四根页与底部导航（2026-09-09）
+
+- `app.config.ts` 注册商城、预约、订单、会员中心四个标准 Tab；微信设置 `custom: true`，由 `custom-tab-bar/` 渲染瓷白丝带托盘，支付宝、抖音和 H5 设置 `custom: false` 并使用原生 TabBar 兼容降级。
+- `navigation/root_tabs.ts` 集中维护四项顺序、文案、路径和页面选中同步；跨根页只使用 `switchTab`。自定义 TabBar 在不同根页会有独立组件实例，因此每个根页在显示时同步自身索引，不依赖组件内部 state 跨页共享。
+- 商城只负责公开 Product 浏览，不再承载登录、账户和 ADMIN+ 管理入口。会员中心服务 Guest 与普通 USER：Guest 得到登录入口，USER 得到资料/钱包；ADMIN+ 误入商城或会员中心时直接回到独立店铺工作台，并且不挂载客户商品或钱包请求。
+- 预约、订单根页在普通 USER 再次显示时保留筛选并刷新第一页；会员中心重读资料和普通 USER 钱包；统一通过 `platform/use_refresh_after_page_return.ts` 只在真实 hide→show 后触发，避免首次挂载与首次显示重复请求。商城保留搜索、类型筛选和浏览上下文，不因 Tab 切换强制重置。
+- 底栏只属于四个根页；商品详情、购物车、下单确认、订单/预约详情、登录注册、钱包与全部管理页面保持普通页面栈且无底栏。该改造只改变前端路由/挂载边界，不改变后端 API、OpenAPI、数据库、业务权限或依赖。
+
+### 4.6 ADMIN+ 独立店铺工作台（2026-09-09）
+
+- 微信、抖音和 H5 将 `pages/entry/index` 置于 `app.config.ts` 的 `pages[0]`，作为无底栏、无业务请求的启动分流页。它等待 AuthProvider 通过 `/users/me` 确认身份，再让 Guest/普通 USER `switchTab` 到商城、ADMIN+ `reLaunch` 到 `admin/pages/workbench/index`。支付宝要求第一个 Tab 同时是首页，因此该端保持商城为 `pages[0]` 并复用商城 ADMIN+ 守卫。
+- `auth/login_route.ts` 统一角色相容的登录落点：ADMIN+ 只保留工作台或六个固定管理列表 redirect，普通 USER 只保留顾客目标；未知角色不产生已认证跳转。动态详情、外部 URL 和任意内部路径继续拒绝。根 Tab 落点使用 `switchTab`，其他普通/管理落点使用 `reLaunch`，登录与注册之间使用 `redirectTo` 替换当前页。
+- `navigation/use_latest_destination_navigation.ts` 由 Entry、登录和注册共享：任一时刻最多一个原生导航在途，期间目标变化只记录最新值；旧请求结束后先记录真实落点，再串行重放最新角色目标。这使迟到失败、快速角色切换与 A→B→A 回跳都不会落在过期页面。
+- 店铺工作台按“今日处理 / 商品与库存 / 门店与权限”三组连接预约审核、订单处理、商品管理、库存流水、营业日历、用户与权限六个已有页面。页面不调用列表或汇总 API，不伪造待办数字；六项用 `navigateTo` 保留返回工作台的页面栈，预约审核与营业日历的对等捷径用 `redirectTo` 替换当前子页，不在子页间堆栈。
+- 工作台页头使用真实 `assets/admin/workbench-header-texture.jpg` 分块纹理，并保留深莓渐变回退；三组装饰脊线由同一强调色基底在裁切容器内形成连续 L 形转角。导航中不对完整动作行使用原生 `disabled`，当前行只通过 pending class 改变右侧“进入”胶囊，白色行背景、左侧文案及其余入口保持原样；独立的在途引用锁继续阻止并发 `navigateTo`。
+- 其余 17 个 ADMIN+ 页面通过 `admin/styles/_surface.scss` 与共享 `styles/_ribbon.scss` 复用同一张真实深莓分块纹理；列表／表单放在任务页头，详情／配置放在身份或摘要区，各页只按标题调整取景。管理顶层页头最多保留一个右上角“店铺工作台”入口，预约与店休的对等互跳下移到独立关联卡片。瓷白筛选／表单、权威信息与高密度记录继续为实色；状态、危险动作、权限和错误保留既有语义色及文字，所有管理页继续无顾客底栏。
+- 顾客四个根页及商品详情、购物车、下单确认、订单／预约详情和钱包流程通过 `styles/_customer.scss` 复用同一纹理身份区，并用受圆角裁切的内嵌强调带组织瓷白内容块。纹理不进入商品图片、业务状态、错误或流水正文；商城真实商品图仍是内容主体。
+- 工作台动作行和登录主按钮显式提供 Taro `hoverClass`：工作台只反馈行内“进入”胶囊，登录按钮保持莓果色按压态，避免微信原生整块变暗或 `type='primary'` 绿色反馈。
+- 四个顾客根页在 ADMIN+ 分支复用无业务请求的 `AdminWorkbenchRedirect`。商城把 `useProductList()` 下沉到顾客内容组件，预约、订单和会员中心也只在普通 USER 分支挂载各自请求，避免管理员会话先读取顾客域数据。应用根的 `CustomerCartBoundary` 只在 Guest 或已确认普通 USER 时挂载 `CartProvider`，初始化、认证错误、ADMIN+、资料缺失与未知角色不恢复顾客购物车。
+- 工作台自身覆盖初始化、认证错误、Guest、资料缺失、普通 USER、ADMIN 与 SUPER_ADMIN。退出无论服务端是否确认都由 SessionManager 先废弃内存 Token/User，再删除持久 Session；删除失败时以无凭据 tombstone 覆盖。持久凭据成功失效后才发布 Guest 并 `reLaunch` 到裸登录页；若删除与覆盖都失败，AuthProvider 进入全局可见 error，明确提示清理小程序数据，不误报已完全清除也不强行跳转。同一运行期内重试初始化时，SessionManager 会先重试清除旧凭据，不会把退出前 Session 重新视为已登录。损坏/旧版 Session 恢复使用同一清理语义。Storage mutation 统一串行，clear/新登录用 epoch 废弃旧身份已在途的 profile/refresh 写入，清理始终排在这些旧写入之后最终移除凭据；请求和 refresh 另以同一 epoch 作为 Session identity，旧身份迟到的 `1005`/`1009`/`1006` 或 refresh 失败只结束原请求，不得清除新会话；导航失败提供原位重试。
+- 工作台和管理子页面均不是 Tab 页面，四端依靠路由层级自然不显示顾客底栏。本阶段不使用动态 TabBar、管理员专属底栏或顾客商城预览。
 
 ---
 
@@ -230,11 +254,14 @@ pinkdooHub/
     │   │   ├── errors.ts
     │   │   └── upload.ts
     │   ├── auth/                     # AuthContext、Session、Token Manager
+    │   ├── assets/tab-bar/           # 同一授权图标库导出的根 Tab 本地 PNG 状态族
     │   ├── components/               # 项目稳定组件边界
+    │   ├── custom-tab-bar/           # 微信瓷白丝带托盘；不读取业务 API
     │   ├── features/                 # auth/product/order/inventory/reservation/admin
     │   ├── hooks/                    # 经真实复用证明的通用 Hook
     │   ├── pages/                    # 主包页面
     │   ├── admin/pages/              # ADMIN 分包页面
+    │   ├── navigation/root_tabs.ts   # 四根页共享配置、选中同步与 switchTab 边界
     │   ├── platform/                 # 跨端 Port 与 Adapter
     │   ├── shared/                   # 常量、Guard、Formatter、类型与存储
     │   ├── styles/
@@ -271,6 +298,7 @@ pinkdooHub/
 - 维护表单、选择、提交中和展示状态；
 - 渲染 Loading、Empty、Error、Content；
 - 导航和展示页面级反馈。
+- 根 Tab 页面在显示时同步微信自定义栏的选中索引，并按该页刷新契约触发一次受控刷新。
 
 禁止：
 
@@ -369,11 +397,12 @@ Endpoint 依赖生成类型和 HTTP Client，不依赖 React、页面或组件�
 | Reservation 选项/列表/详情 | Reservation Feature | 服务端日历 + 请求 Hook + sequence 迟到响应隔离 |
 | Reservation 创建/取消/审核 | Reservation Feature | 判别状态机 + 进行中 Promise 合并 + 服务端重拉 |
 | Store closure | Admin Reservation Feature | PUT 201/200 metadata + 批量计数 + 权威列表核对 |
+| 根 Tab 配置与选中态 | Navigation helper + 各根 Page | 固定配置 + `switchTab` + 页面显示时同步 |
 | 平台信息 | Platform Adapter | 只读查询或小范围缓存 |
 
 ### 8.1 本地购物车已实现边界
 
-Phase 7.1 使用应用级 `CartProvider` 注入可独立测试的 `CartStore`，没有引入 Redux/Zustand：
+Phase 7.1 使用应用级 `CartProvider` 注入可独立测试的 `CartStore`，没有引入 Redux/Zustand。应用根先恢复并确认 Auth，再仅为 Guest/普通 USER 挂载 Cart；ADMIN+、未知/缺失角色与认证错误不会读取顾客购物车：
 
 - `CartItem` 是 Experience/Kit 判别联合；Experience Option 为正整数，Kit Option 固定 null；
 - 唯一身份与后端一致，为 `(productId, experienceOptionId)`；相同组合合并 quantity，不同 Option 保持独立；
@@ -410,7 +439,7 @@ Phase 7.3 把 7.2 的创建结果和 unknown 恢复接到服务端权威查询�
 
 Phase 7.4 在同一应用中落地首个 `admin` 分包，但不把分包或缓存角色误作授权：
 
-- `app.config.ts` 用 `root: admin` 注册管理列表和详情；首页只为 `admin/super_admin` 显示入口，普通用户在挂载管理 Hook 前被拦截；FastAPI ADMIN+ dependency 仍是唯一授权事实；
+- `app.config.ts` 用 `root: admin` 注册管理列表和详情；当前由独立店铺工作台只为 `admin/super_admin` 显示入口，普通用户在挂载管理 Hook 前被拦截；FastAPI ADMIN+ dependency 仍是唯一授权事实；
 - 登录回跳只允许固定管理列表，不允许动态详情进入 redirect 白名单；详情 ID 仍从不可信路由参数校验；
 - ADMIN 列表 Query 只包含冻结的 8 个字段。除状态、精确订单号、用户与 UTC 时间外，`product_name` 按 Order Item 下单时名称快照做服务端包含匹配；状态按钮立即与上次已提交文字快照组合查询，未提交草稿用浅色提示显式标记；日期使用单一数字输入源连续接收 `YYYYMMDD`、以固定横杠显示 `YYYY-MM-DD`，结束日期转换为次日 UTC 零点，以满足后端排他 `created_to`；
 - 商品名筛选不关联当前 Product，也不在当前前端页做本地过滤；后端用订单 ID 子查询保持一单一行、完整 `item_count` 和正确的 `total/pages`，前端翻页继续携带同一关键词；
@@ -427,7 +456,7 @@ Phase 8.1 在既有 `admin` 分包内增加 Product 列表与详情，先建立�
 - 管理 Runtime Guard 从 `unknown` 逐字段投影。列表允许草稿 `cover_image/display_price` 为 null，详情允许 description/null、空公共图片、空 Experience Option 和空 dimensions；同时严格校验 Product 类型/状态、UTC 时间、金额、库存上限和 Option 聚合维度；
 - 列表的筛选草稿与已提交筛选分离：type/status/include_deleted 按钮立即与上次已提交 keyword 组合查询，keyword 未提交时显示浅色提示；删除记录使用“不含 / 包含”两个互斥按钮。服务端分页、重复加载保护与 sequence 迟到响应隔离保持不变；逻辑删除只用于辨识历史记录，不在客户端推导恢复能力；
 - 动态详情路由同时携带并校验正安全整数 Product ID 与 `experience|kit` 类型，随后调用类型专属后端端点；错误类型不回退到另一个端点；
-- 首页只为 ADMIN+ 显示管理商品入口，Guest 登录回跳只允许固定管理列表。列表和详情均在角色确认后才挂载 Hook；这只是减少错误请求，最终授权仍由 FastAPI ADMIN+ dependency 执行；
+- 店铺工作台只为 ADMIN+ 显示管理商品入口，Guest 登录回跳只允许固定工作台或管理列表。列表和详情均在角色确认后才挂载 Hook；这只是减少错误请求，最终授权仍由 FastAPI ADMIN+ dependency 执行；
 - 8.1 页面先只展示服务端管理快照与草稿缺失提示；Phase 8.2 已开放创建、基本信息编辑与逻辑删除，Phase 8.3 已开放 Option 与 Kit 价格，Phase 8.4–8.5 已开放图片生命周期与上下架/readiness，Phase 8.6 已开放 Kit Inventory，Phase 8.8 已开放 Product Audit。
 
 ### 8.6 ADMIN Product 基本写入边界
@@ -505,6 +534,18 @@ Reservation 作为独立 Feature，不复用 OrderSubmissionStore、Cart 或 Pay
 
 2026-09-06 Reservation N1 前端工程门槛为完整 77 套件/488 项、Reservation 专项 7 套件/46 项、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移检查、17 项 CI policy 测试和微信/支付宝/抖音/H5 四端 production build 全部通过；微信端另以 CI 固定 HTTPS Origin 重建并通过产物扫描（141 个文件、总计 968,329 bytes、`release_eligible=false`），H5 仅保留既有 bundle-size 建议警告。该微信产物不是正式 RC；微信开发者工具中的真实 API、角色、弱网和营业边界 Functional 仍需单独验收。
 
+### 8.12 顾客根 Tab 生命周期与身份边界
+
+根 Tab 是页面组织与刷新边界，不是新的全局服务端缓存：
+
+- 四项固定为商城、预约、订单、会员中心，顾客导航本身不得重排；ADMIN+ 不消费这套顾客 Tab，而由默认启动分流和角色落点进入无底栏店铺工作台。本阶段不增加第五项或管理员底栏。
+- 微信自定义栏只读取共享静态配置、当前选中索引并执行 `switchTab`，不得读取 AuthContext 业务数据或直接调用 Endpoint；其他平台原生栏消费相同的路径、文案与本地图标。
+- `useDidShow`/等价生命周期负责“再次可见”的新鲜度，必须与首次加载协调。订单、预约和会员根页首开只请求一次，回到页面时保留可读旧内容再刷新；商城不因显示事件清空搜索、筛选、分页或滚动上下文。
+- Guest 在预约/订单/会员根页只显示登录引导；普通 USER 才挂载自己的预约、订单和钱包；ADMIN+ 误入任一顾客根页时在业务 Hook 前重定向工作台。退出、禁用或角色变化必须清理旧身份受保护数据。
+- 默认启动页在确认角色前不挂载任何业务 Feature；显式登录回跳只保留与实际角色相容的固定白名单目标。前端角色分流和管理分包仍不能替代 FastAPI ADMIN+ 授权。
+- 动态详情参数仍走普通页面栈并严格校验；根 Tab 的 `switchTab` 路径不带 query。登录回跳可以记录一个允许的根目标，但不得放宽为任意内部 URL。
+- 商品列表、Order、Reservation、Wallet 继续各自拥有服务端状态；导航组件不建立第二份业务 Store，也不根据切换动作乐观篡改服务端事实。
+
 后端提供 Order create 客户端幂等键之前，UI 防抖和 Promise 合并都不能替代服务端幂等。首版仍不引入 Redux、Zustand 或服务端缓存框架。出现以下证据之一时再写 ADR：
 
 - 多个非父子页面频繁修改同一复杂状态；
@@ -540,7 +581,7 @@ MVP 使用现有用户名密码和 Bearer JWT：
 - user：AuthContext 的安全公开字段；
 - expiresAt：由登录响应 `expires_in` 和客户端时钟计算。
 
-Token Manager 必须处理当前后端的特殊契约：无凭据为 HTTP 401；无效或过期 Token 当前为 HTTP 400 + code `1006`；已禁用账号为 HTTP 400 + code `1005`。多个并发请求遇到 `1006` 时只能共享一次 refresh；受保护请求遇到 `1005` 必须清理 Session 且不能 refresh。
+Token Manager 必须处理当前后端的特殊契约：无凭据为 HTTP 401；无效或过期 Token 当前为 HTTP 400 + code `1006`；已禁用/已删除账号分别为 HTTP 400 + code `1005`/`1009`。多个并发请求只在同一 Session identity 内共享一次 refresh；若同会话 Token 已被另一请求刷新，迟到 `1006` 使用当前 Token 重放一次。受保护请求遇到同会话 `1005`/`1009` 必须清理 Session 且不能 refresh；属于旧 identity 的迟到响应和 refresh 失败不得清除或刷新新登录。
 
 ### 10.2 平台登录
 
@@ -613,6 +654,8 @@ business page
 - 不在业务逻辑中读取布局结果来决定权威业务状态；
 - 样式类遵循简单稳定的命名，不首发 CSS-in-JS；
 - 响应式以移动端为基线，H5 明确最大内容宽度和安全区；
+- 四个根页为底栏可见高度和 `safe-area-inset-bottom` 预留内容尾部空间；底栏每项至少 44px 触控区域，选中态不得只依赖颜色；
+- 微信自定义栏可以使用 Ribbon Ledger 的悬浮瓷白托盘与克制抬升，支付宝、抖音和 H5 的原生降级只需保持相同四项信息架构，不复制微信私有样式实现；
 - Taro H5 会把布尔属性渲染为字符串，禁用态选择器必须匹配 `[disabled='true']`，不得用会误伤 `disabled='false'` 的宽泛 `[disabled]`；
 - 需要提交语义的表单同时保留 `Form.onSubmit` 和按钮的显式 `onClick` 入口；不得依赖 H5 上不稳定的 `formType` 转发来触发关键操作；
 - 平台差异样式使用受控的平台文件或构建条件，不复制整页。
@@ -636,6 +679,7 @@ NutUI 的使用是否扩大，取决于 [ADR-005](adr/ADR-005-cross-platform-ui-
 - 组件列表使用稳定 key；
 - 构建阶段记录各平台包体积并设置发布门槛；
 - 不在渲染函数中执行 I/O 或昂贵、不可缓存的副作用。
+- Tab 再显示刷新不得与首次挂载形成重复请求；刷新时保留现有内容并复用请求序号隔离迟到响应。
 
 ---
 
@@ -720,6 +764,8 @@ npm run build:h5
   → OpenAPI + HTTP Client
   → 账号登录纵向链路（已完成）
   → 商品浏览纵向链路（已完成）
+  → 商城 / 预约 / 订单 / 会员中心四根页与微信自定义底栏（已完成实现，验证结论见本次 changelog）
+  → ADMIN+ 独立店铺工作台与角色落点（已完成仓库实现，验证结论见本次 changelog）
   → 用户订单纵向链路（7.1–7.3 已完成）
   → ADMIN Order 分包纵向链路（7.4 已完成工程实现）
   → ADMIN 最小能力（Phase 8 已完成）

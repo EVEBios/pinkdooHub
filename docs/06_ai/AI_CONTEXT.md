@@ -31,6 +31,9 @@
 | Code Review 清单 | [code_review_checklist.md](../07_process/code_review_checklist.md) |
 | 数据库迁移流程 | [database_migration_workflow.md](../07_process/database_migration_workflow.md) |
 | 容量与性能压测规范 | [capacity_load_test_runbook.md](../09_release/capacity_load_test_runbook.md) |
+| 稳定产品与顾客四根页边界 | [PRODUCT.md](../../PRODUCT.md) |
+| Ribbon Ledger 与瓷白丝带托盘规则 | [DESIGN.md](../../DESIGN.md) |
+| 四根页 Surface Brief | [miniapp-customer-root-tabs.md](../../.impeccable/surfaces/miniapp-customer-root-tabs.md) |
 | 前端总体架构（Draft） | [frontend_architecture.md](../08_frontend/frontend_architecture.md) |
 | 前端多端策略 | [multi_platform_strategy.md](../08_frontend/multi_platform_strategy.md) |
 | 前端 API 集成契约 | [api_integration_contract.md](../08_frontend/api_integration_contract.md) |
@@ -76,6 +79,8 @@
 
 ### 2.1 当前 Phase 与实现边界
 
+- 小程序顾客一级信息架构保持“商城 / 预约 / 订单 / 会员中心”四个固定根 Tab；当前 `app.config.ts` 共注册 15 个主包页面和 18 个 `admin` 分包页面，即 33 条路由。商品浏览只在商城，普通 USER 的账户与退出在会员中心，ADMIN+ 的身份与退出在独立“店铺工作台”；详情、购物车、下单确认、认证、钱包、工作台和管理页不显示底栏。微信通过 `custom-tab-bar/` 使用“瓷白丝带托盘”并设置 `custom: true`，支付宝/抖音/H5 使用同路径、文案与本地图标的原生 `custom: false` 降级。根页跳转必须用 `switchTab`，`navigation/root_tabs.ts` 统一配置和选中同步；微信每个根页的自定义栏实例需在页面显示时同步自身索引。
+- 微信、抖音和 H5 默认由无底栏 `pages/entry` 等 `/users/me` 确认身份后分流：Guest/普通 USER `switchTab` 商城，ADMIN+ `reLaunch` 到 `admin/pages/workbench`；支付宝因首个 Tab 必须是首页而保留商城为 `pages[0]`，由商城相同角色守卫分流。四个顾客根页及商品详情、购物车、下单确认、顾客订单/预约详情和钱包页都在对应业务 Hook 挂载前把 ADMIN+ 送回工作台。工作台按“今日处理 / 商品与库存 / 门店与权限”展示预约审核、订单处理、商品管理、库存流水、营业日历、用户与权限六个既有入口，自身不请求列表/汇总、不伪造数字；本期不做管理员底栏、商城预览或摘要 API。订单、预约和会员中心对普通 USER 再显示时读取新鲜服务端事实并与首次挂载去重，商城保留筛选与浏览上下文。此次只调整前端路由、生命周期和入口，不改变后端 API/OpenAPI、数据库/Aerich、业务权限、依赖或版本；自动化、构建与视觉结论以本次真实执行证据和 changelog 为准。
 - M8 **数字色块 HEX 的 Model/迁移/API/销售校验、小程序直绘和发布工具均已完成仓库实现，并已应用当前本地持久 SQLite；Gate A 仍为 M7，M8 尚未应用**：`BeadColor.swatch_hex` 为 nullable `VARCHAR(7)`，非空写入规范化为大写 `#RRGGBB`；code/name/有效 HEX 三者完整才算 configured，激活、商品颜色启用、上架、公共输出与下单均 fail closed。公开颜色响应要求非空 HEX，管理响应保留 nullable 诊断态。小程序以共享组件用 `backgroundColor` 直绘，并只在迁移期 HEX 缺失时回退可选 `swatch_image_url`；该 URL 只用于既有兼容 PNG 或未来实拍校色 WebP，不回退商品封面。现有 221 张 PNG 不转 WebP、不删除；纯数字色块不再生成新图片格式。
 - MySQL/Aerich 权威链现为 M0–M8；M8 内嵌并按 `slot_no=1..221` 回填冻结清单 HEX，同时绑定 manifest SHA-256。一次性 MySQL 8.0.46 已真实完成 0→8、精确 221 HEX 与 Gate A MARD publish/replay `2 passed`，容器/13308 已清理。基线 head `4e745848...`、merge-ref `3ddda81...` 又由 Run 34242753255 在干净 checkout 完成 8/8；首轮 Run 34242022911 因 Reservation MySQL 门槛漏列 M8 而 7/8，修复后完整重跑。保留数据的本地 SQLite 工具已停写应用并通过 221 项、完整性/外键和幂等核验。持久 Gate A 已受控完成 M3→M7、Wallet 和 MARD 元数据/PNG，只有 M8 仍待应用。其后仓库候选新增显式 `--source-version 7` 的 M7→M8 入口、`m7-preserved-business-v1` 21 表内容摘要、停写后的 raw M7 schema/221 色/221 PNG 精确预检，以及 Online 目录严格 no-op 复验；成功后还必须在 `app-up` 前紧邻重放 plan，因为 `app-up` 不核验 live DB/图片/MARD。历史加固点 head `fa6fce05...` / Run 34281512196 已完成 8/8；完整 updater 的受测实现 head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、merge-ref `a9ff3d246c61a4aeede062596c32817a69834d7a` 又由 Run 34288613644 最终 attempt 2 完成现行 9/9 required Job，其中一次性 Linux/MySQL 完整 updater 为 14/14 阶段通过。
 - HTTP 传输已为直连 App 增加 ≥1 KiB、level 6 的协商 gzip，并在 Gate A/Rehearsal Nginx 启用相同文本 MIME 策略；本地上传图片路径和 PNG/JPEG/WebP MIME 不重复压缩。标准 Nginx 镜像没有 Brotli 模块，本次不更换镜像、不引入第三方压缩依赖。
