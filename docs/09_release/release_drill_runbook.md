@@ -295,7 +295,10 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 另一锁路径。锁在任何 TTY 凭据读取、HTTP 请求、pending journal、数据库/图片/配置/容器
 状态读取之前取得，并持续到补偿清理、登出和 success/failure journal 落盘之后；不能用两
 个 shell 并跑候选、升级、备份、Restore verify、acceptance 或 resilience。纯只读
-`preflight`、`database-status`、`status` 不持锁，其旧输出不是写入授权。
+`preflight`、`database-status`、`status` 不持锁，其旧输出不是写入授权。`preflight` 的
+端口空闲断言只用于尚无 Runtime 的首次部署；已有健康 M7 source 的升级使用 `status`、
+`database-status` 与唯一现有 loopback publisher 核验，不得为了运行 `preflight` 而停止
+source 或换端口，后续 Backup/activation/upgrade 仍在操作锁内重新校验同一现场。
 
 当前 M7→M9 的持久成功路径必须严格按以下顺序执行，完整参数形状见
 [`deploy/gatea/README.md`](../../deploy/gatea/README.md)：
@@ -305,8 +308,10 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
    required Jobs 证据；以 archive 中已单独校验的 launcher 执行 candidate `stage`。
    `stage` 只安装版本化 Release/目标镜像和不可覆盖证据，不改 config、Runtime、DB 或
    `current`。
-2. 只读核验 source M7，创建新的 source Backup 并完成同 ID 独立 Restore。Backup/Restore
-   任何失败、pending 或摘要不匹配都停止；不得先把 config 指向 target 再补 source 备份。
+2. 用 `status`、`database-status` 和唯一现有 loopback publisher 只读核验健康 source M7；
+   不运行只适用于空端口首次部署的 `preflight`，也不停止 source 来迎合该检查。随后创建
+   新的 source Backup 并完成同 ID 独立 Restore。Backup/Restore 任何失败、pending 或摘要
+   不匹配都停止；不得先把 config 指向 target 再补 source 备份。
 3. 从 `/srv/pinkdoohub/gatea/releases/<target-sha>` 运行 candidate `activate-config`：先不带
    `--apply` 取得 M7→M9 plan，再用相同 source/target SHA、Backup ID 和 manifest SHA-256
    明确确认 apply。它只原子修改 `GATEA_APP_IMAGE` 和

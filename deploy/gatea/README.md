@@ -155,9 +155,13 @@ Backup pending 仍只由消费该精确 ID 的 Restore/Upgrade 拒绝。
 宣称解决任何 journal/sidecar，因此可用于把数据依赖拉起或把现场停到安全状态；只要
 unresolved inventory 仍在，后续迁移、启动业务服务、验收、备份或候选切换依旧被阻断。
 
-Root 创建真实配置后，先执行只读预检。预检只检查非 Secret 配置语义、Secret
-文件元数据/非空大小、环回端口和 Compose 渲染，不输出 Secret 值，也不创建
-Docker 资源：
+Root 创建真实配置且尚未启动任何 Gate A publisher 时，先执行首次部署只读预检。
+预检只检查非 Secret 配置语义、Secret 文件元数据/非空大小、环回端口和 Compose
+渲染，不输出 Secret 值，也不创建 Docker 资源。它故意要求环回端口尚未被占用，
+因此不适用于已经由健康 source Nginx 发布同一端口的既有库升级；这类升级必须使用
+下方的 `status` 与 `database-status` 核验 source，并由 Backup、candidate activation 和
+upgrade 在操作锁内再次校验精确现有 publisher。不得为了让 `preflight` 通过而停止健康
+source、改用临时端口或绕过受保护生命周期：
 
 ```bash
 sudo python -m scripts.release.gatea_operations \
@@ -870,7 +874,10 @@ finalize 直接绑定的 post-acceptance Backup）和在线数据重比。checkp
 
 1. 取得同一 target checkout 的 9/9 required Jobs、source archive 与 updater artifact，
    用校验过的临时 launcher 执行 candidate `stage`；不得从现场工作树直接 build。
-2. Root 复核配置/Secret/持久运维目录与唯一全局操作锁；运行 loopback preflight。
+2. Root 复核配置/Secret/持久运维目录与唯一全局操作锁。只有尚无 Runtime 的首次部署才
+   运行要求端口空闲的 loopback `preflight`；当前健康 M7 升级不得为此停止 source，改用
+   `status`、`database-status` 和唯一现有 loopback publisher 检查完成只读核验，后续写入
+   入口仍会在锁内复验配置、Secret、Compose 与 publisher。
 3. 只读重新确认当前 Gate A 为精确 M7，并与 M7 upgrade/Backup/图片 Record 比较；任何
    不一致先停止。空库才可使用 `initial-migrate`，两条路径不得混用。
 4. 对持久 source M7 创建新 MySQL/图片 Backup 并完成同 ID 独立 Restore；随后从已安装的
