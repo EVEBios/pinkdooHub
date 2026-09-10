@@ -1,5 +1,6 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
 
 .reservation-detail-page {
   @include pd.page-shell;
@@ -21,7 +22,7 @@
 }
 
 .reservation-detail-heading {
-  @include pd.header-band;
+  @include customer.page-header(center 46%);
 
   &__topline {
     display: flex;
@@ -31,7 +32,7 @@
   }
 
   &__title {
-    @include pd.page-title;
+    @include customer.title;
   }
 
   &__status {
@@ -64,6 +65,7 @@
     display: block;
     max-width: 22ch;
     margin-top: 28px;
+    color: #fff;
     font-size: var(--pd-font-title);
     font-weight: 700;
     line-height: 1.4;
@@ -74,7 +76,7 @@
   &__time {
     display: block;
     margin-top: 14px;
-    color: var(--pd-color-ink-soft);
+    color: rgb(255 244 248 / 84%);
     font-size: var(--pd-font-body-size);
     font-variant-numeric: tabular-nums;
   }
@@ -82,7 +84,7 @@
   &__clock {
     display: block;
     margin-top: 5px;
-    color: var(--pd-color-primary-strong);
+    color: #fff;
     font-size: var(--pd-font-price);
     font-weight: 750;
     font-variant-numeric: tabular-nums;

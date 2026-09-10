@@ -8,6 +8,7 @@ export {
   NetworkError,
   RequestCancelledError,
   SessionExpiredError,
+  SessionSupersededError,
   TimeoutError,
 } from './errors'
 export { TaroHttpTransport } from './taro_transport'

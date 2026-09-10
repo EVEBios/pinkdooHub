@@ -4,6 +4,7 @@ import {
   HttpError,
   NetworkError,
   SessionExpiredError,
+  SessionSupersededError,
 } from './errors'
 import { parseEnvelope } from './envelope'
 import type {
@@ -32,6 +33,10 @@ export interface ApiClientOptions {
   defaultTimeoutMs?: number
 }
 
+interface RequestSessionIdentity {
+  readonly value: unknown
+}
+
 export class ApiClient {
   private readonly baseUrl: string
   private readonly transport: HttpTransport
@@ -39,6 +44,7 @@ export class ApiClient {
   private readonly authSession?: AuthSession
   private readonly defaultTimeoutMs: number
   private refreshPromise?: Promise<string>
+  private refreshPromiseSessionIdentity?: unknown
 
   constructor(options: ApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '')
@@ -69,11 +75,16 @@ export class ApiClient {
     options: ApiFileUploadOptions,
     refreshed: boolean,
     accessTokenOverride?: string,
+    sessionIdentityOverride?: RequestSessionIdentity,
   ): Promise<T> {
     if (!this.uploadTransport) {
       throw new Error('ApiClient 未配置文件上传 Transport')
     }
-    const request = this.buildUploadTransportRequest(options, accessTokenOverride)
+    const requestAccessToken = accessTokenOverride ?? this.authSession?.getAccessToken()
+    const requestSessionIdentity = sessionIdentityOverride
+      ? sessionIdentityOverride.value
+      : this.getSessionIdentity(requestAccessToken)
+    const request = this.buildUploadTransportRequest(options, requestAccessToken)
     let response
     try {
       response = await this.uploadTransport.upload(request)
@@ -100,10 +111,35 @@ export class ApiClient {
       envelope.code === TOKEN_EXPIRED_CODE &&
       !refreshed &&
       options.auth !== 'none' &&
-      this.authSession?.getAccessToken()
+      requestAccessToken
     ) {
-      const newAccessToken = await this.refreshAccessToken(options.operation)
-      return this.executeUpload<T>(options, true, newAccessToken)
+      const currentAccessToken = this.getCurrentRequestAccessToken(
+        options.operation,
+        requestSessionIdentity,
+      )
+      if (currentAccessToken !== requestAccessToken) {
+        return this.executeUpload<T>(
+          options,
+          true,
+          currentAccessToken,
+          { value: requestSessionIdentity },
+        )
+      }
+      const refreshedAccessToken = await this.refreshAccessToken(
+        options.operation,
+        requestSessionIdentity,
+      )
+      const replayAccessToken = this.getPostRefreshAccessToken(
+        options.operation,
+        requestSessionIdentity,
+        refreshedAccessToken,
+      )
+      return this.executeUpload<T>(
+        options,
+        true,
+        replayAccessToken,
+        { value: requestSessionIdentity },
+      )
     }
 
     if (
@@ -116,7 +152,7 @@ export class ApiClient {
         envelope.code,
         envelope.message,
         envelope.data,
-      ))
+      ), requestSessionIdentity)
     }
 
     if (envelope.code !== 0) {
@@ -140,8 +176,13 @@ export class ApiClient {
     options: ApiRequestOptions,
     refreshed: boolean,
     accessTokenOverride?: string,
+    sessionIdentityOverride?: RequestSessionIdentity,
   ): Promise<ApiResponse<T>> {
-    const request = this.buildTransportRequest(options, accessTokenOverride)
+    const requestAccessToken = accessTokenOverride ?? this.authSession?.getAccessToken()
+    const requestSessionIdentity = sessionIdentityOverride
+      ? sessionIdentityOverride.value
+      : this.getSessionIdentity(requestAccessToken)
+    const request = this.buildTransportRequest(options, requestAccessToken)
     let response
     try {
       response = await this.transport.request(request)
@@ -170,10 +211,35 @@ export class ApiClient {
       envelope.code === TOKEN_EXPIRED_CODE &&
       !refreshed &&
       options.auth !== 'none' &&
-      this.authSession?.getAccessToken()
+      requestAccessToken
     ) {
-      const newAccessToken = await this.refreshAccessToken(options.operation)
-      return this.execute<T>(options, true, newAccessToken)
+      const currentAccessToken = this.getCurrentRequestAccessToken(
+        options.operation,
+        requestSessionIdentity,
+      )
+      if (currentAccessToken !== requestAccessToken) {
+        return this.execute<T>(
+          options,
+          true,
+          currentAccessToken,
+          { value: requestSessionIdentity },
+        )
+      }
+      const refreshedAccessToken = await this.refreshAccessToken(
+        options.operation,
+        requestSessionIdentity,
+      )
+      const replayAccessToken = this.getPostRefreshAccessToken(
+        options.operation,
+        requestSessionIdentity,
+        refreshedAccessToken,
+      )
+      return this.execute<T>(
+        options,
+        true,
+        replayAccessToken,
+        { value: requestSessionIdentity },
+      )
     }
 
     if (
@@ -186,7 +252,7 @@ export class ApiClient {
         envelope.code,
         envelope.message,
         envelope.data,
-      ))
+      ), requestSessionIdentity)
     }
 
     if (envelope.code !== 0) {
@@ -274,26 +340,42 @@ export class ApiClient {
     }
   }
 
-  private async refreshAccessToken(operation: string): Promise<string> {
+  private async refreshAccessToken(
+    operation: string,
+    expectedSessionIdentity: unknown,
+  ): Promise<string> {
     if (!this.authSession) {
       throw new SessionExpiredError({ operation }, '未配置 AuthSession')
     }
-    if (this.refreshPromise) {
+    if (
+      this.refreshPromise &&
+      Object.is(this.refreshPromiseSessionIdentity, expectedSessionIdentity)
+    ) {
       return this.refreshPromise
     }
 
-    const activeRefresh = this.performRefresh(operation, this.authSession)
+    const activeRefresh = this.performRefresh(
+      operation,
+      this.authSession,
+      expectedSessionIdentity,
+    )
     this.refreshPromise = activeRefresh
+    this.refreshPromiseSessionIdentity = expectedSessionIdentity
     try {
       return await activeRefresh
     } finally {
       if (this.refreshPromise === activeRefresh) {
         this.refreshPromise = undefined
+        this.refreshPromiseSessionIdentity = undefined
       }
     }
   }
 
-  private async performRefresh(operation: string, authSession: AuthSession): Promise<string> {
+  private async performRefresh(
+    operation: string,
+    authSession: AuthSession,
+    expectedSessionIdentity: unknown,
+  ): Promise<string> {
     try {
       const accessToken = await authSession.refreshAccessToken()
       if (!accessToken) {
@@ -301,9 +383,12 @@ export class ApiClient {
       }
       return accessToken
     } catch (cause) {
+      if (cause instanceof SessionSupersededError) {
+        throw new SessionExpiredError({ operation }, cause)
+      }
       let cleanupCause: unknown
       try {
-        await authSession.clearSession()
+        await authSession.clearSession(expectedSessionIdentity)
       } catch (error) {
         cleanupCause = error
       }
@@ -311,14 +396,61 @@ export class ApiClient {
     }
   }
 
-  private async invalidateSession(operation: string, cause: unknown): Promise<never> {
+  private async invalidateSession(
+    operation: string,
+    cause: unknown,
+    expectedSessionIdentity?: unknown,
+  ): Promise<never> {
     let cleanupCause: unknown
     try {
-      await this.authSession?.clearSession()
+      await this.authSession?.clearSession(expectedSessionIdentity)
     } catch (error) {
       cleanupCause = error
     }
     throw new SessionExpiredError({ operation }, cause, cleanupCause)
+  }
+
+  private getCurrentRequestAccessToken(
+    operation: string,
+    expectedSessionIdentity: unknown,
+  ): string {
+    const accessToken = this.authSession?.getAccessToken()
+    if (
+      !accessToken ||
+      !Object.is(this.getSessionIdentity(accessToken), expectedSessionIdentity)
+    ) {
+      throw new SessionExpiredError({ operation }, new SessionSupersededError())
+    }
+    return accessToken
+  }
+
+  private getPostRefreshAccessToken(
+    operation: string,
+    expectedSessionIdentity: unknown,
+    refreshedAccessToken: string,
+  ): string {
+    const accessToken = this.authSession?.getAccessToken()
+    if (!accessToken) {
+      throw new SessionExpiredError({ operation }, new SessionSupersededError())
+    }
+
+    if (this.authSession?.getSessionIdentity) {
+      if (!Object.is(this.authSession.getSessionIdentity(), expectedSessionIdentity)) {
+        throw new SessionExpiredError({ operation }, new SessionSupersededError())
+      }
+      return accessToken
+    }
+
+    // 兼容未实现 identity 的 AuthSession：至少要求当前 Token 仍是刚完成刷新的结果。
+    // 正式 SessionManager 提供稳定 identity，因此可以严格区分 refresh 与新登录。
+    if (accessToken !== refreshedAccessToken) {
+      throw new SessionExpiredError({ operation }, new SessionSupersededError())
+    }
+    return accessToken
+  }
+
+  private getSessionIdentity(accessToken: string | undefined): unknown {
+    return this.authSession?.getSessionIdentity?.() ?? accessToken
   }
 }
 

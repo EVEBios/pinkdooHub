@@ -1,4 +1,4 @@
-/* stylelint-disable at-rule-no-unknown -- 本文件只提供 Sass mixin，由页面样式按需编译。 */
+/* stylelint-disable at-rule-no-unknown, at-rule-prelude-no-invalid -- 本文件只提供 Sass mixin，由页面样式按需编译。 */
 
 @mixin page-shell($top-padding: 0) {
   min-height: 100vh;

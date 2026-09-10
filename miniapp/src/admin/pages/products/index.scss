@@ -1,20 +1,21 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
 
 .admin-products-page {
   @include pd.page-shell;
   @include pd.content-width;
 
   &__header {
-    @include pd.header-band;
+    @include admin.page-header(true, center 50%);
   }
 
   &__title {
-    @include pd.page-title;
+    @include admin.header-title;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include admin.header-subtitle;
   }
 }
 
@@ -35,6 +36,7 @@
 
 .admin-product-filters {
   @include pd.section-panel(22px);
+  @include admin.filter-panel;
 
   margin: 20px 0 24px;
 

@@ -90,10 +90,36 @@
     width: 100%;
     margin-top: 30px;
 
-    &--wechat {
-      background: linear-gradient(135deg, #087e50 0%, #0a8d59 100%);
-      box-shadow: 0 9px 22px rgb(8 126 80 / 17%);
+    &--pressed {
+      background: linear-gradient(135deg, #7e1f42 0%, #92264a 100%) !important;
+      box-shadow: 0 4px 12px rgb(82 20 45 / 20%);
+      transform: translateY(1px);
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-form {
+    &__submit--pressed {
+      transform: none;
+    }
+  }
+}
+
+.login-navigation {
+  margin-top: 24px;
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__retry {
+    @include pd.quiet-button;
+
+    width: 100%;
+    margin-top: 12px;
+    color: var(--pd-color-primary-strong);
+    background: transparent;
   }
 }
 

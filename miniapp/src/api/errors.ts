@@ -80,3 +80,14 @@ export class SessionExpiredError extends ApiClientError {
     this.cleanupCause = cleanupCause
   }
 }
+
+/**
+ * 标记请求期间会话已被退出或新登录取代。
+ * 这不等于“当前会话刷新失败”，调用方不得因此清除更新的身份。
+ */
+export class SessionSupersededError extends Error {
+  constructor() {
+    super('请求期间登录会话已发生变化')
+    this.name = 'SessionSupersededError'
+  }
+}

@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import type { AdminOrderListItem } from '@/api/endpoints/orders'
 import { MaskedDateInput } from '@/admin/components/masked_date_input'
+import { AdminWorkbenchLink } from '@/admin/components/workbench_link'
 import { buildLoginUrl, useAuth } from '@/auth'
 import {
   ADMIN_ORDER_LIST_PATH,
@@ -100,6 +101,7 @@ export function AuthenticatedAdminOrders() {
       <View className='admin-orders-page__header'>
         <Text className='admin-orders-page__title'>管理订单</Text>
         <Text className='admin-orders-page__subtitle'>查询全部用户订单，并执行契约允许的状态变迁</Text>
+        <AdminWorkbenchLink />
       </View>
 
       <View className='admin-order-filters'>

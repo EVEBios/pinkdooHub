@@ -2,8 +2,9 @@ import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 
 import type { WalletTransaction } from '@/api/endpoints/wallet'
-import { buildLoginUrl, useAuth, WALLET_TRANSACTION_LIST_PATH } from '@/auth'
+import { buildLoginUrl, isAdminRole, useAuth, WALLET_TRANSACTION_LIST_PATH } from '@/auth'
 import { getWalletTransactionLabel, useWalletTransactions } from '@/features/wallet'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
@@ -27,6 +28,23 @@ export default function WalletTransactionsPage() {
           className='wallet-ledger-state__action'
           onClick={() => void Taro.navigateTo({ url: buildLoginUrl(WALLET_TRANSACTION_LIST_PATH) })}
         >去登录</Button>
+      </LedgerState>
+    )
+  }
+  if (!auth.user) {
+    return (
+      <LedgerState title='账户信息不完整' description='请重新检查登录状态后再查看资金明细'>
+        <Button className='wallet-ledger-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+      </LedgerState>
+    )
+  }
+  if (isAdminRole(auth.user.role)) {
+    return <AdminWorkbenchRedirect />
+  }
+  if (auth.user.role !== 'user') {
+    return (
+      <LedgerState title='账户角色暂不支持' description='请重新检查登录状态后再查看资金明细'>
+        <Button className='wallet-ledger-state__action' onClick={auth.retryInitialization}>重新检查</Button>
       </LedgerState>
     )
   }

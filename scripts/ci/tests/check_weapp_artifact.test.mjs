@@ -1,14 +1,25 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test, { afterEach } from 'node:test'
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..', '..')
 const CHECKER = join(REPOSITORY_ROOT, 'scripts', 'ci', 'check_weapp_artifact.mjs')
 const EXPECTED_ORIGIN = 'https://api.ci.pinkdoohub.test'
+const ROOT_TABS = [
+  { pagePath: 'pages/index/index', text: '商城' },
+  { pagePath: 'pages/reservations/index', text: '预约' },
+  { pagePath: 'pages/orders/index', text: '订单' },
+  { pagePath: 'pages/member/index', text: '会员中心' }
+]
+const TAB_BAR_ICON_PATHS = ['mall', 'reservations', 'orders', 'member'].flatMap((name) => [
+  `assets/tab-bar/${name}-outline.png`,
+  `assets/tab-bar/${name}-solid-berry.png`,
+  `assets/tab-bar/${name}-solid-white.png`
+])
 const createdRoots = new Set()
 
 afterEach(() => {
@@ -22,18 +33,33 @@ function createFixture(mainSource = `const apiOrigin = '${EXPECTED_ORIGIN}'`) {
   const root = mkdtempSync(join(tmpdir(), 'pinkdoohub-weapp-check-'))
   createdRoots.add(root)
   const artifactRoot = join(root, 'weapp')
-  mkdirSync(join(artifactRoot, 'admin'), { recursive: true })
+  mkdirSync(join(artifactRoot, 'admin', 'pages', 'workbench'), { recursive: true })
+  mkdirSync(join(artifactRoot, 'pages', 'entry'), { recursive: true })
   writeFileSync(join(artifactRoot, 'app.json'), JSON.stringify({
-    pages: ['pages/index/index'],
-    subPackages: [{ root: 'admin', pages: ['pages/users/index'] }]
+    pages: ['pages/entry/index', 'pages/index/index'],
+    subPackages: [{ root: 'admin', pages: ['pages/workbench/index', 'pages/users/index'] }],
+    tabBar: { custom: true, list: ROOT_TABS }
   }))
+  mkdirSync(join(artifactRoot, 'custom-tab-bar'), { recursive: true })
+  for (const extension of ['js', 'json', 'wxml', 'wxss']) {
+    writeFileSync(join(artifactRoot, 'custom-tab-bar', `index.${extension}`), '{}')
+  }
+  for (const iconPath of TAB_BAR_ICON_PATHS) {
+    const absoluteIconPath = join(artifactRoot, iconPath)
+    mkdirSync(dirname(absoluteIconPath), { recursive: true })
+    writeFileSync(absoluteIconPath, 'png')
+  }
   const projectConfig = join(root, 'project.config.json')
   writeFileSync(projectConfig, JSON.stringify({
     miniprogramRoot: 'dist/weapp/',
     setting: { uploadWithSourceMap: false }
   }))
   writeFileSync(join(artifactRoot, 'app.js'), mainSource)
-  writeFileSync(join(artifactRoot, 'admin', 'page.js'), 'module.exports = {}')
+  for (const pagePath of ['pages/entry/index', 'admin/pages/workbench/index']) {
+    for (const extension of ['js', 'json', 'wxml', 'wxss']) {
+      writeFileSync(join(artifactRoot, `${pagePath}.${extension}`), '{}')
+    }
+  }
   return {
     root,
     artifactRoot,
@@ -131,6 +157,65 @@ test('rejects a source map file even when it is not referenced', () => {
 
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /source map/i)
+})
+
+test('rejects base64 images in the custom TabBar bundle', () => {
+  const fixture = createFixture()
+  writeFileSync(
+    join(fixture.artifactRoot, 'custom-tab-bar', 'index.js'),
+    "const icon = 'data:image/png;base64,AAAA'"
+  )
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /physical image files/i)
+})
+
+test('rejects a missing physical custom TabBar icon', () => {
+  const fixture = createFixture()
+  unlinkSync(join(fixture.artifactRoot, 'assets', 'tab-bar', 'mall-solid-white.png'))
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /mall-solid-white\.png/i)
+})
+
+test('rejects a drifted root TabBar contract', () => {
+  const fixture = createFixture()
+  const appConfigPath = join(fixture.artifactRoot, 'app.json')
+  const appConfig = JSON.parse(readFileSync(appConfigPath, 'utf8'))
+  appConfig.tabBar.list[0].text = '首页'
+  writeFileSync(appConfigPath, JSON.stringify(appConfig))
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /frozen four-item custom TabBar/i)
+})
+
+test('rejects a default route that can flash the customer TabBar before role resolution', () => {
+  const fixture = createFixture()
+  const appConfigPath = join(fixture.artifactRoot, 'app.json')
+  const appConfig = JSON.parse(readFileSync(appConfigPath, 'utf8'))
+  appConfig.pages = ['pages/index/index', 'pages/entry/index']
+  writeFileSync(appConfigPath, JSON.stringify(appConfig))
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /no-Tab entry page/i)
+})
+
+test('rejects a missing admin workbench artifact', () => {
+  const fixture = createFixture()
+  unlinkSync(join(fixture.artifactRoot, 'admin', 'pages', 'workbench', 'index.wxml'))
+
+  const result = runChecker(fixture)
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /admin\/pages\/workbench\/index\.wxml/i)
 })
 
 test('rejects release eligibility for the reserved CI test origin', () => {

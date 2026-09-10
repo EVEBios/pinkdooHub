@@ -2,6 +2,7 @@ import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useState } from 'react'
 
+import { isAdminRole, useAuth } from '@/auth'
 import {
   cartItemKey,
   type CartItem,
@@ -9,6 +10,7 @@ import {
   useCart,
 } from '@/features/order'
 import { BeadColorSwatch } from '@/components/bead_color_swatch'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
@@ -20,6 +22,42 @@ type CartDisplayEntry =
   | { readonly kind: 'color-kit'; readonly items: readonly ColorKitCartItem[] }
 
 export default function CartPage() {
+  const auth = useAuth()
+
+  if (auth.status === 'initializing') {
+    return <CartState title='正在确认账户身份…' description='确认后将恢复当前设备的购物车' />
+  }
+  if (auth.status === 'error') {
+    return (
+      <CartState title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
+        <Button className='cart-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+      </CartState>
+    )
+  }
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <CartState title='账户信息不完整' description='请重新检查登录状态后再打开购物车'>
+          <Button className='cart-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </CartState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <CartState title='账户角色暂不支持' description='请重新检查登录状态后再打开购物车'>
+          <Button className='cart-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </CartState>
+      )
+    }
+  }
+
+  return <CustomerCartPage />
+}
+
+function CustomerCartPage() {
   const cart = useCart()
   const [busyKey, setBusyKey] = useState<string>()
 
@@ -36,7 +74,7 @@ export default function CartPage() {
   if (cart.items.length === 0) {
     return (
       <CartState title='购物车还是空的' description='选择一个真实的体验配置，或者加入一个材料包'>
-        <Button className='cart-state__action' onClick={() => void Taro.navigateTo({ url: '/pages/index/index' })}>
+        <Button className='cart-state__action' onClick={() => void Taro.switchTab({ url: '/pages/index/index' })}>
           去看看商品
         </Button>
       </CartState>

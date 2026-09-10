@@ -1,12 +1,13 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
 
 .admin-wallet-page {
   @include pd.page-shell;
   @include pd.content-width;
 
   &__header {
-    @include pd.header-band;
+    @include admin.page-header;
   }
 
   &__eyebrow,
@@ -16,29 +17,29 @@
   }
 
   &__eyebrow {
-    color: var(--pd-color-primary-strong);
+    @include admin.header-eyebrow;
+
     font-size: var(--pd-font-caption);
     font-weight: 750;
     letter-spacing: 1.2px;
   }
 
   &__title {
-    @include pd.page-title;
+    @include admin.header-title;
 
     margin-top: 24px;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include admin.header-subtitle;
   }
 }
 
 .admin-wallet-balance {
+  @include admin.authority-panel;
+
   padding: 26px;
-  color: #fff;
-  background: var(--pd-gradient-primary);
   border-radius: var(--pd-radius-large);
-  box-shadow: var(--pd-shadow-medium);
 
   &__label,
   &__amount,
@@ -75,6 +76,8 @@
 }
 
 .admin-wallet-commerce {
+  @include admin.section-accent;
+
   &__title,
   &__description,
   &__warning {

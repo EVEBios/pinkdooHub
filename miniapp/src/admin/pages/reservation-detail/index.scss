@@ -1,5 +1,6 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
 
 .admin-reservation-detail-page {
   @include pd.page-shell;
@@ -14,7 +15,7 @@
 }
 
 .admin-reservation-detail-heading {
-  @include pd.header-band;
+  @include admin.page-header;
 
   &__topline {
     display: flex;
@@ -24,7 +25,7 @@
   }
 
   &__title {
-    @include pd.page-title;
+    @include admin.header-title;
   }
 
   &__status {
@@ -62,12 +63,13 @@
     line-height: 1.4;
     text-wrap: balance;
     word-break: keep-all;
+    color: #fff;
   }
 
   &__date {
     display: block;
     margin-top: 14px;
-    color: var(--pd-color-ink-soft);
+    color: rgb(255 244 248 / 86%);
     font-size: var(--pd-font-body-size);
     font-variant-numeric: tabular-nums;
   }
@@ -75,7 +77,7 @@
   &__time {
     display: block;
     margin-top: 4px;
-    color: var(--pd-color-primary-strong);
+    color: #fff;
     font-size: var(--pd-font-price);
     font-weight: 750;
     font-variant-numeric: tabular-nums;

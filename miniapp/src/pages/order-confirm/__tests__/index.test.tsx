@@ -17,11 +17,15 @@ let mockCart: CartContextValue
 let mockSubmission: UseOrderSubmissionResult
 const mockSubmit = jest.fn(async () => undefined)
 const mockReset = jest.fn()
+const mockUseCart = jest.fn()
+const mockUseOrderSubmission = jest.fn()
 
 jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
   ORDER_CONFIRM_PATH: '/pages/order-confirm/index',
   ORDER_LIST_PATH: '/pages/orders/index',
   buildLoginUrl: () => '/pages/login/index?redirect=%2Fpages%2Forder-confirm%2Findex',
+  isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
   useAuth: () => mockAuth,
 }))
 
@@ -30,8 +34,14 @@ jest.mock('@/features/order', () => ({
     `${item.productId}:${item.experienceOptionId ?? item.kitColorId ?? 'fixed'}`
   ),
   ORDER_REMARK_LIMIT: 500,
-  useCart: () => mockCart,
-  useOrderSubmission: () => mockSubmission,
+  useCart: () => {
+    mockUseCart()
+    return mockCart
+  },
+  useOrderSubmission: () => {
+    mockUseOrderSubmission()
+    return mockSubmission
+  },
 }))
 
 jest.mock('@/utils/format', () => ({
@@ -180,6 +190,38 @@ describe('OrderConfirmPage', () => {
     expect(testUtils.queries.querySelector('.order-confirm-page')?.textContent).toContain(text)
   })
 
+  it.each(['admin', 'super_admin'] as const)('%s 深链不挂载购物车或下单 Hook', async (role) => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role },
+    }
+    await testUtils.mount(OrderConfirmPage)
+
+    expect(requireElement(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
+    expect(mockUseCart).not.toHaveBeenCalled()
+    expect(mockUseOrderSubmission).not.toHaveBeenCalled()
+    await flush(testUtils)
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it.each([
+    ['missing', '账户信息不完整'],
+    ['unknown', '账户角色暂不支持'],
+  ] as const)('认证资料为 %s 时 fail closed', async (userCase, expectedText) => {
+    mockAuth = {
+      ...mockAuth,
+      user: userCase === 'missing'
+        ? undefined
+        : { ...mockAuth.user!, role: 'operator' as never },
+    }
+    await testUtils.mount(OrderConfirmPage)
+
+    expect(requireElement(testUtils, '.order-confirm-state__title').textContent).toContain(expectedText)
+    expect(mockUseCart).not.toHaveBeenCalled()
+    expect(mockUseOrderSubmission).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+  })
+
   it('空购物清单不允许进入提交表单', async () => {
     mockCart = { ...mockCart, items: [] }
 
@@ -188,6 +230,8 @@ describe('OrderConfirmPage', () => {
     expect(testUtils.queries.querySelector('.order-confirm-page')?.textContent)
       .toContain('没有可以确认的商品')
     expect(testUtils.queries.querySelector('.order-confirm-page__submit')).toBeNull()
+    testUtils.fireEvent.click(requireElement(testUtils, '.order-confirm-state__action'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
   })
 
   it('游客进入安全登录地址，说明登录后返回且保留购物清单', async () => {
@@ -282,7 +326,7 @@ describe('OrderConfirmPage', () => {
     const checkOrders = testUtils.queries.querySelector('.order-confirm-feedback__action')
     if (!checkOrders) throw new Error('unknown 未提供我的订单核对入口')
     testUtils.fireEvent.click(checkOrders)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
   })
 
   it('成功后只展示服务端快照，并提示本地对账异常但不降级订单结果', async () => {
@@ -312,5 +356,23 @@ describe('OrderConfirmPage', () => {
     expect(result?.textContent).toContain('订单已经创建')
     expect(result?.textContent).toContain('不要重复创建')
     expect(result?.textContent).toContain('查看我的订单')
+    const actions = requireElement(testUtils, '.order-result-actions').children
+    testUtils.fireEvent.click(actions[0])
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    testUtils.fireEvent.click(actions[1])
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
   })
 })
+
+function requireElement(testUtils: ReactTestUtil, selector: string): Element {
+  const element = testUtils.queries.querySelector(selector)
+  if (!element) throw new Error(`${selector} not found`)
+  return element
+}
+
+async function flush(testUtils: ReactTestUtil): Promise<void> {
+  await testUtils.act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}

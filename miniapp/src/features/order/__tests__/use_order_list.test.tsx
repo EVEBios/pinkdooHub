@@ -4,6 +4,12 @@ import type { OrderListPage } from '@/api/endpoints/orders'
 
 import { type OrderListSource, useOrderList } from '../use_order_list'
 
+let mockRefreshAfterReturn: (() => void) | undefined
+
+jest.mock('@/platform/use_refresh_after_page_return', () => ({
+  useRefreshAfterPageReturn: (refresh: () => void) => { mockRefreshAfterReturn = refresh },
+}))
+
 const firstPage: OrderListPage = {
   items: [{
     id: 1,
@@ -52,6 +58,7 @@ describe('useOrderList', () => {
 
   beforeEach(() => {
     testUtils = new ReactTestUtil()
+    mockRefreshAfterReturn = undefined
   })
 
   afterEach(() => testUtils.unmout())
@@ -108,6 +115,35 @@ describe('useOrderList', () => {
     await testUtils.mount(Harness, { props: { source } })
     await flush(testUtils)
     expect(requireElement(testUtils, '.status').textContent).toBe('error')
+  })
+
+  it('页面再次显示时保留内容静默刷新第一页，且首次挂载只请求一次', async () => {
+    const refreshed = deferred<OrderListPage>()
+    const source: OrderListSource = {
+      listOrders: jest.fn()
+        .mockResolvedValueOnce(firstPage)
+        .mockImplementationOnce(() => refreshed.promise),
+    }
+    await testUtils.mount(Harness, { props: { source } })
+    await flush(testUtils)
+    expect(source.listOrders).toHaveBeenCalledTimes(1)
+
+    await testUtils.act(async () => { mockRefreshAfterReturn?.() })
+    expect(source.listOrders).toHaveBeenNthCalledWith(2, { page: 1, page_size: 20 })
+    expect(requireElement(testUtils, '.status').textContent).toBe('content')
+    expect(requireElement(testUtils, '.ids').textContent).toBe('1')
+    testUtils.fireEvent.click(requireElement(testUtils, '.next'))
+    expect(source.listOrders).toHaveBeenCalledTimes(2)
+
+    refreshed.resolve({
+      ...firstPage,
+      items: [{ ...firstPage.items[0], id: 3 }],
+      total: 1,
+      pages: 1,
+    })
+    await flush(testUtils)
+    expect(requireElement(testUtils, '.ids').textContent).toBe('3')
+    expect(requireElement(testUtils, '.page').textContent).toBe('1')
   })
 })
 

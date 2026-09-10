@@ -1,5 +1,6 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
 
 .admin-product-detail-page {
   @include pd.page-shell(24px);
@@ -29,24 +30,10 @@
 }
 
 .admin-product-detail-heading {
-  position: relative;
-  overflow: hidden;
-  padding: 30px 28px;
-  color: #fff;
-  background: var(--pd-gradient-stock);
-  border-radius: var(--pd-radius-large);
-  box-shadow: var(--pd-shadow-medium);
+  @include admin.identity-panel;
 
-  &::after {
-    position: absolute;
-    right: -74px;
-    bottom: -92px;
-    width: 220px;
-    height: 220px;
-    background: rgb(255 255 255 / 8%);
-    border-radius: 50%;
-    content: '';
-  }
+  padding: 30px 28px;
+  border-radius: var(--pd-radius-large);
 
   &__eyebrow,
   &__name,

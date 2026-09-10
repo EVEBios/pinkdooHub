@@ -18,7 +18,7 @@ import AdminReservationsPage, {
 import StoreClosuresPage, {
   AuthenticatedStoreClosures,
 } from '@/admin/pages/store-closures'
-import { AuthenticatedReservationDetail } from '@/pages/reservation-detail'
+import ReservationDetailPage, { AuthenticatedReservationDetail } from '@/pages/reservation-detail'
 import ReservationsPage, { AuthenticatedReservations } from '@/pages/reservations'
 
 let mockAuth: AuthContextValue
@@ -37,6 +37,7 @@ const mockConfirm = jest.fn(async () => undefined)
 const mockReject = jest.fn(async () => undefined)
 const mockClose = jest.fn(async () => undefined)
 const mockReopen = jest.fn(async () => undefined)
+const mockUseRootTabSelection = jest.fn()
 
 jest.mock('@tarojs/taro', () => {
   const actual = jest.requireActual('@tarojs/taro')
@@ -44,6 +45,7 @@ jest.mock('@tarojs/taro', () => {
 })
 
 jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
   buildLoginUrl: (redirect: string) => `/pages/login/index?redirect=${encodeURIComponent(redirect)}`,
   isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
   useAuth: () => mockAuth,
@@ -74,6 +76,11 @@ jest.mock('@/features/reservation', () => ({
   useReservationDetail: () => mockUseReservationDetail(),
   useReservationList: () => mockUseReservationList(),
   useStoreClosures: () => mockUseStoreClosures(),
+}))
+
+jest.mock('@/navigation/root_tabs', () => ({
+  ROOT_TAB_INDEX: { reservations: 1 },
+  useRootTabSelection: (index: number) => mockUseRootTabSelection(index),
 }))
 
 jest.mock('@/utils/format', () => ({ formatPrice: (value: string) => value }))
@@ -183,6 +190,40 @@ describe('Reservation N1 页面集成', () => {
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/reservation-detail/index?id=31' })
   })
 
+  it('预约根页同步自定义 TabBar 的选中序号', async () => {
+    await testUtils.mount(ReservationsPage)
+    expect(mockUseRootTabSelection).toHaveBeenCalledWith(1)
+  })
+
+  it('预约空态返回商城、详情返回列表均使用根 Tab 切换', async () => {
+    mockReservationListState = {
+      ...mockReservationListState,
+      state: { status: 'empty', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
+    }
+    await testUtils.mount(AuthenticatedReservations)
+    expect(testUtils.queries.querySelector('.reservations-inline-state')).not.toBeNull()
+    expect(testUtils.queries.querySelector('.reservations-page--state')).toBeNull()
+    testUtils.fireEvent.click(required(testUtils, '.reservations-state__action'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
+    testUtils.unmout()
+
+    testUtils = new ReactTestUtil()
+    await testUtils.mount(AuthenticatedReservationDetail, { props: { reservationId: 31 } })
+    testUtils.fireEvent.click(required(testUtils, '.reservation-detail-page__back'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/reservations/index' })
+  })
+
+  it('预约详情读取失败时仍通过根 Tab 返回预约列表', async () => {
+    mockReservationDetailState = {
+      ...mockReservationDetailState,
+      detail: { status: 'error', errorMessage: 'offline' },
+    }
+    await testUtils.mount(AuthenticatedReservationDetail, { props: { reservationId: 31 } })
+
+    testUtils.fireEvent.click(required(testUtils, '.reservation-detail-state__back'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/reservations/index' })
+  })
+
   it('pending 与 confirmed 即使本地截止时间已过也显示取消按钮，unknown 时冻结', async () => {
     await testUtils.mount(AuthenticatedReservationDetail, { props: { reservationId: 31 } })
     const pendingButton = required(testUtils, '.reservation-detail-cancellation__action')
@@ -251,6 +292,35 @@ describe('Reservation N1 页面集成', () => {
     expect(mockReject).toHaveBeenCalledTimes(1)
   })
 
+  it('管理预约与店休使用同级替换，往返不会持续堆高页面栈', async () => {
+    mockAuth = authenticated('admin')
+    await testUtils.mount(AuthenticatedAdminReservations)
+    const reservationsHeader = required(testUtils, '.admin-reservations-page__header')
+    expect(reservationsHeader.querySelectorAll('.admin-workbench-link')).toHaveLength(1)
+    expect(reservationsHeader.querySelector('.admin-reservations-page__closures')).toBeNull()
+    expect(
+      required(testUtils, '.admin-reservations-page__related')
+        .querySelector('.admin-reservations-page__closures'),
+    ).not.toBeNull()
+    testUtils.fireEvent.click(required(testUtils, '.admin-reservations-page__closures'))
+    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: '/admin/pages/store-closures/index' })
+    expect(Taro.navigateTo).not.toHaveBeenCalledWith({ url: '/admin/pages/store-closures/index' })
+
+    testUtils.unmout()
+    testUtils = new ReactTestUtil()
+    await testUtils.mount(AuthenticatedStoreClosures)
+    const closuresHeader = required(testUtils, '.store-closures-page__header')
+    expect(closuresHeader.querySelectorAll('.admin-workbench-link')).toHaveLength(1)
+    expect(closuresHeader.querySelector('.store-closures-page__reservations')).toBeNull()
+    expect(
+      required(testUtils, '.store-closures-page__related')
+        .querySelector('.store-closures-page__reservations'),
+    ).not.toBeNull()
+    testUtils.fireEvent.click(required(testUtils, '.store-closures-page__reservations'))
+    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: '/admin/pages/reservations/index' })
+    expect(Taro.navigateTo).not.toHaveBeenCalledWith({ url: '/admin/pages/reservations/index' })
+  })
+
   it('店休确认区分 store_closed，成功结果展示批量计数和人工联系边界', async () => {
     mockAuth = authenticated('admin')
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-06T02:00:00Z'))
@@ -276,11 +346,53 @@ describe('Reservation N1 页面集成', () => {
     expect(feedback.textContent).not.toContain('已通知')
   })
 
-  it('管理员账号不能挂载顾客预约列表 hook', async () => {
-    mockAuth = authenticated('admin')
+  it.each(['admin', 'super_admin'] as const)('%s 账号不能挂载顾客预约列表或详情 Hook', async (role) => {
+    mockAuth = {
+      ...authenticated('admin'),
+      user: { ...authenticated('admin').user!, role },
+    }
     await testUtils.mount(ReservationsPage)
-    expect(required(testUtils, '.reservations-page').textContent).toContain('顾客账号才能查看预约')
+    expect(required(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
     expect(mockUseReservationList).not.toHaveBeenCalled()
+    expect(mockUseRootTabSelection).not.toHaveBeenCalled()
+    await flush(testUtils)
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+
+    testUtils.unmout()
+    testUtils = new ReactTestUtil()
+    await testUtils.mount(ReservationDetailPage)
+    expect(required(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
+    expect(mockUseReservationDetail).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['missing', '账户信息不完整'],
+    ['unknown', '账户角色暂不支持'],
+  ] as const)('预约根页认证资料为 %s 时 fail closed', async (userCase, expectedText) => {
+    mockAuth = {
+      ...mockAuth,
+      user: userCase === 'missing'
+        ? undefined
+        : { ...mockAuth.user!, role: 'operator' as never },
+    }
+    await testUtils.mount(ReservationsPage)
+
+    expect(required(testUtils, '.reservations-state__title').textContent).toContain(expectedText)
+    expect(mockUseReservationList).not.toHaveBeenCalled()
+    expect(mockUseRootTabSelection).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+  })
+
+  it('预约详情未知角色保持 fail closed，不挂载详情 Hook', async () => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role: 'operator' as never },
+    }
+    await testUtils.mount(ReservationDetailPage)
+
+    expect(required(testUtils, '.reservation-detail-state__title').textContent).toContain('账户角色暂不支持')
+    expect(mockUseReservationDetail).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
   })
 })
 

@@ -1,11 +1,14 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as patterns;
+@use '../../styles/customer' as customer;
 
 .member-page {
   @include patterns.page-shell;
 
+  padding-bottom: var(--pd-root-tab-page-clearance);
+
   &__header {
-    @include patterns.header-band;
+    @include customer.page-header(center 40%);
   }
 
   &__eyebrow,
@@ -15,26 +18,29 @@
   }
 
   &__eyebrow {
-    color: var(--pd-color-primary-strong);
+    @include customer.eyebrow;
+
     font-size: var(--pd-font-caption);
     font-weight: 750;
     letter-spacing: 1px;
   }
 
   &__title {
-    @include patterns.page-title;
+    @include customer.title;
 
     margin-top: 28px;
   }
 
   &__identity {
     margin-top: 10px;
-    color: var(--pd-color-ink-soft);
+    color: rgb(255 244 248 / 88%);
     font-size: var(--pd-font-label);
   }
 
   &--state {
     @include patterns.state-shell;
+
+    padding-bottom: var(--pd-root-tab-page-clearance);
   }
 }
 
@@ -91,8 +97,32 @@
   }
 }
 
+.member-refresh {
+  @include patterns.feedback-warning;
+
+  display: flex;
+  max-width: 720px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 auto 18px;
+  box-sizing: border-box;
+
+  &__message {
+    min-width: 0;
+    line-height: 1.55;
+  }
+
+  &__action {
+    @include patterns.secondary-button(12px);
+
+    flex: 0 0 auto;
+  }
+}
+
 .member-profile {
   @include patterns.section-panel(22px, var(--pd-radius-medium));
+  @include customer.ledger-panel(#c97991, 5px);
 
   max-width: 720px;
   margin: -2px auto 18px;
@@ -189,6 +219,7 @@
 
 .member-notice {
   @include patterns.section-panel(22px);
+  @include customer.ledger-panel(var(--pd-color-line-strong), 5px);
 
   max-width: 720px;
   margin: 28px auto 0;
@@ -212,6 +243,41 @@
   }
 }
 
+.member-logout {
+  max-width: 720px;
+  margin: 22px auto 0;
+
+  &__button {
+    display: inline-flex;
+    width: fit-content;
+    min-width: var(--pd-control-min-inline);
+    min-height: var(--pd-control-height);
+    align-items: center;
+    justify-content: flex-start;
+    margin: 0;
+    padding: 0 5px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-label);
+    font-weight: 650;
+    line-height: 1.2;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+
+    &:active {
+      color: var(--pd-color-primary-strong);
+      background: var(--pd-color-primary-soft);
+    }
+  }
+
+  &__error {
+    @include patterns.feedback-error;
+
+    margin-top: 8px;
+  }
+}
+
 .member-state {
   &__title {
     @include patterns.state-title;
@@ -231,6 +297,15 @@
 @media (width <= 520px) {
   .member-actions {
     grid-template-columns: 1fr;
+  }
+
+  .member-refresh {
+    align-items: stretch;
+    flex-direction: column;
+
+    &__action {
+      width: 100%;
+    }
   }
 }
 

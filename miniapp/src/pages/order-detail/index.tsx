@@ -3,7 +3,13 @@ import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 
 import type { OrderDetail } from '@/api/endpoints/orders'
-import { buildLoginUrl, ORDER_LIST_PATH, useAuth } from '@/auth'
+import {
+  buildLoginUrl,
+  type AuthContextValue,
+  isAdminRole,
+  ORDER_LIST_PATH,
+  useAuth,
+} from '@/auth'
 import { parseOrderDetailRoute, useOrderDetail } from '@/features/order'
 import {
   getPaymentMethodLabel,
@@ -13,12 +19,37 @@ import {
   useOrderFinancial,
   useOrderPayment,
 } from '@/features/wallet'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
 
 export default function OrderDetailPage() {
   const auth = useAuth()
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <DetailState title='账户信息不完整' description='请重新检查登录状态后再查看订单'>
+          <Button className='order-detail-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </DetailState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <DetailState title='账户角色暂不支持' description='请重新检查登录状态后再查看订单'>
+          <Button className='order-detail-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </DetailState>
+      )
+    }
+  }
+
+  return <CustomerOrderDetailPage auth={auth} />
+}
+
+function CustomerOrderDetailPage({ auth }: { readonly auth: AuthContextValue }) {
   const route = parseOrderDetailRoute(useRouter().params)
   if (!route) {
     return <DetailState title='订单地址无效' description='请从“我的订单”重新进入' />
@@ -88,7 +119,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
         >{reconcilingPayment ? '重新核对订单与资金' : '重新加载'}</Button>
         <Button
           className='order-detail-state__back'
-          onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}
+          onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}
         >返回我的订单</Button>
       </DetailState>
     )
@@ -195,7 +226,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
       )}
       <Button
         className='order-detail-page__back'
-        onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}
+        onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}
       >
         返回我的订单
       </Button>

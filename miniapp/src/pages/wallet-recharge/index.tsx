@@ -2,8 +2,9 @@ import { Button, Input, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useMemo, useState } from 'react'
 
-import { buildLoginUrl, useAuth, WALLET_RECHARGE_PATH } from '@/auth'
+import { buildLoginUrl, isAdminRole, useAuth, WALLET_RECHARGE_PATH } from '@/auth'
 import { moneyToCents, normalizeMoneyDraft, useMemberWallet, useRecharge } from '@/features/wallet'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
@@ -30,6 +31,23 @@ export default function WalletRechargePage() {
           className='recharge-state__action'
           onClick={() => void Taro.navigateTo({ url: buildLoginUrl(WALLET_RECHARGE_PATH) })}
         >去登录</Button>
+      </RechargeState>
+    )
+  }
+  if (!auth.user) {
+    return (
+      <RechargeState title='账户信息不完整' description='请重新检查登录状态后再打开充值页面'>
+        <Button className='recharge-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+      </RechargeState>
+    )
+  }
+  if (isAdminRole(auth.user.role)) {
+    return <AdminWorkbenchRedirect />
+  }
+  if (auth.user.role !== 'user') {
+    return (
+      <RechargeState title='账户角色暂不支持' description='请重新检查登录状态后再打开充值页面'>
+        <Button className='recharge-state__action' onClick={auth.retryInitialization}>重新检查</Button>
       </RechargeState>
     )
   }

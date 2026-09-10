@@ -1,5 +1,6 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
 
 .reservation-create-page {
   @include pd.page-shell;
@@ -10,15 +11,15 @@
   }
 
   &__header {
-    @include pd.header-band;
+    @include customer.page-header(center 44%);
   }
 
   &__title {
-    @include pd.page-title;
+    @include customer.title;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include customer.subtitle;
   }
 
   &__submit {
@@ -75,6 +76,7 @@
 .reservation-create-schedule,
 .reservation-create-contact {
   @include pd.section-panel;
+  @include customer.ledger-panel(var(--pd-color-line-strong), 5px);
 
   margin-top: 22px;
 

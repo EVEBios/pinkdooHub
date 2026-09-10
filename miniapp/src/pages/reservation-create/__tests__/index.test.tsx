@@ -3,8 +3,9 @@ import Taro from '@tarojs/taro'
 
 import type { UserProfile } from '@/api/endpoints/auth'
 import type { Reservation, ReservationBookingOptions } from '@/api/endpoints/reservations'
+import type { AuthContextValue } from '@/auth'
 
-import { AuthenticatedReservationCreate } from '../index'
+import ReservationCreatePage, { AuthenticatedReservationCreate } from '../index'
 
 const options: ReservationBookingOptions = {
   experience_option_id: 11,
@@ -57,6 +58,9 @@ const created: Reservation = {
 }
 
 const mockSubmit = jest.fn(async () => created)
+let mockReservationCreateState: Record<string, unknown>
+let mockAuth: AuthContextValue
+const mockUseReservationCreate = jest.fn()
 
 jest.mock('@/features/reservation', () => ({
   buildReservationCreateUrl: (productId: number, optionId: number) => `/pages/reservation-create/index?product_id=${productId}&option_id=${optionId}`,
@@ -64,19 +68,18 @@ jest.mock('@/features/reservation', () => ({
   formatReservationDate: (value: string) => value,
   parseReservationCreateRoute: jest.fn(),
   RESERVATION_LIST_PATH: '/pages/reservations/index',
-  useReservationCreate: () => ({
-    data: { status: 'ready', options },
-    reservationDate: '2026-09-12',
-    startTime: '14:30',
-    submission: { status: 'idle' },
-    retry: jest.fn(),
-    selectDate: jest.fn(),
-    selectStartTime: jest.fn(),
-    submit: mockSubmit,
-  }),
+  useReservationCreate: () => {
+    mockUseReservationCreate()
+    return mockReservationCreateState
+  },
 }))
 
-jest.mock('@/auth', () => ({ buildLoginUrl: jest.fn(), useAuth: jest.fn() }))
+jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
+  buildLoginUrl: jest.fn(),
+  isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
+  useAuth: () => mockAuth,
+}))
 jest.mock('@/utils/format', () => ({ formatPrice: (value: string) => value }))
 
 describe('AuthenticatedReservationCreate', () => {
@@ -84,7 +87,18 @@ describe('AuthenticatedReservationCreate', () => {
 
   beforeEach(() => {
     testUtils = new ReactTestUtil()
+    mockAuth = authenticatedUser()
     mockSubmit.mockClear()
+    mockReservationCreateState = {
+      data: { status: 'ready', options },
+      reservationDate: '2026-09-12',
+      startTime: '14:30',
+      submission: { status: 'idle' },
+      retry: jest.fn(),
+      selectDate: jest.fn(),
+      selectStartTime: jest.fn(),
+      submit: mockSubmit,
+    }
   })
 
   afterEach(() => {
@@ -121,6 +135,31 @@ describe('AuthenticatedReservationCreate', () => {
     await flush(testUtils)
     expect(mockSubmit).toHaveBeenCalledTimes(1)
     expect(Taro.redirectTo).toHaveBeenCalledWith({ url: '/pages/reservation-detail/index?id=101' })
+  })
+
+  it.each(['admin', 'super_admin'] as const)('%s 创建预约深链在业务 Hook 前进入工作台', async (role) => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role },
+    }
+    await testUtils.mount(ReservationCreatePage)
+
+    expect(required(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
+    expect(mockUseReservationCreate).not.toHaveBeenCalled()
+    await flush(testUtils)
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it('未知角色保持 fail closed，不挂载预约创建 Hook', async () => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role: 'operator' as never },
+    }
+    await testUtils.mount(ReservationCreatePage)
+
+    expect(required(testUtils, '.reservation-create-state__title').textContent).toContain('账户角色暂不支持')
+    expect(mockUseReservationCreate).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
   })
 
   it('已保存手机号可直接提交，页面明确不创建订单且不主动通知', async () => {
@@ -190,6 +229,28 @@ describe('AuthenticatedReservationCreate', () => {
     expect((required(testUtils, '.reservation-create-page__submit') as HTMLButtonElement).disabled).toBe(true)
     expect(mockSubmit).not.toHaveBeenCalled()
   })
+
+  it('预约结果未知时通过根 Tab 前往我的预约核对', async () => {
+    mockReservationCreateState = {
+      ...mockReservationCreateState,
+      submission: { status: 'unknown', errorMessage: '预约结果可能未知' },
+    }
+    await testUtils.mount(AuthenticatedReservationCreate, {
+      props: {
+        experienceOptionId: 11,
+        initialPhone: '13800000000',
+        productId: 7,
+        updateProfile: jest.fn(),
+      },
+    })
+
+    const action = required(testUtils, '.reservation-create-feedback').lastElementChild
+    if (!action) {
+      throw new Error('Expected the unknown-result action')
+    }
+    testUtils.fireEvent.click(action)
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/reservations/index' })
+  })
 })
 
 function required(testUtils: ReactTestUtil, selector: string): Element {
@@ -215,4 +276,28 @@ function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve })
   return { promise, resolve }
+}
+
+function authenticatedUser(): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: {
+      id: 9,
+      username: 'member_009',
+      nickname: '小豆',
+      phone: '13800000000',
+      avatar: null,
+      role: 'user',
+      status: 'normal',
+      last_login_at: null,
+      created_at: '2026-09-06T02:00:00Z',
+      updated_at: '2026-09-06T02:00:00Z',
+    },
+    register: jest.fn(),
+    updateProfile: jest.fn(),
+    login: jest.fn(),
+    loginWithWechat: jest.fn(),
+    logout: jest.fn(),
+    retryInitialization: jest.fn(),
+  }
 }

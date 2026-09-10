@@ -3,26 +3,50 @@ import Taro from '@tarojs/taro'
 import { useState } from 'react'
 
 import type { ProductListItem } from '@/api/endpoints/products'
-import {
-  ADMIN_ORDER_LIST_PATH,
-  ADMIN_RESERVATION_LIST_PATH,
-  ADMIN_STORE_CLOSURE_LIST_PATH,
-  ADMIN_INVENTORY_LIST_PATH,
-  ADMIN_PRODUCT_LIST_PATH,
-  ADMIN_USER_LIST_PATH,
-  MEMBER_PATH,
-  RESERVATION_LIST_PATH,
-  useAuth,
-} from '@/auth'
+import { isAdminRole, useAuth } from '@/auth'
 import { type ProductTypeFilter, useProductList } from '@/features/product/use_product_list'
 import { buildProductDetailUrl } from '@/features/product/product_detail_route'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
+import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
 import { resolveAssetUrl } from '@/utils/asset_url'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
 
 export default function ProductListPage() {
-  const { logout, status, user } = useAuth()
+  const auth = useAuth()
+  if (auth.status === 'initializing') {
+    return <ProductGateState title='正在确认使用身份…' description='确认后即可进入商城' />
+  }
+  if (auth.status === 'error') {
+    return (
+      <ProductGateState title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
+        <Button className='product-page__state-action' onClick={auth.retryInitialization}>重新检查</Button>
+      </ProductGateState>
+    )
+  }
+  if (auth.status === 'authenticated' && !auth.user) {
+    return (
+      <ProductGateState title='账户信息不完整' description='请重新检查登录状态后再进入商城'>
+        <Button className='product-page__state-action' onClick={auth.retryInitialization}>重新检查</Button>
+      </ProductGateState>
+    )
+  }
+  if (isAdminRole(auth.user?.role)) {
+    return <AdminWorkbenchRedirect />
+  }
+  if (auth.status === 'authenticated' && auth.user?.role !== 'user') {
+    return (
+      <ProductGateState title='账户角色暂不支持' description='请重新检查登录状态后再进入商城'>
+        <Button className='product-page__state-action' onClick={auth.retryInitialization}>重新检查</Button>
+      </ProductGateState>
+    )
+  }
+  return <CustomerProductList />
+}
+
+export function CustomerProductList() {
+  useRootTabSelection(ROOT_TAB_INDEX.mall)
   const {
     keyword,
     loadNextPage,
@@ -32,16 +56,6 @@ export default function ProductListPage() {
     setProductType,
     state,
   } = useProductList()
-  const [logoutError, setLogoutError] = useState('')
-
-  async function handleLogout(): Promise<void> {
-    setLogoutError('')
-    try {
-      await logout()
-    } catch {
-      setLogoutError('服务端登出未确认，本机会话已清除')
-    }
-  }
 
   return (
     <View className='product-page'>
@@ -52,13 +66,6 @@ export default function ProductListPage() {
             <Text className='product-page__title'>发现下一幅拼豆作品</Text>
             <Text className='product-page__subtitle'>选一场体验，或带一套材料回家。</Text>
           </View>
-          <AccountActions
-            onLogout={() => void handleLogout()}
-            status={status}
-            userNickname={user?.nickname}
-            userRole={user?.role}
-          />
-          {logoutError && <Text className='product-page__account-error'>{logoutError}</Text>}
         </View>
       </View>
 
@@ -116,6 +123,14 @@ export default function ProductListPage() {
   )
 }
 
+function ProductGateState({ children, description, title }: PageStateProps) {
+  return (
+    <View className='product-page product-page--gate'>
+      <PageState title={title} description={description}>{children}</PageState>
+    </View>
+  )
+}
+
 interface ProductFiltersProps {
   productType: ProductTypeFilter
   keyword: string
@@ -151,93 +166,6 @@ function ProductFilters({ keyword, onKeywordChange, onProductTypeChange, product
           </Button>
         ))}
       </View>
-    </View>
-  )
-}
-
-interface AccountActionsProps {
-  status: ReturnType<typeof useAuth>['status']
-  userNickname?: string
-  userRole?: string
-  onLogout(): void
-}
-
-function AccountActions({ onLogout, status, userNickname, userRole }: AccountActionsProps) {
-  if (status === 'authenticated' && userNickname) {
-    const isAdmin = userRole === 'admin' || userRole === 'super_admin'
-    const adminActions = [
-      { label: '库存流水', url: ADMIN_INVENTORY_LIST_PATH },
-      { label: '管理商品', url: ADMIN_PRODUCT_LIST_PATH },
-      { label: '管理订单', url: ADMIN_ORDER_LIST_PATH },
-      { label: '管理预约', url: ADMIN_RESERVATION_LIST_PATH },
-      { label: '店休设置', url: ADMIN_STORE_CLOSURE_LIST_PATH },
-      { label: '管理用户', url: ADMIN_USER_LIST_PATH },
-    ] as const
-
-    return (
-      <View className='product-page__account'>
-        <Text className='product-page__account-user'>你好，{userNickname}</Text>
-        <View className='product-page__account-actions'>
-          <View className='product-page__account-group'>
-            <Text className='product-page__account-section'>我的</Text>
-            {!isAdmin && (
-              <>
-                <Button
-                  className='product-page__account-action'
-                  onClick={() => void Taro.navigateTo({ url: MEMBER_PATH })}
-                >
-                  <Text className='product-page__account-action-label'>会员中心</Text>
-                  <Text className='product-page__account-action-meta'>余额与资金</Text>
-                </Button>
-                <Button
-                  className='product-page__account-action'
-                  onClick={() => void Taro.navigateTo({ url: RESERVATION_LIST_PATH })}
-                >
-                  <Text className='product-page__account-action-label'>我的预约</Text>
-                  <Text className='product-page__account-action-meta'>查看状态</Text>
-                </Button>
-              </>
-            )}
-            <Button
-              className='product-page__account-action'
-              onClick={() => void Taro.navigateTo({ url: '/pages/orders/index' })}
-            >
-              <Text className='product-page__account-action-label'>我的订单</Text>
-              <Text className='product-page__account-action-meta'>查看</Text>
-            </Button>
-          </View>
-          {isAdmin && (
-            <View className='product-page__account-group'>
-              <Text className='product-page__account-section'>店铺管理</Text>
-              {adminActions.map((action) => (
-                <Button
-                  key={action.url}
-                  className='product-page__account-action'
-                  onClick={() => void Taro.navigateTo({ url: action.url })}
-                >
-                  <Text className='product-page__account-action-label'>{action.label}</Text>
-                  <Text className='product-page__account-action-meta'>管理</Text>
-                </Button>
-              ))}
-            </View>
-          )}
-        </View>
-        <Button className='product-page__account-logout' onClick={onLogout}>退出</Button>
-      </View>
-    )
-  }
-  if (status === 'initializing') {
-    return <Text className='product-page__account-hint'>正在恢复登录状态…</Text>
-  }
-  return (
-    <View className='product-page__account'>
-      {status === 'error' && <Text className='product-page__account-hint'>登录状态暂不可用，不影响浏览</Text>}
-      <Button
-        className='product-page__account-login'
-        onClick={() => void Taro.navigateTo({ url: '/pages/login/index' })}
-      >
-        登录
-      </Button>
     </View>
   )
 }

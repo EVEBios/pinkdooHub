@@ -23,6 +23,11 @@ export default defineConfig<'webpack5'>(async (merge) => {
     },
     copy: {
       patterns: [
+        {
+          from: 'src/assets/tab-bar',
+          to: `dist/${process.env.TARO_ENV || 'default'}/assets/tab-bar`,
+          ignore: ['**/*.md', '**/*.txt']
+        }
       ],
       options: {
       }

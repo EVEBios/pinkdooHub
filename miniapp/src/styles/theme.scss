@@ -31,6 +31,7 @@ page,
   --pd-radius-large: 30px;
   --pd-control-height: 88px;
   --pd-control-min-inline: 120px;
+  --pd-root-tab-page-clearance: calc(196px + env(safe-area-inset-bottom));
   --pd-font-caption: 22px;
   --pd-font-label: 23px;
   --pd-font-body-size: 25px;

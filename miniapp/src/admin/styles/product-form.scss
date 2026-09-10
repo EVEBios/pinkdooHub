@@ -1,20 +1,21 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use './surface' as admin;
 
 .admin-product-form-page {
   @include pd.page-shell;
   @include pd.content-width;
 
   &__header {
-    @include pd.header-band;
+    @include admin.page-header;
   }
 
   &__title {
-    @include pd.page-title;
+    @include admin.header-title;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include admin.header-subtitle;
   }
 
   > button {
@@ -27,6 +28,7 @@
 
 .admin-product-form {
   @include pd.section-panel(26px);
+  @include admin.section-accent;
 
   display: block;
   margin-top: 22px;

@@ -1,5 +1,6 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
 
 .order-detail-page {
   @include pd.page-shell(28px);
@@ -27,19 +28,18 @@
 }
 
 .order-detail-heading {
+  @include customer.identity-panel(center 48%);
+
   padding: 30px 26px;
   text-align: center;
-  background: var(--pd-gradient-soft);
-  border: 1px solid var(--pd-color-line);
   border-radius: var(--pd-radius-large);
-  box-shadow: var(--pd-shadow-small);
 
   text {
     display: block;
   }
 
   &__title {
-    color: var(--pd-color-primary-strong);
+    color: #fff;
     font-family: var(--pd-font-display);
     font-size: var(--pd-font-title);
     font-weight: 750;
@@ -48,7 +48,7 @@
 
   &__number {
     margin-top: 13px;
-    color: var(--pd-color-ink);
+    color: rgb(255 244 248 / 90%);
     font-size: var(--pd-font-body-size);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -69,7 +69,7 @@
 
   &__total {
     margin-top: 13px;
-    color: var(--pd-color-primary-strong);
+    color: #fff;
     font-size: var(--pd-font-display-size);
     font-weight: 750;
     font-variant-numeric: tabular-nums;
@@ -79,7 +79,7 @@
   &__hint {
     max-width: 28em;
     margin: 10px auto 0;
-    color: var(--pd-color-ink-soft);
+    color: rgb(255 244 248 / 84%);
     font-size: var(--pd-font-caption);
     line-height: 1.5;
   }

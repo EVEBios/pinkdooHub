@@ -1,8 +1,8 @@
 import ReactTestUtil from '@tarojs/test-utils-react'
 import Taro from '@tarojs/taro'
 
-import type { ProductListState } from '@/features/product/use_product_list'
 import type { AuthContextValue } from '@/auth'
+import type { ProductListState } from '@/features/product/use_product_list'
 
 import ProductListPage from '../index'
 
@@ -10,11 +10,19 @@ const mockRetry = jest.fn()
 const mockLoadNextPage = jest.fn()
 const mockSetKeyword = jest.fn()
 const mockSetProductType = jest.fn()
-let mockProductListState: ProductListState
+const mockUseRootTabSelection = jest.fn()
+const mockUseProductList = jest.fn()
 let mockAuth: AuthContextValue
+let mockProductListState: ProductListState
+
+jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
+  isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
+  useAuth: () => mockAuth,
+}))
 
 jest.mock('@/features/product/use_product_list', () => ({
-  useProductList: () => ({
+  useProductList: () => mockUseProductList.mockReturnValue({
     state: mockProductListState,
     productType: 'all',
     keyword: '',
@@ -22,19 +30,12 @@ jest.mock('@/features/product/use_product_list', () => ({
     setProductType: mockSetProductType,
     retry: mockRetry,
     loadNextPage: mockLoadNextPage,
-  }),
+  })(),
 }))
 
-jest.mock('@/auth', () => ({
-  ADMIN_INVENTORY_LIST_PATH: '/admin/pages/inventory-transactions/index',
-  ADMIN_ORDER_LIST_PATH: '/admin/pages/orders/index',
-  ADMIN_RESERVATION_LIST_PATH: '/admin/pages/reservations/index',
-  ADMIN_STORE_CLOSURE_LIST_PATH: '/admin/pages/store-closures/index',
-  ADMIN_PRODUCT_LIST_PATH: '/admin/pages/products/index',
-  ADMIN_USER_LIST_PATH: '/admin/pages/users/index',
-  MEMBER_PATH: '/pages/member/index',
-  RESERVATION_LIST_PATH: '/pages/reservations/index',
-  useAuth: () => mockAuth,
+jest.mock('@/navigation/root_tabs', () => ({
+  ROOT_TAB_INDEX: { mall: 0, reservations: 1, orders: 2, member: 3 },
+  useRootTabSelection: (index: number) => mockUseRootTabSelection(index),
 }))
 
 jest.mock('@/utils/asset_url', () => ({
@@ -48,6 +49,7 @@ describe('ProductListPage', () => {
 
   beforeEach(() => {
     testUtils = new ReactTestUtil()
+    mockAuth = createAuth('user')
     mockProductListState = {
       status: 'loading',
       items: [],
@@ -55,15 +57,6 @@ describe('ProductListPage', () => {
       page: 1,
       pages: 0,
       loadingMore: false,
-    }
-    mockAuth = {
-      status: 'guest',
-      register: jest.fn(),
-      updateProfile: jest.fn(),
-      login: jest.fn(),
-      loginWithWechat: jest.fn(),
-      logout: jest.fn(),
-      retryInitialization: jest.fn(),
     }
   })
 
@@ -150,75 +143,90 @@ describe('ProductListPage', () => {
     expect(mockSetProductType).toHaveBeenCalledWith('kit')
   })
 
-  it('为顾客展示预约入口，并只为 ADMIN+ 展示六类管理入口', async () => {
-    const baseUser = {
-      id: 2,
-      username: 'dev_admin',
-      nickname: '开发管理员',
-      avatar: null,
-      phone: '13800000000',
-      role: 'admin' as const,
-      status: 'normal' as const,
-      last_login_at: null,
-      created_at: '2026-08-01T00:00:00Z',
-      updated_at: '2026-08-01T00:00:00Z',
-    }
-    mockAuth = { ...mockAuth, status: 'authenticated', user: { ...baseUser, role: 'user' } }
+  it('商城只保留品牌、介绍与商品功能，不再承载账户或管理入口', async () => {
     await testUtils.mount(ProductListPage)
-    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理订单')
-    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('管理用户')
-    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).not.toContain('店铺管理')
-    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).toContain('会员中心')
-    expect(testUtils.queries.querySelector('.product-page__account')?.textContent).toContain('我的预约')
-    expect(testUtils.queries.querySelectorAll('.product-page__account-group')).toHaveLength(1)
-    const memberButton = Array.from(testUtils.queries.querySelectorAll('.product-page__account-action'))
-      .find((button) => button.textContent.includes('会员中心'))
-    testUtils.fireEvent.click(memberButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/member/index' })
-    const reservationButton = Array.from(testUtils.queries.querySelectorAll('.product-page__account-action'))
-      .find((button) => button.textContent.includes('我的预约'))
-    testUtils.fireEvent.click(reservationButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/reservations/index' })
-    testUtils.unmout()
 
-    testUtils = new ReactTestUtil()
-    mockAuth = { ...mockAuth, user: baseUser }
+    const page = testUtils.queries.querySelector('.product-page')
+    expect(page?.textContent).toContain('发现下一幅拼豆作品')
+    expect(testUtils.queries.querySelector('.product-filters')).not.toBeNull()
+    expect(testUtils.queries.querySelector('.product-page__account')).toBeNull()
+    expect(page?.textContent).not.toContain('登录')
+    expect(page?.textContent).not.toContain('退出')
+    expect(page?.textContent).not.toContain('会员中心')
+    expect(page?.textContent).not.toContain('我的预约')
+    expect(page?.textContent).not.toContain('我的订单')
+    expect(page?.textContent).not.toContain('店铺管理')
+    expect(mockUseRootTabSelection).toHaveBeenCalledWith(0)
+  })
+
+  it.each(['admin', 'super_admin'] as const)('%s 不挂载商城请求并自动进入店铺工作台', async (role) => {
+    mockAuth = createAuth(role)
     await testUtils.mount(ProductListPage)
-    const buttons = Array.from(testUtils.queries.querySelectorAll('.product-page__account-action'))
-    expect(testUtils.queries.querySelector('.product-page__account-user')?.textContent)
-      .toContain('你好，开发管理员')
-    expect(testUtils.queries.querySelector('.product-page__account-actions')).not.toBeNull()
-    expect(testUtils.queries.querySelectorAll('.product-page__account-group')).toHaveLength(2)
-    expect(Array.from(testUtils.queries.querySelectorAll('.product-page__account-section'))
-      .map((section) => section.textContent)).toEqual(['我的', '店铺管理'])
-    expect(Array.from(testUtils.queries.querySelectorAll('.product-page__account-action-meta'))
-      .map((meta) => meta.textContent)).toEqual(['查看', '管理', '管理', '管理', '管理', '管理', '管理'])
-    expect(buttons).toHaveLength(7)
-    const inventoryButton = buttons.find((button) => button.textContent.includes('库存流水'))
-    const adminButton = buttons.find((button) => button.textContent.includes('管理订单'))
-    const productButton = buttons.find((button) => button.textContent.includes('管理商品'))
-    const userButton = buttons.find((button) => button.textContent.includes('管理用户'))
-    const reservationAdminButton = buttons.find((button) => button.textContent.includes('管理预约'))
-    const closuresButton = buttons.find((button) => button.textContent.includes('店休设置'))
-    expect(adminButton).toBeDefined()
-    expect(productButton).toBeDefined()
-    expect(userButton).toBeDefined()
-    expect(inventoryButton).toBeDefined()
-    expect(reservationAdminButton).toBeDefined()
-    expect(closuresButton).toBeDefined()
-    testUtils.fireEvent.click(inventoryButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/inventory-transactions/index' })
-    testUtils.fireEvent.click(productButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/products/index' })
-    testUtils.fireEvent.click(adminButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/orders/index' })
-    testUtils.fireEvent.click(reservationAdminButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/reservations/index' })
-    testUtils.fireEvent.click(closuresButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/store-closures/index' })
-    testUtils.fireEvent.click(userButton!)
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/users/index' })
-    testUtils.fireEvent.click(testUtils.queries.querySelector('.product-page__account-logout')!)
-    expect(mockAuth.logout).toHaveBeenCalledTimes(1)
+
+    expect(testUtils.queries.querySelector('.admin-workbench-redirect')?.textContent)
+      .toContain('正在进入店铺工作台')
+    expect(mockUseProductList).not.toHaveBeenCalled()
+    expect(mockUseRootTabSelection).not.toHaveBeenCalled()
+    await testUtils.act(async () => { await Promise.resolve() })
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it('未知运行时角色保持 fail closed 且不挂载商城请求', async () => {
+    mockAuth = {
+      ...createAuth('user'),
+      user: { ...createAuth('user').user!, role: 'staff' as 'user' },
+    }
+    await testUtils.mount(ProductListPage)
+
+    expect(testUtils.queries.querySelector('.product-page--gate')?.textContent)
+      .toContain('账户角色暂不支持')
+    expect(mockUseProductList).not.toHaveBeenCalled()
+    expect(mockUseRootTabSelection).not.toHaveBeenCalled()
+  })
+
+  it('认证初始化失败时不挂载商城请求，并允许重新检查', async () => {
+    mockAuth = {
+      ...mockAuth,
+      status: 'error',
+      user: undefined,
+      initializationError: new Error('storage unavailable'),
+    }
+    await testUtils.mount(ProductListPage)
+
+    expect(testUtils.queries.querySelector('.product-page--gate')?.textContent)
+      .toContain('storage unavailable')
+    expect(mockUseProductList).not.toHaveBeenCalled()
+    testUtils.fireEvent.click(requireElement(testUtils, '.product-page__state-action'))
+    expect(mockAuth.retryInitialization).toHaveBeenCalledTimes(1)
   })
 })
+
+function createAuth(role: 'user' | 'admin' | 'super_admin'): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: {
+      id: 7,
+      username: 'member_007',
+      nickname: '拼豆伙伴',
+      phone: null,
+      avatar: null,
+      role,
+      status: 'normal',
+      last_login_at: null,
+      created_at: '2026-09-01T08:00:00Z',
+      updated_at: '2026-09-05T08:00:00Z',
+    },
+    register: jest.fn(),
+    updateProfile: jest.fn(),
+    login: jest.fn(),
+    loginWithWechat: jest.fn(),
+    logout: jest.fn(),
+    retryInitialization: jest.fn(),
+  }
+}
+
+function requireElement(testUtils: ReactTestUtil, selector: string): Element {
+  const element = testUtils.queries.querySelector(selector)
+  if (!element) throw new Error(`${selector} not found`)
+  return element
+}

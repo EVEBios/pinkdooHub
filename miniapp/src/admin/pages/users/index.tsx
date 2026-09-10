@@ -2,6 +2,7 @@ import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 
 import type { AdminUserListItem } from '@/api/endpoints/admin_users'
+import { AdminWorkbenchLink } from '@/admin/components/workbench_link'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
   ADMIN_USER_LIST_PATH,
@@ -85,6 +86,7 @@ export function AuthenticatedAdminUsers({ currentRole, currentUserId }: {
       <View className='admin-users-page__header'>
         <Text className='admin-users-page__title'>管理用户</Text>
         <Text className='admin-users-page__subtitle'>仅展示安全摘要；支持角色、状态筛选与幂等禁用</Text>
+        <AdminWorkbenchLink />
       </View>
 
       <View className='admin-user-filters'>

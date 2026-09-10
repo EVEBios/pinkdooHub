@@ -51,8 +51,11 @@ export interface FileUploadTransport {
 
 export interface AuthSession {
   getAccessToken(): string | undefined
+  /** 同一登录周期内保持不变的身份；Token refresh 不改变，退出/新登录改变。 */
+  getSessionIdentity?(): unknown
   refreshAccessToken(): Promise<string | undefined>
-  clearSession(): void | Promise<void>
+  /** 传入身份时只清除仍属于该请求的会话，避免迟到响应清除新登录。 */
+  clearSession(expectedSessionIdentity?: unknown): void | Promise<void>
 }
 
 export type AuthMode = 'none' | 'optional' | 'required'

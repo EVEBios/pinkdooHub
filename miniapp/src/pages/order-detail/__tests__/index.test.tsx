@@ -2,38 +2,46 @@ import ReactTestUtil from '@tarojs/test-utils-react'
 import Taro from '@tarojs/taro'
 
 import type { OrderDetail } from '@/api/endpoints/orders'
+import type { AuthContextValue } from '@/auth'
 import type { OrderCancellationState, OrderDetailState } from '@/features/order'
 import type { OrderFinancialState, OrderPaymentState } from '@/features/wallet'
 
-import { AuthenticatedOrderDetail } from '../index'
+import OrderDetailPage, { AuthenticatedOrderDetail } from '../index'
 
 let mockDetail: OrderDetailState
 let mockCancellation: OrderCancellationState
 let mockFinancialState: OrderFinancialState
 let mockPaymentState: OrderPaymentState
 let mockMemberBalance = '500.00'
+let mockAuth: AuthContextValue
 const mockCancel = jest.fn(async () => undefined)
 const mockRetry = jest.fn()
 const mockFinancialRetry = jest.fn()
 const mockMemberRetry = jest.fn()
 const mockPaymentReset = jest.fn()
 const mockPayWithWallet = jest.fn(async () => false)
+const mockUseOrderDetail = jest.fn()
 const showModalSpy = jest.spyOn(Taro, 'showModal')
 
 jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
   ORDER_LIST_PATH: '/pages/orders/index',
   buildLoginUrl: () => '/pages/login/index?redirect=%2Fpages%2Forders%2Findex',
-  useAuth: jest.fn(),
+  isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
+  useAuth: () => mockAuth,
 }))
 
 jest.mock('@/features/order', () => ({
-  parseOrderDetailRoute: jest.fn(),
-  useOrderDetail: () => ({
-    detail: mockDetail,
-    cancellation: mockCancellation,
-    cancel: mockCancel,
-    retry: mockRetry,
-  }),
+  parseOrderDetailRoute: () => ({ orderId: 101 }),
+  useOrderDetail: () => {
+    mockUseOrderDetail()
+    return {
+      detail: mockDetail,
+      cancellation: mockCancellation,
+      cancel: mockCancel,
+      retry: mockRetry,
+    }
+  },
 }))
 
 jest.mock('@/features/wallet', () => ({
@@ -119,6 +127,7 @@ describe('AuthenticatedOrderDetail', () => {
 
   beforeEach(() => {
     testUtils = new ReactTestUtil()
+    mockAuth = authenticatedUser()
     mockDetail = { status: 'content', order: pendingOrder }
     mockCancellation = { status: 'idle' }
     mockFinancialState = {
@@ -158,6 +167,31 @@ describe('AuthenticatedOrderDetail', () => {
     await flush(testUtils)
     expect(Taro.showModal).toHaveBeenCalled()
     expect(mockCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['admin', 'super_admin'] as const)('%s 深链在订单业务 Hook 前进入工作台', async (role) => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role },
+    }
+    await testUtils.mount(OrderDetailPage)
+
+    expect(requireElement(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
+    expect(mockUseOrderDetail).not.toHaveBeenCalled()
+    await flush(testUtils)
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it('未知角色 fail closed，不挂载订单详情 Hook', async () => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role: 'operator' as never },
+    }
+    await testUtils.mount(OrderDetailPage)
+
+    expect(requireElement(testUtils, '.order-detail-state__title').textContent).toContain('账户角色暂不支持')
+    expect(mockUseOrderDetail).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
   })
 
   it('取消确认框打开起即锁住余额支付，不能并发发起两种命令', async () => {
@@ -305,7 +339,15 @@ describe('AuthenticatedOrderDetail', () => {
     expect(testUtils.queries.querySelector('.order-payment')).toBeNull()
     expect(testUtils.queries.querySelector('.order-detail-page__cancel')).toBeNull()
     testUtils.fireEvent.click(requireElement(testUtils, '.order-detail-page__back'))
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+  })
+
+  it('详情读取失败时也通过根 Tab 返回订单列表', async () => {
+    mockDetail = { status: 'error', errorMessage: 'offline' }
+    await testUtils.mount(AuthenticatedOrderDetail, { props: { orderId: 101 } })
+
+    testUtils.fireEvent.click(requireElement(testUtils, '.order-detail-state__back'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
   })
 
   it('取消成功和详情刷新失败同时可见', async () => {
@@ -340,4 +382,28 @@ async function flush(testUtils: ReactTestUtil): Promise<void> {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function authenticatedUser(): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: {
+      id: 7,
+      username: 'member_007',
+      nickname: '拼豆会员',
+      phone: null,
+      avatar: null,
+      role: 'user',
+      status: 'normal',
+      last_login_at: null,
+      created_at: '2026-09-01T08:00:00Z',
+      updated_at: '2026-09-05T08:00:00Z',
+    },
+    register: jest.fn(),
+    updateProfile: jest.fn(),
+    login: jest.fn(),
+    loginWithWechat: jest.fn(),
+    logout: jest.fn(),
+    retryInitialization: jest.fn(),
+  }
 }

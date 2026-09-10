@@ -2,7 +2,7 @@ import { Button, Text, View } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 
 import type { Reservation } from '@/api/endpoints/reservations'
-import { buildLoginUrl, useAuth } from '@/auth'
+import { buildLoginUrl, type AuthContextValue, isAdminRole, useAuth } from '@/auth'
 import {
   buildReservationCreateUrl,
   canRequestReservationCancellation,
@@ -13,12 +13,37 @@ import {
   RESERVATION_LIST_PATH,
   useReservationDetail,
 } from '@/features/reservation'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
 
 export default function ReservationDetailPage() {
   const auth = useAuth()
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <ReservationDetailState title='账户信息不完整' description='请重新检查登录状态后再查看预约'>
+          <Button className='reservation-detail-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationDetailState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <ReservationDetailState title='账户角色暂不支持' description='请重新检查登录状态后再查看预约'>
+          <Button className='reservation-detail-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationDetailState>
+      )
+    }
+  }
+
+  return <CustomerReservationDetailPage auth={auth} />
+}
+
+function CustomerReservationDetailPage({ auth }: { readonly auth: AuthContextValue }) {
   const route = parseReservationDetailRoute(useRouter().params)
   if (!route) {
     return <ReservationDetailState title='预约地址无效' description='请从“我的预约”重新进入' />
@@ -43,9 +68,6 @@ export default function ReservationDetailPage() {
       </ReservationDetailState>
     )
   }
-  if (auth.user?.role !== 'user') {
-    return <ReservationDetailState title='顾客账号才能查看预约' description='管理员请从管理预约列表进入' />
-  }
   return <AuthenticatedReservationDetail reservationId={route.reservationId} />
 }
 
@@ -61,7 +83,7 @@ export function AuthenticatedReservationDetail({ reservationId }: { readonly res
         <Button className='reservation-detail-state__action' onClick={retry}>重新加载</Button>
         <Button
           className='reservation-detail-state__back'
-          onClick={() => void Taro.redirectTo({ url: RESERVATION_LIST_PATH })}
+          onClick={() => void Taro.switchTab({ url: RESERVATION_LIST_PATH })}
         >返回我的预约</Button>
       </ReservationDetailState>
     )
@@ -130,7 +152,7 @@ export function AuthenticatedReservationDetail({ reservationId }: { readonly res
       )}
       <Button
         className='reservation-detail-page__back'
-        onClick={() => void Taro.redirectTo({ url: RESERVATION_LIST_PATH })}
+        onClick={() => void Taro.switchTab({ url: RESERVATION_LIST_PATH })}
       >返回我的预约</Button>
     </View>
   )

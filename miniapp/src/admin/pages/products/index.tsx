@@ -3,6 +3,7 @@ import Taro from '@tarojs/taro'
 import { useState } from 'react'
 
 import type { AdminProductListItem } from '@/api/endpoints/admin_products'
+import { AdminWorkbenchLink } from '@/admin/components/workbench_link'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
   ADMIN_PRODUCT_LIST_PATH,
@@ -95,6 +96,7 @@ export function AuthenticatedAdminProducts() {
       <View className='admin-products-page__header'>
         <Text className='admin-products-page__title'>管理商品</Text>
         <Text className='admin-products-page__subtitle'>查看全部状态商品、草稿配置与逻辑删除记录</Text>
+        <AdminWorkbenchLink />
       </View>
 
       <View className='admin-products-create'>

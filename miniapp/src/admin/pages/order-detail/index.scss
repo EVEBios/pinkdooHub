@@ -1,5 +1,6 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
 
 .admin-order-detail-page {
   @include pd.page-shell(24px);
@@ -32,24 +33,10 @@
 }
 
 .admin-order-detail-heading {
-  position: relative;
-  overflow: hidden;
-  padding: 30px 28px;
-  color: #fff;
-  background: var(--pd-gradient-stock);
-  border-radius: var(--pd-radius-large);
-  box-shadow: var(--pd-shadow-medium);
+  @include admin.identity-panel;
 
-  &::after {
-    position: absolute;
-    right: -62px;
-    bottom: -108px;
-    width: 230px;
-    height: 230px;
-    background: rgb(255 255 255 / 8%);
-    border-radius: 50%;
-    content: '';
-  }
+  padding: 30px 28px;
+  border-radius: var(--pd-radius-large);
 
   text {
     position: relative;

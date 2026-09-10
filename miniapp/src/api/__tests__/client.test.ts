@@ -4,6 +4,7 @@ import {
   ContractError,
   HttpError,
   SessionExpiredError,
+  SessionSupersededError,
   TimeoutError,
 } from '../errors'
 import type {
@@ -230,7 +231,146 @@ describe('ApiClient', () => {
       auth: 'required',
     })).rejects.toBeInstanceOf(SessionExpiredError)
     expect(clearSession).toHaveBeenCalledTimes(1)
+    expect(clearSession).toHaveBeenCalledWith('expired-token')
   })
+
+  it('旧 refresh 已被新会话取代时不清理新会话', async () => {
+    const clearSession = jest.fn()
+    const authSession: AuthSession = {
+      getAccessToken: () => 'replacement-token',
+      refreshAccessToken: async () => {
+        throw new SessionSupersededError()
+      },
+      clearSession,
+    }
+    const transport = new FakeTransport(() => response(400, {
+      code: 1006,
+      message: 'Token 已失效',
+      data: null,
+    }))
+    const client = new ApiClient({ baseUrl: 'https://api.example.com', transport, authSession })
+
+    await expect(client.request({
+      operation: 'getMe',
+      path: '/api/v1/users/me',
+      auth: 'required',
+    })).rejects.toBeInstanceOf(SessionExpiredError)
+    expect(clearSession).not.toHaveBeenCalled()
+  })
+
+  it('迟到 1006 属于旧 Token 时不用新会话刷新或清理', async () => {
+    let accessToken = 'old-token'
+    const refreshAccessToken = jest.fn(async () => 'unexpected-refresh')
+    const clearSession = jest.fn()
+    const authSession: AuthSession = {
+      getAccessToken: () => accessToken,
+      refreshAccessToken,
+      clearSession,
+    }
+    const transport = new FakeTransport(() => {
+      accessToken = 'replacement-token'
+      return response(400, { code: 1006, message: 'Token 已失效', data: null })
+    })
+    const client = new ApiClient({ baseUrl: 'https://api.example.com', transport, authSession })
+
+    await expect(client.request({
+      operation: 'getMe',
+      path: '/api/v1/users/me',
+      auth: 'required',
+    })).rejects.toBeInstanceOf(SessionExpiredError)
+    expect(refreshAccessToken).not.toHaveBeenCalled()
+    expect(clearSession).not.toHaveBeenCalled()
+    expect(accessToken).toBe('replacement-token')
+  })
+
+  it('同一会话已被并发请求刷新时，迟到 1006 直接使用新 Token 重放', async () => {
+    let accessToken = 'old-token'
+    const refreshAccessToken = jest.fn(async () => 'unexpected-refresh')
+    const authSession: AuthSession = {
+      getAccessToken: () => accessToken,
+      getSessionIdentity: () => 7,
+      refreshAccessToken,
+      clearSession: jest.fn(),
+    }
+    const transport = new FakeTransport((_request, index) => {
+      if (index === 0) {
+        accessToken = 'peer-refreshed-token'
+        return response(400, { code: 1006, message: 'Token 已失效', data: null })
+      }
+      return response(200, { code: 0, message: 'success', data: { id: 7 } })
+    })
+    const client = new ApiClient({ baseUrl: 'https://api.example.com', transport, authSession })
+
+    await expect(client.request({
+      operation: 'getMe',
+      path: '/api/v1/users/me',
+      auth: 'required',
+    })).resolves.toEqual({ id: 7 })
+    expect(refreshAccessToken).not.toHaveBeenCalled()
+    expect(transport.requests.map((request) => request.headers.Authorization)).toEqual([
+      'Bearer old-token',
+      'Bearer peer-refreshed-token',
+    ])
+  })
+
+  it.each(['request', 'upload'] as const)(
+    '%s refresh 成功后若新登录已经取代旧会话，不重放旧 Token 或清理新会话',
+    async (kind) => {
+      let accessToken: string | undefined = 'expired-a-token'
+      let sessionIdentity = 1
+      let resolveRefresh: (accessToken: string) => void = () => undefined
+      let markRefreshStarted: () => void = () => undefined
+      const refreshStarted = new Promise<void>((resolve) => {
+        markRefreshStarted = resolve
+      })
+      const refreshAccessToken = jest.fn(() => new Promise<string>((resolve) => {
+        resolveRefresh = resolve
+        markRefreshStarted()
+      }))
+      const clearSession = jest.fn(async (expectedSessionIdentity?: unknown) => {
+        if (sessionIdentity === expectedSessionIdentity) accessToken = undefined
+      })
+      const expired = response(400, { code: 1006, message: 'Token 已失效', data: null })
+      const terminal = response(400, { code: 1005, message: 'User is disabled', data: null })
+      const transport = new FakeTransport((_request, index) => index === 0 ? expired : terminal)
+      const uploadTransport = new FakeUploadTransport(
+        (_request, index) => index === 0 ? expired : terminal,
+      )
+      const authSession: AuthSession = {
+        getAccessToken: () => accessToken,
+        getSessionIdentity: () => sessionIdentity,
+        refreshAccessToken,
+        clearSession,
+      }
+      const client = new ApiClient({
+        baseUrl: 'https://api.example.com',
+        transport,
+        uploadTransport,
+        authSession,
+      })
+
+      const operation = kind === 'request'
+        ? client.request({ operation: 'getMe', path: '/api/v1/users/me', auth: 'required' })
+        : client.uploadFile({
+            operation: 'uploadProductImage',
+            path: '/api/v1/admin/products/7/images',
+            filePath: 'wxfile://cover.png',
+            auth: 'required',
+          })
+
+      await refreshStarted
+      accessToken = 'refreshed-a-token'
+      resolveRefresh(accessToken)
+      sessionIdentity = 2
+      accessToken = 'replacement-b-token'
+
+      await expect(operation).rejects.toBeInstanceOf(SessionExpiredError)
+      expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+      expect(clearSession).not.toHaveBeenCalled()
+      expect(accessToken).toBe('replacement-b-token')
+      expect(kind === 'request' ? transport.requests : uploadTransport.requests).toHaveLength(1)
+    },
+  )
 
   it('empty-body PATCH 不添加 data 与 Content-Type', async () => {
     const transport = new FakeTransport(() => response(200, {
@@ -358,4 +498,32 @@ describe('ApiClient', () => {
       expect(refreshAccessToken).not.toHaveBeenCalled()
     },
   )
+
+  it('迟到终态身份错误只尝试清除发起请求的旧 Token', async () => {
+    let accessToken: string | undefined = 'old-token'
+    let sessionIdentity = 1
+    const clearSession = jest.fn(async (expectedSessionIdentity?: unknown) => {
+      if (sessionIdentity === expectedSessionIdentity) accessToken = undefined
+    })
+    const authSession: AuthSession = {
+      getAccessToken: () => accessToken,
+      getSessionIdentity: () => sessionIdentity,
+      refreshAccessToken: jest.fn(),
+      clearSession,
+    }
+    const transport = new FakeTransport(() => {
+      accessToken = 'replacement-token'
+      sessionIdentity = 2
+      return response(400, { code: 1005, message: 'User is disabled', data: null })
+    })
+    const client = new ApiClient({ baseUrl: 'https://api.example.com', transport, authSession })
+
+    await expect(client.request({
+      operation: 'getMe',
+      path: '/api/v1/users/me',
+      auth: 'required',
+    })).rejects.toBeInstanceOf(SessionExpiredError)
+    expect(clearSession).toHaveBeenCalledWith(1)
+    expect(accessToken).toBe('replacement-token')
+  })
 })

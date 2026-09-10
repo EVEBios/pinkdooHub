@@ -1,6 +1,7 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../../styles/patterns' as pd;
 @use '../../styles/product-form';
+@use '../../styles/surface' as admin;
 
 .admin-product-configuration-page {
   @include pd.page-shell(24px);
@@ -25,8 +26,9 @@
 }
 
 .admin-product-configuration-summary {
+  @include admin.summary-panel;
+
   margin-top: 0;
-  background: var(--pd-gradient-soft);
 
   text {
     display: block;
@@ -49,6 +51,7 @@
     @include pd.meta-text;
 
     margin-top: 10px;
+    color: rgb(255 244 248 / 88%);
   }
 
   &__boundary {

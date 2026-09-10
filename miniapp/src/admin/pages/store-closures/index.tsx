@@ -8,6 +8,7 @@ import type {
   StoreClosureMutation,
   WeeklyClosureMutation,
 } from '@/api/endpoints/reservations'
+import { AdminWorkbenchLink } from '@/admin/components/workbench_link'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
   ADMIN_RESERVATION_LIST_PATH,
@@ -106,10 +107,17 @@ export function AuthenticatedStoreClosures() {
       <View className='store-closures-page__header'>
         <Text className='store-closures-page__title'>店休设置</Text>
         <Text className='store-closures-page__subtitle'>管理每周固定店休日，也可以临时关闭某一个日期</Text>
+        <AdminWorkbenchLink />
+      </View>
+      <View className='store-closures-page__related'>
+        <View className='store-closures-page__related-copy'>
+          <Text className='store-closures-page__related-title'>预约队列</Text>
+          <Text className='store-closures-page__related-description'>返回待确认预约，继续处理顾客申请</Text>
+        </View>
         <Button
           className='store-closures-page__reservations'
-          onClick={() => void Taro.navigateTo({ url: ADMIN_RESERVATION_LIST_PATH })}
-        >返回管理预约</Button>
+          onClick={() => void Taro.redirectTo({ url: ADMIN_RESERVATION_LIST_PATH })}
+        >管理预约</Button>
       </View>
 
       <View className='store-closure-editor store-closure-editor--weekly'>

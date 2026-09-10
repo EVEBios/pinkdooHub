@@ -4,7 +4,14 @@ import { useState } from 'react'
 
 import { BusinessError, SessionExpiredError } from '@/api'
 import type { OrderDetail } from '@/api/endpoints/orders'
-import { buildLoginUrl, ORDER_CONFIRM_PATH, ORDER_LIST_PATH, useAuth } from '@/auth'
+import {
+  buildLoginUrl,
+  type AuthContextValue,
+  isAdminRole,
+  ORDER_CONFIRM_PATH,
+  ORDER_LIST_PATH,
+  useAuth,
+} from '@/auth'
 import {
   cartItemKey,
   ORDER_REMARK_LIMIT,
@@ -12,12 +19,48 @@ import {
   useCart,
   useOrderSubmission,
 } from '@/features/order'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatColorLabel, formatPrice } from '@/utils/format'
 
 import './index.scss'
 
 export default function OrderConfirmPage() {
   const auth = useAuth()
+
+  if (auth.status === 'initializing') {
+    return <ConfirmState title='正在确认登录状态…' description='创建订单必须关联当前登录用户' />
+  }
+  if (auth.status === 'error') {
+    return (
+      <ConfirmState title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
+        <Button className='order-confirm-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+      </ConfirmState>
+    )
+  }
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <ConfirmState title='账户信息不完整' description='请重新检查登录状态后再确认订单'>
+          <Button className='order-confirm-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ConfirmState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <ConfirmState title='账户角色暂不支持' description='请重新检查登录状态后再确认订单'>
+          <Button className='order-confirm-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ConfirmState>
+      )
+    }
+  }
+
+  return <CustomerOrderConfirmPage auth={auth} />
+}
+
+function CustomerOrderConfirmPage({ auth }: { readonly auth: AuthContextValue }) {
   const cart = useCart()
   const submission = useOrderSubmission()
   const [remark, setRemark] = useState('')
@@ -42,20 +85,10 @@ export default function OrderConfirmPage() {
       <ConfirmState title='没有可以确认的商品' description='请先从商品详情加入真实配置或材料包'>
         <Button
           className='order-confirm-state__action'
-          onClick={() => void Taro.reLaunch({ url: '/pages/index/index' })}
+          onClick={() => void Taro.switchTab({ url: '/pages/index/index' })}
         >
           去选择商品
         </Button>
-      </ConfirmState>
-    )
-  }
-  if (auth.status === 'initializing') {
-    return <ConfirmState title='正在确认登录状态…' description='创建订单必须关联当前登录用户' />
-  }
-  if (auth.status === 'error') {
-    return (
-      <ConfirmState title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
-        <Button className='order-confirm-state__action' onClick={auth.retryInitialization}>重新检查</Button>
       </ConfirmState>
     )
   }
@@ -180,10 +213,10 @@ function OrderResult({
       )}
 
       <View className='order-result-actions'>
-        <Button onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}>查看我的订单</Button>
+        <Button onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}>查看我的订单</Button>
         <Button
           className='order-result-actions__primary'
-          onClick={() => void Taro.reLaunch({ url: '/pages/index/index' })}
+          onClick={() => void Taro.switchTab({ url: '/pages/index/index' })}
         >
           继续选购
         </Button>
@@ -214,7 +247,7 @@ function SubmissionFeedback({ state }: { state: OrderSubmissionState }) {
         <Text>请求结果可能未知。购物清单已保留，请不要立即重复创建；后续可前往“我的订单”确认。</Text>
         <Button
           className='order-confirm-feedback__action'
-          onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}
+          onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}
         >
           查看我的订单
         </Button>

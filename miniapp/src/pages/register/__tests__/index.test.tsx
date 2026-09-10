@@ -19,8 +19,10 @@ let mockAuth: AuthContextValue
 jest.mock('@tarojs/taro', () => ({
   __esModule: true,
   default: {
-    redirectTo: jest.fn(),
-    reLaunch: jest.fn(),
+    redirectTo: jest.fn(() => Promise.resolve()),
+    reLaunch: jest.fn(() => Promise.resolve()),
+    showToast: jest.fn(() => Promise.resolve()),
+    switchTab: jest.fn(),
   },
   useRouter: () => ({ params: { redirect: '%2Fpages%2Forders%2Findex' } }),
 }))
@@ -30,6 +32,10 @@ jest.mock('@/auth', () => ({
     ? `/pages/login/index?redirect=${encodeURIComponent(redirect)}`
     : '/pages/login/index',
   parseLoginRedirect: () => '/pages/orders/index',
+  resolveAuthenticatedLanding: (role?: string, redirect?: string) => {
+    if (role === 'admin' || role === 'super_admin') return '/admin/pages/workbench/index'
+    return role === 'user' ? redirect ?? '/pages/index/index' : undefined
+  },
   useAuth: () => mockAuth,
 }))
 
@@ -126,6 +132,87 @@ describe('注册页面', () => {
     expect(Taro.redirectTo).toHaveBeenCalledWith({
       url: '/pages/login/index?redirect=%2Fpages%2Forders%2Findex',
     })
+  })
+
+  it('返回登录导航失败时保留注册页并提供原目标重试', async () => {
+    ;(Taro.redirectTo as jest.Mock)
+      .mockRejectedValueOnce(new Error('navigation failed'))
+      .mockResolvedValueOnce(undefined)
+    await testUtils.mount(RegisterPage)
+
+    testUtils.fireEvent.click(requireElement(testUtils, '.registration-card__login'))
+    await flush(testUtils)
+    const error = requireElement(testUtils, '.registration-navigation__error')
+    expect(error.textContent).toContain('登录页暂时无法打开')
+    expect(error.getAttribute('aria-role')).toBe('alert')
+
+    testUtils.fireEvent.click(requireElement(testUtils, '.registration-card__login'))
+    await flush(testUtils)
+    expect(Taro.redirectTo).toHaveBeenCalledTimes(2)
+  })
+
+  it('注册流程外的既有普通用户会话以 switchTab 打开根页目标', async () => {
+    mockAuth = { ...mockAuth, status: 'authenticated', user }
+    await testUtils.mount(RegisterPage)
+    await flush(testUtils)
+
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+
+    input(testUtils, requireElement(testUtils, '.registration-form__input'), 'rerender only')
+    await flush(testUtils)
+    expect(Taro.switchTab).toHaveBeenCalledTimes(1)
+  })
+
+  it('管理员既有会话打开注册页时回到店铺工作台', async () => {
+    mockAuth = {
+      ...mockAuth,
+      status: 'authenticated',
+      user: { ...user, role: 'admin' },
+    }
+    await testUtils.mount(RegisterPage)
+    await flush(testUtils)
+
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it('既有会话落点导航失败后只重试导航，不重复注册', async () => {
+    ;(Taro.switchTab as jest.Mock)
+      .mockRejectedValueOnce(new Error('navigation failed'))
+      .mockResolvedValueOnce(undefined)
+    mockAuth = { ...mockAuth, status: 'authenticated', user }
+    await testUtils.mount(RegisterPage)
+    await flush(testUtils)
+
+    const navigationError = requireElement(testUtils, '.registration-navigation__error')
+    expect(navigationError.textContent).toContain('页面暂时无法打开')
+    expect(navigationError.getAttribute('aria-role')).toBe('alert')
+    expect(Taro.switchTab).toHaveBeenCalledTimes(1)
+
+    testUtils.fireEvent.click(requireElement(testUtils, '.registration-navigation__retry'))
+    await flush(testUtils)
+
+    expect(Taro.switchTab).toHaveBeenCalledTimes(2)
+    expect(mockAuth.register).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['缺少用户资料', undefined, '账户信息不完整'],
+    ['角色未知', { ...user, role: 'operator' as never }, '账户角色暂不支持'],
+  ] as const)('既有会话%s时保持 fail closed 并提供重试与退出', async (_case, profile, message) => {
+    mockAuth = { ...mockAuth, status: 'authenticated', user: profile }
+    await testUtils.mount(RegisterPage)
+    await flush(testUtils)
+
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+    expect(Taro.switchTab).not.toHaveBeenCalled()
+    expect(requireElement(testUtils, '.registration-navigation__error').textContent).toContain(message)
+    const recoveryActions = testUtils.queries.querySelectorAll('.registration-navigation__retry')
+    testUtils.fireEvent.click(recoveryActions[0])
+    expect(mockAuth.retryInitialization).toHaveBeenCalledTimes(1)
+    testUtils.fireEvent.click(recoveryActions[1])
+    await flush(testUtils)
+    expect(mockAuth.logout).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -3,6 +3,7 @@ export type { AuthContextValue, AuthStatus } from './context'
 export {
   buildLoginUrl,
   buildRegisterUrl,
+  ADMIN_WORKBENCH_PATH,
   ADMIN_ORDER_LIST_PATH,
   ADMIN_RESERVATION_LIST_PATH,
   ADMIN_STORE_CLOSURE_LIST_PATH,
@@ -17,11 +18,13 @@ export {
   MEMBER_PATH,
   WALLET_RECHARGE_PATH,
   WALLET_TRANSACTION_LIST_PATH,
+  MALL_PATH,
   parseLoginRedirect,
+  resolveAuthenticatedLanding,
 } from './login_route'
 export type { LoginRedirect } from './login_route'
 export type { ReservationCreateRedirect } from './login_route'
 export type { AuthRuntime } from './runtime'
 export { isAdminRole } from './role'
-export { SessionManager } from './session'
+export { SessionManager, SessionPersistenceClearError } from './session'
 export type { SessionSnapshot } from './session'

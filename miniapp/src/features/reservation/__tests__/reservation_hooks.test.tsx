@@ -16,6 +16,12 @@ import { type ReservationDetailSource, useReservationDetail } from '../use_reser
 import { type ReservationListSource, useReservationList } from '../use_reservation_list'
 import { type StoreClosureSource, useStoreClosures } from '../use_store_closures'
 
+let mockRefreshReservationList: (() => void) | undefined
+
+jest.mock('@/platform/use_refresh_after_page_return', () => ({
+  useRefreshAfterPageReturn: (refresh: () => void) => { mockRefreshReservationList = refresh },
+}))
+
 const pendingReservation: Reservation = {
   id: 101,
   product_id: 7,
@@ -158,7 +164,10 @@ function AdminListHarness({ source }: { readonly source: AdminReservationListSou
 describe('预约 hooks', () => {
   let testUtils: ReactTestUtil
 
-  beforeEach(() => { testUtils = new ReactTestUtil() })
+  beforeEach(() => {
+    testUtils = new ReactTestUtil()
+    mockRefreshReservationList = undefined
+  })
   afterEach(() => testUtils.unmout())
 
   it('加载服务端时间默认值、切换时段并防止重复创建', async () => {
@@ -472,6 +481,62 @@ describe('预约 hooks', () => {
     await flush(testUtils)
     expect(text(testUtils, '.ids')).toBe('202')
     expect(source.listReservations).toHaveBeenLastCalledWith({ page: 1, page_size: 20, status: 'confirmed' })
+  })
+
+  it('再次展示时保留当前筛选和已有内容，静默重读服务端第一页', async () => {
+    const refreshed = deferred<{
+      readonly items: readonly Reservation[]
+      readonly total: number
+      readonly page: number
+      readonly page_size: number
+      readonly pages: number
+    }>()
+    const confirmed = {
+      ...pendingReservation,
+      id: 202,
+      status: { value: 'confirmed' as const, label: '已确认' },
+      confirmed_at: '2026-09-06T03:00:00Z',
+    }
+    const source: ReservationListSource = {
+      listReservations: jest.fn((request = {}) => {
+        if (request.status === 'confirmed' && (source.listReservations as jest.Mock).mock.calls.length > 2) {
+          return refreshed.promise
+        }
+        return Promise.resolve({
+          items: request.status === 'confirmed' ? [confirmed] : [pendingReservation],
+          total: 1,
+          page: 1,
+          page_size: 20,
+          pages: 1,
+        })
+      }),
+    }
+    await testUtils.mount(ListHarness, { props: { source } })
+    await flush(testUtils)
+    expect(source.listReservations).toHaveBeenCalledTimes(1)
+
+    testUtils.fireEvent.click(required(testUtils, '.confirmed'))
+    await flush(testUtils)
+    expect(text(testUtils, '.ids')).toBe('202')
+
+    await testUtils.act(async () => { mockRefreshReservationList?.() })
+    expect(source.listReservations).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 20,
+      status: 'confirmed',
+    })
+    expect(text(testUtils, '.status')).toBe('content')
+    expect(text(testUtils, '.ids')).toBe('202')
+
+    refreshed.resolve({
+      items: [{ ...confirmed, id: 303 }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    await flush(testUtils)
+    expect(text(testUtils, '.ids')).toBe('303')
   })
 
   it('管理预约默认只查 pending，组合筛选从第一页重新请求', async () => {

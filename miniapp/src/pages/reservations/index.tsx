@@ -2,7 +2,7 @@ import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 
 import type { Reservation } from '@/api/endpoints/reservations'
-import { buildLoginUrl, useAuth } from '@/auth'
+import { buildLoginUrl, type AuthContextValue, isAdminRole, useAuth } from '@/auth'
 import {
   buildReservationDetailUrl,
   formatReservationDate,
@@ -11,6 +11,8 @@ import {
   type ReservationListStatusFilter,
   useReservationList,
 } from '@/features/reservation'
+import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
@@ -25,28 +27,51 @@ const STATUS_FILTERS: ReadonlyArray<{ value: ReservationListStatusFilter; label:
 
 export default function ReservationsPage() {
   const auth = useAuth()
+
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <ReservationsState standalone title='账户信息不完整' description='请重新检查登录状态后再查看预约'>
+          <Button className='reservations-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationsState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <ReservationsState standalone title='账户角色暂不支持' description='请重新检查登录状态后再查看预约'>
+          <Button className='reservations-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationsState>
+      )
+    }
+  }
+
+  return <CustomerReservationsPage auth={auth} />
+}
+
+function CustomerReservationsPage({ auth }: { readonly auth: AuthContextValue }) {
+  useRootTabSelection(ROOT_TAB_INDEX.reservations)
   if (auth.status === 'initializing') {
-    return <ReservationsState title='正在确认登录状态…' description='我的预约只对当前登录用户可见' />
+    return <ReservationsState standalone title='正在确认登录状态…' description='我的预约只对当前登录用户可见' />
   }
   if (auth.status === 'error') {
     return (
-      <ReservationsState title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
+      <ReservationsState standalone title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
         <Button className='reservations-state__action' onClick={auth.retryInitialization}>重新检查</Button>
       </ReservationsState>
     )
   }
   if (auth.status === 'guest') {
     return (
-      <ReservationsState title='登录后查看我的预约' description='这里只显示当前账号登记的拼豆体验'>
+      <ReservationsState standalone title='登录后查看我的预约' description='这里只显示当前账号登记的拼豆体验'>
         <Button
           className='reservations-state__action'
           onClick={() => void Taro.navigateTo({ url: buildLoginUrl(RESERVATION_LIST_PATH) })}
         >去登录</Button>
       </ReservationsState>
     )
-  }
-  if (auth.user?.role !== 'user') {
-    return <ReservationsState title='顾客账号才能查看预约' description='管理员请从“管理预约”进入门店工作台' />
   }
   return <AuthenticatedReservations />
 }
@@ -71,7 +96,7 @@ export function AuthenticatedReservations() {
       {state.status === 'loading' && <ReservationsState title='正在加载预约…' description='正在读取服务端最新状态' />}
       {state.status === 'empty' && (
         <ReservationsState title='当前筛选下没有预约' description='从拼豆体验详情选择配置后即可登记到店时间'>
-          <Button className='reservations-state__action' onClick={() => void Taro.navigateTo({ url: '/pages/index/index' })}>
+          <Button className='reservations-state__action' onClick={() => void Taro.switchTab({ url: '/pages/index/index' })}>
             浏览拼豆体验
           </Button>
         </ReservationsState>
@@ -126,13 +151,14 @@ function ReservationCard({ reservation }: { readonly reservation: Reservation })
   )
 }
 
-function ReservationsState({ children, description, title }: {
+function ReservationsState({ children, description, standalone = false, title }: {
   readonly title: string
   readonly description: string
   readonly children?: React.ReactNode
+  readonly standalone?: boolean
 }) {
   return (
-    <View className='reservations-page reservations-page--state'>
+    <View className={standalone ? 'reservations-page reservations-page--state' : 'reservations-inline-state'}>
       <Text className='reservations-state__title'>{title}</Text>
       <Text className='reservations-state__description'>{description}</Text>
       {children}

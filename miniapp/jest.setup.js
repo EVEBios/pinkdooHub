@@ -8,6 +8,10 @@ class IntersectionObserverMock {
 
 global.IntersectionObserver = IntersectionObserverMock
 
+// Taro H5 的测试运行时不实现微信专有的自定义 TabBar 取值接口。
+const taro = require('@tarojs/taro').default
+taro.getTabBar = jest.fn()
+
 jest.mock('@tarojs/router', () => ({
   history: {},
   getCurrentPages: jest.fn(() => []),

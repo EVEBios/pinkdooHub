@@ -1,6 +1,6 @@
 import { Button, Form, Input, Text, View } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   ApiClientError,
@@ -12,7 +12,17 @@ import {
   TimeoutError,
 } from '@/api'
 import type { RegistrationRequest, UserProfile } from '@/api/endpoints/auth'
-import { buildLoginUrl, parseLoginRedirect, useAuth } from '@/auth'
+import {
+  buildLoginUrl,
+  parseLoginRedirect,
+  resolveAuthenticatedLanding,
+  SessionPersistenceClearError,
+  useAuth,
+} from '@/auth'
+import {
+  resolvePathNavigationTarget,
+  useLatestDestinationNavigation,
+} from '@/navigation/use_latest_destination_navigation'
 
 import './index.scss'
 
@@ -30,18 +40,33 @@ const EMPTY_FORM: RegistrationForm = {
 
 export default function RegisterPage() {
   const redirect = parseLoginRedirect(useRouter().params.redirect)
-  const { register, status } = useAuth()
+  const { logout, register, retryInitialization, status, user } = useAuth()
+  const loginNavigationRef = useRef(false)
+  const sessionResetRef = useRef(false)
+  const { navigationError, openDestination, resetNavigation } = useLatestDestinationNavigation()
   const [form, setForm] = useState<RegistrationForm>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [loginNavigationError, setLoginNavigationError] = useState('')
+  const [openingLogin, setOpeningLogin] = useState(false)
+  const [resettingSession, setResettingSession] = useState(false)
   const [registeredUser, setRegisteredUser] = useState<UserProfile>()
 
+  const destination = useMemo(
+    () => status === 'authenticated'
+      ? resolveAuthenticatedLanding(user?.role, redirect)
+      : undefined,
+    [redirect, status, user?.role],
+  )
+
   useEffect(() => {
-    if (status === 'authenticated') {
-      void Taro.reLaunch({ url: redirect ?? '/pages/index/index' })
+    if (!destination) {
+      resetNavigation()
+      return
     }
-  }, [redirect, status])
+    void openDestination(resolvePathNavigationTarget(destination))
+  }, [destination, openDestination, resetNavigation])
 
   function updateField<Key extends keyof RegistrationForm>(
     field: Key,
@@ -65,13 +90,13 @@ export default function RegisterPage() {
     setSubmitting(true)
     setErrorMessage('')
     try {
-      const user = await register({
+      const createdUser = await register({
         username: normalized.username,
         password: normalized.password,
         nickname: normalized.nickname,
         phone: normalized.phone,
       })
-      setRegisteredUser(user)
+      setRegisteredUser(createdUser)
       setForm(EMPTY_FORM)
     } catch (cause) {
       setForm((current) => ({ ...current, password: '', confirmPassword: '' }))
@@ -83,6 +108,45 @@ export default function RegisterPage() {
   }
 
   const loginUrl = buildLoginUrl(redirect)
+
+  async function openLogin(): Promise<void> {
+    if (loginNavigationRef.current) return
+    loginNavigationRef.current = true
+    setOpeningLogin(true)
+    setLoginNavigationError('')
+    try {
+      await Taro.redirectTo({ url: loginUrl })
+    } catch {
+      setLoginNavigationError('登录页暂时无法打开，请重试。')
+    } finally {
+      loginNavigationRef.current = false
+      setOpeningLogin(false)
+    }
+  }
+
+  async function resetAuthenticatedSession(): Promise<void> {
+    if (sessionResetRef.current) return
+    sessionResetRef.current = true
+    setResettingSession(true)
+    try {
+      await logout()
+    } catch (cause) {
+      const title = cause instanceof SessionPersistenceClearError
+        ? cause.message
+        : '服务端登出未确认，本机会话已清除'
+      void Taro.showToast({ title, icon: 'none', duration: 2500 }).catch(() => undefined)
+    } finally {
+      sessionResetRef.current = false
+      setResettingSession(false)
+    }
+  }
+
+  const authenticatedLandingProblem = status === 'authenticated' && !destination
+    ? user
+      ? '账户角色暂不支持，请重新检查或退出当前会话。'
+      : '账户信息不完整，请重新检查或退出当前会话。'
+    : ''
+
   if (registeredUser) {
     return (
       <View className='registration-page'>
@@ -92,12 +156,18 @@ export default function RegisterPage() {
           <Text className='registration-success__description'>
             账号 {registeredUser.username} 已创建，请使用刚才设置的密码登录。
           </Text>
+          {loginNavigationError && (
+            <View className='registration-navigation__error' ariaRole='alert'>
+              <Text>{loginNavigationError}</Text>
+            </View>
+          )}
           <Button
             className='registration-form__submit'
+            disabled={openingLogin}
             type='primary'
-            onClick={() => void Taro.redirectTo({ url: loginUrl })}
+            onClick={() => void openLogin()}
           >
-            去登录
+            {openingLogin ? '正在打开登录…' : loginNavigationError ? '重新打开登录' : '去登录'}
           </Button>
           <Text className='registration-card__notice'>注册不会自动登录，也不会在本地保存密码。</Text>
         </View>
@@ -111,6 +181,38 @@ export default function RegisterPage() {
         <Text className='registration-card__eyebrow'>pinkdooHub</Text>
         <Text className='registration-card__title'>创建账号</Text>
         <Text className='registration-card__subtitle'>注册后默认为普通用户，请继续登录使用</Text>
+
+        {authenticatedLandingProblem && (
+          <View className='registration-navigation'>
+            <View className='registration-navigation__error' ariaRole='alert'>
+              <Text>{authenticatedLandingProblem}</Text>
+            </View>
+            <Button
+              className='registration-navigation__retry'
+              disabled={resettingSession}
+              onClick={retryInitialization}
+            >重新检查</Button>
+            <Button
+              className='registration-navigation__retry'
+              disabled={resettingSession}
+              onClick={() => void resetAuthenticatedSession()}
+            >{resettingSession ? '正在退出…' : '退出当前会话'}</Button>
+          </View>
+        )}
+
+        {navigationError && destination && (
+          <View className='registration-navigation'>
+            <View className='registration-navigation__error' ariaRole='alert'>
+              <Text>{navigationError}</Text>
+            </View>
+            <Button
+              className='registration-navigation__retry'
+              onClick={() => void openDestination(resolvePathNavigationTarget(destination))}
+            >
+              重新进入
+            </Button>
+          </View>
+        )}
 
         <Form className='registration-form'>
           <RegistrationInput
@@ -152,23 +254,37 @@ export default function RegisterPage() {
             onInput={(value) => updateField('confirmPassword', value)}
           />
 
-          {errorMessage && <Text className='registration-form__error'>{errorMessage}</Text>}
+          {errorMessage && (
+            <View className='registration-form__error' ariaRole='alert'>
+              <Text>{errorMessage}</Text>
+            </View>
+          )}
 
           <Button
             className='registration-form__submit'
-            disabled={submitting || status === 'initializing'}
+            disabled={submitting || status === 'initializing' || status === 'authenticated'}
             type='primary'
             onClick={() => void submitRegistration()}
           >
-            {status === 'initializing' ? '正在恢复会话…' : submitting ? '注册中…' : '注册'}
+            {status === 'initializing'
+              ? '正在恢复会话…'
+              : status === 'authenticated'
+                ? '当前会话已登录'
+                : submitting ? '注册中…' : '注册'}
           </Button>
         </Form>
 
+        {loginNavigationError && (
+          <View className='registration-navigation__error' ariaRole='alert'>
+            <Text>{loginNavigationError}</Text>
+          </View>
+        )}
         <Button
           className='registration-card__login'
-          onClick={() => void Taro.redirectTo({ url: loginUrl })}
+          disabled={openingLogin}
+          onClick={() => void openLogin()}
         >
-          已有账号？返回登录
+          {openingLogin ? '正在返回登录…' : loginNavigationError ? '重新返回登录' : '已有账号？返回登录'}
         </Button>
         <Text className='registration-card__notice'>密码只用于注册请求，不会写入 URL 或本地存储。</Text>
       </View>

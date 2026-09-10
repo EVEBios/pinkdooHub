@@ -1,5 +1,6 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
 
 .product-detail {
   @include pd.page-shell(24px);
@@ -40,11 +41,16 @@
   }
 
   &__heading {
-    padding: 28px 4px 6px;
+    @include customer.identity-panel(center 55%);
+
+    margin-top: 18px;
+    padding: 28px;
+    border-radius: var(--pd-radius-large);
   }
 
   &__section {
     @include pd.section-panel;
+    @include customer.ledger-panel(var(--pd-color-line-strong), 4px);
 
     margin-top: 22px;
   }
@@ -55,13 +61,14 @@
     color: var(--pd-color-primary-strong);
     font-size: var(--pd-font-caption);
     font-weight: 700;
-    background: var(--pd-color-primary-soft);
+    background: rgb(255 255 255 / 90%);
     border-radius: 999px;
   }
 
   &__name {
     max-width: 18ch;
     margin-top: 13px;
+    color: #fff;
     font-family: var(--pd-font-display);
     font-size: var(--pd-font-heading);
     font-weight: 700;
@@ -75,7 +82,7 @@
   &__description {
     max-width: 34em;
     margin-top: 14px;
-    color: var(--pd-color-ink-soft);
+    color: rgb(255 244 248 / 86%);
     font-size: var(--pd-font-body-size);
     line-height: 1.65;
     overflow-wrap: break-word;
@@ -135,15 +142,15 @@
   }
 
   &__reservation {
+    @include customer.identity-panel(center 62%);
+
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     margin-top: 22px;
     padding: 23px;
     color: #fff;
-    background: var(--pd-gradient-stock);
     border-radius: var(--pd-radius-large);
-    box-shadow: 0 18px 42px rgb(103 24 54 / 20%);
   }
 
   &__reservation-title,

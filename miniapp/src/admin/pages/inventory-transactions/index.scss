@@ -1,5 +1,6 @@
-/* stylelint-disable-next-line at-rule-no-unknown */
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/inventory';
+@use '../../styles/surface' as admin;
 
 .inventory-transactions-page {
   min-height: 100vh;
@@ -9,10 +10,7 @@
   box-sizing: border-box;
 
   &__header {
-    margin: 0 -24px 30px;
-    padding: 38px 28px 34px;
-    background: var(--pd-gradient-soft);
-    border-bottom: 1px solid rgb(185 119 143 / 18%);
+    @include admin.page-header(true, center 35%);
   }
 
   &__title,
@@ -21,18 +19,14 @@
   }
 
   &__title {
-    font-family: var(--pd-font-display);
-    font-size: 42px;
-    font-weight: 700;
-    letter-spacing: -0.8px;
-    line-height: 1.25;
+    @include admin.header-title;
   }
 
   &__subtitle {
-    margin-top: 12px;
-    max-width: 28em;
-    color: var(--pd-color-ink-soft);
-    font-size: 21px;
-    line-height: 1.58;
+    @include admin.header-subtitle;
   }
+}
+
+.inventory-filters {
+  @include admin.filter-panel;
 }

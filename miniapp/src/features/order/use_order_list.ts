@@ -5,6 +5,7 @@ import type {
   OrderListPage,
   OrderListRequest,
 } from '@/api/endpoints/orders'
+import { useRefreshAfterPageReturn } from '@/platform/use_refresh_after_page_return'
 
 import { getDefaultOrderApi } from './runtime'
 
@@ -49,11 +50,15 @@ export function useOrderList(source: OrderListSource = getDefaultOrderApi()): Or
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all')
   const requestSequenceRef = useRef(0)
   const loadingMoreRef = useRef(false)
+  const refreshingRef = useRef(false)
 
-  const loadFirstPage = useCallback(() => {
+  const loadFirstPage = useCallback((preserveContent = false) => {
     const sequence = ++requestSequenceRef.current
     loadingMoreRef.current = false
-    setState(initialState)
+    refreshingRef.current = preserveContent
+    setState((current) => preserveContent && current.status === 'content'
+      ? { ...current, loadingMore: false, errorMessage: undefined }
+      : initialState)
     void source.listOrders(buildRequest(statusFilter, 1)).then((page) => {
       if (sequence !== requestSequenceRef.current) {
         return
@@ -70,12 +75,27 @@ export function useOrderList(source: OrderListSource = getDefaultOrderApi()): Or
       if (sequence !== requestSequenceRef.current) {
         return
       }
-      setState({ ...initialState, status: 'error', errorMessage: toMessage(cause, '订单加载失败') })
+      const errorMessage = toMessage(cause, '订单加载失败')
+      setState((current) => preserveContent && current.status === 'content'
+        ? { ...current, loadingMore: false, errorMessage }
+        : { ...initialState, status: 'error', errorMessage })
+    }).finally(() => {
+      if (sequence === requestSequenceRef.current) refreshingRef.current = false
     })
   }, [source, statusFilter])
 
+  const refresh = useCallback(() => {
+    loadFirstPage(true)
+  }, [loadFirstPage])
+  const retry = useCallback(() => {
+    loadFirstPage()
+  }, [loadFirstPage])
+
+  useRefreshAfterPageReturn(refresh)
+
   const loadNextPage = useCallback(() => {
-    if (state.status !== 'content' || state.page >= state.pages || loadingMoreRef.current) {
+    if (state.status !== 'content' || state.page >= state.pages ||
+      loadingMoreRef.current || refreshingRef.current) {
       return
     }
     loadingMoreRef.current = true
@@ -116,7 +136,13 @@ export function useOrderList(source: OrderListSource = getDefaultOrderApi()): Or
     }
   }, [loadFirstPage])
 
-  return { state, statusFilter, setStatusFilter, retry: loadFirstPage, loadNextPage }
+  return {
+    state,
+    statusFilter,
+    setStatusFilter,
+    retry,
+    loadNextPage,
+  }
 }
 
 function buildRequest(status: OrderStatusFilter, page: number): OrderListRequest {

@@ -1,5 +1,6 @@
-/* stylelint-disable-next-line at-rule-no-unknown */
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/inventory';
+@use '../../styles/surface' as admin;
 
 .color-inventory-picker {
   margin: 22px 0;
@@ -81,10 +82,10 @@
   box-sizing: border-box;
 
   &__header {
+    @include admin.page-header;
+
     margin: 0 -24px 30px;
     padding: 36px 28px 0;
-    background: var(--pd-gradient-soft);
-    border-bottom: 1px solid rgb(185 119 143 / 18%);
   }
 
   &__header-topline {
@@ -115,6 +116,7 @@
     overflow-wrap: anywhere;
     text-wrap: balance;
     word-break: keep-all;
+    color: #fff;
   }
 
   &__status {
@@ -130,19 +132,19 @@
 
   &__subtitle {
     margin-top: 10px;
-    color: var(--pd-color-ink-soft);
+    color: rgb(255 244 248 / 86%);
     font-size: 21px;
     font-variant-numeric: tabular-nums;
     line-height: 1.5;
   }
 
   &__stock-panel {
+    @include admin.authority-panel;
+
     position: relative;
     top: 22px;
     min-height: 230px;
     padding: 26px;
-    color: #fff;
-    background: var(--pd-gradient-stock);
     border: 1px solid rgb(255 255 255 / 20%);
     border-radius: var(--pd-radius-large);
     box-shadow: 0 20px 44px rgb(103 24 54 / 24%);

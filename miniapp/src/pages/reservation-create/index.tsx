@@ -3,7 +3,7 @@ import Taro, { useRouter } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 
 import type { ProfileUpdateRequest, UserProfile } from '@/api/endpoints/auth'
-import { buildLoginUrl, useAuth } from '@/auth'
+import { buildLoginUrl, type AuthContextValue, isAdminRole, useAuth } from '@/auth'
 import {
   buildReservationCreateUrl,
   buildReservationDetailUrl,
@@ -12,6 +12,7 @@ import {
   RESERVATION_LIST_PATH,
   useReservationCreate,
 } from '@/features/reservation'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
 import './index.scss'
@@ -20,6 +21,30 @@ const PHONE_PATTERN = /^1[3-9]\d{9}$/
 
 export default function ReservationCreatePage() {
   const auth = useAuth()
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <ReservationCreateState title='账户信息不完整' description='请重新检查登录状态后再提交预约'>
+          <Button className='reservation-create-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationCreateState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <ReservationCreateState title='账户角色暂不支持' description='请重新检查登录状态后再提交预约'>
+          <Button className='reservation-create-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationCreateState>
+      )
+    }
+  }
+
+  return <CustomerReservationCreatePage auth={auth} />
+}
+
+function CustomerReservationCreatePage({ auth }: { readonly auth: AuthContextValue }) {
   const route = parseReservationCreateRoute(useRouter().params)
   if (!route) {
     return <ReservationCreateState title='预约地址无效' description='请从拼豆体验详情重新选择配置' />
@@ -45,13 +70,18 @@ export default function ReservationCreatePage() {
       </ReservationCreateState>
     )
   }
-  if (auth.user?.role !== 'user') {
-    return <ReservationCreateState title='顾客账号才能预约' description='管理员账号不会请求顾客预约接口' />
+  const customer = auth.user
+  if (!customer) {
+    return (
+      <ReservationCreateState title='账户信息不完整' description='请重新检查登录状态后再提交预约'>
+        <Button className='reservation-create-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+      </ReservationCreateState>
+    )
   }
   return (
     <AuthenticatedReservationCreate
       experienceOptionId={route.experienceOptionId}
-      initialPhone={auth.user.phone ?? ''}
+      initialPhone={customer.phone ?? ''}
       productId={route.productId}
       updateProfile={auth.updateProfile}
     />
@@ -250,7 +280,7 @@ export function AuthenticatedReservationCreate({
         <View className={`reservation-create-feedback reservation-create-feedback--${reservation.submission.status}`}>
           <Text>{reservation.submission.errorMessage}</Text>
           {reservation.submission.status === 'unknown' && (
-            <Button onClick={() => void Taro.navigateTo({ url: RESERVATION_LIST_PATH })}>前往我的预约核对</Button>
+            <Button onClick={() => void Taro.switchTab({ url: RESERVATION_LIST_PATH })}>前往我的预约核对</Button>
           )}
         </View>
       )}

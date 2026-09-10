@@ -6,6 +6,7 @@ import type {
   ReservationPage,
   ReservationStatus,
 } from '@/api/endpoints/reservations'
+import { useRefreshAfterPageReturn } from '@/platform/use_refresh_after_page_return'
 
 import { getReservationErrorMessage } from './mutation'
 import { getDefaultReservationApi } from './runtime'
@@ -35,11 +36,15 @@ export function useReservationList(source: ReservationListSource = getDefaultRes
   const [statusFilter, setStatusFilter] = useState<ReservationListStatusFilter>('all')
   const sequenceRef = useRef(0)
   const loadingMoreRef = useRef(false)
+  const refreshingRef = useRef(false)
 
-  const loadFirstPage = useCallback(() => {
+  const loadFirstPage = useCallback((preserveContent = false) => {
     const sequence = ++sequenceRef.current
     loadingMoreRef.current = false
-    setState(initialState)
+    refreshingRef.current = preserveContent
+    setState((current) => preserveContent && current.status === 'content'
+      ? { ...current, loadingMore: false, errorMessage: undefined }
+      : initialState)
     void source.listReservations(buildRequest(statusFilter, 1)).then((page) => {
       if (sequence !== sequenceRef.current) return
       setState({
@@ -52,13 +57,28 @@ export function useReservationList(source: ReservationListSource = getDefaultRes
       })
     }).catch((cause: unknown) => {
       if (sequence === sequenceRef.current) {
-        setState({ ...initialState, status: 'error', errorMessage: getReservationErrorMessage(cause, '预约加载失败') })
+        const errorMessage = getReservationErrorMessage(cause, '预约加载失败')
+        setState((current) => preserveContent && current.status === 'content'
+          ? { ...current, loadingMore: false, errorMessage }
+          : { ...initialState, status: 'error', errorMessage })
       }
+    }).finally(() => {
+      if (sequence === sequenceRef.current) refreshingRef.current = false
     })
   }, [source, statusFilter])
 
+  const refresh = useCallback(() => {
+    loadFirstPage(true)
+  }, [loadFirstPage])
+  const retry = useCallback(() => {
+    loadFirstPage()
+  }, [loadFirstPage])
+
+  useRefreshAfterPageReturn(refresh)
+
   const loadNextPage = useCallback(() => {
-    if (state.status !== 'content' || state.page >= state.pages || loadingMoreRef.current) return
+    if (state.status !== 'content' || state.page >= state.pages ||
+      loadingMoreRef.current || refreshingRef.current) return
     loadingMoreRef.current = true
     const sequence = ++sequenceRef.current
     setState((current) => ({ ...current, loadingMore: true, errorMessage: undefined }))
@@ -90,7 +110,13 @@ export function useReservationList(source: ReservationListSource = getDefaultRes
     return () => { sequenceRef.current += 1 }
   }, [loadFirstPage])
 
-  return { state, statusFilter, setStatusFilter, retry: loadFirstPage, loadNextPage }
+  return {
+    state,
+    statusFilter,
+    setStatusFilter,
+    retry,
+    loadNextPage,
+  }
 }
 
 function buildRequest(status: ReservationListStatusFilter, page: number): ReservationListRequest {

@@ -1,29 +1,35 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
 
 .orders-page {
   @include pd.page-shell;
+
+  padding-bottom: var(--pd-root-tab-page-clearance);
 
   &--state {
     @include pd.state-shell;
 
     min-height: 100vh;
+    padding-bottom: var(--pd-root-tab-page-clearance);
   }
 
   &__header {
-    @include pd.header-band;
+    @include customer.page-header(center 52%);
   }
 
   &__title {
-    @include pd.page-title;
+    @include customer.title;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include customer.subtitle;
   }
 }
 
 .orders-filters {
+  @include customer.ledger-panel;
+
   display: flex;
   gap: 10px;
   margin: 22px 0;
@@ -72,6 +78,7 @@
 .order-card {
   @include pd.record-card;
   @include pd.tappable-card;
+  @include customer.ledger-panel(var(--pd-color-line-strong), 4px);
 
   margin-bottom: 15px;
 
@@ -148,6 +155,10 @@
 
     margin-top: 26px;
   }
+}
+
+.orders-inline-state {
+  @include pd.state-shell;
 }
 
 @supports (backdrop-filter: blur(1px)) {

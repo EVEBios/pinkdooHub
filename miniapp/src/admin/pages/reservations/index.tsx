@@ -3,6 +3,7 @@ import Taro from '@tarojs/taro'
 import { useState } from 'react'
 
 import { MaskedDateInput } from '@/admin/components/masked_date_input'
+import { AdminWorkbenchLink } from '@/admin/components/workbench_link'
 import type { AdminReservationListItem } from '@/api/endpoints/reservations'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
@@ -99,10 +100,17 @@ export function AuthenticatedAdminReservations() {
       <View className='admin-reservations-page__header'>
         <Text className='admin-reservations-page__title'>管理预约</Text>
         <Text className='admin-reservations-page__subtitle'>首版由店员人工判断座位；待确认预约可确认或因无空位拒绝</Text>
+        <AdminWorkbenchLink />
+      </View>
+      <View className='admin-reservations-page__related'>
+        <View className='admin-reservations-page__related-copy'>
+          <Text className='admin-reservations-page__related-title'>营业日历</Text>
+          <Text className='admin-reservations-page__related-description'>固定店休和临时店休在独立页面维护</Text>
+        </View>
         <Button
           className='admin-reservations-page__closures'
-          onClick={() => void Taro.navigateTo({ url: ADMIN_STORE_CLOSURE_LIST_PATH })}
-        >进入店休设置</Button>
+          onClick={() => void Taro.redirectTo({ url: ADMIN_STORE_CLOSURE_LIST_PATH })}
+        >店休设置</Button>
       </View>
 
       <View className='admin-reservation-filters'>

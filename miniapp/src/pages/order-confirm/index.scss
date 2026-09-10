@@ -1,9 +1,10 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
 
 .order-confirm-page,
 .order-result-page {
-  @include pd.page-shell(28px);
+  @include pd.page-shell;
   @include pd.content-width;
 }
 
@@ -15,7 +16,7 @@
   }
 
   &__header {
-    padding: 12px 4px 24px;
+    @include customer.page-header(center 48%);
   }
 
   &__title,
@@ -24,14 +25,16 @@
   }
 
   &__title {
-    @include pd.page-title;
+    @include customer.title;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include customer.subtitle;
   }
 
   &__notice {
+    @include customer.ledger-panel(#c97991, 5px);
+
     max-width: 38em;
     padding: 17px 19px;
     color: var(--pd-color-ink-soft);
@@ -77,6 +80,7 @@
 
 .order-confirm-item {
   @include pd.record-card(22px);
+  @include customer.ledger-panel(var(--pd-color-line-strong), 4px);
 
   &__type,
   &__name,
@@ -123,6 +127,7 @@
 
 .order-confirm-remark {
   @include pd.section-panel(22px);
+  @include customer.ledger-panel(#c97991, 5px);
 
   margin-top: 20px;
 
@@ -175,12 +180,11 @@
 }
 
 .order-result-hero {
+  @include customer.identity-panel(center 52%);
+
   padding: 32px 26px;
   text-align: center;
-  background: var(--pd-gradient-soft);
-  border: 1px solid var(--pd-color-line);
   border-radius: var(--pd-radius-large);
-  box-shadow: var(--pd-shadow-small);
 
   &__eyebrow,
   &__number,
@@ -191,13 +195,14 @@
   }
 
   &__eyebrow {
-    color: var(--pd-color-success);
+    color: rgb(255 244 248 / 86%);
     font-size: var(--pd-font-label);
     font-weight: 700;
   }
 
   &__number {
     margin-top: 13px;
+    color: #fff;
     font-size: var(--pd-font-body-size);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -218,7 +223,7 @@
 
   &__total {
     margin-top: 14px;
-    color: var(--pd-color-primary-strong);
+    color: #fff;
     font-size: var(--pd-font-display-size);
     font-weight: 750;
     font-variant-numeric: tabular-nums;
@@ -228,7 +233,7 @@
   &__hint {
     max-width: 28em;
     margin: 9px auto 0;
-    color: var(--pd-color-ink-soft);
+    color: rgb(255 244 248 / 84%);
     font-size: var(--pd-font-caption);
     line-height: 1.5;
   }

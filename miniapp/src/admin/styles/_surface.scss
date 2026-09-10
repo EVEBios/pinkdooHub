@@ -1,0 +1,62 @@
+/* stylelint-disable at-rule-no-unknown, at-rule-prelude-no-invalid -- 管理员界面专属 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+@use '../../styles/ribbon' as ribbon;
+
+/* 管理页共享同一张真实纹理，但允许按标题长度调整取景位置。 */
+@mixin page-header($has-action: false, $position: center) {
+  @include ribbon.page-header($position);
+
+  @if $has-action {
+    padding-right: 220px;
+  }
+}
+
+@mixin header-title {
+  @include ribbon.title;
+}
+
+@mixin header-subtitle {
+  @include ribbon.subtitle;
+}
+
+@mixin header-eyebrow {
+  @include ribbon.eyebrow;
+}
+
+@mixin header-action($radius: 14px) {
+  @include pd.secondary-button($radius);
+
+  color: var(--pd-color-primary-strong);
+  background: rgb(255 253 253 / 94%);
+  border-color: rgb(255 255 255 / 34%);
+  box-shadow: 0 8px 20px rgb(62 11 32 / 14%);
+}
+
+@mixin identity-panel {
+  @include ribbon.texture-surface(center 44%);
+}
+
+@mixin summary-panel {
+  @include ribbon.texture-surface(center 54%);
+}
+
+@mixin section-accent($accent: var(--pd-color-primary-strong)) {
+  @include ribbon.panel-accent($accent);
+}
+
+@mixin filter-panel {
+  @include section-accent;
+
+  box-shadow: 0 12px 30px rgb(83 31 49 / 8%);
+}
+
+@mixin authority-panel {
+  color: #fff;
+  background: var(--pd-gradient-primary);
+  border-color: transparent;
+  box-shadow: var(--pd-shadow-medium);
+}
+
+@mixin related-panel {
+  @include ribbon.related-panel;
+}

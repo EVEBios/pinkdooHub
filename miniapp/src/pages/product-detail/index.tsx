@@ -8,7 +8,7 @@ import type {
   KitColorOption,
   KitProductDetail,
 } from '@/api/endpoints/products'
-import { buildLoginUrl, useAuth } from '@/auth'
+import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import { BeadColorSwatch } from '@/components/bead_color_swatch'
 import { buildReservationCreateUrl } from '@/features/reservation'
 import {
@@ -22,12 +22,49 @@ import {
   buildExperienceCartItem,
   buildKitCartItem,
 } from '@/features/order/cart_item'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { resolveAssetUrl } from '@/utils/asset_url'
 import { formatColorLabel, formatPrice } from '@/utils/format'
 
 import './index.scss'
 
 export default function ProductDetailPage() {
+  const auth = useAuth()
+
+  if (auth.status === 'initializing') {
+    return <DetailState title='正在确认账户身份…' description='确认后将打开对应商品' />
+  }
+  if (auth.status === 'error') {
+    return (
+      <DetailState title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
+        <Button className='product-detail__action' onClick={auth.retryInitialization}>重新检查</Button>
+      </DetailState>
+    )
+  }
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <DetailState title='账户信息不完整' description='请重新检查登录状态后再打开商品'>
+          <Button className='product-detail__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </DetailState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <DetailState title='账户角色暂不支持' description='请重新检查登录状态后再打开商品'>
+          <Button className='product-detail__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </DetailState>
+      )
+    }
+  }
+
+  return <CustomerProductDetailPage />
+}
+
+function CustomerProductDetailPage() {
   const router = useRouter()
   const route = parseProductDetailRoute(router.params)
 

@@ -49,8 +49,14 @@ export function AuthProvider({ children, runtime: runtimeProp }: AuthProviderPro
   const [initializationAttempt, setInitializationAttempt] = useState(0)
 
   useEffect(() => {
-    return runtime.session.subscribe((snapshot) => {
+    return runtime.session.subscribe((snapshot, persistenceError) => {
       setUser(snapshot?.user)
+      if (persistenceError) {
+        setInitializationError(persistenceError)
+        setStatus('error')
+        return
+      }
+      setInitializationError(undefined)
       setStatus(snapshot ? 'authenticated' : 'guest')
     })
   }, [runtime])
@@ -81,7 +87,15 @@ export function AuthProvider({ children, runtime: runtimeProp }: AuthProviderPro
         }
       } catch (cause) {
         if (isInvalidSessionError(cause)) {
-          await runtime.session.clearSession()
+          try {
+            await runtime.session.clearSession()
+          } catch (cleanupCause) {
+            if (active) {
+              setUser(undefined)
+              setInitializationError(toError(cleanupCause))
+              setStatus('error')
+            }
+          }
           return
         }
         if (active) {

@@ -1,8 +1,9 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
 
 .cart-page {
-  @include pd.page-shell(28px);
+  @include pd.page-shell;
   @include pd.content-width;
 
   &--state {
@@ -12,7 +13,7 @@
   }
 
   &__header {
-    padding: 12px 4px 24px;
+    @include customer.page-header(center 56%);
   }
 
   &__title,
@@ -21,14 +22,16 @@
   }
 
   &__title {
-    @include pd.page-title;
+    @include customer.title;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include customer.subtitle;
   }
 
   &__notice {
+    @include customer.ledger-panel(#c97991, 5px);
+
     max-width: 36em;
     padding: 17px 19px;
     color: var(--pd-color-ink-soft);
@@ -88,6 +91,7 @@
 
 .cart-item {
   @include pd.record-card(23px);
+  @include customer.ledger-panel(var(--pd-color-line-strong), 4px);
 
   &__type,
   &__name,

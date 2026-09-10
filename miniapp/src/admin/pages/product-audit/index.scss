@@ -1,24 +1,25 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
 
 .product-audit-page {
   @include pd.page-shell;
   @include pd.content-width;
 
   &__header {
-    @include pd.header-band;
+    @include admin.page-header;
   }
 
   &__title {
-    @include pd.page-title;
+    @include admin.header-title;
   }
 
   &__subtitle {
-    @include pd.page-subtitle;
+    @include admin.header-subtitle;
   }
 
   &__back {
-    @include pd.secondary-button;
+    @include admin.header-action;
 
     width: 100%;
     margin-top: 22px;

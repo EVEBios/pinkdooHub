@@ -4,13 +4,20 @@ import Taro from '@tarojs/taro'
 import type { ExperienceProductDetail } from '@/api/endpoints/products'
 import type { AuthContextValue } from '@/auth'
 
-import { ReservationAction } from '../index'
+import ProductDetailPage, { ReservationAction } from '../index'
 
 let mockAuth: AuthContextValue
+const mockUseProductDetail = jest.fn()
 
 jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
   buildLoginUrl: (redirect: string) => `/pages/login/index?redirect=${encodeURIComponent(redirect)}`,
+  isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
   useAuth: () => mockAuth,
+}))
+
+jest.mock('@/features/product/use_product_detail', () => ({
+  useProductDetail: (...args: unknown[]) => mockUseProductDetail(...args),
 }))
 
 jest.mock('@/features/reservation', () => ({
@@ -68,6 +75,31 @@ describe('商品详情预约入口', () => {
       url: '/pages/reservation-create/index?product_id=7&option_id=11',
     })
   })
+
+  it.each(['admin', 'super_admin'] as const)('%s 商品深链在商品 Hook 前进入工作台', async (role) => {
+    mockAuth = {
+      ...authValue('authenticated'),
+      user: { ...authValue('authenticated').user!, role },
+    }
+    await testUtils.mount(ProductDetailPage)
+
+    expect(required(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
+    expect(mockUseProductDetail).not.toHaveBeenCalled()
+    await flush(testUtils)
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it('未知角色保持 fail closed，不挂载商品 Hook', async () => {
+    mockAuth = {
+      ...authValue('authenticated'),
+      user: { ...authValue('authenticated').user!, role: 'operator' as never },
+    }
+    await testUtils.mount(ProductDetailPage)
+
+    expect(required(testUtils, '.product-detail__state-title').textContent).toContain('账户角色暂不支持')
+    expect(mockUseProductDetail).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+  })
 })
 
 function authValue(status: 'guest' | 'authenticated'): AuthContextValue {
@@ -100,4 +132,11 @@ function required(testUtils: ReactTestUtil, selector: string): Element {
   const element = testUtils.queries.querySelector(selector)
   if (!element) throw new Error(`${selector} not found`)
   return element
+}
+
+async function flush(testUtils: ReactTestUtil): Promise<void> {
+  await testUtils.act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }

@@ -1,28 +1,53 @@
 import { Button, Form, Input, Text, View } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiClientError, BusinessError } from '@/api'
-import { buildRegisterUrl, parseLoginRedirect, useAuth } from '@/auth'
+import {
+  buildRegisterUrl,
+  parseLoginRedirect,
+  resolveAuthenticatedLanding,
+  SessionPersistenceClearError,
+  useAuth,
+} from '@/auth'
 import { resolveEnv } from '@/config/env'
+import {
+  resolvePathNavigationTarget,
+  useLatestDestinationNavigation,
+} from '@/navigation/use_latest_destination_navigation'
 
 import './index.scss'
 
 export default function LoginPage() {
   const router = useRouter()
   const redirect = parseLoginRedirect(router.params.redirect)
-  const { login, loginWithWechat, status } = useAuth()
+  const { login, loginWithWechat, logout, retryInitialization, status, user } = useAuth()
+  const registerNavigationRef = useRef(false)
+  const sessionResetRef = useRef(false)
+  const { navigationError, openDestination, resetNavigation } = useLatestDestinationNavigation()
   const { authMode } = resolveEnv()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [registerNavigationError, setRegisterNavigationError] = useState('')
+  const [openingRegister, setOpeningRegister] = useState(false)
+  const [resettingSession, setResettingSession] = useState(false)
+
+  const destination = useMemo(
+    () => status === 'authenticated'
+      ? resolveAuthenticatedLanding(user?.role, redirect)
+      : undefined,
+    [redirect, status, user?.role],
+  )
 
   useEffect(() => {
-    if (status === 'authenticated') {
-      void Taro.reLaunch({ url: redirect ?? '/pages/index/index' })
+    if (!destination) {
+      resetNavigation()
+      return
     }
-  }, [redirect, status])
+    void openDestination(resolvePathNavigationTarget(destination))
+  }, [destination, openDestination, resetNavigation])
 
   async function submitLogin(): Promise<void> {
     const validationMessage = validateLogin(username, password)
@@ -55,6 +80,45 @@ export default function LoginPage() {
     }
   }
 
+  async function openRegister(): Promise<void> {
+    if (registerNavigationRef.current) return
+    registerNavigationRef.current = true
+    setOpeningRegister(true)
+    setRegisterNavigationError('')
+    try {
+      // 替换登录页，避免“登录 → 注册 → 登录”往返不断堆高小程序页面栈。
+      await Taro.redirectTo({ url: buildRegisterUrl(redirect) })
+    } catch {
+      setRegisterNavigationError('注册页暂时无法打开，请重试。')
+    } finally {
+      registerNavigationRef.current = false
+      setOpeningRegister(false)
+    }
+  }
+
+  async function resetAuthenticatedSession(): Promise<void> {
+    if (sessionResetRef.current) return
+    sessionResetRef.current = true
+    setResettingSession(true)
+    try {
+      await logout()
+    } catch (cause) {
+      const title = cause instanceof SessionPersistenceClearError
+        ? cause.message
+        : '服务端登出未确认，本机会话已清除'
+      void Taro.showToast({ title, icon: 'none', duration: 2500 }).catch(() => undefined)
+    } finally {
+      sessionResetRef.current = false
+      setResettingSession(false)
+    }
+  }
+
+  const authenticatedLandingProblem = status === 'authenticated' && !destination
+    ? user
+      ? '账户角色暂不支持，请重新检查或退出当前会话。'
+      : '账户信息不完整，请重新检查或退出当前会话。'
+    : ''
+
   return (
     <View className='login-page'>
       <View className='login-card'>
@@ -64,16 +128,56 @@ export default function LoginPage() {
           {authMode === 'wechat' ? '使用微信安全登录' : '内部测试使用现有账号登录'}
         </Text>
 
+        {authenticatedLandingProblem && (
+          <View className='login-navigation'>
+            <View className='login-navigation__error' ariaRole='alert'>
+              <Text>{authenticatedLandingProblem}</Text>
+            </View>
+            <Button
+              className='login-navigation__retry'
+              disabled={resettingSession}
+              onClick={retryInitialization}
+            >重新检查</Button>
+            <Button
+              className='login-navigation__retry'
+              disabled={resettingSession}
+              onClick={() => void resetAuthenticatedSession()}
+            >{resettingSession ? '正在退出…' : '退出当前会话'}</Button>
+          </View>
+        )}
+
+        {navigationError && destination && (
+          <View className='login-navigation'>
+            <View className='login-navigation__error' ariaRole='alert'>
+              <Text>{navigationError}</Text>
+            </View>
+            <Button
+              className='login-navigation__retry'
+              onClick={() => void openDestination(resolvePathNavigationTarget(destination))}
+            >
+              重新进入
+            </Button>
+          </View>
+        )}
+
         {authMode === 'wechat' ? (
           <View className='login-form'>
-            {errorMessage && <Text className='login-form__error'>{errorMessage}</Text>}
+            {errorMessage && (
+              <View className='login-form__error' ariaRole='alert'>
+                <Text>{errorMessage}</Text>
+              </View>
+            )}
             <Button
               className='login-form__submit login-form__submit--wechat'
-              disabled={submitting || status === 'initializing'}
-              type='primary'
+              disabled={submitting || status === 'initializing' || status === 'authenticated'}
+              hoverClass='login-form__submit--pressed'
               onClick={() => void submitWeChatLogin()}
             >
-              {status === 'initializing' ? '正在恢复会话…' : submitting ? '登录中…' : '微信一键登录'}
+              {status === 'initializing'
+                ? '正在恢复会话…'
+                : status === 'authenticated'
+                  ? '登录已完成'
+                  : submitting ? '登录中…' : '微信一键登录'}
             </Button>
           </View>
         ) : (
@@ -99,26 +203,42 @@ export default function LoginPage() {
             onInput={(event) => setPassword(event.detail.value)}
           />
 
-          {errorMessage && <Text className='login-form__error'>{errorMessage}</Text>}
+          {errorMessage && (
+            <View className='login-form__error' ariaRole='alert'>
+              <Text>{errorMessage}</Text>
+            </View>
+          )}
 
           <Button
             className='login-form__submit'
-            disabled={submitting || status === 'initializing'}
-            type='primary'
+            disabled={submitting || status === 'initializing' || status === 'authenticated'}
+            hoverClass='login-form__submit--pressed'
             onClick={() => void submitLogin()}
           >
-            {status === 'initializing' ? '正在恢复会话…' : submitting ? '登录中…' : '登录'}
+            {status === 'initializing'
+              ? '正在恢复会话…'
+              : status === 'authenticated'
+                ? '登录已完成'
+                : submitting ? '登录中…' : '登录'}
           </Button>
         </Form>
         )}
 
         {authMode === 'password' && (
-        <Button
-          className='login-card__register'
-          onClick={() => void Taro.navigateTo({ url: buildRegisterUrl(redirect) })}
-        >
-          没有账号？立即注册
-        </Button>
+        <>
+          {registerNavigationError && (
+            <View className='login-navigation__error' ariaRole='alert'>
+              <Text>{registerNavigationError}</Text>
+            </View>
+          )}
+          <Button
+            className='login-card__register'
+            disabled={openingRegister || status === 'initializing' || status === 'authenticated'}
+            onClick={() => void openRegister()}
+          >
+            {openingRegister ? '正在打开注册…' : registerNavigationError ? '重新打开注册' : '没有账号？立即注册'}
+          </Button>
+        </>
         )}
 
         <Text className='login-card__notice'>

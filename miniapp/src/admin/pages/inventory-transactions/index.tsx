@@ -7,6 +7,7 @@ import {
   InventoryState,
   InventoryTransactionList,
 } from '@/admin/components/inventory'
+import { AdminWorkbenchLink } from '@/admin/components/workbench_link'
 import { buildLoginUrl, isAdminRole, useAuth } from '@/auth'
 import {
   ADMIN_INVENTORY_LIST_PATH,
@@ -103,6 +104,7 @@ export function AuthenticatedInventoryTransactions() {
       <View className='inventory-transactions-page__header'>
         <Text className='inventory-transactions-page__title'>库存流水</Text>
         <Text className='inventory-transactions-page__subtitle'>统一追溯调整、扣减、取消恢复和期初余额。</Text>
+        <AdminWorkbenchLink />
       </View>
       <InventoryFilterPanel
         allowProductId

@@ -15,6 +15,28 @@ const MAIN_PACKAGE_LIMIT = 2 * 1024 * 1024
 const SUBPACKAGE_LIMIT = 2 * 1024 * 1024
 const SUBPACKAGES_TOTAL_LIMIT = 30 * 1024 * 1024
 const ARTIFACT_TOTAL_LIMIT = MAIN_PACKAGE_LIMIT + SUBPACKAGES_TOTAL_LIMIT
+const TAB_BAR_ICON_LIMIT = 40 * 1024
+const EXPECTED_ROOT_TABS = [
+  { pagePath: 'pages/index/index', text: '商城' },
+  { pagePath: 'pages/reservations/index', text: '预约' },
+  { pagePath: 'pages/orders/index', text: '订单' },
+  { pagePath: 'pages/member/index', text: '会员中心' }
+]
+const REQUIRED_TAB_BAR_FILES = [
+  'custom-tab-bar/index.js',
+  'custom-tab-bar/index.json',
+  'custom-tab-bar/index.wxml',
+  'custom-tab-bar/index.wxss',
+  ...['mall', 'reservations', 'orders', 'member'].flatMap((name) => [
+    `assets/tab-bar/${name}-outline.png`,
+    `assets/tab-bar/${name}-solid-berry.png`,
+    `assets/tab-bar/${name}-solid-white.png`
+  ])
+]
+const REQUIRED_ROLE_LANDING_FILES = [
+  ...['js', 'json', 'wxml', 'wxss'].map((extension) => `pages/entry/index.${extension}`),
+  ...['js', 'json', 'wxml', 'wxss'].map((extension) => `admin/pages/workbench/index.${extension}`)
+]
 const TEXT_EXTENSIONS = new Set([
   '.css', '.html', '.js', '.json', '.txt', '.wxml', '.wxs', '.wxss'
 ])
@@ -188,6 +210,9 @@ function validateTextContent(artifactPath, text, expectedOrigin) {
       throw new Error(`Secret marker (${marker.name}) found: ${artifactPath}`)
     }
   }
+  if (artifactPath.startsWith('custom-tab-bar/') && text.includes('data:image')) {
+    throw new Error(`custom TabBar must reference physical image files: ${artifactPath}`)
+  }
 
   const origins = text.match(/https?:\/\/(?:\[[0-9a-f:]+\]|[a-z0-9.-]+)(?::\d{1,5})?/gi) ?? []
   for (const rawOrigin of origins) {
@@ -208,6 +233,42 @@ function validateTextContent(artifactPath, text, expectedOrigin) {
   }
 
   return text.includes(expectedOrigin)
+}
+
+function validateRootTabBar(appConfig, artifactFiles) {
+  const configuredTabs = appConfig.tabBar?.list?.map(({ pagePath, text }) => ({ pagePath, text }))
+  if (appConfig.tabBar?.custom !== true || !isDeepStrictEqual(configuredTabs, EXPECTED_ROOT_TABS)) {
+    throw new Error('app.json must declare the frozen four-item custom TabBar')
+  }
+
+  const filesByPath = new Map(artifactFiles.map((file) => [file.artifactPath, file]))
+  for (const requiredPath of REQUIRED_TAB_BAR_FILES) {
+    const file = filesByPath.get(requiredPath)
+    if (!file) {
+      throw new Error(`required custom TabBar artifact is missing: ${requiredPath}`)
+    }
+    if (requiredPath.endsWith('.png') && readFileSync(file.absolutePath).length > TAB_BAR_ICON_LIMIT) {
+      throw new Error(`custom TabBar icon exceeds ${TAB_BAR_ICON_LIMIT} bytes: ${requiredPath}`)
+    }
+  }
+}
+
+function validateRoleLanding(appConfig, artifactFiles) {
+  if (!Array.isArray(appConfig.pages) || appConfig.pages[0] !== 'pages/entry/index') {
+    throw new Error('app.json must use the no-Tab entry page as its default route')
+  }
+  const configured = appConfig.subPackages ?? appConfig.subpackages
+  const adminPackage = configured?.find((item) => item?.root === 'admin')
+  if (!Array.isArray(adminPackage?.pages) || !adminPackage.pages.includes('pages/workbench/index')) {
+    throw new Error('app.json must declare the admin workbench in the admin subpackage')
+  }
+
+  const filesByPath = new Set(artifactFiles.map((file) => file.artifactPath))
+  for (const requiredPath of REQUIRED_ROLE_LANDING_FILES) {
+    if (!filesByPath.has(requiredPath)) {
+      throw new Error(`required role landing artifact is missing: ${requiredPath}`)
+    }
+  }
 }
 
 function calculateSizes(files, roots) {
@@ -279,11 +340,14 @@ function run() {
   if (projectConfigFile.document?.setting?.uploadWithSourceMap !== false) {
     throw new Error('project.config.json must disable source map upload')
   }
-  const roots = packageRoots(readJson(artifactRoot, 'app.json'))
+  const appConfig = readJson(artifactRoot, 'app.json')
+  const roots = packageRoots(appConfig)
   const artifactFiles = listArtifactFiles(artifactRoot)
   if (artifactFiles.length === 0) {
     throw new Error('artifact contains no files')
   }
+  validateRootTabBar(appConfig, artifactFiles)
+  validateRoleLanding(appConfig, artifactFiles)
   const copiedProjectConfig = artifactFiles.find(
     (file) => file.artifactPath === 'project.config.json'
   )

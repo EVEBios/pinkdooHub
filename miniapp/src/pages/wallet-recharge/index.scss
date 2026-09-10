@@ -1,11 +1,12 @@
 /* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
 @use '../../styles/patterns' as patterns;
+@use '../../styles/customer' as customer;
 
 .recharge-page {
   @include patterns.page-shell;
 
   &__header {
-    @include patterns.header-band;
+    @include customer.page-header(center 40%);
   }
 
   &__eyebrow,
@@ -16,20 +17,21 @@
   }
 
   &__eyebrow {
-    color: var(--pd-color-primary-strong);
+    @include customer.eyebrow;
+
     font-size: var(--pd-font-caption);
     font-weight: 750;
     letter-spacing: 1.3px;
   }
 
   &__title {
-    @include patterns.page-title;
+    @include customer.title;
 
     margin-top: 25px;
   }
 
   &__subtitle {
-    @include patterns.page-subtitle;
+    @include customer.subtitle;
 
     font-variant-numeric: tabular-nums;
   }
@@ -50,6 +52,7 @@
 
 .recharge-form {
   @include patterns.section-panel(26px, var(--pd-radius-large));
+  @include customer.ledger-panel(#c97991, 6px);
 
   max-width: 680px;
   margin: 0 auto;

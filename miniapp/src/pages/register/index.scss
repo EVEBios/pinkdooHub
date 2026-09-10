@@ -92,6 +92,23 @@
   }
 }
 
+.registration-navigation {
+  margin-top: 24px;
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__retry {
+    @include pd.quiet-button;
+
+    width: 100%;
+    margin-top: 12px;
+    color: var(--pd-color-primary-strong);
+    background: transparent;
+  }
+}
+
 .registration-success {
   &__description {
     display: block;

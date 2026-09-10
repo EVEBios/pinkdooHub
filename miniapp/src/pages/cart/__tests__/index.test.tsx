@@ -1,6 +1,7 @@
 import ReactTestUtil from '@tarojs/test-utils-react'
 import Taro from '@tarojs/taro'
 
+import type { AuthContextValue } from '@/auth'
 import type { CartContextValue } from '@/features/order'
 
 import CartPage from '../index'
@@ -9,12 +10,23 @@ const mockRetryInitialization = jest.fn()
 const mockUpdateQuantity = jest.fn(async () => undefined)
 const mockRemoveItem = jest.fn(async () => undefined)
 let mockCart: CartContextValue
+let mockAuth: AuthContextValue
+const mockUseCart = jest.fn()
+
+jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
+  isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
+  useAuth: () => mockAuth,
+}))
 
 jest.mock('@/features/order', () => ({
   cartItemKey: (item: { productId: number; experienceOptionId: number | null; kitColorId: number | null }) => (
     `${item.productId}:${item.experienceOptionId ?? item.kitColorId ?? 'fixed'}`
   ),
-  useCart: () => mockCart,
+  useCart: () => {
+    mockUseCart()
+    return mockCart
+  },
 }))
 
 jest.mock('@/utils/asset_url', () => ({
@@ -26,6 +38,7 @@ describe('CartPage', () => {
 
   beforeEach(() => {
     testUtils = new ReactTestUtil()
+    mockAuth = authenticatedUser()
     mockCart = {
       status: 'ready',
       items: [],
@@ -60,6 +73,39 @@ describe('CartPage', () => {
     await testUtils.mount(CartPage)
 
     expect(testUtils.queries.querySelector('.cart-page')?.textContent).toContain(expectedText)
+  })
+
+  it.each(['admin', 'super_admin'] as const)('%s 深链不挂载购物车，并自动进入工作台', async (role) => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role },
+    }
+    await testUtils.mount(CartPage)
+
+    expect(requireElement(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
+    expect(mockUseCart).not.toHaveBeenCalled()
+    await flush(testUtils)
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it('未知角色保持 fail closed，不挂载购物车', async () => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role: 'operator' as never },
+    }
+    await testUtils.mount(CartPage)
+
+    expect(requireElement(testUtils, '.cart-state__title').textContent).toContain('账户角色暂不支持')
+    expect(mockUseCart).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+  })
+
+  it('空购物车返回商城时切换到根 Tab', async () => {
+    await testUtils.mount(CartPage)
+
+    testUtils.fireEvent.click(requireElement(testUtils, '.cart-state__action'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
+    expect(Taro.navigateTo).not.toHaveBeenCalledWith({ url: '/pages/index/index' })
   })
 
   it('展示 Experience/Kit 本地预览，并把数量操作交给 Cart Store', async () => {
@@ -227,3 +273,40 @@ describe('CartPage', () => {
     expect(mockRetryInitialization).toHaveBeenCalledTimes(1)
   })
 })
+
+function requireElement(testUtils: ReactTestUtil, selector: string): Element {
+  const element = testUtils.queries.querySelector(selector)
+  if (!element) throw new Error(`${selector} not found`)
+  return element
+}
+
+function authenticatedUser(): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: {
+      id: 7,
+      username: 'member_007',
+      nickname: '拼豆会员',
+      phone: null,
+      avatar: null,
+      role: 'user',
+      status: 'normal',
+      last_login_at: null,
+      created_at: '2026-09-01T08:00:00Z',
+      updated_at: '2026-09-05T08:00:00Z',
+    },
+    register: jest.fn(),
+    updateProfile: jest.fn(),
+    login: jest.fn(),
+    loginWithWechat: jest.fn(),
+    logout: jest.fn(),
+    retryInitialization: jest.fn(),
+  }
+}
+
+async function flush(testUtils: ReactTestUtil): Promise<void> {
+  await testUtils.act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}

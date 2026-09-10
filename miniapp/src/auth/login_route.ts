@@ -1,3 +1,7 @@
+import { isAdminRole } from './role'
+
+export const MALL_PATH = '/pages/index/index'
+export const ADMIN_WORKBENCH_PATH = '/admin/pages/workbench/index'
 export const ORDER_CONFIRM_PATH = '/pages/order-confirm/index'
 export const ORDER_LIST_PATH = '/pages/orders/index'
 export const RESERVATION_CREATE_PATH = '/pages/reservation-create/index'
@@ -16,6 +20,7 @@ export const WALLET_TRANSACTION_LIST_PATH = '/pages/wallet-transactions/index'
 export type ReservationCreateRedirect = `${typeof RESERVATION_CREATE_PATH}?product_id=${number}&option_id=${number}`
 
 export type LoginRedirect =
+  | typeof ADMIN_WORKBENCH_PATH
   | typeof ORDER_CONFIRM_PATH
   | typeof ORDER_LIST_PATH
   | typeof RESERVATION_LIST_PATH
@@ -31,6 +36,7 @@ export type LoginRedirect =
   | typeof WALLET_TRANSACTION_LIST_PATH
 
 const ALLOWED_REDIRECTS = new Set<LoginRedirect>([
+  ADMIN_WORKBENCH_PATH,
   ORDER_CONFIRM_PATH,
   ORDER_LIST_PATH,
   RESERVATION_LIST_PATH,
@@ -43,6 +49,16 @@ const ALLOWED_REDIRECTS = new Set<LoginRedirect>([
   MEMBER_PATH,
   WALLET_RECHARGE_PATH,
   WALLET_TRANSACTION_LIST_PATH,
+])
+
+const ADMIN_REDIRECTS = new Set<LoginRedirect>([
+  ADMIN_WORKBENCH_PATH,
+  ADMIN_ORDER_LIST_PATH,
+  ADMIN_RESERVATION_LIST_PATH,
+  ADMIN_STORE_CLOSURE_LIST_PATH,
+  ADMIN_PRODUCT_LIST_PATH,
+  ADMIN_USER_LIST_PATH,
+  ADMIN_INVENTORY_LIST_PATH,
 ])
 
 export function buildLoginUrl(redirect?: LoginRedirect): string {
@@ -73,6 +89,26 @@ export function parseLoginRedirect(value: unknown): LoginRedirect | undefined {
   return isReservationCreateRedirect(decoded)
     ? decoded as ReservationCreateRedirect
     : undefined
+}
+
+/**
+ * 登录成功后只保留与当前角色相容的白名单目标，避免角色先落入另一套界面再二次跳转。
+ */
+export function resolveAuthenticatedLanding(
+  role: string | undefined,
+  redirect?: LoginRedirect,
+): LoginRedirect | typeof MALL_PATH | undefined {
+  if (isAdminRole(role)) {
+    return redirect && ADMIN_REDIRECTS.has(redirect)
+      ? redirect
+      : ADMIN_WORKBENCH_PATH
+  }
+  if (role === 'user') {
+    return redirect && !ADMIN_REDIRECTS.has(redirect)
+      ? redirect
+      : MALL_PATH
+  }
+  return undefined
 }
 
 function isReservationCreateRedirect(value: string): boolean {
