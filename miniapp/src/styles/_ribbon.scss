@@ -7,7 +7,7 @@
   color: #fff;
   background-color: #7e2042;
   background-image:
-    url('../assets/admin/workbench-header-texture.jpg'),
+    var(--pd-image-header-texture),
     var(--pd-gradient-stock);
   background-position: $position;
   background-repeat: no-repeat;

@@ -40,6 +40,10 @@ npm run dev:weapp      # 开发构建（watch，加载 .env.development）
 
 生产环境只接受不含路径/凭据的 HTTPS Origin，并拒绝 localhost、127.0.0.1、
 0.0.0.0 与 `[::1]`。`.env.production` 当前是不可发布的占位域名，部署前必须替换。
+GitHub Actions 的不可发布微信产物固定使用 `npm run build:weapp -- --mode ci`，由
+`.env.ci` 注入保留域 `.test` Origin。Taro 的 mode 文件参与编译期替换，因此不能只依赖
+workflow 的同名 shell 变量覆盖 `.env.production`；产物扫描仍拒绝 `.example.invalid`、
+localhost、HTTP、本地地址和带凭据 Origin。
 Gate A 微信上传关闭 source map；9.2.3 检查器分别校验干净生成的 `dist/weapp`
 和项目根 `project.config.json`，并把上传配置的 SHA-256 写入 manifest。远端 CI
 已在 head `62b1b15f...` / checkout `a9ff3d24...` 的 Run 34288613644 attempt 2 作为

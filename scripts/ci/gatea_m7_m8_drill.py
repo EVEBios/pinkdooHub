@@ -982,6 +982,11 @@ class GateAM7M9Drill:
         for image in (state.source_image, state.target_image):
             if _docker_image_ids(state.command_runner, image):
                 raise DrillError("drill app image tag already exists")
+        # Source keeps the exact frozen M7 application and migration payload,
+        # while both images use the candidate's reviewed runtime wrapper. This
+        # exercises M7 data without weakening the current image identity
+        # contract, including Uvicorn access-log suppression.
+        runtime_dockerfile = REPOSITORY_ROOT / "deploy" / "runtime" / "Dockerfile"
         builds = (
             (state.source_image, SOURCE_SHA, state.paths.source_tree),
             (state.target_image, state.target_sha, REPOSITORY_ROOT),
@@ -993,7 +998,7 @@ class GateAM7M9Drill:
                     "docker",
                     "build",
                     "--file",
-                    str(context / "deploy" / "runtime" / "Dockerfile"),
+                    str(runtime_dockerfile),
                     "--tag",
                     image,
                     "--label",

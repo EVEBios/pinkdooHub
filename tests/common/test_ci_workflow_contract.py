@@ -186,7 +186,7 @@ def test_workflow_keeps_the_weapp_artifact_non_release_and_traceable() -> None:
     assert "npm ci --include=dev --legacy-peer-deps" in workflow
     assert "set -o pipefail" in workflow
     assert "mkdir -p dist" in workflow
-    assert "npm run build:weapp" in workflow
+    assert "npm run build:weapp -- --mode ci" in workflow
     assert "npm run build:weapp:check" in workflow
     assert "github.sha" in workflow
     assert "github.run_id" in workflow
@@ -194,6 +194,12 @@ def test_workflow_keeps_the_weapp_artifact_non_release_and_traceable() -> None:
     assert "dist/weapp-manifest.sha256" in workflow
     assert "upload" not in workflow.lower().replace("upload-artifact", "")
     assert "deploy" not in workflow.lower()
+
+    ci_environment = (REPOSITORY_ROOT / "miniapp" / ".env.ci").read_text()
+    assert "TARO_APP_APP_ENV=production" in ci_environment
+    assert "TARO_APP_API_ORIGIN=https://api.ci.pinkdoohub.test" in ci_environment
+    assert "TARO_APP_AUTH_MODE=password" in ci_environment
+    assert "example.invalid" not in ci_environment
 
 
 def test_package_exposes_ci_policy_and_weapp_check_commands() -> None:

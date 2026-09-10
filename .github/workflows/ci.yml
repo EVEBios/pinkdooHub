@@ -355,7 +355,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p dist
-          npm run build:weapp 2>&1 | tee dist/weapp-build.log
+          npm run build:weapp -- --mode ci 2>&1 | tee dist/weapp-build.log
           if grep -Eiq '(^|[[:space:]])(warning|warn)(:|[[:space:]])' dist/weapp-build.log; then
             echo 'Unapproved warning found in the WeChat production build.'
             exit 1
