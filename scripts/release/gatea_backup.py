@@ -287,6 +287,23 @@ def _requires_m7_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
     return snapshot.get("aerich_versions") in M7_CONTENT_SNAPSHOT_AERICH_CHAINS
 
 
+def _requires_table_sweeper(snapshot: Mapping[str, Any]) -> bool:
+    """只有精确 M9 Schema 才允许恢复 M9 桌台清理器。"""
+
+    aerich_versions = snapshot.get("aerich_versions")
+    supported_chains = {
+        ",".join(gatea.APPROVED_SOURCE_M2_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M7_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M9_CHAIN),
+    }
+    if aerich_versions not in supported_chains:
+        raise gatea.GateAError(
+            "Gate A backup database migration chain is not approved"
+        )
+    return aerich_versions == ",".join(gatea.APPROVED_TARGET_M9_CHAIN)
+
+
 def _validate_m7_content_snapshot(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict) or set(payload) != M7_CONTENT_SNAPSHOT_KEYS:
         raise gatea.GateAError("Gate A M7 content snapshot is invalid")
@@ -468,14 +485,21 @@ def create_backup(
         candidate_sha=gatea._candidate_sha(values),
         image_id=image_id,
     )
+    running_snapshot = _source_snapshot(values, config_file, secret_dir, mode)
+    include_table_sweeper = _requires_table_sweeper(running_snapshot)
+    required_services = (
+        ("mysql", "redis", "app", "table-sweeper", "nginx")
+        if include_table_sweeper
+        else ("mysql", "redis", "app", "nginx")
+    )
     rows = gatea._compose_ps(
         values=values,
         config_file=config_file,
         secret_dir=secret_dir,
         mode=mode,
-        services=("mysql", "redis", "app", "nginx"),
+        services=required_services,
     )
-    gatea._ensure_services_healthy(rows, "mysql", "redis", "app", "nginx")
+    gatea._ensure_services_healthy(rows, *required_services)
 
     database_path, image_path = _backup_paths(backup_root, backup_id)
     record_path = backup_record_dir / f"{backup_id}.json"
@@ -489,14 +513,23 @@ def create_backup(
     m7_content_snapshot: dict[str, Any] | None = None
     image_manifest: list[str] = []
     try:
+        stopped_services = (
+            ("nginx", "table-sweeper", "app")
+            if include_table_sweeper
+            else ("nginx", "app")
+        )
         gatea._run_compose(
             values=values,
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
-            arguments=("stop", "--timeout", "30", "nginx", "app"),
+            arguments=("stop", "--timeout", "30", *stopped_services),
         )
         snapshot = _source_snapshot(values, config_file, secret_dir, mode)
+        if _requires_table_sweeper(snapshot) != include_table_sweeper:
+            raise gatea.GateAError(
+                "Gate A database migration chain changed during backup entry"
+            )
         if _requires_m7_content_snapshot(snapshot):
             m7_content_snapshot = _source_m7_content_snapshot(
                 values,
@@ -553,6 +586,7 @@ def create_backup(
             record_dir=release_record_dir,
             mode=mode,
             wait_timeout=wait_timeout,
+            include_table_sweeper=include_table_sweeper,
         )
     except BaseException as error:
         restart_error = error
@@ -595,6 +629,7 @@ def create_backup(
         },
         "redis_recovery_policy": "start-empty-and-invalidate-refresh-sessions",
         "application_restarted": True,
+        "table_sweeper_restarted": include_table_sweeper,
         "passed": True,
     }
     try:

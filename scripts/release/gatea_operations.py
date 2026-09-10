@@ -985,8 +985,9 @@ def app_up(
     record_dir: Path,
     mode: str,
     wait_timeout: int,
+    include_table_sweeper: bool = True,
 ) -> None:
-    """首次迁移或既有库升级 Record 匹配后启动 App/Nginx。"""
+    """Record 匹配后启动 App/Nginx，并默认严格要求 M9 sweeper。"""
 
     _require_loopback_write_mode(mode)
     values = _validated_inputs(
@@ -1011,6 +1012,11 @@ def app_up(
     )
     _ensure_services_healthy(rows, "mysql", "redis")
 
+    runtime_services = (
+        ("app", "table-sweeper", "nginx")
+        if include_table_sweeper
+        else ("app", "nginx")
+    )
     try:
         _run_compose(
             values=values,
@@ -1024,9 +1030,7 @@ def app_up(
                 "--wait",
                 "--wait-timeout",
                 str(wait_timeout),
-                "app",
-                "table-sweeper",
-                "nginx",
+                *runtime_services,
             ),
         )
         rows = _compose_ps(
@@ -1034,9 +1038,9 @@ def app_up(
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
-            services=("app", "table-sweeper", "nginx"),
+            services=runtime_services,
         )
-        _ensure_services_healthy(rows, "app", "table-sweeper", "nginx")
+        _ensure_services_healthy(rows, *runtime_services)
         _validate_loopback_publishers(
             rows,
             int(values.get("GATEA_LOOPBACK_PORT", "18080")),

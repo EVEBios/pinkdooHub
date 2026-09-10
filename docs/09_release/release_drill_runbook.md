@@ -299,10 +299,14 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 4. 比较 Schema/诊断摘要、完整图片 manifest 和预先冻结的业务抽样；启动只读应用 Smoke。
    聚合行数不能替代版本化内容摘要。
 5. 记录恢复耗时和恢复点。恢复验证失败时不得继续迁移。
+6. 备份器必须按精确 Aerich 链恢复常驻服务：M7/M8 不启动尚无桌台表的
+   `table-sweeper`；M9 必须先证明 sweeper 健康，并把它与 App/Nginx 一起纳入停写和
+   恢复健康检查。未知链或进入停写窗口期间版本变化必须拒绝，不得通过放宽健康检查绕过。
 
 版本化摘要的 20 表 dump 与 `bead_colors` 投影是两次顺序读取，MySQL 内容与图片归档也
-不在同一个跨系统事务中。其一致性依赖 App/Nginx 已停止且没有直接 SQL、其他迁移进程
-或宿主图片旁路写入；不能满足时保持 No-Go。
+不在同一个跨系统事务中。其一致性依赖所有写入方停止：M7/M8 为 App/Nginx，M9 还包括
+`table-sweeper`；同时不得存在直接 SQL、其他迁移进程或宿主图片旁路写入。不能满足时
+保持 No-Go。
 
 ### 4.3 数据库迁移
 
@@ -429,7 +433,8 @@ sudo python3 -m scripts.release.gatea_m7_representative_data \
    不同时长分别计时、quantity 不放大时长、Kit 不参与计时、15 分钟支付边界、每组加
    10 分钟，以及支付/超时/取消/完成/退款的释放和 sweep/reconcile 幂等；内部验收只使用
    wallet/manual，真实微信支付继续为单独项目。
-7. 在成功运行状态创建新的 M9 MySQL/图片 Backup，完成独立无端口 Restore、空 Redis、
+7. 在成功运行状态先证明 `table-sweeper` 健康，再把它与 App/Nginx 一起停止并创建新的
+   M9 MySQL/图片 Backup；成功后必须恢复三者健康，并完成独立无端口 Restore、空 Redis、
    Restore App readiness、225 图片与 30 桌核验，再按既有 AES-256-GCM/RSA-OAEP-SHA256
    流程生成并立即解密复核异机副本。M9 检查点只能引用这组新 Record。
 

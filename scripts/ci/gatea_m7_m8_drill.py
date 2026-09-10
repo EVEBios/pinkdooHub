@@ -1471,6 +1471,7 @@ class GateAM7M9Drill:
             backup_payload.get("candidate_sha") != SOURCE_SHA
             or backup_payload.get("m7_content_snapshot", {}).get("profile")
             != backup.M7_CONTENT_SNAPSHOT_PROFILE
+            or backup_payload.get("table_sweeper_restarted") is not False
             or restore_payload.get("backup_id") != state.source_backup_id
             or restore_payload.get("passed") is not True
         ):
@@ -1908,6 +1909,7 @@ class GateAM7M9Drill:
         self._artifact("target-restore-record.json", restore_payload)
         if (
             backup_payload.get("candidate_sha") != state.target_sha
+            or backup_payload.get("table_sweeper_restarted") is not True
             or restore_payload.get("backup_id") != state.target_backup_id
             or restore_payload.get("candidate_sha") != state.target_sha
             or restore_payload.get("passed") is not True

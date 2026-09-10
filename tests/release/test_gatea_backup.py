@@ -27,6 +27,13 @@ def _m7_database_snapshot() -> dict[str, object]:
     }
 
 
+def _m9_database_snapshot() -> dict[str, object]:
+    return {
+        "aerich_versions": ",".join(gatea.APPROVED_TARGET_M9_CHAIN),
+        "tables": 27,
+    }
+
+
 def _m7_content_snapshot(digest: str = "7" * 64) -> dict[str, object]:
     return {
         "content_sha256": digest,
@@ -194,6 +201,22 @@ def test_m7_content_snapshot_contract_is_versioned_sanitized_and_pre_m8_safe() -
             backup._validate_m7_content_snapshot(invalid)
 
 
+def test_backup_runtime_services_follow_the_exact_migration_chain() -> None:
+    assert backup._requires_table_sweeper(
+        {"aerich_versions": ",".join(gatea.APPROVED_SOURCE_M2_CHAIN)}
+    ) is False
+    assert backup._requires_table_sweeper(_m7_database_snapshot()) is False
+    assert backup._requires_table_sweeper(_m9_database_snapshot()) is True
+
+    with pytest.raises(gatea.GateAError, match="migration chain is not approved"):
+        backup._requires_table_sweeper(
+            {
+                "aerich_versions": ",".join(gatea.APPROVED_TARGET_M9_CHAIN)
+                + ",unknown"
+            }
+        )
+
+
 def test_create_backup_stops_writes_records_artifacts_and_restarts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -238,7 +261,7 @@ def test_create_backup_stops_writes_records_artifacts_and_restarts(
     monkeypatch.setattr(
         gatea,
         "app_up",
-        lambda **kwargs: restarted.append(True),
+        lambda **kwargs: restarted.append(bool(kwargs["include_table_sweeper"])),
     )
 
     backup.create_backup(
@@ -253,7 +276,7 @@ def test_create_backup_stops_writes_records_artifacts_and_restarts(
     )
 
     assert compose_commands == [("stop", "--timeout", "30", "nginx", "app")]
-    assert restarted == [True]
+    assert restarted == [False]
     payload = json.loads(
         (backup_records / "20260902t120000z.json").read_text(encoding="utf-8")
     )
@@ -263,10 +286,83 @@ def test_create_backup_stops_writes_records_artifacts_and_restarts(
     assert payload["redis_recovery_policy"] == (
         "start-empty-and-invalidate-refresh-sessions"
     )
+    assert payload["table_sweeper_restarted"] is False
     for name in ("mysql", "images"):
         path = Path(payload["artifacts"][name]["path"])
         assert path.is_file()
         assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_create_m9_backup_stops_and_strictly_restarts_the_table_sweeper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    backup_root, backup_records, _ = _directories(tmp_path)
+    values = _values(backup_root)
+    compose_commands: list[tuple[str, ...]] = []
+    restarted: list[bool] = []
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+    monkeypatch.setattr(gatea, "_require_deployment_record", lambda **kwargs: None)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [
+            {"Service": name, "State": "running", "Health": "healthy"}
+            for name in kwargs["services"]
+        ],
+    )
+    monkeypatch.setattr(gatea, "_ensure_services_healthy", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: compose_commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess([], 0, stdout=""),
+    )
+    monkeypatch.setattr(
+        backup,
+        "_source_snapshot",
+        lambda *args: _m9_database_snapshot(),
+    )
+    monkeypatch.setattr(
+        backup,
+        "_source_m7_content_snapshot",
+        lambda *args: _m7_content_snapshot(),
+    )
+    monkeypatch.setattr(backup, "_source_image_manifest", lambda *args: [])
+
+    def fake_stream(**kwargs: object) -> None:
+        Path(kwargs["path"]).write_bytes(b"verified-artifact")
+        Path(kwargs["path"]).chmod(0o600)
+
+    monkeypatch.setattr(backup, "_stream_source_artifact", fake_stream)
+    monkeypatch.setattr(
+        gatea,
+        "app_up",
+        lambda **kwargs: restarted.append(bool(kwargs["include_table_sweeper"])),
+    )
+
+    backup.create_backup(
+        backup_id="20260902t120001z",
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+        backup_root=backup_root,
+        backup_record_dir=backup_records,
+        release_record_dir=tmp_path / "releases",
+        wait_timeout=180,
+    )
+
+    assert compose_commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
+    assert restarted == [True]
+    payload = json.loads(
+        (backup_records / "20260902t120001z.json").read_text(encoding="utf-8")
+    )
+    assert payload["table_sweeper_restarted"] is True
 
 
 def _write_backup_fixture(

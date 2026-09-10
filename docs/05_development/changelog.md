@@ -12,8 +12,9 @@
 - 新增公开二维码解析、可选订单、创建/当前/订单最新会话和 ADMIN 桌台/会话/启停/释放 API；严格认证、资源隐藏、幂等、Redis fail-closed 限流和生产 claims 开关同步进入 OpenAPI。占用对 table/session/user/order 四列分别 UNIQUE；跨域锁序保持 `User -> Order -> StoreTable -> Session/Occupancy -> 资金 -> Wallet/Kit`。
 - 小程序增加扫码入口、登录后意图恢复、选择/新建订单、钱包付款、服务端权威倒计时，以及 ADMIN 30 桌列表、10 秒轮询、详情和应急释放；普通二维码仅用于备案前 `develop` 内部验收，不冒充正式微信小程序码。
 - Gate A 运维链已扩展为 M7→M8→M9：迁移后执行 30 桌 bootstrap/replay、结构/内容/一致性核验，常驻 `table-sweeper` 与 App 一起启动；disposable updater CI 同步覆盖 M7 source Backup/Restore、M9 target Backup/Restore、M8 HEX/gzip/PNG 与 M9 Runtime。真实持久状态和验收证据必须在 CI 通过后另行记录，本文条目本身不代表已部署。
+- Run 34455514865 暴露 source Backup 后通用 `app-up` 在 M7 Schema 上误启动 M9 `table-sweeper`；备份器现按精确 M7/M8/M9 Aerich 链选择恢复服务，M7/M8 只恢复 App/Nginx，M9 则要求 sweeper 备份前健康、随 App/Nginx 一起停写并在备份后严格恢复。未知链和停写期间版本变化保持 fail closed，完整 updater 必须由后续当前 SHA 的 CI 重新证明。
 - 新增直接依赖 `segno==1.6.6` 仅用于离线生成 PNG 占位二维码；真实微信支付、微信官方小程序码、预约绑定、换桌/加时/暂停和公开发布均不在 M9 首版。
-- 当前本地门槛为后端完整 `2384 passed, 39 skipped`；前端完整 `102 suites / 719 tests`，TypeScript、ESLint、Stylelint、CI policy 和 OpenAPI 类型均通过；一次性 MySQL 8.0.46 从 M0→M9 后的 M9 迁移/约束/并发/领域门槛为 `39 passed`，完整迁移编排与资源清理通过。微信 CI 改用独立 `.env.ci`，避免生产占位 Origin 覆盖 CI 注入值；页头纹理提升为全局 CSS 变量后只内联一次，当前不可发布微信产物主包约 0.86 MiB、总包约 1.42 MiB。Gate A 目标的非 Secret 标识已固定为 `ubuntu@118.195.195.59`，微信内部验收环境为 `develop`；私钥和其他凭据不进入仓库。
+- 当前本地门槛为后端完整 `2387 passed, 39 skipped`；前端完整 `102 suites / 719 tests`，TypeScript、ESLint、Stylelint、CI policy 和 OpenAPI 类型均通过；一次性 MySQL 8.0.46 从 M0→M9 后的 M9 迁移/约束/并发/领域门槛为 `39 passed`，完整迁移编排与资源清理通过。微信 CI 改用独立 `.env.ci`，避免生产占位 Origin 覆盖 CI 注入值；页头纹理提升为全局 CSS 变量后只内联一次，当前不可发布微信产物主包约 0.86 MiB、总包约 1.42 MiB。Gate A 目标的非 Secret 标识已固定为 `ubuntu@118.195.195.59`，微信内部验收环境为 `develop`；私钥和其他凭据不进入仓库。
 
 ## Frontend ADMIN+ 独立店铺工作台（仓库实现候选，2026-09-09）
 

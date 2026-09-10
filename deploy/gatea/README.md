@@ -192,6 +192,12 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
 将完整 JSON 作为升级前证据保存到仓库外受控位置。该命令只解决只读起点确认，仍不
 构成非空库升级授权。
 
+`gatea_backup.py backup` 会从只读数据库摘要精确区分 M7/M8 与 M9：M7/M8 写前备份只
+要求并恢复 App/Nginx，不启动尚无对应表的 `table-sweeper`；M9 备份则先要求 sweeper
+健康，把它与 Nginx/App 一起停止后再读取停写摘要和导出资产，成功后必须与 App/Nginx
+一起恢复健康。普通 `gatea_operations app-up` 仍默认严格要求 M9 sweeper；旧版本分支
+只存在于备份器对批准 Aerich 链的内部调用，未知或中途变化的迁移链一律 fail closed。
+
 候选镜像内另有三个只供受控非空升级编排调用的执行原语：
 
 - `python -m app.tasks.gatea_migrate_step --target-version <3..9>` 在容器 `/tmp`

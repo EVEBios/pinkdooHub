@@ -555,6 +555,71 @@ def test_app_up_requires_matching_migration_record_and_waits_for_health(
     ]
 
 
+def test_app_up_can_restore_an_approved_pre_m9_runtime_without_sweeper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    commands: list[tuple[str, ...]] = []
+    requested_services: list[tuple[str, ...]] = []
+    gatea._write_migration_record(
+        record_dir=tmp_path,
+        candidate_sha="a" * 40,
+        image_id="sha256:image",
+    )
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+
+    def fake_compose_ps(**kwargs: object) -> list[dict[str, object]]:
+        services = tuple(kwargs["services"])
+        requested_services.append(services)
+        rows: list[dict[str, object]] = _healthy_rows(*services)
+        for row in rows:
+            if row["Service"] == "nginx":
+                row["Publishers"] = [
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    }
+                ]
+        return rows
+
+    monkeypatch.setattr(gatea, "_compose_ps", fake_compose_ps)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+
+    gatea.app_up(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+        wait_timeout=180,
+        include_table_sweeper=False,
+    )
+
+    assert commands == [
+        (
+            "up",
+            "--detach",
+            "--no-build",
+            "--wait",
+            "--wait-timeout",
+            "180",
+            "app",
+            "nginx",
+        )
+    ]
+    assert requested_services == [("mysql", "redis"), ("app", "nginx")]
+
+
 def test_lifecycle_writes_reject_tls_and_safe_stop_never_removes_volumes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
