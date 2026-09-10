@@ -344,12 +344,24 @@ def prepare(
     release_record_dir: Path,
     bootstrap_record: Path,
     record_dir: Path,
+    acceptance_record_dir: Path = gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
 ) -> PreparedContext:
     """在读取密码前完成 Root、候选、健康、端口和空基线检查。"""
 
     if os.geteuid() != 0:
         raise RepresentativeDataError("Gate A representative data must run as root")
     _validate_identity(username, confirm_username)
+    gatea._validate_root_directory(
+        release_record_dir,
+        0o755,
+        "Gate A release record directory",
+    )
+    gatea.reject_unresolved_candidate_transition_journals(
+        record_dir=release_record_dir,
+    )
+    gatea.reject_unresolved_m9_acceptance_sidecars(
+        record_dir=acceptance_record_dir,
+    )
     values = gatea._validated_inputs(
         config_file=config_file,
         secret_dir=secret_dir,
@@ -922,6 +934,11 @@ def _parser() -> argparse.ArgumentParser:
         default=gatea.DEFAULT_RECORD_DIR,
     )
     parser.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+    )
+    parser.add_argument(
         "--bootstrap-record",
         type=Path,
         default=DEFAULT_BOOTSTRAP_RECORD,
@@ -935,27 +952,29 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not arguments.apply:
             raise RepresentativeDataError("Gate A representative data requires --apply")
-        context = prepare(
-            username=arguments.super_admin_username,
-            confirm_username=arguments.confirm_super_admin_username,
-            config_file=arguments.config_file,
-            secret_dir=arguments.secret_dir,
-            release_record_dir=arguments.release_record_dir,
-            bootstrap_record=arguments.bootstrap_record,
-            record_dir=arguments.record_dir,
-        )
-        if not sys.stdin.isatty():
-            raise RepresentativeDataError(
-                "Gate A representative data requires an interactive TTY"
+        with gatea.operation_lock():
+            context = prepare(
+                username=arguments.super_admin_username,
+                confirm_username=arguments.confirm_super_admin_username,
+                config_file=arguments.config_file,
+                secret_dir=arguments.secret_dir,
+                release_record_dir=arguments.release_record_dir,
+                bootstrap_record=arguments.bootstrap_record,
+                record_dir=arguments.record_dir,
+                acceptance_record_dir=arguments.acceptance_record_dir,
             )
-        password = getpass.getpass("Current SUPER_ADMIN password: ")
-        confirmation = getpass.getpass("Confirm current SUPER_ADMIN password: ")
-        _validate_password(password, confirmation)
-        execute(
-            context,
-            username=arguments.super_admin_username,
-            password=password,
-        )
+            if not sys.stdin.isatty():
+                raise RepresentativeDataError(
+                    "Gate A representative data requires an interactive TTY"
+                )
+            password = getpass.getpass("Current SUPER_ADMIN password: ")
+            confirmation = getpass.getpass("Confirm current SUPER_ADMIN password: ")
+            _validate_password(password, confirmation)
+            execute(
+                context,
+                username=arguments.super_admin_username,
+                password=password,
+            )
     except RepresentativeDataError as error:
         print(f"Gate A representative data failed: {error}", file=sys.stderr)
         return 1

@@ -1,8 +1,12 @@
 """Gate A 持久部署预检与生命周期命令边界。"""
 
+from contextlib import nullcontext
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -36,6 +40,464 @@ def _valid_values() -> dict[str, str]:
         ),
         "JWT_ALGORITHM": "HS256",
     }
+
+
+def _mock_root_lock_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_fstat = os.fstat
+
+    def root_fstat(descriptor: int) -> SimpleNamespace:
+        metadata = real_fstat(descriptor)
+        return SimpleNamespace(
+            st_mode=metadata.st_mode,
+            st_uid=0,
+            st_gid=0,
+        )
+
+    monkeypatch.setattr(gatea.os, "fstat", root_fstat)
+
+
+def test_operation_lock_uses_fixed_secure_nonblocking_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "gatea-operation.lock"
+    real_open = os.open
+    opened: list[tuple[Path, int, int]] = []
+
+    def tracked_open(value: Path, flags: int, mode: int) -> int:
+        opened.append((value, flags, mode))
+        return real_open(value, flags, mode)
+
+    monkeypatch.setattr(gatea.os, "open", tracked_open)
+    _mock_root_lock_metadata(monkeypatch)
+
+    with gatea.operation_lock(_path=path):
+        assert path.is_file()
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        with pytest.raises(GateAError, match="Another Gate A operation is active"):
+            with gatea.operation_lock(_path=path):
+                pass
+
+    assert path.is_file()
+    assert gatea.DEFAULT_OPERATION_LOCK_FILE == Path(
+        "/run/lock/pinkdoohub-gatea-operation.lock"
+    )
+    assert opened
+    _, flags, mode = opened[0]
+    assert flags & os.O_RDWR
+    assert flags & os.O_CREAT
+    assert flags & os.O_CLOEXEC
+    assert flags & os.O_NOFOLLOW
+    assert mode == 0o600
+
+
+@pytest.mark.parametrize(
+    ("file_type", "mode", "uid", "gid"),
+    (
+        (stat.S_IFDIR, 0o600, 0, 0),
+        (stat.S_IFREG, 0o640, 0, 0),
+        (stat.S_IFREG, 0o600, 1, 0),
+        (stat.S_IFREG, 0o600, 0, 1),
+    ),
+)
+def test_operation_lock_rejects_unsafe_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    file_type: int,
+    mode: int,
+    uid: int,
+    gid: int,
+) -> None:
+    path = tmp_path / "gatea-operation.lock"
+    path.touch(mode=0o600)
+    monkeypatch.setattr(
+        gatea.os,
+        "fstat",
+        lambda descriptor: SimpleNamespace(
+            st_mode=file_type | mode,
+            st_uid=uid,
+            st_gid=gid,
+        ),
+    )
+
+    with pytest.raises(GateAError, match="operation lock is unsafe"):
+        with gatea.operation_lock(_path=path):
+            pass
+
+
+def test_operation_lock_rejects_symlink(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.lock"
+    target.touch(mode=0o600)
+    path = tmp_path / "gatea-operation.lock"
+    path.symlink_to(target)
+
+    with pytest.raises(GateAError, match="operation lock is unavailable"):
+        with gatea.operation_lock(_path=path):
+            pass
+
+
+def test_operation_lock_releases_after_body_error_without_unlinking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "gatea-operation.lock"
+    _mock_root_lock_metadata(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="operation failed"):
+        with gatea.operation_lock(_path=path):
+            raise RuntimeError("operation failed")
+
+    assert path.is_file()
+    with gatea.operation_lock(_path=path):
+        assert path.is_file()
+
+
+@pytest.mark.parametrize(
+    ("work_signal", "work_error_type", "recovery_signal"),
+    (
+        (gatea.signal.SIGHUP, gatea.GateAOperationInterrupted, gatea.signal.SIGINT),
+        (gatea.signal.SIGTERM, gatea.GateAOperationInterrupted, gatea.signal.SIGINT),
+        (gatea.signal.SIGINT, KeyboardInterrupt, gatea.signal.SIGTERM),
+    ),
+)
+def test_operation_termination_guard_covers_all_control_signals_and_restores(
+    monkeypatch: pytest.MonkeyPatch,
+    work_signal: int,
+    work_error_type: type[BaseException],
+    recovery_signal: int,
+) -> None:
+    previous = {
+        gatea.signal.SIGHUP: object(),
+        gatea.signal.SIGTERM: object(),
+        gatea.signal.SIGINT: object(),
+    }
+    active_handlers: dict[int, object] = {}
+
+    monkeypatch.setattr(
+        gatea.signal,
+        "getsignal",
+        lambda signum: previous[signum],
+    )
+    monkeypatch.setattr(
+        gatea.signal,
+        "signal",
+        lambda signum, handler: active_handlers.__setitem__(signum, handler),
+    )
+
+    first_interruption: BaseException | None = None
+    with pytest.raises(work_error_type) as propagated:
+        with gatea.operation_termination_guard() as controller:
+            assert set(active_handlers) == set(previous)
+            interrupt = active_handlers[work_signal]
+            assert callable(interrupt)
+            with pytest.raises(work_error_type) as caught:
+                interrupt(work_signal, None)
+            first_interruption = caught.value
+            assert controller.work_interruption is first_interruption
+
+            deferred = active_handlers[recovery_signal]
+            assert callable(deferred)
+            assert deferred(recovery_signal, None) is None
+            remembered = controller.deferred_interruption
+            assert remembered is not None
+            assert deferred(recovery_signal, None) is None
+            assert controller.deferred_interruption is remembered
+
+    assert propagated.value is first_interruption
+    assert active_handlers == previous
+
+
+def test_operation_termination_guard_preserves_body_error_before_deferred_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous = {
+        gatea.signal.SIGHUP: object(),
+        gatea.signal.SIGTERM: object(),
+        gatea.signal.SIGINT: object(),
+    }
+    active_handlers: dict[int, object] = {}
+    monkeypatch.setattr(
+        gatea.signal,
+        "getsignal",
+        lambda signum: previous[signum],
+    )
+    monkeypatch.setattr(
+        gatea.signal,
+        "signal",
+        lambda signum, handler: active_handlers.__setitem__(signum, handler),
+    )
+
+    original = GateAError("original work failure")
+    with pytest.raises(GateAError, match="original work failure") as caught:
+        with gatea.operation_termination_guard() as controller:
+            controller.begin_recovery()
+            handler = active_handlers[gatea.signal.SIGINT]
+            assert callable(handler)
+            assert handler(gatea.signal.SIGINT, None) is None
+            raise original
+
+    assert caught.value is original
+    assert active_handlers == previous
+
+
+def test_operation_termination_guard_propagates_late_deferred_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    previous = {
+        gatea.signal.SIGHUP: object(),
+        gatea.signal.SIGTERM: object(),
+        gatea.signal.SIGINT: object(),
+    }
+    active_handlers: dict[int, object] = {}
+    monkeypatch.setattr(
+        gatea.signal,
+        "getsignal",
+        lambda signum: previous[signum],
+    )
+    monkeypatch.setattr(
+        gatea.signal,
+        "signal",
+        lambda signum, handler: active_handlers.__setitem__(signum, handler),
+    )
+
+    with pytest.raises(KeyboardInterrupt, match="received SIGINT"):
+        with gatea.operation_termination_guard() as controller:
+            controller.begin_recovery()
+            handler = active_handlers[gatea.signal.SIGINT]
+            assert callable(handler)
+            assert handler(gatea.signal.SIGINT, None) is None
+
+    assert active_handlers == previous
+
+
+def test_best_effort_stop_is_strict_isolated_and_verifies_stopped_services(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[tuple[tuple[str, ...], bool, bool]] = []
+    status_session_flags: list[bool] = []
+
+    def run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(
+            (
+                tuple(kwargs["arguments"]),
+                bool(kwargs.get("check", True)),
+                bool(kwargs.get("start_new_session", False)),
+            )
+        )
+        return subprocess.CompletedProcess([], 0, stdout="")
+
+    monkeypatch.setattr(gatea, "_run_compose", run_compose)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: status_session_flags.append(
+            bool(kwargs.get("start_new_session", False))
+        )
+        or [
+            {"Service": "nginx", "State": "exited"},
+            {"Service": "app", "State": "exited"},
+        ],
+    )
+
+    gatea._best_effort_stop(
+        values=_valid_values(),
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+        services=("nginx", "app"),
+    )
+
+    assert commands == [
+        (("stop", "--timeout", "30", "nginx", "app"), True, True)
+    ]
+    assert status_session_flags == [True]
+
+
+def test_best_effort_stop_rejects_a_service_that_is_still_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: subprocess.CompletedProcess([], 0, stdout=""),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [{"Service": "app", "State": "running"}],
+    )
+
+    with pytest.raises(GateAError, match="service app did not stop"):
+        gatea._best_effort_stop(
+            values=_valid_values(),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            services=("app",),
+        )
+
+
+def test_stop_on_failure_preserves_original_error_before_deferred_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = gatea._OperationTerminationController()
+    original = GateAError("original work failure")
+    completed: list[bool] = []
+
+    def run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert controller.interrupt(gatea.signal.SIGINT, None) is None
+        completed.append(True)
+        return subprocess.CompletedProcess([], 0, stdout="")
+
+    monkeypatch.setattr(gatea, "_run_compose", run_compose)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [{"Service": "app", "State": "exited"}],
+    )
+
+    with pytest.raises(GateAError, match="original work failure") as caught:
+        with gatea._stop_services_on_failure(
+            termination=controller,
+            values=_valid_values(),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            services=("app",),
+        ):
+            raise original
+
+    assert caught.value is original
+    assert isinstance(controller.deferred_interruption, KeyboardInterrupt)
+    assert completed == [True]
+
+
+def test_stop_on_failure_prioritizes_recovery_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = gatea._OperationTerminationController()
+    original = GateAError("original work failure")
+    recovery = subprocess.CalledProcessError(130, ["docker", "compose", "stop"])
+
+    def run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert controller.interrupt(gatea.signal.SIGINT, None) is None
+        raise recovery
+
+    monkeypatch.setattr(gatea, "_run_compose", run_compose)
+
+    with pytest.raises(subprocess.CalledProcessError) as caught:
+        with gatea._stop_services_on_failure(
+            termination=controller,
+            values=_valid_values(),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            services=("app",),
+        ):
+            raise original
+
+    assert caught.value is recovery
+    assert isinstance(controller.deferred_interruption, KeyboardInterrupt)
+
+
+def test_stop_on_failure_runs_stop_when_recovery_transition_is_interrupted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = gatea._OperationTerminationController()
+    original = GateAError("original work failure")
+    transition = KeyboardInterrupt("transition interrupt")
+    completed: list[bool] = []
+
+    def interrupt_transition() -> None:
+        raise transition
+
+    monkeypatch.setattr(controller, "begin_recovery", interrupt_transition)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: completed.append(True)
+        or subprocess.CompletedProcess([], 0, stdout=""),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [{"Service": "app", "State": "exited"}],
+    )
+
+    with pytest.raises(GateAError, match="original work failure") as caught:
+        with gatea._stop_services_on_failure(
+            termination=controller,
+            values=_valid_values(),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            services=("app",),
+        ):
+            raise original
+
+    assert caught.value is original
+    assert completed == [True]
+
+
+def test_safe_stop_defers_sigint_until_stop_and_verification_finish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = gatea._OperationTerminationController()
+    events: list[str] = []
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _valid_values())
+
+    def run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert kwargs["start_new_session"] is True
+        assert controller.interrupt(gatea.signal.SIGINT, None) is None
+        events.append("stop")
+        return subprocess.CompletedProcess([], 0, stdout="")
+
+    def compose_ps(**kwargs: object) -> list[dict[str, str]]:
+        assert kwargs["start_new_session"] is True
+        events.append("verify")
+        return [
+            {"Service": service, "State": "exited"}
+            for service in kwargs["services"]
+        ]
+
+    monkeypatch.setattr(gatea, "_run_compose", run_compose)
+    monkeypatch.setattr(gatea, "_compose_ps", compose_ps)
+
+    with pytest.raises(KeyboardInterrupt, match="received SIGINT"):
+        gatea.safe_stop(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            _termination_controller=controller,
+        )
+
+    assert events == ["stop", "verify"]
+
+
+def test_safe_stop_prioritizes_stop_failure_over_deferred_sigint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = gatea._OperationTerminationController()
+    recovery = subprocess.CalledProcessError(1, ["docker", "compose", "stop"])
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _valid_values())
+
+    def run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert controller.interrupt(gatea.signal.SIGINT, None) is None
+        raise recovery
+
+    monkeypatch.setattr(gatea, "_run_compose", run_compose)
+
+    with pytest.raises(subprocess.CalledProcessError) as caught:
+        gatea.safe_stop(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            _termination_controller=controller,
+        )
+
+    assert caught.value is recovery
 
 
 def test_parse_env_file_accepts_comments_and_rejects_duplicate_keys(
@@ -177,6 +639,32 @@ def test_compose_command_binds_exact_mode_and_optional_bootstrap() -> None:
     assert command[-4:] == ["--profile", "bootstrap", "config", "--quiet"]
 
 
+def test_run_compose_start_new_session_creates_a_process_group_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        gatea,
+        "compose_command",
+        lambda **kwargs: [
+            gatea.sys.executable,
+            "-c",
+            "import os; print(os.getpgrp())",
+        ],
+    )
+
+    result = gatea._run_compose(
+        values=_valid_values(),
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+        arguments=("stop",),
+        capture_output=True,
+        start_new_session=True,
+    )
+
+    assert int(result.stdout.strip()) != os.getpgrp()
+
+
 def _healthy_rows(*services: str) -> list[dict[str, str]]:
     return [
         {"Service": service, "State": "running", "Health": "healthy"}
@@ -272,6 +760,43 @@ def test_validate_app_image_requires_matching_sha_and_non_root_runtime(
         gatea.validate_app_image(values)
 
 
+def test_validate_app_image_allows_only_the_exact_legacy_m7_command_when_opted_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = _valid_values()
+    payload = {
+        "Id": "sha256:image-id",
+        "Config": {
+            "User": "10001:10001",
+            "Entrypoint": ["/usr/local/bin/pinkdoo-entrypoint"],
+            "Cmd": list(gatea.LEGACY_M7_APP_COMMAND),
+            "Labels": {
+                "org.opencontainers.image.revision": "a" * 40,
+            },
+        },
+    }
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=json.dumps(payload),
+        ),
+    )
+
+    with pytest.raises(GateAError, match="command does not match"):
+        gatea.validate_app_image(values)
+    assert (
+        gatea.validate_app_image(values, allow_legacy_m7_command=True)
+        == "sha256:image-id"
+    )
+
+    payload["Config"]["Cmd"] = [*gatea.LEGACY_M7_APP_COMMAND, "--reload"]
+    with pytest.raises(GateAError, match="command does not match"):
+        gatea.validate_app_image(values, allow_legacy_m7_command=True)
+
+
 def test_infra_up_uses_wait_and_stops_services_on_failed_health(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -291,7 +816,14 @@ def test_infra_up_uses_wait_and_stops_services_on_failed_health(
     monkeypatch.setattr(
         gatea,
         "_compose_ps",
-        lambda **kwargs: _healthy_rows("mysql"),
+        lambda **kwargs: (
+            [
+                {"Service": "redis", "State": "exited"},
+                {"Service": "mysql", "State": "exited"},
+            ]
+            if kwargs.get("start_new_session")
+            else _healthy_rows("mysql")
+        ),
     )
 
     with pytest.raises(GateAError, match="redis is unavailable"):
@@ -314,7 +846,7 @@ def test_infra_up_uses_wait_and_stops_services_on_failed_health(
     )
     assert commands[-1] == (
         ("stop", "--timeout", "30", "redis", "mysql"),
-        False,
+        True,
     )
 
 
@@ -429,7 +961,14 @@ def test_initial_migrate_requires_empty_schema_and_records_candidate(
     monkeypatch.setattr(
         gatea,
         "_compose_ps",
-        lambda **kwargs: _healthy_rows("mysql", "redis"),
+        lambda **kwargs: (
+            [
+                {"Service": "redis", "State": "exited"},
+                {"Service": "mysql", "State": "exited"},
+            ]
+            if kwargs.get("start_new_session")
+            else _healthy_rows("mysql", "redis")
+        ),
     )
 
     def fake_run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -471,7 +1010,14 @@ def test_initial_migrate_rejects_nonempty_database_before_aerich(
     monkeypatch.setattr(
         gatea,
         "_compose_ps",
-        lambda **kwargs: _healthy_rows("mysql", "redis"),
+        lambda **kwargs: (
+            [
+                {"Service": "redis", "State": "exited"},
+                {"Service": "mysql", "State": "exited"},
+            ]
+            if kwargs.get("start_new_session")
+            else _healthy_rows("mysql", "redis")
+        ),
     )
 
     def fake_run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -494,6 +1040,198 @@ def test_initial_migrate_rejects_nonempty_database_before_aerich(
     assert not list(tmp_path.glob("*.initial-migration.json"))
 
 
+@pytest.mark.parametrize(
+    "pending_suffix",
+    gatea.CANDIDATE_TRANSITION_PENDING_SUFFIXES,
+)
+def test_initial_migrate_rejects_any_candidate_pending_before_input_or_compose(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pending_suffix: str,
+) -> None:
+    pending_path = tmp_path / f"{'b' * 40}.{pending_suffix}"
+    pending_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    def unexpected_inputs(**kwargs: object) -> dict[str, str]:
+        del kwargs
+        raise AssertionError("pending must fail before input validation or compose")
+
+    monkeypatch.setattr(gatea, "_validated_inputs", unexpected_inputs)
+
+    with pytest.raises(GateAError, match="unresolved pending journal"):
+        gatea.initial_migrate(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+        )
+
+
+def test_initial_migrate_rejects_acceptance_sidecar_before_input_or_compose(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    acceptance_record_dir = tmp_path / "acceptance"
+    acceptance_record_dir.mkdir()
+    sidecar_path = acceptance_record_dir / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'b' * 40}"
+        f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+    )
+    sidecar_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    def unexpected_inputs(**kwargs: object) -> dict[str, str]:
+        del kwargs
+        raise AssertionError("acceptance sidecar must fail before compose")
+
+    monkeypatch.setattr(gatea, "_validated_inputs", unexpected_inputs)
+
+    with pytest.raises(GateAError, match="unresolved sidecar"):
+        gatea.initial_migrate(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            acceptance_record_dir=acceptance_record_dir,
+        )
+
+
+def test_migration_record_never_publishes_partial_json_on_enospc(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candidate_sha = "a" * 40
+    marker = gatea._migration_marker(tmp_path, candidate_sha)
+    synced_directories: list[Path] = []
+
+    def fail_after_partial_write(
+        payload: object,
+        stream: object,
+        **kwargs: object,
+    ) -> None:
+        del payload, kwargs
+        stream.write('{"candidate_sha":')
+        raise OSError(28, "simulated ENOSPC")
+
+    monkeypatch.setattr(gatea.json, "dump", fail_after_partial_write)
+    monkeypatch.setattr(
+        gatea,
+        "_fsync_directory",
+        lambda directory: synced_directories.append(directory),
+    )
+
+    with pytest.raises(OSError, match="ENOSPC"):
+        gatea._write_migration_record(
+            record_dir=tmp_path,
+            candidate_sha=candidate_sha,
+            image_id="sha256:image",
+        )
+
+    assert not marker.exists()
+    assert not marker.is_symlink()
+    assert list(tmp_path.glob(f".{marker.name}.tmp-*")) == []
+    assert synced_directories == [tmp_path]
+
+
+@pytest.mark.parametrize("target_kind", ("file", "dangling-symlink"))
+def test_migration_record_never_overwrites_an_existing_path(
+    tmp_path: Path,
+    target_kind: str,
+) -> None:
+    candidate_sha = "a" * 40
+    marker = gatea._migration_marker(tmp_path, candidate_sha)
+    if target_kind == "file":
+        original = '{"owner":"first"}\n'
+        marker.write_text(original, encoding="utf-8")
+    else:
+        missing_target = tmp_path / "missing-record"
+        marker.symlink_to(missing_target)
+
+    with pytest.raises(GateAError, match="record path is already reserved"):
+        gatea._write_migration_record(
+            record_dir=tmp_path,
+            candidate_sha=candidate_sha,
+            image_id="sha256:replacement",
+        )
+
+    if target_kind == "file":
+        assert marker.read_text(encoding="utf-8") == original
+    else:
+        assert marker.is_symlink()
+        assert marker.readlink() == missing_target
+    assert list(tmp_path.glob(f".{marker.name}.tmp-*")) == []
+
+
+def test_migration_record_link_failure_does_not_publish_or_leave_a_tempfile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candidate_sha = "a" * 40
+    marker = gatea._migration_marker(tmp_path, candidate_sha)
+    synced_directories: list[Path] = []
+
+    def fail_link(
+        source: Path,
+        target: Path,
+        *,
+        follow_symlinks: bool,
+    ) -> None:
+        assert source.parent == tmp_path
+        assert target == marker
+        assert follow_symlinks is False
+        raise OSError("simulated link failure")
+
+    monkeypatch.setattr(gatea.os, "link", fail_link)
+    monkeypatch.setattr(
+        gatea,
+        "_fsync_directory",
+        lambda directory: synced_directories.append(directory),
+    )
+
+    with pytest.raises(OSError, match="link failure"):
+        gatea._write_migration_record(
+            record_dir=tmp_path,
+            candidate_sha=candidate_sha,
+            image_id="sha256:image",
+        )
+
+    assert not marker.exists()
+    assert list(tmp_path.glob(f".{marker.name}.tmp-*")) == []
+    assert synced_directories == [tmp_path]
+
+
+def test_migration_record_directory_sync_failure_keeps_only_complete_final_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candidate_sha = "a" * 40
+    marker = gatea._migration_marker(tmp_path, candidate_sha)
+    sync_calls = 0
+
+    def interrupt_first_directory_sync(directory: Path) -> None:
+        nonlocal sync_calls
+        assert directory == tmp_path
+        sync_calls += 1
+        if sync_calls == 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(gatea, "_fsync_directory", interrupt_first_directory_sync)
+
+    with pytest.raises(KeyboardInterrupt):
+        gatea._write_migration_record(
+            record_dir=tmp_path,
+            candidate_sha=candidate_sha,
+            image_id="sha256:image",
+        )
+
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    assert payload["candidate_sha"] == candidate_sha
+    assert payload["image_id"] == "sha256:image"
+    assert list(tmp_path.glob(f".{marker.name}.tmp-*")) == []
+    assert sync_calls == 2
+
+
 def test_app_up_requires_matching_migration_record_and_waits_for_health(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -509,6 +1247,20 @@ def test_app_up_requires_matching_migration_record_and_waits_for_health(
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: {
+            "aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN)
+        },
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_run_m9_table_reconcile",
+        lambda **kwargs: {key: 0 for key in gatea.M9_RECONCILE_KEYS},
+    )
+
     def fake_compose_ps(**kwargs: object) -> list[dict[str, object]]:
         services = tuple(kwargs["services"])
         rows: list[dict[str, object]] = _healthy_rows(*services)
@@ -555,6 +1307,737 @@ def test_app_up_requires_matching_migration_record_and_waits_for_health(
     ]
 
 
+def test_app_up_recovery_session_is_forwarded_to_every_child_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    gatea._write_migration_record(
+        record_dir=tmp_path,
+        candidate_sha="a" * 40,
+        image_id="sha256:image",
+    )
+    session_flags: dict[str, list[bool]] = {
+        "image": [],
+        "snapshot": [],
+        "reconcile": [],
+        "ps": [],
+        "compose": [],
+    }
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    def validate_image(*args: object, **kwargs: object) -> str:
+        session_flags["image"].append(bool(kwargs.get("start_new_session")))
+        return "sha256:image"
+
+    def read_snapshot(**kwargs: object) -> dict[str, object]:
+        session_flags["snapshot"].append(
+            bool(kwargs.get("start_new_session"))
+        )
+        return {"aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN)}
+
+    def reconcile(**kwargs: object) -> dict[str, int]:
+        session_flags["reconcile"].append(
+            bool(kwargs.get("start_new_session"))
+        )
+        return {key: 0 for key in gatea.M9_RECONCILE_KEYS}
+
+    def compose_ps(**kwargs: object) -> list[dict[str, object]]:
+        session_flags["ps"].append(bool(kwargs.get("start_new_session")))
+        rows: list[dict[str, object]] = _healthy_rows(*kwargs["services"])
+        for row in rows:
+            if row["Service"] == "nginx":
+                row["Publishers"] = [
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    }
+                ]
+        return rows
+
+    monkeypatch.setattr(gatea, "validate_app_image", validate_image)
+    monkeypatch.setattr(gatea, "read_database_snapshot", read_snapshot)
+    monkeypatch.setattr(gatea, "_run_m9_table_reconcile", reconcile)
+    monkeypatch.setattr(gatea, "_compose_ps", compose_ps)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: session_flags["compose"].append(
+            bool(kwargs.get("start_new_session"))
+        )
+        or subprocess.CompletedProcess([], 0, stdout=""),
+    )
+
+    gatea.app_up(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+        wait_timeout=180,
+        _start_new_session=True,
+    )
+
+    assert session_flags == {
+        "image": [True, True],
+        "snapshot": [True],
+        "reconcile": [True],
+        "ps": [True, True],
+        "compose": [True],
+    }
+
+
+@pytest.mark.parametrize(
+    "pending_suffix",
+    gatea.CANDIDATE_TRANSITION_PENDING_SUFFIXES,
+)
+@pytest.mark.parametrize("pending_candidate_sha", ("a" * 40, "b" * 40))
+def test_app_up_rejects_unresolved_candidate_transition_before_image_or_docker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pending_suffix: str,
+    pending_candidate_sha: str,
+) -> None:
+    (tmp_path / f"{pending_candidate_sha}.{pending_suffix}").write_text(
+        "{}\n", encoding="utf-8"
+    )
+    image_validated = False
+
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail(
+            "pending transition must fail before input validation"
+        ),
+    )
+
+    def unexpected_image_validation(*args: object, **kwargs: object) -> str:
+        nonlocal image_validated
+        image_validated = True
+        raise AssertionError("pending transition must fail before image validation")
+
+    monkeypatch.setattr(gatea, "validate_app_image", unexpected_image_validation)
+
+    with pytest.raises(GateAError, match="unresolved pending journal"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+        )
+
+    assert image_validated is False
+
+
+@pytest.mark.parametrize(
+    "pending_suffix",
+    (
+        "config-activation.pending.json",
+        gatea.CURRENT_FINALIZATION_PENDING_SUFFIX,
+    ),
+)
+def test_candidate_transition_guard_rejects_dangling_pending_symlink(
+    tmp_path: Path,
+    pending_suffix: str,
+) -> None:
+    candidate_sha = "a" * 40
+    pending_path = tmp_path / f"{candidate_sha}.{pending_suffix}"
+    pending_path.symlink_to(tmp_path / "missing-journal")
+
+    with pytest.raises(GateAError, match="unresolved pending journal"):
+        gatea.reject_unresolved_candidate_transition_journals(
+            record_dir=tmp_path,
+            candidate_sha=candidate_sha,
+        )
+
+
+def test_candidate_transition_guard_rejects_malformed_candidate_name(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "not-a-sha.config-activation.pending.json").write_text(
+        "{}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(GateAError, match="unresolved pending journal"):
+        gatea.reject_unresolved_candidate_transition_journals(
+            record_dir=tmp_path,
+            candidate_sha="a" * 40,
+        )
+
+
+@pytest.mark.parametrize("entry_kind", ("directory", "fifo"))
+def test_candidate_transition_guard_rejects_nonregular_pending(
+    tmp_path: Path,
+    entry_kind: str,
+) -> None:
+    pending_path = tmp_path / f"{'a' * 40}.candidate-stage.pending.json"
+    if entry_kind == "directory":
+        pending_path.mkdir()
+    else:
+        os.mkfifo(pending_path)
+
+    with pytest.raises(GateAError, match="unresolved pending journal"):
+        gatea.reject_unresolved_candidate_transition_journals(
+            record_dir=tmp_path,
+            candidate_sha="a" * 40,
+        )
+
+
+def test_candidate_transition_guard_only_scans_direct_children(
+    tmp_path: Path,
+) -> None:
+    nested_record_dir = tmp_path / "nested"
+    nested_record_dir.mkdir()
+    (nested_record_dir / f"{'a' * 40}.candidate-stage.pending.json").write_text(
+        "{}\n", encoding="utf-8"
+    )
+
+    gatea.reject_unresolved_candidate_transition_journals(
+        record_dir=tmp_path,
+        candidate_sha="a" * 40,
+    )
+
+
+def test_candidate_transition_guard_allows_one_exact_validated_recovery(
+    tmp_path: Path,
+) -> None:
+    candidate_sha = "a" * 40
+    pending_path = tmp_path / (
+        f"{candidate_sha}.{gatea.CURRENT_FINALIZATION_PENDING_SUFFIX}"
+    )
+    pending_path.write_text("{}\n", encoding="utf-8")
+    allowance = gatea.CandidateTransitionRecoveryAllowance(
+        path=pending_path,
+        kind="current-finalization",
+        candidate_sha=candidate_sha,
+    )
+
+    gatea.reject_unresolved_candidate_transition_journals(
+        record_dir=tmp_path,
+        candidate_sha=candidate_sha,
+        recovery_allowance=allowance,
+    )
+
+
+@pytest.mark.parametrize("entry_kind", ("directory", "dangling-symlink", "fifo"))
+def test_candidate_transition_guard_does_not_allow_unsafe_recovery_entry(
+    tmp_path: Path,
+    entry_kind: str,
+) -> None:
+    candidate_sha = "a" * 40
+    pending_path = tmp_path / (
+        f"{candidate_sha}.{gatea.CURRENT_FINALIZATION_PENDING_SUFFIX}"
+    )
+    if entry_kind == "directory":
+        pending_path.mkdir()
+    elif entry_kind == "dangling-symlink":
+        pending_path.symlink_to(tmp_path / "missing-journal")
+    else:
+        os.mkfifo(pending_path)
+
+    allowance = gatea.CandidateTransitionRecoveryAllowance(
+        path=pending_path,
+        kind="current-finalization",
+        candidate_sha=candidate_sha,
+    )
+    with pytest.raises(GateAError, match="recovery allowance is invalid"):
+        gatea.reject_unresolved_candidate_transition_journals(
+            record_dir=tmp_path,
+            candidate_sha=candidate_sha,
+            recovery_allowance=allowance,
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_allowance",
+    ("outside", "other-sha", "invalid-sha", "other-kind"),
+)
+def test_candidate_transition_guard_rejects_invalid_recovery_allowance(
+    tmp_path: Path,
+    invalid_allowance: str,
+) -> None:
+    record_dir = tmp_path / "records"
+    record_dir.mkdir()
+    candidate_sha = "a" * 40
+    pending_path = record_dir / (
+        f"{candidate_sha}.{gatea.CURRENT_FINALIZATION_PENDING_SUFFIX}"
+    )
+    pending_path.write_text("{}\n", encoding="utf-8")
+    allowance_path = pending_path
+    allowance_sha = candidate_sha
+    allowance_kind = "current-finalization"
+    if invalid_allowance == "outside":
+        allowance_path = tmp_path / pending_path.name
+        allowance_path.write_text("{}\n", encoding="utf-8")
+    elif invalid_allowance == "other-sha":
+        allowance_sha = "b" * 40
+    elif invalid_allowance == "invalid-sha":
+        allowance_sha = "not-a-sha"
+    else:
+        allowance_kind = "config-rollback"
+
+    with pytest.raises(GateAError, match="recovery allowance is invalid"):
+        gatea.reject_unresolved_candidate_transition_journals(
+            record_dir=record_dir,
+            candidate_sha=candidate_sha,
+            recovery_allowance=gatea.CandidateTransitionRecoveryAllowance(
+                path=allowance_path,
+                kind=allowance_kind,
+                candidate_sha=allowance_sha,
+            ),
+        )
+
+
+def test_m9_acceptance_inventory_allows_a_missing_directory(tmp_path: Path) -> None:
+    gatea.reject_unresolved_m9_acceptance_sidecars(
+        record_dir=tmp_path / "not-created-yet",
+    )
+
+
+@pytest.mark.parametrize(
+    "candidate_part",
+    ("a" * 40, "b" * 40, "not-a-candidate-sha"),
+)
+@pytest.mark.parametrize(
+    "sidecar_suffix",
+    gatea.M9_ACCEPTANCE_SIDECAR_SUFFIXES,
+)
+def test_m9_acceptance_inventory_rejects_every_matching_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    candidate_part: str,
+    sidecar_suffix: str,
+) -> None:
+    sidecar_path = tmp_path / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{candidate_part}{sidecar_suffix}"
+    )
+    sidecar_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    with pytest.raises(GateAError, match="unresolved sidecar"):
+        gatea.reject_unresolved_m9_acceptance_sidecars(record_dir=tmp_path)
+
+
+def test_m9_acceptance_inventory_only_scans_direct_children(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (
+        nested
+        / (
+            f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'a' * 40}"
+            f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+        )
+    ).write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    gatea.reject_unresolved_m9_acceptance_sidecars(record_dir=tmp_path)
+
+
+@pytest.mark.parametrize("entry_kind", ("directory", "dangling-symlink"))
+def test_m9_acceptance_inventory_rejects_nonregular_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    entry_kind: str,
+) -> None:
+    sidecar_path = tmp_path / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'a' * 40}"
+        f"{gatea.M9_ACCEPTANCE_COMPLETE_SUFFIX}"
+    )
+    if entry_kind == "directory":
+        sidecar_path.mkdir()
+    else:
+        sidecar_path.symlink_to(tmp_path / "missing-sidecar")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    with pytest.raises(GateAError, match="unresolved sidecar"):
+        gatea.reject_unresolved_m9_acceptance_sidecars(record_dir=tmp_path)
+
+
+def test_m9_acceptance_inventory_rejects_symlink_record_directory(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    record_dir = tmp_path / "acceptance"
+    record_dir.symlink_to(target, target_is_directory=True)
+
+    with pytest.raises(GateAError, match="must not be a symlink"):
+        gatea.reject_unresolved_m9_acceptance_sidecars(record_dir=record_dir)
+
+
+def test_m9_acceptance_inventory_rejects_unsafe_directory_metadata(
+    tmp_path: Path,
+) -> None:
+    record_dir = tmp_path / "acceptance"
+    record_dir.mkdir(mode=0o700)
+
+    with pytest.raises(GateAError, match="owned by root|unsafe permissions"):
+        gatea.reject_unresolved_m9_acceptance_sidecars(record_dir=record_dir)
+
+
+def test_m9_acceptance_recovery_allows_exact_pending_and_complete_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candidate_sha = "a" * 40
+    base_name = f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{candidate_sha}"
+    pending_path = tmp_path / f"{base_name}{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+    complete_path = tmp_path / f"{base_name}{gatea.M9_ACCEPTANCE_COMPLETE_SUFFIX}"
+    pending_path.write_text("{}\n", encoding="utf-8")
+    pending_path.chmod(0o600)
+    complete_path.write_text("{}\n", encoding="utf-8")
+    # final hard-link 发布后的 chmod 会同步改变同 inode 的 complete mode。
+    complete_path.chmod(0o644)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_m9_acceptance_sidecar_lstat",
+        lambda path: SimpleNamespace(
+            st_mode=path.lstat().st_mode,
+            st_uid=0,
+            st_gid=0,
+        ),
+    )
+    allowance = gatea.M9AcceptanceSidecarRecoveryAllowance(
+        candidate_sha=candidate_sha,
+        pending_path=pending_path,
+        complete_path=complete_path,
+    )
+
+    gatea.reject_unresolved_m9_acceptance_sidecars(
+        record_dir=tmp_path,
+        recovery_allowance=allowance,
+    )
+
+    extra_path = tmp_path / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'b' * 40}"
+        f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+    )
+    extra_path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(GateAError, match="unresolved sidecar"):
+        gatea.reject_unresolved_m9_acceptance_sidecars(
+            record_dir=tmp_path,
+            recovery_allowance=allowance,
+        )
+
+
+@pytest.mark.parametrize(
+    ("sidecar_kind", "mode", "uid", "gid", "allowed"),
+    (
+        ("pending", 0o600, 0, 0, True),
+        ("pending", 0o644, 0, 0, False),
+        ("complete", 0o600, 0, 0, True),
+        ("complete", 0o644, 0, 0, True),
+        ("complete", 0o640, 0, 0, False),
+        ("complete", 0o600, 501, 0, False),
+        ("complete", 0o600, 0, 501, False),
+    ),
+)
+def test_m9_acceptance_recovery_enforces_owner_and_kind_specific_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    sidecar_kind: str,
+    mode: int,
+    uid: int,
+    gid: int,
+    allowed: bool,
+) -> None:
+    candidate_sha = "a" * 40
+    suffix = (
+        gatea.M9_ACCEPTANCE_PENDING_SUFFIX
+        if sidecar_kind == "pending"
+        else gatea.M9_ACCEPTANCE_COMPLETE_SUFFIX
+    )
+    sidecar_path = tmp_path / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{candidate_sha}{suffix}"
+    )
+    sidecar_path.write_text("{}\n", encoding="utf-8")
+    sidecar_path.chmod(mode)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_m9_acceptance_sidecar_lstat",
+        lambda path: SimpleNamespace(
+            st_mode=path.lstat().st_mode,
+            st_uid=uid,
+            st_gid=gid,
+        ),
+    )
+    allowance = gatea.M9AcceptanceSidecarRecoveryAllowance(
+        candidate_sha=candidate_sha,
+        pending_path=sidecar_path if sidecar_kind == "pending" else None,
+        complete_path=sidecar_path if sidecar_kind == "complete" else None,
+    )
+
+    expectation = (
+        nullcontext()
+        if allowed
+        else pytest.raises(gatea.GateAError, match="recovery allowance is invalid")
+    )
+    with expectation:
+        gatea.reject_unresolved_m9_acceptance_sidecars(
+            record_dir=tmp_path,
+            recovery_allowance=allowance,
+        )
+
+
+def test_app_up_finalization_recovery_allows_only_one_exact_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    candidate_sha = "a" * 40
+    finalization_path = tmp_path / (
+        f"{candidate_sha}.{gatea.CURRENT_FINALIZATION_PENDING_SUFFIX}"
+    )
+    finalization_path.write_text("{}\n", encoding="utf-8")
+    allowance = gatea.CandidateTransitionRecoveryAllowance(
+        path=finalization_path,
+        kind="current-finalization",
+        candidate_sha=candidate_sha,
+    )
+    image_validations = 0
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    def stop_after_guard(*args: object, **kwargs: object) -> str:
+        nonlocal image_validations
+        del args, kwargs
+        image_validations += 1
+        raise AssertionError("finalization recovery passed the journal guard")
+
+    monkeypatch.setattr(gatea, "validate_app_image", stop_after_guard)
+
+    with pytest.raises(AssertionError, match="passed the journal guard"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_transition_recovery=allowance,
+        )
+
+    assert image_validations == 1
+
+    (tmp_path / f"{candidate_sha}.config-rollback.pending.json").write_text(
+        "{}\n", encoding="utf-8"
+    )
+    with pytest.raises(GateAError, match="unresolved pending journal"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_transition_recovery=allowance,
+        )
+
+    assert image_validations == 1
+
+
+@pytest.mark.parametrize(
+    ("kind", "pending_suffix"),
+    (
+        ("candidate-stage", "candidate-stage.pending.json"),
+        ("config-activation", "config-activation.pending.json"),
+        ("config-rollback", "config-rollback.pending.json"),
+    ),
+)
+def test_app_up_rejects_matching_non_finalization_recovery_allowance(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    kind: str,
+    pending_suffix: str,
+) -> None:
+    candidate_sha = "a" * 40
+    pending_path = tmp_path / f"{candidate_sha}.{pending_suffix}"
+    pending_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail(
+            "non-finalization allowance must fail before input validation"
+        ),
+    )
+
+    with pytest.raises(GateAError, match="restricted to finalization"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_transition_recovery=(
+                gatea.CandidateTransitionRecoveryAllowance(
+                    path=pending_path,
+                    kind=kind,
+                    candidate_sha=candidate_sha,
+                )
+            ),
+        )
+
+
+def test_app_up_rejects_acceptance_sidecar_before_image_or_docker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    acceptance_record_dir = tmp_path / "acceptance"
+    acceptance_record_dir.mkdir()
+    sidecar_path = acceptance_record_dir / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'a' * 40}"
+        f"{gatea.M9_ACCEPTANCE_COMPLETE_SUFFIX}"
+    )
+    sidecar_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail(
+            "acceptance sidecar must fail before input validation"
+        ),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "validate_app_image",
+        lambda *args, **kwargs: pytest.fail(
+            "acceptance sidecar must fail before image validation"
+        ),
+    )
+
+    with pytest.raises(GateAError, match="unresolved sidecar"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            acceptance_record_dir=acceptance_record_dir,
+        )
+
+
+def test_app_up_recovery_allowance_must_match_live_config_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    allowance_candidate_sha = "b" * 40
+    pending_path = tmp_path / (
+        f"{allowance_candidate_sha}.{gatea.CURRENT_FINALIZATION_PENDING_SUFFIX}"
+    )
+    pending_path.write_text("{}\n", encoding="utf-8")
+    allowance = gatea.CandidateTransitionRecoveryAllowance(
+        path=pending_path,
+        kind="current-finalization",
+        candidate_sha=allowance_candidate_sha,
+    )
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _valid_values())
+    monkeypatch.setattr(
+        gatea,
+        "validate_app_image",
+        lambda *args, **kwargs: pytest.fail(
+            "candidate mismatch must fail before image validation"
+        ),
+    )
+
+    with pytest.raises(GateAError, match="does not match the live candidate"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_transition_recovery=allowance,
+        )
+
+
+def test_cli_app_up_passes_controller_but_never_supplies_recovery_allowance(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    controller = gatea._OperationTerminationController()
+    monkeypatch.setattr(gatea, "operation_lock", lambda: nullcontext())
+    monkeypatch.setattr(
+        gatea,
+        "operation_termination_guard",
+        lambda: nullcontext(controller),
+    )
+    monkeypatch.setattr(gatea, "app_up", lambda **kwargs: calls.append(kwargs))
+
+    assert (
+        gatea.main(
+            (
+                "app-up",
+                "--mode",
+                "loopback",
+                "--record-dir",
+                str(tmp_path),
+            )
+        )
+        == 0
+    )
+    assert len(calls) == 1
+    assert calls[0].get("candidate_transition_recovery") is None
+    assert calls[0]["acceptance_record_dir"] == gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR
+    assert calls[0]["_termination_controller"] is controller
+
+
+@pytest.mark.parametrize(
+    ("command", "function_name"),
+    (
+        ("infra-up", "infra_up"),
+        ("initial-migrate", "initial_migrate"),
+        ("app-up", "app_up"),
+        ("safe-stop", "safe_stop"),
+    ),
+)
+def test_cli_passes_the_shared_controller_to_every_mutating_entry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    command: str,
+    function_name: str,
+) -> None:
+    controller = gatea._OperationTerminationController()
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(gatea, "operation_lock", lambda: nullcontext())
+    monkeypatch.setattr(
+        gatea,
+        "operation_termination_guard",
+        lambda: nullcontext(controller),
+    )
+    monkeypatch.setattr(
+        gatea,
+        function_name,
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    assert (
+        gatea.main(
+            (
+                command,
+                "--mode",
+                "loopback",
+                "--record-dir",
+                str(tmp_path),
+            )
+        )
+        == 0
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["_termination_controller"] is controller
+
+
 def test_app_up_can_restore_an_approved_pre_m9_runtime_without_sweeper(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -571,6 +2054,13 @@ def test_app_up_can_restore_an_approved_pre_m9_runtime_without_sweeper(
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: {
+            "aerich_versions": list(gatea.APPROVED_TARGET_M8_CHAIN)
+        },
+    )
 
     def fake_compose_ps(**kwargs: object) -> list[dict[str, object]]:
         services = tuple(kwargs["services"])
@@ -620,6 +2110,414 @@ def test_app_up_can_restore_an_approved_pre_m9_runtime_without_sweeper(
     assert requested_services == [("mysql", "redis"), ("app", "nginx")]
 
 
+def test_m9_upgrade_replay_record_binds_success_evidence_and_candidate(
+    tmp_path: Path,
+) -> None:
+    success = _write_m9_upgrade_evidence(tmp_path)
+
+    replay = gatea._require_m9_upgrade_replay_record(
+        record_dir=tmp_path,
+        candidate_sha="b" * 40,
+        image_id="sha256:target",
+        upgrade_record=success,
+    )
+
+    assert replay["passed"] is True
+    assert replay["table_reconcile"] == _empty_m9_reconcile()
+
+
+@pytest.mark.parametrize("tamper_target", ("evidence", "replay", "success"))
+def test_m9_upgrade_replay_record_rejects_digest_or_sidecar_tampering(
+    tmp_path: Path,
+    tamper_target: str,
+) -> None:
+    success = _write_m9_upgrade_evidence(tmp_path)
+    if tamper_target == "evidence":
+        path = tmp_path / (
+            f"{'b' * 40}.existing-database-upgrade.evidence.json"
+        )
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["status"] = "failed"
+    elif tamper_target == "replay":
+        path = gatea._upgrade_replay_marker(tmp_path, "b" * 40)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["evidence_sha256"] = "e" * 64
+    else:
+        path = gatea._upgrade_marker(tmp_path, "b" * 40)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["completed_at"] = "2026-09-08T12:11:00+00:00"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(GateAError, match="replay evidence is invalid"):
+        gatea._require_m9_upgrade_replay_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:target",
+            upgrade_record=success,
+        )
+
+
+def test_m9_app_up_rejects_live_schema_drift_before_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _write_m9_upgrade_evidence(tmp_path)
+    values = _valid_values() | {
+        "GATEA_APP_IMAGE": "pinkdoohub-gatea:" + "b" * 40
+    }
+    drifted = _m9_database_snapshot() | {"columns_sha256": "e" * 64}
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:target")
+    monkeypatch.setattr(gatea, "read_database_snapshot", lambda **kwargs: drifted)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+
+    with pytest.raises(GateAError, match="schema no longer matches"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+        )
+
+    assert commands == []
+
+
+def test_m9_app_up_allows_business_counts_to_change_after_upgrade(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _write_m9_upgrade_evidence(tmp_path)
+    values = _valid_values() | {
+        "GATEA_APP_IMAGE": "pinkdoohub-gatea:" + "b" * 40
+    }
+    live_snapshot = _m9_database_snapshot() | {
+        "orders": 3,
+        "table_sessions": 1,
+    }
+    commands: list[tuple[str, ...]] = []
+    compose_images: list[str] = []
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:target")
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: live_snapshot,
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_run_m9_table_reconcile",
+        lambda **kwargs: _empty_m9_reconcile() | {"scanned": 1},
+    )
+
+    def fake_compose_ps(**kwargs: object) -> list[dict[str, object]]:
+        services = tuple(kwargs["services"])
+        rows: list[dict[str, object]] = _healthy_rows(*services)
+        for row in rows:
+            if row["Service"] == "nginx":
+                row["Publishers"] = [
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    }
+                ]
+        return rows
+
+    def fake_run_compose(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(tuple(kwargs["arguments"]))
+        compose_images.append(str(kwargs["values"]["GATEA_APP_IMAGE"]))
+        return subprocess.CompletedProcess(args=[], returncode=0)
+
+    monkeypatch.setattr(gatea, "_compose_ps", fake_compose_ps)
+    monkeypatch.setattr(gatea, "_run_compose", fake_run_compose)
+
+    gatea.app_up(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+        wait_timeout=180,
+    )
+
+    assert commands[0][:2] == ("up", "--detach")
+    assert compose_images == ["sha256:target"]
+
+
+def test_backup_recovery_reuses_only_the_existing_exact_gatea_publisher(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    gatea._write_migration_record(
+        record_dir=tmp_path,
+        candidate_sha="a" * 40,
+        image_id="sha256:image",
+    )
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda value: "sha256:image")
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: {
+            "aerich_versions": list(gatea.APPROVED_TARGET_M8_CHAIN)
+        },
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_assert_loopback_port_available",
+        lambda port: (_ for _ in ()).throw(AssertionError("unexpected port probe")),
+    )
+
+    def fake_compose_ps(**kwargs: object) -> list[dict[str, object]]:
+        services = tuple(kwargs["services"])
+        rows: list[dict[str, object]] = _healthy_rows(*services)
+        for row in rows:
+            if row["Service"] == "nginx":
+                row["Publishers"] = [
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    }
+                ]
+        return rows
+
+    monkeypatch.setattr(gatea, "_compose_ps", fake_compose_ps)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+
+    gatea.app_up(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+        wait_timeout=180,
+        include_table_sweeper=False,
+        allow_existing_gatea_publisher=True,
+    )
+
+    assert commands == [
+        (
+            "up",
+            "--detach",
+            "--no-build",
+            "--wait",
+            "--wait-timeout",
+            "180",
+            "app",
+            "nginx",
+        )
+    ]
+
+
+def test_app_up_legacy_command_compatibility_is_bound_to_exact_m7(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    validation_flags: list[bool] = []
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: {
+            "aerich_versions": list(gatea.APPROVED_TARGET_M7_CHAIN)
+        },
+    )
+
+    def fake_validate(
+        value: object,
+        *,
+        allow_legacy_m7_command: bool = False,
+    ) -> str:
+        validation_flags.append(allow_legacy_m7_command)
+        return "sha256:image"
+
+    monkeypatch.setattr(gatea, "validate_app_image", fake_validate)
+    monkeypatch.setattr(gatea, "_require_deployment_record", lambda **kwargs: None)
+
+    def fake_compose_ps(**kwargs: object) -> list[dict[str, object]]:
+        services = tuple(kwargs["services"])
+        rows: list[dict[str, object]] = _healthy_rows(*services)
+        for row in rows:
+            if row["Service"] == "nginx":
+                row["Publishers"] = [
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    }
+                ]
+        return rows
+
+    monkeypatch.setattr(gatea, "_compose_ps", fake_compose_ps)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: subprocess.CompletedProcess(args=[], returncode=0),
+    )
+
+    gatea.app_up(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+        wait_timeout=180,
+        include_table_sweeper=False,
+        allow_legacy_m7_command=True,
+    )
+
+    assert validation_flags == [True]
+
+
+def test_app_up_legacy_m7_compatibility_cannot_start_the_table_sweeper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    snapshot_read = False
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    def fake_snapshot(**kwargs: object) -> dict[str, object]:
+        nonlocal snapshot_read
+        snapshot_read = True
+        return {"aerich_versions": list(gatea.APPROVED_TARGET_M7_CHAIN)}
+
+    monkeypatch.setattr(gatea, "read_database_snapshot", fake_snapshot)
+
+    with pytest.raises(GateAError, match="cannot start the table sweeper"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            allow_legacy_m7_command=True,
+        )
+
+    assert snapshot_read is False
+
+
+def test_app_up_legacy_m7_compatibility_rejects_second_snapshot_chain_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = _valid_values()
+    snapshots = iter(
+        (
+            {"aerich_versions": list(gatea.APPROVED_TARGET_M7_CHAIN)},
+            {"aerich_versions": list(gatea.APPROVED_TARGET_M8_CHAIN)},
+        )
+    )
+    snapshot_reads = 0
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+
+    def fake_snapshot(**kwargs: object) -> dict[str, object]:
+        nonlocal snapshot_reads
+        snapshot_reads += 1
+        return next(snapshots)
+
+    monkeypatch.setattr(gatea, "read_database_snapshot", fake_snapshot)
+    monkeypatch.setattr(
+        gatea,
+        "validate_app_image",
+        lambda values, **kwargs: "sha256:image",
+    )
+    monkeypatch.setattr(gatea, "_require_deployment_record", lambda **kwargs: None)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: pytest.fail("chain drift must fail before compose ps"),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: pytest.fail("chain drift must fail before compose up"),
+    )
+
+    with pytest.raises(GateAError, match="requires the exact M7 chain"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            include_table_sweeper=False,
+            allow_legacy_m7_command=True,
+        )
+
+    assert snapshot_reads == 2
+
+
+@pytest.mark.parametrize(
+    "aerich_versions",
+    (
+        list(gatea.APPROVED_TARGET_M8_CHAIN),
+        list(gatea.APPROVED_TARGET_M9_CHAIN),
+        [*gatea.APPROVED_TARGET_M7_CHAIN, "unknown"],
+    ),
+)
+def test_app_up_legacy_command_compatibility_rejects_non_m7_chains(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    aerich_versions: list[str],
+) -> None:
+    values = _valid_values()
+    validation_called = False
+
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: {"aerich_versions": aerich_versions},
+    )
+
+    def fake_validate(*args: object, **kwargs: object) -> str:
+        nonlocal validation_called
+        validation_called = True
+        return "sha256:image"
+
+    monkeypatch.setattr(gatea, "validate_app_image", fake_validate)
+
+    with pytest.raises(GateAError, match="requires the exact M7 chain"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            include_table_sweeper=False,
+            allow_legacy_m7_command=True,
+        )
+
+    assert validation_called is False
+
+
 def test_lifecycle_writes_reject_tls_and_safe_stop_never_removes_volumes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -639,6 +2537,14 @@ def test_lifecycle_writes_reject_tls_and_safe_stop_never_removes_volumes(
         "_run_compose",
         lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
         or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [
+            {"Service": service, "State": "exited"}
+            for service in kwargs["services"]
+        ],
     )
     gatea.safe_stop(
         config_file=Path("/config.env"),
@@ -805,6 +2711,108 @@ def _upgrade_record_payload(
     if source_version is not None:
         payload["source_version"] = source_version
     return payload
+
+
+def _m9_database_snapshot() -> dict[str, object]:
+    return {
+        "aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+        "tables": 24,
+        "columns": 180,
+        "statistics": 72,
+        "constraints": 40,
+        "columns_sha256": "1" * 64,
+        "statistics_sha256": "2" * 64,
+        "constraints_sha256": "3" * 64,
+        "orders": 0,
+        "table_sessions": 0,
+    }
+
+
+def _empty_m9_reconcile() -> dict[str, int]:
+    return {key: 0 for key in gatea.M9_RECONCILE_KEYS}
+
+
+def _write_m9_upgrade_evidence(tmp_path: Path) -> dict[str, object]:
+    candidate_sha = "b" * 40
+    source_sha = "a" * 40
+    image_id = "sha256:target"
+    backup_id = "20260908t120000z"
+    manifest_sha256 = "c" * 64
+    final_snapshot = _m9_database_snapshot()
+    final_images = {"count": 221, "sha256": "d" * 64}
+    reconcile = _empty_m9_reconcile()
+    sweep = {"status": "ok", "closed": 0}
+    evidence_path = tmp_path / (
+        f"{candidate_sha}.existing-database-upgrade.evidence.json"
+    )
+    evidence = {
+        "schema_version": 1,
+        "record_type": "existing-database-upgrade-evidence",
+        "status": "succeeded",
+        "candidate_sha": candidate_sha,
+        "source_candidate_sha": source_sha,
+        "backup_id": backup_id,
+        "final_database_snapshot": final_snapshot,
+        "final_image_manifest": final_images,
+        "table_reconcile": reconcile,
+        "table_sweep": sweep,
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    success = {
+        **_upgrade_record_payload(
+            source_versions=list(gatea.APPROVED_SOURCE_M7_CHAIN),
+            target_versions=list(gatea.APPROVED_TARGET_M9_CHAIN),
+            source_version=7,
+        ),
+        "candidate_sha": candidate_sha,
+        "image_id": image_id,
+        "source_candidate_sha": source_sha,
+        "backup_id": backup_id,
+        "manifest_sha256": manifest_sha256,
+        "evidence_path": str(evidence_path),
+        "evidence_sha256": gatea._sha256(evidence_path),
+        "final_database_snapshot": final_snapshot,
+        "final_image_manifest": final_images,
+        "table_reconcile": reconcile,
+        "table_sweep": sweep,
+    }
+    success_path = gatea._upgrade_marker(tmp_path, candidate_sha)
+    success_path.write_text(json.dumps(success), encoding="utf-8")
+    replay_result = {
+        "already_current": True,
+        "backup_id": backup_id,
+        "candidate_sha": candidate_sha,
+        "manifest_sha256": manifest_sha256,
+        "mode": "plan-replay",
+        "source_aerich_versions": list(gatea.APPROVED_SOURCE_M7_CHAIN),
+        "source_version": 7,
+        "target_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+        "target_version": 9,
+    }
+    replay = {
+        "schema_version": 1,
+        "record_type": "gatea-m9-upgrade-plan-replay",
+        "passed": True,
+        "candidate_sha": candidate_sha,
+        "source_candidate_sha": source_sha,
+        "source_version": 7,
+        "image_id": image_id,
+        "backup_id": backup_id,
+        "manifest_sha256": manifest_sha256,
+        "database_snapshot": final_snapshot,
+        "image_manifest": final_images,
+        "table_reconcile": reconcile,
+        "upgrade_record_sha256": gatea._sha256(success_path),
+        "evidence_sha256": success["evidence_sha256"],
+        "result": replay_result,
+        "completed_at": "2026-09-08T12:10:00+00:00",
+        "secret_values_recorded": False,
+    }
+    gatea._upgrade_replay_marker(tmp_path, candidate_sha).write_text(
+        json.dumps(replay),
+        encoding="utf-8",
+    )
+    return success
 
 
 @pytest.mark.parametrize(

@@ -202,6 +202,7 @@ def _patch_plan(
         "_validated_inputs",
         lambda **kwargs: _values(tmp_path / "backups"),
     )
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(
         upgrade,
         "_plan",
@@ -239,6 +240,27 @@ def _noop_mard_preview() -> dict[str, object]:
     }
 
 
+def _empty_table_reconcile_result() -> dict[str, object]:
+    return {key: 0 for key in upgrade.M9_EMPTY_TABLE_RECONCILE_KEYS}
+
+
+def _empty_table_sweep_result() -> dict[str, object]:
+    return {"status": "ok", "closed": 0}
+
+
+def _replay_task_result(
+    description: str,
+    *,
+    mard_preview: dict[str, object] | None = None,
+    table_reconcile: dict[str, object] | None = None,
+) -> dict[str, object]:
+    if description == "recorded-upgrade-mard-preview":
+        return mard_preview or _noop_mard_preview()
+    if description == "recorded-upgrade-table-reconcile":
+        return table_reconcile or _empty_table_reconcile_result()
+    raise AssertionError(f"unexpected replay task: {description}")
+
+
 def _stopped_replay_service_rows() -> list[dict[str, str]]:
     return [
         {
@@ -246,7 +268,7 @@ def _stopped_replay_service_rows() -> list[dict[str, str]]:
             "State": "running" if service in {"mysql", "redis"} else "exited",
             "Health": "healthy" if service in {"mysql", "redis"} else "",
         }
-        for service in ("mysql", "redis", "app", "nginx")
+        for service in ("mysql", "redis", "app", "nginx", "table-sweeper")
     ]
 
 
@@ -279,6 +301,8 @@ def _write_replay_fixture(
         "status": "succeeded",
         "final_database_snapshot": final_snapshot,
         "final_image_manifest": final_images,
+        "table_reconcile": _empty_table_reconcile_result(),
+        "table_sweep": _empty_table_sweep_result(),
     }
     if source_version == 7:
         evidence["final_m7_content_snapshot"] = _m7_content_snapshot()
@@ -302,6 +326,8 @@ def _write_replay_fixture(
         "evidence_sha256": upgrade._sha256(evidence_path),
         "final_database_snapshot": final_snapshot,
         "final_image_manifest": final_images,
+        "table_reconcile": _empty_table_reconcile_result(),
+        "table_sweep": _empty_table_sweep_result(),
     }
     if include_source_version:
         success["source_version"] = source_version
@@ -341,6 +367,59 @@ def test_plan_is_read_only_and_rejects_apply_confirmations(
     arguments = _common_arguments(tmp_path, apply=False)
     arguments["confirm_target_sha"] = TARGET_SHA
     with pytest.raises(upgrade.GateAUpgradeError, match="does not accept"):
+        upgrade.upgrade_existing_database(**arguments)
+
+
+@pytest.mark.parametrize(
+    "pending_suffix",
+    gatea.CANDIDATE_TRANSITION_PENDING_SUFFIXES,
+)
+def test_upgrade_rejects_unresolved_candidate_transition_before_plan(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    pending_suffix: str,
+) -> None:
+    _patch_plan(monkeypatch, tmp_path)
+    (tmp_path / f"{TARGET_SHA}.{pending_suffix}").write_text(
+        "{}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(gatea.GateAError, match="unresolved pending journal"):
+        upgrade.upgrade_existing_database(
+            **_common_arguments(tmp_path, apply=False)
+        )
+
+
+@pytest.mark.parametrize("apply", (False, True), ids=("plan", "apply"))
+def test_upgrade_rejects_acceptance_sidecar_before_plan_or_compose(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    apply: bool,
+) -> None:
+    acceptance_record_dir = tmp_path / "acceptance"
+    acceptance_record_dir.mkdir()
+    (
+        acceptance_record_dir
+        / (
+            f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'b' * 40}"
+            f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+        )
+    ).write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail("acceptance guard must run before compose config"),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_plan",
+        lambda **kwargs: pytest.fail("acceptance guard must run before plan"),
+    )
+    arguments = _common_arguments(tmp_path, apply=apply)
+    arguments["acceptance_record_dir"] = acceptance_record_dir
+
+    with pytest.raises(gatea.GateAError, match="unresolved sidecar"):
         upgrade.upgrade_existing_database(**arguments)
 
 
@@ -564,6 +643,10 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
                 "placeholder_qr_count": 0,
                 "wechat_environment": "develop",
             }
+        if description == "table-reconcile":
+            return _empty_table_reconcile_result()
+        if description == "table-sweep":
+            return _empty_table_sweep_result()
         return {
             "already_current": True,
             "colors": 221,
@@ -590,7 +673,9 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
 
     result = upgrade.upgrade_existing_database(**_common_arguments(tmp_path, apply=True))
 
-    assert compose_commands == [("stop", "--timeout", "30", "nginx", "app")]
+    assert compose_commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
     assert task_names == [
         "migrate-m3",
         "migrate-m4",
@@ -605,6 +690,8 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
         "migrate-m9",
         "table-bootstrap",
         "table-bootstrap-replay",
+        "table-reconcile",
+        "table-sweep",
     ]
     assert result["application_stopped"] is True
     success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
@@ -619,7 +706,11 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
     assert success["source_image_id"] == "sha256:source-image"
     assert success["target_aerich_versions"] == list(APPROVED_MIGRATIONS)
     assert success["evidence_sha256"] == upgrade._sha256(evidence_path)
+    assert success["table_reconcile"] == _empty_table_reconcile_result()
+    assert success["table_sweep"] == _empty_table_sweep_result()
     assert evidence["status"] == "succeeded"
+    assert evidence["table_reconcile"] == _empty_table_reconcile_result()
+    assert evidence["table_sweep"] == _empty_table_sweep_result()
     assert [step["name"] for step in evidence["steps"]] == [
         "migrate-m3",
         "migrate-m4",
@@ -631,6 +722,8 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
         "mard-publish",
         "migrate-m9",
         "table-bootstrap",
+        "table-reconcile",
+        "table-sweep",
     ]
     assert not any(command[:2] == ("up", "--detach") for command in compose_commands)
 
@@ -745,6 +838,10 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
                 "placeholder_qr_count": 0,
                 "wechat_environment": "develop",
             }
+        if description == "table-reconcile":
+            return _empty_table_reconcile_result()
+        if description == "table-sweep":
+            return _empty_table_sweep_result()
         raise AssertionError(f"unexpected task: {description}")
 
     monkeypatch.setattr(upgrade, "_run_task", fake_task)
@@ -764,7 +861,9 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
         **_common_arguments(tmp_path, apply=True, source_version=7)
     )
 
-    assert compose_commands == [("stop", "--timeout", "30", "nginx", "app")]
+    assert compose_commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
     assert task_names == [
         "migrate-m8",
         "mard-preview",
@@ -773,6 +872,8 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
         "migrate-m9",
         "table-bootstrap",
         "table-bootstrap-replay",
+        "table-reconcile",
+        "table-sweep",
     ]
     assert content_snapshot_calls == [True, True]
     assert result["source_version"] == 7
@@ -790,17 +891,23 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
     assert success["final_m7_content_snapshot"] == _m7_content_snapshot()
     assert success["source_m7_mard_preflight"] == _m7_source_preflight()
     assert success["wallet_preparation"] == {}
+    assert success["table_reconcile"] == _empty_table_reconcile_result()
+    assert success["table_sweep"] == _empty_table_sweep_result()
     assert evidence["source_version"] == 7
     assert evidence["source_aerich_versions"] == list(APPROVED_MIGRATIONS[:8])
     assert evidence["target_aerich_versions"] == list(APPROVED_MIGRATIONS)
     assert evidence["source_m7_content_snapshot"] == _m7_content_snapshot()
     assert evidence["final_m7_content_snapshot"] == _m7_content_snapshot()
     assert evidence["source_m7_mard_preflight"] == _m7_source_preflight()
+    assert evidence["table_reconcile"] == _empty_table_reconcile_result()
+    assert evidence["table_sweep"] == _empty_table_sweep_result()
     assert [step["name"] for step in evidence["steps"]] == [
         "migrate-m8",
         "mard-publish",
         "migrate-m9",
         "table-bootstrap",
+        "table-reconcile",
+        "table-sweep",
     ]
 
     replay = upgrade.upgrade_existing_database(
@@ -817,6 +924,34 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
         "target_aerich_versions": list(APPROVED_MIGRATIONS),
         "target_version": 9,
     }
+    replay_record_path = gatea._upgrade_replay_marker(tmp_path, TARGET_SHA)
+    replay_record = json.loads(replay_record_path.read_text(encoding="utf-8"))
+    assert set(replay_record) == {
+        "backup_id",
+        "candidate_sha",
+        "completed_at",
+        "database_snapshot",
+        "evidence_sha256",
+        "image_id",
+        "image_manifest",
+        "manifest_sha256",
+        "passed",
+        "record_type",
+        "result",
+        "schema_version",
+        "secret_values_recorded",
+        "source_candidate_sha",
+        "source_version",
+        "table_reconcile",
+        "upgrade_record_sha256",
+    }
+    assert replay_record["record_type"] == "gatea-m9-upgrade-plan-replay"
+    assert replay_record["result"] == replay
+    assert replay_record["database_snapshot"] == _final_snapshot()
+    assert replay_record["table_reconcile"] == _empty_table_reconcile_result()
+    assert replay_record["upgrade_record_sha256"] == upgrade._sha256(success_path)
+    assert replay_record["evidence_sha256"] == success["evidence_sha256"]
+    assert replay_record["secret_values_recorded"] is False
     assert task_names == [
         "migrate-m8",
         "mard-preview",
@@ -825,7 +960,274 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
         "migrate-m9",
         "table-bootstrap",
         "table-bootstrap-replay",
+        "table-reconcile",
+        "table-sweep",
     ]
+
+
+def test_success_publication_cleanup_failure_preserves_evidence_and_replays(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    original_plan = upgrade._plan
+    _patch_plan(monkeypatch, tmp_path, source_version=7)
+    current_version = 7
+
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: subprocess.CompletedProcess([], 0),
+    )
+    _patch_stopped_replay_services(monkeypatch)
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_snapshot",
+        lambda *args: _source_backup_snapshot(7),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_image_manifest",
+        lambda *args: _mard_image_manifest(),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_read_m7_invariant_snapshot",
+        lambda **kwargs: _m7_invariants(),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m7_content_snapshot",
+        lambda *args: _m7_content_snapshot(),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_m7_source_preflight",
+        lambda **kwargs: _m7_source_preflight(),
+    )
+
+    def fake_task(**kwargs: object) -> dict[str, object]:
+        nonlocal current_version
+        description = str(kwargs["description"])
+        if description in {"migrate-m8", "migrate-m9"}:
+            current_version = int(description.removeprefix("migrate-m"))
+            return {
+                "aerich_versions": list(
+                    APPROVED_MIGRATIONS[: current_version + 1]
+                ),
+                "applied": True,
+                "migration": APPROVED_MIGRATIONS[current_version],
+                "target_version": current_version,
+            }
+        if description in {"mard-preview", "mard-replay-preview"}:
+            return _noop_mard_preview()
+        if description == "mard-apply":
+            return _noop_mard_preview() | {"mode": "apply"}
+        if description in {"table-bootstrap", "table-bootstrap-replay"}:
+            return {
+                "status": "ok",
+                "table_count": 30,
+                "placeholder_qr_count": 0,
+                "wechat_environment": "develop",
+            }
+        if description in {"table-reconcile", "recorded-upgrade-table-reconcile"}:
+            return _empty_table_reconcile_result()
+        if description == "table-sweep":
+            return _empty_table_sweep_result()
+        if description == "recorded-upgrade-mard-preview":
+            return _noop_mard_preview()
+        raise AssertionError(f"unexpected task: {description}")
+
+    monkeypatch.setattr(upgrade, "_run_task", fake_task)
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: _source_status(7)
+        | {"aerich_versions": list(APPROVED_MIGRATIONS[: current_version + 1])},
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_read_final_snapshot",
+        lambda **kwargs: _final_snapshot(),
+    )
+
+    success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
+    evidence_path = tmp_path / (
+        f"{TARGET_SHA}.existing-database-upgrade.evidence.json"
+    )
+    success_temp_prefix = f".{success_path.name}.tmp-"
+    real_unlink_and_fsync = upgrade.backup._unlink_and_fsync
+
+    def fail_after_success_temp_cleanup(path: Path) -> None:
+        real_unlink_and_fsync(path)
+        if path.name.startswith(success_temp_prefix):
+            raise OSError("simulated post-publication cleanup fsync failure")
+
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_unlink_and_fsync",
+        fail_after_success_temp_cleanup,
+    )
+
+    with pytest.raises(OSError, match="post-publication cleanup fsync"):
+        upgrade.upgrade_existing_database(
+            **_common_arguments(tmp_path, apply=True, source_version=7)
+        )
+
+    success = json.loads(success_path.read_text(encoding="utf-8"))
+    evidence_bytes = evidence_path.read_bytes()
+    evidence = json.loads(evidence_bytes)
+    assert evidence["status"] == "succeeded"
+    assert evidence["current_stage"] == "completed"
+    assert "error_type" not in evidence
+    assert "business_entry_stopped" not in evidence
+    assert success["evidence_sha256"] == upgrade._sha256(evidence_path)
+
+    # 恢复真实 plan 路径，证明磁盘上的不可变 success/evidence 绑定可以被
+    # 完整重验，而不是只依赖本次调用的内存对象。
+    monkeypatch.setattr(upgrade.backup, "_unlink_and_fsync", real_unlink_and_fsync)
+    monkeypatch.setattr(upgrade, "_plan", original_plan)
+    monkeypatch.setattr(
+        gatea,
+        "validate_app_image",
+        lambda values: "sha256:target-image",
+    )
+    monkeypatch.setattr(upgrade, "_manifest_sha256", lambda: MANIFEST_SHA)
+
+    replay = upgrade.upgrade_existing_database(
+        **_common_arguments(tmp_path, apply=False, source_version=7)
+    )
+
+    assert replay["already_current"] is True
+    assert replay["mode"] == "plan-replay"
+    assert evidence_path.read_bytes() == evidence_bytes
+    assert gatea._upgrade_replay_marker(tmp_path, TARGET_SHA).is_file()
+
+
+@pytest.mark.parametrize(
+    ("invalid_task", "invalid_result", "message"),
+    (
+        (
+            "table-reconcile",
+            _empty_table_reconcile_result() | {"scanned": 1},
+            "empty table reconciliation",
+        ),
+        (
+            "table-sweep",
+            {"status": "ok", "closed": 1},
+            "empty table sweep",
+        ),
+    ),
+)
+def test_invalid_table_consistency_result_preserves_failure_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    invalid_task: str,
+    invalid_result: dict[str, object],
+    message: str,
+) -> None:
+    _patch_plan(monkeypatch, tmp_path, source_version=7)
+    current_version = 7
+    task_names: list[str] = []
+
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: subprocess.CompletedProcess([], 0),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: _stopped_replay_service_rows(),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_snapshot",
+        lambda *args: _source_backup_snapshot(7),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_image_manifest",
+        lambda *args: _mard_image_manifest(),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_read_m7_invariant_snapshot",
+        lambda **kwargs: _m7_invariants(),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m7_content_snapshot",
+        lambda *args: _m7_content_snapshot(),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_m7_source_preflight",
+        lambda **kwargs: _m7_source_preflight(),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_read_final_snapshot",
+        lambda **kwargs: _final_snapshot(),
+    )
+
+    def fake_task(**kwargs: object) -> dict[str, object]:
+        nonlocal current_version
+        description = str(kwargs["description"])
+        task_names.append(description)
+        if description in {"migrate-m8", "migrate-m9"}:
+            current_version = int(description.removeprefix("migrate-m"))
+            return {
+                "aerich_versions": list(
+                    APPROVED_MIGRATIONS[: current_version + 1]
+                ),
+                "applied": True,
+                "migration": APPROVED_MIGRATIONS[current_version],
+                "target_version": current_version,
+            }
+        if description == "mard-apply":
+            return _noop_mard_preview() | {"mode": "apply"}
+        if description in {"mard-preview", "mard-replay-preview"}:
+            return _noop_mard_preview()
+        if description in {"table-bootstrap", "table-bootstrap-replay"}:
+            return {
+                "status": "ok",
+                "table_count": 30,
+                "placeholder_qr_count": 0,
+                "wechat_environment": "develop",
+            }
+        if description == invalid_task:
+            return invalid_result
+        if description == "table-reconcile":
+            return _empty_table_reconcile_result()
+        if description == "table-sweep":
+            return _empty_table_sweep_result()
+        raise AssertionError(f"unexpected task: {description}")
+
+    monkeypatch.setattr(upgrade, "_run_task", fake_task)
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: _source_status(7)
+        | {"aerich_versions": list(APPROVED_MIGRATIONS[: current_version + 1])},
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError, match=message):
+        upgrade.upgrade_existing_database(
+            **_common_arguments(tmp_path, apply=True, source_version=7)
+        )
+
+    evidence_path = tmp_path / (
+        f"{TARGET_SHA}.existing-database-upgrade.evidence.json"
+    )
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["status"] == "failed"
+    assert evidence["business_entry_stopped"] is True
+    assert evidence["current_stage"] == invalid_task
+    assert evidence["error_type"] == "GateAUpgradeError"
+    assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
+    assert task_names[-1] == invalid_task
+    if invalid_task == "table-sweep":
+        assert evidence["table_reconcile"] == _empty_table_reconcile_result()
 
 
 @pytest.mark.parametrize(
@@ -920,7 +1322,9 @@ def test_m7_source_preflight_failure_blocks_m8_before_any_task(
     )
     assert evidence["steps"] == []
     assert task_names == []
-    assert compose_commands == [("stop", "--timeout", "30", "nginx", "app")]
+    assert compose_commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
     assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
 
 
@@ -991,7 +1395,9 @@ def test_stopped_m7_content_drift_blocks_preflight_and_migration(
 
     assert preflight_called is False
     assert task_names == []
-    assert compose_commands == [("stop", "--timeout", "30", "nginx", "app")]
+    assert compose_commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
 
 
 def test_failure_preserves_evidence_and_does_not_restart_business_entry(
@@ -1059,7 +1465,9 @@ def test_failure_preserves_evidence_and_does_not_restart_business_entry(
     assert evidence["error_type"] == "GateAUpgradeError"
     assert [step["name"] for step in evidence["steps"]] == ["migrate-m3"]
     assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
-    assert compose_commands == [("stop", "--timeout", "30", "nginx", "app")]
+    assert compose_commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
 
 
 def test_prior_evidence_blocks_blind_retry(
@@ -1089,11 +1497,83 @@ def test_prior_evidence_blocks_blind_retry(
         )
 
 
+def test_upgrade_exclusive_writer_never_overwrites_or_leaves_tempfiles(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "upgrade.json"
+    upgrade._write_json_exclusive(path, {"owner": "first"})
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="already reserved"):
+        upgrade._write_json_exclusive(path, {"owner": "second"})
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {"owner": "first"}
+    assert list(tmp_path.glob(".upgrade.json.tmp-*")) == []
+
+
+def test_upgrade_exclusive_writer_does_not_publish_partial_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "upgrade.json"
+
+    def fail_after_partial_write(
+        payload: object,
+        stream: object,
+        **kwargs: object,
+    ) -> None:
+        del payload, kwargs
+        stream.write('{"partial":')
+        raise OSError("simulated ENOSPC")
+
+    monkeypatch.setattr(upgrade.backup.json, "dump", fail_after_partial_write)
+
+    with pytest.raises(OSError, match="ENOSPC"):
+        upgrade._write_json_exclusive(path, {"owner": "first"})
+
+    assert not path.exists()
+    assert list(tmp_path.glob(".upgrade.json.tmp-*")) == []
+
+
+def test_upgrade_mutable_evidence_keeps_last_complete_record_on_enospc(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    evidence_path = tmp_path / "upgrade.evidence.json"
+    previous = {"current_stage": "validated", "steps": []}
+    evidence_path.write_text(json.dumps(previous) + "\n", encoding="utf-8")
+    evidence: dict[str, object] = {"current_stage": "validated", "steps": []}
+
+    def fail_after_partial_write(
+        payload: object,
+        stream: object,
+        **kwargs: object,
+    ) -> None:
+        del payload, kwargs
+        stream.write('{"current_stage":"partial"')
+        raise OSError("simulated ENOSPC")
+
+    monkeypatch.setattr(upgrade.backup.json, "dump", fail_after_partial_write)
+
+    with pytest.raises(OSError, match="ENOSPC"):
+        upgrade._record_step(
+            evidence_path=evidence_path,
+            evidence=evidence,
+            name="migrate-m8",
+            started_at="2026-09-11T00:00:00+00:00",
+            result={"applied": True},
+            database_snapshot={"aerich_versions": ["m8"]},
+        )
+
+    assert json.loads(evidence_path.read_text(encoding="utf-8")) == previous
+    assert list(tmp_path.glob(".upgrade.evidence.json.tmp-*")) == []
+
+
 def test_m7_replay_record_must_match_explicit_source_version_and_chain(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     _write_replay_fixture(tmp_path)
+    task_names: list[str] = []
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda values: "sha256:target")
     _patch_stopped_replay_services(monkeypatch)
@@ -1116,7 +1596,8 @@ def test_m7_replay_record_must_match_explicit_source_version_and_chain(
     monkeypatch.setattr(
         upgrade,
         "_run_task",
-        lambda **kwargs: _noop_mard_preview(),
+        lambda **kwargs: task_names.append(str(kwargs["description"]))
+        or _replay_task_result(str(kwargs["description"])),
     )
     arguments = {
         "values": _values(tmp_path / "backups"),
@@ -1138,6 +1619,11 @@ def test_m7_replay_record_must_match_explicit_source_version_and_chain(
     assert backup_record == {}
     assert final_snapshot["aerich_versions"] == list(APPROVED_MIGRATIONS)
     assert manifest_sha == MANIFEST_SHA
+    assert task_names == [
+        "recorded-upgrade-mard-preview",
+        "recorded-upgrade-table-reconcile",
+    ]
+    assert not any("sweep" in name for name in task_names)
 
     with pytest.raises(upgrade.GateAUpgradeError, match="requested replay"):
         upgrade._plan(**arguments)
@@ -1162,7 +1648,11 @@ def test_legacy_m2_to_m8_replay_without_source_version_remains_compatible(
         "_source_image_manifest",
         lambda *args: _mard_image_manifest(),
     )
-    monkeypatch.setattr(upgrade, "_run_task", lambda **kwargs: _noop_mard_preview())
+    monkeypatch.setattr(
+        upgrade,
+        "_run_task",
+        lambda **kwargs: _replay_task_result(str(kwargs["description"])),
+    )
 
     _, _, backup_record, final_snapshot, _ = upgrade._plan(
         values=_values(tmp_path / "backups"),
@@ -1181,6 +1671,84 @@ def test_legacy_m2_to_m8_replay_without_source_version_remains_compatible(
 
 
 @pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("table_reconcile", None, "table consistency evidence"),
+        (
+            "table_reconcile",
+            _empty_table_reconcile_result() | {"violations": False},
+            "empty table reconciliation",
+        ),
+        ("table_sweep", None, "table consistency evidence"),
+        ("table_sweep", {"status": "ok", "closed": 1}, "empty table sweep"),
+    ),
+)
+def test_replay_rejects_missing_or_invalid_recorded_table_consistency(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    success_path, _, success = _write_replay_fixture(tmp_path)
+    if value is None:
+        success.pop(field)
+    else:
+        success[field] = value
+    success_path.write_text(json.dumps(success), encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda values: "sha256:target")
+    _patch_stopped_replay_services(monkeypatch)
+    monkeypatch.setattr(upgrade, "_manifest_sha256", lambda: MANIFEST_SHA)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match=message):
+        upgrade._plan(
+            values=_values(tmp_path / "backups"),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            source_candidate_sha=SOURCE_SHA,
+            backup_id=BACKUP_ID,
+            backup_root=tmp_path / "backups",
+            backup_record_dir=tmp_path / "backup-records",
+            restore_record_dir=tmp_path / "restore-records",
+            release_record_dir=tmp_path,
+            source_version=7,
+        )
+
+
+def test_replay_rejects_table_consistency_evidence_different_from_success_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    success_path, evidence_path, success = _write_replay_fixture(tmp_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["table_sweep"] = {"status": "ok", "closed": 1}
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    success["evidence_sha256"] = upgrade._sha256(evidence_path)
+    success_path.write_text(json.dumps(success), encoding="utf-8")
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda values: "sha256:target")
+    _patch_stopped_replay_services(monkeypatch)
+    monkeypatch.setattr(upgrade, "_manifest_sha256", lambda: MANIFEST_SHA)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="upgrade evidence is invalid"):
+        upgrade._plan(
+            values=_values(tmp_path / "backups"),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            source_candidate_sha=SOURCE_SHA,
+            backup_id=BACKUP_ID,
+            backup_root=tmp_path / "backups",
+            backup_record_dir=tmp_path / "backup-records",
+            restore_record_dir=tmp_path / "restore-records",
+            release_record_dir=tmp_path,
+            source_version=7,
+        )
+
+
+@pytest.mark.parametrize(
     ("scenario", "message"),
     (
         ("evidence_path", "requested replay"),
@@ -1189,6 +1757,7 @@ def test_legacy_m2_to_m8_replay_without_source_version_remains_compatible(
         ("images", "image volume"),
         ("m7_content", "preserved M7 content"),
         ("mard", "exact no-op"),
+        ("reconcile", "empty table reconciliation"),
     ),
 )
 def test_replay_revalidates_fixed_evidence_and_current_final_state(
@@ -1202,6 +1771,7 @@ def test_replay_revalidates_fixed_evidence_and_current_final_state(
     final_images = _mard_image_manifest()
     final_m7_content = _m7_content_snapshot()
     mard_preview = _noop_mard_preview()
+    table_reconcile = _empty_table_reconcile_result()
 
     if scenario == "evidence_path":
         success["evidence_path"] = str(tmp_path / "attacker-selected.json")
@@ -1220,6 +1790,8 @@ def test_replay_revalidates_fixed_evidence_and_current_final_state(
             "already_current": False,
             "database_changes": 1,
         }
+    elif scenario == "reconcile":
+        table_reconcile = table_reconcile | {"scanned": 1}
 
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "validate_app_image", lambda values: "sha256:target")
@@ -1243,7 +1815,11 @@ def test_replay_revalidates_fixed_evidence_and_current_final_state(
     monkeypatch.setattr(
         upgrade,
         "_run_task",
-        lambda **kwargs: mard_preview,
+        lambda **kwargs: _replay_task_result(
+            str(kwargs["description"]),
+            mard_preview=mard_preview,
+            table_reconcile=table_reconcile,
+        ),
     )
 
     with pytest.raises(upgrade.GateAUpgradeError, match=message):
@@ -1270,6 +1846,7 @@ def test_replay_revalidates_fixed_evidence_and_current_final_state(
         ("app-missing", "service app is unavailable"),
         ("mysql-missing", "service mysql is unavailable"),
         ("redis-unhealthy", "service redis is not healthy"),
+        ("table-sweeper-running", "service table-sweeper must not be running"),
     ),
 )
 def test_replay_requires_healthy_dependencies_and_stopped_business_services(
@@ -1294,6 +1871,12 @@ def test_replay_requires_healthy_dependencies_and_stopped_business_services(
         rows = [row for row in rows if row["Service"] != "mysql"]
     elif scenario == "redis-unhealthy":
         rows[1] = {"Service": "redis", "State": "running", "Health": "unhealthy"}
+    elif scenario == "table-sweeper-running":
+        rows[-1] = {
+            "Service": "table-sweeper",
+            "State": "running",
+            "Health": "healthy",
+        }
 
     live_checks: list[str] = []
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
@@ -1449,6 +2032,7 @@ def test_verified_backup_must_be_fresh_and_have_exact_restore_record(
         "_load_backup_record",
         lambda **kwargs: (payload, Path("/db.sql"), Path("/images.tar")),
     )
+    monkeypatch.setattr(upgrade.backup, "_sha256", lambda path: "a" * 64)
 
     with pytest.raises(upgrade.GateAUpgradeError, match="within 24 hours"):
         upgrade._load_verified_backup(
@@ -1470,6 +2054,47 @@ def test_verified_backup_must_be_fresh_and_have_exact_restore_record(
             backup_record_dir=backup_records,
             restore_record_dir=restore_records,
         )
+
+
+def test_verified_backup_rejects_pending_before_loading_backup_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    backup_root = tmp_path / "backups"
+    backup_records = tmp_path / "backup-records"
+    restore_records = tmp_path / "restore-records"
+    backup_records.mkdir()
+    pending = backup_records / f".{BACKUP_ID}.pending.json"
+    pending.write_text("{}\n", encoding="utf-8")
+    loaded = False
+
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_validate_backup_directories",
+        lambda **kwargs: None,
+    )
+
+    def unexpected_load(**kwargs: object) -> object:
+        nonlocal loaded
+        loaded = True
+        raise AssertionError("pending backup must fail before record loading")
+
+    monkeypatch.setattr(upgrade.backup, "_load_backup_record", unexpected_load)
+
+    with pytest.raises(
+        upgrade.GateAUpgradeError,
+        match="pending journal requires manual review",
+    ):
+        upgrade._load_verified_backup(
+            values=_values(backup_root),
+            backup_id=BACKUP_ID,
+            source_candidate_sha=SOURCE_SHA,
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+            restore_record_dir=restore_records,
+        )
+
+    assert loaded is False
 
 
 def test_verified_m7_backup_requires_restore_record_with_exact_content_digest(
@@ -1500,6 +2125,9 @@ def test_verified_m7_backup_requires_restore_record_with_exact_content_digest(
         "restore_project": upgrade.backup.restore_project(BACKUP_ID),
         "completed_at": (completed + timedelta(minutes=1)).isoformat(),
         "host_ports_published": False,
+        "backup_record_sha256": "a" * 64,
+        "mysql_artifact_sha256": "b" * 64,
+        "image_artifact_sha256": "c" * 64,
         "m7_content_matches": True,
         "m7_content_snapshot": content_snapshot,
     }
@@ -1515,6 +2143,15 @@ def test_verified_m7_backup_requires_restore_record_with_exact_content_digest(
         upgrade.backup,
         "_load_backup_record",
         lambda **kwargs: (payload, Path("/db.sql"), Path("/images.tar")),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_sha256",
+        lambda path: {
+            f"{BACKUP_ID}.json": "a" * 64,
+            "db.sql": "b" * 64,
+            "images.tar": "c" * 64,
+        }[path.name],
     )
 
     assert upgrade._load_verified_backup(
@@ -1581,6 +2218,45 @@ def test_final_snapshot_rejects_core_drift_wallet_or_mard_gap() -> None:
         )
     with pytest.raises(upgrade.GateAUpgradeError, match="unavailable"):
         upgrade._validate_final_snapshot(m7_source, final, source_version=7)
+
+
+def test_empty_table_reconcile_requires_exact_integer_zero_contract() -> None:
+    valid = _empty_table_reconcile_result()
+    upgrade._validate_empty_table_reconcile_result(valid)
+
+    invalid_results = [
+        valid | {"scanned": 1},
+        valid | {"violations": False},
+        valid | {"open_sessions": "0"},
+        {key: value for key, value in valid.items() if key != "occupancies"},
+        valid | {"unexpected": 0},
+    ]
+    for result in invalid_results:
+        with pytest.raises(
+            upgrade.GateAUpgradeError,
+            match="empty table reconciliation",
+        ):
+            upgrade._validate_empty_table_reconcile_result(result)
+
+
+def test_empty_table_sweep_requires_exact_integer_zero_contract() -> None:
+    valid = _empty_table_sweep_result()
+    upgrade._validate_empty_table_sweep_result(valid)
+
+    invalid_results = [
+        {"status": "ok", "closed": 1},
+        {"status": "ok", "closed": False},
+        {"status": "ok", "closed": "0"},
+        {"status": "failed", "closed": 0},
+        {"status": "ok"},
+        valid | {"unexpected": 0},
+    ]
+    for result in invalid_results:
+        with pytest.raises(
+            upgrade.GateAUpgradeError,
+            match="empty table sweep",
+        ):
+            upgrade._validate_empty_table_sweep_result(result)
 
 
 def test_final_database_status_fixes_utf8mb4_for_table_display_names() -> None:

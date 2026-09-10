@@ -456,6 +456,7 @@ def execute_bootstrap(
     release_record_dir: Path,
     bootstrap_record_dir: Path,
     secret_file: Path,
+    acceptance_record_dir: Path = gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
 ) -> None:
     """执行首次/重放、登录、轮换、会话撤销并写脱敏 Record。"""
 
@@ -469,6 +470,17 @@ def execute_bootstrap(
     )
     _validate_passwords(initial_password, final_password)
     gatea._require_loopback_write_mode("loopback")
+    gatea._validate_root_directory(
+        release_record_dir,
+        0o755,
+        "Gate A release record directory",
+    )
+    gatea.reject_unresolved_candidate_transition_journals(
+        record_dir=release_record_dir,
+    )
+    gatea.reject_unresolved_m9_acceptance_sidecars(
+        record_dir=acceptance_record_dir,
+    )
     values = gatea._validated_inputs(
         config_file=config_file,
         secret_dir=secret_dir,
@@ -681,6 +693,11 @@ def _parser() -> argparse.ArgumentParser:
         "--release-record-dir", type=Path, default=gatea.DEFAULT_RECORD_DIR
     )
     parser.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+    )
+    parser.add_argument(
         "--bootstrap-record-dir",
         type=Path,
         default=DEFAULT_BOOTSTRAP_RECORD_DIR,
@@ -699,26 +716,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Gate A bootstrap failed: --apply is required", file=sys.stderr)
         return 2
     try:
-        _validate_identity(
-            username=args.username,
-            nickname=args.nickname,
-            phone=args.phone,
-            confirm_username=args.confirm_username,
-        )
-        initial_password, final_password = read_passwords()
-        execute_bootstrap(
-            username=args.username,
-            nickname=args.nickname,
-            phone=args.phone,
-            confirm_username=args.confirm_username,
-            initial_password=initial_password,
-            final_password=final_password,
-            config_file=args.config_file,
-            secret_dir=args.secret_dir,
-            release_record_dir=args.release_record_dir,
-            bootstrap_record_dir=args.bootstrap_record_dir,
-            secret_file=args.secret_file,
-        )
+        with gatea.operation_lock():
+            _validate_identity(
+                username=args.username,
+                nickname=args.nickname,
+                phone=args.phone,
+                confirm_username=args.confirm_username,
+            )
+            initial_password, final_password = read_passwords()
+            execute_bootstrap(
+                username=args.username,
+                nickname=args.nickname,
+                phone=args.phone,
+                confirm_username=args.confirm_username,
+                initial_password=initial_password,
+                final_password=final_password,
+                config_file=args.config_file,
+                secret_dir=args.secret_dir,
+                release_record_dir=args.release_record_dir,
+                bootstrap_record_dir=args.bootstrap_record_dir,
+                secret_file=args.secret_file,
+                acceptance_record_dir=args.acceptance_record_dir,
+            )
     except KeyboardInterrupt:
         print("\nGate A bootstrap cancelled", file=sys.stderr)
         return 130

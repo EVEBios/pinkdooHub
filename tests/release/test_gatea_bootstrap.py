@@ -120,6 +120,7 @@ def _prepare_success(
     values = _values()
     record_dir = tmp_path / "records"
     record_dir.mkdir()
+    (tmp_path / "release-records").mkdir()
     secret_file = tmp_path / "runtime" / "bootstrap_password.pending"
     calls: list[str] = []
 
@@ -209,6 +210,58 @@ def _prepare_success(
         lambda **kwargs: calls.append("session-revoked"),
     )
     return record_dir, secret_file, calls
+
+
+@pytest.mark.parametrize("blocker", ("candidate", "acceptance"))
+def test_bootstrap_rejects_global_release_state_before_compose_or_writes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    blocker: str,
+) -> None:
+    release_record_dir = tmp_path / "release-records"
+    release_record_dir.mkdir()
+    acceptance_record_dir = tmp_path / "acceptance"
+    acceptance_record_dir.mkdir()
+    if blocker == "candidate":
+        (release_record_dir / f"{'b' * 40}.config-activation.pending.json").write_text(
+            "{}\n", encoding="utf-8"
+        )
+    else:
+        (
+            acceptance_record_dir
+            / (
+                f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'b' * 40}"
+                f"{gatea.M9_ACCEPTANCE_COMPLETE_SUFFIX}"
+            )
+        ).write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(bootstrap.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail("global guards must run before compose config"),
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "_create_secret_file",
+        lambda *args, **kwargs: pytest.fail("global guards must run before writes"),
+    )
+
+    with pytest.raises(gatea.GateAError, match="unresolved"):
+        bootstrap.execute_bootstrap(
+            username="owner",
+            nickname="Owner",
+            phone="13800000101",
+            confirm_username="owner",
+            initial_password="initial-password",
+            final_password="final-password",
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            release_record_dir=release_record_dir,
+            bootstrap_record_dir=tmp_path / "bootstrap-records",
+            secret_file=tmp_path / "bootstrap-secret.pending",
+            acceptance_record_dir=acceptance_record_dir,
+        )
 
 
 @pytest.mark.parametrize("first_created", (True, False))

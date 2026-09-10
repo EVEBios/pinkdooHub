@@ -87,6 +87,7 @@ def test_prepare_requires_bootstrap_empty_business_baseline_and_no_images(
     record_dir.mkdir()
     bootstrap_record = tmp_path / "bootstrap.json"
     _bootstrap_record(bootstrap_record)
+    (tmp_path / "release-records").mkdir()
     validated_publishers: list[int] = []
 
     monkeypatch.setattr(representative.os, "geteuid", lambda: 0)
@@ -143,6 +144,7 @@ def test_prepare_rejects_nonempty_baseline_before_api_write(
     record_dir.mkdir()
     bootstrap_record = tmp_path / "bootstrap.json"
     _bootstrap_record(bootstrap_record)
+    (tmp_path / "release-records").mkdir()
 
     monkeypatch.setattr(representative.os, "geteuid", lambda: 0)
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _values())
@@ -177,6 +179,49 @@ def test_prepare_rejects_nonempty_baseline_before_api_write(
             release_record_dir=tmp_path / "release-records",
             bootstrap_record=bootstrap_record,
             record_dir=record_dir,
+        )
+
+
+@pytest.mark.parametrize("blocker", ("candidate", "acceptance"))
+def test_prepare_rejects_global_release_state_before_compose_or_api_write(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    blocker: str,
+) -> None:
+    release_record_dir = tmp_path / "release-records"
+    release_record_dir.mkdir()
+    acceptance_record_dir = tmp_path / "acceptance"
+    acceptance_record_dir.mkdir()
+    if blocker == "candidate":
+        (release_record_dir / f"{'b' * 40}.candidate-stage.pending.json").write_text(
+            "{}\n", encoding="utf-8"
+        )
+    else:
+        (
+            acceptance_record_dir
+            / (
+                f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}malformed"
+                f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+            )
+        ).write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(representative.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail("global guards must run before compose config"),
+    )
+
+    with pytest.raises(gatea.GateAError, match="unresolved"):
+        representative.prepare(
+            username="owner",
+            confirm_username="owner",
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            release_record_dir=release_record_dir,
+            bootstrap_record=tmp_path / "bootstrap.json",
+            record_dir=tmp_path / "representative",
+            acceptance_record_dir=acceptance_record_dir,
         )
 
 

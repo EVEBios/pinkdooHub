@@ -133,6 +133,7 @@ def test_prepare_binds_upgrade_base_data_current_backup_and_empty_m7_baseline(
 ) -> None:
     record_dir = tmp_path / "records"
     record_dir.mkdir()
+    (tmp_path / "release-records").mkdir()
     base_record = tmp_path / "base.json"
     base_record.write_text(
         json.dumps(
@@ -243,6 +244,7 @@ def test_prepare_rejects_drift_after_verified_backup(
 ) -> None:
     record_dir = tmp_path / "records"
     record_dir.mkdir()
+    (tmp_path / "release-records").mkdir()
     base_record = tmp_path / "base.json"
     base_record.write_text(
         json.dumps(
@@ -325,6 +327,55 @@ def test_prepare_rejects_drift_after_verified_backup(
             base_record=base_record,
             record_dir=record_dir,
             credentials_file=record_dir / "credentials.json",
+        )
+
+
+@pytest.mark.parametrize("blocker", ("candidate", "acceptance"))
+def test_prepare_rejects_global_release_state_before_compose_or_api_write(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    blocker: str,
+) -> None:
+    release_record_dir = tmp_path / "release-records"
+    release_record_dir.mkdir()
+    acceptance_record_dir = tmp_path / "acceptance"
+    acceptance_record_dir.mkdir()
+    if blocker == "candidate":
+        (release_record_dir / f"{'b' * 40}.config-rollback.pending.json").write_text(
+            "{}\n", encoding="utf-8"
+        )
+    else:
+        (
+            acceptance_record_dir
+            / (
+                f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'b' * 40}"
+                f"{gatea.M9_ACCEPTANCE_COMPLETE_SUFFIX}"
+            )
+        ).write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(representative.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail("global guards must run before compose config"),
+    )
+
+    with pytest.raises(gatea.GateAError, match="unresolved"):
+        representative.prepare(
+            username="owner",
+            confirm_username="owner",
+            backup_id="20260908t010000z",
+            confirm_backup_id="20260908t010000z",
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            backup_root=tmp_path / "backups",
+            backup_record_dir=tmp_path / "backup-records",
+            restore_record_dir=tmp_path / "restore-records",
+            release_record_dir=release_record_dir,
+            base_record=tmp_path / "base.json",
+            record_dir=tmp_path / "records",
+            credentials_file=tmp_path / "records" / "credentials.json",
+            acceptance_record_dir=acceptance_record_dir,
         )
 
 

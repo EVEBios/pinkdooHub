@@ -10,17 +10,23 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass
 from datetime import datetime, timezone
+import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import stat
 import subprocess
 import sys
-from typing import Any, Mapping, Sequence
+import tempfile
+from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
 
 
@@ -35,6 +41,30 @@ BOOTSTRAP_COMPOSE = GATEA_ROOT / "compose.bootstrap.yml"
 DEFAULT_CONFIG_FILE = Path("/etc/pinkdoohub/gatea/config.env")
 DEFAULT_SECRET_DIR = Path("/etc/pinkdoohub/gatea/secrets")
 DEFAULT_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/releases")
+DEFAULT_M9_ACCEPTANCE_RECORD_DIR = Path(
+    "/srv/pinkdoohub/gatea/records/m9-acceptance"
+)
+DEFAULT_OPERATION_LOCK_FILE = Path("/run/lock/pinkdoohub-gatea-operation.lock")
+CURRENT_FINALIZATION_PENDING_SUFFIX = "current-finalization.pending.json"
+CANDIDATE_TRANSITION_PENDING_KINDS = (
+    ("candidate-stage", "candidate-stage.pending.json"),
+    ("config-activation", "config-activation.pending.json"),
+    ("config-rollback", "config-rollback.pending.json"),
+    ("current-finalization", CURRENT_FINALIZATION_PENDING_SUFFIX),
+)
+CANDIDATE_TRANSITION_PENDING_SUFFIXES = tuple(
+    suffix for _, suffix in CANDIDATE_TRANSITION_PENDING_KINDS
+)
+CANDIDATE_TRANSITION_PENDING_SUFFIX_BY_KIND = dict(
+    CANDIDATE_TRANSITION_PENDING_KINDS
+)
+M9_ACCEPTANCE_SIDECAR_PREFIX = "gatea-m9-runtime-acceptance-"
+M9_ACCEPTANCE_PENDING_SUFFIX = ".json.pending"
+M9_ACCEPTANCE_COMPLETE_SUFFIX = ".json.complete"
+M9_ACCEPTANCE_SIDECAR_SUFFIXES = (
+    M9_ACCEPTANCE_PENDING_SUFFIX,
+    M9_ACCEPTANCE_COMPLETE_SUFFIX,
+)
 EXPECTED_SECRET_FILES = (
     "mysql_app_password",
     "mysql_root_password",
@@ -109,6 +139,36 @@ EXPECTED_APP_COMMAND = [
     "--no-server-header",
     "--no-access-log",
 ]
+M9_RECONCILE_KEYS = frozenset(
+    {
+        "open_sessions",
+        "occupancies",
+        "closed_with_occupancy",
+        "awaiting_with_timers",
+        "active_without_timers",
+        "scanned",
+        "violations",
+    }
+)
+M9_STATIC_SNAPSHOT_KEYS = (
+    "aerich_versions",
+    "tables",
+    "columns",
+    "statistics",
+    "constraints",
+    "columns_sha256",
+    "statistics_sha256",
+    "constraints_sha256",
+)
+LEGACY_M7_APP_COMMAND = [
+    "uvicorn",
+    "app.main:app",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000",
+    "--no-server-header",
+]
 INITIAL_SCHEMA_COUNT_COMMAND = (
     'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" '
     "mysql --batch --skip-column-names --host=127.0.0.1 --user=root "
@@ -175,6 +235,144 @@ LIFECYCLE_COMMANDS = (
 
 class GateAError(RuntimeError):
     """不包含 Secret、Token、密码或连接串的 Gate A 操作错误。"""
+
+
+class GateAOperationInterrupted(GateAError):
+    """可恢复的终止信号已请求中止当前 Gate A 操作。"""
+
+
+@dataclass(frozen=True)
+class CandidateTransitionRecoveryAllowance:
+    """只允许一个已由所属状态机验证的精确 candidate pending。"""
+
+    path: Path
+    kind: str
+    candidate_sha: str
+
+
+@dataclass(frozen=True)
+class M9AcceptanceSidecarRecoveryAllowance:
+    """只允许一个候选由 acceptance 状态机验证的精确 sidecar。"""
+
+    candidate_sha: str
+    pending_path: Path | None = None
+    complete_path: Path | None = None
+
+
+@contextmanager
+def operation_lock(
+    *,
+    _path: Path = DEFAULT_OPERATION_LOCK_FILE,
+) -> Iterator[None]:
+    """互斥执行会改变 Gate A 持久环境的受控操作。"""
+
+    descriptor: int | None = None
+    locked = False
+    try:
+        try:
+            descriptor = os.open(
+                _path,
+                os.O_RDWR
+                | os.O_CREAT
+                | os.O_CLOEXEC
+                | os.O_NOFOLLOW,
+                0o600,
+            )
+            metadata = os.fstat(descriptor)
+        except OSError as error:
+            raise GateAError("Gate A operation lock is unavailable") from error
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != 0
+            or metadata.st_gid != 0
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
+            raise GateAError("Gate A operation lock is unsafe")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError) as error:
+            raise GateAError("Another Gate A operation is active") from error
+        locked = True
+        yield
+    finally:
+        if descriptor is not None:
+            try:
+                if locked:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+
+class _OperationTerminationController:
+    """工作阶段立即中止，恢复阶段延迟 HUP/TERM/SIGINT。"""
+
+    def __init__(self) -> None:
+        self.work_interruption: BaseException | None = None
+        self.deferred_interruption: BaseException | None = None
+        self._recovering = False
+        self._previous_handlers: dict[int, Any] = {}
+        self._installed_signals: list[int] = []
+
+    def begin_recovery(self) -> None:
+        """在任何补偿动作前切换信号语义。"""
+
+        self._recovering = True
+
+    def interrupt(self, signum: int, _frame: object) -> None:
+        signal_name = signal.Signals(signum).name
+        interruption: BaseException = (
+            KeyboardInterrupt(f"Gate A operation received {signal_name}")
+            if signum == signal.SIGINT
+            else GateAOperationInterrupted(
+                f"Gate A operation received {signal_name} and is recovering"
+            )
+        )
+        if self._recovering:
+            if self.deferred_interruption is None:
+                self.deferred_interruption = interruption
+            return
+
+        # 先切换相位再抛出，确保由本信号触发的 finally 已处于恢复语义。
+        self._recovering = True
+        self.work_interruption = interruption
+        raise interruption
+
+    def install(self) -> None:
+        try:
+            for signum in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+                self._previous_handlers[signum] = signal.getsignal(signum)
+                signal.signal(signum, self.interrupt)
+                self._installed_signals.append(signum)
+        except BaseException:
+            self.restore_handlers()
+            raise
+
+    def restore_handlers(self) -> None:
+        while self._installed_signals:
+            signum = self._installed_signals.pop()
+            signal.signal(signum, self._previous_handlers[signum])
+
+
+@contextmanager
+def operation_termination_guard() -> Iterator[_OperationTerminationController]:
+    """在工作开始前安装统一终止信号状态机，并在退出时还原。"""
+
+    controller = _OperationTerminationController()
+    body_error: BaseException | None = None
+    controller.install()
+    try:
+        try:
+            yield controller
+        except BaseException as error:
+            body_error = error
+    finally:
+        controller.restore_handlers()
+    if body_error is not None:
+        raise body_error
+    if controller.work_interruption is not None:
+        raise controller.work_interruption
+    if controller.deferred_interruption is not None:
+        raise controller.deferred_interruption
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -372,6 +570,7 @@ def _run_compose(
     profiles: Sequence[str] = (),
     capture_output: bool = False,
     check: bool = True,
+    start_new_session: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         compose_command(
@@ -385,6 +584,7 @@ def _run_compose(
         env=_operation_environment(values, config_file, secret_dir),
         text=True,
         capture_output=capture_output,
+        start_new_session=start_new_session,
     )
 
 
@@ -452,7 +652,268 @@ def _candidate_sha(values: Mapping[str, str]) -> str:
     return values["GATEA_APP_IMAGE"].rsplit(":", 1)[1]
 
 
-def validate_app_image(values: Mapping[str, str]) -> str:
+def _lexical_absolute_path(path: Path) -> Path:
+    """规范化路径但不跟随可能由攻击者控制的符号链接。"""
+
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _direct_child_paths_with_suffixes(
+    *,
+    record_dir: Path,
+    suffixes: Sequence[str],
+) -> tuple[Path, ...]:
+    """按后缀枚举受保护 Record 目录的直接子项，不跟随链接。"""
+
+    try:
+        entries = tuple(record_dir.iterdir())
+    except OSError as error:
+        raise GateAError("Gate A pending journals could not be inspected") from error
+    return tuple(
+        entry
+        for entry in entries
+        if any(entry.name.endswith(suffix) for suffix in suffixes)
+    )
+
+
+def _candidate_transition_pending_paths(record_dir: Path) -> tuple[Path, ...]:
+    """枚举 release Record 目录直接子项中的所有 candidate pending。"""
+
+    return _direct_child_paths_with_suffixes(
+        record_dir=record_dir,
+        suffixes=CANDIDATE_TRANSITION_PENDING_SUFFIXES,
+    )
+
+
+def _validate_candidate_transition_recovery_allowance(
+    *,
+    record_dir: Path,
+    candidate_sha: str | None,
+    recovery_allowance: CandidateTransitionRecoveryAllowance,
+    pending_paths: Sequence[Path],
+) -> Path:
+    """验证 allowance 只精确指向当前候选的一个普通 pending 文件。"""
+
+    if (
+        not isinstance(recovery_allowance, CandidateTransitionRecoveryAllowance)
+        or not isinstance(recovery_allowance.path, Path)
+        or not isinstance(recovery_allowance.kind, str)
+        or not isinstance(recovery_allowance.candidate_sha, str)
+    ):
+        raise GateAError(
+            "Gate A candidate transition recovery allowance is invalid"
+        )
+    suffix = CANDIDATE_TRANSITION_PENDING_SUFFIX_BY_KIND.get(
+        recovery_allowance.kind
+    )
+    normalized_record_dir = _lexical_absolute_path(record_dir)
+    normalized_allowance_path = _lexical_absolute_path(recovery_allowance.path)
+    expected_path = normalized_record_dir / (
+        f"{recovery_allowance.candidate_sha}.{suffix}"
+        if suffix is not None
+        else "invalid"
+    )
+    if (
+        suffix is None
+        or candidate_sha is None
+        or GIT_SHA_PATTERN.fullmatch(candidate_sha) is None
+        or GIT_SHA_PATTERN.fullmatch(recovery_allowance.candidate_sha) is None
+        or recovery_allowance.candidate_sha != candidate_sha
+        or normalized_allowance_path.parent != normalized_record_dir
+        or normalized_allowance_path != expected_path
+        or all(
+            _lexical_absolute_path(path) != normalized_allowance_path
+            for path in pending_paths
+        )
+    ):
+        raise GateAError(
+            "Gate A candidate transition recovery allowance is invalid"
+        )
+    try:
+        metadata = normalized_allowance_path.lstat()
+    except OSError as error:
+        raise GateAError(
+            "Gate A candidate transition recovery allowance is invalid"
+        ) from error
+    if not stat.S_ISREG(metadata.st_mode) or normalized_allowance_path.is_symlink():
+        raise GateAError(
+            "Gate A candidate transition recovery allowance is invalid"
+        )
+    return normalized_allowance_path
+
+
+def reject_unresolved_candidate_transition_journals(
+    *,
+    record_dir: Path,
+    candidate_sha: str | None = None,
+    recovery_allowance: CandidateTransitionRecoveryAllowance | None = None,
+) -> None:
+    """阻断任意候选未收口事务，仅允许一个精确且安全的 own recovery。"""
+
+    if (
+        candidate_sha is not None
+        and GIT_SHA_PATTERN.fullmatch(candidate_sha) is None
+    ):
+        raise GateAError("Gate A candidate SHA is invalid")
+    pending_paths = _candidate_transition_pending_paths(record_dir)
+    allowed_path = (
+        _validate_candidate_transition_recovery_allowance(
+            record_dir=record_dir,
+            candidate_sha=candidate_sha,
+            recovery_allowance=recovery_allowance,
+            pending_paths=pending_paths,
+        )
+        if recovery_allowance is not None
+        else None
+    )
+    if any(
+        allowed_path is None
+        or _lexical_absolute_path(path) != allowed_path
+        for path in pending_paths
+    ):
+        raise GateAError(
+            "Gate A candidate transition has an unresolved pending journal"
+        )
+
+
+def _m9_acceptance_sidecar_paths(record_dir: Path) -> tuple[Path, ...]:
+    """枚举安全 acceptance Record 目录中的 pending/complete 直接子项。"""
+
+    try:
+        metadata = record_dir.lstat()
+    except FileNotFoundError:
+        # Candidate lifecycle 在首次 M9 acceptance 之前没有这个目录。
+        return ()
+    except OSError as error:
+        raise GateAError(
+            "Gate A M9 acceptance record directory could not be inspected"
+        ) from error
+    if stat.S_ISLNK(metadata.st_mode):
+        raise GateAError("Gate A M9 acceptance record directory must not be a symlink")
+    _validate_root_directory(
+        record_dir,
+        0o755,
+        "Gate A M9 acceptance record directory",
+    )
+    return tuple(
+        path
+        for path in _direct_child_paths_with_suffixes(
+            record_dir=record_dir,
+            suffixes=M9_ACCEPTANCE_SIDECAR_SUFFIXES,
+        )
+        if path.name.startswith(M9_ACCEPTANCE_SIDECAR_PREFIX)
+    )
+
+
+def _validate_m9_acceptance_sidecar_recovery_allowance(
+    *,
+    record_dir: Path,
+    recovery_allowance: M9AcceptanceSidecarRecoveryAllowance,
+    sidecar_paths: Sequence[Path],
+) -> frozenset[Path]:
+    """验证 acceptance own recovery 最多精确豁免 pending 与 complete 各一个。"""
+
+    if (
+        not isinstance(recovery_allowance, M9AcceptanceSidecarRecoveryAllowance)
+        or not isinstance(recovery_allowance.candidate_sha, str)
+        or GIT_SHA_PATTERN.fullmatch(recovery_allowance.candidate_sha) is None
+        or not any(
+            path is not None
+            for path in (
+                recovery_allowance.pending_path,
+                recovery_allowance.complete_path,
+            )
+        )
+    ):
+        raise GateAError("Gate A M9 acceptance recovery allowance is invalid")
+
+    normalized_record_dir = _lexical_absolute_path(record_dir)
+    scanned_paths = {
+        _lexical_absolute_path(path)
+        for path in sidecar_paths
+    }
+    allowed_paths: set[Path] = set()
+    for supplied_path, suffix, allowed_modes in (
+        (
+            recovery_allowance.pending_path,
+            M9_ACCEPTANCE_PENDING_SUFFIX,
+            frozenset({0o600}),
+        ),
+        (
+            recovery_allowance.complete_path,
+            M9_ACCEPTANCE_COMPLETE_SUFFIX,
+            frozenset({0o600, 0o644}),
+        ),
+    ):
+        if supplied_path is None:
+            continue
+        if not isinstance(supplied_path, Path):
+            raise GateAError("Gate A M9 acceptance recovery allowance is invalid")
+        normalized_path = _lexical_absolute_path(supplied_path)
+        expected_path = normalized_record_dir / (
+            f"{M9_ACCEPTANCE_SIDECAR_PREFIX}"
+            f"{recovery_allowance.candidate_sha}{suffix}"
+        )
+        if (
+            normalized_path.parent != normalized_record_dir
+            or normalized_path != expected_path
+            or normalized_path not in scanned_paths
+        ):
+            raise GateAError("Gate A M9 acceptance recovery allowance is invalid")
+        try:
+            metadata = _m9_acceptance_sidecar_lstat(normalized_path)
+        except OSError as error:
+            raise GateAError(
+                "Gate A M9 acceptance recovery allowance is invalid"
+            ) from error
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+            or metadata.st_uid != 0
+            or metadata.st_gid != 0
+            or stat.S_IMODE(metadata.st_mode) not in allowed_modes
+        ):
+            raise GateAError("Gate A M9 acceptance recovery allowance is invalid")
+        allowed_paths.add(normalized_path)
+    return frozenset(allowed_paths)
+
+
+def _m9_acceptance_sidecar_lstat(path: Path) -> os.stat_result:
+    """隔离 sidecar lstat，便于非 root 单测只替换 metadata 边界。"""
+
+    return path.lstat()
+
+
+def reject_unresolved_m9_acceptance_sidecars(
+    *,
+    record_dir: Path,
+    recovery_allowance: M9AcceptanceSidecarRecoveryAllowance | None = None,
+) -> None:
+    """阻断所有 M9 acceptance sidecar，仅容许精确 own recovery。"""
+
+    sidecar_paths = _m9_acceptance_sidecar_paths(record_dir)
+    allowed_paths = (
+        _validate_m9_acceptance_sidecar_recovery_allowance(
+            record_dir=record_dir,
+            recovery_allowance=recovery_allowance,
+            sidecar_paths=sidecar_paths,
+        )
+        if recovery_allowance is not None
+        else frozenset()
+    )
+    if any(
+        _lexical_absolute_path(path) not in allowed_paths
+        for path in sidecar_paths
+    ):
+        raise GateAError("Gate A M9 acceptance has an unresolved sidecar")
+
+
+def validate_app_image(
+    values: Mapping[str, str],
+    *,
+    allow_legacy_m7_command: bool = False,
+    start_new_session: bool = False,
+) -> str:
     """验证本地镜像身份、运行用户、入口和候选 SHA，返回 Image ID。"""
 
     image = values["GATEA_APP_IMAGE"]
@@ -462,6 +923,7 @@ def validate_app_image(values: Mapping[str, str]) -> str:
         cwd=REPOSITORY_ROOT,
         text=True,
         capture_output=True,
+        start_new_session=start_new_session,
     )
     try:
         payload = json.loads(result.stdout)
@@ -475,7 +937,10 @@ def validate_app_image(values: Mapping[str, str]) -> str:
         raise GateAError("Gate A app image must run as UID/GID 10001")
     if config.get("Entrypoint") != EXPECTED_APP_ENTRYPOINT:
         raise GateAError("Gate A app image entrypoint does not match the contract")
-    if config.get("Cmd") != EXPECTED_APP_COMMAND:
+    command = config.get("Cmd")
+    if command != EXPECTED_APP_COMMAND and not (
+        allow_legacy_m7_command and command == LEGACY_M7_APP_COMMAND
+    ):
         raise GateAError("Gate A app image command does not match the contract")
     if labels.get("org.opencontainers.image.revision") != _candidate_sha(values):
         raise GateAError("Gate A app image revision does not match its Git SHA tag")
@@ -491,6 +956,7 @@ def _compose_ps(
     secret_dir: Path,
     mode: str,
     services: Sequence[str] = (),
+    start_new_session: bool = False,
 ) -> list[dict[str, Any]]:
     result = _run_compose(
         values=values,
@@ -499,6 +965,7 @@ def _compose_ps(
         mode=mode,
         arguments=("ps", "--all", "--format", "json", *services),
         capture_output=True,
+        start_new_session=start_new_session,
     )
     payload = _parse_compose_ps_output(result.stdout)
     return payload
@@ -588,15 +1055,112 @@ def _best_effort_stop(
     secret_dir: Path,
     mode: str,
     services: Sequence[str],
+    start_new_session: bool = True,
 ) -> None:
+    """严格停止并复核目标服务；历史名称保留供既有调用方使用。"""
+
     _run_compose(
         values=values,
         config_file=config_file,
         secret_dir=secret_dir,
         mode=mode,
         arguments=("stop", "--timeout", "30", *services),
-        check=False,
+        start_new_session=start_new_session,
     )
+    rows = _compose_ps(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=services,
+        start_new_session=start_new_session,
+    )
+    stopped_states = frozenset({"created", "dead", "exited", "stopped"})
+    targets = frozenset(services)
+    for row in rows:
+        service = str(row.get("Service") or "")
+        if service not in targets:
+            continue
+        state = str(row.get("State") or "").lower()
+        if state not in stopped_states:
+            raise GateAError(f"Gate A service {service} did not stop")
+
+
+def _select_error_after_stop(
+    *,
+    termination: _OperationTerminationController | None,
+    operation_error: BaseException | None,
+    transition_error: BaseException | None,
+    recovery_error: BaseException | None,
+) -> BaseException | None:
+    """恢复失败优先，其次原工作错误，最后传播延期控制信号。"""
+
+    if recovery_error is not None:
+        return recovery_error
+    if transition_error is not None and not isinstance(
+        transition_error,
+        (GateAOperationInterrupted, KeyboardInterrupt, SystemExit),
+    ):
+        return transition_error
+    if operation_error is not None:
+        return operation_error
+    if termination is not None and termination.work_interruption is not None:
+        return termination.work_interruption
+    if transition_error is not None:
+        return transition_error
+    if termination is not None:
+        return termination.deferred_interruption
+    return None
+
+
+@contextmanager
+def _stop_services_on_failure(
+    *,
+    termination: _OperationTerminationController | None,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    services: Sequence[str],
+) -> Iterator[None]:
+    """任意工作异常后无窗口切入严格 stop，再按固定优先级传播。"""
+
+    operation_error: BaseException | None = None
+    transition_error: BaseException | None = None
+    recovery_error: BaseException | None = None
+    try:
+        try:
+            yield
+        except BaseException as error:
+            operation_error = error
+    finally:
+        try:
+            if operation_error is not None and termination is not None:
+                termination.begin_recovery()
+        except BaseException as error:
+            transition_error = error
+        finally:
+            if operation_error is not None:
+                try:
+                    _best_effort_stop(
+                        values=values,
+                        config_file=config_file,
+                        secret_dir=secret_dir,
+                        mode=mode,
+                        services=services,
+                        start_new_session=True,
+                    )
+                except BaseException as error:
+                    recovery_error = error
+
+    selected_error = _select_error_after_stop(
+        termination=termination,
+        operation_error=operation_error,
+        transition_error=transition_error,
+        recovery_error=recovery_error,
+    )
+    if selected_error is not None:
+        raise selected_error
 
 
 def _migration_marker(record_dir: Path, candidate_sha: str) -> Path:
@@ -607,6 +1171,41 @@ def _upgrade_marker(record_dir: Path, candidate_sha: str) -> Path:
     return record_dir / f"{candidate_sha}.existing-database-upgrade.json"
 
 
+def _upgrade_replay_marker(record_dir: Path, candidate_sha: str) -> Path:
+    return record_dir / f"{candidate_sha}.upgrade-plan-replay.json"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _fsync_directory(path: Path) -> None:
+    """同步证据目录项，确保发布和临时文件清理都跨崩溃持久化。"""
+
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+    )
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _unlink_temporary_and_fsync(path: Path) -> None:
+    """清理同目录临时文件，并持久化目录项删除。"""
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    _fsync_directory(path.parent)
+
+
 def _write_migration_record(
     *,
     record_dir: Path,
@@ -614,7 +1213,6 @@ def _write_migration_record(
     image_id: str,
 ) -> None:
     marker = _migration_marker(record_dir, candidate_sha)
-    temporary = record_dir / f".{marker.name}.tmp-{os.getpid()}"
     payload = {
         "candidate_sha": candidate_sha,
         "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -622,23 +1220,32 @@ def _write_migration_record(
         "schema_version": 1,
     }
     descriptor: int | None = None
+    temporary: Path | None = None
     try:
-        descriptor = os.open(
-            temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o644,
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=record_dir,
+            prefix=f".{marker.name}.tmp-",
         )
+        temporary = Path(temporary_name)
+        os.fchmod(descriptor, 0o644)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             descriptor = None
             json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, marker)
+        try:
+            os.link(temporary, marker, follow_symlinks=False)
+        except FileExistsError as error:
+            raise GateAError(
+                "Gate A initial migration record path is already reserved"
+            ) from error
+        _fsync_directory(record_dir)
     finally:
         if descriptor is not None:
             os.close(descriptor)
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            _unlink_temporary_and_fsync(temporary)
 
 
 def _require_migration_record(
@@ -750,6 +1357,165 @@ def _require_deployment_record(
     raise GateAError("Gate A deployment record is unavailable")
 
 
+def _validate_m9_reconcile(
+    payload: object,
+    *,
+    require_empty: bool,
+) -> dict[str, Any]:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != M9_RECONCILE_KEYS
+        or any(type(payload.get(key)) is not int or payload[key] < 0 for key in payload)
+        or payload.get("violations") != 0
+        or payload.get("closed_with_occupancy") != 0
+        or payload.get("awaiting_with_timers") != 0
+        or payload.get("active_without_timers") != 0
+        or (require_empty and any(payload[key] != 0 for key in payload))
+    ):
+        raise GateAError("Gate A M9 table reconciliation is invalid")
+    return dict(payload)
+
+
+def _require_m9_upgrade_replay_record(
+    *,
+    record_dir: Path,
+    candidate_sha: str,
+    image_id: str,
+    upgrade_record: Mapping[str, Any],
+) -> dict[str, Any]:
+    """验证 M9 app-up 前不可变的 upgrade evidence 与 plan-replay sidecar。"""
+
+    success_path = _upgrade_marker(record_dir, candidate_sha)
+    evidence_path = record_dir / (
+        f"{candidate_sha}.existing-database-upgrade.evidence.json"
+    )
+    replay_path = _upgrade_replay_marker(record_dir, candidate_sha)
+    try:
+        replay = json.loads(replay_path.read_text(encoding="utf-8"))
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as error:
+        raise GateAError("Gate A M9 upgrade replay evidence is unavailable") from error
+    expected_replay_keys = {
+        "backup_id",
+        "candidate_sha",
+        "completed_at",
+        "database_snapshot",
+        "evidence_sha256",
+        "image_id",
+        "image_manifest",
+        "manifest_sha256",
+        "passed",
+        "record_type",
+        "result",
+        "schema_version",
+        "secret_values_recorded",
+        "source_candidate_sha",
+        "source_version",
+        "table_reconcile",
+        "upgrade_record_sha256",
+    }
+    source_version = upgrade_record.get("source_version")
+    expected_result = {
+        "already_current": True,
+        "backup_id": upgrade_record.get("backup_id"),
+        "candidate_sha": candidate_sha,
+        "manifest_sha256": upgrade_record.get("manifest_sha256"),
+        "mode": "plan-replay",
+        "source_aerich_versions": upgrade_record.get("source_aerich_versions"),
+        "source_version": source_version,
+        "target_aerich_versions": list(APPROVED_TARGET_M9_CHAIN),
+        "target_version": 9,
+    }
+    recorded_reconcile = (
+        _validate_m9_reconcile(replay.get("table_reconcile"), require_empty=True)
+        if isinstance(replay, dict)
+        else {}
+    )
+    if (
+        not isinstance(replay, dict)
+        or set(replay) != expected_replay_keys
+        or replay.get("schema_version") != 1
+        or replay.get("record_type") != "gatea-m9-upgrade-plan-replay"
+        or replay.get("passed") is not True
+        or replay.get("candidate_sha") != candidate_sha
+        or replay.get("source_candidate_sha")
+        != upgrade_record.get("source_candidate_sha")
+        or type(replay.get("source_version")) is not int
+        or replay.get("source_version") != source_version
+        or replay.get("image_id") != image_id
+        or replay.get("backup_id") != upgrade_record.get("backup_id")
+        or replay.get("manifest_sha256") != upgrade_record.get("manifest_sha256")
+        or replay.get("database_snapshot")
+        != upgrade_record.get("final_database_snapshot")
+        or replay.get("image_manifest") != upgrade_record.get("final_image_manifest")
+        or replay.get("upgrade_record_sha256") != _sha256(success_path)
+        or replay.get("evidence_sha256") != upgrade_record.get("evidence_sha256")
+        or replay.get("result") != expected_result
+        or not isinstance(replay.get("completed_at"), str)
+        or not replay["completed_at"]
+        or replay.get("secret_values_recorded") is not False
+        or upgrade_record.get("evidence_path") != str(evidence_path)
+        or SHA256_PATTERN.fullmatch(str(upgrade_record.get("evidence_sha256", "")))
+        is None
+        or _sha256(evidence_path) != upgrade_record.get("evidence_sha256")
+        or not isinstance(evidence, dict)
+        or evidence.get("schema_version") != 1
+        or evidence.get("record_type") != "existing-database-upgrade-evidence"
+        or evidence.get("status") != "succeeded"
+        or evidence.get("candidate_sha") != candidate_sha
+        or evidence.get("source_candidate_sha")
+        != upgrade_record.get("source_candidate_sha")
+        or evidence.get("backup_id") != upgrade_record.get("backup_id")
+        or evidence.get("final_database_snapshot")
+        != upgrade_record.get("final_database_snapshot")
+        or evidence.get("final_image_manifest")
+        != upgrade_record.get("final_image_manifest")
+        or evidence.get("table_reconcile") != upgrade_record.get("table_reconcile")
+        or evidence.get("table_sweep") != upgrade_record.get("table_sweep")
+        or recorded_reconcile != replay.get("table_reconcile")
+    ):
+        raise GateAError("Gate A M9 upgrade replay evidence is invalid")
+    _validate_m9_reconcile(upgrade_record.get("table_reconcile"), require_empty=True)
+    if upgrade_record.get("table_sweep") != {"status": "ok", "closed": 0}:
+        raise GateAError("Gate A M9 upgrade table sweep evidence is invalid")
+    return replay
+
+
+def _run_m9_table_reconcile(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    start_new_session: bool = False,
+) -> dict[str, Any]:
+    result = _run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "run",
+            "--rm",
+            "--no-deps",
+            "app",
+            "python",
+            "-m",
+            "app.tasks.table_reconcile",
+        ),
+        capture_output=True,
+        check=False,
+        start_new_session=start_new_session,
+    )
+    if result.returncode != 0:
+        raise GateAError("Gate A M9 table reconciliation task failed")
+    try:
+        payload = json.loads(result.stdout.strip())
+    except (json.JSONDecodeError, TypeError) as error:
+        raise GateAError("Gate A M9 table reconciliation output is invalid") from error
+    return _validate_m9_reconcile(payload, require_empty=False)
+
+
 def preflight(*, config_file: Path, secret_dir: Path, mode: str) -> None:
     """在创建任何 Docker 资源前完成只读 Gate A 预检。"""
 
@@ -768,6 +1534,7 @@ def read_database_snapshot(
     config_file: Path,
     secret_dir: Path,
     mode: str,
+    start_new_session: bool = False,
 ) -> dict[str, Any]:
     """从已有健康 MySQL 读取规范化的只读数据库摘要。"""
 
@@ -777,6 +1544,7 @@ def read_database_snapshot(
         secret_dir=secret_dir,
         mode=mode,
         services=("mysql",),
+        start_new_session=start_new_session,
     )
     _ensure_services_healthy(rows, "mysql")
     result = _run_compose(
@@ -793,6 +1561,7 @@ def read_database_snapshot(
             DATABASE_STATUS_COMMAND,
         ),
         capture_output=True,
+        start_new_session=start_new_session,
     )
     try:
         snapshot = json.loads(result.stdout.strip())
@@ -846,6 +1615,7 @@ def infra_up(
     secret_dir: Path,
     mode: str,
     wait_timeout: int,
+    _termination_controller: _OperationTerminationController | None = None,
 ) -> None:
     """仅启动 MySQL/Redis 并等待健康；失败时停止已启动的基础设施。"""
 
@@ -857,7 +1627,14 @@ def infra_up(
         require_available_port=True,
     )
     validate_app_image(values)
-    try:
+    with _stop_services_on_failure(
+        termination=_termination_controller,
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=("redis", "mysql"),
+    ):
         _run_compose(
             values=values,
             config_file=config_file,
@@ -882,15 +1659,6 @@ def infra_up(
             services=("mysql", "redis"),
         )
         _ensure_services_healthy(rows, "mysql", "redis")
-    except (GateAError, subprocess.CalledProcessError):
-        _best_effort_stop(
-            values=values,
-            config_file=config_file,
-            secret_dir=secret_dir,
-            mode=mode,
-            services=("redis", "mysql"),
-        )
-        raise
     print("Gate A infrastructure is healthy")
 
 
@@ -900,17 +1668,21 @@ def initial_migrate(
     secret_dir: Path,
     record_dir: Path,
     mode: str,
+    acceptance_record_dir: Path = DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+    _termination_controller: _OperationTerminationController | None = None,
 ) -> None:
     """只对首次空库执行 Aerich upgrade，并原子记录候选和镜像身份。"""
 
     _require_loopback_write_mode(mode)
+    _validate_root_directory(record_dir, 0o755, "Gate A release record directory")
+    reject_unresolved_candidate_transition_journals(record_dir=record_dir)
+    reject_unresolved_m9_acceptance_sidecars(record_dir=acceptance_record_dir)
     values = _validated_inputs(
         config_file=config_file,
         secret_dir=secret_dir,
         mode=mode,
         require_available_port=True,
     )
-    _validate_root_directory(record_dir, 0o755, "Gate A release record directory")
     image_id = validate_app_image(values)
     candidate_sha = _candidate_sha(values)
     marker = _migration_marker(record_dir, candidate_sha)
@@ -923,7 +1695,14 @@ def initial_migrate(
         print("Gate A initial migration was already recorded for this candidate")
         return
 
-    try:
+    with _stop_services_on_failure(
+        termination=_termination_controller,
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=("redis", "mysql"),
+    ):
         rows = _compose_ps(
             values=values,
             config_file=config_file,
@@ -966,15 +1745,6 @@ def initial_migrate(
             candidate_sha=candidate_sha,
             image_id=image_id,
         )
-    except (GateAError, subprocess.CalledProcessError):
-        _best_effort_stop(
-            values=values,
-            config_file=config_file,
-            secret_dir=secret_dir,
-            mode=mode,
-            services=("redis", "mysql"),
-        )
-        raise
     print("Gate A initial migration completed and was recorded")
 
 
@@ -986,29 +1756,146 @@ def app_up(
     mode: str,
     wait_timeout: int,
     include_table_sweeper: bool = True,
+    allow_legacy_m7_command: bool = False,
+    allow_existing_gatea_publisher: bool = False,
+    candidate_transition_recovery: CandidateTransitionRecoveryAllowance | None = None,
+    acceptance_record_dir: Path = DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+    _termination_controller: _OperationTerminationController | None = None,
+    _start_new_session: bool = False,
 ) -> None:
     """Record 匹配后启动 App/Nginx，并默认严格要求 M9 sweeper。"""
 
     _require_loopback_write_mode(mode)
+    subprocess_options = (
+        {"start_new_session": True} if _start_new_session else {}
+    )
+    if candidate_transition_recovery is not None and (
+        not isinstance(
+            candidate_transition_recovery,
+            CandidateTransitionRecoveryAllowance,
+        )
+        or candidate_transition_recovery.kind != "current-finalization"
+    ):
+        raise GateAError(
+            "Gate A app-up recovery allowance is restricted to finalization"
+        )
+    _validate_root_directory(record_dir, 0o755, "Gate A release record directory")
+    recovery_candidate_sha = (
+        candidate_transition_recovery.candidate_sha
+        if candidate_transition_recovery is not None
+        else None
+    )
+    reject_unresolved_candidate_transition_journals(
+        record_dir=record_dir,
+        candidate_sha=recovery_candidate_sha,
+        recovery_allowance=candidate_transition_recovery,
+    )
+    reject_unresolved_m9_acceptance_sidecars(record_dir=acceptance_record_dir)
     values = _validated_inputs(
         config_file=config_file,
         secret_dir=secret_dir,
         mode=mode,
-        require_available_port=True,
+        require_available_port=not allow_existing_gatea_publisher,
     )
-    _validate_root_directory(record_dir, 0o755, "Gate A release record directory")
-    image_id = validate_app_image(values)
-    _require_deployment_record(
+    candidate_sha = _candidate_sha(values)
+    if (
+        candidate_transition_recovery is not None
+        and candidate_sha != recovery_candidate_sha
+    ):
+        raise GateAError(
+            "Gate A app-up recovery allowance does not match the live candidate"
+        )
+    if allow_legacy_m7_command:
+        if include_table_sweeper:
+            raise GateAError(
+                "Gate A legacy M7 app command recovery cannot start the table sweeper"
+            )
+        snapshot = read_database_snapshot(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            **subprocess_options,
+        )
+        if snapshot.get("aerich_versions") != list(APPROVED_TARGET_M7_CHAIN):
+            raise GateAError(
+                "Gate A legacy app command recovery requires the exact M7 chain"
+            )
+        image_id = validate_app_image(
+            values,
+            allow_legacy_m7_command=True,
+            **subprocess_options,
+        )
+    else:
+        image_id = validate_app_image(values, **subprocess_options)
+    deployment_record = _require_deployment_record(
         record_dir=record_dir,
-        candidate_sha=_candidate_sha(values),
+        candidate_sha=candidate_sha,
         image_id=image_id,
     )
+    live_snapshot = read_database_snapshot(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        **subprocess_options,
+    )
+    live_versions = live_snapshot.get("aerich_versions")
+    if (
+        allow_legacy_m7_command
+        and live_versions != list(APPROVED_TARGET_M7_CHAIN)
+    ):
+        raise GateAError(
+            "Gate A legacy app command recovery requires the exact M7 chain"
+        )
+    if include_table_sweeper:
+        if live_versions != list(APPROVED_TARGET_M9_CHAIN):
+            raise GateAError("Gate A table sweeper requires the exact M9 chain")
+        if deployment_record.get("record_type") == "existing-database-upgrade":
+            _require_m9_upgrade_replay_record(
+                record_dir=record_dir,
+                candidate_sha=candidate_sha,
+                image_id=image_id,
+                upgrade_record=deployment_record,
+            )
+            recorded_snapshot = deployment_record.get("final_database_snapshot")
+            if not isinstance(recorded_snapshot, dict) or any(
+                live_snapshot.get(key) != recorded_snapshot.get(key)
+                for key in M9_STATIC_SNAPSHOT_KEYS
+            ):
+                raise GateAError(
+                    "Gate A live M9 schema no longer matches the upgrade record"
+                )
+        pinned_values = dict(values)
+        pinned_values["GATEA_APP_IMAGE"] = image_id
+        _run_m9_table_reconcile(
+            values=pinned_values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            **subprocess_options,
+        )
+        if validate_app_image(values, **subprocess_options) != image_id:
+            raise GateAError("Gate A app image tag changed before runtime start")
+    else:
+        approved_pre_m9 = (
+            list(APPROVED_SOURCE_M2_CHAIN),
+            list(APPROVED_TARGET_M7_CHAIN),
+            list(APPROVED_TARGET_M8_CHAIN),
+        )
+        if live_versions not in approved_pre_m9:
+            raise GateAError(
+                "Gate A runtime without table sweeper requires an approved pre-M9 chain"
+            )
+        pinned_values = dict(values)
+        pinned_values["GATEA_APP_IMAGE"] = image_id
     rows = _compose_ps(
         values=values,
         config_file=config_file,
         secret_dir=secret_dir,
         mode=mode,
         services=("mysql", "redis"),
+        **subprocess_options,
     )
     _ensure_services_healthy(rows, "mysql", "redis")
 
@@ -1017,9 +1904,38 @@ def app_up(
         if include_table_sweeper
         else ("app", "nginx")
     )
-    try:
-        _run_compose(
+    if allow_existing_gatea_publisher:
+        existing_rows = _compose_ps(
             values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            services=runtime_services,
+            **subprocess_options,
+        )
+        nginx = next(
+            (row for row in existing_rows if row.get("Service") == "nginx"),
+            None,
+        )
+        if nginx is not None and str(nginx.get("State", "")).lower() == "running":
+            _validate_loopback_publishers(
+                existing_rows,
+                int(values.get("GATEA_LOOPBACK_PORT", "18080")),
+            )
+        else:
+            _assert_loopback_port_available(
+                int(values.get("GATEA_LOOPBACK_PORT", "18080"))
+            )
+    with _stop_services_on_failure(
+        termination=_termination_controller,
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=("nginx", "table-sweeper", "app", "image-init"),
+    ):
+        _run_compose(
+            values=pinned_values,
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
@@ -1032,28 +1948,21 @@ def app_up(
                 str(wait_timeout),
                 *runtime_services,
             ),
+            **subprocess_options,
         )
         rows = _compose_ps(
-            values=values,
+            values=pinned_values,
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
             services=runtime_services,
+            **subprocess_options,
         )
         _ensure_services_healthy(rows, *runtime_services)
         _validate_loopback_publishers(
             rows,
             int(values.get("GATEA_LOOPBACK_PORT", "18080")),
         )
-    except (GateAError, subprocess.CalledProcessError):
-        _best_effort_stop(
-            values=values,
-            config_file=config_file,
-            secret_dir=secret_dir,
-            mode=mode,
-            services=("nginx", "table-sweeper", "app", "image-init"),
-        )
-        raise
     print("Gate A application and loopback edge are healthy")
 
 
@@ -1106,7 +2015,13 @@ def status(
     )
 
 
-def safe_stop(*, config_file: Path, secret_dir: Path, mode: str) -> None:
+def safe_stop(
+    *,
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    _termination_controller: _OperationTerminationController | None = None,
+) -> None:
     """停止 Gate A 服务但保留容器、命名卷、迁移记录和 Secret。"""
 
     values = _validated_inputs(
@@ -1116,23 +2031,42 @@ def safe_stop(*, config_file: Path, secret_dir: Path, mode: str) -> None:
         require_available_port=False,
         require_secrets=False,
     )
-    _run_compose(
-        values=values,
-        config_file=config_file,
-        secret_dir=secret_dir,
-        mode=mode,
-        arguments=(
-            "stop",
-            "--timeout",
-            "30",
-            "nginx",
-            "table-sweeper",
-            "app",
-            "image-init",
-            "redis",
-            "mysql",
-        ),
+    transition_error: BaseException | None = None
+    recovery_error: BaseException | None = None
+    try:
+        try:
+            if _termination_controller is not None:
+                _termination_controller.begin_recovery()
+        except BaseException as error:
+            transition_error = error
+    finally:
+        try:
+            _best_effort_stop(
+                values=values,
+                config_file=config_file,
+                secret_dir=secret_dir,
+                mode=mode,
+                services=(
+                    "nginx",
+                    "table-sweeper",
+                    "app",
+                    "image-init",
+                    "redis",
+                    "mysql",
+                ),
+                start_new_session=True,
+            )
+        except BaseException as error:
+            recovery_error = error
+
+    selected_error = _select_error_after_stop(
+        termination=_termination_controller,
+        operation_error=None,
+        transition_error=transition_error,
+        recovery_error=recovery_error,
     )
+    if selected_error is not None:
+        raise selected_error
     print("Gate A services stopped; named volumes were preserved")
 
 
@@ -1157,6 +2091,11 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_RECORD_DIR,
     )
+    parser.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+    )
     parser.add_argument("--wait-timeout", type=int, default=180)
     return parser
 
@@ -1175,24 +2114,53 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mode": args.mode,
     }
     try:
-        if args.command == "preflight":
-            preflight(**common)
-        elif args.command == "database-status":
-            database_status(**common)
-        elif args.command == "infra-up":
-            infra_up(**common, wait_timeout=args.wait_timeout)
-        elif args.command == "initial-migrate":
-            initial_migrate(**common, record_dir=args.record_dir)
-        elif args.command == "app-up":
-            app_up(
-                **common,
-                record_dir=args.record_dir,
-                wait_timeout=args.wait_timeout,
-            )
-        elif args.command == "status":
-            status(**common, record_dir=args.record_dir)
-        else:
-            safe_stop(**common)
+        mutating = args.command in {
+            "infra-up",
+            "initial-migrate",
+            "app-up",
+            "safe-stop",
+        }
+        lock_context = (
+            operation_lock()
+            if mutating
+            else nullcontext()
+        )
+        termination_context = (
+            operation_termination_guard() if mutating else nullcontext(None)
+        )
+        with lock_context, termination_context as termination_controller:
+            if args.command == "preflight":
+                preflight(**common)
+            elif args.command == "database-status":
+                database_status(**common)
+            elif args.command == "infra-up":
+                infra_up(
+                    **common,
+                    wait_timeout=args.wait_timeout,
+                    _termination_controller=termination_controller,
+                )
+            elif args.command == "initial-migrate":
+                initial_migrate(
+                    **common,
+                    record_dir=args.record_dir,
+                    acceptance_record_dir=args.acceptance_record_dir,
+                    _termination_controller=termination_controller,
+                )
+            elif args.command == "app-up":
+                app_up(
+                    **common,
+                    record_dir=args.record_dir,
+                    wait_timeout=args.wait_timeout,
+                    acceptance_record_dir=args.acceptance_record_dir,
+                    _termination_controller=termination_controller,
+                )
+            elif args.command == "status":
+                status(**common, record_dir=args.record_dir)
+            else:
+                safe_stop(
+                    **common,
+                    _termination_controller=termination_controller,
+                )
     except (GateAError, subprocess.CalledProcessError) as error:
         print(f"Gate A {args.command} failed: {error}", file=sys.stderr)
         return 1

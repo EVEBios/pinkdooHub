@@ -94,6 +94,15 @@ M9_EMPTY_TABLE_INVARIANTS = (
     ("table_session_timers", 0),
     ("table_occupancies", 0),
 )
+M9_EMPTY_TABLE_RECONCILE_KEYS = (
+    "open_sessions",
+    "occupancies",
+    "closed_with_occupancy",
+    "awaiting_with_timers",
+    "active_without_timers",
+    "scanned",
+    "violations",
+)
 RESTORE_TRUE_FIELDS = (
     "database_matches",
     "images_match",
@@ -471,18 +480,56 @@ def _parse_mode_manifest(lines: Sequence[str]) -> dict[str, str]:
 
 
 def _write_json_exclusive(path: Path, payload: Mapping[str, Any]) -> None:
-    descriptor: int | None = None
+    """通过共享 durable writer 发布不可覆盖的升级证据。"""
+
     try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            descriptor = None
-            json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
+        backup._write_json_exclusive(path, payload, 0o644)
+    except gatea.GateAError as error:
+        raise GateAUpgradeError(
+            "Gate A upgrade record path is already reserved"
+        ) from error
+
+
+def _canonical_json_bytes(payload: Mapping[str, Any]) -> bytes:
+    return (
+        json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+
+def _validate_published_upgrade_commit(
+    *,
+    success_path: Path,
+    evidence_path: Path,
+    success_payload: Mapping[str, Any] | None,
+    evidence: Mapping[str, Any],
+) -> None:
+    """验证已可见 success 是当前 succeeded evidence 的完整提交点。"""
+
+    if success_payload is None:
+        raise GateAUpgradeError(
+            "Gate A visible upgrade success record has no prepared payload"
+        )
+    if success_path.is_symlink() or evidence_path.is_symlink():
+        raise GateAUpgradeError("Gate A published upgrade commit is invalid")
+    try:
+        success_bytes = success_path.read_bytes()
+        evidence_bytes = evidence_path.read_bytes()
+    except OSError as error:
+        raise GateAUpgradeError(
+            "Gate A published upgrade commit is unavailable"
+        ) from error
+    evidence_sha256 = hashlib.sha256(evidence_bytes).hexdigest()
+    if (
+        evidence.get("status") != "succeeded"
+        or evidence.get("current_stage") != "completed"
+        or success_payload.get("record_type") != "existing-database-upgrade"
+        or success_payload.get("passed") is not True
+        or success_payload.get("evidence_path") != str(evidence_path)
+        or success_payload.get("evidence_sha256") != evidence_sha256
+        or success_bytes != _canonical_json_bytes(success_payload)
+        or evidence_bytes != _canonical_json_bytes(evidence)
+    ):
+        raise GateAUpgradeError("Gate A published upgrade commit is invalid")
 
 
 def _expected_versions(version: int) -> list[str]:
@@ -528,6 +575,9 @@ def _load_restore_record(
     restore_record_dir: Path,
     backup_completed_at: datetime,
     now: datetime,
+    backup_record_sha256: str,
+    mysql_artifact_sha256: str,
+    image_artifact_sha256: str,
     expected_m7_content_snapshot: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     path = restore_record_dir / f"{backup_id}.json"
@@ -541,6 +591,9 @@ def _load_restore_record(
         or payload.get("backup_id") != backup_id
         or payload.get("candidate_sha") != source_candidate_sha
         or payload.get("restore_project") != backup.restore_project(backup_id)
+        or payload.get("backup_record_sha256") != backup_record_sha256
+        or payload.get("mysql_artifact_sha256") != mysql_artifact_sha256
+        or payload.get("image_artifact_sha256") != image_artifact_sha256
         or payload.get("host_ports_published") is not False
         or any(payload.get(field) is not True for field in RESTORE_TRUE_FIELDS)
     ):
@@ -583,11 +636,19 @@ def _load_verified_backup(
         backup_record_dir=backup_record_dir,
         restore_record_dir=restore_record_dir,
     )
-    payload, _, _ = backup._load_backup_record(
+    pending_path = backup_record_dir / f".{backup_id}.pending.json"
+    if pending_path.exists() or pending_path.is_symlink():
+        raise GateAUpgradeError(
+            "Gate A backup pending journal requires manual review"
+        )
+    payload, database_path, image_path = backup._load_backup_record(
         backup_id=backup_id,
         backup_root=backup_root,
         backup_record_dir=backup_record_dir,
     )
+    backup_record_sha256 = backup._sha256(backup_record_dir / f"{backup_id}.json")
+    mysql_artifact_sha256 = backup._sha256(database_path)
+    image_artifact_sha256 = backup._sha256(image_path)
     if (
         payload.get("candidate_sha") != source_candidate_sha
         or not isinstance(payload.get("image_id"), str)
@@ -611,6 +672,9 @@ def _load_verified_backup(
         restore_record_dir=restore_record_dir,
         backup_completed_at=completed_at,
         now=now,
+        backup_record_sha256=backup_record_sha256,
+        mysql_artifact_sha256=mysql_artifact_sha256,
+        image_artifact_sha256=image_artifact_sha256,
         expected_m7_content_snapshot=(
             payload.get("m7_content_snapshot")
             if backup._requires_m7_content_snapshot(payload["database_snapshot"])
@@ -628,6 +692,18 @@ def _ensure_stopped(rows: Sequence[Mapping[str, Any]], *services: str) -> None:
             raise GateAUpgradeError(f"Gate A service {service} is unavailable")
         if str(row.get("State", "")).lower() not in {"exited", "stopped"}:
             raise GateAUpgradeError(f"Gate A service {service} did not stop")
+
+
+def _ensure_not_running(rows: Sequence[Mapping[str, Any]], *services: str) -> None:
+    """允许服务尚未创建，但拒绝任何仍可执行后台写入的状态。"""
+
+    by_service = {str(row.get("Service")): row for row in rows}
+    for service in services:
+        row = by_service.get(service)
+        if row is None:
+            continue
+        if str(row.get("State", "")).lower() not in {"created", "exited", "stopped"}:
+            raise GateAUpgradeError(f"Gate A service {service} must not be running")
 
 
 def _validate_wallet_result(result: Mapping[str, Any]) -> None:
@@ -972,13 +1048,43 @@ def _validate_final_snapshot(
         or final_snapshot.get("reservation_settings_unique") != 1
     ):
         raise GateAUpgradeError("Gate A final ReservationSettings invariant failed")
+    _validate_empty_m9_table_snapshot(final_snapshot)
+
+
+def _validate_empty_m9_table_snapshot(snapshot: Mapping[str, Any]) -> None:
+    """严格验证 bootstrap 后尚无会话的 M9 桌台数据库状态。"""
+
     for key, expected in M9_EMPTY_TABLE_INVARIANTS:
-        actual = final_snapshot.get(key)
+        actual = snapshot.get(key)
         if type(actual) is not int or actual != expected:
             raise GateAUpgradeError(
                 "Gate A final M9 invariant failed: "
                 f"{key} expected={expected} actual={actual!r}"
             )
+
+
+def _validate_empty_table_reconcile_result(result: Mapping[str, Any]) -> None:
+    """要求空表期 reconcile 只返回冻结字段，且每个计数都是整数零。"""
+
+    if set(result) != set(M9_EMPTY_TABLE_RECONCILE_KEYS) or any(
+        type(result.get(key)) is not int or result[key] != 0
+        for key in M9_EMPTY_TABLE_RECONCILE_KEYS
+    ):
+        raise GateAUpgradeError(
+            "Gate A M9 empty table reconciliation result is invalid"
+        )
+
+
+def _validate_empty_table_sweep_result(result: Mapping[str, Any]) -> None:
+    """要求空表期 sweep 成功且没有关闭任何会话。"""
+
+    if (
+        set(result) != {"status", "closed"}
+        or result.get("status") != "ok"
+        or type(result.get("closed")) is not int
+        or result["closed"] != 0
+    ):
+        raise GateAUpgradeError("Gate A M9 empty table sweep result is invalid")
 
 
 def _validate_mard_result(
@@ -1053,6 +1159,58 @@ def _upgrade_paths(record_dir: Path, candidate_sha: str) -> tuple[Path, Path]:
     )
 
 
+def _write_plan_replay_record(
+    *,
+    record_dir: Path,
+    success_path: Path,
+    success_record: Mapping[str, Any],
+    candidate_sha: str,
+    image_id: str,
+    source_candidate_sha: str,
+    source_version: int,
+    backup_id: str,
+    manifest_sha256: str,
+    database_snapshot: Mapping[str, Any],
+    image_manifest: Mapping[str, Any],
+    table_reconcile: Mapping[str, Any],
+) -> None:
+    """发布 app-up 必须消费的不可覆盖、只读 replay 证据。"""
+
+    result = {
+        "already_current": True,
+        "backup_id": backup_id,
+        "candidate_sha": candidate_sha,
+        "manifest_sha256": manifest_sha256,
+        "mode": "plan-replay",
+        "source_aerich_versions": _expected_versions(source_version),
+        "source_version": source_version,
+        "target_aerich_versions": _expected_versions(TARGET_VERSION),
+        "target_version": TARGET_VERSION,
+    }
+    _write_json_exclusive(
+        gatea._upgrade_replay_marker(record_dir, candidate_sha),
+        {
+            "schema_version": 1,
+            "record_type": "gatea-m9-upgrade-plan-replay",
+            "passed": True,
+            "candidate_sha": candidate_sha,
+            "source_candidate_sha": source_candidate_sha,
+            "source_version": source_version,
+            "image_id": image_id,
+            "backup_id": backup_id,
+            "manifest_sha256": manifest_sha256,
+            "database_snapshot": dict(database_snapshot),
+            "image_manifest": dict(image_manifest),
+            "table_reconcile": dict(table_reconcile),
+            "upgrade_record_sha256": _sha256(success_path),
+            "evidence_sha256": success_record["evidence_sha256"],
+            "result": result,
+            "completed_at": _iso_now(),
+            "secret_values_recorded": False,
+        },
+    )
+
+
 def _plan(
     *,
     values: Mapping[str, str],
@@ -1088,10 +1246,11 @@ def _plan(
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
-            services=("mysql", "redis", "app", "nginx"),
+            services=("mysql", "redis", "app", "table-sweeper", "nginx"),
         )
         gatea._ensure_services_healthy(replay_rows, "mysql", "redis")
         _ensure_stopped(replay_rows, "app", "nginx")
+        _ensure_not_running(replay_rows, "table-sweeper")
         success_record = gatea._require_upgrade_record(
             record_dir=release_record_dir,
             candidate_sha=candidate_sha,
@@ -1119,6 +1278,16 @@ def _plan(
             raise GateAUpgradeError(
                 "Gate A recorded upgrade does not match the requested replay"
             )
+        recorded_table_reconcile = success_record.get("table_reconcile")
+        recorded_table_sweep = success_record.get("table_sweep")
+        if not isinstance(recorded_table_reconcile, dict) or not isinstance(
+            recorded_table_sweep, dict
+        ):
+            raise GateAUpgradeError(
+                "Gate A recorded upgrade table consistency evidence is unavailable"
+            )
+        _validate_empty_table_reconcile_result(recorded_table_reconcile)
+        _validate_empty_table_sweep_result(recorded_table_sweep)
         try:
             if _sha256(evidence_path) != success_record["evidence_sha256"]:
                 raise GateAUpgradeError(
@@ -1142,6 +1311,9 @@ def _plan(
             != success_record["final_database_snapshot"]
             or replay_evidence.get("final_image_manifest")
             != success_record["final_image_manifest"]
+            or replay_evidence.get("table_reconcile")
+            != recorded_table_reconcile
+            or replay_evidence.get("table_sweep") != recorded_table_sweep
         ):
             raise GateAUpgradeError("Gate A recorded upgrade evidence is invalid")
         final_snapshot = _read_final_snapshot(
@@ -1158,6 +1330,7 @@ def _plan(
             raise GateAUpgradeError(
                 "Gate A recorded upgrade no longer matches the database"
             )
+        _validate_empty_m9_table_snapshot(final_snapshot)
         final_images = backup._source_image_manifest(
             values, config_file, secret_dir, mode
         )
@@ -1201,6 +1374,18 @@ def _plan(
             manifest_sha256=manifest_sha256,
             require_noop=True,
         )
+        replay_table_reconcile = _run_task(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            service="app",
+            module="app.tasks.table_reconcile",
+            description="recorded-upgrade-table-reconcile",
+        )
+        _validate_empty_table_reconcile_result(replay_table_reconcile)
+        # table_sweep 可能关闭到期会话，plan replay 必须保持业务数据只读；这里
+        # 重新验证只读 reconcile 与完整 M9 SQL invariant，并绑定 apply 时的 sweep 证据。
         return candidate_sha, image_id, {}, final_snapshot, manifest_sha256
     if evidence_path.exists():
         raise GateAUpgradeError(
@@ -1258,12 +1443,22 @@ def upgrade_existing_database(
     confirm_backup_id: str | None,
     confirm_manifest_sha256: str | None,
     source_version: int = DEFAULT_SOURCE_VERSION,
+    acceptance_record_dir: Path = gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
 ) -> dict[str, Any]:
     """规划或执行精确 M2/M7→M9 升级，生成 app-up 成功 Record。"""
 
     gatea._require_loopback_write_mode(mode)
     source_version = _validate_source_version(source_version)
     backup_id = backup._backup_id(backup_id)
+    gatea._validate_root_directory(
+        release_record_dir, 0o755, "Gate A release record directory"
+    )
+    gatea.reject_unresolved_candidate_transition_journals(
+        record_dir=release_record_dir,
+    )
+    gatea.reject_unresolved_m9_acceptance_sidecars(
+        record_dir=acceptance_record_dir,
+    )
     values = gatea._validated_inputs(
         config_file=config_file,
         secret_dir=secret_dir,
@@ -1285,6 +1480,11 @@ def upgrade_existing_database(
     )
     success_path, evidence_path = _upgrade_paths(release_record_dir, candidate_sha)
     if success_path.exists():
+        success_record = gatea._require_upgrade_record(
+            record_dir=release_record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+        )
         if apply:
             _validate_confirmations(
                 candidate_sha=candidate_sha,
@@ -1296,7 +1496,7 @@ def upgrade_existing_database(
                 confirm_backup_id=confirm_backup_id,
                 confirm_manifest_sha256=confirm_manifest_sha256,
             )
-        return {
+        result = {
             "already_current": True,
             "backup_id": backup_id,
             "candidate_sha": candidate_sha,
@@ -1307,6 +1507,22 @@ def upgrade_existing_database(
             "target_aerich_versions": _expected_versions(TARGET_VERSION),
             "target_version": TARGET_VERSION,
         }
+        if not apply:
+            _write_plan_replay_record(
+                record_dir=release_record_dir,
+                success_path=success_path,
+                success_record=success_record,
+                candidate_sha=candidate_sha,
+                image_id=image_id,
+                source_candidate_sha=source_candidate_sha,
+                source_version=source_version,
+                backup_id=backup_id,
+                manifest_sha256=manifest_sha256,
+                database_snapshot=success_record["final_database_snapshot"],
+                image_manifest=success_record["final_image_manifest"],
+                table_reconcile=success_record["table_reconcile"],
+            )
+        return result
     if not apply:
         if any(
             value is not None
@@ -1375,11 +1591,14 @@ def upgrade_existing_database(
     wallet_result: dict[str, Any] = {}
     mard_result: dict[str, Any] = {}
     table_bootstrap_result: dict[str, Any] = {}
+    table_reconcile_result: dict[str, Any] = {}
+    table_sweep_result: dict[str, Any] = {}
     source_m7_invariants: dict[str, Any] | None = None
     source_m7_content_snapshot: dict[str, Any] | None = None
     final_m7_content_snapshot: dict[str, Any] | None = None
     m7_source_preflight: dict[str, Any] = {}
     stopped_images: list[str] = []
+    success_payload: dict[str, Any] | None = None
     try:
         evidence["current_stage"] = "stop-business-entry"
         backup._write_json_atomic(evidence_path, evidence, 0o644)
@@ -1388,7 +1607,14 @@ def upgrade_existing_database(
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
-            arguments=("stop", "--timeout", "30", "nginx", "app"),
+            arguments=(
+                "stop",
+                "--timeout",
+                "30",
+                "nginx",
+                "table-sweeper",
+                "app",
+            ),
         )
         business_stopped = True
         rows = gatea._compose_ps(
@@ -1396,10 +1622,11 @@ def upgrade_existing_database(
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
-            services=("mysql", "redis", "app", "nginx"),
+            services=("mysql", "redis", "app", "table-sweeper", "nginx"),
         )
         gatea._ensure_services_healthy(rows, "mysql", "redis")
         _ensure_stopped(rows, "app", "nginx")
+        _ensure_not_running(rows, "table-sweeper")
 
         evidence["current_stage"] = "verify-stopped-source"
         stopped_snapshot = backup._source_snapshot(
@@ -1613,12 +1840,66 @@ def upgrade_existing_database(
                     database_snapshot=database_status,
                 )
 
+        step_started = _iso_now()
+        evidence["current_stage"] = "table-reconcile"
+        backup._write_json_atomic(evidence_path, evidence, 0o644)
+        table_reconcile_result = _run_task(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            service="app",
+            module="app.tasks.table_reconcile",
+            description="table-reconcile",
+        )
+        _validate_empty_table_reconcile_result(table_reconcile_result)
+        reconcile_snapshot = _read_final_snapshot(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+        )
+        _validate_empty_m9_table_snapshot(reconcile_snapshot)
+        evidence["table_reconcile"] = table_reconcile_result
+        _record_step(
+            evidence_path=evidence_path,
+            evidence=evidence,
+            name="table-reconcile",
+            started_at=step_started,
+            result=table_reconcile_result,
+            database_snapshot=reconcile_snapshot,
+        )
+
+        step_started = _iso_now()
+        evidence["current_stage"] = "table-sweep"
+        backup._write_json_atomic(evidence_path, evidence, 0o644)
+        table_sweep_result = _run_task(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            service="app",
+            module="app.tasks.table_sweep",
+            description="table-sweep",
+        )
+        _validate_empty_table_sweep_result(table_sweep_result)
         final_snapshot = _read_final_snapshot(
             values=values,
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
         )
+        _validate_empty_m9_table_snapshot(final_snapshot)
+        evidence["table_sweep"] = table_sweep_result
+        _record_step(
+            evidence_path=evidence_path,
+            evidence=evidence,
+            name="table-sweep",
+            started_at=step_started,
+            result=table_sweep_result,
+            database_snapshot=final_snapshot,
+        )
+
         evidence["current_stage"] = "validate-final"
         evidence["final_database_snapshot"] = final_snapshot
         backup._write_json_atomic(evidence_path, evidence, 0o644)
@@ -1693,9 +1974,21 @@ def upgrade_existing_database(
             "wallet_preparation": wallet_result,
             "mard_publication": mard_result,
             "table_bootstrap": table_bootstrap_result,
+            "table_reconcile": table_reconcile_result,
+            "table_sweep": table_sweep_result,
         }
         _write_json_exclusive(success_path, success_payload)
     except BaseException as error:
+        if success_path.exists() or success_path.is_symlink():
+            # success hard-link 是不可变提交点。其发布后的 temp 清理/目录
+            # fsync 若报错，绝不能反向污染已绑定 digest 的 succeeded evidence。
+            _validate_published_upgrade_commit(
+                success_path=success_path,
+                evidence_path=evidence_path,
+                success_payload=success_payload,
+                evidence=evidence,
+            )
+            raise
         evidence["completed_at"] = _iso_now()
         evidence["error_type"] = type(error).__name__
         evidence["status"] = "failed"
@@ -1760,6 +2053,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--release-record-dir", type=Path, default=gatea.DEFAULT_RECORD_DIR
     )
+    parser.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--confirm-target-sha")
     parser.add_argument("--confirm-source-sha")
@@ -1771,23 +2069,25 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        result = upgrade_existing_database(
-            config_file=args.config_file,
-            secret_dir=args.secret_dir,
-            mode=args.mode,
-            source_candidate_sha=args.source_candidate_sha,
-            backup_id=args.backup_id,
-            backup_root=args.backup_root,
-            backup_record_dir=args.backup_record_dir,
-            restore_record_dir=args.restore_record_dir,
-            release_record_dir=args.release_record_dir,
-            apply=args.apply,
-            confirm_target_sha=args.confirm_target_sha,
-            confirm_source_sha=args.confirm_source_sha,
-            confirm_backup_id=args.confirm_backup_id,
-            confirm_manifest_sha256=args.confirm_manifest_sha256,
-            source_version=args.source_version,
-        )
+        with gatea.operation_lock(), gatea.operation_termination_guard():
+            result = upgrade_existing_database(
+                config_file=args.config_file,
+                secret_dir=args.secret_dir,
+                mode=args.mode,
+                source_candidate_sha=args.source_candidate_sha,
+                backup_id=args.backup_id,
+                backup_root=args.backup_root,
+                backup_record_dir=args.backup_record_dir,
+                restore_record_dir=args.restore_record_dir,
+                release_record_dir=args.release_record_dir,
+                acceptance_record_dir=args.acceptance_record_dir,
+                apply=args.apply,
+                confirm_target_sha=args.confirm_target_sha,
+                confirm_source_sha=args.confirm_source_sha,
+                confirm_backup_id=args.confirm_backup_id,
+                confirm_manifest_sha256=args.confirm_manifest_sha256,
+                source_version=args.source_version,
+            )
     except (gatea.GateAError, subprocess.SubprocessError) as error:
         print(f"Gate A existing-database upgrade failed: {error}", file=sys.stderr)
         return 1
