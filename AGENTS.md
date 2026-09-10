@@ -61,7 +61,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 - Wallet/Payment/Refund v1 已完成仓库实现、扩展 MySQL/远端门槛及 Gate A M4/历史补齐/对账；真实 Provider、生产环境迁移和生产开关仍属于发布前工作。
 - Reservation N1 已完成；N2 微信主动通知、可逆加密投递地址、durable outbox、worker、重试与监控仍是明确后续范围，不能把页面状态展示误报为主动通知。
 - M9 二维码开台已于 2026-09-10 完成仓库实现：精确 30 桌、15 分钟待支付、按 Experience 时长快照分组并各加 10 分钟、`quantity` 不乘时长、Kit 不参与计时、最长 Timer 到期只释放桌台；Reservation 独立，内部验收只用钱包/人工结算，真实微信支付另行立项。后端四表/迁移、API、跨域事务、小程序顾客和管理页面、受控 bootstrap/reconcile/sweep 及普通占位二维码均已接入；占位码内容为 `PINKDOOHUB_TABLE:v1:<token>`，微信官方小程序码保持 Deferred。
-- M9 当前本地门槛为后端完整 `2387 passed, 39 skipped`、前端 `102 suites / 719 tests`，TypeScript/ESLint/Stylelint/CI policy/OpenAPI 类型均通过；一次性 MySQL 8.0.46 的 M0→M9 迁移和 M9 发布门槛为 `39 passed`。Gate A/容量 Runtime 已关闭未经脱敏的 Uvicorn access log，Nginx 与异常日志对桌台 Token 路径统一脱敏；reconcile 同时核验打开和已关闭会话的付款/计时历史。微信 CI 使用独立 `.env.ci`，避免生产占位 Origin 覆盖 CI 注入值；页头纹理由全局 CSS 变量只内联一次，当前不可发布微信产物主包约 0.86 MiB、总包约 1.42 MiB。
+- M9 当前本地门槛为后端完整 `2388 passed, 39 skipped`、前端 `102 suites / 719 tests`，TypeScript/ESLint/Stylelint/CI policy/OpenAPI 类型均通过；一次性 MySQL 8.0.46 的 M0→M9 迁移和 M9 发布门槛为 `39 passed`。Gate A/容量 Runtime 已关闭未经脱敏的 Uvicorn access log，Nginx 与异常日志对桌台 Token 路径统一脱敏；reconcile 同时核验打开和已关闭会话的付款/计时历史。微信 CI 使用独立 `.env.ci`，避免生产占位 Origin 覆盖 CI 注入值；页头纹理由全局 CSS 变量只内联一次，当前不可发布微信产物主包约 0.86 MiB、总包约 1.42 MiB。
 - Gate A Backup 按精确 Aerich 链恢复常驻服务：M7/M8 只恢复 App/Nginx，不启动尚无桌台表的 M9 sweeper；M9 则要求 `table-sweeper` 备份前健康、与 App/Nginx 一起停写并在备份后严格恢复。普通 `app-up` 仍默认要求 M9 sweeper，未知链或停写窗口内版本变化 fail closed。
 - M9 是 M8 之后的当前仓库候选增量；环境状态必须以该环境的 Release Record 为准。未经明确授权，不接入真实微信支付、不生成或上传正式微信小程序码，也不把仓库实现误报为持久环境已经迁移。
 

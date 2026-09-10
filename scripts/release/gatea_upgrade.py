@@ -101,9 +101,12 @@ print(json.dumps({
 }, sort_keys=True))
 """
 
+# Pin both the mysql client encoding and the non-ASCII suffix bytes. The official
+# mysql:8.0.46 CLI otherwise defaults to latin1 in this non-interactive path.
 FINAL_DATABASE_STATUS_COMMAND = r"""MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
 export MYSQL_PWD
-mysql --batch --skip-column-names --raw --host=127.0.0.1 --user=root "$MYSQL_DATABASE" <<'SQL'
+mysql --default-character-set=utf8mb4 --batch --skip-column-names --raw \
+  --host=127.0.0.1 --user=root "$MYSQL_DATABASE" <<'SQL'
 SET SESSION group_concat_max_len = 1048576;
 SELECT JSON_OBJECT(
   'aerich_versions', COALESCE((SELECT GROUP_CONCAT(version ORDER BY id SEPARATOR ',') FROM aerich), ''),
@@ -192,10 +195,29 @@ SELECT JSON_OBJECT(
   ),
   'store_tables', (SELECT COUNT(*) FROM store_tables),
   'enabled_store_tables', (SELECT COUNT(*) FROM store_tables WHERE is_enabled = 1),
+  'invalid_table_numbers', (
+    SELECT COUNT(*) FROM store_tables
+    WHERE table_no NOT REGEXP '^T(0[1-9]|[12][0-9]|30)$'
+  ),
+  'invalid_table_display_names', (
+    SELECT COUNT(*) FROM store_tables
+    WHERE display_name <> CONCAT(
+      table_no, CONVERT(0xE58FB7E6A18C USING utf8mb4)
+    )
+  ),
+  'invalid_table_qr_token_lengths', (
+    SELECT COUNT(*) FROM store_tables WHERE CHAR_LENGTH(qr_token) <> 32
+  ),
+  'invalid_table_qr_token_characters', (
+    SELECT COUNT(*) FROM store_tables
+    WHERE CONVERT(qr_token USING ascii) NOT REGEXP '^[A-Za-z0-9]{32}$'
+  ),
   'invalid_store_tables', (
     SELECT COUNT(*) FROM store_tables
     WHERE table_no NOT REGEXP '^T(0[1-9]|[12][0-9]|30)$'
-       OR display_name <> CONCAT(table_no, '号桌')
+       OR display_name <> CONCAT(
+         table_no, CONVERT(0xE58FB7E6A18C USING utf8mb4)
+       )
        OR CHAR_LENGTH(qr_token) <> 32
        OR CONVERT(qr_token USING ascii) NOT REGEXP '^[A-Za-z0-9]{32}$'
   ),
@@ -940,6 +962,10 @@ def _validate_final_snapshot(
     expected_table_values = {
         "store_tables": 30,
         "enabled_store_tables": 30,
+        "invalid_table_numbers": 0,
+        "invalid_table_display_names": 0,
+        "invalid_table_qr_token_lengths": 0,
+        "invalid_table_qr_token_characters": 0,
         "invalid_store_tables": 0,
         "distinct_table_qr_tokens": 30,
         "table_sessions": 0,
@@ -947,8 +973,12 @@ def _validate_final_snapshot(
         "table_occupancies": 0,
     }
     for key, expected in expected_table_values.items():
-        if final_snapshot.get(key) != expected:
-            raise GateAUpgradeError(f"Gate A final M9 invariant failed: {key}")
+        actual = final_snapshot.get(key)
+        if actual != expected:
+            raise GateAUpgradeError(
+                "Gate A final M9 invariant failed: "
+                f"{key} expected={expected} actual={actual!r}"
+            )
 
 
 def _validate_mard_result(
@@ -1589,6 +1619,9 @@ def upgrade_existing_database(
             secret_dir=secret_dir,
             mode=mode,
         )
+        evidence["current_stage"] = "validate-final"
+        evidence["final_database_snapshot"] = final_snapshot
+        backup._write_json_atomic(evidence_path, evidence, 0o644)
         _validate_final_snapshot(
             backup_record["database_snapshot"],
             final_snapshot,

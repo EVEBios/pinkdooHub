@@ -111,6 +111,10 @@ def _final_snapshot() -> dict[str, object]:
         "reservation_settings_unique": 1,
         "store_tables": 30,
         "enabled_store_tables": 30,
+        "invalid_table_numbers": 0,
+        "invalid_table_display_names": 0,
+        "invalid_table_qr_token_lengths": 0,
+        "invalid_table_qr_token_characters": 0,
         "invalid_store_tables": 0,
         "distinct_table_qr_tokens": 30,
         "table_sessions": 0,
@@ -1546,6 +1550,10 @@ def test_final_snapshot_rejects_core_drift_wallet_or_mard_gap() -> None:
         ("distinct_bead_color_hex", 220, "MARD invariant"),
         ("reservation_settings_unique", 0, "ReservationSettings"),
         ("store_tables", 29, "M9 invariant"),
+        ("invalid_table_numbers", 1, "M9 invariant"),
+        ("invalid_table_display_names", 1, "M9 invariant"),
+        ("invalid_table_qr_token_lengths", 1, "M9 invariant"),
+        ("invalid_table_qr_token_characters", 1, "M9 invariant"),
         ("invalid_store_tables", 1, "M9 invariant"),
         ("distinct_table_qr_tokens", 29, "M9 invariant"),
     ):
@@ -1570,6 +1578,26 @@ def test_final_snapshot_rejects_core_drift_wallet_or_mard_gap() -> None:
         )
     with pytest.raises(upgrade.GateAUpgradeError, match="unavailable"):
         upgrade._validate_final_snapshot(m7_source, final, source_version=7)
+
+
+def test_final_database_status_fixes_utf8mb4_for_table_display_names() -> None:
+    command = upgrade.FINAL_DATABASE_STATUS_COMMAND
+
+    assert "mysql --default-character-set=utf8mb4" in command
+    assert command.count("CONVERT(0xE58FB7E6A18C USING utf8mb4)") == 2
+    assert "'invalid_table_numbers'" in command
+    assert "'invalid_table_display_names'" in command
+    assert "'invalid_table_qr_token_lengths'" in command
+    assert "'invalid_table_qr_token_characters'" in command
+
+    with pytest.raises(
+        upgrade.GateAUpgradeError,
+        match=r"invalid_table_display_names expected=0 actual=30",
+    ):
+        upgrade._validate_final_snapshot(
+            _source_backup_snapshot(),
+            _final_snapshot() | {"invalid_table_display_names": 30},
+        )
 
 
 @pytest.mark.parametrize(
