@@ -14,6 +14,7 @@ from typing import Iterable
 
 ALLOWED_ENV_FILES = {
     ".env.example",
+    "miniapp/.env.ci",
     "miniapp/.env.development",
     "miniapp/.env.production",
     "miniapp/.env.test",

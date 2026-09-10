@@ -18,6 +18,7 @@ CHECKER = REPOSITORY_ROOT / "scripts" / "ci" / "check_repository_hygiene.py"
 def test_path_policy_allows_public_env_templates_and_rejects_local_data() -> None:
     paths = [
         ".env.example",
+        "miniapp/.env.ci",
         "miniapp/.env.development",
         "miniapp/.env.production",
         "miniapp/.env.test",
