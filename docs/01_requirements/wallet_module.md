@@ -234,3 +234,17 @@ User → Order/RechargeOrder → Payment/Settlement/Refund → WalletAccount →
 - 钱包转账、提现、兑换现金、赠送余额或第三方消费。
 - 混合支付、部分退款、用户自助退款。
 - 动态资金配置中心及生产经营/商户进件资料。
+
+## 13. M9 二维码开台联动（已实现）
+
+M9 只把既有成功订单付款事实接入桌台计时，不改变钱包金额、Payment、Settlement、Refund 或 WalletTransaction 的计算规则：
+
+- 钱包支付和管理员人工结算仍分别由现有事务所有者编排。
+- 若订单绑定有效待支付 Table Session，唯一可信计时起点是该次成功 `Payment.succeeded_at`。
+- Payment、Settlement、钱包扣款/流水、Order `pending -> paid`、Session `awaiting_payment -> active` 与全部 Timer 必须同事务提交或回滚。
+- 桌台页面发起钱包付款时必须携带 `Table-Session-No`；指定 Session 过期/关闭/不属于当前用户或订单时资金零写入。
+- 全额退款成功时，在现有 Refund 事务内关闭仍为 active 的 Session 并释放 Occupancy；PAID Kit 恢复与 COMPLETED 不恢复语义不变。
+- 涉及 M9 时采用适用的 `User -> Order -> StoreTable -> TableSession/Occupancy -> Settlement/Payment/Refund -> WalletAccount -> Kit` 锁序。
+- 真实微信支付仍是独立后续项目，不因 M9 内部钱包/人工验收而开启或模拟成功 Provider 事实。
+
+完整规则见 [二维码开台需求](table_session_module.md) 与 [二维码开台 API](../03_api/table_session_api.md)。运行时代码、M9 迁移和内部钱包/人工验收路径已进入仓库；真实微信支付仍保持 Deferred，各持久环境须独立迁移和验收。

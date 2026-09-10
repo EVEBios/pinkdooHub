@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 
 from app.api.deps import get_current_admin, get_order_service, reject_request_body
 from app.api.mappers.audit import map_audit_log_page
@@ -23,6 +23,7 @@ from app.schemas.order_response import (
     OrderStatusOut,
 )
 from app.services.order_service import OrderService
+from app.schemas.table_session import TableSessionNumber
 from app.utils.request import get_client_ip
 
 router = APIRouter(
@@ -108,6 +109,10 @@ async def mark_order_paid(
     current_admin: CurrentAdmin,
     service: OrderServiceDependency,
     _empty_body: Annotated[None, Depends(reject_request_body)],
+    table_session_no: Annotated[
+        TableSessionNumber | None,
+        Header(alias="Table-Session-No"),
+    ] = None,
 ) -> dict:
     """由 ADMIN+ 人工确认 Pending Order 已支付。"""
 
@@ -115,6 +120,7 @@ async def mark_order_paid(
         order_id,
         operator_id=current_admin.id,
         ip_address=get_client_ip(request),
+        table_session_no=table_session_no,
     )
     return success(
         data=map_order_status_response(order).model_dump(mode="json"),

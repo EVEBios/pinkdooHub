@@ -24,7 +24,8 @@ export default defineAppConfig({
     'pages/reservation-detail/index',
     'pages/member/index',
     'pages/wallet-recharge/index',
-    'pages/wallet-transactions/index'
+    'pages/wallet-transactions/index',
+    'pages/table-entry/index'
   ],
   subPackages: [{
     root: 'admin',
@@ -46,7 +47,9 @@ export default defineAppConfig({
       'pages/users/index',
       'pages/user-wallet/index',
       'pages/wallet-order/index',
-      'pages/inventory-transactions/index'
+      'pages/inventory-transactions/index',
+      'pages/tables/index',
+      'pages/table-session-detail/index'
     ]
   }],
   window: {

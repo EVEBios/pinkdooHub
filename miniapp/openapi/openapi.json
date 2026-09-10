@@ -997,6 +997,487 @@
         "title": "AdminReservationListItemOut",
         "type": "object"
       },
+      "AdminTableListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminTableOut"
+            },
+            "maxItems": 30,
+            "title": "Items",
+            "type": "array"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "server_now"
+        ],
+        "title": "AdminTableListOut",
+        "type": "object"
+      },
+      "AdminTableOut": {
+        "additionalProperties": false,
+        "properties": {
+          "claimed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At"
+          },
+          "current_order_no": {
+            "anyOf": [
+              {
+                "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Order No"
+          },
+          "current_session_no": {
+            "anyOf": [
+              {
+                "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Session No"
+          },
+          "current_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableEnumOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_user_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current User Id"
+          },
+          "display_name": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "payment_deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Deadline At"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AdminTableState"
+          },
+          "table_no": {
+            "pattern": "^T(?:0[1-9]|[12][0-9]|30)$",
+            "title": "Table No",
+            "type": "string"
+          },
+          "table_release_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Release At"
+          }
+        },
+        "required": [
+          "id",
+          "table_no",
+          "display_name",
+          "is_enabled",
+          "state"
+        ],
+        "title": "AdminTableOut",
+        "type": "object"
+      },
+      "AdminTableSessionListItemOut": {
+        "additionalProperties": false,
+        "properties": {
+          "claimed_at": {
+            "format": "date-time",
+            "title": "Claimed At",
+            "type": "string"
+          },
+          "close_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableEnumOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "maximum_duration_minutes": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum Duration Minutes"
+          },
+          "minimum_duration_minutes": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Duration Minutes"
+          },
+          "order_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "order_no": {
+            "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Order No",
+            "type": "string"
+          },
+          "payment_deadline_at": {
+            "format": "date-time",
+            "title": "Payment Deadline At",
+            "type": "string"
+          },
+          "session_no": {
+            "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session No",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TableEnumOut"
+          },
+          "table": {
+            "$ref": "#/components/schemas/TableSummaryOut"
+          },
+          "table_release_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Release At"
+          },
+          "timer_count": {
+            "minimum": 0.0,
+            "title": "Timer Count",
+            "type": "integer"
+          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          },
+          "user_nickname": {
+            "minLength": 1,
+            "title": "User Nickname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_no",
+          "table",
+          "order_id",
+          "order_no",
+          "user_id",
+          "user_nickname",
+          "status",
+          "timer_count",
+          "claimed_at",
+          "payment_deadline_at"
+        ],
+        "title": "AdminTableSessionListItemOut",
+        "type": "object"
+      },
+      "AdminTableSessionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_close_reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Close Reason"
+          },
+          "claimed_at": {
+            "format": "date-time",
+            "title": "Claimed At",
+            "type": "string"
+          },
+          "close_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableEnumOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_by_user_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed By User Id"
+          },
+          "order_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "order_no": {
+            "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Order No",
+            "type": "string"
+          },
+          "payment_deadline_at": {
+            "format": "date-time",
+            "title": "Payment Deadline At",
+            "type": "string"
+          },
+          "payment_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Id"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          },
+          "session_no": {
+            "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session No",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TableEnumOut"
+          },
+          "table": {
+            "$ref": "#/components/schemas/TableSummaryOut"
+          },
+          "table_release_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Release At"
+          },
+          "timers": {
+            "items": {
+              "$ref": "#/components/schemas/TableSessionTimerOut"
+            },
+            "title": "Timers",
+            "type": "array"
+          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          },
+          "user_nickname": {
+            "minLength": 1,
+            "title": "User Nickname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_no",
+          "table",
+          "order_id",
+          "order_no",
+          "status",
+          "claimed_at",
+          "payment_deadline_at",
+          "timers",
+          "server_now",
+          "user_id",
+          "user_nickname"
+        ],
+        "title": "AdminTableSessionOut",
+        "type": "object"
+      },
+      "AdminTableSessionRelease": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AdminTableSessionRelease",
+        "type": "object"
+      },
+      "AdminTableState": {
+        "enum": [
+          "available",
+          "awaiting_payment",
+          "active",
+          "disabled"
+        ],
+        "title": "AdminTableState",
+        "type": "string"
+      },
+      "AdminTableUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_enabled",
+          "reason"
+        ],
+        "title": "AdminTableUpdate",
+        "type": "object"
+      },
       "AdminUserWalletOut": {
         "properties": {
           "user": {
@@ -1322,6 +1803,97 @@
           "redis"
         ],
         "title": "DependencyChecksOut",
+        "type": "object"
+      },
+      "EligibleDurationGroupOut": {
+        "additionalProperties": false,
+        "properties": {
+          "buffer_minutes": {
+            "const": 10,
+            "title": "Buffer Minutes",
+            "type": "integer"
+          },
+          "duration_minutes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "experience_item_count": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experience Item Count",
+            "type": "integer"
+          },
+          "total_quantity": {
+            "exclusiveMinimum": 0.0,
+            "title": "Total Quantity",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duration_minutes",
+          "buffer_minutes",
+          "experience_item_count",
+          "total_quantity"
+        ],
+        "title": "EligibleDurationGroupOut",
+        "type": "object"
+      },
+      "EligibleOrderListItemOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_groups": {
+            "items": {
+              "$ref": "#/components/schemas/EligibleDurationGroupOut"
+            },
+            "minItems": 1,
+            "title": "Duration Groups",
+            "type": "array"
+          },
+          "experience_item_count": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experience Item Count",
+            "type": "integer"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "kit_item_count": {
+            "minimum": 0.0,
+            "title": "Kit Item Count",
+            "type": "integer"
+          },
+          "order_no": {
+            "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Order No",
+            "type": "string"
+          },
+          "total_amount": {
+            "description": "固定两位小数的订单金额字符串",
+            "examples": [
+              "497.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Total Amount",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "order_no",
+          "total_amount",
+          "created_at",
+          "experience_item_count",
+          "kit_item_count",
+          "duration_groups"
+        ],
+        "title": "EligibleOrderListItemOut",
         "type": "object"
       },
       "ErrorResponse": {
@@ -3503,6 +4075,42 @@
         "title": "Page[AdminReservationListItemOut]",
         "type": "object"
       },
+      "Page_AdminTableSessionListItemOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminTableSessionListItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[AdminTableSessionListItemOut]",
+        "type": "object"
+      },
       "Page_AuditLogOut_": {
         "properties": {
           "items": {
@@ -3573,6 +4181,42 @@
           "pages"
         ],
         "title": "Page[BeadColorOut]",
+        "type": "object"
+      },
+      "Page_EligibleOrderListItemOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EligibleOrderListItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[EligibleOrderListItemOut]",
         "type": "object"
       },
       "Page_InventoryTransactionListItem_": {
@@ -4271,6 +4915,38 @@
           }
         },
         "title": "ProductUpdate",
+        "type": "object"
+      },
+      "PublicTableCodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "is_available": {
+            "title": "Is Available",
+            "type": "boolean"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "table_no": {
+            "pattern": "^T(?:0[1-9]|[12][0-9]|30)$",
+            "title": "Table No",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_no",
+          "display_name",
+          "is_enabled",
+          "is_available"
+        ],
+        "title": "PublicTableCodeOut",
         "type": "object"
       },
       "ReadinessErrorResponse": {
@@ -5239,6 +5915,54 @@
         "title": "SuccessResponse[AdminReservationDetailOut]",
         "type": "object"
       },
+      "SuccessResponse_AdminTableListOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminTableListOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[AdminTableListOut]",
+        "type": "object"
+      },
+      "SuccessResponse_AdminTableSessionOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminTableSessionOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[AdminTableSessionOut]",
+        "type": "object"
+      },
       "SuccessResponse_AdminUserWalletOut_": {
         "additionalProperties": false,
         "properties": {
@@ -5864,6 +6588,30 @@
         "title": "SuccessResponse[Page[AdminReservationListItemOut]]",
         "type": "object"
       },
+      "SuccessResponse_Page_AdminTableSessionListItemOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_AdminTableSessionListItemOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[AdminTableSessionListItemOut]]",
+        "type": "object"
+      },
       "SuccessResponse_Page_AuditLogOut__": {
         "additionalProperties": false,
         "properties": {
@@ -5910,6 +6658,30 @@
           "data"
         ],
         "title": "SuccessResponse[Page[BeadColorOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_EligibleOrderListItemOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_EligibleOrderListItemOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[EligibleOrderListItemOut]]",
         "type": "object"
       },
       "SuccessResponse_Page_InventoryTransactionListItem__": {
@@ -6176,6 +6948,30 @@
         "title": "SuccessResponse[ProductOnlineOut]",
         "type": "object"
       },
+      "SuccessResponse_PublicTableCodeOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PublicTableCodeOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[PublicTableCodeOut]",
+        "type": "object"
+      },
       "SuccessResponse_ReadinessOut_": {
         "additionalProperties": false,
         "properties": {
@@ -6344,6 +7140,54 @@
         "title": "SuccessResponse[StoreClosureMutationOut]",
         "type": "object"
       },
+      "SuccessResponse_TableSessionOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TableSessionOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[TableSessionOut]",
+        "type": "object"
+      },
+      "SuccessResponse_TableSummaryOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TableSummaryOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[TableSummaryOut]",
+        "type": "object"
+      },
       "SuccessResponse_TokenOut_": {
         "additionalProperties": false,
         "properties": {
@@ -6398,6 +7242,37 @@
           "data"
         ],
         "title": "SuccessResponse[Union[ProductImageOut, OptionImageOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Union_TableSessionOut__NoneType__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableSessionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Union[TableSessionOut, NoneType]]",
         "type": "object"
       },
       "SuccessResponse_UserOut_": {
@@ -6494,6 +7369,336 @@
           "data"
         ],
         "title": "SuccessResponse[WeeklyClosureMutationOut]",
+        "type": "object"
+      },
+      "TableEnumOut": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "TableEnumOut",
+        "type": "object"
+      },
+      "TableSessionCloseReason": {
+        "enum": [
+          "payment_timeout",
+          "time_expired",
+          "order_cancelled",
+          "order_completed",
+          "refunded",
+          "admin_released"
+        ],
+        "title": "TableSessionCloseReason",
+        "type": "string"
+      },
+      "TableSessionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "order_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "qr_token": {
+            "pattern": "^[A-Za-z0-9]{32}$",
+            "title": "Qr Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qr_token",
+          "order_id"
+        ],
+        "title": "TableSessionCreate",
+        "type": "object"
+      },
+      "TableSessionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "claimed_at": {
+            "format": "date-time",
+            "title": "Claimed At",
+            "type": "string"
+          },
+          "close_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableEnumOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "order_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "order_no": {
+            "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Order No",
+            "type": "string"
+          },
+          "payment_deadline_at": {
+            "format": "date-time",
+            "title": "Payment Deadline At",
+            "type": "string"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          },
+          "session_no": {
+            "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session No",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TableEnumOut"
+          },
+          "table": {
+            "$ref": "#/components/schemas/TableSummaryOut"
+          },
+          "table_release_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Release At"
+          },
+          "timers": {
+            "items": {
+              "$ref": "#/components/schemas/TableSessionTimerOut"
+            },
+            "title": "Timers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_no",
+          "table",
+          "order_id",
+          "order_no",
+          "status",
+          "claimed_at",
+          "payment_deadline_at",
+          "timers",
+          "server_now"
+        ],
+        "title": "TableSessionOut",
+        "type": "object"
+      },
+      "TableSessionStatus": {
+        "enum": [
+          "awaiting_payment",
+          "active",
+          "closed"
+        ],
+        "title": "TableSessionStatus",
+        "type": "string"
+      },
+      "TableSessionTimerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "buffer_minutes": {
+            "const": 10,
+            "title": "Buffer Minutes",
+            "type": "integer"
+          },
+          "duration_minutes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "experience_items": {
+            "items": {
+              "$ref": "#/components/schemas/TimerExperienceItemOut"
+            },
+            "minItems": 1,
+            "title": "Experience Items",
+            "type": "array"
+          },
+          "grace_ends_at": {
+            "format": "date-time",
+            "title": "Grace Ends At",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/TableEnumOut"
+          },
+          "service_ends_at": {
+            "format": "date-time",
+            "title": "Service Ends At",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "duration_minutes",
+          "buffer_minutes",
+          "started_at",
+          "service_ends_at",
+          "grace_ends_at",
+          "phase",
+          "experience_items"
+        ],
+        "title": "TableSessionTimerOut",
+        "type": "object"
+      },
+      "TableSummaryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "table_no": {
+            "pattern": "^T(?:0[1-9]|[12][0-9]|30)$",
+            "title": "Table No",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "table_no",
+          "display_name",
+          "is_enabled"
+        ],
+        "title": "TableSummaryOut",
+        "type": "object"
+      },
+      "TimerExperienceItemOut": {
+        "additionalProperties": false,
+        "properties": {
+          "order_item_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Order Item Id",
+            "type": "integer"
+          },
+          "participants_per_unit": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participants Per Unit"
+          },
+          "product_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "product_name": {
+            "minLength": 1,
+            "title": "Product Name",
+            "type": "string"
+          },
+          "quantity": {
+            "exclusiveMinimum": 0.0,
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "total_participants": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Participants"
+          }
+        },
+        "required": [
+          "order_item_id",
+          "product_id",
+          "product_name",
+          "quantity"
+        ],
+        "title": "TimerExperienceItemOut",
         "type": "object"
       },
       "TokenOut": {
@@ -8767,6 +9972,23 @@
               "exclusiveMinimum": 0,
               "title": "Order Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Table-Session-No",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Table-Session-No"
             }
           }
         ],
@@ -12565,6 +13787,645 @@
         ]
       }
     },
+    "/api/v1/admin/table-sessions": {
+      "get": {
+        "operationId": "list_admin_table_sessions_api_v1_admin_table_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "table_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Table Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Order Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TableSessionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "close_reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TableSessionCloseReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Close Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "claimed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Claimed From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "claimed_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Claimed To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_AdminTableSessionListItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Admin Table Sessions",
+        "tags": [
+          "admin-table-sessions"
+        ]
+      }
+    },
+    "/api/v1/admin/table-sessions/{session_no}": {
+      "get": {
+        "operationId": "get_admin_table_session_api_v1_admin_table_sessions__session_no__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_no",
+            "required": true,
+            "schema": {
+              "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Session No",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AdminTableSessionOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Admin Table Session",
+        "tags": [
+          "admin-table-sessions"
+        ]
+      }
+    },
+    "/api/v1/admin/table-sessions/{session_no}/release": {
+      "post": {
+        "operationId": "release_admin_table_session_api_v1_admin_table_sessions__session_no__release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_no",
+            "required": true,
+            "schema": {
+              "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Session No",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTableSessionRelease"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AdminTableSessionOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Release Admin Table Session",
+        "tags": [
+          "admin-table-sessions"
+        ]
+      }
+    },
+    "/api/v1/admin/tables": {
+      "get": {
+        "operationId": "list_admin_tables_api_v1_admin_tables_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AdminTableListOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Admin Tables",
+        "tags": [
+          "admin-table-sessions"
+        ]
+      }
+    },
+    "/api/v1/admin/tables/{table_id}": {
+      "patch": {
+        "operationId": "update_admin_table_api_v1_admin_tables__table_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "table_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Table Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTableUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_TableSummaryOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Admin Table",
+        "tags": [
+          "admin-table-sessions"
+        ]
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "description": "按状态、角色稳定倒序分页查询用户安全摘要。",
@@ -14667,6 +16528,23 @@
               "title": "Idempotency-Key",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Table-Session-No",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Table-Session-No"
+            }
           }
         ],
         "responses": {
@@ -14888,6 +16766,124 @@
         "summary": "Create Wechat Order Payment",
         "tags": [
           "payments"
+        ]
+      }
+    },
+    "/api/v1/orders/{order_id}/table-session": {
+      "get": {
+        "operationId": "get_order_table_session_api_v1_orders__order_id__table_session_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Order Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Union_TableSessionOut__NoneType__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Order Table Session",
+        "tags": [
+          "table-sessions"
         ]
       }
     },
@@ -15637,6 +17633,495 @@
         "summary": "Cancel Reservation",
         "tags": [
           "reservations"
+        ]
+      }
+    },
+    "/api/v1/table-codes/{qr_token}": {
+      "get": {
+        "operationId": "resolve_table_code_api_v1_table_codes__qr_token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "qr_token",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9]{32}$",
+              "title": "Qr Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_PublicTableCodeOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Resolve Table Code",
+        "tags": [
+          "table-sessions"
+        ]
+      }
+    },
+    "/api/v1/table-sessions": {
+      "post": {
+        "operationId": "create_table_session_api_v1_table_sessions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TableSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_TableSessionOut_"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_TableSessionOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Table Session",
+        "tags": [
+          "table-sessions"
+        ]
+      }
+    },
+    "/api/v1/table-sessions/current": {
+      "get": {
+        "operationId": "get_current_table_session_api_v1_table_sessions_current_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Union_TableSessionOut__NoneType__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Current Table Session",
+        "tags": [
+          "table-sessions"
+        ]
+      }
+    },
+    "/api/v1/table-sessions/eligible-orders": {
+      "get": {
+        "operationId": "list_eligible_orders_api_v1_table_sessions_eligible_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_EligibleOrderListItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Eligible Orders",
+        "tags": [
+          "table-sessions"
         ]
       }
     },

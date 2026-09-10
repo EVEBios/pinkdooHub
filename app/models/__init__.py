@@ -21,3 +21,9 @@ from app.models.reservation import (  # noqa: F401
 )
 from app.models.user import User  # noqa: F401
 from app.models.wallet import WalletAccount, WalletTransaction  # noqa: F401
+from app.models.table_session import (  # noqa: F401
+    StoreTable,
+    TableOccupancy,
+    TableSession,
+    TableSessionTimer,
+)

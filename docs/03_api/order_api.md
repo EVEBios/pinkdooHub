@@ -539,3 +539,16 @@ Phase 4.3.7 已在原 `POST /api/v1/orders` 实现 Experience/Kit/混合创建�
 M6 不新增另一套订单端点，而是扩展 `OrderItemCreate` / `OrderItemOut`。请求通过 `kit_color_id` 引用 ProductKitColor；响应和历史查询固定返回颜色槽号、编码、名称、10g 单位及总克重。新增 `42233` 表达颜色缺失/归属/启用不可用，`42234` 在写数据库前表达总金额超过 `DECIMAL(10,2)` 契约上限。现有 Experience/fixed Kit 行新增颜色字段时全部为 null，旧请求不必提交新字段。
 
 M6 Model/迁移、创建/取消/代客/退款 Service、Mapper、HTTP 矩阵与真实 MySQL 颜色并发门槛均已完成，本节状态为 Implemented；当前 Gate A M7 已包含该能力，其他持久环境仍须分别迁移和验收。
+
+### 9.3 M9 QR Table Session（已实现）
+
+M9 不向现有 Order 创建、列表、详情或状态响应直接追加 Table 字段，避免把独立桌台生命周期耦合进 Order Out Schema。桌台会话通过独立端点查询：
+
+- `GET /api/v1/table-sessions/eligible-orders`
+- `POST /api/v1/table-sessions`
+- `GET /api/v1/table-sessions/current`
+- `GET /api/v1/orders/{order_id}/table-session`
+
+现有用户取消、ADMIN+ 人工付款和完成端点的响应形状保持不变，并已在各自现有事务中同步关闭或激活关联 Session。钱包付款与 ADMIN+ 人工付款都增加了可选 `Table-Session-No` Header；桌台计时页或管理桌台页必须携带它以在付款竞态中锁定精确会话。计时详情在付款成功后由独立 Table Session 查询获得。
+
+具体 15 分钟占台、Experience 分组、10 分钟缓冲、Kit/quantity 忽略规则、错误码与原子性见 [二维码开台需求](../01_requirements/table_session_module.md) 和 [二维码开台 API](table_session_api.md)。仓库实现不等于任意持久环境已应用 M9，部署状态仍以目标环境 Release Record 为准。

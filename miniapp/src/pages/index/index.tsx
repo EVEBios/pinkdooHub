@@ -6,6 +6,7 @@ import type { ProductListItem } from '@/api/endpoints/products'
 import { isAdminRole, useAuth } from '@/auth'
 import { type ProductTypeFilter, useProductList } from '@/features/product/use_product_list'
 import { buildProductDetailUrl } from '@/features/product/product_detail_route'
+import { buildTableEntryUrl, parseTableToken } from '@/features/table_session'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
 import { resolveAssetUrl } from '@/utils/asset_url'
@@ -65,6 +66,9 @@ export function CustomerProductList() {
           <View className='product-page__intro'>
             <Text className='product-page__title'>发现下一幅拼豆作品</Text>
             <Text className='product-page__subtitle'>选一场体验，或带一套材料回家。</Text>
+            <Button className='product-page__scan-table' onClick={() => void scanTableCode()}>
+              扫码开台
+            </Button>
           </View>
         </View>
       </View>
@@ -121,6 +125,25 @@ export function CustomerProductList() {
       </View>
     </View>
   )
+}
+
+async function scanTableCode(): Promise<void> {
+  try {
+    const result = await Taro.scanCode({ scanType: ['qrCode'] })
+    const token = parseTableToken(result.result)
+    if (!token) {
+      await Taro.showToast({ title: '这不是有效的桌台二维码', icon: 'none' })
+      return
+    }
+    await Taro.navigateTo({ url: buildTableEntryUrl(token) })
+  } catch (cause) {
+    const message = cause && typeof cause === 'object' && 'errMsg' in cause
+      ? String(cause.errMsg)
+      : ''
+    if (!message.toLowerCase().includes('cancel')) {
+      await Taro.showToast({ title: '扫码暂不可用，请稍后重试', icon: 'none' })
+    }
+  }
 }
 
 function ProductGateState({ children, description, title }: PageStateProps) {

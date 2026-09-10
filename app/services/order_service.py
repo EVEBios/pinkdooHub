@@ -61,6 +61,16 @@ from app.common.enums.wallet import (
     WalletTransactionSourceType,
     WalletTransactionType,
 )
+from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
+from app.common.constants.table_session import (
+    TABLE_AUDIT_ACTION_ACTIVATE,
+    TABLE_AUDIT_ACTION_RELEASE,
+    TABLE_AUDIT_TARGET_TYPE,
+)
+from app.common.exceptions.table_session import (
+    TableSessionNotFound,
+)
+from app.domain.table_session import automatic_close_for, build_timer_specs
 from app.common.exceptions import (
     InsufficientStock,
     InventoryBalanceExceeded,
@@ -89,6 +99,7 @@ from app.core.exceptions import PermissionException, ServiceUnavailableException
 from app.models.audit_log import AuditLog
 from app.models.order import Order
 from app.models.payment import Payment
+from app.models.table_session import TableSession
 from app.models.user import User
 from app.repositories.order_repo import (
     OrderCancellationItemData,
@@ -108,8 +119,10 @@ from app.repositories.wallet_repo import (
     WalletRepository,
     WalletTransactionCreateData,
 )
+from app.repositories.table_session_repo import TableSessionRepository
 from app.services.audit_log_service import AuditLogService
 from app.utils.database import get_database_error_code
+from app.validators.table_session import validate_payment_activation
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +162,8 @@ class OrderService:
         payment_repository: PaymentRepository | None = None,
         payment_number_generator: Callable[[], str] = generate_payment_number,
         wallet_repository: WalletRepository | None = None,
+        table_session_repository: TableSessionRepository | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.order_repository = order_repository
         self.product_repository = product_repository
@@ -159,6 +174,8 @@ class OrderService:
         self.payment_repository = payment_repository
         self.payment_number_generator = payment_number_generator
         self.wallet_repository = wallet_repository
+        self.table_session_repository = table_session_repository
+        self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
 
     async def create_assisted_wallet_order(
         self,
@@ -371,7 +388,7 @@ class OrderService:
                 payment,
                 status=PaymentStatus.SUCCEEDED,
                 provider_transaction_id=None,
-                succeeded_at=datetime.now(timezone.utc),
+                succeeded_at=self.now_provider(),
                 using_db=connection,
             )
 
@@ -1005,6 +1022,10 @@ class OrderService:
             separators=(",", ":"),
         )
         async with in_transaction() as connection:
+            await self.user_repository.get_for_update(
+                user_id,
+                using_db=connection,
+            )
             order = await self.order_repository.get_order_for_update(
                 order_id,
                 user_id=user_id,
@@ -1025,6 +1046,13 @@ class OrderService:
                 order.id,
                 using_db=connection,
             )
+            closed_session_no = await self._close_open_table_session(
+                order_id=order.id,
+                reason=TableSessionCloseReason.ORDER_CANCELLED,
+                closed_by_user_id=user_id,
+                ip_address=ip_address,
+                using_db=connection,
+            )
             await self._restore_kit_stock_after_cancellation(
                 order_id=order.id,
                 user_id=user_id,
@@ -1042,7 +1070,18 @@ class OrderService:
                 target_type=ORDER_AUDIT_TARGET_TYPE,
                 target_id=order.id,
                 ip_address=ip_address,
-                description=audit_description,
+                description=(
+                    json.dumps(
+                        {
+                            "before_status": ORDER_STATUS_VALUES[OrderStatus.PENDING],
+                            "after_status": ORDER_STATUS_VALUES[OrderStatus.CANCELLED],
+                            "table_session_no": closed_session_no,
+                        },
+                        separators=(",", ":"),
+                    )
+                    if closed_session_no is not None
+                    else audit_description
+                ),
                 using_db=connection,
             )
             loaded = await self.order_repository.get_order_by_id(
@@ -1237,6 +1276,7 @@ class OrderService:
         *,
         operator_id: int,
         ip_address: str,
+        table_session_no: str | None = None,
     ) -> Order:
         """由 ADMIN+ 执行 ``pending → paid``；角色权限由 API 依赖保证。"""
 
@@ -1249,6 +1289,7 @@ class OrderService:
             target_status=OrderStatus.PAID,
             audit_action=ORDER_AUDIT_ACTION_MARK_PAID,
             ip_address=ip_address,
+            table_session_no=table_session_no,
         )
 
     async def complete_order(
@@ -1269,6 +1310,7 @@ class OrderService:
             target_status=OrderStatus.COMPLETED,
             audit_action=ORDER_AUDIT_ACTION_COMPLETE,
             ip_address=ip_address,
+            table_session_no=None,
         )
 
     async def _transition_order(
@@ -1282,6 +1324,54 @@ class OrderService:
         target_status: OrderStatus,
         audit_action: str,
         ip_address: str,
+        table_session_no: str | None,
+    ) -> Order:
+        """仅对 MySQL 锁瞬态错误以全新事务重试完整状态变迁。"""
+
+        for attempt in range(1, INVENTORY_TRANSACTION_MAX_ATTEMPTS + 1):
+            try:
+                return await self._transition_order_once(
+                    order_id,
+                    operator_id=operator_id,
+                    visible_user_id=visible_user_id,
+                    operation=operation,
+                    required_status=required_status,
+                    target_status=target_status,
+                    audit_action=audit_action,
+                    ip_address=ip_address,
+                    table_session_no=table_session_no,
+                )
+            except OperationalError as exc:
+                error_code = get_database_error_code(exc)
+                if (
+                    error_code not in INVENTORY_RETRYABLE_MYSQL_ERROR_CODES
+                    or attempt >= INVENTORY_TRANSACTION_MAX_ATTEMPTS
+                ):
+                    raise
+                logger.warning(
+                    "Retrying order status transition after MySQL transient error: "
+                    "operator_id=%d order_id=%d operation=%s error_code=%d attempt=%d",
+                    operator_id,
+                    order_id,
+                    operation,
+                    error_code,
+                    attempt,
+                )
+
+        raise RuntimeError("Order status transition retry loop exhausted")
+
+    async def _transition_order_once(
+        self,
+        order_id: int,
+        *,
+        operator_id: int,
+        visible_user_id: int | None,
+        operation: str,
+        required_status: OrderStatus,
+        target_status: OrderStatus,
+        audit_action: str,
+        ip_address: str,
+        table_session_no: str | None,
     ) -> Order:
         """在行锁保护下执行一条由公开用例固定的状态变迁。"""
 
@@ -1350,6 +1440,12 @@ class OrderService:
                     required_status=required_status,
                 )
 
+            table_session = await self._lock_table_session_for_order(
+                order_id=order.id,
+                requested_session_no=table_session_no,
+                using_db=connection,
+            )
+
             if self.payment_repository is not None:
                 settlement = (
                     await self.payment_repository.get_settlement_by_order_id(
@@ -1360,6 +1456,24 @@ class OrderService:
                 if operation == ORDER_OPERATION_MARK_PAID:
                     if settlement is not None:
                         raise PaymentSettlementConflict()
+                    succeeded_at = self.now_provider()
+                    if (
+                        table_session is not None
+                        and table_session_no is None
+                        and TableSessionStatus(table_session.status)
+                        is TableSessionStatus.AWAITING_PAYMENT
+                        and succeeded_at > table_session.payment_deadline_at
+                    ):
+                        await self.table_session_repository.close_session(
+                            table_session,
+                            reason=TableSessionCloseReason.PAYMENT_TIMEOUT,
+                            closed_at=table_session.payment_deadline_at,
+                            closed_by_user_id=None,
+                            admin_close_reason=None,
+                            release_idempotency_key=None,
+                            using_db=connection,
+                        )
+                        table_session = None
                     payment = await self.payment_repository.create_payment(
                         data=PaymentCreateData(
                             payment_no=self.payment_number_generator(),
@@ -1377,11 +1491,18 @@ class OrderService:
                         ),
                         using_db=connection,
                     )
+                    if table_session is not None:
+                        validate_payment_activation(
+                            session_no=table_session.session_no,
+                            status=TableSessionStatus(table_session.status),
+                            succeeded_at=succeeded_at,
+                            payment_deadline_at=table_session.payment_deadline_at,
+                        )
                     await self.payment_repository.update_payment_status(
                         payment,
                         status=PaymentStatus.SUCCEEDED,
                         provider_transaction_id=None,
-                        succeeded_at=datetime.now(timezone.utc),
+                        succeeded_at=succeeded_at,
                         using_db=connection,
                     )
                     await self.payment_repository.create_settlement(
@@ -1390,6 +1511,15 @@ class OrderService:
                         amount=order.total_amount,
                         using_db=connection,
                     )
+                    if table_session is not None:
+                        await self._activate_table_session(
+                            table_session,
+                            payment_id=payment.id,
+                            succeeded_at=succeeded_at,
+                            operator_id=operator_id,
+                            ip_address=ip_address,
+                            using_db=connection,
+                        )
                 elif operation == ORDER_OPERATION_COMPLETE and settlement is not None:
                     refund = (
                         await self.payment_repository.get_refund_by_settlement_id(
@@ -1403,6 +1533,16 @@ class OrderService:
                     ):
                         raise RefundStatusConflict()
 
+            closed_session_no: str | None = None
+            if operation == ORDER_OPERATION_COMPLETE and table_session is not None:
+                closed_session_no = await self._close_locked_table_session(
+                    table_session,
+                    reason=TableSessionCloseReason.ORDER_COMPLETED,
+                    closed_by_user_id=operator_id,
+                    ip_address=ip_address,
+                    using_db=connection,
+                )
+
             await self.order_repository.update_status(
                 order,
                 status=target_status,
@@ -1414,7 +1554,18 @@ class OrderService:
                 target_type=ORDER_AUDIT_TARGET_TYPE,
                 target_id=order.id,
                 ip_address=ip_address,
-                description=audit_description,
+                description=(
+                    json.dumps(
+                        {
+                            "before_status": ORDER_STATUS_VALUES[required_status],
+                            "after_status": ORDER_STATUS_VALUES[target_status],
+                            "table_session_no": closed_session_no,
+                        },
+                        separators=(",", ":"),
+                    )
+                    if closed_session_no is not None
+                    else audit_description
+                ),
                 using_db=connection,
             )
             loaded = await self.order_repository.get_order_by_id(
@@ -1431,6 +1582,159 @@ class OrderService:
             operation,
         )
         return loaded
+
+    async def _lock_table_session_for_order(
+        self,
+        *,
+        order_id: int,
+        requested_session_no: str | None,
+        using_db: BaseDBAsyncClient,
+    ) -> TableSession | None:
+        if self.table_session_repository is None:
+            return None
+        if requested_session_no is not None:
+            visible = await self.table_session_repository.get_session_detail_by_no(
+                requested_session_no,
+                using_db=using_db,
+            )
+            if visible is None or visible.order_id != order_id:
+                raise TableSessionNotFound()
+        else:
+            visible = await self.table_session_repository.get_open_session_by_order_id(
+                order_id,
+                using_db=using_db,
+            )
+            if visible is None:
+                return None
+        await self.table_session_repository.get_table_for_update(
+            visible.table_id,
+            using_db=using_db,
+        )
+        locked = await self.table_session_repository.get_session_for_update(
+            visible.id,
+            using_db=using_db,
+        )
+        if locked is None:
+            raise TableSessionNotFound()
+        return locked
+
+    async def _activate_table_session(
+        self,
+        session: TableSession,
+        *,
+        payment_id: int,
+        succeeded_at: datetime,
+        operator_id: int,
+        ip_address: str,
+        using_db: BaseDBAsyncClient,
+    ) -> None:
+        if self.table_session_repository is None:
+            return
+        snapshots = await self.table_session_repository.get_order_item_snapshots(
+            session.order_id,
+            using_db=using_db,
+        )
+        specs = build_timer_specs(
+            (
+                item.duration_minutes
+                for item in snapshots
+                if item.is_experience
+            ),
+            started_at=succeeded_at,
+        )
+        await self.table_session_repository.bulk_create_timers(
+            session_id=session.id,
+            specs=specs,
+            using_db=using_db,
+        )
+        await self.table_session_repository.update_session_active(
+            session,
+            payment_id=payment_id,
+            started_at=succeeded_at,
+            table_release_at=max(spec.grace_ends_at for spec in specs),
+            using_db=using_db,
+        )
+        await self.audit_log_service.log(
+            operator_id=operator_id,
+            action=TABLE_AUDIT_ACTION_ACTIVATE,
+            target_type=TABLE_AUDIT_TARGET_TYPE,
+            target_id=session.id,
+            ip_address=ip_address,
+            description=json.dumps(
+                {"order_id": session.order_id, "payment_id": payment_id},
+                separators=(",", ":"),
+            ),
+            using_db=using_db,
+        )
+
+    async def _close_locked_table_session(
+        self,
+        session: TableSession,
+        *,
+        reason: TableSessionCloseReason,
+        closed_by_user_id: int,
+        ip_address: str,
+        using_db: BaseDBAsyncClient,
+    ) -> str | None:
+        if self.table_session_repository is None:
+            return None
+        status = TableSessionStatus(session.status)
+        if status is TableSessionStatus.CLOSED:
+            return None
+        now = self.now_provider()
+        automatic = automatic_close_for(
+            status=status,
+            now=now,
+            payment_deadline_at=session.payment_deadline_at,
+            table_release_at=session.table_release_at,
+        )
+        await self.table_session_repository.close_session(
+            session,
+            reason=automatic.reason if automatic is not None else reason,
+            closed_at=automatic.closed_at if automatic is not None else now,
+            closed_by_user_id=(None if automatic is not None else closed_by_user_id),
+            admin_close_reason=None,
+            release_idempotency_key=None,
+            using_db=using_db,
+        )
+        if automatic is None:
+            await self.audit_log_service.log(
+                operator_id=closed_by_user_id,
+                action=TABLE_AUDIT_ACTION_RELEASE,
+                target_type=TABLE_AUDIT_TARGET_TYPE,
+                target_id=session.id,
+                ip_address=ip_address,
+                description=json.dumps(
+                    {"close_reason": reason.value, "order_id": session.order_id},
+                    separators=(",", ":"),
+                ),
+                using_db=using_db,
+            )
+        return session.session_no
+
+    async def _close_open_table_session(
+        self,
+        *,
+        order_id: int,
+        reason: TableSessionCloseReason,
+        closed_by_user_id: int,
+        ip_address: str,
+        using_db: BaseDBAsyncClient,
+    ) -> str | None:
+        session = await self._lock_table_session_for_order(
+            order_id=order_id,
+            requested_session_no=None,
+            using_db=using_db,
+        )
+        if session is None:
+            return None
+        return await self._close_locked_table_session(
+            session,
+            reason=reason,
+            closed_by_user_id=closed_by_user_id,
+            ip_address=ip_address,
+            using_db=using_db,
+        )
 
     async def _build_order_snapshots(
         self,

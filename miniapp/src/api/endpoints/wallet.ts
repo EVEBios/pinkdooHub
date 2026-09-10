@@ -91,7 +91,11 @@ export class WalletApi {
     return result
   }
 
-  async payOrderWithWallet(orderId: number, idempotencyKey: string): Promise<WalletPaymentResult> {
+  async payOrderWithWallet(
+    orderId: number,
+    idempotencyKey: string,
+    tableSessionNo?: string,
+  ): Promise<WalletPaymentResult> {
     assertPositiveSafeInteger(orderId, 'Order ID')
     assertIdempotencyKey(idempotencyKey)
     const operation = 'payments.order.wallet'
@@ -100,7 +104,10 @@ export class WalletApi {
       path: `/api/v1/orders/${orderId}/payments/wallet`,
       method: 'POST',
       auth: 'required',
-      headers: { 'Idempotency-Key': idempotencyKey },
+      headers: {
+        'Idempotency-Key': idempotencyKey,
+        ...(tableSessionNo ? { 'Table-Session-No': tableSessionNo } : {}),
+      },
     })
     const parsed = requireParsed(operation, result, parseWalletPaymentResult)
     if (parsed.order_id !== orderId) throw new ContractError({ operation })

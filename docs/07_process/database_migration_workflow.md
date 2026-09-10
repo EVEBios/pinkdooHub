@@ -511,11 +511,11 @@ M6 没有导入真实色号、名称或色板图，只创建 1–221 的未配�
 
 `backend-mysql-release` 当前在固定 disposable Schema 中执行以下顺序：
 
-1. `aerich --app models upgrade` 从空库真实执行完整 0→8，禁止 `--fake`、`init-db` 或运行时 `generate_schemas()`；
-2. 回退 M8 与 M7，写入受控 M7 前 Reservation/单日店休历史，再回退 M6 并写入 `stock=7` 的受控 fixed Kit；
-3. 正常升级 M6→M7→M8，然后再执行一次 no-op `upgrade`，证明历史 fixed 库存、Reservation 事实、M6/M7 默认值、M8 精确 HEX 回填和 Aerich 幂等边界保持；
-4. `check_mysql_gate.py snapshot` 同时核验 MySQL 8.0.46、M0–M8 九条版本、M6 的 221 槽/关键列/FK/索引、M7 `reservation_settings` 单例/默认周一/CHECK/UNIQUE，以及 M8 nullable `VARCHAR(7)` 与冻结清单逐槽相等的 221 个唯一 HEX；
-5. 联合运行 `tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql`，覆盖 M6 颜色集合锁/索引计划、M7 固定店休更换，以及资金/库存历史数据、并发、回滚、1205/1213 和结构计划；
+1. `aerich --app models upgrade` 从空库真实执行完整 0→9，禁止 `--fake`、`init-db` 或运行时 `generate_schemas()`；
+2. 依次回退 M9、M8 与 M7，写入受控 M7 前 Reservation/单日店休历史，再回退 M6 并写入 `stock=7` 的受控 fixed Kit；
+3. 正常升级 M6→M7→M8→M9，执行 30 桌 bootstrap，再执行 no-op `upgrade` 与 bootstrap replay，证明历史 fixed 库存、Reservation 事实、M6/M7 默认值、M8 精确 HEX、M9 四表/30 桌和 Aerich 幂等边界保持；
+4. `check_mysql_gate.py snapshot` 同时核验 MySQL 8.0.46、M0–M9 十条版本、M6 的 221 槽/关键列/FK/索引、M7 `reservation_settings` 单例/默认周一/CHECK/UNIQUE、M8 nullable `VARCHAR(7)` 与冻结清单逐槽相等的 221 个唯一 HEX，以及 M9 四表/命名 UNIQUE/10 个 RESTRICT 外键/精确 `T01`–`T30`；
+5. 联合运行 `tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql tests/table_sessions/mysql`，覆盖 M6 颜色集合锁/索引计划、M7 固定店休更换、资金/库存历史数据，以及 M9 同桌/同用户/同订单竞态、付款计时、超时竞争、幂等释放、回滚和 1205/1213；
 6. 保存 preflight、M6/M7 legacy seed、迁移日志、最终 snapshot 与 JUnit；无论前序结果如何都删除精确专用 Schema、停止准确的 service container，并复核容器非运行与非默认端口已释放。
 
 fixture 不负责执行迁移。为防止函数级清理把迁移种子抹掉后由运行时代码悄悄补种，MySQL 门槛在各用例之间保留 `bead_colors` 与 `aerich`，只清空其他业务表；snapshot 仍在 pytest 之前直接验证原始迁移结果。
@@ -602,7 +602,7 @@ updater 中复现；进入持久执行评审仍须取得目标环境当次只读
 - M6/M7 snapshot 核验迁移版本、221 色槽、颜色列/FK/索引、`reservation_settings` 单例、默认周一及 CHECK/UNIQUE。随后 Inventory + Reservation 联合 MySQL 门槛为 `21 passed`。
 - 专用 Schema、容器及非默认端口已销毁/释放。该提交随后随 head `4d6430c...` 由 Run 34129910349 远端 8/8；持久 Gate A 又于 2026-09-08 完成 M2→M7。以上都是 M7 历史检查点，不代表 M8 已应用。
 
-### 12.2 当前 Gate A M7→M8 停止条件
+### 12.2 当前 Gate A M7→M8→M9 停止条件
 
 持久 Gate A 已于 2026-09-08 从只读确认的 M2 受控升级到 M7，并完成 Wallet
 backfill/reconcile、221 色/持久 PNG、综合数据及数据后 Backup/Restore；权威事实见
@@ -612,12 +612,12 @@ backfill/reconcile、221 色/持久 PNG、综合数据及数据后 Backup/Restor
 `gatea_operations.py initial-migrate` 仍只支持空库。仓库候选已为
 `scripts.release.gatea_upgrade` 增加显式 `--source-version 7`：它复用目标 SHA/Image、
 新 Backup/独立 Restore、停写快照、逐步 evidence、部分 DDL 失败处置和成功 Record 绑定，
-但只应用 M8，不重复 M3–M7、Wallet backfill 或代表数据；旧调用仍默认 M2，M7 未显式
+但只应用 M8 与 M9，不重复 M3–M7、Wallet backfill 或代表数据；旧调用仍默认 M2，M7 未显式
 选择时在读取 Backup、停写和写入前 fail closed。入口以版本化
 `m7-preserved-business-v1` 保护 20 个非 `bead_colors` 业务表的确定性内容 dump 与
 `bead_colors` 的 M7 字段投影，共 21 个业务表；M8 的 `swatch_hex` 被有意排除，使该摘要
 在合法 M7→M8 前后保持不变。Aerich 精确链、完整图片 manifest 和原有聚合摘要仍分别
-核验，其中聚合只作诊断，不能替代内容摘要。M7/M8 Backup 和独立 Restore 必须携带并
+核验，其中聚合只作诊断，不能替代内容摘要。M7/M8/M9 Backup 和独立 Restore 必须携带并
 重算同一 profile；旧 M7 Backup 缺失时拒绝升级。
 
 在 App/Nginx 停止、live DB/图片与该 Backup 精确匹配后，入口先执行只使用 M7 字段的
@@ -625,11 +625,12 @@ raw source preflight：`information_schema` 必须确认不存在 `swatch_hex`�
 slot/code/name/URL/sort/active 必须逐项匹配冻结 manifest，221 张预期 PNG 必须为普通
 非软链接文件、内容 SHA-256 匹配且权限 `0644`；额外 Product 图片允许存在，但完整图片
 manifest 不得相对 Backup 漂移。以上任一失败都发生在 M8 原语前。之后三次 MARD
-preview/apply/replay 均须为精确 no-op，最终再比较同一 21 表内容摘要。
+preview/apply/replay 均须为精确 no-op，再应用 M9 四表迁移并执行精确 30 桌
+bootstrap/replay，最终比较同一 21 表内容摘要并运行桌台只读 reconcile/sweep。
 
 成功 Record 生成后 App/Nginx 继续停止；执行人必须以同一显式 source version、source
 SHA 和 Backup ID 紧邻重放 upgrade plan。该 replay 会验证 evidence 路径/哈希、当前
-完整数据库摘要、图片 manifest、M7 内容摘要，并重新运行只读 MARD preview；只有
+完整数据库摘要、图片 manifest、M7 内容摘要、M9 四表/30 桌与桌台一致性，并重新运行只读 MARD preview；只有
 `already_current=true` 才能调用 `app-up`。`app-up` 本身只验证 Record、target SHA/Image
 和合法迁移组合，不重读 live DB/图片/MARD，不能替代该 replay。本轮本地完整
 `tests/release` 为 `229 passed`；新入口的历史加固点已收口为 head `fa6fce05...`、
@@ -641,10 +642,12 @@ merge-ref `b2f02ebc...`，并由 Run 34281512196 在干净 PR checkout 完成远
 
 独立只读代码审查曾发现成功重放没有重新证明 App/Nginx 仍停服；修复并补齐服务状态
 fail-closed 矩阵后，复核无未解决 P0–P3。该结论现已绑定上述干净候选与远端 Run。
-一次性 MySQL 完整 M7→M8 updater 已复现；持久执行前仍必须取得当前 M7 只读事实、
+历史一次性 MySQL M7→M8 updater 已复现；当前 M7→M8→M9 候选仍必须以自身干净 SHA
+完成全部 required Jobs。持久执行前仍必须取得当前 M7 只读事实、
 当次 Backup/Restore、明确停写/写入授权与目标镜像；
-执行后核验 M0–M8、221 个精确 HEX、既有色卡/商品库存/21 表内容摘要零漂移、gzip Runtime，
-并建立新的 M8 数据后 Backup/Restore/加密异机副本。不得手工补表/列、删除失败
+执行后核验 M0–M9、221 个精确 HEX、既有色卡/商品库存/21 表内容摘要零漂移、30 桌/
+唯一 Token/零初始会话、table reconcile/sweep 与 gzip Runtime，并建立新的 M9 数据后
+Backup/Restore/加密异机副本。不得手工补表/列、删除失败
 evidence、直接调用内部原语、临时改商品状态、盲目重跑或使用 `--fake`。真实 Origin/RC、
 iOS/Android 真机与微信外部条件也均未完成，当前发布判定仍为 No-Go。
 
@@ -741,7 +744,35 @@ Run 首 attempt 的 `openapi-contract` 只在 pip truststore 安装阶段瞬态�
 
 ---
 
-## 14. 本地 SQLite Refund 结构精确修复
+## 14. Table Session M9 发布流程
+
+`9_20260910180000_add_table_sessions.py` 在 M8 之后建立 `store_tables`、
+`table_sessions`、`table_session_timers` 与 `table_occupancies`。迁移只负责结构，不在 DDL
+中生成环境专属 Token；`app.tasks.table_bootstrap --apply` 仅在桌台表为空时原子建立
+`T01`–`T30`，再次执行必须逐项验证桌号、展示名、32 位大小写敏感字母数字 Token 与唯一性，
+任何部分数据或漂移都 fail closed。M9 同样设置 `RUN_IN_TRANSACTION=False`，MySQL DDL
+隐式提交后的失败必须保留现场并走经 Review 的前滚或已验证备份恢复，禁止 `--fake`、
+手工补表或猜测性重跑。
+
+Gate A 当前只允许以显式 `--source-version 7` 走 M7→M8→M9：先完成 M7 source
+Backup/独立 Restore 和停写一致性，再执行 M8 精确 HEX/no-op MARD，随后单步应用 M9、
+bootstrap/replay、四表/命名 UNIQUE/10 个 RESTRICT 外键/30 桌检查、
+`table_reconcile` 与 `table_sweep`。成功 Record 生成后继续停写，紧邻重放只读 plan，
+再执行 `app-up`；启动后创建 M9 数据后 Backup 并完成同 ID 独立 Restore。历史 M8
+Run 34288613644 只能作为基线，不能替代当前 M9 候选自身的 9/9 required Jobs 与
+保留兼容 Job ID 的 `gatea-m7-m8-updater` M7→M8→M9 disposable 证据。Job ID 不改名，
+避免让现有 branch protection 的 required check 静默失联；artifact 与内部 sentinel 使用
+M9 名称表达当前语义。
+
+普通占位二维码不是迁移或数据库备份的一部分。内部验收如需生成，必须向全新的受控目录
+运行 `app.tasks.table_bootstrap --output-dir <new-path>`；目录权限为 `0700`、PNG/清单为
+`0600`，清单只保存 Token/Payload 摘要，目标微信环境固定 `develop`。当前也允许先跳过
+物料生成；正式微信小程序码必须在备案和平台参数复核后单独立项替换，不能把普通占位码
+标记为正式物料。
+
+---
+
+## 15. 本地 SQLite Refund 结构精确修复
 
 development 启动时的 `generate_schemas()` 曾为本地 `db.sqlite3` 补建 M4 表，但不会 ALTER 既有表。2026-09-07 的只读结构对比证明 22 张表中唯一会阻断当前 ORM 投影的差异是 `refunds.inventory_restored` 缺失，同表还缺数据库设计已要求的一单一退款 `UNIQUE(order_id)`。
 
@@ -761,7 +792,7 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 
 ---
 
-## 15. 本地综合 Demo Seed 边界
+## 16. 本地综合 Demo Seed 边界
 
 `python -m app.tasks.local_demo_seed --apply --confirm-local-only --operator-username <ADMIN>` 是本地 development SQLite 的可恢复演示数据工具，不是迁移或发布数据入口。它在写入前创建 SQLite Backup API 快照，并把合成用户的随机凭据只写入被 Git 忽略的 `0600` 本地文件；不伪造真实微信充值、支付、退款或外部身份。
 

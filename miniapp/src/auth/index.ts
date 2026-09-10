@@ -10,6 +10,8 @@ export {
   ADMIN_INVENTORY_LIST_PATH,
   ADMIN_PRODUCT_LIST_PATH,
   ADMIN_USER_LIST_PATH,
+  ADMIN_TABLES_PATH,
+  TABLE_ENTRY_PATH,
   ORDER_CONFIRM_PATH,
   ORDER_LIST_PATH,
   RESERVATION_CREATE_PATH,
@@ -24,6 +26,7 @@ export {
 } from './login_route'
 export type { LoginRedirect } from './login_route'
 export type { ReservationCreateRedirect } from './login_route'
+export type { TableEntryRedirect } from './login_route'
 export type { AuthRuntime } from './runtime'
 export { isAdminRole } from './role'
 export { SessionManager, SessionPersistenceClearError } from './session'

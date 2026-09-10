@@ -51,6 +51,7 @@ from app.api.v1.admin_refunds import router as admin_refunds_router
 from app.api.v1.admin_wallet import router as admin_wallet_router
 from app.api.v1.admin_products import router as admin_products_router
 from app.api.v1.admin_users import router as admin_users_router
+from app.api.v1.admin_tables import router as admin_tables_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
 from app.api.v1.products import router as products_router
@@ -59,6 +60,7 @@ from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.users import router as users_router
 from app.api.v1.wallet import router as wallet_router
+from app.api.v1.tables import router as tables_router
 from app.common.constants.http import (
     API_GZIP_COMPRESSION_LEVEL,
     API_GZIP_MINIMUM_SIZE,
@@ -212,6 +214,8 @@ app.include_router(admin_router, prefix="/api/v1")
 app.include_router(products_router, prefix="/api/v1")
 app.include_router(admin_products_router, prefix="/api/v1")
 app.include_router(admin_inventory_router, prefix="/api/v1")
+app.include_router(tables_router, prefix="/api/v1")
+app.include_router(admin_tables_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(admin_orders_router, prefix="/api/v1")
 app.include_router(reservations_router, prefix="/api/v1")

@@ -133,6 +133,18 @@ class Settings(BaseSettings):
     wallet_topup_enabled: bool = False
     payment_provider: str = "disabled"
 
+    # ═══════════════════════
+    # M9 二维码开台
+    # ═══════════════════════
+    table_session_claims_enabled: bool = False
+    table_resolve_ip_limit: int = 60
+    table_resolve_window_seconds: int = 60
+    table_create_user_limit: int = 5
+    table_create_ip_limit: int = 20
+    table_create_window_seconds: int = 900
+    table_user_read_limit: int = 60
+    table_user_read_window_seconds: int = 60
+
     model_config = {
         "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",
@@ -197,6 +209,19 @@ class Settings(BaseSettings):
             "AUTH_WECHAT_BIND_WINDOW_SECONDS": self.auth_wechat_bind_window_seconds,
         }
         for name, value in positive_limits.items():
+            if value < 1:
+                raise ValueError(f"{name} must be positive")
+
+        table_limits = {
+            "TABLE_RESOLVE_IP_LIMIT": self.table_resolve_ip_limit,
+            "TABLE_RESOLVE_WINDOW_SECONDS": self.table_resolve_window_seconds,
+            "TABLE_CREATE_USER_LIMIT": self.table_create_user_limit,
+            "TABLE_CREATE_IP_LIMIT": self.table_create_ip_limit,
+            "TABLE_CREATE_WINDOW_SECONDS": self.table_create_window_seconds,
+            "TABLE_USER_READ_LIMIT": self.table_user_read_limit,
+            "TABLE_USER_READ_WINDOW_SECONDS": self.table_user_read_window_seconds,
+        }
+        for name, value in table_limits.items():
             if value < 1:
                 raise ValueError(f"{name} must be positive")
 
@@ -288,6 +313,15 @@ class Settings(BaseSettings):
         """只有真实 Provider 与充值开关同时就绪时才允许创建充值。"""
 
         return self.wallet_topup_enabled and self.payment_provider != "disabled"
+
+    @property
+    def table_session_claims_available(self) -> bool:
+        """开发/测试可回归；生产 Gate A 必须显式启用新占台。"""
+
+        return (
+            self.app_env in ("development", "testing")
+            or self.table_session_claims_enabled
+        )
 
 
 settings = Settings()

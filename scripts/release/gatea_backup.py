@@ -40,6 +40,7 @@ M7_CONTENT_SNAPSHOT_AERICH_CHAINS = frozenset(
     {
         ",".join(gatea.APPROVED_TARGET_M7_CHAIN),
         ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M9_CHAIN),
     }
 )
 M7_PRESERVED_TABLES = (

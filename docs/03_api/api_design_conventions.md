@@ -330,6 +330,7 @@ Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败
 | 4093x | 库存模块 — 余额与幂等冲突 |
 | 4044x / 4094x / 4224x | Wallet/Payment/Refund — 资源不存在 / 余额、结算、退款与幂等冲突 / 充值范围 |
 | 4045x / 4095x / 4225x | Reservation — 预约/店休资源不存在 / 状态与时间冲突 / Product、Option、排期、手机号和店休日期不可用 |
+| 4046x / 4096x / 4226x / 4296x | M9 Table Session（计划）— 桌台/会话资源、占用/状态/幂等/付款窗口、订单资格与限流 |
 | 40xxx | 商品模块 — 资源不存在 / 类型错误 |
 | 409xx | 商品模块 — 状态冲突 |
 | 422xx | 商品模块 — 业务校验 |
@@ -484,6 +485,26 @@ Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40406`、`40
 | 42255 | 422 | `StoreClosureDateUnavailable` | 自定义店休日期是过去日期或周一 |
 
 `42253.data.reason` 只允许 `minimum_lead_time`、`outside_booking_window`、`invalid_slot_increment`、`outside_business_hours`、`weekly_closed`、`store_closed`、`option_day_type_mismatch`。`42255.data.reason` 只允许 `past_date`、`weekly_closed`。完整契约见 [Reservation API](reservation_api.md)。请求形状错误继续使用通用 HTTP 422 / code `422`。
+
+### 8.9 二维码开台模块错误码（4046x / 4096x / 4226x / 4296x，M9 已实现）
+
+以下号段已由 M9 命名异常与统一异常中间件实现；某个持久环境只有在 M9 迁移、30 桌 bootstrap、运行时开关和验收同时完成后才可对外返回这些业务码。
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40461 | 404 | `TableCodeNotFound` | QR Token 无效；公开响应不泄露内部 Table ID |
+| 40462 | 404 | `TableSessionNotFound` | Session 不存在；用户访问他人 Session 同样隐藏 |
+| 40463 | 404 | `StoreTableNotFound` | 管理员目标桌台不存在 |
+| 40961 | 409 | `TableUnavailable` | 桌台被占用或已停用；不返回占台者 |
+| 40962 | 409 | `TableSessionStatusConflict` | Session 状态不允许当前操作 |
+| 40963 | 409 | `UserTableSessionConflict` | 当前用户已有未关闭 Session |
+| 40964 | 409 | `OrderTableSessionConflict` | 当前订单已有未关闭 Session |
+| 40965 | 409 | `TableIdempotencyConflict` | 桌台幂等键绑定到不同请求 |
+| 40966 | 409 | `TablePaymentWindowExpired` | 指定 Session 的 15 分钟付款窗口已结束 |
+| 42261 | 422 | `TableOrderIneligible` | 订单不满足开台资格；reason 为稳定白名单 |
+| 42961 | 429 | `TableRateLimitExceeded` | 二维码解析或开台请求超过 M9 多维限流阈值 |
+
+`42261.data.reason` 只允许 `no_experience_item`、`invalid_experience_duration_snapshot`、`order_not_pending`、`order_already_settled`。请求体、`Idempotency-Key`、可选 `Table-Session-No` Header、Path 和 Query 形状错误使用全局 HTTP 422 / code `422`。完整契约见 [二维码开台 API](table_session_api.md)。
 
 ---
 
@@ -694,6 +715,7 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `is_cover` (boolean) | `is_cover` | → boolean |
 | `scheduled_start_at` (datetime) | `scheduled_start_at` | → UTC ISO 8601 string |
 | `option_price` (decimal) | `price` | → Reservation 创建快照的两位小数 string |
+| `payment_deadline_at` / `table_release_at` (datetime) | 同名字段 | → M9 Table Session 的 UTC ISO 8601 string |
 
 > - 所有 ID 类型在 API 中统一为 `int` / `bigint`
 > - 所有时间字段统一为 ISO 8601 字符串
@@ -749,8 +771,12 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `ReservationCancellationReason` | VARCHAR | `"customer_request"` / `"store_closed"` | 顾客取消 / 门店店休 |
 | `ReservationScheduleUnavailableReason` | API-only | `"minimum_lead_time"` / `"outside_booking_window"` / `"invalid_slot_increment"` / `"outside_business_hours"` / `"weekly_closed"` / `"store_closed"` / `"option_day_type_mismatch"` | 排期不可用机器原因，不持久化 |
 | `StoreClosureDateUnavailableReason` | API-only | `"past_date"` / `"weekly_closed"` | 自定义店休日期不可操作机器原因，不持久化 |
+| `TableSessionStatus`（M9） | VARCHAR | `"awaiting_payment"` / `"active"` / `"closed"` | 待支付 / 计时中 / 已关闭 |
+| `TableSessionCloseReason`（M9） | VARCHAR | `"payment_timeout"` / `"time_expired"` / `"order_cancelled"` / `"order_completed"` / `"refunded"` / `"admin_released"` | 待支付超时 / 计时到期 / 订单取消 / 订单完成 / 已退款 / 管理员释放 |
+| `TableTimerPhase`（M9，API-only） | API-only | `"experience"` / `"grace"` / `"ended"` | 体验中 / 缓冲中 / 已结束；由服务端当前时间推导 |
+| `TableOrderIneligibleReason`（M9，API-only） | API-only | `"no_experience_item"` / `"invalid_experience_duration_snapshot"` / `"order_not_pending"` / `"order_already_settled"` | 开台订单不合格机器原因 |
 
-> Order/DayType/KitKind/Reservation 状态与持久化原因等面向页面展示的字段通过 Mapper 输出 `{value, label}`；请求中的 `kit_kind` 使用原始字符串 value，省略时默认 `fixed`。Reservation 的 `42253/42255 data.reason` 是机器原因原始 value。Wallet/Payment/Refund 的机器状态当前直接输出稳定字符串 Enum。退款状态独立于 OrderStatus，成功退款不会把 Order 改成 Cancelled。
+> Order/DayType/KitKind/Reservation 状态与持久化原因等面向页面展示的字段通过 Mapper 输出 `{value, label}`；请求中的 `kit_kind` 使用原始字符串 value，省略时默认 `fixed`。Reservation 的 `42253/42255 data.reason` 是机器原因原始 value。Wallet/Payment/Refund 的机器状态当前直接输出稳定字符串 Enum。退款状态独立于 OrderStatus，成功退款不会把 Order 改成 Cancelled。M9 Table Session/CloseReason/TimerPhase 已通过 Mapper 输出 `{value, label}`，错误 `data.reason` 仍使用原始机器 value。
 
 ### 使用示例
 

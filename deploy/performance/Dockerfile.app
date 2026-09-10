@@ -25,4 +25,4 @@ RUN chmod 0755 /usr/local/bin/pinkdoo-entrypoint
 USER 10001:10001
 
 ENTRYPOINT ["/usr/local/bin/pinkdoo-entrypoint"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header", "--no-access-log"]

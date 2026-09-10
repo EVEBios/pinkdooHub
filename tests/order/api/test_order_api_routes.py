@@ -299,10 +299,15 @@ async def test_admin_status_routes_use_authenticated_operator_and_ip(
 
     assert response.status_code == 200
     assert response.json()["message"] == message
+    expected_kwargs = {
+        "operator_id": 70,
+        "ip_address": "192.0.2.70",
+    }
+    if method_name == "mark_order_paid":
+        expected_kwargs["table_session_no"] = None
     getattr(admin_routed_service, method_name).assert_awaited_once_with(
         101,
-        operator_id=70,
-        ip_address="192.0.2.70",
+        **expected_kwargs,
     )
 
 

@@ -9,6 +9,7 @@ import {
   ADMIN_RESERVATION_LIST_PATH,
   ADMIN_STORE_CLOSURE_LIST_PATH,
   ADMIN_USER_LIST_PATH,
+  ADMIN_TABLES_PATH,
   ADMIN_WORKBENCH_PATH,
   buildLoginUrl,
   isAdminRole,
@@ -44,6 +45,7 @@ const WORKBENCH_GROUPS = [
     tone: 'rose',
     actions: [
       { label: '营业日历', meta: '固定店休与单日店休', url: ADMIN_STORE_CLOSURE_LIST_PATH },
+      { label: '桌台工作台', meta: '30 桌状态与应急释放', url: ADMIN_TABLES_PATH },
       { label: '用户与权限', meta: '账号状态与资金入口', url: ADMIN_USER_LIST_PATH },
     ],
   },

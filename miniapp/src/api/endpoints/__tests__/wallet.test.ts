@@ -121,6 +121,37 @@ describe('WalletApi', () => {
     })
   })
 
+  it('桌台入口付款携带精确 Table-Session-No', async () => {
+    const payment = {
+      id: 8,
+      payment_no: `PY${'A'.repeat(26)}`,
+      order_id: 101,
+      recharge_order_id: null,
+      purpose: 'order',
+      method: 'wallet',
+      amount: '99.00',
+      status: 'succeeded',
+      created_at: timestamp,
+      updated_at: timestamp,
+      succeeded_at: timestamp,
+    }
+    const client = new FakeClient([{
+      order_id: 101,
+      order_no: `OD${'B'.repeat(26)}`,
+      order_status: { value: 'paid', label: '已支付' },
+      payment,
+      post_payment_balance: '181.00',
+    }])
+    const api = new WalletApi(client)
+
+    await api.payOrderWithWallet(101, 'wallet-payment-key', `TS${'1'.repeat(26)}`)
+
+    expect(client.requests[0].headers).toEqual({
+      'Idempotency-Key': 'wallet-payment-key',
+      'Table-Session-No': `TS${'1'.repeat(26)}`,
+    })
+  })
+
   it('代客钱包订单复用 OrderCreate、携带幂等键并校验真实已支付结果', async () => {
     const payment = {
       id: 18,

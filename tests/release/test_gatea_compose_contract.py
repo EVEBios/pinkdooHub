@@ -114,6 +114,10 @@ def test_gatea_uses_frozen_images_and_shared_non_root_runtime() -> None:
     assert services["app"]["image"] == "pinkdoohub-gatea:contract-sha"
     assert services["app"]["read_only"] is True
     assert services["app"]["security_opt"] == ["no-new-privileges:true"]
+    assert services["table-sweeper"]["image"] == "pinkdoohub-gatea:contract-sha"
+    assert services["table-sweeper"]["read_only"] is True
+    assert "app.tasks.table_sweep" in " ".join(services["table-sweeper"]["command"])
+    assert services["table-sweeper"]["healthcheck"]
 
 
 def test_phase95_identity_secrets_are_optional_at_runtime_and_absent_from_gatea() -> None:
@@ -255,7 +259,7 @@ def test_migration_is_explicit_and_application_does_not_auto_migrate() -> None:
     assert services["app"]["command"] is None
     assert (
         'CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", '
-        '"--port", "8000", "--no-server-header"]'
+        '"--port", "8000", "--no-server-header", "--no-access-log"]'
     ) in dockerfile
     assert "aerich" not in dockerfile
 
@@ -288,7 +292,8 @@ def test_nginx_overwrites_untrusted_forwarding_headers_and_omits_query_log() -> 
         assert "proxy_set_header X-Forwarded-For $remote_addr;" in text
         assert "proxy_set_header X-Real-IP $remote_addr;" in text
         assert "$proxy_add_x_forwarded_for" not in text
-        assert '"$request_method $uri $server_protocol"' in text
+        assert '"$request_method $gatea_log_uri $server_protocol"' in text
+        assert "~^/api/v1/table-codes/ /api/v1/table-codes/<redacted>;" in text
         assert "$args" not in text
 
 

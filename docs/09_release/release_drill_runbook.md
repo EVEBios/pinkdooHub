@@ -1,14 +1,15 @@
 # 微信 Gate A 隔离发布演练 Runbook
 
-> **Status:** M2→M7 persistent/server drill passed；M7→M8 complete updater passed on GitHub-hosted disposable Linux；persistent M8 execution remains blocked
-> **Last Updated:** 2026-09-09
+> **Status:** M2→M7 persistent/server drill passed；M7→M8 historical updater passed on GitHub-hosted disposable Linux；current M7→M8→M9 candidate and persistent M9 execution remain blocked pending the candidate's own CI
+> **Last Updated:** 2026-09-10
 > **Scope:** 微信小程序内部测试版（Gate A）
 
 本文定义 Phase 9.3 的安全执行顺序、证据和失败处置。它不是生产操作授权，也不包含任何真实连接信息。首次实际演练必须在专用、可销毁、与共享环境隔离的 MySQL 8+、Redis 和图片存储中执行。
 
-2026-08-31 的已执行报告只证明当时 M0–M2 候选。当前迁移链已经扩展到 M8，功能面
+2026-08-31 的已执行报告只证明当时 M0–M2 候选。当前迁移链已经扩展到 M9，功能面
 增加 M4 Wallet/Payment/Refund、M5 Reservation N1、M6 自选颜色 Kit 和 M7 可配置
-固定店休；M8 又增加正式 HEX 与文本压缩。旧报告、旧工具输出和旧候选迁移 Record
+固定店休；M8 又增加正式 HEX 与文本压缩，M9 增加 30 个固定桌台、开台会话、订单计时器
+和当前占用。旧报告、旧工具输出和旧候选迁移 Record
 不得重命名或复用为当前结果。持久 Gate A 已于 2026-09-08 从 M2 升级到 M7；这是当前
 最后成功点，后续每次操作仍须以只读查询重新确认，不能退回使用 2026-09-02 的 M2 假设。
 
@@ -25,7 +26,10 @@ Run 在同一 clean checkout 重跑一次性 `pip` truststore 失败的 OpenAPI 
 最终 9/9。详见
 [M8 发布加固远端 CI 报告](reports/m8_hardening_remote_ci_2026-09-09.md)与
 [Gate A M7→M8 完整更新器远端 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
-一次性 updater 缺口已关闭，持久 Gate A M8 仍未执行。
+上述历史 M8 一次性 updater 缺口已关闭。当前 M9 候选把编排扩展为
+M7→M8→M9，并新增 30 桌 bootstrap/replay、桌台 reconcile/sweep、Runtime API 和
+M9 数据后 Backup/Restore；它必须先用自己的干净 Git SHA 完成全部 required Jobs，
+历史 Run 34288613644 不能替代。持久 Gate A M8/M9 仍未执行。
 
 ## 1. 安全边界
 
@@ -64,11 +68,11 @@ Run 在同一 clean checkout 重跑一次性 `pip` truststore 失败的 OpenAPI 
 
 | ID | 场景 | 核心断言 | 状态 |
 |----|------|----------|------|
-| DR-01 | 全新空库 0→当前 | 当前要求为精确 0→8，并核验 M3–M8 表/约束/索引/默认数据/HEX | 一次性 MySQL Job 与 Run 34288613644 完整 updater PASS；持久 Gate A 仍为 M7 |
-| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；当前候选必须继续到 M8 | 一次性 0→8 和完整 M7→M8 代表数据演练 PASS；持久 Gate A 的 M2→M7 历史 PASS，M7→M8 NOT RUN |
-| DR-03 | 历史版本代表性数据升级 | M5 fixed/Reservation 样本经 M6→M7→M8，已有数据不漂移 | M6→M7→M8 迁移步骤与 GitHub-hosted M7→M8 21 表内容保护 PASS；持久 M7→M8 NOT RUN |
+| DR-01 | 全新空库 0→当前 | 当前要求为精确 0→9，并核验 M3–M9 表/约束/索引/默认数据/HEX/30 桌 | M9 本地一次性 MySQL 0→9 PASS；当前 SHA 的远端 CI 与持久 Gate A 待执行 |
+| DR-02 | 迁移 0 代表性数据升级 | 用户、Product、Audit 等数据保持；当前候选必须继续到 M9 | M9 本地一次性 0→9 PASS；持久 Gate A 的 M2→M7 历史 PASS，M7→M8→M9 NOT RUN |
+| DR-03 | 历史版本代表性数据升级 | M5 fixed/Reservation 样本经 M6→M7→M8→M9，已有数据不漂移 | M9 本地迁移链与历史 M8 内容保护 PASS；当前 SHA 的完整远端 updater 与持久 M7→M8→M9 NOT RUN |
 | DR-04 | 备份并恢复到新实例 | Schema、关键行数、抽样聚合、登录和启动均通过 | 持久 M7 Backup `20260908t021224z`/独立 Restore/加密异机副本 PASS；一次性 M7 `20260908t230214z` 和 M8 `20260908t230329z` 同 ID Restore PASS |
-| DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | 历史 M2 PASS；M8 的“列已提交/Aerich 仍 M7”处置待 M7→M8 入口验证 |
+| DR-05 | 可控迁移失败 | 识别实际部分提交状态；按批准方案前滚或从已验证备份恢复 | 历史 M2 PASS；M8/M9 部分提交均须保持停写并按当次证据处置 |
 | DR-06 | 应用与依赖 | FastAPI/Uvicorn、MySQL、Redis、图片、liveness/readiness、优雅重启通过 | 当前 M7 Runtime 候选级韧性 PASS |
 | DR-07 | 管理员初始化 | 一次性、幂等、可审计地建立首个 SUPER_ADMIN；重复执行无第二账号 | 历史 Bootstrap PASS；当前账号登录、轮换密码和会话撤销在 M7 Seed 重验 PASS |
 | DR-08 | 微信真机网络 | request/upload/download、证书、Token、图片和错误信封通过 | BLOCKED：备案/Origin/RC |
@@ -78,6 +82,7 @@ Run 在同一 clean checkout 重跑一次性 `pip` truststore 失败的 OpenAPI 
 | DR-12 | M6 颜色目录与库存 | M5 fixed 重放到 M6/M7；221 槽/列/FK/索引；持久图、商品启用色/库存与 HTTPS | MySQL/持久图/三启用色/库存/Backup 已 PASS；HTTPS 真机待 DR-08 |
 | DR-13 | M7 固定店休 | 单例/默认周一/唯一约束，历史预约/单日店休不漂移，更换的事务/锁序/批量取消 | 一次性/远端 MySQL 与持久 Gate A 结构/聚合 PASS；真机待 DR-08 |
 | DR-14 | M8 HEX 与 gzip | `swatch_hex` 221 项精确/唯一，目录与图片零漂移；API/小程序直绘；文本只压缩一次、图片不压缩 | 一次性 updater Runtime 221 HEX、63,445→10,948 bytes gzip、PNG 不压缩 PASS；持久 M7→M8、Gate A HTTPS Runtime 与真机 NOT RUN |
+| DR-15 | M9 二维码开台与计时 | 30 桌固定编号/随机 Token、15 分钟支付窗、按已付 Experience 时长分组计时并加 10 分钟、超时/取消/完成/退款释放、对账与清扫幂等 | 仓库实现与本地 SQLite/MySQL 门槛 PASS；当前 SHA 的远端 updater、持久 Gate A 与真机扫码 NOT RUN |
 
 对当前最后留证为非空 M7 的 Gate A，以及未来任何需要接管的既有数据库，都必须先执行
 只读审计，确认 Schema、Aerich 版本、数据质量、图片 manifest 和备份；未审计的库不
@@ -85,7 +90,7 @@ Run 在同一 clean checkout 重跑一次性 `pip` truststore 失败的 OpenAPI 
 
 历史 M2 执行的 SHA、CI、结果、耗时、修复项和资源清理记录见
 [Phase 9.3 隔离发布演练报告](reports/phase93_rehearsal_2026-08-31.md)。该报告不修改，
-当前候选的每次新执行必须另建独立报告并列出 DR-01～DR-14 的适用/不适用项。
+当前候选的每次新执行必须另建独立报告并列出 DR-01～DR-15 的适用/不适用项。
 
 M7 的本地可销毁迁移与联合门槛见
 [M7 一次性 MySQL 报告](reports/m7_mysql_release_gate_2026-09-07.md)。该报告运行于提交前
@@ -96,7 +101,7 @@ dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430
 整体标成 M8 候选 PASS。M8 的远端身份、首轮失败与修复、8 Job/artifact 见
 [M8 远端 CI 报告](reports/m8_remote_ci_2026-09-08.md)。
 
-### 3.1 当前 M4–M8 证据分层
+### 3.1 当前 M4–M9 证据分层
 
 | 版本 | 仓库/历史事实 | 当前候选一次性 MySQL | 持久 Gate A 必需动作 |
 |------|---------------|----------------------|----------------------|
@@ -106,6 +111,7 @@ dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430
 | M6 | 221 色目录、商品颜色库存和兼容 PNG 完成 | M6 snapshot/锁等待及 M8 迁移重放通过 | 持久 Gate A 已发布 221 色/PNG 与三启用色；M8 不得改这些事实 |
 | M7 | 固定店休完成 | 单例/约束/并发及 M6→M7→M8 远端步骤通过 | 当前持久成功点；作为 M8 唯一允许规划的 source 起点 |
 | M8 | HEX/API/小程序直绘/gzip 仓库实现完成；显式 M7→M8、21 表内容保护与 Online exact no-op 已实现 | 基线 0→8/Run 34242753255、加固 Run 34281512196，以及 head `62b1b15...` / Run 34288613644 的 GitHub-hosted 完整 updater 14/14 均 PASS；后者含双 Backup/Restore、221 HEX/gzip/PNG 和零残留 | NOT RUN；持久 Gate A 仍须当次只读预检、新 Backup/Restore、精确目标/窗口/写授权与数据后恢复 |
+| M9 | 二维码开台、订单绑定、支付后分组计时、15 分钟支付超时、10 分钟缓冲、30 桌管理与清扫均已完成仓库实现；受控升级器扩展到 M9 | 本地 SQLite 定向/完整门槛及一次性 MySQL 0→9、M9 迁移/并发/领域门槛 PASS；当前 SHA 远端证据待生成 | NOT RUN；只允许从精确 M7 经当次 Backup/Restore 与显式授权执行 M8→M9，并在启动前重放 plan |
 
 任何“一次性 MySQL PASS”只关闭候选迁移实现风险，不等于已应用 Gate A。任何本地
 SQLite 数据也只属于开发环境，不是 Gate A 的数据或图片发布证据。
@@ -114,11 +120,12 @@ SQLite 数据也只属于开发环境，不是 Gate A 的数据或图片发布�
 
 ### 4.0 本仓库自动化入口
 
-当前 CI 另有 `scripts/ci/gatea_m7_m8_drill.py`，用于在 GitHub 托管的一次性 Ubuntu
-Runner 上自动复现完整 M7→M8 updater。它与下方历史 Phase 9.3 工具分离：source 为冻结
+当前 CI 另有 `scripts/ci/gatea_m7_m8_drill.py`（为兼容既有 workflow/branch protection
+保留文件名和 Job ID `gatea-m7-m8-updater`），用于在 GitHub 托管的一次性 Ubuntu
+Runner 上自动复现完整 M7→M8→M9 updater。它与下方历史 Phase 9.3 工具分离：source 为冻结
 M7 Runtime，target 为本次 checkout，顺序包含 source 数据/221 PNG、Backup/独立
-Restore、M8 plan/apply/停服 replay、target app-up、221 HEX/gzip/PNG Runtime，以及
-M8 数据后 Backup/Restore。`run` 内部和 workflow `always()` cleanup 均会精确回收固定
+Restore、M9 plan/apply/停服 replay、target app-up、221 HEX/gzip/PNG、30 桌与 table
+session Runtime，以及 M9 数据后 Backup/Restore。`run` 内部和 workflow `always()` cleanup 均会精确回收固定
 Compose/restore 资源与两张任务镜像；Artifact 只接收脱敏白名单，并且只有 cleanup 后
 重新签发的最终安全扫描 marker 存在时才上传。
 
@@ -130,12 +137,12 @@ Workflow 总闸为 60 分钟；主体由 40 分钟进程组 watchdog 约束，�
 环境；不得为了复用它而放宽 guard。它通过后只关闭 disposable Linux 的 updater 复现
 缺口，仍不授权持久迁移、Runtime 切换、真实 Origin/TLS、微信上传或真机操作。
 
-实际执行记录：head `62b1b15...` / merge-ref `a9ff3d2...` 的
+历史 M8 执行记录：head `62b1b15...` / merge-ref `a9ff3d2...` 的
 [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644) 已完成
 14/14 阶段，source Backup/Restore ID 为 `20260908t230214z`，target Backup/Restore ID
 为 `20260908t230329z`；221 HEX、63,445→10,948 bytes gzip、PNG 回退、20 文件
 artifact 白名单/Secret 扫描和零残留均通过。这是一次性入口的已执行
-证据，不是持久 Gate A 记录。
+证据，不是当前 M9 候选或持久 Gate A 记录。
 
 9.3.3–9.3.4 已把本 Runbook 固化为以下入口。`<run-id>` 必须使用 `YYYYMMDDtHHMMSS`；准备命令会先要求工作树 clean、记录 HEAD/Compose digest、确认四个回环端口空闲且同名 project 不存在，未通过时不会创建 Secret、证书或 Docker 资源。以下命令不包含 Secret 值，所有原始证据只写入 `/tmp/pinkdoohub-phase93/<run-id>/evidence`：
 
@@ -201,7 +208,7 @@ python -m scripts.release.phase93_operations cleanup \
 
 #### 4.0.1 当前工具适用边界与停止条件
 
-历史演练不能直接承担当前 M7→M8；仓库候选已新增精确入口，但仍不是持久执行授权：
+历史演练不能直接承担当前 M7→M8→M9；仓库候选已新增精确入口，但仍不是持久执行授权：
 
 - `scripts.release.phase93_operations` 的迁移版本、Schema 断言和 legacy 场景硬编码为
   M0–M2，只能复核历史 9.3 报告；在更新并重新测试前不得称为“0→当前”。
@@ -222,25 +229,28 @@ python -m scripts.release.phase93_operations cleanup \
    Root/Secret/镜像、停写状态、新 Backup/Restore Record、候选 SHA/Image ID 和该份
    Aerich/Schema 证据；受支持起点清单必须单独 Review，不能由
    一次性 MySQL 的 M0–M6 矩阵自动推导；
-2. M7/M8 Backup 必须带 `m7-preserved-business-v1`：20 个非 `bead_colors` 表的稳定顺序
+2. M7/M8/M9 Backup 必须带 `m7-preserved-business-v1`：20 个非 `bead_colors` 表的稳定顺序
    data dump 加该表 M7 字段投影，共覆盖 21 个业务表；独立 Restore、停写源和最终态都
    重算精确 SHA-256。Aerich 链与完整图片 manifest 另行比较，旧聚合仅作诊断；
 3. 停写源与 Backup 对齐后、M8 原语前，raw preflight 要求 `swatch_hex` 列为 0，221 条
    M7 slot/code/name/URL/sort/active 逐槽等于冻结 manifest，221 张预期 PNG 为普通非软
    链接文件、checksum 精确且权限 `0644`；
-4. 入口按真实 Aerich 版本逐步升级，保存每步 Schema/数据摘要，失败时保留现场，并在
+4. 入口按真实 Aerich 版本逐步升级到 M9，保存每步 Schema/数据摘要，失败时保留现场，并在
    全部核验通过后生成新的 candidate upgrade Record；
 5. Gate A 221 色发布原语接入受控流程：M2 路径可按 preview、显式 checksum apply、
    MySQL 事务、持久图片原子发布/补偿、幂等重放和 HTTPS URL 核验留证；M7 路径则要求
    preview/apply/replay 全部为精确 221 项 no-op；
-6. 失败保留脱敏 evidence 和停止状态，成功 Record 可重放；输出不含 Secret、PII 或
+6. M9 成功迁移后只由编排运行 30 桌 bootstrap/replay，要求 T01–T30 唯一、display name
+   精确、Token 格式和唯一性正确；随后执行 table reconcile/sweep 并核验四表约束与索引；
+7. 失败保留脱敏 evidence 和停止状态，成功 Record 可重放；输出不含 Secret、PII 或
    幂等键。成功后继续停写，并在 `app-up` 前紧邻重放同一 upgrade plan；重放会验证
    evidence 哈希、live DB、图片 manifest、21 表内容摘要和只读 MARD preview。`app-up`
    只校验 Record 与 target SHA/Image ID/迁移组合，本身不执行这些 live 检查。
 
 默认 plan 只读；apply 必须同时确认 source SHA、target SHA、Backup ID 与 MARD manifest
 SHA-256。M7 起点必须显式选择，且 Record 同时绑定 `source_version=7`、精确 M0–M7 source
-链和 M0–M8 target 链；只有 M2→M7、M2→M8、M7→M8 三种组合可被部署入口接受。新增
+链和 M0–M9 target 链；当前入口只接受既有历史组合以及当前 M7→M9 组合，不能把 M8
+历史 Record 冒充 M9 Record。新增
 实现已由 head `fa6fce05...` / Run 34281512196 完成干净远端 8/8，后续又由
 head `62b1b15...` / Run 34288613644 在专用一次性 Linux/MySQL 中完整运行。
 这关闭了 disposable updater 门槛，不构成持久 Gate A 的目标冻结、当次只读预检、
@@ -248,7 +258,7 @@ head `62b1b15...` / Run 34288613644 在专用一次性 Linux/MySQL 中完整运�
 伪造 Record 或绕过保护逻辑。
 
 候选镜像已提供 `app.tasks.gatea_migrate_step` 与 `app.tasks.gatea_wallet_prepare` 两个
-内部执行原语：前者将 Aerich 限制为 M3–M8 单步前进，后者完成 M4 后双 preview、冻结
+内部执行原语：前者将 Aerich 限制为 M3–M9 单步前进，后者完成 M4 后双 preview、冻结
 上界 apply、重放与 reconcile。它们不拥有主机/备份/停写/Record 验证，只能由
 经批准的升级编排调用，不得直接用于持久 Gate A。M7→M8 不重复执行 Wallet backfill；
 升级器也不在内部重复运行 `wallet_reconcile`。它改用写前 Backup/Restore、停写源和写后
@@ -282,7 +292,7 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 
 1. 对有数据场景创建一致性备份或快照，记录不可变 ID、开始/结束时间、工具版本和校验和。
 2. 在新的隔离实例恢复该备份。
-3. 对精确 M7/M8 链，Backup Record 必须包含 `m7-preserved-business-v1`：20 个非
+3. 对精确 M7/M8/M9 链，Backup Record 必须包含 `m7-preserved-business-v1`：20 个非
    `bead_colors` 业务表的确定性 data dump 与该表 M7 投影，共 21 表；Restore Record
    必须重算同一摘要并记录 `m7_content_matches=true`。缺少此字段的旧 M7 Backup 不得
    用于当前升级。
@@ -296,10 +306,10 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 
 ### 4.3 数据库迁移
 
-以下是 M7→M8 已由仓库候选固化的验收顺序，不是可以人工拆跑的现场命令。该
+以下是 M7→M8→M9 已由仓库候选固化的验收顺序，不是可以人工拆跑的现场命令。该
 `--source-version 7` 路径已修复独立只读代码审查发现的 replay 停服复验缺口，修复后
 复核无未解决 P0–P3；结论已绑定 head `fa6fce05...` / Run 34281512196 的干净远端 8/8。
-只有该 SHA 的完整 updater 一次性 MySQL 也通过，
+历史 M8 SHA 的完整 updater 一次性 MySQL 已通过；当前 M9 SHA 必须重新通过完整 updater，
 并且 Gate A 的只读状态、新 Backup/Restore、目标 Image 与当次持久写入授权全部绑定后，
 才可执行。截至本文更新，这些外部门槛尚未关闭，本节仍为 **BLOCKED / NOT AUTHORIZED**。
 
@@ -312,12 +322,12 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
    为普通非软链接文件、SHA-256 精确且权限 `0644`。额外 Product 图片可以保留，但已经
    由完整 manifest 绑定。未知、缺口、重复、部分 M8 或不一致时在 M8 任务前停止；不得
    退回 M2 路径。
-4. 只通过受保护编排调用 M8 单步原语，记录开始/结束、退出码、前后 Aerich/Schema 摘要
+4. 只通过受保护编排调用 M8、M9 单步原语，记录开始/结束、退出码、前后 Aerich/Schema 摘要
    和候选身份。不得 `--fake`、直接改 Aerich 表、手工补列或把 downgrade 当回滚。
 5. M8 DDL 可能出现物理 `swatch_hex` 已提交而 Aerich 仍为 M7 的部分状态。发生任何失败
    立即保持 App/Nginx 停止并保存 evidence；由授权人选择经 Review 的精确前滚修复或从
    当次已验证 Backup 恢复，禁止盲目重跑。
-6. 核验最终 Aerich 精确为 M0–M8；`swatch_hex` 为 nullable `VARCHAR(7)`，221 个槽按
+6. 核验最终 Aerich 精确为 M0–M9；`swatch_hex` 为 nullable `VARCHAR(7)`，221 个槽按
    `slot_no` 与冻结 manifest 逐项相等且值唯一。code/name/active/URL/sort、商品颜色启用/
    库存、Order/Inventory/Wallet/Reservation/Audit 等 21 表内容和既有时间戳边界不得
    出现未批准漂移；重新计算的 `m7-preserved-business-v1` 必须与停写源完全相同。升级器
@@ -325,14 +335,17 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 7. 由受控编排调用 publisher 的精确 no-op 分支，确认 221 张兼容 PNG 内容、权限、路径
    与 M7 基线逐项相同且无需创建；不得脱离编排单独运行 publisher，不改变商品状态，
    不转换或删除 PNG。
-8. 只在全部检查通过后写入绑定 source/target SHA、Image ID、M7→M8、Backup ID、HEX/
-   图片 manifest、21 表内容摘要和复核时间的新 upgrade Record。该 Record 不包含
+8. 执行 30 桌 bootstrap 并立即 replay；核验仅有 T01–T30、display name 精确为
+   `1号桌` 至 `30号桌`、每桌一个不可预测且唯一的 32 位字母数字 Token。再运行 table
+   reconcile/sweep；不得把 Token 写入日志、URL 访问日志、CI artifact 或交付报告。
+9. 只在全部检查通过后写入绑定 source/target SHA、Image ID、M7→M8→M9、Backup ID、HEX/
+   图片 manifest、21 表内容摘要、30 桌摘要和复核时间的新 upgrade Record。该 Record 不包含
    `wallet_reconcile` 结果。保持
    App/Nginx 停止，以与成功 apply 完全相同的 source version/SHA/Backup ID 立即重放
    upgrade plan；它必须验证 evidence 路径/哈希、当前最终 DB、图片 manifest、M7 内容
    摘要，并再次得到只读 MARD preview 精确 no-op，输出 `already_current=true`。只有这次
    replay 成功后才可紧邻执行 `app-up`；`app-up` 自身不会重读 live DB、图片或 MARD。
-   启动后再创建新 Backup/Restore。当前 M7 的 `20260908t021224z` 不得冒充 M8 数据后证据。
+   启动后再创建新 Backup/Restore。当前 M7 的 `20260908t021224z` 不得冒充 M9 数据后证据。
 
 迁移失败后立即停止应用写入和后续步骤。先记录真实 Schema/Aerich 状态，再由授权人选择前滚修复或从已验证备份恢复；不得盲目重跑、fake 版本或直接 downgrade。
 
@@ -392,11 +405,11 @@ sudo python3 -m scripts.release.gatea_m7_representative_data \
 
 历史 M2 环境已验证 dependency-free liveness、DB/Redis dependency-aware readiness、
 故障摘流量/恢复、Bootstrap 和凭据处置；M7 镜像随后已在升级后的持久环境重新验证。
-这些结果不能直接关闭 M8 候选项目。
+这些结果不能直接关闭 M9 候选项目。
 
-#### 4.4.3 M8 HEX、gzip 与数据后恢复验收
+#### 4.4.3 M8 HEX/gzip、M9 桌台计时与数据后恢复验收
 
-只有 §4.3 的 M7→M8 成功 Record 已生成、独立复核，并在同一无旁路写入的停写窗口完成
+只有 §4.3 的 M7→M8→M9 成功 Record 已生成、独立复核，并在同一无旁路写入的停写窗口完成
 紧邻 `plan-replay`（`already_current=true`）后，才允许启动目标 Runtime。单有 Record
 不够，因为 `app-up` 不会重读 live DB、图片或 MARD。验收必须至少包含：
 
@@ -412,9 +425,13 @@ sudo python3 -m scripts.release.gatea_m7_representative_data \
    221 张兼容 PNG 的数量、权限和 checksum 与 M7 Backup 一致。Brotli 不属于本候选。
 5. 重跑只读 Wallet reconcile、数据库领域摘要、图片 manifest、日志 Secret/高置信敏感
    模式扫描，以及 MySQL/Redis 依赖恢复和 App 重启；任何未解释漂移都阻断。
-6. 在成功运行状态创建新的 M8 MySQL/图片 Backup，完成独立无端口 Restore、空 Redis、
-   Restore App readiness 和 225 图片核验，再按既有 AES-256-GCM/RSA-OAEP-SHA256 流程
-   生成并立即解密复核异机副本。M8 检查点只能引用这组新 Record。
+6. 核验 30 桌 bootstrap/replay、管理员桌台列表/会话详情、匿名扫码 Claim、同一时长合并、
+   不同时长分别计时、quantity 不放大时长、Kit 不参与计时、15 分钟支付边界、每组加
+   10 分钟，以及支付/超时/取消/完成/退款的释放和 sweep/reconcile 幂等；内部验收只使用
+   wallet/manual，真实微信支付继续为单独项目。
+7. 在成功运行状态创建新的 M9 MySQL/图片 Backup，完成独立无端口 Restore、空 Redis、
+   Restore App readiness、225 图片与 30 桌核验，再按既有 AES-256-GCM/RSA-OAEP-SHA256
+   流程生成并立即解密复核异机副本。M9 检查点只能引用这组新 Record。
 
 上述服务端 PASS 仍不关闭真实 HTTPS Origin、微信合法域名、release-eligible RC 或真机
 矩阵，也不授予体验版上传、分发、提审或公开发布权限。
@@ -468,10 +485,10 @@ python -m app.tasks.super_admin_bootstrap \
 - readiness、Redis、图片持久化或管理员初始化失败；
 - 越权、凭据泄漏、数据破坏、重复订单/扣库存或无法恢复；
 - artifact 与已测试 SHA 不一致；
-- 当前远端 CI 未达现行 9/9，或 MySQL snapshot 未精确覆盖 M0–M8（当前 head
-  `62b1b15...` / Run 34288613644 已满足；任何后续业务 SHA 必须重验）；
-- M7→M8 候选没有与当前身份绑定的 14/14 disposable 完整 updater 证据（当前
-  Run 34288613644 已满足），持久候选 upgrade Record 缺失，或试图对当前 M7 Gate A
+- 当前远端 CI 未达现行 required Jobs，或 MySQL snapshot 未精确覆盖 M0–M9；历史 head
+  `62b1b15...` / Run 34288613644 只满足 M8，当前 M9 业务 SHA 必须重验；
+- M7→M8→M9 候选没有与当前身份绑定的 disposable 完整 updater 证据，持久候选
+  upgrade Record 缺失，或试图对当前 M7 Gate A
   使用空库 `initial-migrate`、省略显式 source 选择、退回默认 M2 路径或直接运行内部原语；
 - 新 M7 Backup/Restore 缺少或不匹配 `m7-preserved-business-v1`，raw source preflight
   发现部分 M8、色卡/PNG 漂移，或成功 Record 后未在 `app-up` 前完成紧邻 live replay；
@@ -479,6 +496,8 @@ python -m app.tasks.super_admin_bootstrap \
 - wallet reconcile 非零差异，HEX/图片 manifest 不一致，或试图对已有 Online 自选色
   商品独立运行 publisher、临时改商品状态、转换/删除兼容 PNG；
 - gzip 无法解码、重复编码、缺少正确 `Vary`，或图片被错误压缩；
+- 30 桌编号/display name/Token、M9 四表约束、15 分钟支付边界、分组计时加 10 分钟、
+  table sweep/reconcile 或敏感 Token 脱敏任一不匹配；
 - 微信真机无法通过 HTTPS 或合法域名访问。
 
 Inventory downgrade 会删除流水结构并可能丢失新版本运行后的历史，不是常规无损回滚。一旦新版本开始写数据，首选停写、保全证据和前滚修复；从备份恢复只由授权人决定，并明确恢复点之后数据的处置。

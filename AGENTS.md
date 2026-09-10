@@ -17,7 +17,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 
 ## 当前 Phase 与范围
 
-当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1：Product Module**、**Phase 4.2：Order Module**、**Phase 4.3：Inventory Module**、**Reservation N1**、**M6 自选颜色 Kit**、**M7 可配置每周固定店休** 与 **M8 数字色块 HEX/文本压缩** 均已完成仓库实现。
+当前代码版本候选为 **v0.6.0（尚未发布）**；**Phase 4.1：Product Module**、**Phase 4.2：Order Module**、**Phase 4.3：Inventory Module**、**Reservation N1**、**M6 自选颜色 Kit**、**M7 可配置每周固定店休**、**M8 数字色块 HEX/文本压缩** 与 **M9 二维码开台/多时长计时** 均已完成仓库实现。
 
 已完成：
 
@@ -34,7 +34,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 - Wallet/Payment/Refund v1 已完成仓库实现：新建普通 `USER` 创建 `0.00..1000.00` WalletAccount；历史 backfill 只补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补，ADMIN/SUPER_ADMIN 始终不建钱包。六个用户侧 wallet/payment 端点强制 NORMAL USER；调账、代客扣款和退款资金写入只操作普通客户。已实现会员/流水查询、ADMIN+ 调账与代客钱包订单、余额支付、manual 结算、订单资金只读查询和一次全额退款；PAID Kit 恢复、COMPLETED 不恢复。一次性 MySQL Wallet `9 passed` 与三域联合 `30 passed`、远端 workflow 及 Gate A M4/backfill/reconcile 均已完成；Gate A 只允许无真实资金的合成验收。真实微信充值/支付/退款仍保持 503 零写入，共享/预发布/生产迁移和生产资金开关仍需单独授权。`wallet_reconcile` 全程只读，任一 mismatch/violation 非零退出且不自动修账。
 - Phase 4.2 Order v1.0 已完成契约冻结、4.2.2–4.2.11 实现与 4.2.12 最终 Review：领域语言、Schema、Model/离线迁移、Repository、标准库 OD+ULID 生成器、查询/Experience 创建/三个状态变迁 Service、API Mapper、组合根，以及用户 4 个/管理 5 个 FastAPI 端点均已实现并有契约测试。创建用例批量校验 Product/Option，在单事务内写 Order、快照 Items、`CREATE_ORDER` 审计并重载聚合；编号冲突通过全新事务最多重试 3 次。状态用例在事务内执行 `SELECT ... FOR UPDATE`、锁后重检并原子提交状态/审计/重载。Mapper 对用户/管理列表、详情和状态响应执行显式字段投影与严格 Out Schema 校验，真实聚合测试固定零 SQL、零修改。路由统一通过认证或 ADMIN+ 依赖、`get_order_service()` 组合根、Mapper 和 `success()` 工作；缺失 Bearer 凭据已统一为 401 错误信封，既有无效 Token `1006` 仍按 User 契约返回 HTTP 400。完整真实 HTTP 矩阵覆盖创建防伪与边界、Product/Option/Kit 拒绝、权限和资源隐藏、组合筛选、全部非法状态前置条件、审计顺序、事务故障回滚及订单号冲突重试；三个无请求体状态 PATCH 会主动拒绝任意 body。最终安全复核同时将共享审计 IP 输入收紧为合法 IPv4/IPv6 字面量，非法、超长或带 scope 的代理头回退到直连地址。MySQL 8+ Order 增量迁移已离线生成并通过最终静态 Review；它作为 M1 已存在于当前 Gate A 的 M0–M7 链中，M8 不改变其结构，其他共享、预发布或生产数据库仍须分别核验和授权。
 - Product 的业务、数据库、API 和 Schema 契约已完成；`app/common/` 中的 Product Enum/常量、`app/schemas/product*.py`、四个 Product Model，以及 `app/repositories/product_repo.py` 已实现并有契约测试。Product Validator、Service 和 API Mapper 均已完成，跨表写入和审计有真实事务回滚测试，Mapper 有零 SQL、零修改和字段隔离测试。Phase 4.3.10 移除旧 stock 写入口后保留 21 个 Product FastAPI 端点，包括 19 个用户/管理 JSON 查询与 mutation（含共享 AuditLog 分页操作历史），以及 Product 公共图/Option 专属图两个 ADMIN+ multipart 上传端点。上传链路已实现 2 MiB、jpg/png/webp、内容/MIME 一致、安全 UUID 路径、原子写入、Service 失败的幂等文件补偿、开发环境静态 URL 和真实 SQLite HTTP 流程测试；逻辑删除图片的本地文件由显式截止时间、命名空间校验、有效引用保护和失败重试语义的独立批处理清理。
-- MySQL 8+ 权威迁移链现为 M0–M8，均已离线生成并通过静态契约测试；一次性 MySQL 8.0.46 已真实执行完整 Aerich 0→8、历史起点重放、M6/M7 结构快照与 M8 精确 HEX 核验，未使用 `--fake`，临时实例均已销毁。持久 Gate A 已于 2026-09-08 从经只读确认的 M2 受控应用 M3–M7，当前权威状态仍为 M7；M8 尚未应用。共享、预发布和生产数据库不因 Gate A 证据自动迁移，仍须分别核验和授权。
+- MySQL 8+ 权威迁移链现为 M0–M9，均已离线生成并通过静态契约测试；M9 新增固定桌台、会话、计时器与占用四表。持久 Gate A 已于 2026-09-08 从经只读确认的 M2 受控应用 M3–M7，本文更新时权威状态仍为 M7；M8/M9 只有在当次 CI、备份恢复、停写迁移与现场验收全部通过后才可记为已应用。共享、预发布和生产数据库不因 Gate A 证据自动迁移，仍须分别核验和授权。
 - 本地持久 `db.sqlite3` 曾因 `generate_schemas()` 只补表不 ALTER 而缺少 `refunds.inventory_restored` 及 `UNIQUE(order_id)`。提交 `35e8630` 的精确修复脚本已应用，写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-refunds-repair-20260907-105304-874045.bak`；备份权限 `0600`，应用后完整性和外键核验通过。该脚本不写 Aerich，不是 MySQL/发布迁移证据，数据库设计与 API 契约本就已是目标形状。
 - 综合本地演示数据已应用并通过专用 verifier：新增 9 个合成用户；本地表中共 19 个 Product（活跃 8 Experience/10 Kit，另 1 条逻辑删除）、8 笔四状态 Order、6 笔 Payment/Settlement、2 笔 Refund，及 6 条 seed Reservation（实际表含旧数据共 7 条）；自选颜色 Kit 启用三色，每周固定店休收敛为周三。写前备份 `backups/local-demo-data/db.sqlite3.pre-local-demo-20260907-105320-455438.bak` 与忽略的凭据文件 `backups/local-demo-data/synthetic-credentials.json` 均为 `0600`，不得记录或提交凭据值。`wallet_reconcile` 结果为 `scanned=11 mismatches=0 violations=0`；该检查点后端完整回归为 `2000 passed, 30 skipped`，三类 MySQL-only 门槛另以真实联合 `30 passed` 覆盖。
 - ExperienceOption 配置组合在全历史范围内唯一；再次创建相同已删除组合时恢复原 Option ID、更新当前价格并保留图片关联，不创建第二条版本记录。
@@ -60,11 +60,13 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 - Phase 4.3：Inventory；4.3.1–4.3.12 已完成并通过最终 Review。
 - Wallet/Payment/Refund v1 已完成仓库实现、扩展 MySQL/远端门槛及 Gate A M4/历史补齐/对账；真实 Provider、生产环境迁移和生产开关仍属于发布前工作。
 - Reservation N1 已完成；N2 微信主动通知、可逆加密投递地址、durable outbox、worker、重试与监控仍是明确后续范围，不能把页面状态展示误报为主动通知。
-- M8 是当前发布候选增量；M8 之后的下一业务 Phase 尚未冻结。未经当前任务明确要求，不提前实现未来能力，不把规划误报为已完成能力。
+- M9 二维码开台已于 2026-09-10 完成仓库实现：精确 30 桌、15 分钟待支付、按 Experience 时长快照分组并各加 10 分钟、`quantity` 不乘时长、Kit 不参与计时、最长 Timer 到期只释放桌台；Reservation 独立，内部验收只用钱包/人工结算，真实微信支付另行立项。后端四表/迁移、API、跨域事务、小程序顾客和管理页面、受控 bootstrap/reconcile/sweep 及普通占位二维码均已接入；占位码内容为 `PINKDOOHUB_TABLE:v1:<token>`，微信官方小程序码保持 Deferred。
+- M9 当前本地门槛为后端完整 `2384 passed, 39 skipped`、前端 `101 suites / 718 tests`，TypeScript/ESLint/Stylelint/CI policy/OpenAPI 类型均通过；一次性 MySQL 8.0.46 的 M0→M9 迁移和 M9 发布门槛为 `39 passed`。Gate A/容量 Runtime 已关闭未经脱敏的 Uvicorn access log，Nginx 与异常日志对桌台 Token 路径统一脱敏；reconcile 同时核验打开和已关闭会话的付款/计时历史。
+- M9 是 M8 之后的当前仓库候选增量；环境状态必须以该环境的 Release Record 为准。未经明确授权，不接入真实微信支付、不生成或上传正式微信小程序码，也不把仓库实现误报为持久环境已经迁移。
 
 2026-09-09 已新增可复用的本机容量工具，并在 MySQL 8/M8、共享双 CPU、五个稳态容器内存上限合计 4096MiB、唯一 5Mbps TBF 出口下完整执行 A/B/C/D、5/10 VU 的 12/12 Profile 探索轮。`73,027` 个请求均成功，gzip 色板、认证浏览、C v3 的 221 PNG 冷/热完整页面和 150 个订单/库存/钱包写旅程均通过，最终对账、日志/statement 与资源清理通过；唯一失败是 10 VU 持续请求 51,063-byte 未压缩色板，产生 428 个 qdisc drops、P95/P99 1,510/2,442ms，所以整轮严格为 `FAIL`。gzip 后为 10,023 bytes、减少 80.371%，同一 10 VU 为 271/290ms 且零 drops。该 dirty-tree、单轮 ARM64 Docker **服务容器包络**不包含宿主内核/daemon/Runner，不是独立 2C/4GiB 主机、candidate-pre、TLS/公网或真机证据；报告见 `docs/09_release/reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md`。新增完整 updater disposable CI 候选后，本地回归为后端 `2348 passed, 33 skipped`、Release `259 passed`、Performance `190 passed`，前端为 `84 suites / 573 tests`，TypeScript/ESLint/Stylelint/CI policy/OpenAPI 类型均通过。没有新增直接依赖；为消除两条新公开的 Low 原型污染公告，`@tarojs/service@4.2.1` 允许范围内的传递依赖 Joi 已从 `17.13.4` lockfile-only 提升至 `17.13.7`，既有 npm 审计例外集合不变。CI 当前有 9 个 required Job；第九个 `gatea-m7-m8-updater` 已在 GitHub-hosted disposable Linux 上真实完成完整 M7→M8 编排。
 
-当前仍为 **No-Go**：持久 Gate A 的权威成功点是 2026-09-08 的 M7 Runtime `73dca350...` 与数据后 Backup `20260908t021224z`；M8 尚未应用 Gate A。完整 updater 的受测实现 head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、真实 CI checkout/merge-ref `a9ff3d246c61a4aeede062596c32817a69834d7a` 已由 Run 34288613644 最终 attempt 2 完成远端 9/9。新增 `gatea-m7-m8-updater` Job 在不读取生产 Secret、不使用持久环境授权的 GitHub-hosted disposable Ubuntu/Linux root 与本地 Unix Docker daemon 上完成 14/14 阶段：以 source SHA `73dca350505d43775fb1ff1158ccf6aabc221998` 建立 M7，source Backup/同 ID Restore `20260908t230214z`、M8 target Backup/同 ID Restore `20260908t230329z` 均通过；221 个 HEX、`63445→10948` bytes gzip（减少 `52497`）、PNG 回退、20 文件 artifact 白名单/Secret 扫描均通过。清理首次 `compose-down` 瞬态失败，第二次成功且最终零残留。首 attempt 唯一 CI 失败是 OpenAPI Job 安装阶段的 pip truststore 瞬态异常；相同提交重跑通过，不能误报为 Schema 漂移。此前 head `fa6fce05...` / Run 34281512196 的 8/8 仍是有效历史加固证据。旧升级调用仍默认 M2 并对当前 M7 fail closed。尚未完成的是持久 Gate A 的只读复核、当次 Backup/独立 Restore、目标 SHA/Image、停写窗口、明确写授权、M8 应用和现场验收；共享、预发布、生产 MySQL 均未触碰。成功升级后必须在 `app-up` 前保持停写并重放 upgrade plan，实时核验数据库、图片、内容摘要和 MARD preview，`app-up` 本身不执行这些 live 检查。保护依赖维护窗口内不存在直接 SQL 或宿主图片旁路写入，不构成跨数据库/文件系统的绝对原子事务。本地容量探索尚未形成 candidate-pre 三轮，真实 Origin/`release_eligible=true` RC、iOS/Android 真机及微信 upload/gray/release 也未授权或验收。其他限制包括真实微信支付 Provider/商户进件、实体拼豆校色、Reservation N2 主动通知、邮件验证/OAuth、管理员启用用户和头像上传。不得把一次性远端 updater、本地 SQLite、既有 workflow MySQL Job 或 M7 历史证据误报成 M8 已应用持久环境，也不要在无关任务中扩展这些范围。
+当前仍为 **No-Go**：持久 Gate A 的权威成功点仍是 2026-09-08 的 M7 Runtime `73dca350...` 与数据后 Backup `20260908t021224z`；M8/M9 尚未应用。M9 仓库候选已把受控升级器扩展为 M7→M8→M9，并加入 30 桌 bootstrap/replay、M9 结构/约束、table reconcile/sweep、常驻 sweeper 与 Runtime API 验收；只有当前候选自身完成干净远端 required Jobs 后，才允许执行当次真实 Backup/独立 Restore、停写 apply、紧邻 plan replay、app-up 和数据后 Backup/Restore。历史 Run 34288613644 只证明 M8 updater 基线。真实 Origin/`release_eligible=true` RC、iOS/Android 真机、微信官方小程序码、upload/gray/release 与真实微信支付仍未完成或未授权；共享、预发布和生产环境未触碰。
 
 ## 文档导航与事实来源
 
@@ -95,6 +97,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | Wallet/Payment/Refund 权威需求 | [`docs/01_requirements/wallet_module.md`](docs/01_requirements/wallet_module.md) |
 | Reservation N1 权威需求 | [`docs/01_requirements/reservation_module.md`](docs/01_requirements/reservation_module.md) |
 | Reservation N2 微信通知规划 | [`docs/01_requirements/reservation_wechat_notification_plan.md`](docs/01_requirements/reservation_wechat_notification_plan.md) |
+| M9 二维码开台权威需求（已实现） | [`docs/01_requirements/table_session_module.md`](docs/01_requirements/table_session_module.md) |
 
 ### API 与数据
 
@@ -107,6 +110,7 @@ pinkdooHub 是拼豆店管理系统，后端技术栈为 FastAPI、Tortoise ORM�
 | Inventory API | [`docs/03_api/inventory_api.md`](docs/03_api/inventory_api.md) |
 | Wallet/Payment/Refund API | [`docs/03_api/wallet_api.md`](docs/03_api/wallet_api.md) |
 | Reservation API | [`docs/03_api/reservation_api.md`](docs/03_api/reservation_api.md) |
+| M9 二维码开台 API（已实现） | [`docs/03_api/table_session_api.md`](docs/03_api/table_session_api.md) |
 | 表、字段、约束和索引 | [`docs/02_database/database_design.md`](docs/02_database/database_design.md) |
 | 可维护的 ER 源文件 | [`docs/02_database/er_diagram.dbml`](docs/02_database/er_diagram.dbml) |
 

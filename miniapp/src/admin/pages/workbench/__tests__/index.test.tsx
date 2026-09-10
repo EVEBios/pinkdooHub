@@ -23,6 +23,7 @@ jest.mock('@/auth', () => ({
   ADMIN_PRODUCT_LIST_PATH: '/admin/pages/products/index',
   ADMIN_RESERVATION_LIST_PATH: '/admin/pages/reservations/index',
   ADMIN_STORE_CLOSURE_LIST_PATH: '/admin/pages/store-closures/index',
+  ADMIN_TABLES_PATH: '/admin/pages/tables/index',
   ADMIN_USER_LIST_PATH: '/admin/pages/users/index',
   ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
   MALL_PATH: '/pages/index/index',
@@ -54,7 +55,7 @@ describe('店铺工作台', () => {
   it.each([
     ['admin', '管理员'],
     ['super_admin', '超级管理员'],
-  ] as const)('%s 展示紧凑身份与三组六项入口', async (role, roleLabel) => {
+  ] as const)('%s 展示紧凑身份与三组七项入口', async (role, roleLabel) => {
     mockAuth = createAuth(role)
     await testUtils.mount(AdminWorkbenchPage)
 
@@ -76,7 +77,7 @@ describe('店铺工作台', () => {
     ])
 
     const actions = Array.from(testUtils.queries.querySelectorAll('.workbench-action'))
-    expect(actions).toHaveLength(6)
+    expect(actions).toHaveLength(7)
     expect(actions.map((action) => [
       action.querySelector('.workbench-action__label')?.textContent,
       action.querySelector('.workbench-action__meta')?.textContent,
@@ -86,6 +87,7 @@ describe('店铺工作台', () => {
       ['商品管理', '商品、价格与配置'],
       ['库存流水', '变动记录与来源'],
       ['营业日历', '固定店休与单日店休'],
+      ['桌台工作台', '30 桌状态与应急释放'],
       ['用户与权限', '账号状态与资金入口'],
     ])
 
@@ -95,6 +97,7 @@ describe('店铺工作台', () => {
       '/admin/pages/products/index',
       '/admin/pages/inventory-transactions/index',
       '/admin/pages/store-closures/index',
+      '/admin/pages/tables/index',
       '/admin/pages/users/index',
     ]
     for (const action of actions) {

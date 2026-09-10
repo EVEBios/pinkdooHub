@@ -1,4 +1,4 @@
-"""Gate A 非空 M2→M8 升级编排的授权、顺序、证据与失败语义。"""
+"""Gate A 非空 M2/M7→M9 升级编排的授权、顺序、证据与失败语义。"""
 
 from __future__ import annotations
 
@@ -109,6 +109,13 @@ def _final_snapshot() -> dict[str, object]:
         "reservation_settings_invalid": 0,
         "reservation_settings_check": 1,
         "reservation_settings_unique": 1,
+        "store_tables": 30,
+        "enabled_store_tables": 30,
+        "invalid_store_tables": 0,
+        "distinct_table_qr_tokens": 30,
+        "table_sessions": 0,
+        "table_session_timers": 0,
+        "table_occupancies": 0,
     }
 
 
@@ -209,6 +216,7 @@ def _patch_plan(
             "app_env": "production",
             "db_engine": "mysql",
             "jwt_algorithm": "HS256",
+            "table_session_claims_enabled": True,
             "validated": True,
         },
     )
@@ -322,7 +330,7 @@ def test_plan_is_read_only_and_rejects_apply_confirmations(
         "source_candidate_sha": SOURCE_SHA,
         "source_version": 2,
         "target_aerich_versions": list(APPROVED_MIGRATIONS),
-        "target_version": 8,
+            "target_version": 9,
     }
     assert not list(tmp_path.glob("*.json"))
 
@@ -545,6 +553,13 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
                 "manifest_sha256": MANIFEST_SHA,
                 "mode": "apply",
             }
+        if description in {"table-bootstrap", "table-bootstrap-replay"}:
+            return {
+                "status": "ok",
+                "table_count": 30,
+                "placeholder_qr_count": 0,
+                "wechat_environment": "develop",
+            }
         return {
             "already_current": True,
             "colors": 221,
@@ -583,6 +598,9 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
         "mard-preview",
         "mard-apply",
         "mard-replay-preview",
+        "migrate-m9",
+        "table-bootstrap",
+        "table-bootstrap-replay",
     ]
     assert result["application_stopped"] is True
     success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
@@ -607,6 +625,8 @@ def test_apply_runs_exact_sequence_writes_record_and_keeps_app_stopped(
         "migrate-m7",
         "migrate-m8",
         "mard-publish",
+        "migrate-m9",
+        "table-bootstrap",
     ]
     assert not any(command[:2] == ("up", "--detach") for command in compose_commands)
 
@@ -671,13 +691,15 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
         nonlocal current_version
         description = str(kwargs["description"])
         task_names.append(description)
-        if description == "migrate-m8":
-            current_version = 8
+        if description in {"migrate-m8", "migrate-m9"}:
+            current_version = int(description.removeprefix("migrate-m"))
             return {
-                "aerich_versions": list(APPROVED_MIGRATIONS),
+                "aerich_versions": list(
+                    APPROVED_MIGRATIONS[: current_version + 1]
+                ),
                 "applied": True,
-                "migration": APPROVED_MIGRATIONS[8],
-                "target_version": 8,
+                "migration": APPROVED_MIGRATIONS[current_version],
+                "target_version": current_version,
             }
         if description == "mard-preview":
             return {
@@ -712,6 +734,13 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
                 "manifest_sha256": MANIFEST_SHA,
                 "mode": "preview",
             }
+        if description in {"table-bootstrap", "table-bootstrap-replay"}:
+            return {
+                "status": "ok",
+                "table_count": 30,
+                "placeholder_qr_count": 0,
+                "wechat_environment": "develop",
+            }
         raise AssertionError(f"unexpected task: {description}")
 
     monkeypatch.setattr(upgrade, "_run_task", fake_task)
@@ -737,6 +766,9 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
         "mard-preview",
         "mard-apply",
         "mard-replay-preview",
+        "migrate-m9",
+        "table-bootstrap",
+        "table-bootstrap-replay",
     ]
     assert content_snapshot_calls == [True, True]
     assert result["source_version"] == 7
@@ -763,6 +795,8 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
     assert [step["name"] for step in evidence["steps"]] == [
         "migrate-m8",
         "mard-publish",
+        "migrate-m9",
+        "table-bootstrap",
     ]
 
     replay = upgrade.upgrade_existing_database(
@@ -777,13 +811,16 @@ def test_m7_apply_runs_only_m8_and_mard_and_records_exact_source_chain(
         "source_aerich_versions": list(APPROVED_MIGRATIONS[:8]),
         "source_version": 7,
         "target_aerich_versions": list(APPROVED_MIGRATIONS),
-        "target_version": 8,
+        "target_version": 9,
     }
     assert task_names == [
         "migrate-m8",
         "mard-preview",
         "mard-apply",
         "mard-replay-preview",
+        "migrate-m9",
+        "table-bootstrap",
+        "table-bootstrap-replay",
     ]
 
 
@@ -1508,6 +1545,9 @@ def test_final_snapshot_rejects_core_drift_wallet_or_mard_gap() -> None:
         ("active_bead_colors", 220, "MARD invariant"),
         ("distinct_bead_color_hex", 220, "MARD invariant"),
         ("reservation_settings_unique", 0, "ReservationSettings"),
+        ("store_tables", 29, "M9 invariant"),
+        ("invalid_store_tables", 1, "M9 invariant"),
+        ("distinct_table_qr_tokens", 29, "M9 invariant"),
     ):
         changed = final | {key: value}
         with pytest.raises(upgrade.GateAUpgradeError, match=message):
@@ -1889,10 +1929,11 @@ def test_runtime_preflight_uses_entrypoint_and_rejects_raw_failure_output(
         return subprocess.CompletedProcess(
             [],
             0,
-            stdout=(
-                '{"app_env":"production","db_engine":"mysql",'
-                '"jwt_algorithm":"HS256","validated":true}'
-            ),
+                stdout=(
+                    '{"app_env":"production","db_engine":"mysql",'
+                    '"jwt_algorithm":"HS256",'
+                    '"table_session_claims_enabled":true,"validated":true}'
+                ),
             stderr="",
         )
 
@@ -1974,7 +2015,7 @@ def test_deployment_record_accepts_upgrade_and_rejects_tampering(
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
 
-    assert tuple(APPROVED_MIGRATIONS) == gatea.APPROVED_TARGET_M8_CHAIN
+    assert tuple(APPROVED_MIGRATIONS) == gatea.APPROVED_TARGET_M9_CHAIN
     loaded = gatea._require_deployment_record(
         record_dir=tmp_path,
         candidate_sha=TARGET_SHA,

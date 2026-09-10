@@ -1,6 +1,6 @@
-# pinkdooHub 数据库设计 v2.1
+# pinkdooHub 数据库设计 v2.2
 
-> **Last Updated:** 2026-09-09
+> **Last Updated:** 2026-09-10
 
 ---
 
@@ -24,6 +24,8 @@ users
   ├── external_identities
   ├── orders ── order_items
   │     ├── payments ── payment_settlements ── refunds
+  │     ├── table_sessions ── table_session_timers
+  │     ├── table_occupancies
   │     └── inventory_transactions
   ├── wallet_accounts
   │     ├── wallet_transactions
@@ -42,20 +44,25 @@ products
 
 store_business_days ── reservations
 
+store_tables ── table_sessions ── table_session_timers
+      └──────── table_occupancies
+
 audit_logs
 ```
 
+`store_tables`、`table_sessions`、`table_session_timers` 与 `table_occupancies` 已由 M9 Model 与迁移实现。当前权威迁移链为 M0–M9；但仓库实现不表示任意持久环境已升级，本文更新时 Gate A 仍以 M7 为最后成功点，M8/M9 尚待受控应用。
+
 ### 2.1 数据完整性约束边界
 
-Product、Order、Inventory、Wallet/Payment/Refund 与 Reservation 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成。M6 新增字段与表已随当前持久 Gate A 的 M0–M7 链应用；M8 `swatch_hex` 尚未应用 Gate A，其他环境也不因 Gate A 证据自动迁移：
+Product、Order、Inventory、Wallet/Payment/Refund、Reservation 与 M9 Table Session 规则由三层共同保证，文档中的“必须”不等于所有规则都由物理数据库独立完成。M6 新增字段与表已随当前持久 Gate A 的 M0–M7 链应用；M8 `swatch_hex` 与 M9 四表尚未应用 Gate A。其他环境也不因 Gate A 证据自动迁移：
 
 | 层级 | 当前保证 |
 |------|----------|
-| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit/Wallet/Settlement/Refund 一对一唯一性、Option 全历史联合唯一性、颜色槽号/非空颜色编码/商品与颜色关联唯一性、营业日日期唯一性、业务编号唯一性、Inventory/Wallet/Payment/Refund 幂等键唯一性和命名索引；四类资金幂等键在 MySQL 使用 `ascii_bin` 逐字节区分大小写 |
-| Schema / Model | 文本长度、正整数、金额范围与两位小数、库存 `0..999999`、颜色槽 `1..221`、自选颜色销售单位固定 10g、钱包余额 `0.00..1000.00`、流水单字段边界、非零变化量、Enum 合法性、Order Item 每色数量/分类项数/重复三元组边界、Reservation 日期与半小时时间输入、快照字段边界 |
-| Service / Validator | Product 类型、KitKind 与扩展表匹配，颜色目录完整性、商品级启用和上架完整性，图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转；Order 聚合可售性、颜色归属、快照金额与状态机；Inventory 固定 Kit / 商品颜色余额权威选择、before/change/after 等式、类型/来源组合、锁后余额判断和余额/流水同事务；Wallet/Payment/Settlement/Refund 金额、状态、权限和幂等一致性；Reservation 上海营业日、提前量、完整营业时段、Option 日期类型、状态/原因/时间组合和店休批量取消原子性 |
+| 数据库 | `NOT NULL`、字段类型、默认值、外键删除策略、Kit/Wallet/Settlement/Refund 一对一唯一性、Option 全历史联合唯一性、颜色槽号/非空颜色编码/商品与颜色关联唯一性、营业日日期唯一性、业务编号唯一性、Inventory/Wallet/Payment/Refund 幂等键唯一性和命名索引；四类资金幂等键在 MySQL 使用 `ascii_bin` 逐字节区分大小写。M9 已用命名 UNIQUE 保证桌台编号/Token、Session 编号/幂等键/Payment、Timer 时长分组和 Occupancy 的桌台/用户/订单/Session 唯一性 |
+| Schema / Model | 文本长度、正整数、金额范围与两位小数、库存 `0..999999`、颜色槽 `1..221`、自选颜色销售单位固定 10g、钱包余额 `0.00..1000.00`、流水单字段边界、非零变化量、Enum 合法性、Order Item 每色数量/分类项数/重复三元组边界、Reservation 日期与半小时时间输入、快照字段边界；M9 已增加桌号、Token、Session/Timer 时间与状态/关闭原因形状校验 |
+| Service / Validator | Product 类型、KitKind 与扩展表匹配，颜色目录完整性、商品级启用和上架完整性，图片与 Option 同属一个 Product、单封面与 Option 禁止封面、状态流转；Order 聚合可售性、颜色归属、快照金额与状态机；Inventory 固定 Kit / 商品颜色余额权威选择、before/change/after 等式、类型/来源组合、锁后余额判断和余额/流水同事务；Wallet/Payment/Settlement/Refund 金额、状态、权限和幂等一致性；Reservation 上海营业日、提前量、完整营业时段、Option 日期类型、状态/原因/时间组合和店休批量取消原子性；M9 负责开台资格、15 分钟窗口、Experience 时长分组、可信付款起点、10 分钟缓冲、Session/Occupancy/跨域事务一致性 |
 
-当前 Product、Order、Inventory、Wallet/Payment/Refund 与 Reservation Model 没有声明数据库 `CHECK` 约束，因此绕过应用直接执行 SQL 可能绕过正数、金额范围、流水算术、预约状态/原因/时间组合等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，必须作为独立设计变更统一评估，不能只改某一数据库。
+当前 Product、Order、Inventory、Wallet/Payment/Refund、Reservation 与 Table Session Model 没有用数据库 `CHECK` 独立表达全部跨字段规则，因此绕过应用直接执行 SQL 可能绕过正数、金额范围、流水算术、预约状态/原因/时间组合及桌台状态/时间组合等值域规则。生产数据写入必须经过应用或受 Review 的迁移/运维脚本；是否把这些值域进一步下沉为跨 MySQL/SQLite 的命名 `CHECK`，必须作为独立设计变更统一评估，不能只改某一数据库。
 
 ---
 
@@ -508,6 +515,116 @@ N1 刻意不建立 `(user_id, experience_option_id, scheduled_start_at)` 或任�
 
 M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2026-09-06 在一次性 MySQL 8.0.46 专用 Schema 真实完成 0→5、并发关店/创建、事务回滚、1205/1213 重试与六个索引查询计划验证；Reservation 专项 `7 passed`，与 Inventory 联合门槛 `16 passed`。该次验证实例已销毁且本身未触碰持久库；M5/M7 后续已随当前 Gate A 的 M2→M7 受控升级应用，本地持久 SQLite、共享、预发布和生产数据库仍未因此自动迁移。
 
+### 3.18 store_tables（固定桌台，M9 已实现）
+
+本表保存门店固定桌台与静态二维码定位符。M9 首版通过受控、可重复执行的环境初始化命令精确建立 `T01`–`T30`；Schema 迁移本身不生成环境专属随机 Token。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 桌台内部 ID |
+| table_no | VARCHAR(10) | NOT NULL, UNIQUE | 稳定桌号；首版精确 `T01`–`T30` |
+| display_name | VARCHAR(50) | NOT NULL | 顾客可见名称 |
+| qr_token | VARCHAR(32) ASCII | NOT NULL, UNIQUE, binary collation | 密码学安全随机纯字母数字定位符；大小写敏感，不是鉴权秘密 |
+| is_enabled | BOOLEAN | NOT NULL, DEFAULT true | 是否允许创建新 Session；不主动终止现有会话 |
+| created_at / updated_at | DATETIME(6) | NOT NULL | 技术时间 |
+
+命名唯一索引：
+
+- `uidx_store_table_no(table_no)`
+- `uidx_store_table_qr_token(qr_token)`
+
+`qr_token` 不使用桌号、数据库 ID 或可预测哈希。二维码物料不得携带内部 ID、订单、金额或时长。Token 轮换与旧物料下线不属于 M9 首版公开 API。
+
+### 3.19 table_sessions（开台生命周期，M9 已实现）
+
+每次成功绑定“普通用户 + Pending 订单 + 桌台”创建一行。历史 Session 永久保留；同一订单在先前待支付会话超时后可以创建新行，所以 `order_id` 不得全局 UNIQUE。当前唯一占用由 `table_occupancies` 表达。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | Session ID |
+| session_no | VARCHAR(28) ASCII | NOT NULL, UNIQUE, binary collation | `TS` + 26 位 Crockford Base32 ULID |
+| table_id | BIGINT | FK → store_tables.id, NOT NULL, ON DELETE RESTRICT | 绑定桌台 |
+| user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | NORMAL USER owner |
+| order_id | BIGINT | FK → orders.id, NOT NULL, ON DELETE RESTRICT | 绑定订单；允许多条历史 Session |
+| payment_id | BIGINT | FK → payments.id, nullable, UNIQUE, ON DELETE RESTRICT | 只在激活时写入可信成功 Payment；一个 Payment 最多激活一条 Session |
+| status | VARCHAR(32) | NOT NULL, DEFAULT `awaiting_payment` | `awaiting_payment` / `active` / `closed` |
+| claim_idempotency_key | VARCHAR(256) ASCII | NOT NULL, UNIQUE, binary collation | 内部命名后的开台幂等身份；不经 API 输出 |
+| claim_request_fingerprint | CHAR(64) ASCII | NOT NULL | 规范化用户、桌台 Token 与订单请求的 SHA-256；用于严格重放比对 |
+| release_idempotency_key | VARCHAR(256) ASCII | nullable, UNIQUE, binary collation | 管理员显式释放的内部幂等身份 |
+| claimed_at | DATETIME(6) | NOT NULL | 成功占台 UTC 时间 |
+| payment_deadline_at | DATETIME(6) | NOT NULL | `claimed_at + 15 分钟` |
+| started_at | DATETIME(6) | nullable | 激活后严格等于关联 `payments.succeeded_at` |
+| table_release_at | DATETIME(6) | nullable | 激活后等于全部 Timer `grace_ends_at` 最大值 |
+| closed_at | DATETIME(6) | nullable | 关闭业务时间；自动关闭保存实际 deadline，而不是延迟清理时间 |
+| close_reason | VARCHAR(32) | nullable | `payment_timeout` / `time_expired` / `order_cancelled` / `order_completed` / `refunded` / `admin_released` |
+| closed_by_user_id | BIGINT | FK → users.id, nullable, ON DELETE RESTRICT | 人工关闭操作者；系统超时/到期为空 |
+| admin_close_reason | VARCHAR(200) | nullable | 仅 `admin_released` 的规范化原因 |
+| created_at / updated_at | DATETIME(6) | NOT NULL | 技术时间 |
+
+索引：
+
+- UNIQUE `uidx_table_session_no(session_no)`
+- UNIQUE `uidx_table_session_claim_idempotency(claim_idempotency_key)`
+- UNIQUE `uidx_table_session_release_idempotency(release_idempotency_key)`；nullable 值不冲突
+- UNIQUE `uidx_table_session_payment(payment_id)`；nullable 值不冲突
+- `idx_table_session_table_claimed_id(table_id, claimed_at, id)`
+- `idx_table_session_user_status_claimed_id(user_id, status, claimed_at, id)`
+- `idx_table_session_order_status_claimed_id(order_id, status, claimed_at, id)`
+- `idx_table_session_status_payment_deadline_id(status, payment_deadline_at, id)`
+- `idx_table_session_status_release_id(status, table_release_at, id)`
+
+数据库不独立表达以下跨字段规则，必须由 Service/Validator 在统一事务和锁后重检中维护：
+
+- `awaiting_payment` 没有 Payment、started/release/closed 字段和 Timer；`active` 必须有成功 Payment、started/release 与至少一个 Timer；`closed` 必须有 closed_at/reason。
+- 付款成功时间必须不晚于 `payment_deadline_at`，且 `started_at = payments.succeeded_at`。
+- 自动 `payment_timeout` 的 `closed_at = payment_deadline_at`；自动 `time_expired` 的 `closed_at = table_release_at`。
+- 订单必须属于同一 user、处于 Pending、至少一个 Experience Item 且时长快照完整。
+- 一用户、一订单和一桌任一时刻最多一个未关闭 Session；数据库最后兜底由 Occupancy 的四个唯一列提供。
+- 状态只允许 `awaiting_payment -> active|closed` 与 `active -> closed`，关闭事实不可改写。
+
+### 3.20 table_session_timers（时长分组快照，M9 已实现）
+
+Timer 只在 Session 激活时创建。Order Item 中所有 Kit 行先被过滤；剩余 Experience 行按 `option_duration_minutes` 精确分组，每个不同分钟数只创建一行。`quantity`、Option participants 和 Item 数量不改变时长。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | Timer ID |
+| session_id | BIGINT | FK → table_sessions.id, NOT NULL, ON DELETE RESTRICT | 所属 Session |
+| duration_minutes | INT | NOT NULL | Experience 时长订单快照，正整数 |
+| buffer_minutes | SMALLINT | NOT NULL, DEFAULT 10 | 创建时缓冲快照；M9 固定为 10 |
+| started_at | DATETIME(6) | NOT NULL | 等于 Session started_at / Payment succeeded_at |
+| service_ends_at | DATETIME(6) | NOT NULL | `started_at + duration_minutes` |
+| grace_ends_at | DATETIME(6) | NOT NULL | `service_ends_at + buffer_minutes` |
+| created_at / updated_at | DATETIME(6) | NOT NULL | 技术时间；无业务更新路径 |
+
+UNIQUE `uidx_table_session_timer_duration(session_id, duration_minutes)` 同时支持按 Session 读取和防止同一时长重复 Timer。Timer 不关联 Kit，也不增加 Timer↔OrderItem 中间表；历史 Order Item 快照不可变，详情响应可按 `duration_minutes` 重新分组得到展示摘要。
+
+Timer 不保存独立 status 或提前停止时间。父 Session 一旦关闭，全部 Timer 在 API 中视为 ended，实际结束时间按 `min(timer.grace_ends_at, session.closed_at)` 派生；这样既保留原计划时间，又不为同一次整桌关闭重复更新多行。
+
+### 3.21 table_occupancies（当前占台唯一性，M9 已实现）
+
+本表只保存当前未关闭占台，不保存历史。创建 Session 时创建，激活时保留，任何关闭原因发生时删除。为给三类并发冲突提供数据库最终兜底，表中有意复制当前 Session 的 table/user/order ID；Service 必须同事务写入并校验与 Session 一致。
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | Occupancy ID |
+| table_id | BIGINT | FK → store_tables.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一桌最多一个未关闭 Session |
+| session_id | BIGINT | FK → table_sessions.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一个未关闭 Session 精确一条 Occupancy |
+| user_id | BIGINT | FK → users.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一用户最多一个未关闭 Session |
+| order_id | BIGINT | FK → orders.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一订单最多一个未关闭 Session |
+| created_at / updated_at | DATETIME(6) | NOT NULL | 技术时间；激活不更新时间 |
+
+命名唯一索引：
+
+- `uidx_table_occupancy_table(table_id)`
+- `uidx_table_occupancy_session(session_id)`
+- `uidx_table_occupancy_user(user_id)`
+- `uidx_table_occupancy_order(order_id)`
+
+Occupancy 不是审计历史。`closed` Session 仍保留原 table/user/order；只有 Occupancy 被删除。只读一致性工具必须检查未关闭 Session 与 Occupancy 一一对应、四个复制 ID 完全一致，并只报告差异，不自动修复。
+
+上述四张表、Model 与 M9 增量迁移均已完成仓库实现，并已进入 M0–M9 迁移/测试断言。它们不属于历史 Gate A M7 内容摘要；只有完成 M7→M8→M9 受控升级、30 桌 bootstrap 与数据后 Backup/Restore 后，才能声明已进入对应持久环境。
+
 ---
 
 ## 4. 关系总览
@@ -539,8 +656,14 @@ M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2
 | store_business_days → reservations | 一对多 | 一日锁点关联该日全部预约 |
 | products → reservations | 一对多 | 保存创建时 Product 外键并同时保留名称快照 |
 | experience_options → reservations | 一对多 | 保存创建时 Option 外键并同时保留完整配置/价格快照 |
+| store_tables → table_sessions | 一对多（M9 已实现） | 桌台保留全部历史开台会话 |
+| users → table_sessions | 一对多（M9 已实现） | 普通用户可有多条历史会话，但当前最多一个未关闭 |
+| orders → table_sessions | 一对多（M9 已实现） | 超时后允许同一 Pending 订单重新绑定；当前最多一个未关闭 |
+| payments → table_sessions | 一对零或一（M9 已实现） | 成功 Payment 最多激活一个 Session；待支付历史 Session 为空 |
+| table_sessions → table_session_timers | 一对多（M9 已实现） | 每个不同 Experience 时长一个 Timer |
+| store_tables / users / orders / table_sessions → table_occupancies | 一对零或一（M9 已实现） | 四个唯一 FK 共同表达当前占台；关闭时删除 |
 
-**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。颜色目录、商品颜色、订单、Inventory、Wallet、Payment、Settlement、Refund 与 Reservation 的历史 FK 全部使用 `ON DELETE RESTRICT` 保存追溯链。Inventory/Wallet 的 `source_id` 是通用来源标识，不建立多态外键。
+**外键约束：** Product 子表指向 `products` 的 FK 使用 `ON DELETE RESTRICT`，防止绕过业务层物理删除。`product_images.experience_option_id` 是明确例外，使用 `ON DELETE SET NULL`；正常业务仍只逻辑删除 Option，该策略仅作为异常物理删除时的数据库兜底。颜色目录、商品颜色、订单、Inventory、Wallet、Payment、Settlement、Refund、Reservation 与 M9 目标 Table Session/Timer/Occupancy 的历史或当前 FK 全部使用 `ON DELETE RESTRICT` 保存追溯链。Inventory/Wallet 的 `source_id` 是通用来源标识，不建立多态外键。
 
 ---
 
@@ -553,7 +676,7 @@ M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2
 | 所有主键 | `id BIGINT AUTO_INCREMENT` |
 | 所有时间 | `created_at` / `updated_at` |
 | 所有金额 | `DECIMAL(10,2)`，单位：元 |
-| 状态/类型字段 | 按模块权威设计：User / Order 使用 `SMALLINT`；Product（含 `KitKind`）、Inventory、Wallet、Payment、RechargeOrder、Refund 与 Reservation 使用容量明确的 VARCHAR 字符串 Enum |
+| 状态/类型字段 | 按模块权威设计：User / Order 使用 `SMALLINT`；Product（含 `KitKind`）、Inventory、Wallet、Payment、RechargeOrder、Refund、Reservation 与 M9 Table Session 使用容量明确的 VARCHAR 字符串 Enum |
 | 所有外键 | `xxx_id BIGINT` |
 
 ### 时间字段策略
@@ -590,7 +713,7 @@ M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2
 | 2NF | 消除部分依赖 | 主键均为单字段 `id` |
 | 3NF | 消除传递依赖 | 体验/套装信息通过外键关联，不冗余 |
 
-**反规范化例外**：`order_items` 的 Product/Option/颜色/销售单位字段与 `reservations` 的 `product_name`、Option 配置和价格均为快照字段，故意冗余以保证历史订单/预约不被当前商品数据覆盖。这是可接受且有意识的反规范化设计。`order_items.total_weight_grams` 可由销售单位与数量推导，因而不存储；手机号不属于履约快照，不在 Reservation 中复制。
+**反规范化例外**：`order_items` 的 Product/Option/颜色/销售单位字段与 `reservations` 的 `product_name`、Option 配置和价格均为快照字段，故意冗余以保证历史订单/预约不被当前商品数据覆盖。这是可接受且有意识的反规范化设计。M9 `table_occupancies` 复制 table/user/order/session ID，是为当前占用的四类唯一约束提供数据库兜底；它不取代 `table_sessions` 历史，并由同一事务维护一致性。`order_items.total_weight_grams` 可由销售单位与数量推导，因而不存储；手机号不属于履约快照，不在 Reservation 中复制。
 
 ---
 
@@ -818,6 +941,21 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 
 管理端只按 `business_date` 筛选时先通过 `store_business_days.business_date` 唯一索引联表到 Reservation；`user_id` / `product_id` 可选组合的实际执行计划必须在真实 MySQL 数据量下复核。M5 不为每一种可选组合预建索引，避免写放大和无依据冗余。
 
+#### store_tables / table_sessions / table_occupancies（M9 已实现）
+
+| # | 查询 | 索引 |
+|---|------|------|
+| 1 | 按桌号或二维码 Token 精确解析桌台 | `UNIQUE(table_no)` / `UNIQUE(qr_token)` |
+| 2 | 桌台历史按占台时间倒序 | `table_sessions(table_id, claimed_at, id)` |
+| 3 | 用户/订单按状态定位当前或历史会话 | 分别使用 `table_sessions(user_id, status, claimed_at, id)` 或 `table_sessions(order_id, status, claimed_at, id)` |
+| 4 | 扫描待支付超时候选 | `table_sessions(status, payment_deadline_at, id)` |
+| 5 | 扫描计时到期候选 | `table_sessions(status, table_release_at, id)` |
+| 6 | 按 Payment 反查激活会话 | `UNIQUE(table_sessions.payment_id)` |
+| 7 | 按 Session 和时长读取 Timer | `UNIQUE(table_session_timers.session_id, duration_minutes)` |
+| 8 | 当前桌台/用户/订单/Session 唯一占用 | `table_occupancies` 四个单列 UNIQUE |
+
+管理端 `table_id`、`user_id`、`order_id`、`status` 与时间范围的任意组合不为每种排列预建索引。发布门槛使用代表性数据在真实 MySQL 8 对实际 SQL 执行 `EXPLAIN`；若执行计划不能复用上述前缀，再以证据新增最小索引。
+
 ### 7.3 索引汇总
 
 | 表 | 索引名 | 列 | 类型 | 覆盖查询 |
@@ -872,6 +1010,22 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | `reservations` | `idx_reservations_user_status_end_id` | `(user_id, status, scheduled_end_at, id)` | 普通 | 活跃预约注销阻断 |
 | `reservations` | `idx_reservations_day_status_start_id` | `(business_day_id, status, scheduled_start_at, id)` | 普通 | 店休批量取消 |
 | `reservations` | `idx_reservations_status_start_id` | `(status, scheduled_start_at, id)` | 普通 | 管理端状态筛选与分页 |
+| `store_tables`（M9） | `uidx_store_table_no` | `(table_no)` | UNIQUE | 30 个稳定桌号 |
+| `store_tables`（M9） | `uidx_store_table_qr_token` | `(qr_token)` | UNIQUE / ASCII binary | 二维码解析 |
+| `table_sessions`（M9） | `uidx_table_session_no` | `(session_no)` | UNIQUE / ASCII binary | 对外 Session 定位 |
+| `table_sessions`（M9） | `uidx_table_session_claim_idempotency` | `(claim_idempotency_key)` | UNIQUE / ASCII binary | 创建幂等 |
+| `table_sessions`（M9） | `uidx_table_session_release_idempotency` | `(release_idempotency_key)` | UNIQUE / ASCII binary | 管理释放幂等 |
+| `table_sessions`（M9） | `uidx_table_session_payment` | `(payment_id)` | UNIQUE | 一个成功 Payment 最多激活一个 Session |
+| `table_sessions`（M9） | `idx_table_session_table_claimed_id` | `(table_id, claimed_at, id)` | 普通 | 单桌历史稳定分页 |
+| `table_sessions`（M9） | `idx_table_session_user_status_claimed_id` | `(user_id, status, claimed_at, id)` | 普通 | 用户当前/历史会话 |
+| `table_sessions`（M9） | `idx_table_session_order_status_claimed_id` | `(order_id, status, claimed_at, id)` | 普通 | 订单当前/历史会话 |
+| `table_sessions`（M9） | `idx_table_session_status_payment_deadline_id` | `(status, payment_deadline_at, id)` | 普通 | 待支付超时扫描 |
+| `table_sessions`（M9） | `idx_table_session_status_release_id` | `(status, table_release_at, id)` | 普通 | 计时到期扫描 |
+| `table_session_timers`（M9） | `uidx_table_session_timer_duration` | `(session_id, duration_minutes)` | UNIQUE | 每 Session/时长一个 Timer |
+| `table_occupancies`（M9） | `uidx_table_occupancy_table` | `(table_id)` | UNIQUE | 一桌一当前会话 |
+| `table_occupancies`（M9） | `uidx_table_occupancy_session` | `(session_id)` | UNIQUE | 一会话一当前占用 |
+| `table_occupancies`（M9） | `uidx_table_occupancy_user` | `(user_id)` | UNIQUE | 一用户一当前会话 |
+| `table_occupancies`（M9） | `uidx_table_occupancy_order` | `(order_id)` | UNIQUE | 一订单一当前会话 |
 | `audit_logs` | `idx_audit_target_created` | `(target_type, target_id, created_at)` | 普通 | 实体审计追踪 |
 | `audit_logs` | `idx_audit_operator_created` | `(operator_id, created_at)` | 普通 | 操作人行为审计 |
 
@@ -882,15 +1036,17 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 | `product_kits` | 仅通过 `product_id`（已有 UNIQUE 约束及其索引）查询，无需额外索引 |
 | `wallet_accounts` | 仅通过 `user_id`（已有 UNIQUE 约束及其索引）锁定/查询 |
 | `payment_settlements` | `payment_id`、`order_id` 均已有 UNIQUE 约束及其索引 |
+| `table_session_timers`（M9） | `(session_id, duration_minutes)` UNIQUE 已覆盖按 Session 读取；到期扫描使用 Session 的 `table_release_at`，无需 `grace_ends_at` 全局索引 |
 
 ---
 
 ## 8. 后续扩展计划
 
-M6 自选颜色 Kit 的仓库实现、离线迁移、本地定向/全量验证和真实 MySQL 0→6 门槛已经完成，并已进入当前持久 Gate A M7；本章描述的是冻结结构，但不表示本地持久 SQLite、共享、预发布或生产数据库已因此自动迁移。历史 Kit 必须保持 `fixed` 默认值与原库存语义；M8 `swatch_hex` 仍未应用 Gate A。
+M6 自选颜色 Kit 的仓库实现、离线迁移、本地定向/全量验证和真实 MySQL 0→6 门槛已经完成，并已进入当前持久 Gate A M7；本章描述的是权威仓库结构，但不表示本地持久 SQLite、共享、预发布或生产数据库已因此自动迁移。历史 Kit 必须保持 `fixed` 默认值与原库存语义；M8 `swatch_hex` 与 M9 四张桌台表仍未应用 Gate A。
 
 | 版本 | 新增内容 |
 |------|----------|
 | v0.2 | 收藏表、评价表（Wallet/Payment/Refund 表已由 M4 仓库实现） |
 | v0.3 | AI 推荐记录、AI 生成模板表 |
+| M9 | 30 桌二维码、待支付 Table Session、Experience 时长分组 Timer 与当前 Occupancy（仓库实现完成，持久环境需单独迁移） |
 | v1.0 | 真实微信 Provider 通知/对账扩展、后台操作日志（微信身份表已由 Phase 9.5 实现；Reservation N2 主动店休通知仍为 Deferred） |

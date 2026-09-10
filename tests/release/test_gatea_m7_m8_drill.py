@@ -1,4 +1,4 @@
-"""GitHub-hosted Gate A M7→M8 完整演练的安全编排边界。"""
+"""GitHub-hosted Gate A M7→M9 完整演练的安全编排边界。"""
 
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ def _paths(tmp_path: Path, environment: Mapping[str, str]) -> drill.DrillPaths:
     return drill.paths_from_environment(
         Path(environment["GITHUB_WORKSPACE"])
         / "artifacts"
-        / "gatea-m7-m8-updater",
+        / "gatea-m7-m9-updater",
         environment,
         require_empty_artifacts=True,
     )
@@ -269,7 +269,7 @@ def test_git_target_binds_exact_checkout_sha_and_records_pr_head_separately(
         f"migrations/models/{name}" for name in drill.gatea.APPROVED_SOURCE_M7_CHAIN
     )
     expected_target = "\n".join(
-        f"migrations/models/{name}" for name in drill.gatea.APPROVED_TARGET_M8_CHAIN
+        f"migrations/models/{name}" for name in drill.gatea.APPROVED_TARGET_M9_CHAIN
     )
 
     def fake_git_output(runner: drill.CommandRunner, *arguments: str) -> str:
@@ -473,7 +473,7 @@ def test_run_executes_complete_order_and_always_cleans(
         "cleanup_owned_state",
         lambda value: {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-cleanup",
+            "record_type": "gatea-m7-m9-drill-cleanup",
             "passed": True,
         },
     )
@@ -537,7 +537,7 @@ def test_run_failure_stops_pipeline_but_still_cleans_and_records_stage(
         cleanup_calls.append(value.ownership_acquired)
         return {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-cleanup",
+            "record_type": "gatea-m7-m9-drill-cleanup",
             "passed": True,
         }
 
@@ -584,14 +584,14 @@ def test_run_retries_a_transient_cleanup_result_before_failing(
         (
             {
                 "schema_version": 1,
-                "record_type": "gatea-m7-m8-drill-cleanup",
+                "record_type": "gatea-m7-m9-drill-cleanup",
                 "passed": False,
                 "errors": ["main-compose-down"],
                 "residual": {"main_networks": ["pinkdoohub-gatea-backend"]},
             },
             {
                 "schema_version": 1,
-                "record_type": "gatea-m7-m8-drill-cleanup",
+                "record_type": "gatea-m7-m9-drill-cleanup",
                 "passed": True,
                 "errors": [],
                 "residual": {"main_networks": []},
@@ -738,7 +738,7 @@ def test_exact_secret_scan_failure_purges_all_candidate_artifacts(
         "cleanup_owned_state",
         lambda value: {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-cleanup",
+            "record_type": "gatea-m7-m9-drill-cleanup",
             "passed": True,
         },
     )
@@ -801,7 +801,7 @@ def test_finalization_failure_preserves_ownership_for_always_cleanup(
             raise drill.DrillError("transient cleanup inventory failure")
         return {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-cleanup",
+            "record_type": "gatea-m7-m9-drill-cleanup",
             "passed": True,
         }
 
@@ -864,7 +864,7 @@ def test_cleanup_removes_stale_upload_marker_when_final_scan_fails(
         "cleanup_owned_state",
         lambda value: {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-cleanup",
+            "record_type": "gatea-m7-m9-drill-cleanup",
             "passed": True,
         },
     )
@@ -905,7 +905,7 @@ def test_cleanup_uses_ownership_even_when_an_interrupted_temp_file_exists(
         cleanup_calls.append(value.ownership_acquired)
         return {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-cleanup",
+            "record_type": "gatea-m7-m9-drill-cleanup",
             "passed": True,
         }
 

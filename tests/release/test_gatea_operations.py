@@ -247,6 +247,7 @@ def test_validate_app_image_requires_matching_sha_and_non_root_runtime(
                 "--port",
                 "8000",
                 "--no-server-header",
+                "--no-access-log",
             ],
             "Labels": {
                 "org.opencontainers.image.revision": "a" * 40,
@@ -548,6 +549,7 @@ def test_app_up_requires_matching_migration_record_and_waits_for_health(
             "--wait-timeout",
             "180",
             "app",
+            "table-sweeper",
             "nginx",
         )
     ]
@@ -585,6 +587,7 @@ def test_lifecycle_writes_reject_tls_and_safe_stop_never_removes_volumes(
             "--timeout",
             "30",
             "nginx",
+            "table-sweeper",
             "app",
             "image-init",
             "redis",

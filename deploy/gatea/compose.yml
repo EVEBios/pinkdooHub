@@ -134,6 +134,35 @@ services:
     mem_limit: 768m
     cpus: 0.75
 
+  table-sweeper:
+    <<: *app-service
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/pinkdoo-entrypoint", "/bin/sh", "-ec"]
+    command:
+      - >-
+        while true; do
+          python -m app.tasks.table_sweep;
+          touch /tmp/table-sweeper-heartbeat;
+          sleep 30;
+        done
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test -f /tmp/table-sweeper-heartbeat &&
+          find /tmp/table-sweeper-heartbeat -mmin -2 -print -quit | grep -q .
+      interval: 30s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
+    mem_limit: 256m
+    cpus: 0.10
+
   nginx:
     image: nginx:1.27.5-alpine
     restart: unless-stopped

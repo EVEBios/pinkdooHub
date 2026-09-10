@@ -84,21 +84,19 @@ class _BarrierInventoryRepository(InventoryRepository):
         )
 
 
-class _BarrierOrderRepository(OrderRepository):
+class _BarrierUserRepository(UserRepository):
     def __init__(self, barrier: _TwoPartyBarrier) -> None:
         self._barrier = barrier
 
-    async def get_order_for_update(
+    async def get_for_update(
         self,
-        order_id: int,
+        user_id: int,
         *,
-        user_id: int | None = None,
         using_db: BaseDBAsyncClient,
-    ) -> Order | None:
+    ) -> User | None:
         await self._barrier.wait()
-        return await super().get_order_for_update(
-            order_id,
-            user_id=user_id,
+        return await super().get_for_update(
+            user_id,
             using_db=using_db,
         )
 
@@ -168,6 +166,7 @@ def _order_service(
     inventory_repository: InventoryRepository,
     *,
     order_repository: OrderRepository | None = None,
+    user_repository: UserRepository | None = None,
 ) -> OrderService:
     sequence = count(1)
     return OrderService(
@@ -175,7 +174,7 @@ def _order_service(
         ProductRepository(),
         inventory_repository,
         _audit_service(),
-        user_repository=UserRepository(),
+        user_repository=user_repository or UserRepository(),
         order_number_generator=lambda: f"OD{next(sequence):026d}",
     )
 
@@ -386,7 +385,7 @@ async def test_same_order_concurrent_cancel_restores_exactly_once() -> None:
     )
     cancel_service = _order_service(
         InventoryRepository(),
-        order_repository=_BarrierOrderRepository(_TwoPartyBarrier()),
+        user_repository=_BarrierUserRepository(_TwoPartyBarrier()),
     )
 
     results = await asyncio.gather(
@@ -580,6 +579,7 @@ async def test_mysql_version_migrations_and_explain_use_expected_indexes() -> No
         "6_20260906123000_add_color_selectable_kits.py",
         "7_20260907190000_add_reservation_settings.py",
         "8_20260908140000_add_bead_color_swatch_hex.py",
+        "9_20260910180000_add_table_sessions.py",
     ]
     assert lock_plan[0]["key"] == "product_id"
     assert product_page_plan[0]["key"] == "idx_inventory_product_created_id"

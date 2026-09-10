@@ -69,6 +69,18 @@
     line-height: 1.55;
   }
 
+  &__scan-table {
+    width: 220px;
+    min-height: var(--pd-control-height);
+    margin: 22px 0 0;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-button);
+    font-weight: 700;
+    background: rgb(255 255 255 / 92%);
+    border: 0;
+    border-radius: 999px;
+  }
+
   &__pagination-error {
     margin-top: 16px;
     color: var(--pd-color-danger);

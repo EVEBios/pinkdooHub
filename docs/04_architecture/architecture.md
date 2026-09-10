@@ -853,6 +853,59 @@ def mask_email(email: str) -> str:
 
 ---
 
+### 3.9 M9 二维码开台边界（仓库已实现）
+
+M9 已按独立 Table Session 领域完成仓库实现。下述文件、类和依赖已经进入运行时；某个持久环境是否可用仍必须以该环境的 M9 迁移、30 桌 bootstrap 和验收记录为准：
+
+```text
+app/api/v1/tables.py                   # 公开解析、用户开台与本人会话
+app/api/v1/admin_tables.py             # 30 桌、历史会话、启停与应急释放
+app/api/mappers/table_session.py       # 用户/管理白名单、Timer phase 与 server_now
+app/schemas/table_session.py           # 严格请求与 Query Schema
+app/schemas/table_session_response.py  # 用户/管理响应白名单与时间不变量
+app/common/enums/table_session.py      # Session 状态、关闭原因、Timer 展示阶段
+app/common/constants/table_session.py  # 15 分钟、10 分钟、Token/原因/限流边界
+app/common/exceptions/table_session.py # 4046x/4096x/4226x/4296x 命名异常
+app/domain/table_session.py            # 无 I/O 的 Timer/关闭 transition plan 纯计算
+app/models/table_session.py            # StoreTable/Session/Timer/Occupancy
+app/repositories/table_session_repo.py # 查询、行锁、CRUD、批量收敛原语
+app/validators/table_session.py        # 纯资格/状态判断；只通过或抛命名异常
+app/services/table_session_service.py  # 创建、查询、惰性收敛、管理员释放事务
+```
+
+跨领域事务仍由当前用例的 Service 持有：
+
+- `TableSessionService` 拥有创建 Session、用户/管理查询收敛、桌台启停和管理员释放。
+- `PaymentService` 拥有钱包支付及 Table 激活事务。
+- `OrderService` 拥有人工结算、Pending 取消、订单完成及对应 Table 激活/关闭事务。
+- `RefundService` 拥有全额退款与 Table 关闭事务。
+
+这些 Service 不互相调用。它们直接注入 `TableSessionRepository` 获取/锁定/持久化 Table 数据，并复用 `app/validators/table_session.py` 中无 I/O 的校验函数：调用方先准备已锁 Session、Order Item 快照、Payment 时间和当前时间；Validator 只判断并返回规范化时长或抛命名业务异常，不查库、不写库、不打开事务。
+
+多个事务所有者都需要的确定性计算放在窄范围 `app/domain/table_session.py`，例如按 Experience 时长去重排序、从单一 `started_at` 生成 TimerSpec、计算最大释放时间，以及根据已到达的绝对时间选择自动关闭事实。该模块只依赖标准库与 `app/common/` 的 Enum/常量，输入/输出都是冻结 dataclass/value object，不读取 ORM、不抛 HTTP 异常、不持有事务。它是为避免 Payment/Order/Refund 三处复制同一计时公式而新增的 M9 纯领域边界，不扩张为通用“domain 工具箱”。Repository 只执行调用方已经验证和计算好的锁、批量 Timer 写入、Session 更新和 Occupancy 删除，不判断业务状态或抛业务异常。
+
+涉及 M9 的写事务使用适用的统一锁序：
+
+```text
+User
+  -> Order
+    -> StoreTable
+      -> TableSession / TableOccupancy
+        -> Settlement / Payment / Refund
+          -> WalletAccount
+            -> ProductKit / ProductKitColor
+```
+
+从 `session_no` 或 `table_id` 进入的用例可以先做无锁 ID 解析，但进入事务后必须回到 Order→StoreTable→Session/Occupancy 顺序重新锁定并重检。仅 MySQL 1205/1213 允许用全新事务重试完整用例；禁止只重放 Timer、资金、库存或 Audit 的局部写入。
+
+Timer phase、实际结束时间与剩余时间属于 API Mapper 的纯派生展示：Mapper 入口捕获一次 UTC `server_now`，同步读取 Repository 已预加载的 Session/Timer/Order Item；父 Session 关闭时按 `min(timer.grace_ends_at, session.closed_at)` 派生 ended，不执行 SQL、不写 ORM。定时清理只是及时性优化；TableSessionService 的查询/创建及 Order/Payment/Refund 写入口都负责惰性收敛，正确性不依赖 Redis 定时器或进程内后台任务。
+
+`AuditLogService` 仍是唯一 Service-to-Service 例外。人工开台、激活、桌台启停和释放可以写真实操作者 Audit；自动 `payment_timeout` / `time_expired` 不伪造 operator，权威记录保存在 Session 的 `closed_at/close_reason`。未来如需通知或外部事件投递，再单独引入 durable outbox，不在 M9 首版借用 Reservation N2。
+
+完整业务、API 与目标表见 [二维码开台需求](../01_requirements/table_session_module.md)、[二维码开台 API](../03_api/table_session_api.md) 和 [数据库设计](../02_database/database_design.md)。
+
+---
+
 ## 4. 请求流程
 
 以 Phase 4.3.7 已实现的“创建 Experience/Kit/混合订单”为例，展示当前完整调用链：

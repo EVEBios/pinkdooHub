@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""受控编排 Gate A 既有 M2 或 M7 数据库到当前 M8 候选的升级。
+"""受控编排 Gate A 既有 M2 或 M7 数据库到当前 M9 候选的升级。
 
 未指定 source version 的旧调用继续只接受经 Review 的精确 M2 起点；M7 起点必须显式
 指定 ``--source-version 7``。默认 plan 全程只读；apply 必须同时绑定 source/target SHA、
@@ -32,12 +32,12 @@ from scripts.release import gatea_backup as backup
 from scripts.release import gatea_operations as gatea
 
 
-APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M8_CHAIN
+APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M9_CHAIN
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_SOURCE_VERSION = 2
 SUPPORTED_SOURCE_VERSIONS = (2, 7)
-TARGET_VERSION = 8
+TARGET_VERSION = 9
 MAX_BACKUP_AGE = timedelta(hours=24)
 FUTURE_CLOCK_TOLERANCE = timedelta(minutes=5)
 MARD_MANIFEST = (
@@ -96,6 +96,7 @@ print(json.dumps({
     "app_env": settings.app_env,
     "db_engine": settings.db_engine,
     "jwt_algorithm": settings.jwt_algorithm,
+    "table_session_claims_enabled": settings.table_session_claims_enabled,
     "validated": True,
 }, sort_keys=True))
 """
@@ -188,7 +189,20 @@ SELECT JSON_OBJECT(
       AND table_name = 'reservation_settings'
       AND index_name = 'uidx_reservation_settings_singleton'
       AND non_unique = 0
-  )
+  ),
+  'store_tables', (SELECT COUNT(*) FROM store_tables),
+  'enabled_store_tables', (SELECT COUNT(*) FROM store_tables WHERE is_enabled = 1),
+  'invalid_store_tables', (
+    SELECT COUNT(*) FROM store_tables
+    WHERE table_no NOT REGEXP '^T(0[1-9]|[12][0-9]|30)$'
+       OR display_name <> CONCAT(table_no, '号桌')
+       OR CHAR_LENGTH(qr_token) <> 32
+       OR CONVERT(qr_token USING ascii) NOT REGEXP '^[A-Za-z0-9]{32}$'
+  ),
+  'distinct_table_qr_tokens', (SELECT COUNT(DISTINCT BINARY qr_token) FROM store_tables),
+  'table_sessions', (SELECT COUNT(*) FROM table_sessions),
+  'table_session_timers', (SELECT COUNT(*) FROM table_session_timers),
+  'table_occupancies', (SELECT COUNT(*) FROM table_occupancies)
 );
 SQL"""
 
@@ -670,6 +684,7 @@ def _run_runtime_preflight(
         "app_env": "production",
         "db_engine": "mysql",
         "jwt_algorithm": "HS256",
+        "table_session_claims_enabled": True,
         "validated": True,
     }:
         raise GateAUpgradeError(
@@ -879,7 +894,7 @@ def _validate_final_snapshot(
     source_m7_invariants: Mapping[str, Any] | None = None,
 ) -> None:
     if final_snapshot.get("aerich_versions") != _expected_versions(TARGET_VERSION):
-        raise GateAUpgradeError("Gate A final Aerich chain is not exactly M0-M8")
+        raise GateAUpgradeError("Gate A final Aerich chain is not exactly M0-M9")
     for key in CORE_INVARIANT_KEYS:
         if final_snapshot.get(key) != source_snapshot.get(key):
             raise GateAUpgradeError(
@@ -922,6 +937,18 @@ def _validate_final_snapshot(
         or final_snapshot.get("reservation_settings_unique") != 1
     ):
         raise GateAUpgradeError("Gate A final ReservationSettings invariant failed")
+    expected_table_values = {
+        "store_tables": 30,
+        "enabled_store_tables": 30,
+        "invalid_store_tables": 0,
+        "distinct_table_qr_tokens": 30,
+        "table_sessions": 0,
+        "table_session_timers": 0,
+        "table_occupancies": 0,
+    }
+    for key, expected in expected_table_values.items():
+        if final_snapshot.get(key) != expected:
+            raise GateAUpgradeError(f"Gate A final M9 invariant failed: {key}")
 
 
 def _validate_mard_result(
@@ -960,7 +987,7 @@ def _validate_final_image_manifest(
     if source_version == 7:
         if list(final_manifest) != list(stopped_manifest):
             raise GateAUpgradeError(
-                "Gate A M7-to-M8 image manifest changed unexpectedly"
+                "Gate A M7-to-M9 image manifest changed unexpectedly"
             )
         return
     if _manifest_summary(final_manifest)["files"] < 221:
@@ -1202,7 +1229,7 @@ def upgrade_existing_database(
     confirm_manifest_sha256: str | None,
     source_version: int = DEFAULT_SOURCE_VERSION,
 ) -> dict[str, Any]:
-    """规划或执行精确 M2/M7→M8 升级，生成 app-up 成功 Record。"""
+    """规划或执行精确 M2/M7→M9 升级，生成 app-up 成功 Record。"""
 
     gatea._require_loopback_write_mode(mode)
     source_version = _validate_source_version(source_version)
@@ -1317,6 +1344,7 @@ def upgrade_existing_database(
     final_image_manifest: list[str] = []
     wallet_result: dict[str, Any] = {}
     mard_result: dict[str, Any] = {}
+    table_bootstrap_result: dict[str, Any] = {}
     source_m7_invariants: dict[str, Any] | None = None
     source_m7_content_snapshot: dict[str, Any] | None = None
     final_m7_content_snapshot: dict[str, Any] | None = None
@@ -1511,6 +1539,50 @@ def upgrade_existing_database(
                     database_snapshot=database_status,
                 )
 
+            if target_version == 9:
+                step_started = _iso_now()
+                table_bootstrap_result = _run_task(
+                    values=values,
+                    config_file=config_file,
+                    secret_dir=secret_dir,
+                    mode=mode,
+                    service="app",
+                    module="app.tasks.table_bootstrap",
+                    arguments=("--apply",),
+                    description="table-bootstrap",
+                )
+                if table_bootstrap_result != {
+                    "status": "ok",
+                    "table_count": 30,
+                    "placeholder_qr_count": 0,
+                    "wechat_environment": "develop",
+                }:
+                    raise GateAUpgradeError("Gate A M9 table bootstrap result is invalid")
+                table_bootstrap_replay = _run_task(
+                    values=values,
+                    config_file=config_file,
+                    secret_dir=secret_dir,
+                    mode=mode,
+                    service="app",
+                    module="app.tasks.table_bootstrap",
+                    description="table-bootstrap-replay",
+                )
+                if table_bootstrap_replay != table_bootstrap_result:
+                    raise GateAUpgradeError(
+                        "Gate A M9 table bootstrap replay is not an exact no-op"
+                    )
+                _record_step(
+                    evidence_path=evidence_path,
+                    evidence=evidence,
+                    name="table-bootstrap",
+                    started_at=step_started,
+                    result={
+                        "apply": table_bootstrap_result,
+                        "replay": table_bootstrap_replay,
+                    },
+                    database_snapshot=database_status,
+                )
+
         final_snapshot = _read_final_snapshot(
             values=values,
             config_file=config_file,
@@ -1540,7 +1612,7 @@ def upgrade_existing_database(
             )
             if final_m7_content_snapshot != source_m7_content_snapshot:
                 raise GateAUpgradeError(
-                    "Gate A M7 preserved content changed during the M8 upgrade"
+                    "Gate A M7 preserved content changed during the M9 upgrade"
                 )
 
         evidence["completed_at"] = _iso_now()
@@ -1587,6 +1659,7 @@ def upgrade_existing_database(
             "target_aerich_versions": _expected_versions(TARGET_VERSION),
             "wallet_preparation": wallet_result,
             "mard_publication": mard_result,
+            "table_bootstrap": table_bootstrap_result,
         }
         _write_json_exclusive(success_path, success_payload)
     except BaseException as error:
@@ -1625,7 +1698,7 @@ def upgrade_existing_database(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Plan or apply the guarded Gate A M2/M7-to-M8 upgrade; "
+            "Plan or apply the guarded Gate A M2/M7-to-M9 upgrade; "
             "M7 requires explicit --source-version 7"
         ),
     )

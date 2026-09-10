@@ -8,6 +8,7 @@ from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderRepository
 from app.repositories.payment_repo import PaymentRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.table_session_repo import TableSessionRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.wallet_repo import WalletRepository
 from app.services.audit_log_service import AuditLogService
@@ -44,6 +45,8 @@ def test_order_service_constructor_owns_required_repository_boundaries() -> None
         "payment_repository",
         "payment_number_generator",
         "wallet_repository",
+        "table_session_repository",
+        "now_provider",
     ]
     assert signature.parameters["order_repository"].annotation is OrderRepository
     assert signature.parameters["product_repository"].annotation is ProductRepository
@@ -58,6 +61,9 @@ def test_order_service_constructor_owns_required_repository_boundaries() -> None
     )
     assert signature.parameters["wallet_repository"].annotation == (
         WalletRepository | None
+    )
+    assert signature.parameters["table_session_repository"].annotation == (
+        TableSessionRepository | None
     )
 
 

@@ -33,6 +33,7 @@ EXPECTED_MIGRATIONS = [
     "6_20260906123000_add_color_selectable_kits.py",
     "7_20260907190000_add_reservation_settings.py",
     "8_20260908140000_add_bead_color_swatch_hex.py",
+    "9_20260910180000_add_table_sessions.py",
 ]
 EXPECTED_FOREIGN_KEYS = {
     (

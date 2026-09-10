@@ -1,0 +1,77 @@
+/* stylelint-disable selector-class-pattern -- Taro 页面沿用项目 BEM 命名。 */
+.admin-tables-page {
+  min-height: 100vh;
+  padding: 24px;
+  color: var(--pd-color-ink);
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
+}
+
+.admin-tables-page--state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-tables-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  color: #fff;
+  font-weight: 700;
+  background: var(--pd-gradient-primary);
+  border-radius: var(--pd-radius-large);
+}
+
+.admin-tables-alert {
+  margin-top: 18px;
+  padding: 18px;
+  color: var(--pd-color-danger);
+  background: var(--pd-color-danger-soft);
+  border-radius: var(--pd-radius-medium);
+}
+
+.admin-tables-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.admin-table {
+  padding: 18px;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-medium);
+  box-shadow: var(--pd-shadow-small);
+}
+
+.admin-table--active {
+  border-color: var(--pd-color-success);
+}
+
+.admin-table--awaiting_payment {
+  border-color: var(--pd-color-warning);
+}
+
+.admin-table--disabled {
+  opacity: 0.66;
+}
+
+.admin-table__heading {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-weight: 750;
+}
+
+.admin-table button {
+  margin-top: 12px;
+}
+
+@media (width <= 700px) {
+  .admin-tables-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

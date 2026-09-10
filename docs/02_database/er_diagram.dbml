@@ -446,3 +446,100 @@ Table inventory_transactions {
 Ref: inventory_transactions.product_id > products.id [delete: restrict]
 Ref: inventory_transactions.kit_color_id > product_kit_colors.id [delete: restrict]
 Ref: inventory_transactions.operator_id > users.id [delete: restrict]
+
+// ── QR Table Session (M9 repository implementation; environments migrate separately) ──
+
+Table store_tables [note: 'M9 implemented; controlled environment seed must create exactly T01..T30, migration does not mint production tokens'] {
+  id bigint [pk, increment]
+  table_no varchar(10) [not null, note: 'stable T01..T30 in M9 v1']
+  display_name varchar(50) [not null]
+  qr_token varchar(32) [not null, note: 'cryptographically random alphanumeric ASCII locator; raw WeChat scene; MySQL binary collation; public, not an auth secret']
+  is_enabled boolean [not null, default: true, note: 'blocks new sessions only; does not close an existing session']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (table_no) [unique, name: 'uidx_store_table_no']
+    (qr_token) [unique, name: 'uidx_store_table_qr_token']
+  }
+}
+
+Table table_sessions [note: 'M9 implemented; one row per claim attempt that succeeds; order_id intentionally not unique because a timed-out Pending order may be rebound'] {
+  id bigint [pk, increment]
+  session_no varchar(28) [not null, note: 'TS + 26-char uppercase Crockford Base32 ULID; MySQL binary collation']
+  table_id bigint [not null]
+  user_id bigint [not null]
+  order_id bigint [not null]
+  payment_id bigint [note: 'nullable until activation; one successful Payment can activate at most one session']
+  status varchar(32) [not null, default: 'awaiting_payment', note: 'awaiting_payment | active | closed']
+  claim_idempotency_key varchar(256) [not null, note: 'internal namespaced identity; MySQL binary collation; never exposed']
+  claim_request_fingerprint char(64) [not null, note: 'SHA-256 of canonical actor/table-token/order request']
+  release_idempotency_key varchar(256) [note: 'nullable administrator-release identity; MySQL binary collation; never exposed']
+  claimed_at datetime [not null, note: 'UTC']
+  payment_deadline_at datetime [not null, note: 'claimed_at + 15 minutes']
+  started_at datetime [note: 'activation only; exactly payments.succeeded_at']
+  table_release_at datetime [note: 'activation only; max timer grace_ends_at']
+  closed_at datetime [note: 'business deadline for automatic closure, not delayed cleanup time']
+  close_reason varchar(32) [note: 'payment_timeout | time_expired | order_cancelled | order_completed | refunded | admin_released']
+  closed_by_user_id bigint [note: 'nullable; null for automatic timeout/expiry']
+  admin_close_reason varchar(200) [note: 'admin_released only']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (session_no) [unique, name: 'uidx_table_session_no']
+    (claim_idempotency_key) [unique, name: 'uidx_table_session_claim_idempotency']
+    (release_idempotency_key) [unique, name: 'uidx_table_session_release_idempotency']
+    (payment_id) [unique, name: 'uidx_table_session_payment']
+    (table_id, claimed_at, id) [name: 'idx_table_session_table_claimed_id']
+    (user_id, status, claimed_at, id) [name: 'idx_table_session_user_status_claimed_id']
+    (order_id, status, claimed_at, id) [name: 'idx_table_session_order_status_claimed_id']
+    (status, payment_deadline_at, id) [name: 'idx_table_session_status_payment_deadline_id']
+    (status, table_release_at, id) [name: 'idx_table_session_status_release_id']
+  }
+}
+
+Table table_session_timers [note: 'M9 implemented; one timer per distinct Experience duration snapshot; Kit and quantity do not affect timing'] {
+  id bigint [pk, increment]
+  session_id bigint [not null]
+  duration_minutes int [not null, note: 'positive OrderItem Experience duration snapshot']
+  buffer_minutes smallint [not null, default: 10, note: 'M9 immutable grace snapshot']
+  started_at datetime [not null, note: 'equals session started_at and Payment succeeded_at']
+  service_ends_at datetime [not null]
+  grace_ends_at datetime [not null]
+  created_at datetime
+  updated_at datetime [note: 'technical BaseModel field; no business update path']
+
+  indexes {
+    (session_id, duration_minutes) [unique, name: 'uidx_table_session_timer_duration']
+  }
+}
+
+Table table_occupancies [note: 'M9 implemented; current occupancy materialization, deleted on every session closure; copied IDs provide database uniqueness fallbacks'] {
+  id bigint [pk, increment]
+  table_id bigint [not null]
+  session_id bigint [not null]
+  user_id bigint [not null]
+  order_id bigint [not null]
+  created_at datetime
+  updated_at datetime [note: 'activation does not update this timestamp']
+
+  indexes {
+    (table_id) [unique, name: 'uidx_table_occupancy_table']
+    (session_id) [unique, name: 'uidx_table_occupancy_session']
+    (user_id) [unique, name: 'uidx_table_occupancy_user']
+    (order_id) [unique, name: 'uidx_table_occupancy_order']
+  }
+}
+
+// All Table Session FKs preserve history/current invariants through RESTRICT.
+Ref: table_sessions.table_id > store_tables.id [delete: restrict]
+Ref: table_sessions.user_id > users.id [delete: restrict]
+Ref: table_sessions.order_id > orders.id [delete: restrict]
+Ref: table_sessions.payment_id > payments.id [delete: restrict]
+Ref: table_sessions.closed_by_user_id > users.id [delete: restrict]
+Ref: table_session_timers.session_id > table_sessions.id [delete: restrict]
+Ref: table_occupancies.table_id > store_tables.id [delete: restrict]
+Ref: table_occupancies.session_id > table_sessions.id [delete: restrict]
+Ref: table_occupancies.user_id > users.id [delete: restrict]
+Ref: table_occupancies.order_id > orders.id [delete: restrict]

@@ -1,7 +1,7 @@
 # Phase 9 环境矩阵与 Secret 清单
 
-> **Status:** Current M7 persistent server controls passed；disposable M7→M8 updater CI passed；persistent M8 and real Origin/TLS/RC remain blocked
-> **Last Updated:** 2026-09-09
+> **Status:** Current M7 persistent server controls passed；M7→M8→M9 updater is a repository candidate pending its own CI；persistent M8/M9 and real Origin/TLS/RC remain blocked
+> **Last Updated:** 2026-09-10
 > **Values Policy:** 本文只记录键名和责任，不记录真实值
 
 2026-09-02 的持久主机、Secret、备份和日志证据绑定 M2 Runtime `51ad315...`；
@@ -23,6 +23,11 @@ SHA-256，Restore 必须重算并精确匹配。不能把下述旧 M7 备份冒�
 CI 或本地测试都不授权读取 Secret、停写、迁移、切换 Runtime 或写入 Gate A。
 
 ## 1. 环境矩阵
+
+Gate A 的当前受控 SSH 目标固定为 `ubuntu@118.195.195.59`，并在
+`deploy/gatea/target.env.example` 以 `GATEA_SSH_TARGET` 记录。该值是公开连接目标，
+不是凭据；SSH 私钥及其本机路径不写入项目配置、文档或日志。本轮
+小程序内部验收目标版本为 `develop`，不构成上传、体验版分发、灰度或发布授权。
 
 | 层级 | 前端环境 | 后端环境 | 数据库 | Redis | 网络 | 数据性质 |
 |------|----------|----------|--------|-------|------|----------|
@@ -214,7 +219,7 @@ FileVault 已开启。脱敏 Record 只保存 key ID、算法、大小/checksum�
 重复同一链路：服务器 `0600` 资产、无端口独立 Restore、管理电脑 `0400`
 AES-256-GCM/RSA-OAEP-SHA256 副本、`0600` 副本 Record 和立即解密/成员/来源 checksum
 复核均通过。私钥与副本分离，没有进入服务器或仓库。该资产是 M7 数据后检查点；
-M7→M8 必须先创建新的写前 Backup/Restore，成功运行后再创建新的 M8 数据后
+M7→M8→M9 必须先创建新的写前 Backup/Restore，成功运行后再创建新的 M9 数据后
 Backup/Restore/加密异机副本，并分别记录精确候选 SHA、Image ID 和 Record。新写前与
 数据后 Backup 均须包含版本化 `m7-preserved-business-v1` 内容摘要，不能只比较聚合计数；
 独立 Restore Record 须同时保存 `m7_content_matches=true` 和相同摘要。

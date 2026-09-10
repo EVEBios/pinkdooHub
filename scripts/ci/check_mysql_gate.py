@@ -23,6 +23,7 @@ M5_MIGRATION = "5_20260906094653_add_reservations.py"
 M6_MIGRATION = "6_20260906123000_add_color_selectable_kits.py"
 M7_MIGRATION = "7_20260907190000_add_reservation_settings.py"
 M8_MIGRATION = "8_20260908140000_add_bead_color_swatch_hex.py"
+M9_MIGRATION = "9_20260910180000_add_table_sessions.py"
 MARD_MANIFEST = (
     Path(__file__).resolve().parents[2]
     / "app"
@@ -49,6 +50,7 @@ EXPECTED_MIGRATIONS_THROUGH_M7 = [
 EXPECTED_MIGRATIONS = [
     *EXPECTED_MIGRATIONS_THROUGH_M7,
     M8_MIGRATION,
+    M9_MIGRATION,
 ]
 MYSQL_VERSION_PREFIX = "8.0.46"
 CONTAINER_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")
@@ -147,6 +149,26 @@ M7_EXPECTED_INDEXES = {
     ),
 }
 M8_EXPECTED_COLUMN = ("YES", "varchar", 7)
+M9_EXPECTED_TABLES = {
+    "store_tables",
+    "table_sessions",
+    "table_session_timers",
+    "table_occupancies",
+}
+M9_EXPECTED_UNIQUE_INDEXES = {
+    "uidx_store_table_no",
+    "uidx_store_table_qr_token",
+    "uidx_table_session_no",
+    "uidx_table_session_claim_idempotency",
+    "uidx_table_session_release_idempotency",
+    "uidx_table_session_payment",
+    "uidx_table_session_timer_duration",
+    "uidx_table_occupancy_table",
+    "uidx_table_occupancy_session",
+    "uidx_table_occupancy_user",
+    "uidx_table_occupancy_order",
+}
+M9_EXPECTED_FOREIGN_KEY_COUNT = 10
 
 
 class GateError(RuntimeError):
@@ -910,6 +932,93 @@ async def _read_m8_evidence(config: GateConfig) -> dict[str, object]:
     }
 
 
+async def _read_m9_evidence(config: GateConfig) -> dict[str, object]:
+    """核验 M9 四表、命名唯一约束、外键和 T01–T30 初始化结果。"""
+
+    import asyncmy
+
+    connection = await asyncmy.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        database=config.database,
+        connect_timeout=5,
+        autocommit=True,
+    )
+    try:
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT TABLE_NAME FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME IN "
+                "('store_tables','table_sessions','table_session_timers',"
+                "'table_occupancies')",
+                (config.database,),
+            )
+            actual_tables = {str(row[0]) for row in await cursor.fetchall()}
+            if actual_tables != M9_EXPECTED_TABLES:
+                raise GateError("M9 table set does not match the contract")
+
+            await cursor.execute(
+                "SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = %s AND NON_UNIQUE = 0 AND INDEX_NAME IN ("
+                + ",".join(["%s"] * len(M9_EXPECTED_UNIQUE_INDEXES))
+                + ")",
+                (config.database, *sorted(M9_EXPECTED_UNIQUE_INDEXES)),
+            )
+            actual_indexes = {str(row[0]) for row in await cursor.fetchall()}
+            if actual_indexes != M9_EXPECTED_UNIQUE_INDEXES:
+                raise GateError("M9 named unique indexes do not match the contract")
+
+            await cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = %s AND TABLE_NAME IN "
+                "('table_sessions','table_session_timers','table_occupancies') "
+                "AND DELETE_RULE = 'RESTRICT'",
+                (config.database,),
+            )
+            foreign_key_row = await cursor.fetchone()
+            foreign_key_count = 0 if foreign_key_row is None else int(foreign_key_row[0])
+            if foreign_key_count != M9_EXPECTED_FOREIGN_KEY_COUNT:
+                raise GateError("M9 RESTRICT foreign keys do not match the contract")
+
+            await cursor.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT table_no), "
+                "COUNT(DISTINCT BINARY qr_token), SUM(is_enabled = 1), "
+                "SUM(table_no REGEXP '^T(0[1-9]|[12][0-9]|30)$'), "
+                "SUM(display_name = CONCAT(table_no, '号桌')), "
+                "SUM(CHAR_LENGTH(qr_token) = 32 AND "
+                "CONVERT(qr_token USING ascii) REGEXP '^[A-Za-z0-9]{32}$') "
+                "FROM store_tables"
+            )
+            table_row = await cursor.fetchone()
+            expected_table_shape = (30, 30, 30, 30, 30, 30, 30)
+            if table_row is None or tuple(map(int, table_row)) != expected_table_shape:
+                raise GateError("M9 store table bootstrap does not match T01-T30")
+
+            await cursor.execute(
+                "SELECT (SELECT COUNT(*) FROM table_sessions), "
+                "(SELECT COUNT(*) FROM table_session_timers), "
+                "(SELECT COUNT(*) FROM table_occupancies)"
+            )
+            session_row = await cursor.fetchone()
+            if session_row is None or tuple(map(int, session_row)) != (0, 0, 0):
+                raise GateError("M9 release-gate bootstrap must start without sessions")
+    finally:
+        await connection.ensure_closed()
+
+    return {
+        "table_count": 30,
+        "enabled_table_count": 30,
+        "unique_qr_token_count": 30,
+        "named_unique_index_count": len(M9_EXPECTED_UNIQUE_INDEXES),
+        "restrict_foreign_key_count": M9_EXPECTED_FOREIGN_KEY_COUNT,
+        "initial_session_count": 0,
+        "initial_timer_count": 0,
+        "initial_occupancy_count": 0,
+    }
+
+
 def seed_m6_legacy(config: GateConfig, report_path: Path) -> None:
     """为 M6 二次升级写入受控 M5 历史数据。"""
 
@@ -953,6 +1062,7 @@ def snapshot(config: GateConfig, report_path: Path) -> None:
     m6_evidence = asyncio.run(_read_m6_evidence(config))
     m7_evidence = asyncio.run(_read_m7_evidence(config))
     m8_evidence = asyncio.run(_read_m8_evidence(config))
+    m9_evidence = asyncio.run(_read_m9_evidence(config))
 
     write_report(
         report_path,
@@ -965,6 +1075,7 @@ def snapshot(config: GateConfig, report_path: Path) -> None:
             "m6_evidence": m6_evidence,
             "m7_evidence": m7_evidence,
             "m8_evidence": m8_evidence,
+            "m9_evidence": m9_evidence,
             "git_sha": os.getenv("GITHUB_SHA", "local-uncommitted"),
             "workflow_run_id": os.getenv("GITHUB_RUN_ID", "local"),
         },

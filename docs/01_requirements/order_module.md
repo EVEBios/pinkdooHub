@@ -301,6 +301,7 @@ ADMIN+ 代客钱包订单由管理员作为操作者，按顺序同时写 `CREAT
 | Phase 4.3 Inventory | 4.3.1–4.3.12 创建扣减、Pending 取消恢复、查询/Mapper、管理 API、真实 MySQL 门槛与 Final Review 均已完成 |
 | Wallet/Payment/Refund v1 | 余额支付、ADMIN+ 代客钱包订单、人工结算事实、订单资金查询、一次全额退款已在仓库实现；M4/backfill/reconcile 已进入当前 Gate A M7，其他持久环境与生产开关仍待单独授权 |
 | M6 Color-selectable Kit | 每色一 Item、10g 单位、20/10/30 行边界、颜色槽号/编码/名称快照、总克重派生和商品颜色库存扣减/恢复；仓库、本地/真实 MySQL 验证与当前 Gate A M7 已完成，其他持久环境仍待单独迁移 |
+| M9 QR Table Session | 已实现：Pending 订单可绑定桌台；付款后按 Experience 时长快照分组计时，Kit 与 quantity 不改变时长；取消/完成/退款原子释放桌台 |
 | 后续 Payment | 真实微信下单、签名/验签、通知幂等、查单、关单、退款和对账 |
 | 后续 Order | 超时取消、部分退款、用户自助退款、取消原因、统计、报表与订单删除策略 |
 
@@ -320,3 +321,21 @@ Phase 4.3.1 已冻结 Order v1.1 的 Inventory 联动方向，权威细节见 [I
 - Order Service 拥有创建/取消外层事务并协调 Inventory Repository，不调用 Inventory Service。
 
 Phase 4.3.7–4.3.8 已实现 fixed Kit 请求形状、创建扣减、流水、快照、响应和取消恢复；Wallet/Payment/Refund v1 已增加代客 Paid 创建扣减与 PAID 全额退款恢复。M6 已在相同事务所有权和幂等语义上实现 ProductKitColor 锁与流水，并进入当前 Gate A M7；既有 fixed 行为、错误码和请求兼容性不得退化。
+
+---
+
+## 13. M9 二维码开台联动（已实现）
+
+M9 不改变 Order Item 的创建形状、价格、金额、库存快照或现有状态机，而是以订单历史快照作为计时输入：
+
+- 只有至少一个 Experience Item 的 Pending 订单可创建 Table Session；纯 Kit 订单仍可正常购买，但不可开台。
+- 混合订单中的 Kit Item 完全不参与 Timer；Experience `quantity > 1` 也不把时长相乘。
+- Experience Item 按 `option_duration_minutes` 精确分组，相同分钟数一个 Timer，不同分钟数多个 Timer；全部以同一个 `Payment.succeeded_at` 开始，每组各加 10 分钟缓冲。
+- 待支付占台超时只关闭 Table Session，不自动取消 Order，因此不触发 Kit 库存恢复；同一 Pending Order 后续可重新绑定并产生新的历史 Session。
+- Pending 取消在原 OrderService 事务中关闭 `AWAITING_PAYMENT` Session 并删除 Occupancy；既有 Kit 恢复、Order 状态与 Audit 仍须与该关闭结果一起提交或回滚。
+- ADMIN+ 完成订单在原完成事务中关闭仍为 `ACTIVE` 的 Session；计时自动到期只释放桌台，不把 Order 自动改为 `COMPLETED`。
+- 全额退款在原 RefundService 事务中关闭仍为 `ACTIVE` 的 Session；PAID Kit 恢复与 COMPLETED 不恢复规则保持不变。
+- 涉及 M9 时，现有事务锁序扩展为适用的 `User -> Order -> StoreTable -> TableSession/Occupancy -> Settlement/Payment/Refund -> WalletAccount -> Kit 余额`；不适用的节点可跳过但不得反向获取。
+- OrderService、PaymentService 与 RefundService 各自继续拥有原用例事务，并直接协调 Table Session Repository；禁止业务 Service 互相调用。
+
+权威状态、竞态和验收规则见 [二维码开台需求](table_session_module.md)，HTTP 契约见 [二维码开台 API](../03_api/table_session_api.md)。代码与 M9 迁移已进入仓库；目标环境是否可用仍以迁移、bootstrap、运行时开关和验收记录为准。

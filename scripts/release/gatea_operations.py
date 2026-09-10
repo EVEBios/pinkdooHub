@@ -90,6 +90,9 @@ APPROVED_SOURCE_M7_CHAIN = APPROVED_TARGET_M7_CHAIN
 APPROVED_TARGET_M8_CHAIN = APPROVED_TARGET_M7_CHAIN + (
     "8_20260908140000_add_bead_color_swatch_hex.py",
 )
+APPROVED_TARGET_M9_CHAIN = APPROVED_TARGET_M8_CHAIN + (
+    "9_20260910180000_add_table_sessions.py",
+)
 HOST_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
@@ -104,6 +107,7 @@ EXPECTED_APP_COMMAND = [
     "--port",
     "8000",
     "--no-server-header",
+    "--no-access-log",
 ]
 INITIAL_SCHEMA_COUNT_COMMAND = (
     'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" '
@@ -686,13 +690,18 @@ def _require_upgrade_record(
             or (type(source_version) is int and source_version == 2)
         )
         and target_aerich_versions
-        in (list(APPROVED_TARGET_M7_CHAIN), list(APPROVED_TARGET_M8_CHAIN))
+        in (
+            list(APPROVED_TARGET_M7_CHAIN),
+            list(APPROVED_TARGET_M8_CHAIN),
+            list(APPROVED_TARGET_M9_CHAIN),
+        )
     ) or (
         source_aerich_versions == list(APPROVED_SOURCE_M7_CHAIN)
         and source_version_is_present
         and type(source_version) is int
         and source_version == 7
-        and target_aerich_versions == list(APPROVED_TARGET_M8_CHAIN)
+        and target_aerich_versions
+        in (list(APPROVED_TARGET_M8_CHAIN), list(APPROVED_TARGET_M9_CHAIN))
     )
     if (
         payload.get("schema_version") != 1
@@ -1016,6 +1025,7 @@ def app_up(
                 "--wait-timeout",
                 str(wait_timeout),
                 "app",
+                "table-sweeper",
                 "nginx",
             ),
         )
@@ -1024,9 +1034,9 @@ def app_up(
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
-            services=("app", "nginx"),
+            services=("app", "table-sweeper", "nginx"),
         )
-        _ensure_services_healthy(rows, "app", "nginx")
+        _ensure_services_healthy(rows, "app", "table-sweeper", "nginx")
         _validate_loopback_publishers(
             rows,
             int(values.get("GATEA_LOOPBACK_PORT", "18080")),
@@ -1037,7 +1047,7 @@ def app_up(
             config_file=config_file,
             secret_dir=secret_dir,
             mode=mode,
-            services=("nginx", "app", "image-init"),
+            services=("nginx", "table-sweeper", "app", "image-init"),
         )
         raise
     print("Gate A application and loopback edge are healthy")
@@ -1112,6 +1122,7 @@ def safe_stop(*, config_file: Path, secret_dir: Path, mode: str) -> None:
             "--timeout",
             "30",
             "nginx",
+            "table-sweeper",
             "app",
             "image-init",
             "redis",

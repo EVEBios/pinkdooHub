@@ -22,6 +22,7 @@ RESERVATION_SETTINGS_MIGRATION = (
 BEAD_COLOR_SWATCH_HEX_MIGRATION = (
     "8_20260908140000_add_bead_color_swatch_hex.py"
 )
+TABLE_SESSION_MIGRATION = "9_20260910180000_add_table_sessions.py"
 EXPECTED_MIGRATION_CHAIN = [
     "0_20260810101218_init.py",
     "1_20260813130455_add_order_tables.py",
@@ -32,6 +33,7 @@ EXPECTED_MIGRATION_CHAIN = [
     COLOR_SELECTABLE_KIT_MIGRATION,
     RESERVATION_SETTINGS_MIGRATION,
     BEAD_COLOR_SWATCH_HEX_MIGRATION,
+    TABLE_SESSION_MIGRATION,
 ]
 SAFE_ENVIRONMENT = {
     "APP_ENV": "testing",
@@ -105,7 +107,7 @@ def test_m8_snapshot_uses_exact_frozen_mard_hex_projection() -> None:
     assert len({hex_value for _, hex_value in rows}) == 221
 
 
-def test_m6_through_m8_snapshots_require_replay_and_schema_evidence() -> None:
+def test_m6_through_m9_snapshots_require_replay_and_schema_evidence() -> None:
     checker_source = CHECKER.read_text(encoding="utf-8")
 
     assert '"seed-m6-legacy"' in checker_source
@@ -129,6 +131,12 @@ def test_m6_through_m8_snapshots_require_replay_and_schema_evidence() -> None:
     assert "_read_m8_evidence" in checker_source
     assert '"backfilled_slots": 221' in checker_source
     assert '"manifest_projection_matches": True' in checker_source
+    assert "M9_EXPECTED_TABLES" in checker_source
+    assert "M9_EXPECTED_UNIQUE_INDEXES" in checker_source
+    assert "M9_EXPECTED_FOREIGN_KEY_COUNT" in checker_source
+    assert "_read_m9_evidence" in checker_source
+    assert '"table_count": 30' in checker_source
+    assert '"unique_qr_token_count": 30' in checker_source
     assert "EXPECTED_MIGRATIONS[:-1]" not in checker_source
     assert "EXPECTED_MIGRATIONS[:-2]" not in checker_source
 

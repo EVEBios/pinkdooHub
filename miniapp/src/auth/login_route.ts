@@ -12,12 +12,15 @@ export const ADMIN_STORE_CLOSURE_LIST_PATH = '/admin/pages/store-closures/index'
 export const ADMIN_PRODUCT_LIST_PATH = '/admin/pages/products/index'
 export const ADMIN_USER_LIST_PATH = '/admin/pages/users/index'
 export const ADMIN_INVENTORY_LIST_PATH = '/admin/pages/inventory-transactions/index'
+export const ADMIN_TABLES_PATH = '/admin/pages/tables/index'
+export const TABLE_ENTRY_PATH = '/pages/table-entry/index'
 export const REGISTER_PATH = '/pages/register/index'
 export const MEMBER_PATH = '/pages/member/index'
 export const WALLET_RECHARGE_PATH = '/pages/wallet-recharge/index'
 export const WALLET_TRANSACTION_LIST_PATH = '/pages/wallet-transactions/index'
 
 export type ReservationCreateRedirect = `${typeof RESERVATION_CREATE_PATH}?product_id=${number}&option_id=${number}`
+export type TableEntryRedirect = `${typeof TABLE_ENTRY_PATH}?token=${string}`
 
 export type LoginRedirect =
   | typeof ADMIN_WORKBENCH_PATH
@@ -25,12 +28,14 @@ export type LoginRedirect =
   | typeof ORDER_LIST_PATH
   | typeof RESERVATION_LIST_PATH
   | ReservationCreateRedirect
+  | TableEntryRedirect
   | typeof ADMIN_ORDER_LIST_PATH
   | typeof ADMIN_RESERVATION_LIST_PATH
   | typeof ADMIN_STORE_CLOSURE_LIST_PATH
   | typeof ADMIN_PRODUCT_LIST_PATH
   | typeof ADMIN_USER_LIST_PATH
   | typeof ADMIN_INVENTORY_LIST_PATH
+  | typeof ADMIN_TABLES_PATH
   | typeof MEMBER_PATH
   | typeof WALLET_RECHARGE_PATH
   | typeof WALLET_TRANSACTION_LIST_PATH
@@ -46,6 +51,7 @@ const ALLOWED_REDIRECTS = new Set<LoginRedirect>([
   ADMIN_PRODUCT_LIST_PATH,
   ADMIN_USER_LIST_PATH,
   ADMIN_INVENTORY_LIST_PATH,
+  ADMIN_TABLES_PATH,
   MEMBER_PATH,
   WALLET_RECHARGE_PATH,
   WALLET_TRANSACTION_LIST_PATH,
@@ -59,6 +65,7 @@ const ADMIN_REDIRECTS = new Set<LoginRedirect>([
   ADMIN_PRODUCT_LIST_PATH,
   ADMIN_USER_LIST_PATH,
   ADMIN_INVENTORY_LIST_PATH,
+  ADMIN_TABLES_PATH,
 ])
 
 export function buildLoginUrl(redirect?: LoginRedirect): string {
@@ -88,7 +95,9 @@ export function parseLoginRedirect(value: unknown): LoginRedirect | undefined {
   }
   return isReservationCreateRedirect(decoded)
     ? decoded as ReservationCreateRedirect
-    : undefined
+    : isTableEntryRedirect(decoded)
+      ? decoded as TableEntryRedirect
+      : undefined
 }
 
 /**
@@ -115,4 +124,8 @@ function isReservationCreateRedirect(value: string): boolean {
   const match = /^\/pages\/reservation-create\/index\?product_id=([1-9]\d*)&option_id=([1-9]\d*)$/.exec(value)
   if (!match) return false
   return match.slice(1).every((part) => Number.isSafeInteger(Number(part)))
+}
+
+function isTableEntryRedirect(value: string): boolean {
+  return /^\/pages\/table-entry\/index\?token=[A-Za-z0-9]{32}$/.test(value)
 }

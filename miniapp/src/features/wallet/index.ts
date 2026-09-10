@@ -1,5 +1,6 @@
 export { createWalletIdempotencyKey } from './idempotency'
 export type { WalletIdempotencyKeyFactory } from './idempotency'
+export { getWalletErrorMessage, isWalletMutationUnknown } from './mutation'
 export { moneyToCents, normalizeMoneyDraft } from './money'
 export { useMemberWallet } from './use_member_wallet'
 export type { MemberWalletSource, MemberWalletState } from './use_member_wallet'

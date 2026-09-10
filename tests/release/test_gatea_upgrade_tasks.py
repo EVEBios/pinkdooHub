@@ -20,9 +20,9 @@ class _FakeSettings:
     db_engine = "mysql"
 
 
-@pytest.mark.parametrize("target", (2, 9))
+@pytest.mark.parametrize("target", (2, 10))
 async def test_migration_step_rejects_unapproved_targets(target: int) -> None:
-    with pytest.raises(migration_step.GateAMigrationStepError, match="M3 through M8"):
+    with pytest.raises(migration_step.GateAMigrationStepError, match="M3 through M9"):
         await migration_step.apply_migration_step(target)
 
 

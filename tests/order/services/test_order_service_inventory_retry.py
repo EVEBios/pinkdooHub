@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from tortoise.exceptions import OperationalError
 
+from app.common.constants.order import ORDER_AUDIT_ACTION_COMPLETE, ORDER_OPERATION_COMPLETE
+from app.common.enums.order import OrderStatus
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderItemCreateData, OrderRepository
 from app.repositories.product_repo import ProductRepository
@@ -169,3 +171,33 @@ async def test_cancel_non_retryable_database_error_is_not_retried() -> None:
 
     assert caught.value is failure
     cancel_once.assert_awaited_once()
+
+
+@pytest.mark.parametrize("error_code", [1205, 1213])
+async def test_status_transition_retries_the_complete_transaction(
+    error_code: int,
+) -> None:
+    service = _service()
+    expected = SimpleNamespace(id=51)
+    transition_once = AsyncMock(
+        side_effect=[OperationalError(error_code, "transient"), expected]
+    )
+    service._transition_order_once = transition_once  # type: ignore[method-assign]
+    kwargs = {
+        "operator_id": 7,
+        "visible_user_id": None,
+        "operation": ORDER_OPERATION_COMPLETE,
+        "required_status": OrderStatus.PAID,
+        "target_status": OrderStatus.COMPLETED,
+        "audit_action": ORDER_AUDIT_ACTION_COMPLETE,
+        "ip_address": "127.0.0.1",
+        "table_session_no": None,
+    }
+
+    result = await service._transition_order(51, **kwargs)
+
+    assert result is expected
+    assert transition_once.await_count == 2
+    assert transition_once.await_args_list[0].args == (51,)
+    assert transition_once.await_args_list[0].kwargs == kwargs
+    assert transition_once.await_args_list[1] == transition_once.await_args_list[0]

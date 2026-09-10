@@ -1,6 +1,6 @@
 import { Button, Text, Textarea, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { BusinessError, SessionExpiredError } from '@/api'
 import type { OrderDetail } from '@/api/endpoints/orders'
@@ -19,6 +19,11 @@ import {
   useCart,
   useOrderSubmission,
 } from '@/features/order'
+import {
+  buildTableEntryUrl,
+  clearPendingTableEntry,
+  loadPendingTableEntry,
+} from '@/features/table_session'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatColorLabel, formatPrice } from '@/utils/format'
 
@@ -172,6 +177,8 @@ function OrderResult({
   state: Extract<OrderSubmissionState, { status: 'succeeded' }>
 }) {
   const { order } = state
+  const pendingTableToken = usePendingTableToken()
+  const hasExperience = order.items.some((item) => item.experience_option_id !== null)
   return (
     <View className='order-result-page'>
       <View className='order-result-hero'>
@@ -213,6 +220,12 @@ function OrderResult({
       )}
 
       <View className='order-result-actions'>
+        {pendingTableToken && hasExperience && (
+          <Button
+            className='order-result-actions__primary'
+            onClick={() => void returnToTable(pendingTableToken)}
+          >返回桌台并开台</Button>
+        )}
         <Button onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}>查看我的订单</Button>
         <Button
           className='order-result-actions__primary'
@@ -223,6 +236,23 @@ function OrderResult({
       </View>
     </View>
   )
+}
+
+function usePendingTableToken(): string | undefined {
+  const [token, setToken] = useState<string>()
+  useEffect(() => {
+    let active = true
+    void loadPendingTableEntry()
+      .then((value) => { if (active) setToken(value) })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [])
+  return token
+}
+
+async function returnToTable(token: string): Promise<void> {
+  await Taro.navigateTo({ url: buildTableEntryUrl(token) })
+  await clearPendingTableEntry().catch(() => undefined)
 }
 
 function formatOrderOption(item: OrderDetail['items'][number]): string {

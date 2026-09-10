@@ -118,10 +118,11 @@ jobs:
           python scripts/ci/check_mysql_gate.py preflight \
             --report artifacts/mysql-preflight.json
 
-      - name: Exercise reviewed Aerich M6 through M8 migrations over legacy data
+      - name: Exercise reviewed Aerich M6 through M9 migrations over legacy data
         run: |
           set -o pipefail
           aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log
+          aerich --app models downgrade -v 9 --yes 2>&1 | tee -a artifacts/mysql-migration.log
           aerich --app models downgrade -v 8 --yes 2>&1 | tee -a artifacts/mysql-migration.log
           aerich --app models downgrade -v 7 --yes 2>&1 | tee -a artifacts/mysql-migration.log
           python scripts/ci/check_mysql_gate.py seed-m7-legacy \
@@ -133,13 +134,18 @@ jobs:
             2>&1 | tee -a artifacts/mysql-migration.log
           aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log
           aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log
+          aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log
+          aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log
+          python -m app.tasks.table_bootstrap --apply \
+            2>&1 | tee -a artifacts/mysql-migration.log
           python scripts/ci/check_mysql_gate.py snapshot \
             --report artifacts/mysql-release.json
 
       - name: Run real MySQL release gates
         run: |
           python -m pytest \
-            tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql -q \
+            tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql \
+            tests/table_sessions/mysql -q \
             --junitxml=artifacts/backend-mysql-release.xml
 
       - name: Destroy isolated MySQL schema and service
@@ -166,11 +172,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # Keep the historical job id because branch protection keys required checks by name.
+  # The implementation and artifact below now exercise the complete M7→M8→M9 path.
   gatea-m7-m8-updater:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      PINKDOOHUB_GATEA_M7_M8_DRILL: github-hosted-disposable-linux-v1
+      PINKDOOHUB_GATEA_M7_M9_DRILL: github-hosted-disposable-linux-v1
     steps:
       - name: Check out the complete candidate history
         uses: actions/checkout@v7
@@ -191,28 +199,28 @@ jobs:
           python -m pip install --requirement requirements.txt
           python -m pip check
 
-      - name: Rehearse the complete Gate A M7 to M8 updater
+      - name: Rehearse the complete Gate A M7 to M9 updater
         run: |
-          mkdir -p artifacts/gatea-m7-m8-updater
-          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M8_DRILL \
+          mkdir -p artifacts/gatea-m7-m9-updater
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M9_DRILL \
             timeout --signal=TERM --kill-after=30s 40m \
             "$(command -v python)" scripts/ci/gatea_m7_m8_drill.py run \
-            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m8-updater"
+            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m9-updater"
 
       - name: Verify disposable Gate A resources are removed
         if: always()
         run: |
-          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M8_DRILL \
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M9_DRILL \
             timeout --signal=TERM --kill-after=15s 8m \
             "$(command -v python)" scripts/ci/gatea_m7_m8_drill.py cleanup \
-            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m8-updater"
+            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m9-updater"
 
       - name: Save Gate A updater rehearsal evidence
-        if: ${{ always() && hashFiles('artifacts/gatea-m7-m8-updater/artifact-scan-passed.json') != '' }}
+        if: ${{ always() && hashFiles('artifacts/gatea-m7-m9-updater/artifact-scan-passed.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
-          name: gatea-m7-m8-updater-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/gatea-m7-m8-updater/
+          name: gatea-m7-m9-updater-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gatea-m7-m9-updater/
           if-no-files-found: error
           retention-days: 14
 

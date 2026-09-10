@@ -16,6 +16,10 @@ from app.common.constants.inventory import (
     INVENTORY_STOCK_MAX,
 )
 from app.common.constants.order import ORDER_AUDIT_TARGET_TYPE
+from app.common.constants.table_session import (
+    TABLE_AUDIT_ACTION_RELEASE,
+    TABLE_AUDIT_TARGET_TYPE,
+)
 from app.common.constants.wallet import (
     FINANCIAL_RETRYABLE_MYSQL_ERROR_CODES,
     FINANCIAL_TRANSACTION_MAX_ATTEMPTS,
@@ -31,6 +35,7 @@ from app.common.enums.inventory import (
     InventoryTransactionType,
 )
 from app.common.enums.order import OrderStatus
+from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
 from app.common.enums.user import UserRole, UserStatus
 from app.common.enums.wallet import (
     PaymentMethod,
@@ -58,8 +63,10 @@ from app.common.exceptions.wallet import (
 from app.common.financial_number import generate_refund_number
 from app.core.config import settings
 from app.core.exceptions import PermissionException, ServiceUnavailableException
+from app.domain.table_session import automatic_close_for
 from app.models.order import Order
 from app.models.payment import Payment, PaymentSettlement, Refund
+from app.models.table_session import TableSession
 from app.models.user import User
 from app.repositories.inventory_repo import (
     InventoryColorStockUpdateData,
@@ -72,6 +79,7 @@ from app.repositories.payment_repo import (
     PaymentRepository,
     RefundCreateData,
 )
+from app.repositories.table_session_repo import TableSessionRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.wallet_repo import (
     WalletRepository,
@@ -103,6 +111,7 @@ class RefundService:
         inventory_repository: InventoryRepository,
         user_repository: UserRepository,
         audit_log_service: AuditLogService,
+        table_session_repository: TableSessionRepository | None = None,
     ) -> None:
         self.order_repository = order_repository
         self.payment_repository = payment_repository
@@ -110,6 +119,7 @@ class RefundService:
         self.inventory_repository = inventory_repository
         self.user_repository = user_repository
         self.audit_log_service = audit_log_service
+        self.table_session_repository = table_session_repository
 
     async def refund_order(
         self,
@@ -218,6 +228,11 @@ class RefundService:
             )
             if order is None or order.user_id != owner.id:
                 raise OrderNotFound()
+
+            table_session = await self._lock_open_table_session(
+                order_id=order.id,
+                using_db=connection,
+            )
             try:
                 order_status = OrderStatus(order.status)
             except (TypeError, ValueError):
@@ -344,6 +359,13 @@ class RefundService:
                 succeeded_at=succeeded_at,
                 using_db=connection,
             )
+            closed_session_no = await self._close_table_session_for_refund(
+                table_session,
+                operator_id=operator.id,
+                closed_at=succeeded_at,
+                ip_address=ip_address,
+                using_db=connection,
+            )
             await self.audit_log_service.log(
                 operator_id=operator.id,
                 action=REFUND_AUDIT_ACTION_COMPLETE,
@@ -357,6 +379,7 @@ class RefundService:
                         "method": payment.method.value,
                         "amount": f"{refund.amount:.2f}",
                         "inventory_restored": inventory_restored,
+                        "table_session_no": closed_session_no,
                     },
                     separators=(",", ":"),
                 ),
@@ -369,6 +392,83 @@ class RefundService:
                 inventory_restored=inventory_restored,
                 is_replay=False,
             )
+
+    async def _lock_open_table_session(
+        self,
+        *,
+        order_id: int,
+        using_db: BaseDBAsyncClient,
+    ) -> TableSession | None:
+        if self.table_session_repository is None:
+            return None
+        visible = await self.table_session_repository.get_open_session_by_order_id(
+            order_id,
+            using_db=using_db,
+        )
+        if visible is None:
+            return None
+        table = await self.table_session_repository.get_table_for_update(
+            visible.table_id,
+            using_db=using_db,
+        )
+        if table is None:
+            raise RefundStatusConflict()
+        locked = await self.table_session_repository.get_session_for_update(
+            visible.id,
+            using_db=using_db,
+        )
+        if locked is None:
+            raise RefundStatusConflict()
+        return locked
+
+    async def _close_table_session_for_refund(
+        self,
+        session: TableSession | None,
+        *,
+        operator_id: int,
+        closed_at: datetime,
+        ip_address: str,
+        using_db: BaseDBAsyncClient,
+    ) -> str | None:
+        if session is None or self.table_session_repository is None:
+            return None
+        status = TableSessionStatus(session.status)
+        automatic = automatic_close_for(
+            status=status,
+            now=closed_at,
+            payment_deadline_at=session.payment_deadline_at,
+            table_release_at=session.table_release_at,
+        )
+        reason = (
+            automatic.reason
+            if automatic is not None
+            else TableSessionCloseReason.REFUNDED
+        )
+        effective_closed_at = (
+            automatic.closed_at if automatic is not None else closed_at
+        )
+        await self.table_session_repository.close_session(
+            session,
+            reason=reason,
+            closed_at=effective_closed_at,
+            closed_by_user_id=None if automatic is not None else operator_id,
+            admin_close_reason=None,
+            release_idempotency_key=None,
+            using_db=using_db,
+        )
+        await self.audit_log_service.log(
+            operator_id=operator_id,
+            action=TABLE_AUDIT_ACTION_RELEASE,
+            target_type=TABLE_AUDIT_TARGET_TYPE,
+            target_id=session.id,
+            ip_address=ip_address,
+            description=json.dumps(
+                {"close_reason": reason.value, "order_id": session.order_id},
+                separators=(",", ":"),
+            ),
+            using_db=using_db,
+        )
+        return session.session_no
 
     async def _credit_wallet_refund(
         self,

@@ -14,6 +14,7 @@ from app.api.responses import error_responses, success_responses
 from app.common.response import success
 from app.models.user import User
 from app.schemas.wallet import WalletIdempotencyKey
+from app.schemas.table_session import TableSessionNumber
 from app.schemas.wallet_response import OrderFinancialOut, WalletPaymentOut
 from app.services.payment_service import PaymentService
 from app.utils.request import get_client_ip
@@ -74,12 +75,17 @@ async def pay_order_with_wallet(
     current_user: CurrentUser,
     service: PaymentServiceDependency,
     _empty_body: Annotated[None, Depends(reject_request_body)],
+    table_session_no: Annotated[
+        TableSessionNumber | None,
+        Header(alias="Table-Session-No"),
+    ] = None,
 ) -> dict:
     result = await service.pay_order_with_wallet(
         order_id,
         user=current_user,
         idempotency_key=idempotency_key,
         ip_address=get_client_ip(request),
+        table_session_no=table_session_no,
     )
     if result.is_replay:
         response.status_code = status.HTTP_200_OK

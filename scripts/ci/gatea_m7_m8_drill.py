@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""在 GitHub-hosted disposable Linux runner 上演练完整 Gate A M7→M8。
+"""在 GitHub-hosted disposable Linux runner 上演练完整 Gate A M7→M9。
 
 本工具只接受 root、GitHub-hosted Linux、本地 Docker daemon 和精确 sentinel。
 ``run`` 从冻结 M7 source 构建临时环境，执行真实 Backup/Restore、升级、重放、
-app-up 和 M8 数据后恢复，并在所有退出路径精确清理。``cleanup`` 供 workflow 的
+app-up 和 M9 数据后恢复，并在所有退出路径精确清理。``cleanup`` 供 workflow 的
 ``if: always()`` 步骤幂等复核；没有本工具写出的 ownership Record 时绝不删除资源。
 """
 
@@ -46,7 +46,7 @@ MARD_MANIFEST = REPOSITORY_ROOT / "app" / "tasks" / "manifests" / "mard_221.json
 MARD_MANIFEST_SHA256 = (
     "45e37342ff77907556974bc78c501a3931fda9100afae4506a709ab8a11ad238"
 )
-SENTINEL_ENV = "PINKDOOHUB_GATEA_M7_M8_DRILL"
+SENTINEL_ENV = "PINKDOOHUB_GATEA_M7_M9_DRILL"
 SENTINEL_VALUE = "github-hosted-disposable-linux-v1"
 LOOPBACK_PORT = 18080
 MAIN_PROJECT = "pinkdoohub-gatea"
@@ -110,7 +110,7 @@ PIPELINE: tuple[tuple[str, str], ...] = (
     ("apply-target", "apply_target"),
     ("plan-replay", "plan_replay"),
     ("app-up", "app_up"),
-    ("verify-m8-runtime", "verify_m8_runtime"),
+    ("verify-m9-runtime", "verify_m9_runtime"),
     ("backup-restore-target", "backup_restore_target"),
 )
 
@@ -267,7 +267,7 @@ class DrillState:
     def safe_state(self) -> dict[str, Any]:
         return {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-state",
+            "record_type": "gatea-m7-m9-drill-state",
             "ownership_acquired": self.ownership_acquired,
             "work_root": str(self.paths.work_root),
             "config_file": str(self.paths.config_file),
@@ -425,10 +425,10 @@ def paths_from_environment(
     workspace = workspace.resolve()
     if runner_temp.resolve().is_relative_to(workspace):
         raise DrillError("RUNNER_TEMP must be outside GITHUB_WORKSPACE")
-    work_root = runner_temp / f"pinkdoohub-gatea-m7-m8-{run_id}-{attempt}"
+    work_root = runner_temp / f"pinkdoohub-gatea-m7-m9-{run_id}-{attempt}"
     if work_root.parent.resolve() != runner_temp.resolve():
         raise DrillError("drill workspace escaped RUNNER_TEMP")
-    expected_artifacts = (workspace / "artifacts" / "gatea-m7-m8-updater").resolve()
+    expected_artifacts = (workspace / "artifacts" / "gatea-m7-m9-updater").resolve()
     requested_artifacts = artifact_dir.expanduser().absolute().resolve()
     if requested_artifacts != expected_artifacts:
         raise DrillError("artifact directory must use the frozen workspace path")
@@ -669,11 +669,11 @@ def validate_git_target(
         "migrations/models",
     ).splitlines()
     expected_source = [f"migrations/models/{name}" for name in gatea.APPROVED_SOURCE_M7_CHAIN]
-    expected_target = [f"migrations/models/{name}" for name in gatea.APPROVED_TARGET_M8_CHAIN]
+    expected_target = [f"migrations/models/{name}" for name in gatea.APPROVED_TARGET_M9_CHAIN]
     if source_migrations != expected_source:
         raise DrillError("frozen source is not the exact M0-M7 migration tree")
     if target_migrations != expected_target:
-        raise DrillError("target HEAD is not the exact M0-M8 migration tree")
+        raise DrillError("target HEAD is not the exact M0-M9 migration tree")
 
     manifest_path = "app/tasks/manifests/mard_221.json"
     source_manifest = _git_raw_output(
@@ -764,6 +764,7 @@ def _config_text(state: DrillState, image: str) -> str:
         "WALLET_REFUND_ENABLED": "true",
         "WALLET_TOPUP_ENABLED": "false",
         "PAYMENT_PROVIDER": "disabled",
+        "TABLE_SESSION_CLAIMS_ENABLED": "true",
         "JWT_ALGORITHM": "HS256",
         "JWT_ACCESS_TOKEN_EXPIRE": "7200",
         "JWT_REFRESH_TOKEN_EXPIRE": "604800",
@@ -919,7 +920,7 @@ def _assert_result_fields(
         raise DrillError(f"{label} result does not match the drill contract")
 
 
-class GateAM7M8Drill:
+class GateAM7M9Drill:
     """完整演练阶段编排；每个阶段只将脱敏摘要写入 allowlist。"""
 
     def __init__(self, state: DrillState) -> None:
@@ -1032,13 +1033,40 @@ class GateAM7M8Drill:
             record_dir=paths.release_record_dir,
             mode="loopback",
         )
-        gatea.app_up(
+        # The frozen M7 image predates the M9 sweeper module. Start only the
+        # services available at the source point; the target app-up path below
+        # must start and verify the sweeper as part of the M9 contract.
+        values = gatea._validated_inputs(
             config_file=paths.config_file,
             secret_dir=paths.secret_dir,
-            record_dir=paths.release_record_dir,
             mode="loopback",
-            wait_timeout=300,
+            require_available_port=True,
         )
+        gatea._run_compose(
+            values=values,
+            config_file=paths.config_file,
+            secret_dir=paths.secret_dir,
+            mode="loopback",
+            arguments=(
+                "up",
+                "--detach",
+                "--no-build",
+                "--wait",
+                "--wait-timeout",
+                "300",
+                "app",
+                "nginx",
+            ),
+        )
+        rows = gatea._compose_ps(
+            values=values,
+            config_file=paths.config_file,
+            secret_dir=paths.secret_dir,
+            mode="loopback",
+            services=("app", "nginx"),
+        )
+        gatea._ensure_services_healthy(rows, "app", "nginx")
+        gatea._validate_loopback_publishers(rows, LOOPBACK_PORT)
         values = gatea._validated_inputs(
             config_file=paths.config_file,
             secret_dir=paths.secret_dir,
@@ -1204,7 +1232,7 @@ class GateAM7M8Drill:
                     token=token,
                     payload={
                         "name": "[DRILL-M7] Three-color online Kit",
-                        "description": "Disposable M7 to M8 updater fixture",
+                        "description": "Disposable M7 to M9 updater fixture",
                         "price": "3.00",
                         "kit_kind": "color_selectable",
                     },
@@ -1276,10 +1304,10 @@ class GateAM7M8Drill:
                         token=token,
                         payload={
                             "change": 10,
-                            "reason": "Disposable M7 to M8 drill opening stock",
+                            "reason": "Disposable M7 to M9 drill opening stock",
                         },
                         headers={
-                            "Idempotency-Key": f"gatea-m7-m8-drill-color-{index}-v1"
+                            "Idempotency-Key": f"gatea-m7-m9-drill-color-{index}-v1"
                         },
                         expected_status=201,
                     ),
@@ -1481,7 +1509,7 @@ class GateAM7M8Drill:
                 "backup_id": state.source_backup_id,
                 "manifest_sha256": MARD_MANIFEST_SHA256,
                 "source_version": 7,
-                "target_version": 8,
+                "target_version": 9,
             },
             "target upgrade plan",
         )
@@ -1559,7 +1587,7 @@ class GateAM7M8Drill:
                 "candidate_sha": state.target_sha,
                 "backup_id": state.source_backup_id,
                 "source_version": 7,
-                "target_version": 8,
+                "target_version": 9,
             },
             "target plan replay",
         )
@@ -1586,13 +1614,15 @@ class GateAM7M8Drill:
             config_file=state.paths.config_file,
             secret_dir=state.paths.secret_dir,
             mode="loopback",
-            services=("mysql", "redis", "app", "nginx"),
+            services=("mysql", "redis", "app", "table-sweeper", "nginx"),
         )
-        gatea._ensure_services_healthy(rows, "mysql", "redis", "app", "nginx")
+        gatea._ensure_services_healthy(
+            rows, "mysql", "redis", "app", "table-sweeper", "nginx"
+        )
         gatea._validate_loopback_publishers(rows, LOOPBACK_PORT)
-        return {"services_healthy": 4, "loopback_only": True}
+        return {"services_healthy": 5, "loopback_only": True}
 
-    def verify_m8_runtime(self) -> Mapping[str, Any]:
+    def verify_m9_runtime(self) -> Mapping[str, Any]:
         state = self.state
         if state.secrets is None:
             raise DrillError("drill Secret bundle is unavailable")
@@ -1609,8 +1639,45 @@ class GateAM7M8Drill:
             secret_dir=paths.secret_dir,
             mode="loopback",
         )
-        if snapshot.get("aerich_versions") != list(gatea.APPROVED_TARGET_M8_CHAIN):
-            raise DrillError("M8 runtime does not expose exact M0-M8")
+        if snapshot.get("aerich_versions") != list(gatea.APPROVED_TARGET_M9_CHAIN):
+            raise DrillError("M9 runtime does not expose exact M0-M9")
+        expected_table_values = {
+            "store_tables": 30,
+            "enabled_store_tables": 30,
+            "invalid_store_tables": 0,
+            "distinct_table_qr_tokens": 30,
+            "table_sessions": 0,
+            "table_session_timers": 0,
+            "table_occupancies": 0,
+        }
+        if any(snapshot.get(key) != value for key, value in expected_table_values.items()):
+            raise DrillError("M9 runtime table bootstrap invariants are invalid")
+        task_results: dict[str, dict[str, Any]] = {}
+        for label, module in (
+            ("reconcile", "app.tasks.table_reconcile"),
+            ("sweep", "app.tasks.table_sweep"),
+        ):
+            result = gatea._run_compose(
+                values=values,
+                config_file=paths.config_file,
+                secret_dir=paths.secret_dir,
+                mode="loopback",
+                arguments=(
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "app",
+                    "python",
+                    "-m",
+                    module,
+                ),
+                capture_output=True,
+            )
+            task_results[label] = _parse_task_json(result.stdout)
+        if task_results["reconcile"].get("violations") != 0:
+            raise DrillError("M9 table reconciliation reported a violation")
+        if task_results["sweep"] != {"status": "ok", "closed": 0}:
+            raise DrillError("M9 empty table sweep result is invalid")
 
         client = representative.LoopbackClient(LOOPBACK_PORT)
         admin: dict[str, Any] | None = None
@@ -1626,6 +1693,29 @@ class GateAM7M8Drill:
                 expected_role="super_admin",
             )
             token = str(admin["access_token"])
+            table_list = _json_data(
+                client.json_request(
+                    "drill-m9-admin-tables",
+                    "GET",
+                    "/api/v1/admin/tables",
+                    token=token,
+                ),
+                "m9-admin-tables",
+            )
+            table_items = table_list.get("items")
+            if (
+                not isinstance(table_items, list)
+                or len(table_items) != 30
+                or [item.get("table_no") for item in table_items]
+                != [f"T{index:02d}" for index in range(1, 31)]
+                or any(
+                    item.get("state") != "available"
+                    or item.get("is_enabled") is not True
+                    for item in table_items
+                    if isinstance(item, dict)
+                )
+            ):
+                raise DrillError("M9 admin table inventory is invalid")
             product_id = int(state.color_fixture["product_id"])
             path = f"/api/v1/admin/products/kit/{product_id}"
             identity_body, identity_headers = client.request(
@@ -1753,6 +1843,9 @@ class GateAM7M8Drill:
                 "schema_version": 1,
                 "candidate_sha": state.target_sha,
                 "aerich_versions": snapshot["aerich_versions"],
+                "store_tables": len(table_items),
+                "table_reconcile_violations": 0,
+                "table_sweep_closed": 0,
                 "admin_color_slots": len(colors),
                 "manifest_hex_matches": True,
                 "public_enabled_colors": len(public_colors),
@@ -1784,13 +1877,15 @@ class GateAM7M8Drill:
                 except BaseException as error:
                     logout_error = error
         if logout_error is not None:
-            raise DrillError("M8 runtime session cleanup failed") from logout_error
+            raise DrillError("M9 runtime session cleanup failed") from logout_error
         if operation_error is not None:
             if isinstance(operation_error, DrillError):
                 raise operation_error
-            raise DrillError("M8 runtime verification failed safely") from operation_error
+            raise DrillError("M9 runtime verification failed safely") from operation_error
         self._artifact("runtime-verification.json", payload)
         return {
+            "tables": 30,
+            "table_reconcile_violations": 0,
             "hex_colors": 221,
             "gzip_reduction_bytes": payload["identity_json_bytes"]
             - payload["gzip_json_bytes"],
@@ -1839,7 +1934,7 @@ def _state_from_record(
     target_image = payload.get("target_image")
     if (
         payload.get("schema_version") != 1
-        or payload.get("record_type") != "gatea-m7-m8-drill-state"
+        or payload.get("record_type") != "gatea-m7-m9-drill-state"
         or payload.get("source_sha") != SOURCE_SHA
         or not isinstance(target_sha, str)
         or SHA_PATTERN.fullmatch(target_sha) is None
@@ -1973,7 +2068,7 @@ def cleanup_owned_state(state: DrillState) -> dict[str, Any]:
                     state.paths.work_root.parent.resolve()
                     != Path(state.environment["RUNNER_TEMP"]).resolve()
                     or not state.paths.work_root.name.startswith(
-                        "pinkdoohub-gatea-m7-m8-"
+                        "pinkdoohub-gatea-m7-m9-"
                     )
                 ):
                     raise DrillError("refused unsafe workspace cleanup target")
@@ -2036,7 +2131,7 @@ def cleanup_owned_state(state: DrillState) -> dict[str, Any]:
     )
     return {
         "schema_version": 1,
-        "record_type": "gatea-m7-m8-drill-cleanup",
+        "record_type": "gatea-m7-m9-drill-cleanup",
         "checked_at": _utc_now(),
         "ownership_acquired": state.ownership_acquired,
         "cleanup_performed": performed,
@@ -2104,7 +2199,7 @@ def _write_artifact_scan_failure(
         state.paths.artifact_dir / "cleanup-report.json",
         {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-cleanup",
+            "record_type": "gatea-m7-m9-drill-cleanup",
             "checked_at": _utc_now(),
             "passed": cleanup_passed,
             "errors": [] if cleanup_passed else ["cleanup-not-verified"],
@@ -2114,7 +2209,7 @@ def _write_artifact_scan_failure(
         state.paths.artifact_dir / "summary.json",
         {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill",
+            "record_type": "gatea-m7-m9-drill",
             "completed_at": _utc_now(),
             "status": "failed",
             "failed_stage": failure_stage,
@@ -2139,7 +2234,7 @@ def _write_artifact_scan_marker(artifact_dir: Path) -> None:
         artifact_dir / ARTIFACT_SCAN_MARKER,
         {
             "schema_version": 1,
-            "record_type": "gatea-m7-m8-drill-artifact-scan",
+            "record_type": "gatea-m7-m9-drill-artifact-scan",
             "checked_at": _utc_now(),
             "allowlist_passed": True,
             "secret_scan_passed": True,
@@ -2185,7 +2280,7 @@ def run_command(
     *,
     environment: Mapping[str, str] = os.environ,
     runner: CommandRunner | None = None,
-    drill_factory: Callable[[DrillState], GateAM7M8Drill] = GateAM7M8Drill,
+    drill_factory: Callable[[DrillState], GateAM7M9Drill] = GateAM7M9Drill,
 ) -> int:
     command_runner = runner or CommandRunner()
     state: DrillState | None = None
@@ -2235,7 +2330,7 @@ def run_command(
             except BaseException:
                 cleanup_payload = {
                     "schema_version": 1,
-                    "record_type": "gatea-m7-m8-drill-cleanup",
+                    "record_type": "gatea-m7-m9-drill-cleanup",
                     "ownership_acquired": False,
                     "cleanup_performed": False,
                     "passed": False,
@@ -2271,7 +2366,7 @@ def run_command(
                 finalization_stage = "summary-write"
                 summary = {
                     "schema_version": 1,
-                    "record_type": "gatea-m7-m8-drill",
+                    "record_type": "gatea-m7-m9-drill",
                     "started_at": started_at,
                     "completed_at": _utc_now(),
                     "status": (
@@ -2351,7 +2446,7 @@ def run_command(
     if operation_error is not None:
         if failure_evidence is not None:
             print(
-                "Gate A M7-to-M8 drill failure evidence: "
+                "Gate A M7-to-M9 drill failure evidence: "
                 + json.dumps(failure_evidence, ensure_ascii=True, sort_keys=True),
                 file=sys.stderr,
             )
@@ -2431,7 +2526,7 @@ def cleanup_command(
                 paths.artifact_dir / "cleanup-report.json",
                 {
                     "schema_version": 1,
-                    "record_type": "gatea-m7-m8-drill-cleanup",
+                    "record_type": "gatea-m7-m9-drill-cleanup",
                     "checked_at": _utc_now(),
                     "passed": False,
                     "error_type": type(error).__name__,
@@ -2457,10 +2552,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         result = cleanup_command(arguments.artifact_dir)
     if result == 0:
-        print(f"Gate A M7-to-M8 drill {arguments.command} passed")
+        print(f"Gate A M7-to-M9 drill {arguments.command} passed")
     else:
         print(
-            f"Gate A M7-to-M8 drill {arguments.command} failed safely",
+            f"Gate A M7-to-M9 drill {arguments.command} failed safely",
             file=sys.stderr,
         )
     return result

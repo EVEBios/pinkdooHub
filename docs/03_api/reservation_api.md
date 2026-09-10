@@ -551,3 +551,5 @@ Reservation 的 mutation 除店休 PUT replay 外都不提供幂等重放成功�
 ## 9. 发布状态
 
 仓库已完成 M5 离线迁移与 N1 后端实现。2026-09-06 的一次性 MySQL 8.0.46 验证真实执行 Aerich 0→5，并通过 Reservation `7` 项并发、回滚、1205/1213 与 EXPLAIN 专项；与 Inventory 联合门槛共 `16 passed`。该次隔离结果在当时不代表任何持久环境已应用 M5；2026-09-08 的后续受控执行已将 M5/M7 应用到当前持久 Gate A M7。共享、预发布和生产数据库不因此自动迁移，运行时是否可用仍必须同时以各目标环境迁移版本、OpenAPI、客户端验收和发布记录为准；开发 SQLite 的 `generate_schemas` 不能作为持久迁移证据。
+
+M9 二维码开台与 Reservation API 保持独立：预约端点不新增 table/order/payment 字段，不自动预占桌台或触发计时。用户到店后的扫码、选单和付款计时使用独立 [二维码开台 API](table_session_api.md)；该能力已完成仓库实现，但不改变 Reservation N1/N2 的发布状态。

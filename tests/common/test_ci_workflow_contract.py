@@ -85,19 +85,18 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     assert "INVENTORY_MYSQL_TEST_DB: pinkdoohub_inventory_4311_ci" in workflow
     assert "python scripts/ci/check_mysql_gate.py preflight" in workflow
     assert "aerich --app models upgrade" in workflow
+    assert "aerich --app models downgrade -v 9 --yes" in workflow
     assert "aerich --app models downgrade -v 8 --yes" in workflow
     assert "aerich --app models downgrade -v 7 --yes" in workflow
-    assert "check_mysql_gate.py seed-m7-legacy" in workflow
     assert "aerich --app models downgrade -v 6 --yes" in workflow
+    assert "check_mysql_gate.py seed-m7-legacy" in workflow
     assert "check_mysql_gate.py seed-m6-legacy" in workflow
     assert "python scripts/ci/check_mysql_gate.py snapshot" in workflow
     assert "--ignore=tests/inventory/mysql" in workflow
     assert "--ignore=tests/reservation/mysql" in workflow
     assert "--ignore=tests/wallet/mysql" in workflow
-    assert (
-        "tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql -q"
-        in workflow
-    )
+    assert "tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql" in workflow
+    assert "tests/table_sessions/mysql -q" in workflow
     assert "--fake" not in workflow
     assert "init-db" not in workflow
     assert "generate_schemas" not in workflow
@@ -105,6 +104,7 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     initial_upgrade = workflow.index(
         "aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log"
     )
+    m9_downgrade = workflow.index("aerich --app models downgrade -v 9 --yes")
     m8_downgrade = workflow.index("aerich --app models downgrade -v 8 --yes")
     m7_downgrade = workflow.index("aerich --app models downgrade -v 7 --yes")
     m7_seed = workflow.index("check_mysql_gate.py seed-m7-legacy")
@@ -117,6 +117,7 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     snapshot = workflow.index("python scripts/ci/check_mysql_gate.py snapshot")
     assert (
         initial_upgrade
+        < m9_downgrade
         < m8_downgrade
         < m7_downgrade
         < m7_seed
@@ -127,7 +128,8 @@ def test_mysql_release_job_uses_disposable_non_default_mysql_and_real_migrations
     )
     assert workflow.count(
         "aerich --app models upgrade 2>&1 | tee -a artifacts/mysql-migration.log"
-    ) == 2
+    ) == 4
+    assert "python -m app.tasks.table_bootstrap --apply" in workflow
 
 
 def test_mysql_release_job_always_cleans_up_and_saves_evidence() -> None:
@@ -137,7 +139,7 @@ def test_mysql_release_job_always_cleans_up_and_saves_evidence() -> None:
     assert "python scripts/ci/check_mysql_gate.py cleanup" in workflow
     assert "if: always()" in workflow
     assert (
-        "hashFiles('artifacts/gatea-m7-m8-updater/artifact-scan-passed.json')"
+        "hashFiles('artifacts/gatea-m7-m9-updater/artifact-scan-passed.json')"
         in workflow
     )
     assert "artifacts/mysql-release.json" in workflow
@@ -152,11 +154,12 @@ def test_gatea_updater_job_uses_only_a_disposable_github_hosted_runner() -> None
     workflow = _workflow_text()
 
     assert "gatea-m7-m8-updater:" in workflow
+    assert "branch protection keys required checks by name" in workflow
     assert "runs-on: ubuntu-24.04" in workflow
     assert "timeout-minutes: 60" in workflow
     assert "fetch-depth: 0" in workflow
     assert (
-        "PINKDOOHUB_GATEA_M7_M8_DRILL: github-hosted-disposable-linux-v1"
+        "PINKDOOHUB_GATEA_M7_M9_DRILL: github-hosted-disposable-linux-v1"
         in workflow
     )
     assert "GITHUB_EVENT_PATH" in workflow
@@ -167,10 +170,10 @@ def test_gatea_updater_job_uses_only_a_disposable_github_hosted_runner() -> None
     assert "RUNNER_ENVIRONMENT" in workflow
     assert "if: always()" in workflow
     assert (
-        "gatea-m7-m8-updater-${{ github.sha }}-${{ github.run_id }}-"
+        "gatea-m7-m9-updater-${{ github.sha }}-${{ github.run_id }}-"
         "${{ github.run_attempt }}"
     ) in workflow
-    assert "artifacts/gatea-m7-m8-updater/" in workflow
+    assert "artifacts/gatea-m7-m9-updater/" in workflow
     assert "${{ secrets." not in workflow
     assert "pull_request_target:" not in workflow
 

@@ -31,6 +31,7 @@ from app.repositories.reservation_repo import ReservationRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.payment_repo import PaymentRepository
 from app.repositories.wallet_repo import WalletRepository
+from app.repositories.table_session_repo import TableSessionRepository
 from app.services.audit_log_service import AuditLogService
 from app.services.admin_user_service import AdminUserService
 from app.services.account_lifecycle_service import AccountLifecycleService
@@ -42,6 +43,7 @@ from app.services.reservation_service import ReservationService
 from app.services.payment_service import PaymentService
 from app.services.refund_service import RefundService
 from app.services.wallet_service import WalletService
+from app.services.table_session_service import TableSessionService
 from app.storage.image import ImageStorage, LocalImageStorage
 from app.integrations.wechat import WeChatMiniProgramProvider
 
@@ -93,6 +95,7 @@ def get_order_service(
     audit_log_repository: AuditLogRepository = Depends(),
     payment_repository: PaymentRepository = Depends(),
     wallet_repository: WalletRepository = Depends(),
+    table_session_repository: TableSessionRepository = Depends(),
 ) -> OrderService:
     """组装 OrderService 及其数据访问与共享审计依赖。"""
 
@@ -104,6 +107,7 @@ def get_order_service(
         user_repository=user_repository,
         payment_repository=payment_repository,
         wallet_repository=wallet_repository,
+        table_session_repository=table_session_repository,
     )
 
 
@@ -129,6 +133,7 @@ def get_payment_service(
     wallet_repository: WalletRepository = Depends(),
     user_repository: UserRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
+    table_session_repository: TableSessionRepository = Depends(),
 ) -> PaymentService:
     """组装订单结算与资金状态查询用例。"""
 
@@ -138,6 +143,7 @@ def get_payment_service(
         wallet_repository,
         user_repository,
         AuditLogService(audit_log_repository),
+        table_session_repository,
     )
 
 
@@ -148,6 +154,7 @@ def get_refund_service(
     inventory_repository: InventoryRepository = Depends(),
     user_repository: UserRepository = Depends(),
     audit_log_repository: AuditLogRepository = Depends(),
+    table_session_repository: TableSessionRepository = Depends(),
 ) -> RefundService:
     """组装全额退款及 PAID Kit 库存恢复用例。"""
 
@@ -158,6 +165,7 @@ def get_refund_service(
         inventory_repository,
         user_repository,
         AuditLogService(audit_log_repository),
+        table_session_repository,
     )
 
 
@@ -187,6 +195,24 @@ def get_reservation_service(
         reservation_repository,
         product_repository,
         user_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
+def get_table_session_service(
+    table_repository: TableSessionRepository = Depends(),
+    order_repository: OrderRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> TableSessionService:
+    """组装桌台二维码开台、计时查询和管理员释放用例。"""
+
+    return TableSessionService(
+        table_repository,
+        order_repository,
+        user_repository,
+        payment_repository,
         AuditLogService(audit_log_repository),
     )
 

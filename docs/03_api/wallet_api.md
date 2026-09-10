@@ -440,3 +440,11 @@ python -m app.tasks.wallet_reconcile
 ## 11. 发布验证状态
 
 2026-09-07 已在一次性 MySQL 8.0.46 完成 Wallet 专项 `9 passed` 和 Inventory + Reservation + Wallet 联合 `30 passed`，覆盖并发调账、余额支付、退款、真实 1205、模拟 1213 整事务重试、Wallet/Inventory 行锁等待及关键资金查询 `EXPLAIN`。该次结果只属于当时的本地隔离候选证据；CI workflow 后续已在干净远端通过，持久 Gate A 又于 2026-09-08 完成 M4、两个历史 backfill 与 reconcile。API 请求/响应、错误码与数据模型没有因这些门槛发生变化；共享、预发布和生产环境不因此自动迁移，生产资金开关仍未获授权。
+
+## 12. M9 二维码开台扩展（已实现）
+
+M9 已为现有 `POST /api/v1/orders/{order_id}/payments/wallet` 与 `PATCH /api/v1/admin/orders/{order_id}/paid` 增加可选 `Table-Session-No` Header。普通订单入口不携带 Header 时保持当前行为；桌台计时页或管理桌台页必须携带 Header，服务端在任何资金写入前校验该 Session 属于目标用户和订单、仍为 `awaiting_payment`，且本次可信 `Payment.succeeded_at <= payment_deadline_at`。
+
+有效桌台付款仍返回当前 `PaymentOut`，不向资金响应混入 Timer。Payment/Settlement/钱包流水、Order Paid、Session Active 和 Timer 在同一事务提交；付款后客户端通过 Table Session API 读取计时。指定 Session 已超时、关闭或身份不匹配时必须资金零写入；具体使用 `40462`、`40962`、`40966` 或资源隐藏后的稳定错误，见 [二维码开台 API](table_session_api.md)。
+
+ADMIN+ 人工结算与全额退款的现有请求/响应形状不变，并分别在原事务内激活或关闭当前 Session。真实微信 Provider 仍固定 503 零写入并另行立项。
