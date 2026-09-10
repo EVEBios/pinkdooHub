@@ -195,7 +195,10 @@ Schema 的列/索引/约束数量与确定性 SHA-256，以及 M2 已存在关�
 `gatea_backup.py backup` 会从只读数据库摘要精确区分 M7/M8 与 M9：M7/M8 写前备份只
 要求并恢复 App/Nginx，不启动尚无对应表的 `table-sweeper`；M9 备份则先要求 sweeper
 健康，把它与 Nginx/App 一起停止后再读取停写摘要和导出资产，成功后必须与 App/Nginx
-一起恢复健康。普通 `gatea_operations app-up` 仍默认严格要求 M9 sweeper；旧版本分支
+一起恢复健康。精确 M9 链同时生成 `m9-table-business-v1`，对四张桌台业务表
+进行稳定主键顺序内容摘要；独立 Restore 必须重算一致。原始 Token 和行内容只能
+存在于权限 `0600` 且由 trap 删除的容器临时文件，Record/CI artifact 只保存
+profile、schema version 和 SHA-256。普通 `gatea_operations app-up` 仍默认严格要求 M9 sweeper；旧版本分支
 只存在于备份器对批准 Aerich 链的内部调用，未知或中途变化的迁移链一律 fail closed。
 
 候选镜像内另有三个只供受控非空升级编排调用的执行原语：
@@ -412,7 +415,8 @@ sudo python -m scripts.release.gatea_backup \
 恢复只写入精确确认的独立 project、internal network 和两个临时 named volumes；
 不加入来源 project、不挂载来源卷、不发布宿主端口。工具比较数据库 Schema/诊断摘要、
 图片内容 manifest；对精确 M7/M8 链还重算并比较 `m7-preserved-business-v1` 内容摘要，
-覆盖 20 个非 `bead_colors` 表与 `bead_colors` M7 投影。随后启动 Restore App 验证
+覆盖 20 个非 `bead_colors` 表与 `bead_colors` M7 投影；M9 链在此基础上额外重算
+`m9-table-business-v1`，覆盖桌台、Session、Timer 和 Occupancy 四表。随后启动 Restore App 验证
 readiness，并在成功、失败和中断路径执行精确 `down --volumes` 后复核恢复容器/卷消失。
 来源 Gate A 服务和三个持久卷不属于清理目标。
 
@@ -425,7 +429,11 @@ readiness，并在成功、失败和中断路径执行精确 `down --volumes` �
 现有只读 SSH 身份下载精确 Backup/Restore Record 与两个 Artifact，在权限为 `0700`
 的本机临时目录重算来源 checksum；随后使用随机 AES-256-GCM 数据密钥加密、用独立
 RSA-3072 OAEP-SHA256 公钥封装数据密钥。成功后必须用私钥完成 AEAD 解密、Bundle
-成员白名单、数据库/图片 SHA-256 和 Restore PASS Record 的再次验证。
+成员白名单、数据库/图片 SHA-256 和 Restore PASS Record 的再次验证。export 前与解密
+verify 都会按精确 Aerich 链重新执行内容证据契约：M7/M8/M9 必须有完全相同的
+`m7-preserved-business-v1` 和 `m7_content_matches=true`；M9 还必须有完全相同的
+`m9-table-business-v1` 和 `m9_table_content_matches=true`。缺失、结构无效、摘要不等、
+match 为 false、未知迁移链或版本证据混装均 fail closed；加密/文件哈希本身不代替这项语义校验。
 
 ```bash
 python -m scripts.release.gatea_offsite_backup keygen \

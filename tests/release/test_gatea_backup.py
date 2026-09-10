@@ -42,6 +42,14 @@ def _m7_content_snapshot(digest: str = "7" * 64) -> dict[str, object]:
     }
 
 
+def _m9_table_content_snapshot(digest: str = "9" * 64) -> dict[str, object]:
+    return {
+        "content_sha256": digest,
+        "profile": backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": backup.M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION,
+    }
+
+
 def _directories(tmp_path: Path) -> tuple[Path, Path, Path]:
     backup_root = tmp_path / "backups"
     backup_record_dir = tmp_path / "records" / "backups"
@@ -201,6 +209,30 @@ def test_m7_content_snapshot_contract_is_versioned_sanitized_and_pre_m8_safe() -
             backup._validate_m7_content_snapshot(invalid)
 
 
+def test_m9_table_content_snapshot_contract_is_exact_and_sanitized() -> None:
+    snapshot = _m9_table_content_snapshot()
+
+    assert backup._validate_m9_table_content_snapshot(snapshot) == snapshot
+    assert "umask 077" in backup.M9_TABLE_CONTENT_SNAPSHOT_COMMAND
+    assert 'chmod 0600 "$snapshot_file"' in backup.M9_TABLE_CONTENT_SNAPSHOT_COMMAND
+    assert "--order-by-primary" in backup.M9_TABLE_CONTENT_SNAPSHOT_COMMAND
+    assert "qr_token" not in backup.M9_TABLE_CONTENT_SNAPSHOT_COMMAND
+    for table in backup.M9_TABLE_CONTENT_SNAPSHOT_TABLES:
+        assert table in backup.M9_TABLE_CONTENT_SNAPSHOT_COMMAND
+
+    for invalid in (
+        {},
+        snapshot | {"schema_version": 2},
+        snapshot | {"schema_version": 1.0},
+        snapshot | {"schema_version": True},
+        snapshot | {"profile": "other"},
+        snapshot | {"content_sha256": "not-a-digest"},
+        snapshot | {"row_counts": {}},
+    ):
+        with pytest.raises(gatea.GateAError, match="M9 table content snapshot"):
+            backup._validate_m9_table_content_snapshot(invalid)
+
+
 def test_backup_runtime_services_follow_the_exact_migration_chain() -> None:
     assert backup._requires_table_sweeper(
         {"aerich_versions": ",".join(gatea.APPROVED_SOURCE_M2_CHAIN)}
@@ -331,6 +363,11 @@ def test_create_m9_backup_stops_and_strictly_restarts_the_table_sweeper(
         "_source_m7_content_snapshot",
         lambda *args: _m7_content_snapshot(),
     )
+    monkeypatch.setattr(
+        backup,
+        "_source_m9_table_content_snapshot",
+        lambda *args: _m9_table_content_snapshot(),
+    )
     monkeypatch.setattr(backup, "_source_image_manifest", lambda *args: [])
 
     def fake_stream(**kwargs: object) -> None:
@@ -363,6 +400,7 @@ def test_create_m9_backup_stops_and_strictly_restarts_the_table_sweeper(
         (backup_records / "20260902t120001z.json").read_text(encoding="utf-8")
     )
     assert payload["table_sweeper_restarted"] is True
+    assert payload["m9_table_content_snapshot"] == _m9_table_content_snapshot()
 
 
 def _write_backup_fixture(
@@ -372,6 +410,7 @@ def _write_backup_fixture(
     *,
     database_snapshot: dict[str, object] | None = None,
     m7_content_snapshot: dict[str, object] | None = None,
+    m9_table_content_snapshot: dict[str, object] | None = None,
 ) -> dict[str, object]:
     database_path, image_path = backup._backup_paths(backup_root, backup_id)
     database_path.write_bytes(b"sql")
@@ -382,7 +421,11 @@ def _write_backup_fixture(
         "schema_version": 1,
         "backup_id": backup_id,
         "candidate_sha": "a" * 40,
-        "database_snapshot": database_snapshot or {"tables": 10},
+        "database_snapshot": database_snapshot
+        or {
+            "aerich_versions": ",".join(gatea.APPROVED_SOURCE_M2_CHAIN),
+            "tables": 10,
+        },
         "image_manifest": [],
         "artifacts": {
             "mysql": {
@@ -400,6 +443,8 @@ def _write_backup_fixture(
     }
     if m7_content_snapshot is not None:
         payload["m7_content_snapshot"] = m7_content_snapshot
+    if m9_table_content_snapshot is not None:
+        payload["m9_table_content_snapshot"] = m9_table_content_snapshot
     (backup_records / f"{backup_id}.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
@@ -459,7 +504,96 @@ def test_load_m7_backup_record_requires_exact_content_snapshot(tmp_path: Path) -
     assert loaded["m7_content_snapshot"] == _m7_content_snapshot()
 
 
-def test_verify_restore_compares_and_always_removes_temporary_resources(
+def test_load_m9_backup_record_requires_only_the_m9_table_content_snapshot(
+    tmp_path: Path,
+) -> None:
+    backup_root, backup_records, _ = _directories(tmp_path)
+    backup_id = "20260902t120000z"
+    _write_backup_fixture(
+        backup_root,
+        backup_records,
+        backup_id,
+        database_snapshot=_m9_database_snapshot(),
+        m7_content_snapshot=_m7_content_snapshot(),
+    )
+
+    with pytest.raises(gatea.GateAError, match="record is invalid"):
+        backup._load_backup_record(
+            backup_id=backup_id,
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+        )
+
+    payload = json.loads(
+        (backup_records / f"{backup_id}.json").read_text(encoding="utf-8")
+    )
+    payload["m9_table_content_snapshot"] = _m9_table_content_snapshot()
+    (backup_records / f"{backup_id}.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+    loaded, _, _ = backup._load_backup_record(
+        backup_id=backup_id,
+        backup_root=backup_root,
+        backup_record_dir=backup_records,
+    )
+    assert loaded["m9_table_content_snapshot"] == _m9_table_content_snapshot()
+
+
+def test_load_m8_backup_record_keeps_m7_evidence_and_rejects_m9_evidence(
+    tmp_path: Path,
+) -> None:
+    backup_root, backup_records, _ = _directories(tmp_path)
+    backup_id = "20260902t120000z"
+    m8_snapshot = {
+        "aerich_versions": ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
+        "tables": 26,
+    }
+    _write_backup_fixture(
+        backup_root,
+        backup_records,
+        backup_id,
+        database_snapshot=m8_snapshot,
+        m7_content_snapshot=_m7_content_snapshot(),
+    )
+
+    loaded, _, _ = backup._load_backup_record(
+        backup_id=backup_id,
+        backup_root=backup_root,
+        backup_record_dir=backup_records,
+    )
+    assert loaded["m7_content_snapshot"] == _m7_content_snapshot()
+    assert "m9_table_content_snapshot" not in loaded
+
+    loaded["m9_table_content_snapshot"] = _m9_table_content_snapshot()
+    (backup_records / f"{backup_id}.json").write_text(
+        json.dumps(loaded), encoding="utf-8"
+    )
+    with pytest.raises(gatea.GateAError, match="record is invalid"):
+        backup._load_backup_record(
+            backup_id=backup_id,
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+        )
+
+
+def test_load_backup_record_rejects_unknown_migration_chain(tmp_path: Path) -> None:
+    backup_root, backup_records, _ = _directories(tmp_path)
+    _write_backup_fixture(
+        backup_root,
+        backup_records,
+        "20260902t120000z",
+        database_snapshot={"aerich_versions": "unrecognized"},
+    )
+
+    with pytest.raises(gatea.GateAError, match="record is invalid"):
+        backup._load_backup_record(
+            backup_id="20260902t120000z",
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+        )
+
+
+def test_verify_m9_restore_compares_and_always_removes_temporary_resources(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -469,8 +603,9 @@ def test_verify_restore_compares_and_always_removes_temporary_resources(
         backup_root,
         backup_records,
         backup_id,
-        database_snapshot=_m7_database_snapshot(),
+        database_snapshot=_m9_database_snapshot(),
         m7_content_snapshot=_m7_content_snapshot(),
+        m9_table_content_snapshot=_m9_table_content_snapshot(),
     )
     values = _values(backup_root)
     commands: list[tuple[str, ...]] = []
@@ -486,12 +621,17 @@ def test_verify_restore_compares_and_always_removes_temporary_resources(
     monkeypatch.setattr(
         backup,
         "_restore_snapshot",
-        lambda *args: _m7_database_snapshot(),
+        lambda *args: _m9_database_snapshot(),
     )
     monkeypatch.setattr(
         backup,
         "_restored_m7_content_snapshot",
         lambda *args: _m7_content_snapshot(),
+    )
+    monkeypatch.setattr(
+        backup,
+        "_restored_m9_table_content_snapshot",
+        lambda *args: _m9_table_content_snapshot(),
     )
     monkeypatch.setattr(backup, "_restored_image_manifest", lambda *args: [])
 
@@ -532,6 +672,8 @@ def test_verify_restore_compares_and_always_removes_temporary_resources(
     assert record["refresh_sessions_invalidated"] is True
     assert record["m7_content_matches"] is True
     assert record["m7_content_snapshot"] == _m7_content_snapshot()
+    assert record["m9_table_content_matches"] is True
+    assert record["m9_table_content_snapshot"] == _m9_table_content_snapshot()
 
 
 def test_restore_confirmation_fails_before_docker(
@@ -594,6 +736,71 @@ def test_restore_m7_content_mismatch_still_removes_isolated_project(
         backup,
         "_restored_m7_content_snapshot",
         lambda *args: _m7_content_snapshot("8" * 64),
+    )
+    monkeypatch.setattr(backup, "_restored_image_manifest", lambda *args: [])
+
+    def fake_restore(**kwargs: object) -> subprocess.CompletedProcess[str]:
+        arguments = tuple(kwargs["arguments"])
+        commands.append(arguments)
+        stdout = "0\n" if arguments[:3] == ("exec", "--no-TTY", "redis") else ""
+        return subprocess.CompletedProcess([], 0, stdout=stdout)
+
+    monkeypatch.setattr(backup, "_run_restore", fake_restore)
+
+    with pytest.raises(gatea.GateAError, match="verification failed"):
+        backup.verify_restore(
+            backup_id=backup_id,
+            confirm_project=backup.restore_project(backup_id),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+            restore_record_dir=restore_records,
+            wait_timeout=180,
+        )
+
+    assert commands[-1] == ("down", "--volumes", "--remove-orphans")
+    assert not (restore_records / f"{backup_id}.json").exists()
+
+
+def test_restore_m9_table_content_mismatch_still_removes_isolated_project(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    backup_root, backup_records, restore_records = _directories(tmp_path)
+    backup_id = "20260902t120000z"
+    _write_backup_fixture(
+        backup_root,
+        backup_records,
+        backup_id,
+        database_snapshot=_m9_database_snapshot(),
+        m7_content_snapshot=_m7_content_snapshot(),
+        m9_table_content_snapshot=_m9_table_content_snapshot(),
+    )
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: _values(backup_root),
+    )
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(backup, "_restore_project_absent", lambda project: None)
+    monkeypatch.setattr(
+        backup,
+        "_restore_snapshot",
+        lambda *args: _m9_database_snapshot(),
+    )
+    monkeypatch.setattr(
+        backup,
+        "_restored_m7_content_snapshot",
+        lambda *args: _m7_content_snapshot(),
+    )
+    monkeypatch.setattr(
+        backup,
+        "_restored_m9_table_content_snapshot",
+        lambda *args: _m9_table_content_snapshot("8" * 64),
     )
     monkeypatch.setattr(backup, "_restored_image_manifest", lambda *args: [])
 

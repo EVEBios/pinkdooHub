@@ -137,6 +137,210 @@ def test_cli_requires_exact_run_or_cleanup_and_artifact_directory() -> None:
         drill.parse_args(["run"])
 
 
+def test_empty_m9_runtime_snapshot_requires_full_table_diagnostics() -> None:
+    snapshot = {
+        "aerich_versions": list(drill.gatea.APPROVED_TARGET_M9_CHAIN),
+        "store_tables": 30,
+        "enabled_store_tables": 30,
+        "invalid_table_numbers": 0,
+        "invalid_table_display_names": 0,
+        "invalid_table_qr_token_lengths": 0,
+        "invalid_table_qr_token_characters": 0,
+        "invalid_store_tables": 0,
+        "distinct_table_qr_tokens": 30,
+        "table_sessions": 0,
+        "table_session_timers": 0,
+        "table_occupancies": 0,
+    }
+
+    assert drill._assert_empty_m9_table_snapshot(snapshot) == {
+        key: value for key, value in drill.upgrade.M9_EMPTY_TABLE_INVARIANTS
+    }
+
+    with pytest.raises(
+        drill.DrillError,
+        match=r"invalid_table_display_names expected=0 actual=30",
+    ):
+        drill._assert_empty_m9_table_snapshot(
+            snapshot | {"invalid_table_display_names": 30}
+        )
+
+    with pytest.raises(
+        drill.DrillError,
+        match=r"store_tables expected=30 actual=None",
+    ):
+        drill._assert_empty_m9_table_snapshot(
+            {"aerich_versions": list(drill.gatea.APPROVED_TARGET_M9_CHAIN)}
+        )
+
+    for invalid_count in ("0", False, 0.0):
+        with pytest.raises(
+            drill.DrillError,
+            match=rf"invalid_table_numbers expected=0 actual={invalid_count!r}",
+        ):
+            drill._assert_empty_m9_table_snapshot(
+                snapshot | {"invalid_table_numbers": invalid_count}
+            )
+
+
+def test_available_m9_table_items_require_exact_empty_inventory() -> None:
+    items = [
+        {
+            "table_no": f"T{index:02d}",
+            "display_name": f"T{index:02d}号桌",
+            "state": "available",
+            "is_enabled": True,
+            "current_session_no": None,
+            "current_status": None,
+            "current_order_no": None,
+            "current_user_id": None,
+            "claimed_at": None,
+            "payment_deadline_at": None,
+            "table_release_at": None,
+        }
+        for index in range(1, 31)
+    ]
+
+    assert drill._assert_available_m9_table_items(items) == items
+
+    for invalid in (
+        items[:-1] + ["not-an-object"],
+        [items[0] | {"display_name": "1号桌"}, *items[1:]],
+        [items[0] | {"current_session_no": "TS-invalid"}, *items[1:]],
+    ):
+        with pytest.raises(drill.DrillError, match="admin table inventory"):
+            drill._assert_available_m9_table_items(invalid)
+
+
+def test_verify_m9_runtime_reads_the_full_upgrade_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _state(tmp_path)
+    state.secrets = drill.SecretBundle("", "", "", "", "", "")
+    snapshot = {
+        "aerich_versions": list(drill.gatea.APPROVED_TARGET_M9_CHAIN),
+        "store_tables": 30,
+        "enabled_store_tables": 30,
+        "invalid_table_numbers": 0,
+        "invalid_table_display_names": 30,
+        "invalid_table_qr_token_lengths": 0,
+        "invalid_table_qr_token_characters": 0,
+        "invalid_store_tables": 30,
+        "distinct_table_qr_tokens": 30,
+        "table_sessions": 0,
+        "table_session_timers": 0,
+        "table_occupancies": 0,
+    }
+    full_reads: list[dict[str, object]] = []
+    monkeypatch.setattr(drill.gatea, "_validated_inputs", lambda **kwargs: {})
+    monkeypatch.setattr(
+        drill.upgrade,
+        "_read_final_snapshot",
+        lambda **kwargs: full_reads.append(kwargs) or snapshot,
+    )
+    monkeypatch.setattr(
+        drill.gatea,
+        "read_database_snapshot",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("generic core-only snapshot reader must not be used")
+        ),
+    )
+
+    with pytest.raises(
+        drill.DrillError,
+        match=r"invalid_table_display_names expected=0 actual=30",
+    ):
+        drill.GateAM7M9Drill(state).verify_m9_runtime()
+
+    assert len(full_reads) == 1
+
+
+def test_runtime_verification_artifact_contains_exact_shared_m9_invariants(
+    tmp_path: Path,
+) -> None:
+    state = _state(tmp_path)
+    table_invariants = dict(drill.upgrade.M9_EMPTY_TABLE_INVARIANTS)
+
+    payload = drill.GateAM7M9Drill(state)._write_runtime_verification(
+        {"schema_version": 1, "candidate_sha": TARGET_SHA, "passed": True},
+        table_invariants,
+    )
+
+    artifact = json.loads(
+        (state.paths.artifact_dir / "runtime-verification.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(table_invariants) == 11
+    assert payload["m9_table_invariants"] == table_invariants
+    assert artifact["m9_table_invariants"] == table_invariants
+    assert set(artifact["m9_table_invariants"]) == {
+        key for key, _ in drill.upgrade.M9_EMPTY_TABLE_INVARIANTS
+    }
+
+    for invalid in (
+        table_invariants | {"table_sessions": False},
+        table_invariants | {"unexpected": 0},
+        {key: value for key, value in table_invariants.items() if key != "store_tables"},
+    ):
+        with pytest.raises(drill.DrillError, match="invariants are incomplete"):
+            drill._runtime_verification_payload({}, invalid)
+
+
+def test_m9_target_backup_restore_records_require_both_content_snapshots() -> None:
+    m7_content = {
+        "content_sha256": "7" * 64,
+        "profile": drill.backup.M7_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": drill.backup.M7_CONTENT_SNAPSHOT_SCHEMA_VERSION,
+    }
+    m9_content = {
+        "content_sha256": "9" * 64,
+        "profile": drill.backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": drill.backup.M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION,
+    }
+    backup_record = {
+        "backup_id": "20260910t120000z",
+        "candidate_sha": TARGET_SHA,
+        "m7_content_snapshot": m7_content,
+        "m9_table_content_snapshot": m9_content,
+        "table_sweeper_restarted": True,
+        "passed": True,
+    }
+    restore_record = {
+        "backup_id": "20260910t120000z",
+        "candidate_sha": TARGET_SHA,
+        "host_ports_published": False,
+        **{field: True for field in drill.upgrade.RESTORE_TRUE_FIELDS},
+        "m7_content_matches": True,
+        "m7_content_snapshot": m7_content,
+        "m9_table_content_matches": True,
+        "m9_table_content_snapshot": m9_content,
+    }
+
+    drill._assert_m9_target_backup_restore_records(
+        backup_record,
+        restore_record,
+        target_sha=TARGET_SHA,
+        backup_id="20260910t120000z",
+    )
+
+    for invalid_restore in (
+        restore_record | {"m9_table_content_matches": False},
+        restore_record | {
+            "m9_table_content_snapshot": m9_content | {"content_sha256": "8" * 64}
+        },
+        {key: value for key, value in restore_record.items() if key != "m9_table_content_snapshot"},
+    ):
+        with pytest.raises(drill.DrillError, match="records are invalid"):
+            drill._assert_m9_target_backup_restore_records(
+                backup_record,
+                invalid_restore,
+                target_sha=TARGET_SHA,
+                backup_id="20260910t120000z",
+            )
+
+
 def test_paths_reject_an_artifact_directory_outside_the_frozen_workspace_path(
     tmp_path: Path,
 ) -> None:
@@ -347,6 +551,32 @@ def test_artifact_allowlist_and_exact_secret_scan(tmp_path: Path) -> None:
     (artifact_dir / "mysql.sql").write_text("raw backup", encoding="utf-8")
     with pytest.raises(drill.DrillError, match="non-allowlisted"):
         drill.scan_artifacts(artifact_dir)
+
+
+def test_artifact_scan_rejects_raw_table_codes_but_allows_digests(
+    tmp_path: Path,
+) -> None:
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    artifact = artifact_dir / "summary.json"
+    token = "Aa0123456789BbCcDdEeFfGgHhIiJjKk"
+    assert len(token) == 32
+
+    artifact.write_text(
+        json.dumps({"qr_token_sha256": "a" * 64}) + "\n",
+        encoding="utf-8",
+    )
+    assert drill.scan_artifacts(artifact_dir)["secret_scan_passed"] is True
+
+    for unsafe in (
+        {"qr_token": token},
+        {"payload": f"PINKDOOHUB_TABLE:v1:{token}"},
+        {"url": f"/api/v1/table-codes/{token}"},
+        {"url": f"/table-codes/{token}?source=artifact"},
+    ):
+        artifact.write_text(json.dumps(unsafe) + "\n", encoding="utf-8")
+        with pytest.raises(drill.DrillError, match="credential-shaped"):
+            drill.scan_artifacts(artifact_dir)
 
 
 def test_header_token_matching_is_case_insensitive_but_not_a_substring() -> None:

@@ -81,6 +81,19 @@ M7_INVARIANT_KEYS = (
     "reservation_settings_check",
     "reservation_settings_unique",
 )
+M9_EMPTY_TABLE_INVARIANTS = (
+    ("store_tables", 30),
+    ("enabled_store_tables", 30),
+    ("invalid_table_numbers", 0),
+    ("invalid_table_display_names", 0),
+    ("invalid_table_qr_token_lengths", 0),
+    ("invalid_table_qr_token_characters", 0),
+    ("invalid_store_tables", 0),
+    ("distinct_table_qr_tokens", 30),
+    ("table_sessions", 0),
+    ("table_session_timers", 0),
+    ("table_occupancies", 0),
+)
 RESTORE_TRUE_FIELDS = (
     "database_matches",
     "images_match",
@@ -959,22 +972,9 @@ def _validate_final_snapshot(
         or final_snapshot.get("reservation_settings_unique") != 1
     ):
         raise GateAUpgradeError("Gate A final ReservationSettings invariant failed")
-    expected_table_values = {
-        "store_tables": 30,
-        "enabled_store_tables": 30,
-        "invalid_table_numbers": 0,
-        "invalid_table_display_names": 0,
-        "invalid_table_qr_token_lengths": 0,
-        "invalid_table_qr_token_characters": 0,
-        "invalid_store_tables": 0,
-        "distinct_table_qr_tokens": 30,
-        "table_sessions": 0,
-        "table_session_timers": 0,
-        "table_occupancies": 0,
-    }
-    for key, expected in expected_table_values.items():
+    for key, expected in M9_EMPTY_TABLE_INVARIANTS:
         actual = final_snapshot.get(key)
-        if actual != expected:
+        if type(actual) is not int or actual != expected:
             raise GateAUpgradeError(
                 "Gate A final M9 invariant failed: "
                 f"{key} expected={expected} actual={actual!r}"

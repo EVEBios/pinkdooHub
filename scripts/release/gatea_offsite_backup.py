@@ -238,6 +238,81 @@ def _download_remote_file(
         raise OffsiteBackupError("Gate A offsite source artifact is empty")
 
 
+def _validate_record_pair_content_evidence(
+    *,
+    backup: object,
+    restore: object,
+) -> None:
+    """按备份的精确迁移链校验 Backup/Restore 内容证据。"""
+
+    try:
+        if not isinstance(backup, dict) or not isinstance(restore, dict):
+            raise ValueError
+        database_snapshot = backup.get("database_snapshot")
+        if not isinstance(database_snapshot, dict):
+            raise ValueError
+
+        # This is the authoritative exact-chain allowlist for M2/M7/M8/M9.
+        # Reusing it also prevents an unknown future chain from silently
+        # downgrading the content-evidence requirements below.
+        gatea_backup._requires_table_sweeper(database_snapshot)
+
+        requires_m7 = gatea_backup._requires_m7_content_snapshot(
+            database_snapshot
+        )
+        has_any_m7_evidence = (
+            "m7_content_snapshot" in backup
+            or "m7_content_snapshot" in restore
+            or "m7_content_matches" in restore
+        )
+        if requires_m7 or has_any_m7_evidence:
+            if (
+                "m7_content_snapshot" not in backup
+                or "m7_content_snapshot" not in restore
+                or restore.get("m7_content_matches") is not True
+            ):
+                raise ValueError
+            backup_m7 = gatea_backup._validate_m7_content_snapshot(
+                backup["m7_content_snapshot"]
+            )
+            restore_m7 = gatea_backup._validate_m7_content_snapshot(
+                restore["m7_content_snapshot"]
+            )
+            if backup_m7 != restore_m7:
+                raise ValueError
+
+        requires_m9 = gatea_backup._requires_m9_table_content_snapshot(
+            database_snapshot
+        )
+        has_any_m9_evidence = (
+            "m9_table_content_snapshot" in backup
+            or "m9_table_content_snapshot" in restore
+            or "m9_table_content_matches" in restore
+        )
+        if not requires_m9:
+            if has_any_m9_evidence:
+                raise ValueError
+            return
+        if (
+            "m9_table_content_snapshot" not in backup
+            or "m9_table_content_snapshot" not in restore
+            or restore.get("m9_table_content_matches") is not True
+        ):
+            raise ValueError
+        backup_m9 = gatea_backup._validate_m9_table_content_snapshot(
+            backup["m9_table_content_snapshot"]
+        )
+        restore_m9 = gatea_backup._validate_m9_table_content_snapshot(
+            restore["m9_table_content_snapshot"]
+        )
+        if backup_m9 != restore_m9:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, gatea.GateAError) as error:
+        raise OffsiteBackupError(
+            "Gate A offsite record content evidence is invalid"
+        ) from error
+
+
 def _validate_source_records(
     *,
     backup_id: str,
@@ -246,6 +321,7 @@ def _validate_source_records(
     try:
         backup = json.loads(local_paths["records/backup.json"].read_text())
         restore = json.loads(local_paths["records/restore.json"].read_text())
+        _validate_record_pair_content_evidence(backup=backup, restore=restore)
         if (
             backup.get("schema_version") != 1
             or backup.get("backup_id") != backup_id
@@ -275,7 +351,13 @@ def _validate_source_records(
                 raise ValueError
             if metadata["sha256"] != _sha256_file(local_path):
                 raise ValueError
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        OffsiteBackupError,
+    ) as error:
         raise OffsiteBackupError("Gate A offsite source records are invalid") from error
     return backup, restore
 
@@ -355,6 +437,7 @@ def _inspect_bundle(bundle_path: Path) -> dict[str, Any]:
                 raise ValueError
         backup = json.loads(extracted["records/backup.json"])
         restore = json.loads(extracted["records/restore.json"])
+        _validate_record_pair_content_evidence(backup=backup, restore=restore)
         if (
             backup.get("backup_id") != manifest.get("backup_id")
             or backup.get("candidate_sha") != manifest.get("candidate_sha")
@@ -376,7 +459,14 @@ def _inspect_bundle(bundle_path: Path) -> dict[str, Any]:
                 raise ValueError
             if source["sha256"] != copied["sha256"]:
                 raise ValueError
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError, tarfile.TarError) as error:
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        tarfile.TarError,
+        OffsiteBackupError,
+    ) as error:
         raise OffsiteBackupError("Gate A encrypted backup bundle is invalid") from error
     return manifest
 

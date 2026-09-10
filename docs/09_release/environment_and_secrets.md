@@ -222,7 +222,12 @@ AES-256-GCM/RSA-OAEP-SHA256 副本、`0600` 副本 Record 和立即解密/成员
 M7→M8→M9 必须先创建新的写前 Backup/Restore，成功运行后再创建新的 M9 数据后
 Backup/Restore/加密异机副本，并分别记录精确候选 SHA、Image ID 和 Record。新写前与
 数据后 Backup 均须包含版本化 `m7-preserved-business-v1` 内容摘要，不能只比较聚合计数；
-独立 Restore Record 须同时保存 `m7_content_matches=true` 和相同摘要。
+独立 Restore Record 须同时保存 `m7_content_matches=true` 和相同摘要。精确 M9
+数据后 Backup 还须包含 `m9-table-business-v1`，覆盖四张桌台业务表；Restore
+Record 必须保存 `m9_table_content_matches=true` 和相同摘要。两类 Record 均不得
+保存原始桌台 Token、二维码 payload 或未脱敏的桌台 URL。异机加密副本的
+export 前检查和解密 verify 必须各自重新校验对应版本的 M7/M9 摘要与
+match 布尔值；AEAD 或来源文件 checksum 只证明复制未被改写，不能代替恢复语义。
 
 Run 34288613644 已在无生产 Secret/持久权限的可销毁 Runner 中完成这一
 契约的隔离实演：M7 source Backup/Restore 为 `20260908t230214z`，M8 target

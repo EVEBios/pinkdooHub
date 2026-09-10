@@ -1556,6 +1556,9 @@ def test_final_snapshot_rejects_core_drift_wallet_or_mard_gap() -> None:
         ("invalid_table_qr_token_characters", 1, "M9 invariant"),
         ("invalid_store_tables", 1, "M9 invariant"),
         ("distinct_table_qr_tokens", 29, "M9 invariant"),
+        ("table_sessions", False, "M9 invariant"),
+        ("table_session_timers", "0", "M9 invariant"),
+        ("table_occupancies", 0.0, "M9 invariant"),
     ):
         changed = final | {key: value}
         with pytest.raises(upgrade.GateAUpgradeError, match=message):

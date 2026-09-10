@@ -1,8 +1,8 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；current M8 candidate passed all 9 required Jobs, including the disposable full M7→M8 updater rehearsal；persistent Gate A remains M7
-> **Last Updated:** 2026-09-09
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / [latest recorded successful Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2）
+> **Status:** Phase 9.2 historical baseline complete；persistent Gate A remains M7；current M9 repair candidate still awaits a fresh complete 9/9 required-Job run
+> **Last Updated:** 2026-09-10
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / historical M8 success [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2 / latest recorded M9 diagnostic [Run 34477579769](https://github.com/EVEBios/pinkdooHub/actions/runs/34477579769)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
@@ -18,8 +18,11 @@ Reservation、颜色 Kit 与 M7 后，head `4d6430c...` 的 Run 34129910349 已�
 Run 34242753255 完成 8/8；其后新增的显式 M7→M8/Online no-op 发布保护已由 head
 `fa6fce05...` 的 Run 34281512196 完成 8/8。这些历史 8/8 证据继续保留；当前 head
 `62b1b15f...` / checkout `a9ff3d24...` 的 Run 34288613644 attempt 2 又把新增完整
-updater 在内的 9 个 required Jobs 全部关闭。历史结论只关闭当时 Phase 9.2 的 CI 与
+updater 在内的 9 个 required Jobs 全部关闭。该 Job 名为兼容历史 required-check
+设置继续保留 `gatea-m7-m8-updater`，当前实际候选流程已经扩展为 M7→M8→M9。
+历史结论只关闭当时 Phase 9.2/M8 的 CI 与
 可重复构建范围，不替代 9.3 的生产相似演练、9.4 的微信真机 RC 或后续模块的重新留证。
+当前 M9 head 尚未取得完整 9/9，新修复候选不得复用 Run 34288613644 的 M8 PASS。
 
 ## 0. Phase 9.2.6 远端证据
 
@@ -159,6 +162,35 @@ updater 在内的 9 个 required Jobs 全部关闭。历史结论只关闭当时
 完整身份、Job、阶段、Backup/Restore、artifact 和 cleanup 数值见
 [Gate A M7→M8 完整更新器远端 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
 
+### 0.7 M9 更新器候选与当前未关闭项（2026-09-10）
+
+required-check 的兼容名称仍为 `gatea-m7-m8-updater`，避免改变分支保护配置；从 M9
+候选开始，它执行的实际链路是 M7→M8→M9：先恢复受控 M7 source，连续应用 M8/M9，
+bootstrap 精确 30 张桌台，启动 App/Nginx/常驻 table sweeper，完成 M9 Runtime API
+核验，再执行 M9 数据后 Backup/独立 Restore。名称兼容不代表流程仍停留在 M8。
+
+当前失败 Run 全部保留为诊断与回归依据，不得拼接为 PASS：
+
+1. [Run 34455514865](https://github.com/EVEBios/pinkdooHub/actions/runs/34455514865)
+   暴露 M7 source Backup/Restore 按 M9 Runtime 默认值误启动 table sweeper；M7 尚无桌台
+   表，恢复流程必须按精确 Aerich 版本只恢复该版本应存在的常驻服务。
+2. [Run 34466953348](https://github.com/EVEBios/pinkdooHub/actions/runs/34466953348)
+   暴露官方 MySQL CLI 默认 `latin1` 会把合法 UTF-8 桌台显示名误判为非法；数据库
+   invariant 的 CLI 连接必须显式使用 `utf8mb4`，显示名后缀也必须由 UTF-8 字节构造。
+3. [Run 34477579769](https://github.com/EVEBios/pinkdooHub/actions/runs/34477579769)
+   已越过 M9 最终数据库 invariant 和 `app-up`，随后 Runtime verifier 错把只覆盖
+   M0–M7 核心表的通用 snapshot 当成 M9 full snapshot，因缺少桌台键而失败。该结果只
+   证明失败点之前的阶段在该 Run 到达成功状态，不构成完整 updater 或 9/9 PASS。
+
+当前仓库修复候选把 M9 最终 full snapshot 与 Runtime verifier 统一到同一组 11 项
+count-only invariant；artifact 扫描显式拒绝 `qr_token`、未脱敏桌台码 payload/URL；
+M9 Backup/Restore 新增精确、只输出摘要的 `m9-table-business-v1` 内容指纹，覆盖
+`store_tables`、`table_sessions`、`table_session_timers` 与 `table_occupancies`，避免
+只比较旧核心 snapshot 时对桌台内容丢失产生假阳性。本地 release 测试与隔离 MySQL
+探针已经覆盖上述修复，但它们不是远端 required Job 证据。只有同一当前 SHA 从干净
+checkout 完成全新 9/9，才能关闭 M9 disposable updater 缺口；持久 Gate A 在此之前
+仍为 M7，M8/M9 均未应用。
+
 ## 1. 全局规则
 
 - PR、集成分支和 RC 初期全部运行完整门槛，不做路径跳过；
@@ -173,13 +205,14 @@ updater 在内的 9 个 required Jobs 全部关闭。历史结论只关闭当时
 ## 2. Job 矩阵
 
 当前 workflow 共有 9 个 required Jobs；历史报告中的 8/8 是当时尚未加入
-`gatea-m7-m8-updater` 时的完整集合，应保留其原有证据边界。
+`gatea-m7-m8-updater` 时的完整集合，应保留其原有证据边界。该名称为分支保护兼容名；
+当前 Job 的实际候选语义为 M7→M8→M9，且尚待新的完整 9/9 验证。
 
 | Job | 服务 | 关键命令/动作 | 阻断规则 | Artifact/证据 | 负责人 |
 |-----|------|---------------|----------|---------------|--------|
 | `backend-sqlite` | 隔离 Redis 或 fakeredis | 安装 Python；`pytest tests/ -q` | 任一失败；除已批准 MySQL-only 外出现未知 skip | pytest 日志/JUnit | Yijie Shen |
-| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→8；M5 fixed→M6→M7→M8 历史重放；M6/M7/M8 snapshot；联合运行 `tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql` | 迁移、版本、历史兼容、221 槽/HEX、M7 单例/默认值、FK/约束/索引、库存/预约/资金并发、1205/1213、跨域锁序、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6/M7/M8 快照、pytest/JUnit、cleanup | Yijie Shen |
-| `gatea-m7-m8-updater` | GitHub-hosted disposable Ubuntu；真实 Gate A Compose/MySQL 8.0.46/Redis/Nginx/图片卷 | 冻结 M7 Runtime 建库与 221 PNG；source Backup/独立 Restore；当前 checkout M8 plan/apply/停服 replay/app-up；221 HEX、gzip/identity 等价、PNG 不压缩；M8 Backup/Restore | Runner/资源身份、备份恢复、升级、运行时核验、Secret 扫描或精确清理任一失败 | 白名单 summary、两组 Backup/Restore Record、upgrade plan/apply/replay/Record/evidence、runtime、cleanup | Yijie Shen |
+| `backend-mysql-release` | 专用 MySQL 8+，非 3306，专用 Schema | Aerich 0→9；M5 fixed→M6→M7→M8→M9 历史重放；M6/M7/M8/M9 snapshot；联合运行 `tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql tests/table_sessions/mysql` | 迁移、版本、历史兼容、221 槽/HEX、M7 单例/默认值、M9 四表/约束/索引、库存/预约/资金/桌台并发、1205/1213、跨域锁序、HTTP、店休一致性、EXPLAIN 任一失败 | MySQL 版本、Aerich/M6/M7/M8/M9 快照、pytest/JUnit、cleanup | Yijie Shen |
+| `gatea-m7-m8-updater`（兼容名） | GitHub-hosted disposable Ubuntu；真实 Gate A Compose/MySQL 8.0.46/Redis/Nginx/图片卷 | 冻结 M7 Runtime 建库与 221 PNG；source Backup/独立 Restore；当前 checkout 连续执行 M8/M9 plan/apply/停服 replay；30 桌 bootstrap；App/Nginx/table sweeper app-up；M9 DB/Runtime/reconcile；M9 Backup/Restore | Runner/资源身份、版本化服务恢复、备份恢复、升级、11 项桌台 invariant、Runtime API、桌台内容摘要、桌台码 Secret 扫描或精确清理任一失败 | 白名单 summary、两组 Backup/Restore Record、upgrade plan/apply/replay/Record/evidence、M9 runtime、cleanup | Yijie Shen |
 | `frontend-quality` | 无 | `npm ci --legacy-peer-deps`；typecheck；ESLint；Stylelint；Jest；CI policy tests | 安装/检查/测试任一失败；新增未批准 warning | Jest JSON/log、版本清单 | Yijie Shen |
 | `openapi-contract` | 无外部 DB/Redis | 设置 UTF-8；真实导出到临时文件；比较固定 JSON；生成类型 `--check` | JSON/类型漂移、临时文件残留、CLI smoke 失败 | diff、paths/schemas 摘要 | Yijie Shen |
 | `weapp-build` | 无 | 注入受控 HTTPS Origin；`npm run build:weapp`；配置/包体/Secret 扫描 | 构建失败、非预期/占位/本机 Origin、Secret、微信包体越界、未批准 warning；保留 `.test` Origin 若被标成可发布也必须失败 | `dist/weapp`、manifest、checksum、构建日志 | Yijie Shen |
@@ -265,10 +298,11 @@ Wallet 的 MySQL v1 关键闭环原有单独一次性 `2 passed` 历史结果。
 [Wallet 远端 CI 报告](reports/wallet_remote_ci_2026-09-07.md)。其后新增的 Gate A 运维与
 MARD 测试仍须由后续 SHA 重跑，不能沿用本 Run。
 
-### 3.2.1 Gate A M7→M8 Updater Rehearsal
+### 3.2.1 Gate A M7→M8→M9 Updater Rehearsal
 
 `gatea-m7-m8-updater` 是对 3.2 的补充而不是替代。它要求完整 Git 历史，source 固定为
-已留证的 M7 Runtime，target 绑定本次干净 checkout 的精确 `GITHUB_SHA`。编排器只在
+已留证的 M7 Runtime，target 绑定本次干净 checkout 的精确 `GITHUB_SHA`。Job 名称为
+兼容既有 required-check 配置保留，当前实际链路是 M7→M8→M9。编排器只在
 `RUNNER_ENVIRONMENT=github-hosted`、Linux、root、显式 sentinel 和本地 Docker daemon
 同时成立时运行；固定 Gate A container、volume、network 或 loopback 端口若已存在，
 必须在产生写入前拒绝。
@@ -277,9 +311,11 @@ Job 的总超时为 60 分钟，但完整 `run` 另受 40 分钟进程组 watchd
 Python 及其 Docker 子进程，并为独立 `always()` cleanup 保留最多 8 分钟，避免卡死操作
 耗尽总闸而跳过资源补偿与证据收口。
 
-顺序固定为：M7 首次迁移/启动与代表数据 → source 221 色 PNG 发布 → source
-Backup/独立 Restore → M8 plan/apply → App/Nginx 保持停止的 plan replay → target
-`app-up` → 221 HEX/gzip/PNG Runtime 核验 → M8 数据后 Backup/独立 Restore。`run` 的
+当前顺序固定为：M7 首次迁移/启动与代表数据 → source 221 色 PNG 发布 → source
+Backup/独立 Restore → M8 plan/apply → M9 plan/apply 与 30 桌 bootstrap → App/Nginx
+保持停止的 plan replay → target `app-up`（含 table sweeper）→ 221 HEX/gzip/PNG 与
+M9 Runtime 核验 → M9 数据后 Backup/独立 Restore。M7/M8 source Restore 不得启动
+尚无桌台表的 sweeper；M9 Restore 必须恢复并核验它。`run` 的
 `finally` 与 workflow 的 `if: always()` cleanup 双重回收精确资源；上传同时要求脱敏白名单
 和 cleanup 后重新签发的安全扫描 marker，MySQL dump、图片 tar、配置、Secret、合成密码
 和 Token 均不得进入 artifact。扫描异常会先失效 marker 并清空候选上传内容，只重建安全
@@ -292,6 +328,11 @@ Run 34288613644 attempt 2 已将这一顺序在精确 checkout
 updater”的隔离环境缺口，不构成持久 Gate A 写入授权，也不替代真实候选
 Image ID、当次持久 Backup/Restore、真实 Origin/TLS、`release_eligible=true` RC
 或 iOS/Android 真机。
+
+Run 34455514865、34466953348、34477579769 依次暴露版本化 sweeper 恢复、MySQL CLI
+字符集和 M9 Runtime full-snapshot 读取缺陷，详见 §0.7。当前修复候选还加入共享 11 项
+invariant、桌台码 artifact 扫描和 `m9-table-business-v1` Backup/Restore 内容摘要；这些
+改动只有取得同一当前 SHA 的全新 9/9 后才能成为远端 PASS 证据。
 
 ### 3.3 Frontend Quality
 
@@ -390,10 +431,10 @@ Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装�
 | Gate B RC | 全部 Job + Gate B 专项 | 受保护生产候选 Secret | 经双人/明确审批后提审 |
 | 定时 | 依赖审计、可选工具链兼容检查 | 最小读取权限 | 无发布 |
 
-## 6. 历史 9.2 完成定义与当前候选重开项
+## 6. 历史 9.2 完成定义与当前 M9 候选重开项
 
-以下第一组 `[x]` 仅表示 Phase 9.2 的 M0–M2 历史基线完成；当前 M8
-候选的 9-Job 结论必须另外由本节后半部和 §0.6 的 Run 34288613644 证据支持：
+以下第一组 `[x]` 仅表示 Phase 9.2 的 M0–M2 历史基线完成；§0.6 的 Run
+34288613644 只支持当时 M8 候选的 9-Job 结论，不支持当前 M9 候选：
 
 - [x] CI 配置已提交并经过至少一个 PR 真实运行；
 - [x] 所有 Job 从干净 checkout 通过；
@@ -406,7 +447,7 @@ Python 漏洞扫描已选用并固定 `pip-audit==2.10.1`；扫描器只安装�
 - [x] warning 策略为零项白名单，任何未批准 warning 都阻断；
 - [x] 没有配置自动迁移持久数据库、自动提审或自动发布。
 
-M8 基线与后续候选结果：
+M8 基线与当时候选结果：
 
 - [x] 修复后的同一干净 PR checkout 完成八类 Job 8/8，保存 Run 34129910349 与 7 组 artifact；
 - [x] MySQL Job 在远端精确覆盖 M0–M7、M5→M6→M7 历史重放、M7 snapshot、联合
@@ -426,7 +467,12 @@ M8 基线与后续候选结果：
   Backup/Restore、Runtime 和二次 cleanup 证据均完整；
 - [x] attempt 1 的 `openapi-contract` 仅在安装依赖时遇到 pip truststore TLS 瞬态
   错误，contract 命令未运行；failed-job rerun 在 51 秒内通过并形成最终 attempt 2；
-- [ ] 持久 Gate A 仍需当次授权、新 Backup/独立 Restore、停写窗口、目标 Image
-  与 Runtime 验收后才能应用 M8；
-- [ ] Gate A M7→M8、真实 Origin/TLS/RC、iOS/Android 真机、微信上传灰度发布继续由
+- [ ] 当前 M9 SHA 必须重新完成全部 9 个 required Jobs；兼容名
+  `gatea-m7-m8-updater` 必须真实完成 M7→M8→M9、11 项桌台 invariant、M9 Runtime、
+  `m9-table-business-v1` Backup/Restore、artifact 扫描和精确 cleanup；
+- [ ] Run 34455514865、34466953348、34477579769 均为失败诊断证据，不得与其他 Run
+  的成功 Job 拼接；当前修复只有在新的同 SHA 9/9 后才能记为 PASS；
+- [ ] 持久 Gate A 仍需当次授权、新 Backup/独立 Restore、停写窗口、目标 Image、
+  M7→M8→M9 迁移与 Runtime 验收后才能应用 M8/M9；
+- [ ] Gate A M7→M8→M9、真实 Origin/TLS/RC、iOS/Android 真机、微信上传灰度发布继续由
   后续 Gate 单独授权，CI 不自动执行。

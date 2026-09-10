@@ -65,6 +65,24 @@ M7_PRESERVED_TABLES = (
     "wallet_accounts",
     "wallet_transactions",
 )
+M9_TABLE_CONTENT_SNAPSHOT_PROFILE = "m9-table-business-v1"
+M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION = 1
+M9_TABLE_CONTENT_SNAPSHOT_TABLES = (
+    "store_tables",
+    "table_sessions",
+    "table_session_timers",
+    "table_occupancies",
+)
+M9_TABLE_CONTENT_SNAPSHOT_KEYS = frozenset(
+    {
+        "content_sha256",
+        "profile",
+        "schema_version",
+    }
+)
+M9_TABLE_CONTENT_SNAPSHOT_AERICH_CHAIN = ",".join(
+    gatea.APPROVED_TARGET_M9_CHAIN
+)
 MYSQL_DUMP_COMMAND = (
     'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" '
     "exec mysqldump --host=127.0.0.1 --user=root "
@@ -136,6 +154,28 @@ if [ "${{#content_sha256}}" -ne 64 ]; then
   exit 1
 fi
 printf '{{"content_sha256":"%s","profile":"{M7_CONTENT_SNAPSHOT_PROFILE}","schema_version":{M7_CONTENT_SNAPSHOT_SCHEMA_VERSION}}}\\n' \
+  "$content_sha256"
+'''
+M9_TABLE_CONTENT_SNAPSHOT_COMMAND = f'''MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+umask 077
+snapshot_file="$(mktemp /tmp/pinkdoohub-m9-table-content.XXXXXX)"
+chmod 0600 "$snapshot_file"
+trap 'rm -f "$snapshot_file"' EXIT HUP INT TERM
+LC_ALL=C mysqldump --host=127.0.0.1 --user=root \
+  --single-transaction --hex-blob --set-gtid-purged=OFF --no-tablespaces \
+  --default-character-set=utf8mb4 --no-create-info --skip-triggers --compact \
+  --order-by-primary --skip-extended-insert "$MYSQL_DATABASE" \
+  {" ".join(M9_TABLE_CONTENT_SNAPSHOT_TABLES)} > "$snapshot_file"
+content_sha256="$(sha256sum "$snapshot_file" | awk '{{print $1}}')"
+case "$content_sha256" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]* ) ;;
+  * ) exit 1 ;;
+esac
+if [ "${{#content_sha256}}" -ne 64 ]; then
+  exit 1
+fi
+printf '{{"content_sha256":"%s","profile":"{M9_TABLE_CONTENT_SNAPSHOT_PROFILE}","schema_version":{M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION}}}\n' \
   "$content_sha256"
 '''
 IMAGE_MANIFEST_COMMAND = (
@@ -287,6 +327,13 @@ def _requires_m7_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
     return snapshot.get("aerich_versions") in M7_CONTENT_SNAPSHOT_AERICH_CHAINS
 
 
+def _requires_m9_table_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
+    return (
+        snapshot.get("aerich_versions")
+        == M9_TABLE_CONTENT_SNAPSHOT_AERICH_CHAIN
+    )
+
+
 def _requires_table_sweeper(snapshot: Mapping[str, Any]) -> bool:
     """只有精确 M9 Schema 才允许恢复 M9 桌台清理器。"""
 
@@ -319,6 +366,25 @@ def _validate_m7_content_snapshot(payload: object) -> dict[str, Any]:
     return dict(payload)
 
 
+def _validate_m9_table_content_snapshot(payload: object) -> dict[str, Any]:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != M9_TABLE_CONTENT_SNAPSHOT_KEYS
+    ):
+        raise gatea.GateAError("Gate A M9 table content snapshot is invalid")
+    content_sha256 = payload.get("content_sha256")
+    if (
+        type(payload.get("schema_version")) is not int
+        or payload.get("schema_version")
+        != M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        or payload.get("profile") != M9_TABLE_CONTENT_SNAPSHOT_PROFILE
+        or not isinstance(content_sha256, str)
+        or gatea.SHA256_PATTERN.fullmatch(content_sha256) is None
+    ):
+        raise gatea.GateAError("Gate A M9 table content snapshot is invalid")
+    return dict(payload)
+
+
 def _source_m7_content_snapshot(
     values: Mapping[str, str],
     config_file: Path,
@@ -341,6 +407,30 @@ def _source_m7_content_snapshot(
         capture_output=True,
     )
     return _validate_m7_content_snapshot(_parse_snapshot(result.stdout))
+
+
+def _source_m9_table_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql",
+            "sh",
+            "-ec",
+            M9_TABLE_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m9_table_content_snapshot(_parse_snapshot(result.stdout))
 
 
 def _source_snapshot(
@@ -511,6 +601,7 @@ def create_backup(
     backup_error: BaseException | None = None
     snapshot: dict[str, Any] = {}
     m7_content_snapshot: dict[str, Any] | None = None
+    m9_table_content_snapshot: dict[str, Any] | None = None
     image_manifest: list[str] = []
     try:
         stopped_services = (
@@ -532,6 +623,13 @@ def create_backup(
             )
         if _requires_m7_content_snapshot(snapshot):
             m7_content_snapshot = _source_m7_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                mode,
+            )
+        if _requires_m9_table_content_snapshot(snapshot):
+            m9_table_content_snapshot = _source_m9_table_content_snapshot(
                 values,
                 config_file,
                 secret_dir,
@@ -614,6 +712,11 @@ def create_backup(
             if m7_content_snapshot is not None
             else {}
         ),
+        **(
+            {"m9_table_content_snapshot": m9_table_content_snapshot}
+            if m9_table_content_snapshot is not None
+            else {}
+        ),
         "image_manifest": image_manifest,
         "artifacts": {
             "mysql": {
@@ -664,6 +767,10 @@ def _load_backup_record(
         ):
             raise ValueError
         database_snapshot = payload["database_snapshot"]
+        # Restore supports only exact, already-reviewed migration chains.  This
+        # is also the authoritative gate for deciding which content evidence is
+        # required, so an unknown chain cannot downgrade verification.
+        _requires_table_sweeper(database_snapshot)
         m7_content_snapshot = payload.get("m7_content_snapshot")
         if _requires_m7_content_snapshot(database_snapshot):
             if m7_content_snapshot is None:
@@ -671,6 +778,13 @@ def _load_backup_record(
             _validate_m7_content_snapshot(m7_content_snapshot)
         elif m7_content_snapshot is not None:
             _validate_m7_content_snapshot(m7_content_snapshot)
+        m9_table_content_snapshot = payload.get("m9_table_content_snapshot")
+        if _requires_m9_table_content_snapshot(database_snapshot):
+            if m9_table_content_snapshot is None:
+                raise ValueError
+            _validate_m9_table_content_snapshot(m9_table_content_snapshot)
+        elif m9_table_content_snapshot is not None:
+            raise ValueError
         for name, path in expected.items():
             metadata = artifacts[name]
             if metadata.get("path") != str(path):
@@ -679,7 +793,14 @@ def _load_backup_record(
                 raise ValueError
             if _sha256(path) != metadata["sha256"]:
                 raise ValueError
-    except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (
+        FileNotFoundError,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        gatea.GateAError,
+    ) as error:
         raise gatea.GateAError("Gate A verified backup record is invalid") from error
     return payload, database_path, image_path
 
@@ -767,6 +888,30 @@ def _restored_m7_content_snapshot(
     return _validate_m7_content_snapshot(_parse_snapshot(result.stdout))
 
 
+def _restored_m9_table_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> dict[str, Any]:
+    result = _run_restore(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        project=project,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql-restore",
+            "sh",
+            "-ec",
+            M9_TABLE_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m9_table_content_snapshot(_parse_snapshot(result.stdout))
+
+
 def _restored_image_manifest(
     values: Mapping[str, str],
     config_file: Path,
@@ -852,6 +997,10 @@ def verify_restore(
     restored_snapshot: dict[str, Any] = {}
     restored_m7_content_snapshot: dict[str, Any] | None = None
     expected_m7_content_snapshot = payload.get("m7_content_snapshot")
+    restored_m9_table_content_snapshot: dict[str, Any] | None = None
+    expected_m9_table_content_snapshot = payload.get(
+        "m9_table_content_snapshot"
+    )
     restored_images: list[str] = []
     redis_size = "unknown"
     passed = False
@@ -935,6 +1084,15 @@ def verify_restore(
                 secret_dir,
                 project,
             )
+        if expected_m9_table_content_snapshot is not None:
+            restored_m9_table_content_snapshot = (
+                _restored_m9_table_content_snapshot(
+                    values,
+                    config_file,
+                    secret_dir,
+                    project,
+                )
+            )
         restored_images = _restored_image_manifest(
             values, config_file, secret_dir, project
         )
@@ -974,6 +1132,13 @@ def verify_restore(
         if restored_m7_content_snapshot != expected_m7_content_snapshot:
             raise gatea.GateAError(
                 "Gate A restored M7 content snapshot does not match"
+            )
+        if (
+            restored_m9_table_content_snapshot
+            != expected_m9_table_content_snapshot
+        ):
+            raise gatea.GateAError(
+                "Gate A restored M9 table content snapshot does not match"
             )
         if restored_images != payload["image_manifest"]:
             raise gatea.GateAError("Gate A restored image manifest does not match")
@@ -1034,6 +1199,16 @@ def verify_restore(
                     "m7_content_snapshot": restored_m7_content_snapshot,
                 }
                 if restored_m7_content_snapshot is not None
+                else {}
+            ),
+            **(
+                {
+                    "m9_table_content_matches": True,
+                    "m9_table_content_snapshot": (
+                        restored_m9_table_content_snapshot
+                    ),
+                }
+                if restored_m9_table_content_snapshot is not None
                 else {}
             ),
             "images_match": True,

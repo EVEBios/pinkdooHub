@@ -14,6 +14,50 @@ BACKUP_ID = "20260902t014211z"
 CANDIDATE_SHA = "a" * 40
 
 
+def _m7_content_snapshot(digest: str = "7" * 64) -> dict[str, object]:
+    return {
+        "content_sha256": digest,
+        "profile": offsite.gatea_backup.M7_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": (
+            offsite.gatea_backup.M7_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        ),
+    }
+
+
+def _m9_table_content_snapshot(digest: str = "9" * 64) -> dict[str, object]:
+    return {
+        "content_sha256": digest,
+        "profile": offsite.gatea_backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": (
+            offsite.gatea_backup.M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        ),
+    }
+
+
+def _persist_source_records(
+    local_paths: dict[str, Path], backup: dict, restore: dict
+) -> None:
+    local_paths["records/backup.json"].write_text(
+        json.dumps(backup), encoding="utf-8"
+    )
+    local_paths["records/restore.json"].write_text(
+        json.dumps(restore), encoding="utf-8"
+    )
+
+
+def _add_m9_content_evidence(backup: dict, restore: dict) -> None:
+    backup["database_snapshot"] = {
+        "aerich_versions": ",".join(offsite.gatea.APPROVED_TARGET_M9_CHAIN),
+        "tables": 27,
+    }
+    backup["m7_content_snapshot"] = _m7_content_snapshot()
+    backup["m9_table_content_snapshot"] = _m9_table_content_snapshot()
+    restore["m7_content_matches"] = True
+    restore["m7_content_snapshot"] = _m7_content_snapshot()
+    restore["m9_table_content_matches"] = True
+    restore["m9_table_content_snapshot"] = _m9_table_content_snapshot()
+
+
 def _source_fixture(tmp_path: Path) -> tuple[dict[str, Path], dict, dict]:
     remote = offsite._remote_path_map(BACKUP_ID)
     mysql = tmp_path / "mysql.sql"
@@ -26,6 +70,12 @@ def _source_fixture(tmp_path: Path) -> tuple[dict[str, Path], dict, dict]:
         "schema_version": 1,
         "backup_id": BACKUP_ID,
         "candidate_sha": CANDIDATE_SHA,
+        "database_snapshot": {
+            "aerich_versions": ",".join(
+                offsite.gatea.APPROVED_SOURCE_M2_CHAIN
+            ),
+            "tables": 10,
+        },
         "artifacts": {
             "mysql": {
                 "path": str(remote["artifacts/mysql.sql"]),
@@ -116,6 +166,119 @@ def test_source_records_require_successful_isolated_restore_and_checksums(
         )
 
 
+def test_m9_source_records_and_bundle_round_trip_with_versioned_content_evidence(
+    tmp_path: Path,
+) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    _add_m9_content_evidence(backup, restore)
+    _persist_source_records(local_paths, backup, restore)
+
+    assert offsite._validate_source_records(
+        backup_id=BACKUP_ID,
+        local_paths=local_paths,
+    ) == (backup, restore)
+
+    bundle = tmp_path / "m9-bundle.tar.gz"
+    manifest = offsite._build_bundle(
+        backup_id=BACKUP_ID,
+        local_paths=local_paths,
+        backup=backup,
+        restore=restore,
+        bundle_path=bundle,
+    )
+    assert offsite._inspect_bundle(bundle) == manifest
+
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "missing_m7_backup",
+        "missing_m9_restore",
+        "m7_match_false",
+        "m9_match_false",
+        "m7_snapshot_mismatch",
+        "m9_snapshot_mismatch",
+    ),
+)
+def test_m9_source_records_fail_closed_on_incomplete_or_mismatched_evidence(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    _add_m9_content_evidence(backup, restore)
+    if case == "missing_m7_backup":
+        backup.pop("m7_content_snapshot")
+    elif case == "missing_m9_restore":
+        restore.pop("m9_table_content_snapshot")
+    elif case == "m7_match_false":
+        restore["m7_content_matches"] = False
+    elif case == "m9_match_false":
+        restore["m9_table_content_matches"] = False
+    elif case == "m7_snapshot_mismatch":
+        restore["m7_content_snapshot"] = _m7_content_snapshot("8" * 64)
+    else:
+        restore["m9_table_content_snapshot"] = _m9_table_content_snapshot(
+            "a" * 64
+        )
+    _persist_source_records(local_paths, backup, restore)
+
+    with pytest.raises(offsite.OffsiteBackupError, match="source records"):
+        offsite._validate_source_records(
+            backup_id=BACKUP_ID,
+            local_paths=local_paths,
+        )
+
+
+@pytest.mark.parametrize("database_snapshot", (None, [], {}))
+def test_source_records_require_an_approved_database_snapshot_object(
+    tmp_path: Path,
+    database_snapshot: object,
+) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    if database_snapshot is None:
+        backup.pop("database_snapshot")
+    else:
+        backup["database_snapshot"] = database_snapshot
+    _persist_source_records(local_paths, backup, restore)
+
+    with pytest.raises(offsite.OffsiteBackupError, match="source records"):
+        offsite._validate_source_records(
+            backup_id=BACKUP_ID,
+            local_paths=local_paths,
+        )
+
+
+def test_source_records_reject_unknown_migration_chain_without_echoing_it(
+    tmp_path: Path,
+) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    unknown_chain = "unapproved-sensitive-chain"
+    backup["database_snapshot"] = {"aerich_versions": unknown_chain}
+    _persist_source_records(local_paths, backup, restore)
+
+    with pytest.raises(offsite.OffsiteBackupError) as captured:
+        offsite._validate_source_records(
+            backup_id=BACKUP_ID,
+            local_paths=local_paths,
+        )
+    assert "source records are invalid" in str(captured.value)
+    assert unknown_chain not in str(captured.value)
+
+
+def test_non_m9_source_records_reject_any_m9_evidence(tmp_path: Path) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    backup["m9_table_content_snapshot"] = _m9_table_content_snapshot()
+    restore["m9_table_content_matches"] = True
+    restore["m9_table_content_snapshot"] = _m9_table_content_snapshot()
+    _persist_source_records(local_paths, backup, restore)
+
+    with pytest.raises(offsite.OffsiteBackupError, match="source records"):
+        offsite._validate_source_records(
+            backup_id=BACKUP_ID,
+            local_paths=local_paths,
+        )
+
+
 def test_bundle_contains_only_fixed_regular_members_and_verified_manifest(
     tmp_path: Path,
 ) -> None:
@@ -136,6 +299,34 @@ def test_bundle_contains_only_fixed_regular_members_and_verified_manifest(
             offsite.EXPECTED_BUNDLE_MEMBERS
         )
         assert all(member.isfile() for member in archive.getmembers())
+
+
+def test_bundle_rejects_self_consistent_but_semantically_invalid_m9_evidence(
+    tmp_path: Path,
+) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    _add_m9_content_evidence(backup, restore)
+    invalid_snapshot = {
+        "content_sha256": "not-a-sha256",
+        "profile": offsite.gatea_backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": (
+            offsite.gatea_backup.M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        ),
+    }
+    backup["m9_table_content_snapshot"] = invalid_snapshot
+    restore["m9_table_content_snapshot"] = invalid_snapshot.copy()
+    _persist_source_records(local_paths, backup, restore)
+    bundle = tmp_path / "semantically-invalid.tar.gz"
+    offsite._build_bundle(
+        backup_id=BACKUP_ID,
+        local_paths=local_paths,
+        backup=backup,
+        restore=restore,
+        bundle_path=bundle,
+    )
+
+    with pytest.raises(offsite.OffsiteBackupError, match="bundle is invalid"):
+        offsite._inspect_bundle(bundle)
 
 
 def test_bundle_rejects_unexpected_member(tmp_path: Path) -> None:

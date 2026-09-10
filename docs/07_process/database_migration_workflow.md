@@ -618,7 +618,9 @@ backfill/reconcile、221 色/持久 PNG、综合数据及数据后 Backup/Restor
 `bead_colors` 的 M7 字段投影，共 21 个业务表；M8 的 `swatch_hex` 被有意排除，使该摘要
 在合法 M7→M8 前后保持不变。Aerich 精确链、完整图片 manifest 和原有聚合摘要仍分别
 核验，其中聚合只作诊断，不能替代内容摘要。M7/M8/M9 Backup 和独立 Restore 必须携带并
-重算同一 profile；旧 M7 Backup 缺失时拒绝升级。
+重算同一 profile；旧 M7 Backup 缺失时拒绝升级。精确 M9 数据后 Backup 另外必须带
+`m9-table-business-v1`，按稳定主键顺序覆盖桌台、Session、Timer 和 Occupancy
+四表；独立 Restore 必须重算完全相同的摘要，Record 不记录原始 Token/行内容。
 
 在 App/Nginx 停止、live DB/图片与该 Backup 精确匹配后，入口先执行只使用 M7 字段的
 raw source preflight：`information_schema` 必须确认不存在 `swatch_hex`，221 条
@@ -763,6 +765,9 @@ Run 34288613644 只能作为基线，不能替代当前 M9 候选自身的 9/9 r
 保留兼容 Job ID 的 `gatea-m7-m8-updater` M7→M8→M9 disposable 证据。Job ID 不改名，
 避免让现有 branch protection 的 required check 静默失联；artifact 与内部 sentinel 使用
 M9 名称表达当前语义。
+该 M9 数据后 Backup/Restore 必须同时带有既有 21 表 M7 保留摘要与
+`m9-table-business-v1` 四表内容摘要；通用 Core 行数聚合、30 桌 API 列表或单独
+Token 唯一数都不能替代内容级恢复证据。
 
 普通占位二维码不是迁移或数据库备份的一部分。内部验收如需生成，必须向全新的受控目录
 运行 `app.tasks.table_bootstrap --output-dir <new-path>`；目录权限为 `0700`、PNG/清单为

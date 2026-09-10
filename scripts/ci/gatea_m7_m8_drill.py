@@ -92,9 +92,17 @@ ARTIFACT_ALLOWLIST = frozenset(
 )
 SENSITIVE_TEXT_PATTERNS = (
     re.compile(rb"Authorization\s*:\s*Bearer\s+", re.IGNORECASE),
-    re.compile(rb'"(?:access_token|refresh_token|password|jwt_secret|db_password)"\s*:', re.IGNORECASE),
+    re.compile(
+        rb'"(?:access_token|refresh_token|password|jwt_secret|db_password)"\s*:',
+        re.IGNORECASE,
+    ),
     re.compile(rb"redis://:[^@\s]+@", re.IGNORECASE),
     re.compile(rb"mysql(?:\+[^:]+)?://[^\s]+", re.IGNORECASE),
+    re.compile(rb'"qr_token"\s*:', re.IGNORECASE),
+    re.compile(rb"PINKDOOHUB_TABLE:v1:[A-Za-z0-9]{32}"),
+    re.compile(
+        rb"/(?:api/v1/)?table-codes/[A-Za-z0-9]{32}(?:[^A-Za-z0-9]|$)"
+    ),
 )
 
 PIPELINE: tuple[tuple[str, str], ...] = (
@@ -920,6 +928,113 @@ def _assert_result_fields(
         raise DrillError(f"{label} result does not match the drill contract")
 
 
+def _assert_empty_m9_table_snapshot(snapshot: Mapping[str, Any]) -> dict[str, int]:
+    if snapshot.get("aerich_versions") != list(gatea.APPROVED_TARGET_M9_CHAIN):
+        raise DrillError("M9 runtime does not expose exact M0-M9")
+    validated: dict[str, int] = {}
+    for key, expected_value in upgrade.M9_EMPTY_TABLE_INVARIANTS:
+        actual = snapshot.get(key)
+        if type(actual) is not int or actual != expected_value:
+            raise DrillError(
+                "M9 runtime table bootstrap invariant failed: "
+                f"{key} expected={expected_value} actual={actual!r}"
+            )
+        validated[key] = actual
+    return validated
+
+
+def _assert_available_m9_table_items(payload: object) -> list[dict[str, Any]]:
+    if (
+        not isinstance(payload, list)
+        or len(payload) != 30
+        or any(not isinstance(item, dict) for item in payload)
+    ):
+        raise DrillError("M9 admin table inventory is invalid")
+    items = payload
+    if (
+        [item.get("table_no") for item in items]
+        != [f"T{index:02d}" for index in range(1, 31)]
+        or any(
+            item.get("display_name") != f"{item['table_no']}号桌"
+            or item.get("state") != "available"
+            or item.get("is_enabled") is not True
+            or any(
+                item.get(key) is not None
+                for key in (
+                    "current_session_no",
+                    "current_status",
+                    "current_order_no",
+                    "current_user_id",
+                    "claimed_at",
+                    "payment_deadline_at",
+                    "table_release_at",
+                )
+            )
+            for item in items
+        )
+    ):
+        raise DrillError("M9 admin table inventory is invalid")
+    return items
+
+
+def _runtime_verification_payload(
+    evidence: Mapping[str, Any],
+    table_invariants: Mapping[str, int],
+) -> dict[str, Any]:
+    expected_invariants = dict(upgrade.M9_EMPTY_TABLE_INVARIANTS)
+    actual_invariants = dict(table_invariants)
+    if (
+        actual_invariants != expected_invariants
+        or any(type(value) is not int for value in actual_invariants.values())
+    ):
+        raise DrillError("M9 runtime evidence invariants are incomplete")
+    payload = dict(evidence)
+    payload["m9_table_invariants"] = expected_invariants
+    return payload
+
+
+def _assert_m9_target_backup_restore_records(
+    backup_record: Mapping[str, Any],
+    restore_record: Mapping[str, Any],
+    *,
+    target_sha: str,
+    backup_id: str,
+) -> None:
+    try:
+        m7_content = backup._validate_m7_content_snapshot(
+            backup_record.get("m7_content_snapshot")
+        )
+        m9_table_content = backup._validate_m9_table_content_snapshot(
+            backup_record.get("m9_table_content_snapshot")
+        )
+        restored_m7_content = backup._validate_m7_content_snapshot(
+            restore_record.get("m7_content_snapshot")
+        )
+        restored_m9_table_content = backup._validate_m9_table_content_snapshot(
+            restore_record.get("m9_table_content_snapshot")
+        )
+    except gatea.GateAError as error:
+        raise DrillError("target Backup/Restore records are invalid") from error
+    if (
+        backup_record.get("backup_id") != backup_id
+        or backup_record.get("candidate_sha") != target_sha
+        or backup_record.get("table_sweeper_restarted") is not True
+        or backup_record.get("passed") is not True
+        or restore_record.get("backup_id") != backup_id
+        or restore_record.get("candidate_sha") != target_sha
+        or restore_record.get("host_ports_published") is not False
+        or any(
+            restore_record.get(field) is not True
+            for field in upgrade.RESTORE_TRUE_FIELDS
+        )
+        or restore_record.get("m7_content_matches") is not True
+        or restored_m7_content != m7_content
+        or restore_record.get("m9_table_content_matches") is not True
+        or restored_m9_table_content != m9_table_content
+    ):
+        raise DrillError("target Backup/Restore records are invalid")
+
+
 class GateAM7M9Drill:
     """完整演练阶段编排；每个阶段只将脱敏摘要写入 allowlist。"""
 
@@ -930,6 +1045,15 @@ class GateAM7M9Drill:
         if name not in ARTIFACT_ALLOWLIST:
             raise DrillError("attempted to write a non-allowlisted artifact")
         _write_json(self.state.paths.artifact_dir / name, payload)
+
+    def _write_runtime_verification(
+        self,
+        evidence: Mapping[str, Any],
+        table_invariants: Mapping[str, int],
+    ) -> dict[str, Any]:
+        payload = _runtime_verification_payload(evidence, table_invariants)
+        self._artifact("runtime-verification.json", payload)
+        return payload
 
     def _persist_state(self) -> None:
         self._artifact("drill-state.json", self.state.safe_state())
@@ -1639,25 +1763,13 @@ class GateAM7M9Drill:
             mode="loopback",
             require_available_port=False,
         )
-        snapshot = gatea.read_database_snapshot(
+        snapshot = upgrade._read_final_snapshot(
             values=values,
             config_file=paths.config_file,
             secret_dir=paths.secret_dir,
             mode="loopback",
         )
-        if snapshot.get("aerich_versions") != list(gatea.APPROVED_TARGET_M9_CHAIN):
-            raise DrillError("M9 runtime does not expose exact M0-M9")
-        expected_table_values = {
-            "store_tables": 30,
-            "enabled_store_tables": 30,
-            "invalid_store_tables": 0,
-            "distinct_table_qr_tokens": 30,
-            "table_sessions": 0,
-            "table_session_timers": 0,
-            "table_occupancies": 0,
-        }
-        if any(snapshot.get(key) != value for key, value in expected_table_values.items()):
-            raise DrillError("M9 runtime table bootstrap invariants are invalid")
+        table_invariants = _assert_empty_m9_table_snapshot(snapshot)
         task_results: dict[str, dict[str, Any]] = {}
         for label, module in (
             ("reconcile", "app.tasks.table_reconcile"),
@@ -1708,20 +1820,7 @@ class GateAM7M9Drill:
                 ),
                 "m9-admin-tables",
             )
-            table_items = table_list.get("items")
-            if (
-                not isinstance(table_items, list)
-                or len(table_items) != 30
-                or [item.get("table_no") for item in table_items]
-                != [f"T{index:02d}" for index in range(1, 31)]
-                or any(
-                    item.get("state") != "available"
-                    or item.get("is_enabled") is not True
-                    for item in table_items
-                    if isinstance(item, dict)
-                )
-            ):
-                raise DrillError("M9 admin table inventory is invalid")
+            table_items = _assert_available_m9_table_items(table_list.get("items"))
             product_id = int(state.color_fixture["product_id"])
             path = f"/api/v1/admin/products/kit/{product_id}"
             identity_body, identity_headers = client.request(
@@ -1888,7 +1987,7 @@ class GateAM7M9Drill:
             if isinstance(operation_error, DrillError):
                 raise operation_error
             raise DrillError("M9 runtime verification failed safely") from operation_error
-        self._artifact("runtime-verification.json", payload)
+        payload = self._write_runtime_verification(payload, table_invariants)
         return {
             "tables": 30,
             "table_reconcile_violations": 0,
@@ -1907,18 +2006,19 @@ class GateAM7M9Drill:
         )
         self._artifact("target-backup-record.json", backup_payload)
         self._artifact("target-restore-record.json", restore_payload)
-        if (
-            backup_payload.get("candidate_sha") != state.target_sha
-            or backup_payload.get("table_sweeper_restarted") is not True
-            or restore_payload.get("backup_id") != state.target_backup_id
-            or restore_payload.get("candidate_sha") != state.target_sha
-            or restore_payload.get("passed") is not True
-        ):
-            raise DrillError("target Backup/Restore records are invalid")
+        _assert_m9_target_backup_restore_records(
+            backup_payload,
+            restore_payload,
+            target_sha=state.target_sha,
+            backup_id=state.target_backup_id,
+        )
         return {
             "backup_id": state.target_backup_id,
             "same_id_restore": True,
             "restore_app_ready": True,
+            "m9_table_content_profile": (
+                backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE
+            ),
         }
 
     def execute(self) -> None:

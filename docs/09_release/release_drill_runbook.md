@@ -231,7 +231,11 @@ python -m scripts.release.phase93_operations cleanup \
    一次性 MySQL 的 M0–M6 矩阵自动推导；
 2. M7/M8/M9 Backup 必须带 `m7-preserved-business-v1`：20 个非 `bead_colors` 表的稳定顺序
    data dump 加该表 M7 字段投影，共覆盖 21 个业务表；独立 Restore、停写源和最终态都
-   重算精确 SHA-256。Aerich 链与完整图片 manifest 另行比较，旧聚合仅作诊断；
+   重算精确 SHA-256。精确 M9 Backup 还必须带 `m9-table-business-v1`，以稳定主键
+   顺序覆盖 `store_tables`、`table_sessions`、`table_session_timers` 和
+   `table_occupancies`，并在独立 Restore 重算相同摘要。Record 只保存版本化
+   profile 和 digest，不保存原始桌台 Token/行内容。Aerich 链与完整图片 manifest
+   另行比较，旧聚合仅作诊断；
 3. 停写源与 Backup 对齐后、M8 原语前，raw preflight 要求 `swatch_hex` 列为 0，221 条
    M7 slot/code/name/URL/sort/active 逐槽等于冻结 manifest，221 张预期 PNG 为普通非软
    链接文件、checksum 精确且权限 `0644`；
@@ -295,13 +299,19 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
 3. 对精确 M7/M8/M9 链，Backup Record 必须包含 `m7-preserved-business-v1`：20 个非
    `bead_colors` 业务表的确定性 data dump 与该表 M7 投影，共 21 表；Restore Record
    必须重算同一摘要并记录 `m7_content_matches=true`。缺少此字段的旧 M7 Backup 不得
-   用于当前升级。
+   用于当前升级。精确 M9 链还必须包含覆盖四张桌台业务表的
+   `m9-table-business-v1`，Restore Record 必须记录 `m9_table_content_matches=true`
+   且摘要完全相同；M8 及更早链出现该 M9 证据也应 fail closed。
 4. 比较 Schema/诊断摘要、完整图片 manifest 和预先冻结的业务抽样；启动只读应用 Smoke。
    聚合行数不能替代版本化内容摘要。
 5. 记录恢复耗时和恢复点。恢复验证失败时不得继续迁移。
 6. 备份器必须按精确 Aerich 链恢复常驻服务：M7/M8 不启动尚无桌台表的
    `table-sweeper`；M9 必须先证明 sweeper 健康，并把它与 App/Nginx 一起纳入停写和
    恢复健康检查。未知链或进入停写窗口期间版本变化必须拒绝，不得通过放宽健康检查绕过。
+7. M9 数据后异机加密副本在 export 前与解密 verify 时都必须重新校验精确
+   Aerich 链、M7/M9 内容摘要、Restore match 布尔值和摘要一致性。只校验
+   AES-GCM/Bundle 或两个来源 Artifact checksum 会将语义不合格的 Restore Record
+   原样固化，不是可接受的灾备证据。
 
 版本化摘要的 20 表 dump 与 `bead_colors` 投影是两次顺序读取，MySQL 内容与图片归档也
 不在同一个跨系统事务中。其一致性依赖所有写入方停止：M7/M8 为 App/Nginx，M9 还包括
@@ -340,7 +350,7 @@ M6 色卡原语 `app.tasks.gatea_mard_publish` 也已完成：它固定 producti
    与 M7 基线逐项相同且无需创建；不得脱离编排单独运行 publisher，不改变商品状态，
    不转换或删除 PNG。
 8. 执行 30 桌 bootstrap 并立即 replay；核验仅有 T01–T30、display name 精确为
-   `1号桌` 至 `30号桌`、每桌一个不可预测且唯一的 32 位字母数字 Token。再运行 table
+   `T01号桌` 至 `T30号桌`、每桌一个不可预测且唯一的 32 位字母数字 Token。再运行 table
    reconcile/sweep；不得把 Token 写入日志、URL 访问日志、CI artifact 或交付报告。
 9. 只在全部检查通过后写入绑定 source/target SHA、Image ID、M7→M8→M9、Backup ID、HEX/
    图片 manifest、21 表内容摘要、30 桌摘要和复核时间的新 upgrade Record。该 Record 不包含
@@ -435,7 +445,8 @@ sudo python3 -m scripts.release.gatea_m7_representative_data \
    wallet/manual，真实微信支付继续为单独项目。
 7. 在成功运行状态先证明 `table-sweeper` 健康，再把它与 App/Nginx 一起停止并创建新的
    M9 MySQL/图片 Backup；成功后必须恢复三者健康，并完成独立无端口 Restore、空 Redis、
-   Restore App readiness、225 图片与 30 桌核验，再按既有 AES-256-GCM/RSA-OAEP-SHA256
+   Restore App readiness、225 图片、30 桌聚合和 `m9-table-business-v1` 四表内容摘要核验，
+   再按既有 AES-256-GCM/RSA-OAEP-SHA256
    流程生成并立即解密复核异机副本。M9 检查点只能引用这组新 Record。
 
 上述服务端 PASS 仍不关闭真实 HTTPS Origin、微信合法域名、release-eligible RC 或真机
