@@ -113,9 +113,9 @@ dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430
 | M8 | HEX/API/小程序直绘/gzip 仓库实现完成；显式 M7→M8、21 表内容保护与 Online exact no-op 已实现 | 基线 0→8/Run 34242753255、加固 Run 34281512196，以及 head `62b1b15...` / Run 34288613644 的 GitHub-hosted 完整 updater 14/14 均 PASS；后者含双 Backup/Restore、221 HEX/gzip/PNG 和零残留 | NOT RUN；持久 Gate A 仍须当次只读预检、新 Backup/Restore、精确目标/窗口/写授权与数据后恢复 |
 | M9 | 二维码开台、订单绑定、支付后分组计时、15 分钟支付超时、10 分钟缓冲、30 桌管理与清扫均已完成仓库实现；受控升级器扩展到 M9 | 本地 SQLite 定向/完整门槛及一次性 MySQL 0→9、M9 迁移/并发/领域门槛 PASS；当前 SHA 远端证据待生成 | NOT RUN；只允许从精确 M7 经当次 Backup/Restore 与显式授权执行 M8→M9，并在启动前重放 plan |
 
-当前 M9 仓库候选的本地验证口径为后端等价完整 `2855 passed, 39 skipped`（沙箱
-`2851 passed`，四项 loopback bind 在允许环境另为 `4 passed`）与 Release 等价完整
-`733 passed`（沙箱 `731 passed`，其中两项 loopback bind 在允许环境另为 `2 passed`）。这些
+当前 M9 仓库候选的本地验证口径为后端等价完整 `2856 passed, 39 skipped`（沙箱
+`2852 passed`，四项 loopback bind 在允许环境另为 `4 passed`）与 Release 等价完整
+`734 passed`（沙箱 `732 passed`，其中两项 loopback bind 在允许环境另为 `2 passed`）。这些
 结果不代替当前 SHA 的远端 required Jobs，也不表示持久 Gate A 已从 M7 升级。
 
 任何“一次性 MySQL PASS”只关闭候选迁移实现风险，不等于已应用 Gate A。任何本地

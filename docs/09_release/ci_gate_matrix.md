@@ -2,7 +2,7 @@
 
 > **Status:** Phase 9.2 historical baseline complete；persistent Gate A remains M7；current M9 repair candidate still awaits a fresh complete 9/9 required-Job run
 > **Last Updated:** 2026-09-11
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / historical M8 success [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2 / latest recorded M9 diagnostic [Run 34477579769](https://github.com/EVEBios/pinkdooHub/actions/runs/34477579769)）
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / historical M8 success [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2 / latest recorded M9 diagnostic [Run 34520442209](https://github.com/EVEBios/pinkdooHub/actions/runs/34520442209)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
@@ -181,6 +181,10 @@ bootstrap 精确 30 张桌台，启动 App/Nginx/常驻 table sweeper，完成 M
    已越过 M9 最终数据库 invariant 和 `app-up`，随后 Runtime verifier 错把只覆盖
    M0–M7 核心表的通用 snapshot 当成 M9 full snapshot，因缺少桌台键而失败。该结果只
    证明失败点之前的阶段在该 Run 到达成功状态，不构成完整 updater 或 9/9 PASS。
+4. [Run 34520442209](https://github.com/EVEBios/pinkdooHub/actions/runs/34520442209)
+   的其他 8 个 required Job 均通过；updater 在 source Backup 完成后因新增必填
+   `release_record_dir` 未从 disposable 编排器透传给 Restore 而失败。当前实现已复用
+   同一受保护 Release Record 目录并新增接线回归，但该失败 Run 仍不构成 updater PASS。
 
 当前仓库修复候选把 M9 最终 full snapshot 与 Runtime verifier 统一到同一组 11 项
 count-only invariant；artifact 扫描显式拒绝 `qr_token`、未脱敏桌台码 payload/URL；
@@ -191,8 +195,8 @@ M9 Backup/Restore 新增精确、只输出摘要的 `m9-table-business-v1` 内�
 evidence 并由成功 Record 绑定；停写 plan replay 只重跑只读 reconcile 与 SQL invariant，
 不重跑可能写库的 sweep。旧 M7 镜像缺少 `--no-access-log` 的兼容只能由精确 M7
 Backup 内部恢复分支在停写前/恢复时双重验链后启用；默认、M8 和 M9 仍严格。本地
-验证口径为后端等价完整 `2855 passed, 39 skipped`（沙箱 `2851 passed`，四项 loopback
-bind 在允许环境另为 `4 passed`）与 Release 等价完整 `733 passed`（沙箱 `731 passed`，
+验证口径为后端等价完整 `2856 passed, 39 skipped`（沙箱 `2852 passed`，四项 loopback
+bind 在允许环境另为 `4 passed`）与 Release 等价完整 `734 passed`（沙箱 `732 passed`，
 其中两项 loopback bind 在允许环境另为 `2 passed`）；隔离 MySQL 探针也已覆盖上述修复。
 这些都不是远端 required Job 证据。只有同一当前 SHA 从干净
 checkout 完成全新 9/9，才能关闭 M9 disposable updater 缺口；持久 Gate A 在此之前

@@ -1576,6 +1576,7 @@ class GateAM7M9Drill:
             backup_record_dir=paths.backup_record_dir,
             restore_record_dir=paths.restore_record_dir,
             wait_timeout=300,
+            release_record_dir=paths.release_record_dir,
         )
         return (
             _read_json(paths.backup_record_dir / f"{backup_id}.json"),

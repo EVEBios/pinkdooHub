@@ -341,6 +341,43 @@ def test_m9_target_backup_restore_records_require_both_content_snapshots() -> No
             )
 
 
+def test_backup_restore_forwards_the_guarded_release_record_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _state(tmp_path)
+    calls: dict[str, dict[str, object]] = {}
+
+    monkeypatch.setattr(
+        drill.backup,
+        "create_backup",
+        lambda **kwargs: calls.setdefault("backup", kwargs),
+    )
+    monkeypatch.setattr(
+        drill.backup,
+        "verify_restore",
+        lambda **kwargs: calls.setdefault("restore", kwargs),
+    )
+    monkeypatch.setattr(
+        drill,
+        "_read_json",
+        lambda path: {"path": str(path)},
+    )
+
+    backup_record, restore_record = drill.GateAM7M9Drill(
+        state
+    )._backup_and_restore("20260910t120000z")
+
+    assert calls["backup"]["release_record_dir"] == state.paths.release_record_dir
+    assert calls["restore"]["release_record_dir"] == state.paths.release_record_dir
+    assert backup_record["path"].endswith(
+        "/records/backups/20260910t120000z.json"
+    )
+    assert restore_record["path"].endswith(
+        "/records/restores/20260910t120000z.json"
+    )
+
+
 def test_paths_reject_an_artifact_directory_outside_the_frozen_workspace_path(
     tmp_path: Path,
 ) -> None:
