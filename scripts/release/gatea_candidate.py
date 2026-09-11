@@ -60,6 +60,9 @@ DEFAULT_ACCEPTANCE_RECORD_DIR = Path(
 DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR = Path(
     "/srv/pinkdoohub/gatea/records/m9-acceptance-failures"
 )
+DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR = Path(
+    "/srv/pinkdoohub/gatea/records/m9-retirement-failures"
+)
 DEFAULT_CURRENT_LINK = Path("/srv/pinkdoohub/gatea/current")
 DEFAULT_LOCK_FILE = Path("/run/lock/pinkdoohub-gatea-operation.lock")
 
@@ -307,6 +310,33 @@ FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS = frozenset(
         "secret_values_recorded",
     }
 )
+FAILED_ACCEPTANCE_BUSINESS_REFUSAL_KEYS = frozenset(
+    {
+        "schema_version",
+        "passed",
+        "reason_code",
+        "refusal_key",
+        "secret_values_recorded",
+    }
+)
+FAILED_ACCEPTANCE_BUSINESS_REFUSAL_KEY_BY_REASON = {
+    "INPUT_CONTRACT": "input_contract",
+    "ORDER_CONTRACT": "order_contract",
+    "FIXTURE_PRODUCT_CONTRACT": "fixture_product_contract",
+    "FIXTURE_IMAGE_CONTRACT": "fixture_image_contract",
+    "KIT_CONTRACT": "kit_contract",
+    "OPTION_CONTRACT": "option_contract",
+    "ORDER_ITEM_CONTRACT": "order_item_contract",
+    "DEPENDENT_FACTS": "dependent_facts",
+    "INVENTORY_SET": "inventory_set",
+    "INVENTORY_SUPPLY": "inventory_supply",
+    "INVENTORY_ORDER_CHAIN": "inventory_order_chain",
+    "INTERNAL_FAILURE": "internal_failure",
+}
+FAILED_ACCEPTANCE_BUSINESS_REASON_CODES = frozenset(
+    FAILED_ACCEPTANCE_BUSINESS_REFUSAL_KEY_BY_REASON
+)
+MAX_FAILED_ACCEPTANCE_VERIFIER_OUTPUT_BYTES = 1024
 FAILED_ACCEPTANCE_BUSINESS_COUNTS = {
     "orders": 1,
     "fixtures": 2,
@@ -365,6 +395,35 @@ RETIREMENT_PENDING_KEYS = frozenset(
 )
 RETIREMENT_RECORD_KEYS = RETIREMENT_PENDING_KEYS | frozenset(
     {"completed_at", "passed"}
+)
+TAKEOVER_RETIREMENT_PENDING_PHASES = frozenset(
+    {
+        "prepared",
+        "write-free-verified",
+        "superseded-retirement-archived",
+        "acceptance-archived",
+        "record-published",
+        "superseded-retirement-removed",
+        "canonical-removed",
+        "runtime-restored",
+    }
+)
+TAKEOVER_RETIREMENT_FIELDS = frozenset(
+    {
+        "recovery_kind",
+        "superseded_retirement_candidate_sha",
+        "superseded_retirement_image_id",
+        "superseded_retirement_stage_record_sha256",
+        "superseded_retirement_pending_sha256",
+        "superseded_retirement_archive_path",
+        "superseded_retirement_archive_sha256",
+    }
+)
+TAKEOVER_RETIREMENT_PENDING_KEYS = (
+    RETIREMENT_PENDING_KEYS | TAKEOVER_RETIREMENT_FIELDS
+)
+TAKEOVER_RETIREMENT_RECORD_KEYS = (
+    RETIREMENT_RECORD_KEYS | TAKEOVER_RETIREMENT_FIELDS
 )
 ACCEPTANCE_REQUIRED_TRUE_FIELDS = (
     "upgrade_plan_replayed",
@@ -480,6 +539,16 @@ ADOPTION_STAGE_PENDING_KEYS = (
         "phase",
     }
 )
+TAKEOVER_STAGE_FIELDS = frozenset(
+    {
+        "recovery_kind",
+        "superseded_retirement_candidate_sha",
+        "superseded_retirement_stage_record_sha256",
+        "superseded_retirement_pending_sha256",
+    }
+)
+TAKEOVER_STAGE_RECORD_KEYS = ADOPTION_STAGE_RECORD_KEYS | TAKEOVER_STAGE_FIELDS
+TAKEOVER_STAGE_PENDING_KEYS = ADOPTION_STAGE_PENDING_KEYS | TAKEOVER_STAGE_FIELDS
 ACTIVATION_RECORD_KEYS = frozenset(
     {
         "schema_version",
@@ -2271,21 +2340,33 @@ def _reject_unresolved_transition_journals(
     release_record_dir: Path,
     acceptance_record_dir: Path,
     allowed_release_pending: Path | None = None,
+    allowed_release_pendings: Sequence[Path] | None = None,
     allowed_acceptance_candidate_sha: str | None = None,
     allowed_acceptance_pending_sha256: str | None = None,
 ) -> dict[str, Any] | None:
     """Fail closed on every cross-candidate transition and acceptance sidecar."""
 
-    allowed = (
-        _lexical_absolute_path(allowed_release_pending)
+    if allowed_release_pending is not None and allowed_release_pendings is not None:
+        raise GateACandidateError(
+            "Gate A candidate transition recovery allowances conflict"
+        )
+    raw_allowed = (
+        tuple(allowed_release_pendings)
+        if allowed_release_pendings is not None
+        else (allowed_release_pending,)
         if allowed_release_pending is not None
-        else None
+        else ()
     )
-    if allowed is not None:
+    allowed = tuple(_lexical_absolute_path(path) for path in raw_allowed)
+    if len(set(allowed)) != len(allowed):
+        raise GateACandidateError(
+            "Gate A candidate transition recovery allowance is duplicated"
+        )
+    for allowed_path in allowed:
         expected_parent = _lexical_absolute_path(release_record_dir)
         if (
-            allowed.parent != expected_parent
-            or _CANDIDATE_PENDING_NAME_PATTERN.fullmatch(allowed.name) is None
+            allowed_path.parent != expected_parent
+            or _CANDIDATE_PENDING_NAME_PATTERN.fullmatch(allowed_path.name) is None
         ):
             raise GateACandidateError(
                 "Gate A candidate transition recovery allowance is invalid"
@@ -2323,7 +2404,7 @@ def _reject_unresolved_transition_journals(
             raise GateACandidateError(
                 "Gate A malformed candidate transition journal blocks mutation"
             )
-        if allowed is None or _lexical_absolute_path(path) != allowed:
+        if _lexical_absolute_path(path) not in allowed:
             raise GateACandidateError(
                 "Gate A unresolved candidate transition journal blocks mutation"
             )
@@ -2380,10 +2461,18 @@ def _validate_stage_pending(
 ) -> dict[str, Any]:
     temporary_image = payload.get("temporary_image")
     adoption = expected.get("transition_kind") == "m9-candidate-adoption"
-    expected_keys = (
-        ADOPTION_STAGE_PENDING_KEYS if adoption else STAGE_PENDING_KEYS
+    takeover = (
+        adoption
+        and expected.get("recovery_kind") == "prepared-retirement-takeover"
     )
-    expected_schema = 2 if adoption else 1
+    expected_keys = (
+        TAKEOVER_STAGE_PENDING_KEYS
+        if takeover
+        else ADOPTION_STAGE_PENDING_KEYS
+        if adoption
+        else STAGE_PENDING_KEYS
+    )
+    expected_schema = 3 if takeover else 2 if adoption else 1
     if (
         set(payload) != expected_keys
         or payload.get("schema_version") != expected_schema
@@ -2432,7 +2521,12 @@ def stage_candidate(
     release_record_dir: Path,
     superseded_candidate_sha: str | None = None,
     failed_acceptance_sha256: str | None = None,
+    superseded_retirement_candidate_sha: str | None = None,
+    superseded_retirement_stage_record_sha256: str | None = None,
+    superseded_retirement_pending_sha256: str | None = None,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
+    acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    retirement_failure_archive_dir: Path = DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
 ) -> dict[str, Any]:
@@ -2468,6 +2562,42 @@ def stage_candidate(
             raise GateACandidateError(
                 "Gate A superseded and target candidates must differ"
             )
+    takeover_values = (
+        superseded_retirement_candidate_sha,
+        superseded_retirement_stage_record_sha256,
+        superseded_retirement_pending_sha256,
+    )
+    takeover = any(value is not None for value in takeover_values)
+    if takeover and (
+        superseded_candidate_sha is None
+        or any(value is None for value in takeover_values)
+    ):
+        raise GateACandidateError(
+            "Gate A prepared retirement takeover requires complete confirmations"
+        )
+    if takeover:
+        superseded_retirement_candidate_sha = _validate_sha(
+            str(superseded_retirement_candidate_sha),
+            "superseded retirement candidate SHA",
+        )
+        superseded_retirement_stage_record_sha256 = _validate_sha256(
+            str(superseded_retirement_stage_record_sha256),
+            "superseded retirement stage record digest",
+        )
+        superseded_retirement_pending_sha256 = _validate_sha256(
+            str(superseded_retirement_pending_sha256),
+            "superseded retirement pending digest",
+        )
+        if len(
+            {
+                target_sha,
+                str(superseded_candidate_sha),
+                superseded_retirement_candidate_sha,
+            }
+        ) != 3:
+            raise GateACandidateError(
+                "Gate A takeover candidates must be distinct"
+            )
     expected_artifact_name = (
         f"gatea-m7-m9-updater-{target_sha}-{ci_run_id}-{ci_run_attempt}"
     )
@@ -2476,13 +2606,54 @@ def stage_candidate(
     _require_root_directory(release_root, 0o755, "Gate A release root")
     _require_root_directory(staging_root, 0o700, "Gate A staging root")
     _require_root_directory(release_record_dir, 0o755, "Gate A release record directory")
-    _reject_unresolved_transition_journals(
-        release_record_dir=release_record_dir,
-        acceptance_record_dir=acceptance_record_dir,
-        allowed_release_pending=_stage_pending_path(release_record_dir, target_sha),
-        allowed_acceptance_candidate_sha=superseded_candidate_sha,
-        allowed_acceptance_pending_sha256=failed_acceptance_sha256,
-    )
+    scanner_arguments = {
+        "release_record_dir": release_record_dir,
+        "acceptance_record_dir": acceptance_record_dir,
+        "allowed_acceptance_candidate_sha": superseded_candidate_sha,
+        "allowed_acceptance_pending_sha256": failed_acceptance_sha256,
+    }
+    if takeover:
+        allowed_acceptance = _reject_unresolved_transition_journals(
+            **scanner_arguments,
+            allowed_release_pendings=(
+                _stage_pending_path(release_record_dir, target_sha),
+                _retirement_pending_path(
+                    release_record_dir,
+                    str(superseded_retirement_candidate_sha),
+                ),
+            ),
+        )
+    else:
+        allowed_acceptance = _reject_unresolved_transition_journals(
+            **scanner_arguments,
+            allowed_release_pending=_stage_pending_path(
+                release_record_dir, target_sha
+            ),
+        )
+    if takeover:
+        if allowed_acceptance is None:
+            raise GateACandidateError(
+                "Gate A prepared retirement takeover acceptance is unavailable"
+            )
+        _validate_prepared_retirement_takeover(
+            release_root=release_root,
+            release_record_dir=release_record_dir,
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
+            source_candidate_sha=str(superseded_candidate_sha),
+            failed_acceptance=allowed_acceptance,
+            failed_acceptance_sha256=str(failed_acceptance_sha256),
+            superseded_retirement_candidate_sha=str(
+                superseded_retirement_candidate_sha
+            ),
+            expected_stage_record_sha256=str(
+                superseded_retirement_stage_record_sha256
+            ),
+            expected_pending_sha256=str(
+                superseded_retirement_pending_sha256
+            ),
+            require_unarchived=True,
+        )
     _require_root_file(source_archive, 0o600, "Gate A source archive")
     _require_root_file(ci_artifact, 0o600, "Gate A CI artifact")
     _require_root_file(launcher, 0o700, "Gate A candidate launcher")
@@ -2558,6 +2729,22 @@ def stage_candidate(
                     if superseded_candidate_sha is not None
                     else {}
                 ),
+                **(
+                    {
+                        "recovery_kind": "prepared-retirement-takeover",
+                        "superseded_retirement_candidate_sha": (
+                            superseded_retirement_candidate_sha
+                        ),
+                        "superseded_retirement_stage_record_sha256": (
+                            superseded_retirement_stage_record_sha256
+                        ),
+                        "superseded_retirement_pending_sha256": (
+                            superseded_retirement_pending_sha256
+                        ),
+                    }
+                    if takeover
+                    else {}
+                ),
             }
             if record_path.exists() or record_path.is_symlink():
                 final_record = _load_stage(
@@ -2628,7 +2815,11 @@ def stage_candidate(
                     )
                 pending = {
                     "schema_version": (
-                        2 if superseded_candidate_sha is not None else 1
+                        3
+                        if takeover
+                        else 2
+                        if superseded_candidate_sha is not None
+                        else 1
                     ),
                     "record_type": "gatea-candidate-stage-pending",
                     **expected_pending,
@@ -2743,7 +2934,11 @@ def stage_candidate(
             )
             payload = {
                 "schema_version": (
-                    2 if superseded_candidate_sha is not None else 1
+                    3
+                    if takeover
+                    else 2
+                    if superseded_candidate_sha is not None
+                    else 1
                 ),
                 "record_type": "gatea-candidate-stage",
                 "passed": True,
@@ -2775,6 +2970,22 @@ def stage_candidate(
                         "failed_acceptance_sha256": failed_acceptance_sha256,
                     }
                     if superseded_candidate_sha is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "recovery_kind": "prepared-retirement-takeover",
+                        "superseded_retirement_candidate_sha": (
+                            superseded_retirement_candidate_sha
+                        ),
+                        "superseded_retirement_stage_record_sha256": (
+                            superseded_retirement_stage_record_sha256
+                        ),
+                        "superseded_retirement_pending_sha256": (
+                            superseded_retirement_pending_sha256
+                        ),
+                    }
+                    if takeover
                     else {}
                 ),
             }
@@ -2817,15 +3028,27 @@ def _load_stage(
     ci_run_attempt = payload.get("ci_run_attempt")
     source_head_sha = payload.get("source_head_sha")
     schema_version = payload.get("schema_version")
+    takeover = (
+        schema_version == 3
+        and payload.get("transition_kind") == "m9-candidate-adoption"
+        and payload.get("recovery_kind") == "prepared-retirement-takeover"
+    )
     adoption = (
-        schema_version == 2
+        schema_version in {2, 3}
         and payload.get("transition_kind") == "m9-candidate-adoption"
     )
-    expected_keys = ADOPTION_STAGE_RECORD_KEYS if adoption else STAGE_RECORD_KEYS
+    expected_keys = (
+        TAKEOVER_STAGE_RECORD_KEYS
+        if takeover
+        else ADOPTION_STAGE_RECORD_KEYS
+        if adoption
+        else STAGE_RECORD_KEYS
+    )
     if (
         set(payload) != expected_keys
-        or schema_version not in {1, 2}
+        or schema_version not in {1, 2, 3}
         or (schema_version == 2 and not adoption)
+        or (schema_version == 3 and not takeover)
         or payload.get("record_type") != "gatea-candidate-stage"
         or payload.get("passed") is not True
         or payload.get("candidate_sha") != target_sha
@@ -2905,6 +3128,24 @@ def _load_stage(
                     str(payload.get("failed_acceptance_sha256", ""))
                 )
                 is None
+            )
+        )
+        or (
+            takeover
+            and (
+                SHA_PATTERN.fullmatch(
+                    str(payload.get("superseded_retirement_candidate_sha", ""))
+                )
+                is None
+                or payload.get("superseded_retirement_candidate_sha")
+                in {target_sha, payload.get("superseded_candidate_sha")}
+                or any(
+                    SHA256_PATTERN.fullmatch(str(payload.get(field, ""))) is None
+                    for field in (
+                        "superseded_retirement_stage_record_sha256",
+                        "superseded_retirement_pending_sha256",
+                    )
+                )
             )
         )
     ):
@@ -3054,6 +3295,8 @@ def _plan_upgrade(
     release_record_dir: Path,
     lineage_source_candidate_sha: str | None = None,
     acceptance_retirement_record_sha256: str | None = None,
+    acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    retirement_failure_archive_dir: Path = DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
 ) -> dict[str, Any]:
     _, _, upgrade = _runtime_modules()
     try:
@@ -3077,6 +3320,8 @@ def _plan_upgrade(
             backup_record_dir=backup_record_dir,
             restore_record_dir=restore_record_dir,
             release_record_dir=release_record_dir,
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
             apply=False,
             confirm_target_sha=None,
             confirm_source_sha=None,
@@ -3225,6 +3470,7 @@ def activate_config(
     confirm_acceptance_retirement_record_sha256: str | None = None,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
     acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    retirement_failure_archive_dir: Path = DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
 ) -> dict[str, Any]:
@@ -3311,7 +3557,9 @@ def activate_config(
             acceptance_retirement_record_sha256=str(
                 acceptance_retirement_record_sha256
             ),
+            acceptance_record_dir=acceptance_record_dir,
             acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
         )
     current_source_sha = (
         str(lineage_source_candidate_sha) if adoption else source_candidate_sha
@@ -3508,6 +3756,8 @@ def activate_config(
             acceptance_retirement_record_sha256=(
                 acceptance_retirement_record_sha256
             ),
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
         )
         expected_source_chain = (
             list(gatea.APPROVED_TARGET_M9_CHAIN)
@@ -3768,6 +4018,7 @@ def rollback_config(
     confirm_acceptance_retirement_record_sha256: str | None = None,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
     acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    retirement_failure_archive_dir: Path = DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
 ) -> dict[str, Any]:
@@ -3841,7 +4092,9 @@ def rollback_config(
             acceptance_retirement_record_sha256=(
                 acceptance_retirement_record_sha256
             ),
+            acceptance_record_dir=acceptance_record_dir,
             acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
         )
     elif any(
         value is not None
@@ -4226,6 +4479,17 @@ def _retirement_archive_path(
     )
 
 
+def _retirement_journal_archive_path(
+    archive_dir: Path,
+    superseded_candidate_sha: str,
+    pending_sha256: str,
+) -> Path:
+    return archive_dir / (
+        "gatea-m9-superseded-retirement-"
+        f"{superseded_candidate_sha}-{pending_sha256}.json"
+    )
+
+
 def _load_adoption_predecessor_binding(
     *,
     release_root: Path,
@@ -4392,8 +4656,9 @@ def _failed_acceptance_business_verification(
         "app.tasks.gatea_m9_failed_acceptance_verify",
     )
     verifier_input = {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_sha": failed_acceptance["candidate_sha"],
+        "acceptance_attempt_id": failed_acceptance["attempt_id"],
         "order_id": failed_acceptance["order_id"],
         "experience_product_id": fixture["experience_product_id"],
         "kit_product_id": fixture["kit_product_id"],
@@ -4437,10 +4702,19 @@ def _failed_acceptance_business_verification(
             check=False,
             input_text=verifier_input_text,
         )
-        lines = result.stdout.splitlines()
-        if result.returncode != 0 or len(lines) != 1 or not lines[0]:
+        output = result.stdout
+        if (
+            not isinstance(output, str)
+            or len(output.encode("utf-8"))
+            > MAX_FAILED_ACCEPTANCE_VERIFIER_OUTPUT_BYTES
+        ):
             raise GateACandidateError(
-                "Gate A failed acceptance business verifier refused the state"
+                "Gate A failed acceptance business verifier protocol is invalid"
+            )
+        lines = output.splitlines()
+        if len(lines) != 1 or not lines[0] or output != f"{lines[0]}\n":
+            raise GateACandidateError(
+                "Gate A failed acceptance business verifier protocol is invalid"
             )
         payload = json.loads(
             lines[0], object_pairs_hook=_json_object_without_duplicates
@@ -4451,10 +4725,46 @@ def _failed_acceptance_business_verification(
         raise GateACandidateError(
             "Gate A failed acceptance business verification failed"
         ) from error
+    canonical_output = json.dumps(
+        payload,
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if canonical_output != lines[0]:
+        raise GateACandidateError(
+            "Gate A failed acceptance business verifier protocol is invalid"
+        )
+    if result.returncode == 2:
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != FAILED_ACCEPTANCE_BUSINESS_REFUSAL_KEYS
+            or payload.get("schema_version") != 2
+            or payload.get("passed") is not False
+            or payload.get("reason_code")
+            not in FAILED_ACCEPTANCE_BUSINESS_REASON_CODES
+            or payload.get("refusal_key")
+            != FAILED_ACCEPTANCE_BUSINESS_REFUSAL_KEY_BY_REASON.get(
+                payload.get("reason_code")
+            )
+            or payload.get("secret_values_recorded") is not False
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance business verifier protocol is invalid"
+            )
+        raise GateACandidateError(
+            "Gate A failed acceptance business verifier refused the state: "
+            f"reason_code={payload['reason_code']}"
+        )
+    if result.returncode != 0:
+        raise GateACandidateError(
+            "Gate A failed acceptance business verifier process failed safely"
+        )
     if (
         not isinstance(payload, dict)
         or set(payload) != FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS
-        or payload.get("schema_version") != 1
+        or payload.get("schema_version") != 2
         or payload.get("passed") is not True
         or payload.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
         or payload.get("evidence_sha256")
@@ -4708,7 +5018,11 @@ def _retirement_live_verification(
     }
 
 
-def _validate_retirement_live_verification(payload: object) -> dict[str, Any]:
+def _validate_retirement_live_verification(
+    payload: object,
+    *,
+    allowed_business_schema_versions: frozenset[int] = frozenset({1, 2}),
+) -> dict[str, Any]:
     gatea, _, _ = _runtime_modules()
     business = (
         payload.get("business_verification")
@@ -4720,7 +5034,7 @@ def _validate_retirement_live_verification(payload: object) -> dict[str, Any]:
         or set(payload) != RETIREMENT_LIVE_VERIFICATION_KEYS
         or not isinstance(business, dict)
         or set(business) != FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS
-        or business.get("schema_version") != 1
+        or business.get("schema_version") not in allowed_business_schema_versions
         or business.get("passed") is not True
         or business.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
         or business.get("evidence_sha256")
@@ -4765,7 +5079,21 @@ def _validate_retirement_journal(
     expected: Mapping[str, Any],
     final: bool,
 ) -> dict[str, Any]:
-    expected_keys = RETIREMENT_RECORD_KEYS if final else RETIREMENT_PENDING_KEYS
+    takeover = expected.get("recovery_kind") == "prepared-retirement-takeover"
+    expected_keys = (
+        TAKEOVER_RETIREMENT_RECORD_KEYS
+        if takeover and final
+        else TAKEOVER_RETIREMENT_PENDING_KEYS
+        if takeover
+        else RETIREMENT_RECORD_KEYS
+        if final
+        else RETIREMENT_PENDING_KEYS
+    )
+    allowed_phases = (
+        TAKEOVER_RETIREMENT_PENDING_PHASES
+        if takeover
+        else RETIREMENT_PENDING_PHASES
+    )
     expected_type = (
         "gatea-m9-failed-acceptance-retirement"
         if final
@@ -4773,10 +5101,10 @@ def _validate_retirement_journal(
     )
     if (
         set(payload) != expected_keys
-        or payload.get("schema_version") != 1
+        or payload.get("schema_version") != (2 if takeover else 1)
         or payload.get("record_type") != expected_type
         or any(payload.get(key) != value for key, value in expected.items())
-        or payload.get("phase") not in RETIREMENT_PENDING_PHASES
+        or payload.get("phase") not in allowed_phases
         or not _is_utc_timestamp(payload.get("started_at"))
         or payload.get("secret_values_recorded") is not False
         or (final and payload.get("phase") != "record-published")
@@ -4801,8 +5129,202 @@ def _validate_retirement_journal(
                 "Gate A failed acceptance retirement prepared journal is invalid"
             )
     else:
-        _validate_retirement_live_verification(payload.get("live_verification"))
+        _validate_retirement_live_verification(
+            payload.get("live_verification"),
+            allowed_business_schema_versions=(
+                frozenset({2}) if takeover else frozenset({1, 2})
+            ),
+        )
     return dict(payload)
+
+
+def _validate_prepared_retirement_takeover(
+    *,
+    release_root: Path,
+    release_record_dir: Path,
+    acceptance_failure_archive_dir: Path,
+    retirement_failure_archive_dir: Path,
+    source_candidate_sha: str,
+    failed_acceptance: Mapping[str, Any],
+    failed_acceptance_sha256: str,
+    superseded_retirement_candidate_sha: str,
+    expected_stage_record_sha256: str,
+    expected_pending_sha256: str,
+    require_unarchived: bool = False,
+) -> dict[str, Any]:
+    """Validate the exact schema-v1 B journal C is allowed to take over."""
+
+    lineage_source_candidate_sha = _validate_sha(
+        str(failed_acceptance.get("source_candidate_sha", "")),
+        "failed acceptance lineage source SHA",
+    )
+    if len(
+        {
+            source_candidate_sha,
+            superseded_retirement_candidate_sha,
+            lineage_source_candidate_sha,
+        }
+    ) != 3:
+        raise GateACandidateError(
+            "Gate A prepared retirement takeover lineage is invalid"
+        )
+    stage_path = _stage_record_path(
+        release_record_dir, superseded_retirement_candidate_sha
+    )
+    stage = _load_stage(
+        release_root=release_root,
+        release_record_dir=release_record_dir,
+        target_sha=superseded_retirement_candidate_sha,
+    )
+    if (
+        stage.get("schema_version") != 2
+        or stage.get("transition_kind") != "m9-candidate-adoption"
+        or stage.get("superseded_candidate_sha") != source_candidate_sha
+        or stage.get("failed_acceptance_sha256")
+        != failed_acceptance_sha256
+        or _sha256(stage_path) != expected_stage_record_sha256
+    ):
+        raise GateACandidateError(
+            "Gate A superseded retirement stage binding is invalid"
+        )
+    predecessor = _load_adoption_predecessor_binding(
+        release_root=release_root,
+        release_record_dir=release_record_dir,
+        source_candidate_sha=source_candidate_sha,
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+    )
+    acceptance_archive_path = _retirement_archive_path(
+        acceptance_failure_archive_dir,
+        source_candidate_sha,
+        failed_acceptance_sha256,
+    )
+    expected_binding = {
+        "candidate_sha": superseded_retirement_candidate_sha,
+        "image_id": stage["image_id"],
+        **predecessor,
+        "stage_record_sha256": expected_stage_record_sha256,
+        "acceptance_pending_sha256": failed_acceptance_sha256,
+        "acceptance_attempt_id_sha256": failed_acceptance[
+            "attempt_id_sha256"
+        ],
+        "acceptance_archive_path": str(acceptance_archive_path),
+        "acceptance_archive_sha256": failed_acceptance_sha256,
+    }
+    record_path = _retirement_record_path(
+        release_record_dir, superseded_retirement_candidate_sha
+    )
+    if _path_entry_exists(
+        record_path, "Gate A superseded retirement final record"
+    ):
+        raise GateACandidateError(
+            "Gate A completed retirement cannot be taken over"
+        )
+    pending_path = _retirement_pending_path(
+        release_record_dir, superseded_retirement_candidate_sha
+    )
+    journal_archive_path = _retirement_journal_archive_path(
+        retirement_failure_archive_dir,
+        superseded_retirement_candidate_sha,
+        expected_pending_sha256,
+    )
+    pending_exists = _path_entry_exists(
+        pending_path, "Gate A superseded retirement pending journal"
+    )
+    archive_exists = _path_entry_exists(
+        journal_archive_path,
+        "Gate A superseded retirement journal archive",
+    )
+    if require_unarchived and (
+        not pending_exists
+        or archive_exists
+        or _path_entry_exists(
+            acceptance_archive_path, "Gate A failed acceptance archive"
+        )
+    ):
+        raise GateACandidateError(
+            "Gate A prepared retirement takeover is not pristine"
+        )
+    if not pending_exists and not archive_exists:
+        raise GateACandidateError(
+            "Gate A superseded retirement journal disappeared without an archive"
+        )
+
+    raw_payload: bytes
+    pending_identity: tuple[int, ...] | None = None
+    if pending_exists:
+        raw_payload, pending_identity = _read_stable_protected_bytes(
+            pending_path,
+            mode=0o600,
+            max_bytes=MAX_JSON_BYTES,
+            description="Gate A superseded retirement pending journal",
+        )
+    else:
+        _require_root_directory(
+            retirement_failure_archive_dir,
+            0o700,
+            "Gate A superseded retirement archive directory",
+        )
+        raw_payload, _ = _read_stable_protected_bytes(
+            journal_archive_path,
+            mode=0o600,
+            max_bytes=MAX_JSON_BYTES,
+            description="Gate A superseded retirement journal archive",
+        )
+    if _sha256_bytes(raw_payload) != expected_pending_sha256:
+        raise GateACandidateError(
+            "Gate A superseded retirement pending digest does not match"
+        )
+    try:
+        payload = json.loads(
+            raw_payload,
+            object_pairs_hook=_json_object_without_duplicates,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise GateACandidateError(
+            "Gate A superseded retirement pending journal is invalid"
+        ) from error
+    if not isinstance(payload, dict):
+        raise GateACandidateError(
+            "Gate A superseded retirement pending journal is invalid"
+        )
+    pending = _validate_retirement_journal(
+        payload,
+        expected=expected_binding,
+        final=False,
+    )
+    if pending.get("phase") != "prepared" or pending.get("live_verification") is not None:
+        raise GateACandidateError(
+            "Gate A superseded retirement is beyond the safe takeover point"
+        )
+    if archive_exists:
+        _require_root_directory(
+            retirement_failure_archive_dir,
+            0o700,
+            "Gate A superseded retirement archive directory",
+        )
+        archived_raw, _ = _read_stable_protected_bytes(
+            journal_archive_path,
+            mode=0o600,
+            max_bytes=MAX_JSON_BYTES,
+            description="Gate A superseded retirement journal archive",
+        )
+        if archived_raw != raw_payload:
+            raise GateACandidateError(
+                "Gate A superseded retirement journal archive differs"
+            )
+    return {
+        "candidate_sha": superseded_retirement_candidate_sha,
+        "image_id": stage["image_id"],
+        "stage_record_sha256": expected_stage_record_sha256,
+        "pending_sha256": expected_pending_sha256,
+        "pending_path": pending_path,
+        "pending_identity": pending_identity,
+        "raw_payload": raw_payload,
+        "archive_path": journal_archive_path,
+        "archive_exists": archive_exists,
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "pending": pending,
+    }
 
 
 def _retirement_live_identity(payload: object) -> dict[str, Any]:
@@ -4823,6 +5345,80 @@ def _require_retirement_live_match(
     if _retirement_live_identity(current) != _retirement_live_identity(recorded):
         raise GateACandidateError(
             "Gate A failed acceptance state drifted during retirement recovery"
+        )
+
+
+def _validate_takeover_retirement_recovery_shape(
+    *,
+    phase: str | None,
+    superseded_pending_exists: bool,
+    superseded_archive_exists: bool,
+    acceptance_pending_exists: bool,
+    acceptance_archive_exists: bool,
+    retirement_record_exists: bool,
+) -> None:
+    """Accept only an exact checkpoint or its single no-clobber action-ahead state."""
+
+    observed = (
+        superseded_pending_exists,
+        superseded_archive_exists,
+        acceptance_pending_exists,
+        acceptance_archive_exists,
+        retirement_record_exists,
+    )
+    allowed_by_phase: dict[str | None, frozenset[tuple[bool, ...]]] = {
+        # ``None`` covers either a pristine first invocation or a completed
+        # invocation whose own journal was removed after runtime restoration.
+        None: frozenset(
+            {
+                (True, False, True, False, False),
+                (False, True, False, True, True),
+            }
+        ),
+        "prepared": frozenset({(True, False, True, False, False)}),
+        # Each mutating step publishes its durable artifact before advancing
+        # the journal.  Recovery therefore permits exactly that one next
+        # artifact to be visible, never an arbitrary mixture of later state.
+        "write-free-verified": frozenset(
+            {
+                (True, False, True, False, False),
+                (True, True, True, False, False),
+            }
+        ),
+        "superseded-retirement-archived": frozenset(
+            {
+                (True, True, True, False, False),
+                (True, True, True, True, False),
+            }
+        ),
+        "acceptance-archived": frozenset(
+            {
+                (True, True, True, True, False),
+                (True, True, True, True, True),
+            }
+        ),
+        "record-published": frozenset(
+            {
+                (True, True, True, True, True),
+                (False, True, True, True, True),
+            }
+        ),
+        "superseded-retirement-removed": frozenset(
+            {
+                (False, True, True, True, True),
+                (False, True, False, True, True),
+            }
+        ),
+        "canonical-removed": frozenset(
+            {(False, True, False, True, True)}
+        ),
+        "runtime-restored": frozenset(
+            {(False, True, False, True, True)}
+        ),
+    }
+    if observed not in allowed_by_phase.get(phase, frozenset()):
+        raise GateACandidateError(
+            "Gate A prepared retirement takeover recovery state is inconsistent"
         )
 
 
@@ -4947,8 +5543,20 @@ def _load_adoption_context(
     lineage_source_candidate_sha: str,
     target_sha: str,
     acceptance_retirement_record_sha256: str,
+    acceptance_record_dir: Path,
     acceptance_failure_archive_dir: Path,
+    retirement_failure_archive_dir: Path,
 ) -> dict[str, Any]:
+    successful_acceptance = acceptance_record_dir / (
+        f"gatea-m9-runtime-acceptance-{source_candidate_sha}.json"
+    )
+    if _path_entry_exists(
+        successful_acceptance,
+        "Gate A predecessor successful acceptance record",
+    ):
+        raise GateACandidateError(
+            "Gate A failed and successful predecessor acceptance evidence conflict"
+        )
     target_stage = _load_stage(
         release_root=release_root,
         release_record_dir=release_record_dir,
@@ -4960,8 +5568,9 @@ def _load_adoption_context(
         source_candidate_sha=source_candidate_sha,
         lineage_source_candidate_sha=lineage_source_candidate_sha,
     )
+    takeover = target_stage.get("schema_version") == 3
     if (
-        target_stage.get("schema_version") != 2
+        target_stage.get("schema_version") not in {2, 3}
         or target_stage.get("transition_kind") != "m9-candidate-adoption"
         or target_stage.get("superseded_candidate_sha")
         != source_candidate_sha
@@ -4969,6 +5578,49 @@ def _load_adoption_context(
             str(target_stage.get("failed_acceptance_sha256", ""))
         )
         is None
+        or (
+            takeover
+            and (
+                target_stage.get("recovery_kind")
+                != "prepared-retirement-takeover"
+                or SHA_PATTERN.fullmatch(
+                    str(
+                        target_stage.get(
+                            "superseded_retirement_candidate_sha", ""
+                        )
+                    )
+                )
+                is None
+                or SHA256_PATTERN.fullmatch(
+                    str(
+                        target_stage.get(
+                            "superseded_retirement_stage_record_sha256", ""
+                        )
+                    )
+                )
+                is None
+                or SHA256_PATTERN.fullmatch(
+                    str(
+                        target_stage.get(
+                            "superseded_retirement_pending_sha256", ""
+                        )
+                    )
+                )
+                is None
+                or len(
+                    {
+                        source_candidate_sha,
+                        target_sha,
+                        str(
+                            target_stage.get(
+                                "superseded_retirement_candidate_sha", ""
+                            )
+                        ),
+                    }
+                )
+                != 3
+            )
+        )
     ):
         raise GateACandidateError("Gate A adoption stage binding is invalid")
     target_stage_sha256 = _sha256(
@@ -4991,22 +5643,89 @@ def _load_adoption_context(
         raise GateACandidateError(
             "Gate A failed acceptance archive path is invalid"
         )
+    archived_acceptance, _, _ = _validate_preclaim_failed_acceptance(
+        path=expected_archive_path,
+        expected_candidate_sha=source_candidate_sha,
+        expected_sha256=str(target_stage["failed_acceptance_sha256"]),
+    )
+    if (
+        archived_acceptance.get("source_candidate_sha")
+        != lineage_source_candidate_sha
+        or archived_acceptance.get("image_id")
+        != predecessor["source_image_id"]
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance archive lineage is invalid"
+        )
     expected_retirement = {
         "candidate_sha": target_sha,
         "image_id": target_stage["image_id"],
         **predecessor,
         "stage_record_sha256": target_stage_sha256,
         "acceptance_pending_sha256": target_stage["failed_acceptance_sha256"],
+        "acceptance_attempt_id_sha256": archived_acceptance[
+            "attempt_id_sha256"
+        ],
         "acceptance_archive_path": str(expected_archive_path),
         "acceptance_archive_sha256": target_stage["failed_acceptance_sha256"],
     }
+    takeover_context: dict[str, Any] | None = None
+    if takeover:
+        takeover_context = _validate_prepared_retirement_takeover(
+            release_root=release_root,
+            release_record_dir=release_record_dir,
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
+            source_candidate_sha=source_candidate_sha,
+            failed_acceptance=archived_acceptance,
+            failed_acceptance_sha256=str(
+                target_stage["failed_acceptance_sha256"]
+            ),
+            superseded_retirement_candidate_sha=str(
+                target_stage["superseded_retirement_candidate_sha"]
+            ),
+            expected_stage_record_sha256=str(
+                target_stage["superseded_retirement_stage_record_sha256"]
+            ),
+            expected_pending_sha256=str(
+                target_stage["superseded_retirement_pending_sha256"]
+            ),
+        )
+        if _path_entry_exists(
+            Path(str(takeover_context["pending_path"])),
+            "Gate A superseded retirement pending journal",
+        ):
+            raise GateACandidateError(
+                "Gate A superseded retirement pending journal was not retired"
+            )
+        expected_retirement.update(
+            {
+                "recovery_kind": "prepared-retirement-takeover",
+                "superseded_retirement_candidate_sha": takeover_context[
+                    "candidate_sha"
+                ],
+                "superseded_retirement_image_id": takeover_context["image_id"],
+                "superseded_retirement_stage_record_sha256": takeover_context[
+                    "stage_record_sha256"
+                ],
+                "superseded_retirement_pending_sha256": takeover_context[
+                    "pending_sha256"
+                ],
+                "superseded_retirement_archive_path": str(
+                    takeover_context["archive_path"]
+                ),
+                "superseded_retirement_archive_sha256": takeover_context[
+                    "pending_sha256"
+                ],
+            }
+        )
     retirement = _load_retirement_record(
         release_record_dir=release_record_dir,
         target_sha=target_sha,
         expected_sha256=acceptance_retirement_record_sha256,
         expected_binding=expected_retirement,
     )
-    _validate_adoption_retirement_archive(
+    reloaded_acceptance = _validate_adoption_retirement_archive(
         acceptance_failure_archive_dir=acceptance_failure_archive_dir,
         source_candidate_sha=source_candidate_sha,
         failed_acceptance_sha256=str(target_stage["failed_acceptance_sha256"]),
@@ -5014,6 +5733,10 @@ def _load_adoption_context(
         source_image_id=str(predecessor["source_image_id"]),
         retirement=retirement,
     )
+    if reloaded_acceptance != archived_acceptance:
+        raise GateACandidateError(
+            "Gate A failed acceptance archive changed during adoption validation"
+        )
     return {
         "transition_kind": "m9-candidate-adoption",
         "source_candidate_sha": source_candidate_sha,
@@ -5043,6 +5766,7 @@ def _load_adoption_context(
         ),
         "retirement": retirement,
         "stage": target_stage,
+        "takeover": takeover_context,
     }
 
 
@@ -5056,7 +5780,8 @@ def _validated_retirement_recovery_allowances(
     failed_acceptance_sha256: str,
     pending_path: Path,
     expected_binding: Mapping[str, Any],
-) -> tuple[Any, Any | None]:
+    takeover_context: Mapping[str, Any] | None = None,
+) -> tuple[Any | None, Any | None, Any | None]:
     """Build only the two exact allowances needed to restart A."""
 
     expected_path = _retirement_pending_path(release_record_dir, target_sha)
@@ -5071,10 +5796,13 @@ def _validated_retirement_recovery_allowances(
         canonical_pending,
         "Gate A failed acceptance journal",
     )
+    allowed_release_pendings = [expected_path]
+    if takeover_context is not None:
+        allowed_release_pendings.append(Path(str(takeover_context["pending_path"])))
     _reject_unresolved_transition_journals(
         release_record_dir=release_record_dir,
         acceptance_record_dir=acceptance_record_dir,
-        allowed_release_pending=expected_path,
+        allowed_release_pendings=tuple(allowed_release_pendings),
         allowed_acceptance_candidate_sha=(
             source_candidate_sha if acceptance_exists else None
         ),
@@ -5082,22 +5810,32 @@ def _validated_retirement_recovery_allowances(
             failed_acceptance_sha256 if acceptance_exists else None
         ),
     )
-    _validate_retirement_journal(
-        _load_json(
-            expected_path,
-            "Gate A failed acceptance retirement pending journal",
-            mode=0o600,
-        ),
+    current_pending_raw, _ = _read_stable_protected_bytes(
+        expected_path,
+        mode=0o600,
+        max_bytes=MAX_JSON_BYTES,
+        description="Gate A failed acceptance retirement pending journal",
+    )
+    try:
+        current_pending_payload = json.loads(
+            current_pending_raw,
+            object_pairs_hook=_json_object_without_duplicates,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement pending journal is invalid"
+        ) from error
+    if not isinstance(current_pending_payload, dict):
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement pending journal is invalid"
+        )
+    current_pending = _validate_retirement_journal(
+        current_pending_payload,
         expected=expected_binding,
         final=False,
     )
+    current_pending_sha256 = _sha256_bytes(current_pending_raw)
     try:
-        transition = gatea.CandidateTransitionRecoveryAllowance(
-            path=expected_path,
-            kind="failed-acceptance-retirement",
-            candidate_sha=target_sha,
-            runtime_candidate_sha=source_candidate_sha,
-        )
         acceptance = (
             gatea.M9AcceptanceSidecarRecoveryAllowance(
                 candidate_sha=source_candidate_sha,
@@ -5106,11 +5844,72 @@ def _validated_retirement_recovery_allowances(
             if acceptance_exists
             else None
         )
+        if takeover_context is not None:
+            superseded_path = Path(str(takeover_context["pending_path"]))
+            superseded_exists = _path_entry_exists(
+                superseded_path,
+                "Gate A superseded retirement pending journal",
+            )
+            record_exists = _path_entry_exists(
+                _retirement_record_path(release_record_dir, target_sha),
+                "Gate A failed acceptance retirement record",
+            )
+            if not superseded_exists and (
+                current_pending["phase"]
+                not in {
+                    "record-published",
+                    "superseded-retirement-removed",
+                    "canonical-removed",
+                    "runtime-restored",
+                }
+                or not record_exists
+            ):
+                raise GateACandidateError(
+                    "Gate A superseded retirement disappeared before commit"
+                )
+            if not acceptance_exists and (
+                current_pending["phase"]
+                not in {
+                    "superseded-retirement-removed",
+                    "canonical-removed",
+                    "runtime-restored",
+                }
+                or not record_exists
+            ):
+                raise GateACandidateError(
+                    "Gate A failed acceptance disappeared before commit"
+                )
+            takeover = gatea.M9CandidateTakeoverRecoveryAllowance(
+                runtime_candidate_sha=source_candidate_sha,
+                current_transition=gatea.CandidateTransitionRecoveryAllowance(
+                    path=expected_path,
+                    kind="failed-acceptance-retirement",
+                    candidate_sha=target_sha,
+                    runtime_candidate_sha=source_candidate_sha,
+                ),
+                current_pending_sha256=current_pending_sha256,
+                superseded_pending=(
+                    gatea.SupersededCandidatePendingRecoveryAllowance(
+                        candidate_sha=takeover_context["candidate_sha"],
+                        path=superseded_path,
+                        sha256=takeover_context["pending_sha256"],
+                        expected_exists=superseded_exists,
+                    )
+                ),
+                acceptance_sidecar=acceptance,
+            )
+            return None, None, takeover
+        transition = gatea.CandidateTransitionRecoveryAllowance(
+            path=expected_path,
+            kind="failed-acceptance-retirement",
+            candidate_sha=target_sha,
+            runtime_candidate_sha=source_candidate_sha,
+        )
     except (AttributeError, TypeError, ValueError) as error:
         raise GateACandidateError(
             "Gate A operations retirement recovery API is unavailable"
         ) from error
-    return transition, acceptance
+    return transition, acceptance, None
 
 
 def _restore_retirement_runtime(
@@ -5130,10 +5929,11 @@ def _restore_retirement_runtime(
     failed_acceptance_sha256: str,
     pending_path: Path,
     expected_binding: Mapping[str, Any],
+    takeover_context: Mapping[str, Any] | None = None,
 ) -> None:
     """Restart and re-prove A's exact five-service M9 runtime."""
 
-    transition_allowance, acceptance_allowance = (
+    transition_allowance, acceptance_allowance, takeover_allowance = (
         _validated_retirement_recovery_allowances(
             gatea=gatea,
             release_record_dir=release_record_dir,
@@ -5143,6 +5943,7 @@ def _restore_retirement_runtime(
             failed_acceptance_sha256=failed_acceptance_sha256,
             pending_path=pending_path,
             expected_binding=expected_binding,
+            takeover_context=takeover_context,
         )
     )
     try:
@@ -5156,6 +5957,7 @@ def _restore_retirement_runtime(
             allow_existing_gatea_publisher=True,
             candidate_transition_recovery=transition_allowance,
             acceptance_sidecar_recovery=acceptance_allowance,
+            candidate_takeover_recovery=takeover_allowance,
             acceptance_record_dir=acceptance_record_dir,
             _start_new_session=True,
         )
@@ -5272,12 +6074,19 @@ def retire_failed_acceptance(
     confirm_lineage_source_sha: str,
     confirm_target_sha: str,
     confirm_failed_acceptance_sha256: str,
+    superseded_retirement_candidate_sha: str | None = None,
+    superseded_retirement_stage_record_sha256: str | None = None,
+    superseded_retirement_pending_sha256: str | None = None,
+    confirm_superseded_retirement_candidate_sha: str | None = None,
+    confirm_superseded_retirement_stage_record_sha256: str | None = None,
+    confirm_superseded_retirement_pending_sha256: str | None = None,
     config_file: Path,
     secret_dir: Path,
     release_root: Path,
     release_record_dir: Path,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
     acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    retirement_failure_archive_dir: Path = DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     current_link: Path = DEFAULT_CURRENT_LINK,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
@@ -5299,6 +6108,32 @@ def retire_failed_acceptance(
     failed_acceptance_sha256 = _validate_sha256(
         failed_acceptance_sha256, "failed acceptance digest"
     )
+    takeover_values = (
+        superseded_retirement_candidate_sha,
+        superseded_retirement_stage_record_sha256,
+        superseded_retirement_pending_sha256,
+        confirm_superseded_retirement_candidate_sha,
+        confirm_superseded_retirement_stage_record_sha256,
+        confirm_superseded_retirement_pending_sha256,
+    )
+    takeover = any(value is not None for value in takeover_values)
+    if takeover and any(value is None for value in takeover_values):
+        raise GateACandidateError(
+            "Gate A prepared retirement takeover confirmations are incomplete"
+        )
+    if takeover:
+        superseded_retirement_candidate_sha = _validate_sha(
+            str(superseded_retirement_candidate_sha),
+            "superseded retirement candidate SHA",
+        )
+        superseded_retirement_stage_record_sha256 = _validate_sha256(
+            str(superseded_retirement_stage_record_sha256),
+            "superseded retirement stage record digest",
+        )
+        superseded_retirement_pending_sha256 = _validate_sha256(
+            str(superseded_retirement_pending_sha256),
+            "superseded retirement pending digest",
+        )
     if (
         len(
             {
@@ -5312,6 +6147,26 @@ def retire_failed_acceptance(
         or confirm_lineage_source_sha != lineage_source_candidate_sha
         or confirm_target_sha != target_sha
         or confirm_failed_acceptance_sha256 != failed_acceptance_sha256
+        or (
+            takeover
+            and (
+                confirm_superseded_retirement_candidate_sha
+                != superseded_retirement_candidate_sha
+                or confirm_superseded_retirement_stage_record_sha256
+                != superseded_retirement_stage_record_sha256
+                or confirm_superseded_retirement_pending_sha256
+                != superseded_retirement_pending_sha256
+                or len(
+                    {
+                        target_sha,
+                        source_candidate_sha,
+                        lineage_source_candidate_sha,
+                        str(superseded_retirement_candidate_sha),
+                    }
+                )
+                != 4
+            )
+        )
     ):
         raise GateACandidateError(
             "Gate A failed acceptance retirement confirmations do not match"
@@ -5332,7 +6187,17 @@ def retire_failed_acceptance(
     _reject_unresolved_transition_journals(
         release_record_dir=release_record_dir,
         acceptance_record_dir=acceptance_record_dir,
-        allowed_release_pending=pending_path,
+        allowed_release_pendings=(
+            (
+                pending_path,
+                _retirement_pending_path(
+                    release_record_dir,
+                    str(superseded_retirement_candidate_sha),
+                ),
+            )
+            if takeover
+            else (pending_path,)
+        ),
         allowed_acceptance_candidate_sha=(
             source_candidate_sha if acceptance_exists else None
         ),
@@ -5346,12 +6211,27 @@ def retire_failed_acceptance(
         target_sha=target_sha,
     )
     if (
-        target_stage.get("schema_version") != 2
+        target_stage.get("schema_version") != (3 if takeover else 2)
         or target_stage.get("transition_kind") != "m9-candidate-adoption"
         or target_stage.get("superseded_candidate_sha")
         != source_candidate_sha
         or target_stage.get("failed_acceptance_sha256")
         != failed_acceptance_sha256
+        or (
+            takeover
+            and (
+                target_stage.get("recovery_kind")
+                != "prepared-retirement-takeover"
+                or target_stage.get("superseded_retirement_candidate_sha")
+                != superseded_retirement_candidate_sha
+                or target_stage.get(
+                    "superseded_retirement_stage_record_sha256"
+                )
+                != superseded_retirement_stage_record_sha256
+                or target_stage.get("superseded_retirement_pending_sha256")
+                != superseded_retirement_pending_sha256
+            )
+        )
     ):
         raise GateACandidateError(
             "Gate A target stage does not bind the failed acceptance allowance"
@@ -5430,6 +6310,34 @@ def retire_failed_acceptance(
             "Gate A successful or completing predecessor acceptance cannot retire"
         )
 
+    takeover_context: dict[str, Any] | None = None
+    if takeover:
+        takeover_context = _validate_prepared_retirement_takeover(
+            release_root=release_root,
+            release_record_dir=release_record_dir,
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
+            source_candidate_sha=source_candidate_sha,
+            failed_acceptance=failed,
+            failed_acceptance_sha256=failed_acceptance_sha256,
+            superseded_retirement_candidate_sha=str(
+                superseded_retirement_candidate_sha
+            ),
+            expected_stage_record_sha256=str(
+                superseded_retirement_stage_record_sha256
+            ),
+            expected_pending_sha256=str(
+                superseded_retirement_pending_sha256
+            ),
+        )
+        if (
+            takeover_context.get("lineage_source_candidate_sha")
+            != lineage_source_candidate_sha
+        ):
+            raise GateACandidateError(
+                "Gate A superseded retirement lineage changed"
+            )
+
     expected_binding = {
         "candidate_sha": target_sha,
         "image_id": target_stage["image_id"],
@@ -5439,6 +6347,31 @@ def retire_failed_acceptance(
         "acceptance_attempt_id_sha256": failed["attempt_id_sha256"],
         "acceptance_archive_path": str(archive_path),
         "acceptance_archive_sha256": failed_acceptance_sha256,
+        **(
+            {
+                "recovery_kind": "prepared-retirement-takeover",
+                "superseded_retirement_candidate_sha": (
+                    takeover_context["candidate_sha"]
+                ),
+                "superseded_retirement_image_id": takeover_context[
+                    "image_id"
+                ],
+                "superseded_retirement_stage_record_sha256": (
+                    takeover_context["stage_record_sha256"]
+                ),
+                "superseded_retirement_pending_sha256": (
+                    takeover_context["pending_sha256"]
+                ),
+                "superseded_retirement_archive_path": str(
+                    takeover_context["archive_path"]
+                ),
+                "superseded_retirement_archive_sha256": (
+                    takeover_context["pending_sha256"]
+                ),
+            }
+            if takeover_context is not None
+            else {}
+        ),
     }
     has_pending = _path_entry_exists(
         pending_path, "Gate A failed acceptance retirement pending journal"
@@ -5455,11 +6388,25 @@ def retire_failed_acceptance(
             0o700,
             "Gate A failed acceptance archive directory",
         )
+        archived_raw, _ = _read_stable_protected_bytes(
+            archive_path,
+            mode=0o600,
+            max_bytes=MAX_ACCEPTANCE_PENDING_BYTES,
+            description="Gate A failed acceptance archive",
+        )
+        if (
+            archived_raw != raw_payload
+            or _sha256_bytes(archived_raw) != failed_acceptance_sha256
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance archive changed"
+            )
     if not acceptance_exists and not has_record:
         raise GateACandidateError(
             "Gate A failed acceptance retirement recovery evidence is incomplete"
         )
 
+    pending: dict[str, Any] | None = None
     if has_pending:
         pending = _validate_retirement_journal(
             _load_json(
@@ -5470,24 +6417,58 @@ def retire_failed_acceptance(
             expected=expected_binding,
             final=False,
         )
-    else:
+    if takeover:
+        if takeover_context is None:
+            raise GateACandidateError(
+                "Gate A prepared retirement takeover context is unavailable"
+            )
+        _validate_takeover_retirement_recovery_shape(
+            phase=str(pending["phase"]) if pending is not None else None,
+            superseded_pending_exists=_path_entry_exists(
+                Path(str(takeover_context["pending_path"])),
+                "Gate A superseded retirement pending journal",
+            ),
+            superseded_archive_exists=_path_entry_exists(
+                Path(str(takeover_context["archive_path"])),
+                "Gate A superseded retirement journal archive",
+            ),
+            acceptance_pending_exists=acceptance_exists,
+            acceptance_archive_exists=archive_exists,
+            retirement_record_exists=has_record,
+        )
+    if pending is None:
         if has_record:
             if acceptance_exists:
                 raise GateACandidateError(
                     "Gate A failed acceptance retirement journal is missing"
                 )
-            return _load_retirement_record(
+            if takeover and _path_entry_exists(
+                _retirement_pending_path(
+                    release_record_dir,
+                    str(superseded_retirement_candidate_sha),
+                ),
+                "Gate A superseded retirement pending journal",
+            ):
+                raise GateACandidateError(
+                    "Gate A superseded retirement pending journal was not retired"
+                )
+            completed_retirement = _load_retirement_record(
                 release_record_dir=release_record_dir,
                 target_sha=target_sha,
                 expected_sha256=_sha256(record_path),
                 expected_binding=expected_binding,
             )
+            # A crash can land after unlinking the own journal but before the
+            # parent directory fsync.  Replay closes that durability window
+            # before treating the absence as a completed retirement.
+            _fsync_directory(release_record_dir)
+            return completed_retirement
         if archive_exists:
             raise GateACandidateError(
                 "Gate A failed acceptance archive has no retirement journal"
             )
         pending = {
-            "schema_version": 1,
+            "schema_version": 2 if takeover else 1,
             "record_type": "gatea-m9-failed-acceptance-retirement-pending",
             **expected_binding,
             "live_verification": None,
@@ -5501,13 +6482,28 @@ def retire_failed_acceptance(
             final=False,
         )
         _write_json_exclusive(pending_path, pending, 0o600)
-    if has_record and pending["phase"] in {"prepared", "write-free-verified"}:
+    if pending is None:  # pragma: no cover - all branches initialize it.
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement journal is unavailable"
+        )
+    record_too_early_phases = {
+        "prepared",
+        "write-free-verified",
+    }
+    if takeover:
+        record_too_early_phases.add("superseded-retirement-archived")
+    if has_record and pending["phase"] in record_too_early_phases:
         raise GateACandidateError(
             "Gate A failed acceptance retirement record appeared too early"
         )
     if (
         pending["phase"]
-        in {"record-published", "canonical-removed", "runtime-restored"}
+        in {
+            "record-published",
+            "superseded-retirement-removed",
+            "canonical-removed",
+            "runtime-restored",
+        }
         and not has_record
     ):
         raise GateACandidateError(
@@ -5576,7 +6572,68 @@ def retire_failed_acceptance(
             }
             _atomic_replace_json(pending_path, pending, 0o600)
 
-        if pending["phase"] == "write-free-verified":
+        if takeover_context is not None and pending["phase"] == "write-free-verified":
+            superseded_archive_path = Path(
+                str(expected_binding["superseded_retirement_archive_path"])
+            )
+            _ensure_root_directory(
+                retirement_failure_archive_dir,
+                0o700,
+                "Gate A superseded retirement archive directory",
+            )
+            if _path_entry_exists(
+                superseded_archive_path,
+                "Gate A superseded retirement journal archive",
+            ):
+                archived_retirement, _ = _read_stable_protected_bytes(
+                    superseded_archive_path,
+                    mode=0o600,
+                    max_bytes=MAX_JSON_BYTES,
+                    description="Gate A superseded retirement journal archive",
+                )
+                if archived_retirement != takeover_context["raw_payload"]:
+                    raise GateACandidateError(
+                        "Gate A superseded retirement journal archive differs"
+                    )
+            else:
+                _write_bytes_exclusive(
+                    superseded_archive_path,
+                    takeover_context["raw_payload"],
+                    0o600,
+                )
+            pending = {
+                **pending,
+                "phase": "superseded-retirement-archived",
+            }
+            _atomic_replace_json(pending_path, pending, 0o600)
+
+        if takeover_context is not None:
+            _require_root_directory(
+                retirement_failure_archive_dir,
+                0o700,
+                "Gate A superseded retirement archive directory",
+            )
+            archived_retirement, _ = _read_stable_protected_bytes(
+                Path(str(expected_binding["superseded_retirement_archive_path"])),
+                mode=0o600,
+                max_bytes=MAX_JSON_BYTES,
+                description="Gate A superseded retirement journal archive",
+            )
+            if (
+                archived_retirement != takeover_context["raw_payload"]
+                or _sha256_bytes(archived_retirement)
+                != expected_binding["superseded_retirement_archive_sha256"]
+            ):
+                raise GateACandidateError(
+                    "Gate A superseded retirement journal archive changed"
+                )
+
+        acceptance_archive_ready = (
+            pending["phase"] == "superseded-retirement-archived"
+            if takeover_context is not None
+            else pending["phase"] == "write-free-verified"
+        )
+        if acceptance_archive_ready:
             _ensure_root_directory(
                 acceptance_failure_archive_dir,
                 0o700,
@@ -5653,6 +6710,36 @@ def retire_failed_acceptance(
             _atomic_replace_json(pending_path, pending, 0o600)
 
         if pending["phase"] == "record-published":
+            if takeover_context is not None:
+                superseded_pending_path = Path(
+                    str(takeover_context["pending_path"])
+                )
+                if _path_entry_exists(
+                    superseded_pending_path,
+                    "Gate A superseded retirement pending journal",
+                ):
+                    superseded_identity = takeover_context["pending_identity"]
+                    if superseded_identity is None:
+                        raise GateACandidateError(
+                            "Gate A superseded retirement identity is unavailable"
+                        )
+                    _unlink_exact_protected_file(
+                        superseded_pending_path,
+                        superseded_identity,
+                        description="Gate A superseded retirement pending journal",
+                    )
+                pending = {
+                    **pending,
+                    "phase": "superseded-retirement-removed",
+                }
+                _atomic_replace_json(pending_path, pending, 0o600)
+
+        canonical_removal_ready = (
+            pending["phase"] == "superseded-retirement-removed"
+            if takeover_context is not None
+            else pending["phase"] == "record-published"
+        )
+        if canonical_removal_ready:
             if _path_entry_exists(
                 canonical_pending, "Gate A failed acceptance journal"
             ):
@@ -5685,6 +6772,7 @@ def retire_failed_acceptance(
         "failed_acceptance_sha256": failed_acceptance_sha256,
         "pending_path": pending_path,
         "expected_binding": expected_binding,
+        "takeover_context": takeover_context,
     }
     work_result, work_error = _run_retirement_work_then_restore(
         termination=_termination_controller,
@@ -6709,6 +7797,7 @@ def finalize_candidate(
     current_link: Path,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
     acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    retirement_failure_archive_dir: Path = DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     resilience_record_dir: Path = DEFAULT_RESILIENCE_RECORD_DIR,
     predecessor_candidate_sha: str | None = None,
     acceptance_retirement_record_sha256: str | None = None,
@@ -6827,7 +7916,9 @@ def finalize_candidate(
             acceptance_retirement_record_sha256=str(
                 acceptance_retirement_record_sha256
             ),
+            acceptance_record_dir=acceptance_record_dir,
             acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
         )
     activation = _validate_activation_journal(
         activation,
@@ -7485,10 +8576,27 @@ def _parser() -> argparse.ArgumentParser:
     stage.add_argument("--confirm-target-sha", required=True)
     stage.add_argument("--superseded-candidate-sha")
     stage.add_argument("--confirm-failed-acceptance-sha256")
+    stage.add_argument("--superseded-retirement-candidate-sha")
+    stage.add_argument(
+        "--confirm-superseded-retirement-stage-record-sha256"
+    )
+    stage.add_argument(
+        "--confirm-superseded-retirement-pending-sha256"
+    )
     stage.add_argument(
         "--acceptance-record-dir",
         type=Path,
         default=DEFAULT_ACCEPTANCE_RECORD_DIR,
+    )
+    stage.add_argument(
+        "--acceptance-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    )
+    stage.add_argument(
+        "--retirement-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     )
     stage.add_argument("--apply", action="store_true")
 
@@ -7504,6 +8612,16 @@ def _parser() -> argparse.ArgumentParser:
     retire.add_argument(
         "--confirm-failed-acceptance-sha256", required=True
     )
+    retire.add_argument("--superseded-retirement-candidate-sha")
+    retire.add_argument("--superseded-retirement-stage-record-sha256")
+    retire.add_argument("--superseded-retirement-pending-sha256")
+    retire.add_argument("--confirm-superseded-retirement-candidate-sha")
+    retire.add_argument(
+        "--confirm-superseded-retirement-stage-record-sha256"
+    )
+    retire.add_argument(
+        "--confirm-superseded-retirement-pending-sha256"
+    )
     retire.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG_FILE)
     retire.add_argument("--secret-dir", type=Path, default=DEFAULT_SECRET_DIR)
     retire.add_argument(
@@ -7515,6 +8633,11 @@ def _parser() -> argparse.ArgumentParser:
         "--acceptance-failure-archive-dir",
         type=Path,
         default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    )
+    retire.add_argument(
+        "--retirement-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     )
     retire.add_argument("--current-link", type=Path, default=DEFAULT_CURRENT_LINK)
     retire.add_argument("--apply", action="store_true")
@@ -7558,6 +8681,11 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
     )
+    activate.add_argument(
+        "--retirement-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
+    )
     activate.add_argument("--apply", action="store_true")
 
     rollback = subparsers.add_parser("rollback-config")
@@ -7589,6 +8717,11 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
     )
+    rollback.add_argument(
+        "--retirement-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
+    )
     rollback.add_argument("--apply", action="store_true")
 
     finalize = subparsers.add_parser("finalize")
@@ -7613,6 +8746,11 @@ def _parser() -> argparse.ArgumentParser:
         "--acceptance-failure-archive-dir",
         type=Path,
         default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    )
+    finalize.add_argument(
+        "--retirement-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
     )
     finalize.add_argument("--post-backup-id", required=True)
     finalize.add_argument("--confirm-source-sha", required=True)
@@ -7666,7 +8804,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 failed_acceptance_sha256=(
                     args.confirm_failed_acceptance_sha256
                 ),
+                superseded_retirement_candidate_sha=(
+                    args.superseded_retirement_candidate_sha
+                ),
+                superseded_retirement_stage_record_sha256=(
+                    args.confirm_superseded_retirement_stage_record_sha256
+                ),
+                superseded_retirement_pending_sha256=(
+                    args.confirm_superseded_retirement_pending_sha256
+                ),
                 acceptance_record_dir=args.acceptance_record_dir,
+                acceptance_failure_archive_dir=(
+                    args.acceptance_failure_archive_dir
+                ),
+                retirement_failure_archive_dir=(
+                    args.retirement_failure_archive_dir
+                ),
             )
         elif args.command == "retire-failed-acceptance":
             if not args.apply:
@@ -7686,6 +8839,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 confirm_failed_acceptance_sha256=(
                     args.confirm_failed_acceptance_sha256
                 ),
+                superseded_retirement_candidate_sha=(
+                    args.superseded_retirement_candidate_sha
+                ),
+                superseded_retirement_stage_record_sha256=(
+                    args.superseded_retirement_stage_record_sha256
+                ),
+                superseded_retirement_pending_sha256=(
+                    args.superseded_retirement_pending_sha256
+                ),
+                confirm_superseded_retirement_candidate_sha=(
+                    args.confirm_superseded_retirement_candidate_sha
+                ),
+                confirm_superseded_retirement_stage_record_sha256=(
+                    args.confirm_superseded_retirement_stage_record_sha256
+                ),
+                confirm_superseded_retirement_pending_sha256=(
+                    args.confirm_superseded_retirement_pending_sha256
+                ),
                 config_file=args.config_file,
                 secret_dir=args.secret_dir,
                 release_root=args.release_root,
@@ -7693,6 +8864,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 acceptance_record_dir=args.acceptance_record_dir,
                 acceptance_failure_archive_dir=(
                     args.acceptance_failure_archive_dir
+                ),
+                retirement_failure_archive_dir=(
+                    args.retirement_failure_archive_dir
                 ),
                 current_link=args.current_link,
             )
@@ -7730,6 +8904,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 acceptance_failure_archive_dir=(
                     args.acceptance_failure_archive_dir
                 ),
+                retirement_failure_archive_dir=(
+                    args.retirement_failure_archive_dir
+                ),
             )
         elif args.command == "rollback-config":
             if not args.apply:
@@ -7762,6 +8939,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 acceptance_failure_archive_dir=(
                     args.acceptance_failure_archive_dir
                 ),
+                retirement_failure_archive_dir=(
+                    args.retirement_failure_archive_dir
+                ),
             )
         elif args.command == "finalize":
             if not args.apply:
@@ -7789,6 +8969,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 resilience_record_dir=args.resilience_record_dir,
                 acceptance_failure_archive_dir=(
                     args.acceptance_failure_archive_dir
+                ),
+                retirement_failure_archive_dir=(
+                    args.retirement_failure_archive_dir
                 ),
                 predecessor_candidate_sha=args.predecessor_candidate_sha,
                 acceptance_retirement_record_sha256=(

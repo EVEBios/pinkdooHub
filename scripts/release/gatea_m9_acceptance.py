@@ -3398,10 +3398,10 @@ def _create_fixture(
     client: SafeLoopbackClient,
     *,
     admin_token: str,
-    candidate_sha: str,
+    acceptance_attempt_id: str,
     progress: Callable[[str, Sequence[int]], None] | None = None,
 ) -> dict[str, Any]:
-    suffix = candidate_sha[:12]
+    suffix = acceptance_attempt_id[:12]
     experience = _data(
         client.json_request(
             "create-experience",
@@ -3540,7 +3540,9 @@ def _create_fixture(
         "reason": "Gate A M9 controlled fixture supply",
     }
     inventory_headers = {
-        "Idempotency-Key": f"gatea-m9-kit-stock-{candidate_sha}-v1"
+        "Idempotency-Key": (
+            f"gatea-m9-kit-stock-{acceptance_attempt_id}-v1"
+        )
     }
     adjusted = _data(
         client.json_request(
@@ -4596,7 +4598,7 @@ def _execute_active_acceptance(
             fixture = _create_fixture(
                 client,
                 admin_token=admin_token,
-                candidate_sha=context.attempt_id,
+                acceptance_attempt_id=context.attempt_id,
                 progress=record_fixture_progress,
             )
             fixture_ids = (

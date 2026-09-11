@@ -353,6 +353,34 @@ class M9AcceptanceSidecarRecoveryAllowance:
     complete_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class SupersededCandidatePendingRecoveryAllowance:
+    """M9 候选接管时，已被取代 journal 的不可变身份。"""
+
+    candidate_sha: str
+    path: Path
+    sha256: str | None
+    expected_exists: bool
+
+
+@dataclass(frozen=True)
+class M9CandidateTakeoverRecoveryAllowance:
+    """只允许 C 接管 B 的 prepared retirement 时恢复既有 A runtime。
+
+    这个 bundle 不是通用的多 pending 豁免：它把运行中的 A、当前 C 的
+    own retirement、可能仍存在的 B retirement 和 A 的 acceptance sidecar
+    固定在一次受控恢复中。B unlink 之后调用方必须显式把
+    ``superseded_pending.expected_exists`` 设为 ``False``；届时目录中只能
+    留下 C 的 own pending。
+    """
+
+    runtime_candidate_sha: str
+    current_transition: CandidateTransitionRecoveryAllowance
+    current_pending_sha256: str
+    superseded_pending: SupersededCandidatePendingRecoveryAllowance
+    acceptance_sidecar: M9AcceptanceSidecarRecoveryAllowance | None
+
+
 @contextmanager
 def operation_lock(
     *,
@@ -890,6 +918,233 @@ def reject_unresolved_candidate_transition_journals(
         raise GateAError(
             "Gate A candidate transition has an unresolved pending journal"
         )
+
+
+def _m9_takeover_pending_lstat(path: Path) -> os.stat_result:
+    """隔离 takeover journal 的 metadata 读取，供安全单测替换边界。"""
+
+    return path.lstat()
+
+
+def _m9_takeover_pending_fstat(descriptor: int) -> os.stat_result:
+    """隔离 takeover journal 的 fd metadata 读取，供安全单测替换边界。"""
+
+    return os.fstat(descriptor)
+
+
+def _m9_takeover_pending_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    """可重读的 pending journal 必须在校验窗口内保持同一 inode 与内容身份。"""
+
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _require_m9_takeover_pending_metadata(metadata: os.stat_result) -> None:
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_nlink != 1
+        or metadata.st_size > MAX_M9_ADOPTION_RECORD_BYTES
+    ):
+        raise GateAError("Gate A M9 candidate takeover recovery allowance is invalid")
+
+
+def _validate_m9_takeover_pending_file(
+    *,
+    path: Path,
+    expected_sha256: str,
+) -> None:
+    """稳定读取并摘要绑定 root-only retirement journal。"""
+
+    descriptor: int | None = None
+    try:
+        initial_metadata = _m9_takeover_pending_lstat(path)
+        _require_m9_takeover_pending_metadata(initial_metadata)
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        )
+        before_metadata = _m9_takeover_pending_fstat(descriptor)
+        _require_m9_takeover_pending_metadata(before_metadata)
+        if _m9_takeover_pending_identity(
+            initial_metadata
+        ) != _m9_takeover_pending_identity(before_metadata):
+            raise GateAError(
+                "Gate A M9 candidate takeover recovery allowance is invalid"
+            )
+        digest = hashlib.sha256()
+        remaining = MAX_M9_ADOPTION_RECORD_BYTES + 1
+        while remaining > 0:
+            block = os.read(descriptor, min(1024 * 1024, remaining))
+            if not block:
+                break
+            digest.update(block)
+            remaining -= len(block)
+        if remaining == 0:
+            raise GateAError("Gate A M9 candidate takeover recovery allowance is invalid")
+        after_metadata = _m9_takeover_pending_fstat(descriptor)
+        final_metadata = _m9_takeover_pending_lstat(path)
+        _require_m9_takeover_pending_metadata(after_metadata)
+        _require_m9_takeover_pending_metadata(final_metadata)
+        if (
+            _m9_takeover_pending_identity(before_metadata)
+            != _m9_takeover_pending_identity(after_metadata)
+            or _m9_takeover_pending_identity(before_metadata)
+            != _m9_takeover_pending_identity(final_metadata)
+            or digest.hexdigest() != expected_sha256
+        ):
+            raise GateAError(
+                "Gate A M9 candidate takeover recovery allowance is invalid"
+            )
+    except GateAError:
+        raise
+    except OSError as error:
+        raise GateAError(
+            "Gate A M9 candidate takeover recovery allowance is invalid"
+        ) from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _validate_m9_candidate_takeover_recovery_allowance(
+    *,
+    record_dir: Path,
+    acceptance_record_dir: Path,
+    recovery_allowance: M9CandidateTakeoverRecoveryAllowance,
+    pending_paths: Sequence[Path],
+    sidecar_paths: Sequence[Path],
+) -> None:
+    """验证唯一允许的 C+B retirement 恢复集合，拒绝一切泛化多 pending。"""
+
+    invalid = "Gate A M9 candidate takeover recovery allowance is invalid"
+    if (
+        not isinstance(recovery_allowance, M9CandidateTakeoverRecoveryAllowance)
+        or not isinstance(recovery_allowance.runtime_candidate_sha, str)
+        or not isinstance(
+            recovery_allowance.current_transition,
+            CandidateTransitionRecoveryAllowance,
+        )
+        or not isinstance(
+            recovery_allowance.superseded_pending,
+            SupersededCandidatePendingRecoveryAllowance,
+        )
+        or (
+            recovery_allowance.acceptance_sidecar is not None
+            and not isinstance(
+                recovery_allowance.acceptance_sidecar,
+                M9AcceptanceSidecarRecoveryAllowance,
+            )
+        )
+    ):
+        raise GateAError(invalid)
+
+    current = recovery_allowance.current_transition
+    superseded = recovery_allowance.superseded_pending
+    runtime_sha = recovery_allowance.runtime_candidate_sha
+    if (
+        current.kind != "failed-acceptance-retirement"
+        or current.runtime_candidate_sha != runtime_sha
+        or not isinstance(current.path, Path)
+        or not isinstance(current.candidate_sha, str)
+        or not isinstance(recovery_allowance.current_pending_sha256, str)
+        or not isinstance(superseded.candidate_sha, str)
+        or not isinstance(superseded.path, Path)
+        or (
+            superseded.sha256 is not None
+            and not isinstance(superseded.sha256, str)
+        )
+        or not isinstance(superseded.expected_exists, bool)
+        or any(
+            GIT_SHA_PATTERN.fullmatch(value) is None
+            for value in (
+                runtime_sha,
+                current.candidate_sha,
+                superseded.candidate_sha,
+            )
+        )
+        or (
+            superseded.sha256 is not None
+            and SHA256_PATTERN.fullmatch(superseded.sha256) is None
+        )
+        or (superseded.expected_exists and superseded.sha256 is None)
+        or SHA256_PATTERN.fullmatch(
+            recovery_allowance.current_pending_sha256
+        ) is None
+        or len(
+            {
+                runtime_sha,
+                current.candidate_sha,
+                superseded.candidate_sha,
+            }
+        )
+        != 3
+        or (
+            recovery_allowance.acceptance_sidecar is not None
+            and recovery_allowance.acceptance_sidecar.candidate_sha != runtime_sha
+        )
+    ):
+        raise GateAError(invalid)
+
+    normalized_record_dir = _lexical_absolute_path(record_dir)
+    current_path = _lexical_absolute_path(current.path)
+    superseded_path = _lexical_absolute_path(superseded.path)
+    expected_current_path = normalized_record_dir / (
+        f"{current.candidate_sha}.acceptance-retirement.pending.json"
+    )
+    expected_superseded_path = normalized_record_dir / (
+        f"{superseded.candidate_sha}.acceptance-retirement.pending.json"
+    )
+    if (
+        current_path != expected_current_path
+        or superseded_path != expected_superseded_path
+        or current_path.parent != normalized_record_dir
+        or superseded_path.parent != normalized_record_dir
+    ):
+        raise GateAError(invalid)
+
+    scanned_pending = {_lexical_absolute_path(path) for path in pending_paths}
+    expected_pending = {current_path}
+    if superseded.expected_exists:
+        expected_pending.add(superseded_path)
+    if scanned_pending != expected_pending:
+        raise GateAError(invalid)
+
+    _validate_m9_takeover_pending_file(
+        path=current_path,
+        expected_sha256=recovery_allowance.current_pending_sha256,
+    )
+    if superseded.expected_exists:
+        _validate_m9_takeover_pending_file(
+            path=superseded_path,
+            expected_sha256=superseded.sha256,
+        )
+    if recovery_allowance.acceptance_sidecar is None:
+        if sidecar_paths:
+            raise GateAError(invalid)
+    else:
+        allowed_sidecars = _validate_m9_acceptance_sidecar_recovery_allowance(
+            record_dir=acceptance_record_dir,
+            recovery_allowance=recovery_allowance.acceptance_sidecar,
+            sidecar_paths=sidecar_paths,
+        )
+        if {
+            _lexical_absolute_path(path)
+            for path in sidecar_paths
+        } != allowed_sidecars:
+            raise GateAError(invalid)
 
 
 def _m9_acceptance_sidecar_paths(record_dir: Path) -> tuple[Path, ...]:
@@ -2359,6 +2614,7 @@ def app_up(
     allow_existing_gatea_publisher: bool = False,
     candidate_transition_recovery: CandidateTransitionRecoveryAllowance | None = None,
     acceptance_sidecar_recovery: M9AcceptanceSidecarRecoveryAllowance | None = None,
+    candidate_takeover_recovery: M9CandidateTakeoverRecoveryAllowance | None = None,
     acceptance_record_dir: Path = DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
     _termination_controller: _OperationTerminationController | None = None,
     _start_new_session: bool = False,
@@ -2382,6 +2638,17 @@ def app_up(
         raise GateAError(
             "Gate A app-up recovery allowance is restricted to finalization or failed-acceptance retirement"
         )
+    if candidate_takeover_recovery is not None and (
+        not isinstance(
+            candidate_takeover_recovery,
+            M9CandidateTakeoverRecoveryAllowance,
+        )
+        or candidate_transition_recovery is not None
+        or acceptance_sidecar_recovery is not None
+    ):
+        raise GateAError(
+            "Gate A app-up candidate takeover recovery must be the only recovery allowance"
+        )
     if acceptance_sidecar_recovery is not None and (
         candidate_transition_recovery is None
         or candidate_transition_recovery.kind
@@ -2404,20 +2671,29 @@ def app_up(
             "Gate A app-up acceptance allowance does not match the retirement runtime candidate"
         )
     _validate_root_directory(record_dir, 0o755, "Gate A release record directory")
-    recovery_candidate_sha = (
-        candidate_transition_recovery.candidate_sha
-        if candidate_transition_recovery is not None
-        else None
-    )
-    reject_unresolved_candidate_transition_journals(
-        record_dir=record_dir,
-        candidate_sha=recovery_candidate_sha,
-        recovery_allowance=candidate_transition_recovery,
-    )
-    reject_unresolved_m9_acceptance_sidecars(
-        record_dir=acceptance_record_dir,
-        recovery_allowance=acceptance_sidecar_recovery,
-    )
+    if candidate_takeover_recovery is not None:
+        _validate_m9_candidate_takeover_recovery_allowance(
+            record_dir=record_dir,
+            acceptance_record_dir=acceptance_record_dir,
+            recovery_allowance=candidate_takeover_recovery,
+            pending_paths=_candidate_transition_pending_paths(record_dir),
+            sidecar_paths=_m9_acceptance_sidecar_paths(acceptance_record_dir),
+        )
+    else:
+        recovery_candidate_sha = (
+            candidate_transition_recovery.candidate_sha
+            if candidate_transition_recovery is not None
+            else None
+        )
+        reject_unresolved_candidate_transition_journals(
+            record_dir=record_dir,
+            candidate_sha=recovery_candidate_sha,
+            recovery_allowance=candidate_transition_recovery,
+        )
+        reject_unresolved_m9_acceptance_sidecars(
+            record_dir=acceptance_record_dir,
+            recovery_allowance=acceptance_sidecar_recovery,
+        )
     values = _validated_inputs(
         config_file=config_file,
         secret_dir=secret_dir,
@@ -2426,14 +2702,18 @@ def app_up(
     )
     candidate_sha = _candidate_sha(values)
     expected_runtime_candidate_sha = (
-        candidate_transition_recovery.runtime_candidate_sha
-        if candidate_transition_recovery is not None
-        and candidate_transition_recovery.kind
-        == "failed-acceptance-retirement"
-        else recovery_candidate_sha
+        candidate_takeover_recovery.runtime_candidate_sha
+        if candidate_takeover_recovery is not None
+        else (
+            candidate_transition_recovery.runtime_candidate_sha
+            if candidate_transition_recovery is not None
+            and candidate_transition_recovery.kind
+            == "failed-acceptance-retirement"
+            else recovery_candidate_sha
+        )
     )
     if (
-        candidate_transition_recovery is not None
+        (candidate_transition_recovery is not None or candidate_takeover_recovery is not None)
         and candidate_sha != expected_runtime_candidate_sha
     ):
         raise GateAError(

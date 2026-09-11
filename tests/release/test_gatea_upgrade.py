@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -344,6 +345,47 @@ def _allow_local_bound_records(monkeypatch: pytest.MonkeyPatch) -> None:
         real_validator(adjusted, description)
 
     monkeypatch.setattr(upgrade, "_require_adoption_record_metadata", local_metadata)
+
+    real_takeover_validator = upgrade._require_takeover_archive_metadata
+
+    def local_takeover_metadata(
+        metadata: os.stat_result,
+        description: str,
+    ) -> None:
+        adjusted = SimpleNamespace(
+            **{
+                field: getattr(metadata, field)
+                for field in (
+                    "st_dev",
+                    "st_ino",
+                    "st_mode",
+                    "st_nlink",
+                    "st_size",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                )
+            },
+            st_uid=0,
+            st_gid=0,
+        )
+        real_takeover_validator(adjusted, description)
+
+    monkeypatch.setattr(
+        upgrade,
+        "_require_takeover_archive_metadata",
+        local_takeover_metadata,
+    )
+
+    def local_archive_directory(path: Path, description: str) -> None:
+        metadata = path.lstat()
+        assert stat.S_ISDIR(metadata.st_mode), description
+        assert stat.S_IMODE(metadata.st_mode) == 0o700, description
+
+    monkeypatch.setattr(
+        upgrade,
+        "_require_takeover_archive_directory",
+        local_archive_directory,
+    )
 
 
 def _adoption_context() -> dict[str, object]:
@@ -3552,6 +3594,11 @@ def test_m9_adoption_apply_writes_schema2_without_database_tasks(
     assert set(evidence) == gatea.M9_ADOPTION_EVIDENCE_RECORD_KEYS
     assert success["schema_version"] == 2
     assert success["transition_kind"] == upgrade.M9_ADOPTION_TRANSITION_KIND
+    assert success["database_changes_applied"] is False
+    assert success["migrations_applied"] == []
+    assert evidence["database_changes_applied"] is False
+    assert evidence["migrations_applied"] == []
+    assert evidence["steps"] == []
     assert success["source_database_snapshot"] == success["final_database_snapshot"]
     assert success["source_m7_content_snapshot"] == success["final_m7_content_snapshot"]
     assert (
@@ -4340,6 +4387,487 @@ def test_adoption_bound_record_requires_single_root_owned_link(tmp_path: Path) -
         upgrade._require_adoption_record_metadata(path.stat(), "adoption record")
 
 
+def _takeover_archive_case(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> dict[str, object]:
+    _allow_local_bound_records(monkeypatch)
+    release_record_dir = tmp_path / "release-records"
+    acceptance_archive_dir = tmp_path / "acceptance-failures"
+    retirement_archive_dir = tmp_path / "retirement-failures"
+    for directory in (
+        release_record_dir,
+        acceptance_archive_dir,
+        retirement_archive_dir,
+    ):
+        directory.mkdir()
+    acceptance_archive_dir.chmod(0o700)
+    retirement_archive_dir.chmod(0o700)
+
+    superseded_retirement_candidate_sha = "c" * 40
+    source_image_id = "sha256:" + "1" * 64
+    target_image_id = "sha256:" + "2" * 64
+    superseded_image_id = "sha256:" + "3" * 64
+    lineage_image_id = "sha256:" + "4" * 64
+    attempt_id = "5" * 32
+    attempt_id_sha256 = upgrade.hashlib.sha256(
+        attempt_id.encode("utf-8")
+    ).hexdigest()
+    failed_acceptance = {
+        "schema_version": 3,
+        "record_type": "gatea-m9-internal-acceptance-pending",
+        "environment": "gatea",
+        "candidate_sha": SOURCE_SHA,
+        "operations_sha": SOURCE_SHA,
+        "image_id": source_image_id,
+        "source_candidate_sha": LINEAGE_SHA,
+        "attempt_id": attempt_id,
+        "attempt_id_sha256": attempt_id_sha256,
+        "stage": "order_created",
+        "failure": True,
+        "payment_committed": False,
+        "session_released": False,
+        "claim_replay_verified": False,
+        "payment_replay_verified": False,
+        "admin_visibility_verified": False,
+        "release_replay_verified": False,
+        "cleanup": {
+            "order_cancelled": True,
+            "fixture_products_offline": True,
+            "synthetic_session_revoked": True,
+            "super_admin_session_revoked": True,
+        },
+        "passed": False,
+        "secret_values_recorded": False,
+        "source_volume_restored": False,
+    }
+    acceptance_bytes = upgrade._canonical_json_bytes(failed_acceptance)
+    failed_acceptance_sha256 = upgrade.hashlib.sha256(
+        acceptance_bytes
+    ).hexdigest()
+    acceptance_archive_path = upgrade._acceptance_failure_archive_path(
+        acceptance_archive_dir,
+        SOURCE_SHA,
+        failed_acceptance_sha256,
+    )
+    acceptance_archive_path.write_bytes(acceptance_bytes)
+    acceptance_archive_path.chmod(0o600)
+
+    superseded_stage = {
+        "schema_version": 2,
+        "transition_kind": upgrade.M9_ADOPTION_TRANSITION_KIND,
+        "record_type": "gatea-candidate-stage",
+        "passed": True,
+        "candidate_sha": superseded_retirement_candidate_sha,
+        "image_id": superseded_image_id,
+        "superseded_candidate_sha": SOURCE_SHA,
+        "failed_acceptance_sha256": failed_acceptance_sha256,
+        "secret_values_recorded": False,
+    }
+    superseded_stage_path = release_record_dir / (
+        f"{superseded_retirement_candidate_sha}.candidate-stage.json"
+    )
+    superseded_stage_path.write_bytes(
+        upgrade._canonical_json_bytes(superseded_stage)
+    )
+    superseded_stage_path.chmod(0o644)
+    superseded_stage_sha256 = upgrade._sha256(superseded_stage_path)
+
+    predecessor_digests = {
+        "predecessor_stage_record_sha256": "6" * 64,
+        "predecessor_activation_record_sha256": "7" * 64,
+        "predecessor_upgrade_record_sha256": "8" * 64,
+        "predecessor_upgrade_evidence_sha256": "9" * 64,
+        "predecessor_upgrade_plan_replay_record_sha256": "a" * 64,
+    }
+    superseded_pending = {
+        key: None for key in upgrade.ADOPTION_RETIREMENT_PENDING_RECORD_KEYS
+    }
+    superseded_pending.update(
+        {
+            "schema_version": 1,
+            "record_type": "gatea-m9-failed-acceptance-retirement-pending",
+            "candidate_sha": superseded_retirement_candidate_sha,
+            "image_id": superseded_image_id,
+            "source_candidate_sha": SOURCE_SHA,
+            "source_image_id": source_image_id,
+            "lineage_source_candidate_sha": LINEAGE_SHA,
+            "lineage_source_image_id": lineage_image_id,
+            "stage_record_sha256": superseded_stage_sha256,
+            **predecessor_digests,
+            "acceptance_pending_sha256": failed_acceptance_sha256,
+            "acceptance_attempt_id_sha256": attempt_id_sha256,
+            "acceptance_archive_path": str(acceptance_archive_path),
+            "acceptance_archive_sha256": failed_acceptance_sha256,
+            "live_verification": None,
+            "started_at": "2026-09-11T00:00:00+00:00",
+            "phase": "prepared",
+            "secret_values_recorded": False,
+        }
+    )
+    pending_bytes = upgrade._canonical_json_bytes(superseded_pending)
+    superseded_pending_sha256 = upgrade.hashlib.sha256(pending_bytes).hexdigest()
+    retirement_archive_path = upgrade._retirement_failure_archive_path(
+        retirement_archive_dir,
+        superseded_retirement_candidate_sha,
+        superseded_pending_sha256,
+    )
+    retirement_archive_path.write_bytes(pending_bytes)
+    retirement_archive_path.chmod(0o600)
+
+    target_stage = {
+        "schema_version": 3,
+        "transition_kind": upgrade.M9_ADOPTION_TRANSITION_KIND,
+        "record_type": "gatea-candidate-stage",
+        "passed": True,
+        "candidate_sha": TARGET_SHA,
+        "image_id": target_image_id,
+        "superseded_candidate_sha": SOURCE_SHA,
+        "failed_acceptance_sha256": failed_acceptance_sha256,
+        "recovery_kind": upgrade.TAKEOVER_RECOVERY_KIND,
+        "superseded_retirement_candidate_sha": (
+            superseded_retirement_candidate_sha
+        ),
+        "superseded_retirement_stage_record_sha256": (
+            superseded_stage_sha256
+        ),
+        "superseded_retirement_pending_sha256": (
+            superseded_pending_sha256
+        ),
+        "secret_values_recorded": False,
+    }
+    retirement = {
+        "acceptance_pending_sha256": failed_acceptance_sha256,
+        "acceptance_attempt_id_sha256": attempt_id_sha256,
+        "acceptance_archive_path": str(acceptance_archive_path),
+        "acceptance_archive_sha256": failed_acceptance_sha256,
+        "superseded_retirement_candidate_sha": (
+            superseded_retirement_candidate_sha
+        ),
+        "superseded_retirement_image_id": superseded_image_id,
+        "superseded_retirement_stage_record_sha256": (
+            superseded_stage_sha256
+        ),
+        "superseded_retirement_pending_sha256": (
+            superseded_pending_sha256
+        ),
+        "superseded_retirement_archive_path": str(retirement_archive_path),
+        "superseded_retirement_archive_sha256": superseded_pending_sha256,
+    }
+    return {
+        "release_record_dir": release_record_dir,
+        "acceptance_archive_dir": acceptance_archive_dir,
+        "retirement_archive_dir": retirement_archive_dir,
+        "source_image_id": source_image_id,
+        "lineage_image_id": lineage_image_id,
+        "predecessor_digests": predecessor_digests,
+        "target_stage": target_stage,
+        "retirement": retirement,
+        "acceptance_archive_path": acceptance_archive_path,
+        "retirement_archive_path": retirement_archive_path,
+        "superseded_pending": superseded_pending,
+    }
+
+
+def _validate_takeover_archive_case(case: dict[str, object]) -> None:
+    upgrade._validate_takeover_retirement_archive(
+        release_record_dir=case["release_record_dir"],
+        acceptance_failure_archive_dir=case["acceptance_archive_dir"],
+        retirement_failure_archive_dir=case["retirement_archive_dir"],
+        retirement=case["retirement"],
+        target_stage=case["target_stage"],
+        candidate_sha=TARGET_SHA,
+        source_candidate_sha=SOURCE_SHA,
+        source_image_id=case["source_image_id"],
+        lineage_source_candidate_sha=LINEAGE_SHA,
+        lineage_source_image_id=case["lineage_image_id"],
+        predecessor_digests=case["predecessor_digests"],
+    )
+
+
+def test_m9_takeover_reopens_a_failure_and_b_prepared_retirement_archives(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = _takeover_archive_case(monkeypatch, tmp_path)
+
+    _validate_takeover_archive_case(case)
+
+
+def test_m9_takeover_rejects_b_stage_digest_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = _takeover_archive_case(monkeypatch, tmp_path)
+    superseded_candidate_sha = case["retirement"][
+        "superseded_retirement_candidate_sha"
+    ]
+    stage_path = case["release_record_dir"] / (
+        f"{superseded_candidate_sha}.candidate-stage.json"
+    )
+    stage = json.loads(stage_path.read_text(encoding="utf-8"))
+    stage["failed_acceptance_sha256"] = "0" * 64
+    stage_path.write_bytes(upgrade._canonical_json_bytes(stage))
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="stage record"):
+        _validate_takeover_archive_case(case)
+
+
+def test_m9_takeover_rejects_b_journal_after_prepared_phase(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = _takeover_archive_case(monkeypatch, tmp_path)
+    superseded_pending = dict(case["superseded_pending"])
+    superseded_pending["phase"] = "write-free-verified"
+    pending_bytes = upgrade._canonical_json_bytes(superseded_pending)
+    pending_sha256 = upgrade.hashlib.sha256(pending_bytes).hexdigest()
+    candidate_sha = case["retirement"]["superseded_retirement_candidate_sha"]
+    archive_path = upgrade._retirement_failure_archive_path(
+        case["retirement_archive_dir"],
+        candidate_sha,
+        pending_sha256,
+    )
+    archive_path.write_bytes(pending_bytes)
+    archive_path.chmod(0o600)
+    case["target_stage"]["superseded_retirement_pending_sha256"] = pending_sha256
+    case["retirement"].update(
+        {
+            "superseded_retirement_pending_sha256": pending_sha256,
+            "superseded_retirement_archive_path": str(archive_path),
+            "superseded_retirement_archive_sha256": pending_sha256,
+        }
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="archive is invalid"):
+        _validate_takeover_archive_case(case)
+
+
+def test_m9_takeover_rejects_a_failure_archive_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = _takeover_archive_case(monkeypatch, tmp_path)
+    case["acceptance_archive_path"].write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="acceptance archive"):
+        _validate_takeover_archive_case(case)
+
+
+def test_m9_adoption_lineage_accepts_schema3_takeover_and_reopens_archives(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = _takeover_archive_case(monkeypatch, tmp_path)
+    record_dir = case["release_record_dir"]
+    source_image_id = case["source_image_id"]
+    lineage_image_id = case["lineage_image_id"]
+    target_stage = case["target_stage"]
+    target_image_id = target_stage["image_id"]
+    failed_acceptance_sha256 = target_stage["failed_acceptance_sha256"]
+
+    source_stage = {
+        "schema_version": 1,
+        "record_type": "gatea-candidate-stage",
+        "passed": True,
+        "candidate_sha": SOURCE_SHA,
+        "image_id": source_image_id,
+        "secret_values_recorded": False,
+    }
+    source_stage_path = record_dir / f"{SOURCE_SHA}.candidate-stage.json"
+    source_stage_path.write_bytes(upgrade._canonical_json_bytes(source_stage))
+    source_stage_path.chmod(0o644)
+
+    predecessor_upgrade = {
+        "schema_version": 1,
+        "source_version": 7,
+        "source_candidate_sha": LINEAGE_SHA,
+        "source_image_id": lineage_image_id,
+        "source_aerich_versions": list(APPROVED_MIGRATIONS[:8]),
+        "target_aerich_versions": list(APPROVED_MIGRATIONS),
+        "candidate_sha": SOURCE_SHA,
+        "image_id": source_image_id,
+        "backup_id": "20260911t000000z",
+        "manifest_sha256": MANIFEST_SHA,
+    }
+    predecessor_upgrade_path = gatea._upgrade_marker(record_dir, SOURCE_SHA)
+    predecessor_upgrade_path.write_bytes(
+        upgrade._canonical_json_bytes(predecessor_upgrade)
+    )
+    predecessor_upgrade_path.chmod(0o644)
+    predecessor_activation = {
+        "schema_version": 1,
+        "record_type": "gatea-config-activation",
+        "passed": True,
+        "source_candidate_sha": LINEAGE_SHA,
+        "candidate_sha": SOURCE_SHA,
+        "image_id": source_image_id,
+        "stage_record_sha256": upgrade._sha256(source_stage_path),
+        "backup_id": predecessor_upgrade["backup_id"],
+        "manifest_sha256": MANIFEST_SHA,
+        "secret_values_recorded": False,
+    }
+    predecessor_activation_path = (
+        record_dir / f"{SOURCE_SHA}.config-activation.json"
+    )
+    predecessor_activation_path.write_bytes(
+        upgrade._canonical_json_bytes(predecessor_activation)
+    )
+    predecessor_activation_path.chmod(0o644)
+    predecessor_evidence_path = record_dir / (
+        f"{SOURCE_SHA}.existing-database-upgrade.evidence.json"
+    )
+    predecessor_evidence_path.write_bytes(
+        upgrade._canonical_json_bytes({"status": "succeeded"})
+    )
+    predecessor_evidence_path.chmod(0o644)
+    predecessor_replay = {"validated": True}
+    predecessor_replay_path = gatea._upgrade_replay_marker(
+        record_dir,
+        SOURCE_SHA,
+    )
+    predecessor_replay_path.write_bytes(
+        upgrade._canonical_json_bytes(predecessor_replay)
+    )
+    predecessor_replay_path.chmod(0o644)
+    predecessor_digests = {
+        "predecessor_stage_record_sha256": upgrade._sha256(source_stage_path),
+        "predecessor_activation_record_sha256": upgrade._sha256(
+            predecessor_activation_path
+        ),
+        "predecessor_upgrade_record_sha256": upgrade._sha256(
+            predecessor_upgrade_path
+        ),
+        "predecessor_upgrade_evidence_sha256": upgrade._sha256(
+            predecessor_evidence_path
+        ),
+        "predecessor_upgrade_plan_replay_record_sha256": upgrade._sha256(
+            predecessor_replay_path
+        ),
+    }
+
+    superseded_pending = dict(case["superseded_pending"])
+    superseded_pending.update(predecessor_digests)
+    pending_bytes = upgrade._canonical_json_bytes(superseded_pending)
+    pending_sha256 = upgrade.hashlib.sha256(pending_bytes).hexdigest()
+    superseded_candidate_sha = target_stage[
+        "superseded_retirement_candidate_sha"
+    ]
+    superseded_archive_path = upgrade._retirement_failure_archive_path(
+        case["retirement_archive_dir"],
+        superseded_candidate_sha,
+        pending_sha256,
+    )
+    superseded_archive_path.write_bytes(pending_bytes)
+    superseded_archive_path.chmod(0o600)
+    target_stage["superseded_retirement_pending_sha256"] = pending_sha256
+    target_stage_path = record_dir / f"{TARGET_SHA}.candidate-stage.json"
+    target_stage_path.write_bytes(upgrade._canonical_json_bytes(target_stage))
+    target_stage_path.chmod(0o644)
+
+    retirement = {
+        key: None for key in upgrade.TAKEOVER_RETIREMENT_RECORD_KEYS
+    }
+    retirement.update(
+        {
+            "schema_version": 2,
+            "record_type": "gatea-m9-failed-acceptance-retirement",
+            "candidate_sha": TARGET_SHA,
+            "image_id": target_image_id,
+            "source_candidate_sha": SOURCE_SHA,
+            "source_image_id": source_image_id,
+            "lineage_source_candidate_sha": LINEAGE_SHA,
+            "lineage_source_image_id": lineage_image_id,
+            "stage_record_sha256": upgrade._sha256(target_stage_path),
+            **predecessor_digests,
+            **case["retirement"],
+            "superseded_retirement_pending_sha256": pending_sha256,
+            "superseded_retirement_archive_path": str(
+                superseded_archive_path
+            ),
+            "superseded_retirement_archive_sha256": pending_sha256,
+            "recovery_kind": upgrade.TAKEOVER_RECOVERY_KIND,
+            "live_verification": {
+                "business_verification": {
+                    "schema_version": 2,
+                    "passed": True,
+                    "counts": upgrade.FAILED_ACCEPTANCE_BUSINESS_COUNTS,
+                    "evidence_sha256": (
+                        upgrade.FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+                    ),
+                    "secret_values_recorded": False,
+                },
+                "database_snapshot": {
+                    "aerich_versions": list(APPROVED_MIGRATIONS)
+                },
+                "runtime_services": [
+                    "mysql",
+                    "redis",
+                    "app",
+                    "table-sweeper",
+                    "nginx",
+                ],
+                "database_services_healthy": ["mysql", "redis"],
+                "writer_services_stopped": [
+                    "nginx",
+                    "table-sweeper",
+                    "app",
+                ],
+                "table_reconcile": _empty_table_reconcile_result(),
+                "wallet_reconcile": {
+                    "scanned": 1,
+                    "mismatches": 0,
+                    "violations": 0,
+                },
+                "checked_at": "2026-09-11T00:00:00+00:00",
+            },
+            "started_at": "2026-09-11T00:00:00+00:00",
+            "phase": "record-published",
+            "secret_values_recorded": False,
+            "completed_at": "2026-09-11T00:01:00+00:00",
+            "passed": True,
+        }
+    )
+    retirement_path = record_dir / f"{TARGET_SHA}.acceptance-retirement.json"
+    retirement_path.write_bytes(upgrade._canonical_json_bytes(retirement))
+    retirement_path.chmod(0o644)
+
+    monkeypatch.setattr(
+        gatea,
+        "_require_upgrade_record",
+        lambda **kwargs: predecessor_upgrade,
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_require_m9_upgrade_replay_record",
+        lambda **kwargs: predecessor_replay,
+    )
+    context = upgrade._validate_m9_adoption_lineage(
+        release_record_dir=record_dir,
+        acceptance_failure_archive_dir=case["acceptance_archive_dir"],
+        retirement_failure_archive_dir=case["retirement_archive_dir"],
+        backup_id=BACKUP_ID,
+        bound_backup_records=_bound_backup({}),
+        manifest_sha256=MANIFEST_SHA,
+        candidate_sha=TARGET_SHA,
+        image_id=target_image_id,
+        source_candidate_sha=SOURCE_SHA,
+        source_image_id=source_image_id,
+        lineage_source_candidate_sha=LINEAGE_SHA,
+        acceptance_retirement_record_sha256=upgrade._sha256(retirement_path),
+        require_activation=False,
+    )
+
+    assert context["stage_record_sha256"] == upgrade._sha256(target_stage_path)
+    assert context["predecessor_stage_record_sha256"] == upgrade._sha256(
+        source_stage_path
+    )
+    assert context["activation_record_sha256"] is None
+    assert context["acceptance_retirement_record_sha256"] == upgrade._sha256(
+        retirement_path
+    )
+
+
 def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -4481,6 +5009,12 @@ def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
                     "app",
                     "table-sweeper",
                     "nginx",
+                ],
+                "database_services_healthy": ["mysql", "redis"],
+                "writer_services_stopped": [
+                    "nginx",
+                    "table-sweeper",
+                    "app",
                 ],
                 "table_reconcile": _empty_table_reconcile_result(),
                 "wallet_reconcile": {

@@ -2026,6 +2026,377 @@ def test_app_up_never_accepts_retirement_sidecar_allowance_without_retirement_jo
         )
 
 
+def _mock_m9_takeover_root_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The production contract is root-only; tmp_path fixtures are not root-owned."""
+
+    def root_owned(metadata: os.stat_result) -> SimpleNamespace:
+        return SimpleNamespace(
+            st_dev=metadata.st_dev,
+            st_ino=metadata.st_ino,
+            st_mode=metadata.st_mode,
+            st_nlink=metadata.st_nlink,
+            st_uid=0,
+            st_gid=0,
+            st_size=metadata.st_size,
+            st_mtime_ns=metadata.st_mtime_ns,
+            st_ctime_ns=metadata.st_ctime_ns,
+        )
+
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_m9_takeover_pending_lstat",
+        lambda path: root_owned(path.lstat()),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_m9_takeover_pending_fstat",
+        lambda descriptor: root_owned(os.fstat(descriptor)),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_m9_acceptance_sidecar_lstat",
+        lambda path: SimpleNamespace(
+            st_mode=path.lstat().st_mode,
+            st_uid=0,
+            st_gid=0,
+        ),
+    )
+
+
+def _m9_takeover_allowance(
+    *,
+    record_dir: Path,
+    acceptance_dir: Path,
+    runtime_sha: str = "a" * 40,
+    current_sha: str = "c" * 40,
+    superseded_sha: str = "b" * 40,
+    superseded_expected_exists: bool = True,
+    current_digest: str | None = None,
+    superseded_digest: str | None = None,
+    include_acceptance_sidecar: bool = True,
+) -> gatea.M9CandidateTakeoverRecoveryAllowance:
+    current_path = record_dir / (
+        f"{current_sha}.acceptance-retirement.pending.json"
+    )
+    superseded_path = record_dir / (
+        f"{superseded_sha}.acceptance-retirement.pending.json"
+    )
+    acceptance_path = acceptance_dir / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{runtime_sha}"
+        f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+    )
+    return gatea.M9CandidateTakeoverRecoveryAllowance(
+        runtime_candidate_sha=runtime_sha,
+        current_transition=gatea.CandidateTransitionRecoveryAllowance(
+            path=current_path,
+            kind="failed-acceptance-retirement",
+            candidate_sha=current_sha,
+            runtime_candidate_sha=runtime_sha,
+        ),
+        current_pending_sha256=current_digest or gatea._sha256(current_path),
+        superseded_pending=gatea.SupersededCandidatePendingRecoveryAllowance(
+            candidate_sha=superseded_sha,
+            path=superseded_path,
+            sha256=(
+                superseded_digest
+                if superseded_digest is not None
+                else (
+                    gatea._sha256(superseded_path)
+                    if superseded_expected_exists
+                    else None
+                )
+            ),
+            expected_exists=superseded_expected_exists,
+        ),
+        acceptance_sidecar=(
+            gatea.M9AcceptanceSidecarRecoveryAllowance(
+                candidate_sha=runtime_sha,
+                pending_path=acceptance_path,
+            )
+            if include_acceptance_sidecar
+            else None
+        ),
+    )
+
+
+def _write_m9_takeover_journals(
+    *,
+    record_dir: Path,
+    acceptance_dir: Path,
+    include_superseded: bool = True,
+    include_acceptance_sidecar: bool = True,
+) -> tuple[Path, Path]:
+    current_path = record_dir / (
+        f"{'c' * 40}.acceptance-retirement.pending.json"
+    )
+    superseded_path = record_dir / (
+        f"{'b' * 40}.acceptance-retirement.pending.json"
+    )
+    current_path.write_text('{"candidate":"c"}\n', encoding="utf-8")
+    current_path.chmod(0o600)
+    if include_superseded:
+        superseded_path.write_text('{"candidate":"b"}\n', encoding="utf-8")
+        superseded_path.chmod(0o600)
+    acceptance_dir.mkdir()
+    if include_acceptance_sidecar:
+        acceptance_path = acceptance_dir / (
+            f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{'a' * 40}"
+            f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+        )
+        acceptance_path.write_text("{}\n", encoding="utf-8")
+        acceptance_path.chmod(0o600)
+    return current_path, superseded_path
+
+
+def test_app_up_m9_takeover_recovery_allows_exact_c_and_b_pending_before_runtime_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    acceptance_dir = tmp_path / "acceptance"
+    _write_m9_takeover_journals(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+    )
+    allowance = _m9_takeover_allowance(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+    )
+    _mock_m9_takeover_root_metadata(monkeypatch)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("takeover recovery passed exact pending guards")
+        ),
+    )
+
+    with pytest.raises(AssertionError, match="passed exact pending guards"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_takeover_recovery=allowance,
+            acceptance_record_dir=acceptance_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("superseded_expected_exists", "expect_runtime_boundary"),
+    ((False, True), (True, False)),
+)
+def test_app_up_m9_takeover_recovery_allows_b_absence_only_when_explicitly_expected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    superseded_expected_exists: bool,
+    expect_runtime_boundary: bool,
+) -> None:
+    acceptance_dir = tmp_path / "acceptance"
+    _write_m9_takeover_journals(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+        include_superseded=False,
+    )
+    allowance = _m9_takeover_allowance(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+        superseded_expected_exists=superseded_expected_exists,
+        superseded_digest=("d" * 64 if superseded_expected_exists else None),
+    )
+    _mock_m9_takeover_root_metadata(monkeypatch)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("takeover recovery passed exact pending guards")
+        ),
+    )
+
+    expectation = (
+        pytest.raises(AssertionError, match="passed exact pending guards")
+        if expect_runtime_boundary
+        else pytest.raises(
+            GateAError,
+            match="candidate takeover recovery allowance is invalid",
+        )
+    )
+    with expectation:
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_takeover_recovery=allowance,
+            acceptance_record_dir=acceptance_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("include_acceptance_sidecar", "expect_runtime_boundary"),
+    ((False, True), (True, False)),
+)
+def test_app_up_m9_takeover_recovery_allows_a_sidecar_absence_only_after_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    include_acceptance_sidecar: bool,
+    expect_runtime_boundary: bool,
+) -> None:
+    acceptance_dir = tmp_path / "acceptance"
+    _write_m9_takeover_journals(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+        include_superseded=False,
+        include_acceptance_sidecar=include_acceptance_sidecar,
+    )
+    allowance = _m9_takeover_allowance(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+        superseded_expected_exists=False,
+        include_acceptance_sidecar=False,
+    )
+    _mock_m9_takeover_root_metadata(monkeypatch)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("takeover recovery passed exact pending guards")
+        ),
+    )
+
+    expectation = (
+        pytest.raises(AssertionError, match="passed exact pending guards")
+        if expect_runtime_boundary
+        else pytest.raises(
+            GateAError,
+            match="candidate takeover recovery allowance is invalid",
+        )
+    )
+    with expectation:
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_takeover_recovery=allowance,
+            acceptance_record_dir=acceptance_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ("third", "malformed", "digest", "current-digest", "path", "sha"),
+)
+def test_app_up_m9_takeover_recovery_rejects_any_nonexact_pending_bundle_before_runtime_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    acceptance_dir = tmp_path / "acceptance"
+    _, superseded_path = _write_m9_takeover_journals(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+    )
+    kwargs: dict[str, object] = {}
+    if failure == "third":
+        (tmp_path / f"{'d' * 40}.acceptance-retirement.pending.json").write_text(
+            "{}\n", encoding="utf-8"
+        )
+    elif failure == "malformed":
+        superseded_path.unlink()
+        superseded_path.mkdir()
+        kwargs["superseded_digest"] = "d" * 64
+    elif failure == "digest":
+        kwargs["superseded_digest"] = "d" * 64
+    elif failure == "current-digest":
+        kwargs["current_digest"] = "d" * 64
+    elif failure == "path":
+        kwargs["superseded_sha"] = "d" * 40
+        kwargs["superseded_digest"] = "d" * 64
+    else:
+        kwargs["runtime_sha"] = "c" * 40
+    allowance = _m9_takeover_allowance(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+        **kwargs,
+    )
+    _mock_m9_takeover_root_metadata(monkeypatch)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail(
+            "invalid M9 takeover recovery must fail before mutable runtime work"
+        ),
+    )
+
+    with pytest.raises(
+        GateAError,
+        match="candidate takeover recovery allowance is invalid",
+    ):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_takeover_recovery=allowance,
+            acceptance_record_dir=acceptance_dir,
+        )
+
+
+def test_app_up_m9_takeover_recovery_rejects_current_journal_identity_drift_before_runtime_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    acceptance_dir = tmp_path / "acceptance"
+    _write_m9_takeover_journals(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+    )
+    allowance = _m9_takeover_allowance(
+        record_dir=tmp_path,
+        acceptance_dir=acceptance_dir,
+    )
+    _mock_m9_takeover_root_metadata(monkeypatch)
+    stable_fstat = gatea._m9_takeover_pending_fstat
+    calls = 0
+
+    def drifting_fstat(descriptor: int) -> SimpleNamespace:
+        nonlocal calls
+        metadata = stable_fstat(descriptor)
+        calls += 1
+        if calls == 2:
+            fields = {**vars(metadata), "st_ino": metadata.st_ino + 1}
+            return SimpleNamespace(**fields)
+        return metadata
+
+    monkeypatch.setattr(gatea, "_m9_takeover_pending_fstat", drifting_fstat)
+    monkeypatch.setattr(
+        gatea,
+        "_validated_inputs",
+        lambda **kwargs: pytest.fail(
+            "identity-drifting takeover pending must fail before mutable runtime work"
+        ),
+    )
+
+    with pytest.raises(
+        GateAError,
+        match="candidate takeover recovery allowance is invalid",
+    ):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_takeover_recovery=allowance,
+            acceptance_record_dir=acceptance_dir,
+        )
+
+
 @pytest.mark.parametrize(
     ("kind", "pending_suffix"),
     (

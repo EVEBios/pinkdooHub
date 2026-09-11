@@ -1463,6 +1463,49 @@ def test_rewrite_config_rejects_duplicate_key(
         candidate._rewrite_config(original, TARGET_SHA)
 
 
+def test_plan_upgrade_forwards_both_guarded_takeover_archive_directories(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeUpgrade:
+        @staticmethod
+        def upgrade_existing_database(**kwargs: object) -> dict[str, object]:
+            calls.append(kwargs)
+            return {"mode": "plan"}
+
+    monkeypatch.setattr(
+        candidate,
+        "_runtime_modules",
+        lambda: (SimpleNamespace(), SimpleNamespace(), FakeUpgrade),
+    )
+    acceptance_archive_dir = tmp_path / "acceptance-failures"
+    retirement_archive_dir = tmp_path / "retirement-failures"
+
+    assert candidate._plan_upgrade(
+        config_file=tmp_path / "candidate.env",
+        secret_dir=tmp_path / "secrets",
+        source_version=9,
+        source_candidate_sha="a" * 40,
+        backup_id=BACKUP_ID,
+        backup_root=tmp_path / "backups",
+        backup_record_dir=tmp_path / "backup-records",
+        restore_record_dir=tmp_path / "restore-records",
+        release_record_dir=tmp_path / "release-records",
+        lineage_source_candidate_sha=SOURCE_SHA,
+        acceptance_retirement_record_sha256="f" * 64,
+        acceptance_failure_archive_dir=acceptance_archive_dir,
+        retirement_failure_archive_dir=retirement_archive_dir,
+    ) == {"mode": "plan"}
+
+    assert len(calls) == 1
+    assert calls[0]["acceptance_failure_archive_dir"] == acceptance_archive_dir
+    assert calls[0]["retirement_failure_archive_dir"] == retirement_archive_dir
+    assert calls[0]["lineage_source_candidate_sha"] == SOURCE_SHA
+    assert calls[0]["acceptance_retirement_record_sha256"] == "f" * 64
+
+
 def test_stage_writes_immutable_source_image_and_ci_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1530,6 +1573,162 @@ def test_stage_writes_immutable_source_image_and_ci_record(
     assert (release_root / TARGET_SHA).is_dir()
     assert (record_dir / f"{TARGET_SHA}.source-sha").read_text().strip() == TARGET_SHA
     assert any(command[:2] == ("docker", "build") and "--pull" in command for command in commands)
+
+
+def test_stage_writes_schema3_prepared_retirement_takeover_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _mock_host_guards(monkeypatch)
+    release_root = tmp_path / "releases"
+    staging_root = tmp_path / "staging"
+    record_dir = tmp_path / "records"
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_archive_dir = tmp_path / "acceptance-failures"
+    retirement_archive_dir = tmp_path / "retirement-failures"
+    for directory in (
+        release_root,
+        staging_root,
+        record_dir,
+        acceptance_dir,
+    ):
+        directory.mkdir()
+    launcher = tmp_path / "launcher.py"
+    launcher.write_bytes(b"candidate launcher\n")
+    source = tmp_path / "source.tar"
+    _write_source_tar(source, members=_source_members(launcher.read_bytes()))
+    artifact = tmp_path / "artifact.zip"
+    _write_ci_zip(artifact)
+    source_candidate_sha = "a" * 40
+    superseded_retirement_candidate_sha = "c" * 40
+    failed_acceptance_sha256 = "f" * 64
+    superseded_stage_sha256 = "1" * 64
+    superseded_pending_sha256 = "2" * 64
+    scanner_calls: list[dict[str, object]] = []
+    takeover_calls: list[dict[str, object]] = []
+    failed_acceptance = {"candidate_sha": source_candidate_sha}
+
+    def scan(**kwargs: object) -> dict[str, object]:
+        scanner_calls.append(kwargs)
+        return failed_acceptance
+
+    def validate_takeover(**kwargs: object) -> dict[str, object]:
+        takeover_calls.append(kwargs)
+        assert kwargs["failed_acceptance"] is failed_acceptance
+        assert kwargs["require_unarchived"] is True
+        return {}
+
+    monkeypatch.setattr(candidate, "_reject_unresolved_transition_journals", scan)
+    monkeypatch.setattr(
+        candidate, "_validate_prepared_retirement_takeover", validate_takeover
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_verify_github_provenance",
+        lambda **kwargs: _github_stage_evidence(artifact),
+    )
+    images: set[str] = set()
+    commands: list[tuple[str, ...]] = []
+
+    def fake_run(command: tuple[str, ...], **kwargs: object) -> SimpleNamespace:
+        del kwargs
+        commands.append(command)
+        if command[:2] == ("docker", "build"):
+            images.add(command[command.index("--tag") + 1])
+        elif command[:3] == ("docker", "image", "tag"):
+            images.add(command[4])
+        elif command[:3] == ("docker", "image", "rm"):
+            images.discard(command[3])
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(candidate, "_image_exists", lambda image: image in images)
+    monkeypatch.setattr(
+        candidate,
+        "_inspect_image",
+        lambda image, sha, **kwargs: {
+            "architecture": "amd64",
+            "image_id": IMAGE_ID,
+            "operating_system": "linux",
+        },
+    )
+    monkeypatch.setattr(candidate, "_run", fake_run)
+    arguments = {
+        "source_archive": source,
+        "source_archive_sha256": candidate._sha256(source),
+        "ci_artifact": artifact,
+        "ci_artifact_sha256": candidate._sha256(artifact),
+        "launcher": launcher,
+        "launcher_sha256": candidate._sha256(launcher),
+        "target_sha": TARGET_SHA,
+        "source_head_sha": HEAD_SHA,
+        "ci_run_id": RUN_ID,
+        "ci_run_attempt": ATTEMPT,
+        "ci_artifact_name": ARTIFACT_NAME,
+        "confirmed_required_jobs": 9,
+        "release_root": release_root,
+        "staging_root": staging_root,
+        "release_record_dir": record_dir,
+        "superseded_candidate_sha": source_candidate_sha,
+        "failed_acceptance_sha256": failed_acceptance_sha256,
+        "superseded_retirement_candidate_sha": (
+            superseded_retirement_candidate_sha
+        ),
+        "superseded_retirement_stage_record_sha256": superseded_stage_sha256,
+        "superseded_retirement_pending_sha256": superseded_pending_sha256,
+        "acceptance_record_dir": acceptance_dir,
+        "acceptance_failure_archive_dir": acceptance_archive_dir,
+        "retirement_failure_archive_dir": retirement_archive_dir,
+        "lock_file": tmp_path / "lock",
+    }
+    final_path = candidate._stage_record_path(record_dir, TARGET_SHA)
+    pending_path = candidate._stage_pending_path(record_dir, TARGET_SHA)
+    original_writer = candidate._write_json_exclusive
+    failed_once = False
+
+    def fail_final_once(
+        path: Path,
+        payload: dict[str, object],
+        mode: int = 0o644,
+    ) -> None:
+        nonlocal failed_once
+        if path == final_path and not failed_once:
+            failed_once = True
+            raise OSError("injected schema3 final publication failure")
+        original_writer(path, payload, mode)
+
+    monkeypatch.setattr(candidate, "_write_json_exclusive", fail_final_once)
+    with pytest.raises(OSError, match="schema3 final publication"):
+        candidate.stage_candidate(**arguments)
+    assert pending_path.exists()
+    assert json.loads(pending_path.read_text(encoding="utf-8"))[
+        "schema_version"
+    ] == 3
+    monkeypatch.setattr(candidate, "_write_json_exclusive", original_writer)
+
+    result = candidate.stage_candidate(**arguments)
+
+    assert set(result) == candidate.TAKEOVER_STAGE_RECORD_KEYS
+    assert result["schema_version"] == 3
+    assert result["recovery_kind"] == "prepared-retirement-takeover"
+    assert (
+        result["superseded_retirement_candidate_sha"]
+        == superseded_retirement_candidate_sha
+    )
+    assert result["superseded_retirement_stage_record_sha256"] == (
+        superseded_stage_sha256
+    )
+    assert result["superseded_retirement_pending_sha256"] == (
+        superseded_pending_sha256
+    )
+    assert len(scanner_calls) == 2
+    for scanner_call in scanner_calls:
+        assert scanner_call["allowed_release_pendings"] == (
+            candidate._stage_pending_path(record_dir, TARGET_SHA),
+            candidate._retirement_pending_path(
+                record_dir, superseded_retirement_candidate_sha
+            ),
+        )
+    assert len(takeover_calls) == 2
 
 
 def test_installed_release_commands_do_not_change_the_stage_manifest(
@@ -4485,6 +4684,224 @@ def test_cli_requires_apply_for_stage_and_finalization(capsys: pytest.CaptureFix
     assert "requires --apply" in capsys.readouterr().err
 
 
+def test_takeover_stage_cli_forwards_exact_recovery_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        candidate,
+        "stage_candidate",
+        lambda **kwargs: calls.append(kwargs) or {"passed": True},
+    )
+    source_candidate_sha = "a" * 40
+    superseded_retirement_candidate_sha = "c" * 40
+    acceptance_archive_dir = tmp_path / "acceptance-failures"
+    retirement_archive_dir = tmp_path / "retirement-failures"
+
+    status = candidate.main(
+        [
+            "stage",
+            "--source-archive",
+            "/source.tar",
+            "--confirm-source-archive-sha256",
+            "a" * 64,
+            "--ci-artifact",
+            "/artifact.zip",
+            "--confirm-ci-artifact-sha256",
+            "b" * 64,
+            "--confirm-launcher-sha256",
+            "c" * 64,
+            "--target-sha",
+            TARGET_SHA,
+            "--source-head-sha",
+            HEAD_SHA,
+            "--ci-run-id",
+            RUN_ID,
+            "--ci-run-attempt",
+            "1",
+            "--ci-artifact-name",
+            f"gatea-m7-m9-updater-{TARGET_SHA}-{RUN_ID}-1",
+            "--confirm-required-jobs",
+            "9",
+            "--confirm-target-sha",
+            TARGET_SHA,
+            "--superseded-candidate-sha",
+            source_candidate_sha,
+            "--confirm-failed-acceptance-sha256",
+            "f" * 64,
+            "--superseded-retirement-candidate-sha",
+            superseded_retirement_candidate_sha,
+            "--confirm-superseded-retirement-stage-record-sha256",
+            "1" * 64,
+            "--confirm-superseded-retirement-pending-sha256",
+            "2" * 64,
+            "--acceptance-failure-archive-dir",
+            str(acceptance_archive_dir),
+            "--retirement-failure-archive-dir",
+            str(retirement_archive_dir),
+            "--apply",
+        ]
+    )
+
+    assert status == 0
+    assert len(calls) == 1
+    assert calls[0]["superseded_candidate_sha"] == source_candidate_sha
+    assert calls[0]["superseded_retirement_candidate_sha"] == (
+        superseded_retirement_candidate_sha
+    )
+    assert calls[0]["superseded_retirement_stage_record_sha256"] == "1" * 64
+    assert calls[0]["superseded_retirement_pending_sha256"] == "2" * 64
+    assert calls[0]["acceptance_failure_archive_dir"] == acceptance_archive_dir
+    assert calls[0]["retirement_failure_archive_dir"] == retirement_archive_dir
+
+
+def test_takeover_retirement_cli_forwards_values_and_repeated_confirmations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        candidate,
+        "retire_failed_acceptance",
+        lambda **kwargs: calls.append(kwargs) or {"passed": True},
+    )
+    source_candidate_sha = "a" * 40
+    superseded_retirement_candidate_sha = "c" * 40
+    acceptance_archive_dir = tmp_path / "acceptance-failures"
+    retirement_archive_dir = tmp_path / "retirement-failures"
+
+    status = candidate.main(
+        [
+            "retire-failed-acceptance",
+            "--source-candidate-sha",
+            source_candidate_sha,
+            "--lineage-source-candidate-sha",
+            SOURCE_SHA,
+            "--target-sha",
+            TARGET_SHA,
+            "--failed-acceptance-sha256",
+            "f" * 64,
+            "--confirm-source-sha",
+            source_candidate_sha,
+            "--confirm-lineage-source-sha",
+            SOURCE_SHA,
+            "--confirm-target-sha",
+            TARGET_SHA,
+            "--confirm-failed-acceptance-sha256",
+            "f" * 64,
+            "--superseded-retirement-candidate-sha",
+            superseded_retirement_candidate_sha,
+            "--superseded-retirement-stage-record-sha256",
+            "1" * 64,
+            "--superseded-retirement-pending-sha256",
+            "2" * 64,
+            "--confirm-superseded-retirement-candidate-sha",
+            superseded_retirement_candidate_sha,
+            "--confirm-superseded-retirement-stage-record-sha256",
+            "1" * 64,
+            "--confirm-superseded-retirement-pending-sha256",
+            "2" * 64,
+            "--acceptance-failure-archive-dir",
+            str(acceptance_archive_dir),
+            "--retirement-failure-archive-dir",
+            str(retirement_archive_dir),
+            "--apply",
+        ]
+    )
+
+    assert status == 0
+    assert len(calls) == 1
+    expected = {
+        "superseded_retirement_candidate_sha": (
+            superseded_retirement_candidate_sha
+        ),
+        "superseded_retirement_stage_record_sha256": "1" * 64,
+        "superseded_retirement_pending_sha256": "2" * 64,
+        "confirm_superseded_retirement_candidate_sha": (
+            superseded_retirement_candidate_sha
+        ),
+        "confirm_superseded_retirement_stage_record_sha256": "1" * 64,
+        "confirm_superseded_retirement_pending_sha256": "2" * 64,
+    }
+    for key, value in expected.items():
+        assert calls[0][key] == value
+    assert calls[0]["acceptance_failure_archive_dir"] == acceptance_archive_dir
+    assert calls[0]["retirement_failure_archive_dir"] == retirement_archive_dir
+
+
+@pytest.mark.parametrize("command", ("activate-config", "rollback-config"))
+def test_adoption_config_cli_forwards_retirement_archive_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    command: str,
+) -> None:
+    calls: list[dict[str, object]] = []
+    function_name = (
+        "activate_config" if command == "activate-config" else "rollback_config"
+    )
+    monkeypatch.setattr(
+        candidate,
+        function_name,
+        lambda **kwargs: calls.append(kwargs) or {"passed": True},
+    )
+    source_candidate_sha = "a" * 40
+    retirement_archive_dir = tmp_path / "retirement-failures"
+    shared = [
+        "--lineage-source-candidate-sha",
+        SOURCE_SHA,
+        "--acceptance-retirement-record-sha256",
+        "f" * 64,
+        "--confirm-lineage-source-sha",
+        SOURCE_SHA,
+        "--confirm-acceptance-retirement-record-sha256",
+        "f" * 64,
+        "--retirement-failure-archive-dir",
+        str(retirement_archive_dir),
+        "--apply",
+    ]
+    if command == "activate-config":
+        arguments = [
+            command,
+            "--source-version",
+            "9",
+            "--source-candidate-sha",
+            source_candidate_sha,
+            "--target-sha",
+            TARGET_SHA,
+            "--backup-id",
+            BACKUP_ID,
+            "--confirm-source-sha",
+            source_candidate_sha,
+            "--confirm-target-sha",
+            TARGET_SHA,
+            "--confirm-backup-id",
+            BACKUP_ID,
+            "--confirm-manifest-sha256",
+            MANIFEST_SHA,
+            *shared,
+        ]
+    else:
+        arguments = [
+            command,
+            "--source-sha",
+            source_candidate_sha,
+            "--target-sha",
+            TARGET_SHA,
+            "--confirm-source-sha",
+            source_candidate_sha,
+            "--confirm-target-sha",
+            TARGET_SHA,
+            "--confirm-activation-record-sha256",
+            "e" * 64,
+            *shared,
+        ]
+
+    assert candidate.main(arguments) == 0
+    assert len(calls) == 1
+    assert calls[0]["retirement_failure_archive_dir"] == retirement_archive_dir
+
+
 def test_finalize_cli_forwards_guarded_acceptance_and_resilience_directories(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -4497,6 +4914,7 @@ def test_finalize_cli_forwards_guarded_acceptance_and_resilience_directories(
     )
     acceptance_dir = tmp_path / "acceptance"
     resilience_dir = tmp_path / "resilience"
+    retirement_failure_dir = tmp_path / "retirement-failures"
 
     status = candidate.main(
         [
@@ -4517,6 +4935,8 @@ def test_finalize_cli_forwards_guarded_acceptance_and_resilience_directories(
             "b" * 64,
             "--resilience-record-dir",
             str(resilience_dir),
+            "--retirement-failure-archive-dir",
+            str(retirement_failure_dir),
             "--post-backup-id",
             BACKUP_ID,
             "--confirm-source-sha",
@@ -4533,6 +4953,10 @@ def test_finalize_cli_forwards_guarded_acceptance_and_resilience_directories(
     assert len(calls) == 1
     assert calls[0]["acceptance_record_dir"] == acceptance_dir
     assert calls[0]["resilience_record_dir"] == resilience_dir
+    assert (
+        calls[0]["retirement_failure_archive_dir"]
+        == retirement_failure_dir
+    )
 
 
 def _preclaim_failure_payload(old_sha: str = "a" * 40) -> dict[str, object]:
@@ -4705,7 +5129,7 @@ def test_failed_acceptance_business_verifier_uses_b_and_exact_option_ids() -> No
     failed = _preclaim_failure_payload()
     observed: dict[str, object] = {}
     expected = {
-        "schema_version": 1,
+        "schema_version": 2,
         "passed": True,
         "counts": dict(candidate.FAILED_ACCEPTANCE_BUSINESS_COUNTS),
         "evidence_sha256": candidate.FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256,
@@ -4718,7 +5142,10 @@ def test_failed_acceptance_business_verifier_uses_b_and_exact_option_ids() -> No
             observed.update(kwargs)
             return SimpleNamespace(
                 returncode=0,
-                stdout=json.dumps(expected, separators=(",", ":")) + "\n",
+                stdout=json.dumps(
+                    expected, sort_keys=True, separators=(",", ":")
+                )
+                + "\n",
             )
 
     result = candidate._failed_acceptance_business_verification(
@@ -4869,7 +5296,7 @@ def test_adoption_finalization_journal_uses_immediate_and_lineage_sources() -> N
 def _retirement_live_evidence() -> dict[str, object]:
     return {
         "business_verification": {
-            "schema_version": 1,
+            "schema_version": 2,
             "passed": True,
             "counts": dict(candidate.FAILED_ACCEPTANCE_BUSINESS_COUNTS),
             "evidence_sha256": (
@@ -5023,6 +5450,7 @@ def _retirement_case(
     }
     return SimpleNamespace(
         arguments=arguments,
+        release_root=release_root,
         canonical=canonical,
         pending=pending,
         record=record,
@@ -5030,9 +5458,525 @@ def _retirement_case(
         archive_dir=archive_dir,
         acceptance_records=acceptance_records,
         release_records=release_records,
+        failed_payload=failed_payload,
+        failed_digest=failed_digest,
+        predecessor=predecessor,
+        target_stage=target_stage,
+        source_stage=source_stage,
         live_calls=live_calls,
         runtime_events=runtime_events,
     )
+
+
+def _takeover_retirement_case(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> SimpleNamespace:
+    case = _retirement_case(monkeypatch, tmp_path)
+    superseded_sha = "c" * 40
+    superseded_image_id = "sha256:" + "c" * 64
+    retirement_archive_dir = tmp_path / "retirement-failures"
+    superseded_stage_path = candidate._stage_record_path(
+        case.release_records, superseded_sha
+    )
+    superseded_stage_path.write_text("superseded-stage\n", encoding="utf-8")
+    superseded_stage_path.chmod(0o644)
+    superseded_stage_sha256 = candidate._sha256(superseded_stage_path)
+    superseded_stage = {
+        "schema_version": 2,
+        "record_type": "gatea-candidate-stage",
+        "passed": True,
+        "candidate_sha": superseded_sha,
+        "image_id": superseded_image_id,
+        "transition_kind": "m9-candidate-adoption",
+        "superseded_candidate_sha": case.arguments["source_candidate_sha"],
+        "failed_acceptance_sha256": case.failed_digest,
+        "secret_values_recorded": False,
+    }
+    superseded_pending_path = candidate._retirement_pending_path(
+        case.release_records, superseded_sha
+    )
+    superseded_pending = {
+        "schema_version": 1,
+        "record_type": "gatea-m9-failed-acceptance-retirement-pending",
+        "candidate_sha": superseded_sha,
+        "image_id": superseded_image_id,
+        **case.predecessor,
+        "stage_record_sha256": superseded_stage_sha256,
+        "acceptance_pending_sha256": case.failed_digest,
+        "acceptance_attempt_id_sha256": case.failed_payload[
+            "attempt_id_sha256"
+        ],
+        "acceptance_archive_path": str(case.archive),
+        "acceptance_archive_sha256": case.failed_digest,
+        "live_verification": None,
+        "started_at": "2026-09-11T01:00:00+00:00",
+        "phase": "prepared",
+        "secret_values_recorded": False,
+    }
+    candidate._write_json_exclusive(
+        superseded_pending_path, superseded_pending, 0o600
+    )
+    superseded_pending_sha256 = candidate._sha256(superseded_pending_path)
+    superseded_archive_path = candidate._retirement_journal_archive_path(
+        retirement_archive_dir,
+        superseded_sha,
+        superseded_pending_sha256,
+    )
+    target_stage = {
+        **case.target_stage,
+        "schema_version": 3,
+        "recovery_kind": "prepared-retirement-takeover",
+        "superseded_retirement_candidate_sha": superseded_sha,
+        "superseded_retirement_stage_record_sha256": (
+            superseded_stage_sha256
+        ),
+        "superseded_retirement_pending_sha256": (
+            superseded_pending_sha256
+        ),
+    }
+
+    def load_stage(**kwargs: object) -> dict[str, object]:
+        selected = kwargs["target_sha"]
+        if selected == TARGET_SHA:
+            return dict(target_stage)
+        if selected == superseded_sha:
+            return dict(superseded_stage)
+        return dict(case.source_stage)
+
+    monkeypatch.setattr(candidate, "_load_stage", load_stage)
+    case.arguments.update(
+        {
+            "superseded_retirement_candidate_sha": superseded_sha,
+            "superseded_retirement_stage_record_sha256": (
+                superseded_stage_sha256
+            ),
+            "superseded_retirement_pending_sha256": (
+                superseded_pending_sha256
+            ),
+            "confirm_superseded_retirement_candidate_sha": superseded_sha,
+            "confirm_superseded_retirement_stage_record_sha256": (
+                superseded_stage_sha256
+            ),
+            "confirm_superseded_retirement_pending_sha256": (
+                superseded_pending_sha256
+            ),
+            "retirement_failure_archive_dir": retirement_archive_dir,
+        }
+    )
+    case.superseded_sha = superseded_sha
+    case.superseded_pending = superseded_pending_path
+    case.superseded_pending_payload = superseded_pending
+    case.superseded_pending_sha256 = superseded_pending_sha256
+    case.superseded_archive = superseded_archive_path
+    case.retirement_archive_dir = retirement_archive_dir
+    case.target_stage = target_stage
+    return case
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "stage-digest",
+        "pending-digest",
+        "past-prepared",
+        "superseded-final",
+        "superseded-archive",
+        "acceptance-archive",
+    ),
+)
+def test_prepared_retirement_takeover_stage_requires_pristine_exact_b(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    drift: str,
+) -> None:
+    case = _takeover_retirement_case(monkeypatch, tmp_path)
+    expected_stage_sha256 = case.arguments[
+        "superseded_retirement_stage_record_sha256"
+    ]
+    expected_pending_sha256 = case.superseded_pending_sha256
+    if drift == "stage-digest":
+        expected_stage_sha256 = "9" * 64
+    elif drift == "pending-digest":
+        expected_pending_sha256 = "8" * 64
+    elif drift == "past-prepared":
+        changed = dict(case.superseded_pending_payload)
+        changed["phase"] = "write-free-verified"
+        changed["live_verification"] = _retirement_live_evidence()
+        case.superseded_pending.write_text(
+            json.dumps(
+                changed,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        expected_pending_sha256 = candidate._sha256(case.superseded_pending)
+    elif drift == "superseded-final":
+        candidate._retirement_record_path(
+            case.release_records, case.superseded_sha
+        ).write_text("{}\n", encoding="utf-8")
+    elif drift == "superseded-archive":
+        case.retirement_archive_dir.mkdir(mode=0o700)
+        case.superseded_archive.write_bytes(case.superseded_pending.read_bytes())
+        case.superseded_archive.chmod(0o600)
+    else:
+        case.archive_dir.mkdir(mode=0o700)
+        case.archive.write_bytes(case.canonical.read_bytes())
+        case.archive.chmod(0o600)
+
+    with pytest.raises(candidate.GateACandidateError):
+        candidate._validate_prepared_retirement_takeover(
+            release_root=case.release_root,
+            release_record_dir=case.release_records,
+            acceptance_failure_archive_dir=case.archive_dir,
+            retirement_failure_archive_dir=case.retirement_archive_dir,
+            source_candidate_sha=case.arguments["source_candidate_sha"],
+            failed_acceptance=case.failed_payload,
+            failed_acceptance_sha256=case.failed_digest,
+            superseded_retirement_candidate_sha=case.superseded_sha,
+            expected_stage_record_sha256=str(expected_stage_sha256),
+            expected_pending_sha256=str(expected_pending_sha256),
+            require_unarchived=True,
+        )
+
+
+def test_retire_failed_acceptance_takes_over_exact_prepared_retirement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = _takeover_retirement_case(monkeypatch, tmp_path)
+    original_acceptance = case.canonical.read_bytes()
+    original_superseded = case.superseded_pending.read_bytes()
+
+    first = candidate.retire_failed_acceptance(**case.arguments)
+
+    assert first["schema_version"] == 2
+    assert first["recovery_kind"] == "prepared-retirement-takeover"
+    assert first["superseded_retirement_candidate_sha"] == case.superseded_sha
+    assert (
+        first["superseded_retirement_pending_sha256"]
+        == case.superseded_pending_sha256
+    )
+    assert not case.superseded_pending.exists()
+    assert not case.canonical.exists()
+    assert not case.pending.exists()
+    assert case.superseded_archive.read_bytes() == original_superseded
+    assert case.archive.read_bytes() == original_acceptance
+    assert case.record.exists()
+
+    replay = candidate.retire_failed_acceptance(**case.arguments)
+
+    assert replay == first
+    assert len(case.live_calls) == 1
+    assert case.runtime_events == ["stopped", "restored"]
+
+    adoption = candidate._load_adoption_context(
+        release_root=case.release_root,
+        release_record_dir=case.release_records,
+        source_candidate_sha=case.arguments["source_candidate_sha"],
+        lineage_source_candidate_sha=SOURCE_SHA,
+        target_sha=TARGET_SHA,
+        acceptance_retirement_record_sha256=candidate._sha256(case.record),
+        acceptance_record_dir=case.acceptance_records,
+        acceptance_failure_archive_dir=case.archive_dir,
+        retirement_failure_archive_dir=case.retirement_archive_dir,
+    )
+    assert adoption["retirement"] == first
+    assert adoption["takeover"]["candidate_sha"] == case.superseded_sha
+
+
+@pytest.mark.parametrize(
+    "failure_point",
+    (
+        "pending-published",
+        "write-free-phase-published",
+        "superseded-archive-published",
+        "superseded-archive-phase-published",
+        "acceptance-archive-published",
+        "acceptance-archive-phase-published",
+        "record-published",
+        "record-phase-published",
+        "superseded-pending-unlinked",
+        "superseded-removed-phase-published",
+        "acceptance-pending-unlinked",
+        "canonical-removed-phase-published",
+        "runtime-restored-phase-published",
+        "own-pending-unlinked",
+    ),
+)
+def test_takeover_retirement_recovers_every_durable_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure_point: str,
+) -> None:
+    case = _takeover_retirement_case(monkeypatch, tmp_path)
+    fsync_calls: list[Path] = []
+    monkeypatch.setattr(
+        candidate,
+        "_fsync_directory",
+        lambda path: fsync_calls.append(path),
+    )
+    base_write_bytes = candidate._write_bytes_exclusive
+    base_write_json = candidate._write_json_exclusive
+    base_atomic_json = candidate._atomic_replace_json
+    base_unlink_exact = candidate._unlink_exact_protected_file
+    base_path_unlink = Path.unlink
+    raised = False
+
+    if failure_point == "pending-published":
+
+        def fail_pending_write(
+            path: Path,
+            payload: dict[str, object],
+            mode: int = 0o644,
+        ) -> None:
+            nonlocal raised
+            base_write_json(path, payload, mode)
+            if path == case.pending and not raised:
+                raised = True
+                raise RuntimeError("injected takeover boundary")
+
+        monkeypatch.setattr(candidate, "_write_json_exclusive", fail_pending_write)
+    elif failure_point in {
+        "write-free-phase-published",
+        "superseded-archive-phase-published",
+        "acceptance-archive-phase-published",
+        "record-phase-published",
+        "superseded-removed-phase-published",
+        "canonical-removed-phase-published",
+        "runtime-restored-phase-published",
+    }:
+        phase_by_failure = {
+            "write-free-phase-published": "write-free-verified",
+            "superseded-archive-phase-published": (
+                "superseded-retirement-archived"
+            ),
+            "acceptance-archive-phase-published": "acceptance-archived",
+            "record-phase-published": "record-published",
+            "superseded-removed-phase-published": (
+                "superseded-retirement-removed"
+            ),
+            "canonical-removed-phase-published": "canonical-removed",
+            "runtime-restored-phase-published": "runtime-restored",
+        }
+        expected_phase = phase_by_failure[failure_point]
+
+        def fail_phase(
+            path: Path,
+            payload: dict[str, object],
+            mode: int,
+        ) -> None:
+            nonlocal raised
+            base_atomic_json(path, payload, mode)
+            if (
+                path == case.pending
+                and payload.get("phase") == expected_phase
+                and not raised
+            ):
+                raised = True
+                raise RuntimeError("injected takeover boundary")
+
+        monkeypatch.setattr(candidate, "_atomic_replace_json", fail_phase)
+    elif failure_point in {
+        "superseded-archive-published",
+        "acceptance-archive-published",
+    }:
+        expected_path = (
+            case.superseded_archive
+            if failure_point == "superseded-archive-published"
+            else case.archive
+        )
+
+        def fail_archive(path: Path, content: bytes, mode: int) -> None:
+            nonlocal raised
+            base_write_bytes(path, content, mode)
+            if path == expected_path and not raised:
+                raised = True
+                raise RuntimeError("injected takeover boundary")
+
+        monkeypatch.setattr(candidate, "_write_bytes_exclusive", fail_archive)
+    elif failure_point == "record-published":
+
+        def fail_record(
+            path: Path,
+            payload: dict[str, object],
+            mode: int = 0o644,
+        ) -> None:
+            nonlocal raised
+            base_write_json(path, payload, mode)
+            if path == case.record and not raised:
+                raised = True
+                raise RuntimeError("injected takeover boundary")
+
+        monkeypatch.setattr(candidate, "_write_json_exclusive", fail_record)
+    elif failure_point in {
+        "superseded-pending-unlinked",
+        "acceptance-pending-unlinked",
+    }:
+        expected_path = (
+            case.superseded_pending
+            if failure_point == "superseded-pending-unlinked"
+            else case.canonical
+        )
+
+        def fail_exact_unlink(
+            path: Path,
+            identity: tuple[int, ...],
+            *,
+            description: str,
+        ) -> None:
+            nonlocal raised
+            base_unlink_exact(path, identity, description=description)
+            if path == expected_path and not raised:
+                raised = True
+                raise RuntimeError("injected takeover boundary")
+
+        monkeypatch.setattr(
+            candidate, "_unlink_exact_protected_file", fail_exact_unlink
+        )
+    else:
+
+        def fail_own_unlink(
+            path: Path,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            nonlocal raised
+            base_path_unlink(path, *args, **kwargs)
+            if path == case.pending and not raised:
+                raised = True
+                raise RuntimeError("injected takeover boundary")
+
+        monkeypatch.setattr(Path, "unlink", fail_own_unlink)
+
+    with pytest.raises(RuntimeError, match="takeover boundary"):
+        candidate.retire_failed_acceptance(**case.arguments)
+    assert raised is True
+
+    monkeypatch.setattr(candidate, "_write_bytes_exclusive", base_write_bytes)
+    monkeypatch.setattr(candidate, "_write_json_exclusive", base_write_json)
+    monkeypatch.setattr(candidate, "_atomic_replace_json", base_atomic_json)
+    monkeypatch.setattr(
+        candidate, "_unlink_exact_protected_file", base_unlink_exact
+    )
+    monkeypatch.setattr(Path, "unlink", base_path_unlink)
+
+    fsync_count_before_recovery = len(fsync_calls)
+    recovered = candidate.retire_failed_acceptance(**case.arguments)
+
+    assert recovered["passed"] is True
+    assert not case.superseded_pending.exists()
+    assert not case.canonical.exists()
+    assert not case.pending.exists()
+    assert case.superseded_archive.exists()
+    assert case.archive.exists()
+    assert case.record.exists()
+    expected_live_calls = (
+        1
+        if failure_point in {"pending-published", "own-pending-unlinked"}
+        else 2
+    )
+    assert len(case.live_calls) == expected_live_calls
+    if failure_point == "own-pending-unlinked":
+        assert len(fsync_calls) == fsync_count_before_recovery + 1
+        assert fsync_calls[-1] == case.release_records
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "missing",
+        "tampered",
+        "hardlink",
+        "superseded-stage",
+        "successful-acceptance",
+    ),
+)
+def test_takeover_archives_remain_protected_downstream_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    drift: str,
+) -> None:
+    case = _takeover_retirement_case(monkeypatch, tmp_path)
+    candidate.retire_failed_acceptance(**case.arguments)
+
+    if drift == "missing":
+        case.superseded_archive.unlink()
+    elif drift == "tampered":
+        case.superseded_archive.write_bytes(b"{}\n")
+        case.superseded_archive.chmod(0o600)
+    elif drift == "hardlink":
+        os.link(case.superseded_archive, tmp_path / "retirement-alias.json")
+    elif drift == "superseded-stage":
+        candidate._stage_record_path(
+            case.release_records, case.superseded_sha
+        ).write_text("changed-stage\n", encoding="utf-8")
+    else:
+        (case.acceptance_records / (
+            "gatea-m9-runtime-acceptance-"
+            f"{case.arguments['source_candidate_sha']}.json"
+        )).write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(candidate.GateACandidateError):
+        candidate._load_adoption_context(
+            release_root=case.release_root,
+            release_record_dir=case.release_records,
+            source_candidate_sha=case.arguments["source_candidate_sha"],
+            lineage_source_candidate_sha=SOURCE_SHA,
+            target_sha=TARGET_SHA,
+            acceptance_retirement_record_sha256=candidate._sha256(case.record),
+            acceptance_record_dir=case.acceptance_records,
+            acceptance_failure_archive_dir=case.archive_dir,
+            retirement_failure_archive_dir=case.retirement_archive_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("phase", "observed"),
+    [
+        pytest.param(
+            "prepared",
+            (False, False, True, False, False),
+            id="prepared-without-b",
+        ),
+        pytest.param(
+            "write-free-verified",
+            (True, True, True, True, False),
+            id="write-free-skips-ahead",
+        ),
+        pytest.param(
+            "acceptance-archived",
+            (False, True, True, True, False),
+            id="a-archive-with-b-removed-too-soon",
+        ),
+        pytest.param(
+            "record-published",
+            (False, True, False, True, True),
+            id="both-canonicals-removed-too-soon",
+        ),
+        pytest.param(
+            None,
+            (True, True, False, True, True),
+            id="completed-c-still-has-b-pending",
+        ),
+    ],
+)
+def test_takeover_retirement_recovery_shape_rejects_impossible_mixtures(
+    phase: str | None,
+    observed: tuple[bool, bool, bool, bool, bool],
+) -> None:
+    with pytest.raises(candidate.GateACandidateError, match="inconsistent"):
+        candidate._validate_takeover_retirement_recovery_shape(
+            phase=phase,
+            superseded_pending_exists=observed[0],
+            superseded_archive_exists=observed[1],
+            acceptance_pending_exists=observed[2],
+            acceptance_archive_exists=observed[3],
+            retirement_record_exists=observed[4],
+        )
 
 
 def test_retire_failed_acceptance_first_success_and_success_replay(
@@ -5427,7 +6371,11 @@ def test_restore_retirement_runtime_uses_exact_allowances_and_reproves_a_m9(
     monkeypatch.setattr(
         candidate,
         "_validated_retirement_recovery_allowances",
-        lambda **kwargs: (transition_allowance, acceptance_allowance),
+        lambda **kwargs: (
+            transition_allowance,
+            acceptance_allowance,
+            None,
+        ),
     )
     monkeypatch.setattr(
         candidate,

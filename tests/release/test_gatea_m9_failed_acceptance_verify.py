@@ -47,6 +47,23 @@ from app.tasks import gatea_m9_failed_acceptance_verify as verifier
 
 
 CANDIDATE_SHA = "a" * 40
+OTHER_CANDIDATE_SHA = "c" * 40
+ACCEPTANCE_ATTEMPT_ID = "b" * 32
+
+
+def _experience_name(acceptance_attempt_id: str) -> str:
+    return f"[GATEA-M9] Runtime experience {acceptance_attempt_id[:12]}"
+
+
+def _kit_name(acceptance_attempt_id: str) -> str:
+    return f"[GATEA-M9] Runtime fixed Kit {acceptance_attempt_id[:12]}"
+
+
+def _kit_supply_key(acceptance_attempt_id: str) -> str:
+    return (
+        f"{INVENTORY_ADMIN_IDEMPOTENCY_PREFIX}"
+        f"gatea-m9-kit-stock-{acceptance_attempt_id}-v1"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,14 +98,14 @@ async def _seed_clean_failure() -> SeededFailure:
     )
     experience = await Product.create(
         id=9101,
-        name=f"[GATEA-M9] Runtime experience {CANDIDATE_SHA[:12]}",
+        name=_experience_name(ACCEPTANCE_ATTEMPT_ID),
         description=verifier.EXPECTED_EXPERIENCE_DESCRIPTION,
         product_type=ProductType.EXPERIENCE,
         status=ProductStatus.OFFLINE,
     )
     kit_product = await Product.create(
         id=9102,
-        name=f"[GATEA-M9] Runtime fixed Kit {CANDIDATE_SHA[:12]}",
+        name=_kit_name(ACCEPTANCE_ATTEMPT_ID),
         description=verifier.EXPECTED_KIT_DESCRIPTION,
         product_type=ProductType.KIT,
         status=ProductStatus.OFFLINE,
@@ -195,10 +212,7 @@ async def _seed_clean_failure() -> SeededFailure:
         source_id=None,
         operator=admin,
         reason=verifier.EXPECTED_KIT_SUPPLY_REASON,
-        idempotency_key=(
-            f"{INVENTORY_ADMIN_IDEMPOTENCY_PREFIX}"
-            f"gatea-m9-kit-stock-{CANDIDATE_SHA}-v1"
-        ),
+        idempotency_key=_kit_supply_key(ACCEPTANCE_ATTEMPT_ID),
     )
     await InventoryTransaction.create(
         id=9501,
@@ -244,9 +258,15 @@ async def _seed_clean_failure() -> SeededFailure:
     )
 
 
-async def _verify(seed: SeededFailure) -> dict[str, object]:
+async def _verify(
+    seed: SeededFailure,
+    *,
+    candidate_sha: str = CANDIDATE_SHA,
+    acceptance_attempt_id: str = ACCEPTANCE_ATTEMPT_ID,
+) -> dict[str, object]:
     return await verifier.verify_failed_acceptance(
-        candidate_sha=CANDIDATE_SHA,
+        candidate_sha=candidate_sha,
+        acceptance_attempt_id=acceptance_attempt_id,
         order_id=seed.order.id,
         experience_product_id=seed.experience_product.id,
         kit_product_id=seed.kit_product.id,
@@ -287,7 +307,7 @@ async def test_clean_failure_is_verified_read_only_and_returns_redacted_digest(
     result = await _verify(seed)
 
     assert result == {
-        "schema_version": 1,
+        "schema_version": 2,
         "passed": True,
         "counts": {
             "orders": 1,
@@ -323,6 +343,19 @@ async def test_clean_failure_is_verified_read_only_and_returns_redacted_digest(
         )
     )
     assert await _read_footprint() == before
+
+
+async def test_candidate_and_attempt_identities_have_distinct_roles() -> None:
+    seed = await _seed_clean_failure()
+
+    result = await _verify(seed, candidate_sha=OTHER_CANDIDATE_SHA)
+
+    assert result["passed"] is True
+    with pytest.raises(
+        verifier.GateAM9FailedAcceptanceVerificationError,
+        match="fixture Product roles or saleability",
+    ):
+        await _verify(seed, acceptance_attempt_id="d" * 32)
 
 
 @pytest.mark.parametrize(
@@ -651,8 +684,9 @@ async def test_any_payment_or_table_session_fact_fails_closed(dependant: str) ->
 
 def _stdin_contract() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_sha": CANDIDATE_SHA,
+        "acceptance_attempt_id": ACCEPTANCE_ATTEMPT_ID,
         "order_id": 9301,
         "experience_product_id": 9101,
         "kit_product_id": 9102,
@@ -693,6 +727,8 @@ def _stdin_contract() -> dict[str, object]:
 def test_stdin_contract_requires_bounded_exact_duplicate_free_json() -> None:
     payload = _stdin_contract()
     parsed = verifier._parse_input_payload(json.dumps(payload).encode())
+    assert parsed["candidate_sha"] == CANDIDATE_SHA
+    assert parsed["acceptance_attempt_id"] == ACCEPTANCE_ATTEMPT_ID
     assert parsed["order_id"] == 9301
     assert parsed["experience_items"] == (
         verifier.ExperienceItemExpectation(
@@ -729,6 +765,61 @@ def test_stdin_contract_rejects_non_integer_schema_version(
         verifier._parse_input_payload(json.dumps(payload).encode())
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("schema_version", 1),
+        ("candidate_sha", "a" * 39),
+        ("candidate_sha", "A" * 40),
+        ("acceptance_attempt_id", "b" * 31),
+        ("acceptance_attempt_id", "B" * 32),
+    ),
+)
+def test_stdin_contract_requires_both_exact_root_identities(
+    field: str,
+    value: object,
+) -> None:
+    payload = _stdin_contract()
+    payload[field] = value
+
+    with pytest.raises(verifier.GateAM9FailedAcceptanceVerificationError) as caught:
+        verifier._parse_input_payload(json.dumps(payload).encode())
+
+    assert caught.value.reason_code == "INPUT_CONTRACT"
+
+
+def test_refusal_reason_and_key_allowlist_is_frozen() -> None:
+    assert dict(verifier.REFUSAL_KEYS_BY_REASON_CODE) == {
+        "INPUT_CONTRACT": "input_contract",
+        "ORDER_CONTRACT": "order_contract",
+        "FIXTURE_PRODUCT_CONTRACT": "fixture_product_contract",
+        "FIXTURE_IMAGE_CONTRACT": "fixture_image_contract",
+        "KIT_CONTRACT": "kit_contract",
+        "OPTION_CONTRACT": "option_contract",
+        "ORDER_ITEM_CONTRACT": "order_item_contract",
+        "DEPENDENT_FACTS": "dependent_facts",
+        "INVENTORY_SET": "inventory_set",
+        "INVENTORY_SUPPLY": "inventory_supply",
+        "INVENTORY_ORDER_CHAIN": "inventory_order_chain",
+        "INTERNAL_FAILURE": "internal_failure",
+    }
+    for reason_code, refusal_key in verifier.REFUSAL_KEYS_BY_REASON_CODE.items():
+        assert verifier._refusal_payload(reason_code) == {
+            "schema_version": 2,
+            "passed": False,
+            "reason_code": reason_code,
+            "refusal_key": refusal_key,
+            "secret_values_recorded": False,
+        }
+    assert verifier._refusal_payload("NOT_ALLOWLISTED") == {
+        "schema_version": 2,
+        "passed": False,
+        "reason_code": "INTERNAL_FAILURE",
+        "refusal_key": "internal_failure",
+        "secret_values_recorded": False,
+    }
+
+
 def test_expectation_identity_validation_fails_before_database_reads() -> None:
     duplicate = verifier.ExperienceItemExpectation(
         11, 21, 60, 1, DayType.WEEKDAY, Decimal("1.00"), 1
@@ -757,7 +848,7 @@ def test_main_prints_one_redacted_json_line(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     expected = {
-        "schema_version": 1,
+        "schema_version": 2,
         "passed": True,
         "counts": {"orders": 1},
         "evidence_sha256": "a" * 64,
@@ -782,6 +873,16 @@ def test_main_prints_one_redacted_json_line(
     assert captured.err == ""
     assert captured.out.count("\n") == 1
     assert json.loads(captured.out) == expected
+    assert captured.out == (
+        json.dumps(
+            expected,
+            ensure_ascii=True,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
     assert not any(value in captured.out for value in ("9301", "9101", "9401"))
 
 
@@ -795,9 +896,84 @@ def test_main_none_rejects_real_process_arguments_before_reading_stdin(
     monkeypatch.setattr(sys, "argv", ["gatea-verifier", "9301"])
     monkeypatch.setattr(verifier, "_read_stdin_payload", fail_if_read)
 
-    assert verifier.main(None) == 1
+    assert verifier.main(None) == 2
 
     captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == "Gate A M9 failed-acceptance verification refused\n"
-    assert "9301" not in captured.err
+    assert captured.out == (
+        '{"passed":false,"reason_code":"INPUT_CONTRACT",'
+        '"refusal_key":"input_contract","schema_version":2,'
+        '"secret_values_recorded":false}\n'
+    )
+    assert captured.err == ""
+    assert "9301" not in captured.out
+
+
+def test_main_emits_safe_business_refusal_without_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def refusing_run(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        raise verifier.GateAM9FailedAcceptanceVerificationError(
+            "INVENTORY_SUPPLY",
+            "database row 9500 contained secret-value",
+        )
+
+    monkeypatch.setattr(verifier, "run", refusing_run)
+    monkeypatch.setattr(
+        verifier,
+        "_read_stdin_payload",
+        lambda: json.dumps(_stdin_contract()).encode(),
+    )
+
+    assert verifier.main([]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == (
+        '{"passed":false,"reason_code":"INVENTORY_SUPPLY",'
+        '"refusal_key":"inventory_supply","schema_version":2,'
+        '"secret_values_recorded":false}\n'
+    )
+    assert captured.err == ""
+    assert "9500" not in captured.out
+    assert "secret-value" not in captured.out
+
+
+def test_main_emits_safe_internal_refusal_without_error_or_database_output(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def failing_run(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        raise RuntimeError(
+            "asyncmy OperationalError mysql://user:password@database/private"
+        )
+
+    monkeypatch.setattr(verifier, "run", failing_run)
+    monkeypatch.setattr(
+        verifier,
+        "_read_stdin_payload",
+        lambda: json.dumps(_stdin_contract()).encode(),
+    )
+
+    assert verifier.main([]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == (
+        '{"passed":false,"reason_code":"INTERNAL_FAILURE",'
+        '"refusal_key":"internal_failure","schema_version":2,'
+        '"secret_values_recorded":false}\n'
+    )
+    assert captured.err == ""
+    assert not any(
+        sensitive in captured.out
+        for sensitive in (
+            "RuntimeError",
+            "OperationalError",
+            "mysql",
+            "user",
+            "password",
+            "database",
+            "private",
+        )
+    )
