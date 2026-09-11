@@ -281,6 +281,40 @@ def _validate_record_pair_content_evidence(
             if backup_m7 != restore_m7:
                 raise ValueError
 
+        requires_m8_swatch = (
+            gatea_backup._requires_m8_swatch_content_snapshot(
+                database_snapshot
+            )
+        )
+        has_any_m8_swatch_evidence = (
+            "m8_swatch_content_snapshot" in backup
+            or "m8_swatch_content_snapshot" in restore
+            or "m8_swatch_content_matches" in restore
+        )
+        # The field was added without changing Backup schema v1.  Historical
+        # M8/M9 pairs may therefore omit it; once either side carries any part
+        # of the evidence, however, the pair must be complete and exact.
+        if has_any_m8_swatch_evidence:
+            if (
+                not requires_m8_swatch
+                or "m8_swatch_content_snapshot" not in backup
+                or "m8_swatch_content_snapshot" not in restore
+                or restore.get("m8_swatch_content_matches") is not True
+            ):
+                raise ValueError
+            backup_m8_swatch = (
+                gatea_backup._validate_m8_swatch_content_snapshot(
+                    backup["m8_swatch_content_snapshot"]
+                )
+            )
+            restore_m8_swatch = (
+                gatea_backup._validate_m8_swatch_content_snapshot(
+                    restore["m8_swatch_content_snapshot"]
+                )
+            )
+            if backup_m8_swatch != restore_m8_swatch:
+                raise ValueError
+
         requires_m9 = gatea_backup._requires_m9_table_content_snapshot(
             database_snapshot
         )

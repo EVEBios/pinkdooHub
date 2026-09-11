@@ -51,6 +51,7 @@ CANDIDATE_TRANSITION_PENDING_KINDS = (
     ("config-activation", "config-activation.pending.json"),
     ("config-rollback", "config-rollback.pending.json"),
     ("current-finalization", CURRENT_FINALIZATION_PENDING_SUFFIX),
+    ("acceptance-retirement", "acceptance-retirement.pending.json"),
 )
 CANDIDATE_TRANSITION_PENDING_SUFFIXES = tuple(
     suffix for _, suffix in CANDIDATE_TRANSITION_PENDING_KINDS
@@ -58,6 +59,13 @@ CANDIDATE_TRANSITION_PENDING_SUFFIXES = tuple(
 CANDIDATE_TRANSITION_PENDING_SUFFIX_BY_KIND = dict(
     CANDIDATE_TRANSITION_PENDING_KINDS
 )
+# ``failed-acceptance-retirement`` is deliberately an allowance-only kind.  The
+# on-disk journal keeps the established ``acceptance-retirement`` suffix, while
+# app-up can distinguish this narrowly validated recovery from every ordinary
+# lifecycle invocation.
+CANDIDATE_TRANSITION_PENDING_SUFFIX_BY_KIND[
+    "failed-acceptance-retirement"
+] = "acceptance-retirement.pending.json"
 M9_ACCEPTANCE_SIDECAR_PREFIX = "gatea-m9-runtime-acceptance-"
 M9_ACCEPTANCE_PENDING_SUFFIX = ".json.pending"
 M9_ACCEPTANCE_COMPLETE_SUFFIX = ".json.complete"
@@ -160,6 +168,91 @@ M9_STATIC_SNAPSHOT_KEYS = (
     "statistics_sha256",
     "constraints_sha256",
 )
+M9_ADOPTION_TRANSITION_KIND = "m9-candidate-adoption"
+MAX_M9_ADOPTION_RECORD_BYTES = 4 * 1024 * 1024
+M9_ADOPTION_CONTENT_SNAPSHOT_KEYS = frozenset(
+    {"content_sha256", "profile", "schema_version"}
+)
+M9_ADOPTION_UPGRADE_RECORD_KEYS = frozenset(
+    {
+        "schema_version",
+        "transition_kind",
+        "record_type",
+        "passed",
+        "candidate_sha",
+        "image_id",
+        "source_candidate_sha",
+        "source_image_id",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "source_version",
+        "target_version",
+        "source_aerich_versions",
+        "target_aerich_versions",
+        "backup_id",
+        "manifest_sha256",
+        "stage_record_sha256",
+        "activation_record_sha256",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+        "acceptance_retirement_record_sha256",
+        "backup_record_sha256",
+        "restore_record_sha256",
+        "runtime_preflight",
+        "started_at",
+        "completed_at",
+        "evidence_path",
+        "evidence_sha256",
+        "source_database_snapshot",
+        "final_database_snapshot",
+        "source_image_manifest",
+        "final_image_manifest",
+        "source_m7_content_snapshot",
+        "final_m7_content_snapshot",
+        "source_m8_swatch_content_snapshot",
+        "final_m8_swatch_content_snapshot",
+        "source_m9_table_content_snapshot",
+        "final_m9_table_content_snapshot",
+        "database_changes_applied",
+        "migrations_applied",
+        "table_reconcile",
+    }
+)
+M9_ADOPTION_EVIDENCE_RECORD_KEYS = (
+    M9_ADOPTION_UPGRADE_RECORD_KEYS
+    - frozenset({"passed", "evidence_path", "evidence_sha256"})
+) | frozenset({"status", "current_stage", "stopped_source_verified", "steps"})
+M9_ADOPTION_REPLAY_RECORD_KEYS = frozenset(
+    {
+        "schema_version",
+        "transition_kind",
+        "record_type",
+        "passed",
+        "candidate_sha",
+        "source_candidate_sha",
+        "source_version",
+        "image_id",
+        "backup_id",
+        "manifest_sha256",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "acceptance_retirement_record_sha256",
+        "database_changes_applied",
+        "migrations_applied",
+        "database_snapshot",
+        "m8_swatch_content_snapshot",
+        "image_manifest",
+        "table_reconcile",
+        "upgrade_record_sha256",
+        "evidence_sha256",
+        "result",
+        "completed_at",
+        "secret_values_recorded",
+    }
+)
 LEGACY_M7_APP_COMMAND = [
     "uvicorn",
     "app.main:app",
@@ -248,6 +341,7 @@ class CandidateTransitionRecoveryAllowance:
     path: Path
     kind: str
     candidate_sha: str
+    runtime_candidate_sha: str | None = None
 
 
 @dataclass(frozen=True)
@@ -571,6 +665,7 @@ def _run_compose(
     capture_output: bool = False,
     check: bool = True,
     start_new_session: bool = False,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         compose_command(
@@ -585,6 +680,7 @@ def _run_compose(
         text=True,
         capture_output=capture_output,
         start_new_session=start_new_session,
+        input=input_text,
     )
 
 
@@ -699,6 +795,10 @@ def _validate_candidate_transition_recovery_allowance(
         or not isinstance(recovery_allowance.path, Path)
         or not isinstance(recovery_allowance.kind, str)
         or not isinstance(recovery_allowance.candidate_sha, str)
+        or (
+            recovery_allowance.runtime_candidate_sha is not None
+            and not isinstance(recovery_allowance.runtime_candidate_sha, str)
+        )
     ):
         raise GateAError(
             "Gate A candidate transition recovery allowance is invalid"
@@ -718,6 +818,22 @@ def _validate_candidate_transition_recovery_allowance(
         or candidate_sha is None
         or GIT_SHA_PATTERN.fullmatch(candidate_sha) is None
         or GIT_SHA_PATTERN.fullmatch(recovery_allowance.candidate_sha) is None
+        or (
+            recovery_allowance.kind == "failed-acceptance-retirement"
+            and (
+                recovery_allowance.runtime_candidate_sha is None
+                or GIT_SHA_PATTERN.fullmatch(
+                    recovery_allowance.runtime_candidate_sha
+                )
+                is None
+                or recovery_allowance.runtime_candidate_sha
+                == recovery_allowance.candidate_sha
+            )
+        )
+        or (
+            recovery_allowance.kind != "failed-acceptance-retirement"
+            and recovery_allowance.runtime_candidate_sha is not None
+        )
         or recovery_allowance.candidate_sha != candidate_sha
         or normalized_allowance_path.parent != normalized_record_dir
         or normalized_allowance_path != expected_path
@@ -1269,6 +1385,346 @@ def _require_migration_record(
     return payload
 
 
+def _utc_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        return None
+    return parsed
+
+
+def _is_utc_timestamp(value: object) -> bool:
+    return _utc_datetime(value) is not None
+
+
+def _schema2_file_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _require_schema2_record_metadata(
+    metadata: os.stat_result,
+    description: str,
+) -> None:
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o644
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+        or metadata.st_nlink != 1
+        or metadata.st_size > MAX_M9_ADOPTION_RECORD_BYTES
+    ):
+        raise GateAError(f"Gate A {description} has unsafe metadata")
+
+
+def _json_object_without_duplicates(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError("duplicate JSON key")
+        payload[key] = value
+    return payload
+
+
+def _load_schema2_record_with_sha256(
+    path: Path,
+    description: str,
+) -> tuple[dict[str, Any], str]:
+    """稳定读取 root-only 发布的 schema-v2 Record 与同字节摘要。"""
+
+    descriptor: int | None = None
+    try:
+        path_metadata = path.lstat()
+        _require_schema2_record_metadata(path_metadata, description)
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        )
+        before_metadata = os.fstat(descriptor)
+        _require_schema2_record_metadata(before_metadata, description)
+        if _schema2_file_identity(path_metadata) != _schema2_file_identity(
+            before_metadata
+        ):
+            raise GateAError(f"Gate A {description} changed during validation")
+        chunks: list[bytes] = []
+        remaining = MAX_M9_ADOPTION_RECORD_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if remaining == 0:
+            raise GateAError(f"Gate A {description} is unexpectedly large")
+        after_metadata = os.fstat(descriptor)
+        final_metadata = path.lstat()
+        _require_schema2_record_metadata(after_metadata, description)
+        _require_schema2_record_metadata(final_metadata, description)
+        if not (
+            _schema2_file_identity(before_metadata)
+            == _schema2_file_identity(after_metadata)
+            == _schema2_file_identity(final_metadata)
+        ):
+            raise GateAError(f"Gate A {description} changed during validation")
+        content = b"".join(chunks)
+        payload = json.loads(
+            content.decode("utf-8"),
+            object_pairs_hook=_json_object_without_duplicates,
+        )
+    except GateAError:
+        raise
+    except (
+        FileNotFoundError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as error:
+        raise GateAError(f"Gate A {description} is unavailable") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if not isinstance(payload, dict):
+        raise GateAError(f"Gate A {description} is invalid")
+    return payload, hashlib.sha256(content).hexdigest()
+
+
+def _load_upgrade_record_for_classification(
+    path: Path,
+) -> tuple[dict[str, Any], str]:
+    """从一个稳定 fd 分类 schema；schema v2 再施加 root-only 元数据契约。"""
+
+    descriptor: int | None = None
+    description = "existing-database upgrade record"
+    try:
+        path_metadata = path.lstat()
+        if (
+            not stat.S_ISREG(path_metadata.st_mode)
+            or path_metadata.st_size > MAX_M9_ADOPTION_RECORD_BYTES
+        ):
+            raise GateAError(f"Gate A {description} is unsafe")
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        )
+        before_metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before_metadata.st_mode)
+            or _schema2_file_identity(path_metadata)
+            != _schema2_file_identity(before_metadata)
+        ):
+            raise GateAError(f"Gate A {description} changed during validation")
+        chunks: list[bytes] = []
+        remaining = MAX_M9_ADOPTION_RECORD_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if remaining == 0:
+            raise GateAError(f"Gate A {description} is unexpectedly large")
+        after_metadata = os.fstat(descriptor)
+        final_metadata = path.lstat()
+        if not (
+            _schema2_file_identity(before_metadata)
+            == _schema2_file_identity(after_metadata)
+            == _schema2_file_identity(final_metadata)
+        ):
+            raise GateAError(f"Gate A {description} changed during validation")
+        content = b"".join(chunks)
+        payload = json.loads(
+            content.decode("utf-8"),
+            object_pairs_hook=_json_object_without_duplicates,
+        )
+        if not isinstance(payload, dict):
+            raise GateAError(f"Gate A {description} is invalid")
+        if payload.get("schema_version") == 2:
+            for metadata in (
+                path_metadata,
+                before_metadata,
+                after_metadata,
+                final_metadata,
+            ):
+                _require_schema2_record_metadata(metadata, description)
+    except GateAError:
+        raise
+    except (
+        FileNotFoundError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as error:
+        raise GateAError(f"Gate A {description} is unavailable") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return payload, hashlib.sha256(content).hexdigest()
+
+
+def _validate_m9_adoption_content_snapshot(
+    payload: object,
+    *,
+    profile: str,
+) -> bool:
+    content_sha256 = (
+        payload.get("content_sha256") if isinstance(payload, dict) else None
+    )
+    return (
+        isinstance(payload, dict)
+        and set(payload) == M9_ADOPTION_CONTENT_SNAPSHOT_KEYS
+        and type(payload.get("schema_version")) is int
+        and payload.get("schema_version") == 1
+        and payload.get("profile") == profile
+        and isinstance(content_sha256, str)
+        and SHA256_PATTERN.fullmatch(content_sha256) is not None
+    )
+
+
+def _validate_m9_adoption_image_manifest(payload: object) -> bool:
+    return (
+        isinstance(payload, dict)
+        and set(payload) == {"files", "sha256"}
+        and type(payload.get("files")) is int
+        and payload["files"] >= 0
+        and SHA256_PATTERN.fullmatch(str(payload.get("sha256", ""))) is not None
+    )
+
+
+def _require_m9_adoption_upgrade_record(
+    payload: Mapping[str, Any],
+    *,
+    record_dir: Path,
+    candidate_sha: str,
+    image_id: str,
+) -> dict[str, Any]:
+    source_candidate_sha = payload.get("source_candidate_sha")
+    lineage_source_candidate_sha = payload.get("lineage_source_candidate_sha")
+    digest_fields = (
+        "manifest_sha256",
+        "stage_record_sha256",
+        "activation_record_sha256",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+        "acceptance_retirement_record_sha256",
+        "backup_record_sha256",
+        "restore_record_sha256",
+        "evidence_sha256",
+    )
+    runtime_preflight = payload.get("runtime_preflight")
+    source_database_snapshot = payload.get("source_database_snapshot")
+    final_database_snapshot = payload.get("final_database_snapshot")
+    source_image_manifest = payload.get("source_image_manifest")
+    final_image_manifest = payload.get("final_image_manifest")
+    source_m7_content = payload.get("source_m7_content_snapshot")
+    final_m7_content = payload.get("final_m7_content_snapshot")
+    source_m8_swatch_content = payload.get("source_m8_swatch_content_snapshot")
+    final_m8_swatch_content = payload.get("final_m8_swatch_content_snapshot")
+    source_m9_content = payload.get("source_m9_table_content_snapshot")
+    final_m9_content = payload.get("final_m9_table_content_snapshot")
+    started_at = _utc_datetime(payload.get("started_at"))
+    completed_at = _utc_datetime(payload.get("completed_at"))
+    evidence_path = record_dir / (
+        f"{candidate_sha}.existing-database-upgrade.evidence.json"
+    )
+    if (
+        set(payload) != M9_ADOPTION_UPGRADE_RECORD_KEYS
+        or payload.get("schema_version") != 2
+        or payload.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND
+        or payload.get("record_type") != "existing-database-upgrade"
+        or payload.get("passed") is not True
+        or payload.get("candidate_sha") != candidate_sha
+        or payload.get("image_id") != image_id
+        or not isinstance(source_candidate_sha, str)
+        or GIT_SHA_PATTERN.fullmatch(source_candidate_sha) is None
+        or source_candidate_sha == candidate_sha
+        or not isinstance(lineage_source_candidate_sha, str)
+        or GIT_SHA_PATTERN.fullmatch(lineage_source_candidate_sha) is None
+        or lineage_source_candidate_sha in {source_candidate_sha, candidate_sha}
+        or not isinstance(payload.get("source_image_id"), str)
+        or not payload["source_image_id"]
+        or not isinstance(payload.get("lineage_source_image_id"), str)
+        or not payload["lineage_source_image_id"]
+        or payload.get("source_version") != 9
+        or payload.get("target_version") != 9
+        or payload.get("source_aerich_versions")
+        != list(APPROVED_TARGET_M9_CHAIN)
+        or payload.get("target_aerich_versions")
+        != list(APPROVED_TARGET_M9_CHAIN)
+        or BACKUP_ID_PATTERN.fullmatch(str(payload.get("backup_id", ""))) is None
+        or any(
+            SHA256_PATTERN.fullmatch(str(payload.get(field, ""))) is None
+            for field in digest_fields
+        )
+        or payload.get("evidence_path") != str(evidence_path)
+        or started_at is None
+        or completed_at is None
+        or completed_at < started_at
+        or not isinstance(runtime_preflight, dict)
+        or runtime_preflight
+        != {
+            "app_env": "production",
+            "db_engine": "mysql",
+            "jwt_algorithm": "HS256",
+            "table_session_claims_enabled": True,
+            "validated": True,
+        }
+        or not isinstance(source_database_snapshot, dict)
+        or source_database_snapshot != final_database_snapshot
+        or source_database_snapshot.get("aerich_versions")
+        != list(APPROVED_TARGET_M9_CHAIN)
+        or not _validate_m9_adoption_image_manifest(source_image_manifest)
+        or source_image_manifest != final_image_manifest
+        or not _validate_m9_adoption_content_snapshot(
+            source_m7_content, profile="m7-preserved-business-v1"
+        )
+        or source_m7_content != final_m7_content
+        or not _validate_m9_adoption_content_snapshot(
+            source_m8_swatch_content, profile="m8-swatch-content-v1"
+        )
+        or source_m8_swatch_content != final_m8_swatch_content
+        or not _validate_m9_adoption_content_snapshot(
+            source_m9_content, profile="m9-table-business-v1"
+        )
+        or source_m9_content != final_m9_content
+        or payload.get("database_changes_applied") is not False
+        or payload.get("migrations_applied") != []
+    ):
+        raise GateAError(
+            "Gate A existing-database upgrade record does not match the candidate"
+        )
+    _validate_m9_reconcile(payload.get("table_reconcile"), require_empty=False)
+    recorded_reconcile = payload["table_reconcile"]
+    if (
+        recorded_reconcile.get("open_sessions") != 0
+        or recorded_reconcile.get("occupancies") != 0
+        or recorded_reconcile.get("violations") != 0
+    ):
+        raise GateAError(
+            "Gate A existing-database upgrade record does not match the candidate"
+        )
+    return dict(payload)
+
+
 def _require_upgrade_record(
     *,
     record_dir: Path,
@@ -1278,12 +1734,22 @@ def _require_upgrade_record(
     """验证既有数据库升级成功 Record 与当前不可变候选一致。"""
 
     marker = _upgrade_marker(record_dir, candidate_sha)
-    try:
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError) as error:
+    payload, _ = _load_upgrade_record_for_classification(marker)
+    schema_transition = (
+        payload.get("schema_version"),
+        payload.get("transition_kind") if "transition_kind" in payload else None,
+    )
+    if schema_transition == (2, M9_ADOPTION_TRANSITION_KIND):
+        return _require_m9_adoption_upgrade_record(
+            payload,
+            record_dir=record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+        )
+    if schema_transition != (1, None):
         raise GateAError(
-            "Gate A existing-database upgrade record is unavailable"
-        ) from error
+            "Gate A existing-database upgrade record does not match the candidate"
+        )
     source_candidate_sha = str(payload.get("source_candidate_sha", ""))
     source_image_id = payload.get("source_image_id")
     source_aerich_versions = payload.get("source_aerich_versions")
@@ -1341,20 +1807,22 @@ def _require_deployment_record(
 
     initial_marker = _migration_marker(record_dir, candidate_sha)
     upgrade_marker = _upgrade_marker(record_dir, candidate_sha)
-    if initial_marker.exists():
+    if initial_marker.is_symlink() or upgrade_marker.is_symlink():
+        raise GateAError("Gate A deployment record is ambiguous or unsafe")
+    available = (initial_marker.exists(), upgrade_marker.exists())
+    if sum(available) != 1:
+        raise GateAError("Gate A deployment record is ambiguous or unavailable")
+    if available[0]:
         return _require_migration_record(
             record_dir=record_dir,
             candidate_sha=candidate_sha,
             image_id=image_id,
         )
-    if upgrade_marker.exists():
-        return _require_upgrade_record(
-            record_dir=record_dir,
-            candidate_sha=candidate_sha,
-            image_id=image_id,
-        )
-
-    raise GateAError("Gate A deployment record is unavailable")
+    return _require_upgrade_record(
+        record_dir=record_dir,
+        candidate_sha=candidate_sha,
+        image_id=image_id,
+    )
 
 
 def _validate_m9_reconcile(
@@ -1376,6 +1844,121 @@ def _validate_m9_reconcile(
     return dict(payload)
 
 
+def _require_m9_adoption_replay_record(
+    *,
+    record_dir: Path,
+    candidate_sha: str,
+    image_id: str,
+    upgrade_record: Mapping[str, Any],
+) -> dict[str, Any]:
+    success_path = _upgrade_marker(record_dir, candidate_sha)
+    evidence_path = record_dir / (
+        f"{candidate_sha}.existing-database-upgrade.evidence.json"
+    )
+    replay_path = _upgrade_replay_marker(record_dir, candidate_sha)
+    try:
+        stable_upgrade, upgrade_record_sha256 = (
+            _load_schema2_record_with_sha256(
+                success_path, "M9 adoption upgrade record"
+            )
+        )
+        evidence, evidence_sha256 = _load_schema2_record_with_sha256(
+            evidence_path, "M9 adoption upgrade evidence"
+        )
+        replay, _ = _load_schema2_record_with_sha256(
+            replay_path, "M9 adoption upgrade replay record"
+        )
+    except GateAError as error:
+        raise GateAError("Gate A M9 upgrade replay evidence is unavailable") from error
+    expected_result = {
+        "already_current": True,
+        "backup_id": upgrade_record.get("backup_id"),
+        "candidate_sha": candidate_sha,
+        "database_changes_applied": False,
+        "manifest_sha256": upgrade_record.get("manifest_sha256"),
+        "migrations_applied": [],
+        "mode": "plan-replay",
+        "source_aerich_versions": list(APPROVED_TARGET_M9_CHAIN),
+        "source_version": 9,
+        "target_aerich_versions": list(APPROVED_TARGET_M9_CHAIN),
+        "target_version": 9,
+        "transition_kind": M9_ADOPTION_TRANSITION_KIND,
+    }
+    if not isinstance(replay, dict) or not isinstance(evidence, dict):
+        raise GateAError("Gate A M9 upgrade replay evidence is invalid")
+    evidence_started_at = _utc_datetime(evidence.get("started_at"))
+    evidence_completed_at = _utc_datetime(evidence.get("completed_at"))
+    recorded_reconcile = _validate_m9_reconcile(
+        replay.get("table_reconcile"), require_empty=False
+    )
+    bound_evidence_fields = M9_ADOPTION_EVIDENCE_RECORD_KEYS - frozenset(
+        {"schema_version", "record_type", "status", "current_stage", "steps", "stopped_source_verified"}
+    )
+    if (
+        set(replay) != M9_ADOPTION_REPLAY_RECORD_KEYS
+        or stable_upgrade != upgrade_record
+        or replay.get("schema_version") != 2
+        or replay.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND
+        or replay.get("record_type") != "gatea-m9-upgrade-plan-replay"
+        or replay.get("passed") is not True
+        or replay.get("candidate_sha") != candidate_sha
+        or replay.get("source_candidate_sha")
+        != upgrade_record.get("source_candidate_sha")
+        or replay.get("source_version") != 9
+        or replay.get("image_id") != image_id
+        or replay.get("backup_id") != upgrade_record.get("backup_id")
+        or replay.get("manifest_sha256") != upgrade_record.get("manifest_sha256")
+        or replay.get("lineage_source_candidate_sha")
+        != upgrade_record.get("lineage_source_candidate_sha")
+        or replay.get("lineage_source_image_id")
+        != upgrade_record.get("lineage_source_image_id")
+        or replay.get("acceptance_retirement_record_sha256")
+        != upgrade_record.get("acceptance_retirement_record_sha256")
+        or replay.get("database_changes_applied") is not False
+        or replay.get("migrations_applied") != []
+        or replay.get("database_snapshot")
+        != upgrade_record.get("final_database_snapshot")
+        or replay.get("m8_swatch_content_snapshot")
+        != upgrade_record.get("final_m8_swatch_content_snapshot")
+        or not _validate_m9_adoption_content_snapshot(
+            replay.get("m8_swatch_content_snapshot"),
+            profile="m8-swatch-content-v1",
+        )
+        or replay.get("image_manifest")
+        != upgrade_record.get("final_image_manifest")
+        or replay.get("table_reconcile")
+        != upgrade_record.get("table_reconcile")
+        or replay.get("upgrade_record_sha256") != upgrade_record_sha256
+        or replay.get("evidence_sha256") != upgrade_record.get("evidence_sha256")
+        or replay.get("result") != expected_result
+        or not _is_utc_timestamp(replay.get("completed_at"))
+        or replay.get("secret_values_recorded") is not False
+        or set(evidence) != M9_ADOPTION_EVIDENCE_RECORD_KEYS
+        or evidence.get("schema_version") != 2
+        or evidence.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND
+        or evidence.get("record_type") != "existing-database-upgrade-evidence"
+        or evidence.get("status") != "succeeded"
+        or evidence.get("current_stage") != "completed"
+        or evidence.get("stopped_source_verified") is not True
+        or evidence.get("steps") != []
+        or evidence_started_at is None
+        or evidence_completed_at is None
+        or evidence_completed_at < evidence_started_at
+        or any(
+            evidence.get(field) != upgrade_record.get(field)
+            for field in bound_evidence_fields
+        )
+        or upgrade_record.get("evidence_path") != str(evidence_path)
+        or evidence_sha256 != upgrade_record.get("evidence_sha256")
+        or recorded_reconcile != replay.get("table_reconcile")
+        or recorded_reconcile.get("open_sessions") != 0
+        or recorded_reconcile.get("occupancies") != 0
+        or recorded_reconcile.get("violations") != 0
+    ):
+        raise GateAError("Gate A M9 upgrade replay evidence is invalid")
+    return replay
+
+
 def _require_m9_upgrade_replay_record(
     *,
     record_dir: Path,
@@ -1384,6 +1967,22 @@ def _require_m9_upgrade_replay_record(
     upgrade_record: Mapping[str, Any],
 ) -> dict[str, Any]:
     """验证 M9 app-up 前不可变的 upgrade evidence 与 plan-replay sidecar。"""
+
+    schema_transition = (
+        upgrade_record.get("schema_version"),
+        upgrade_record.get("transition_kind")
+        if "transition_kind" in upgrade_record
+        else None,
+    )
+    if schema_transition == (2, M9_ADOPTION_TRANSITION_KIND):
+        return _require_m9_adoption_replay_record(
+            record_dir=record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+            upgrade_record=upgrade_record,
+        )
+    if schema_transition != (1, None):
+        raise GateAError("Gate A M9 upgrade replay evidence is invalid")
 
     success_path = _upgrade_marker(record_dir, candidate_sha)
     evidence_path = record_dir / (
@@ -1759,6 +2358,7 @@ def app_up(
     allow_legacy_m7_command: bool = False,
     allow_existing_gatea_publisher: bool = False,
     candidate_transition_recovery: CandidateTransitionRecoveryAllowance | None = None,
+    acceptance_sidecar_recovery: M9AcceptanceSidecarRecoveryAllowance | None = None,
     acceptance_record_dir: Path = DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
     _termination_controller: _OperationTerminationController | None = None,
     _start_new_session: bool = False,
@@ -1769,15 +2369,39 @@ def app_up(
     subprocess_options = (
         {"start_new_session": True} if _start_new_session else {}
     )
+    allowed_recovery_kinds = frozenset(
+        {"current-finalization", "failed-acceptance-retirement"}
+    )
     if candidate_transition_recovery is not None and (
         not isinstance(
             candidate_transition_recovery,
             CandidateTransitionRecoveryAllowance,
         )
-        or candidate_transition_recovery.kind != "current-finalization"
+        or candidate_transition_recovery.kind not in allowed_recovery_kinds
     ):
         raise GateAError(
-            "Gate A app-up recovery allowance is restricted to finalization"
+            "Gate A app-up recovery allowance is restricted to finalization or failed-acceptance retirement"
+        )
+    if acceptance_sidecar_recovery is not None and (
+        candidate_transition_recovery is None
+        or candidate_transition_recovery.kind
+        != "failed-acceptance-retirement"
+        or not isinstance(
+            acceptance_sidecar_recovery,
+            M9AcceptanceSidecarRecoveryAllowance,
+        )
+    ):
+        raise GateAError(
+            "Gate A app-up acceptance allowance is restricted to failed-acceptance retirement"
+        )
+    if (
+        acceptance_sidecar_recovery is not None
+        and candidate_transition_recovery is not None
+        and acceptance_sidecar_recovery.candidate_sha
+        != candidate_transition_recovery.runtime_candidate_sha
+    ):
+        raise GateAError(
+            "Gate A app-up acceptance allowance does not match the retirement runtime candidate"
         )
     _validate_root_directory(record_dir, 0o755, "Gate A release record directory")
     recovery_candidate_sha = (
@@ -1790,7 +2414,10 @@ def app_up(
         candidate_sha=recovery_candidate_sha,
         recovery_allowance=candidate_transition_recovery,
     )
-    reject_unresolved_m9_acceptance_sidecars(record_dir=acceptance_record_dir)
+    reject_unresolved_m9_acceptance_sidecars(
+        record_dir=acceptance_record_dir,
+        recovery_allowance=acceptance_sidecar_recovery,
+    )
     values = _validated_inputs(
         config_file=config_file,
         secret_dir=secret_dir,
@@ -1798,9 +2425,16 @@ def app_up(
         require_available_port=not allow_existing_gatea_publisher,
     )
     candidate_sha = _candidate_sha(values)
+    expected_runtime_candidate_sha = (
+        candidate_transition_recovery.runtime_candidate_sha
+        if candidate_transition_recovery is not None
+        and candidate_transition_recovery.kind
+        == "failed-acceptance-retirement"
+        else recovery_candidate_sha
+    )
     if (
         candidate_transition_recovery is not None
-        and candidate_sha != recovery_candidate_sha
+        and candidate_sha != expected_runtime_candidate_sha
     ):
         raise GateAError(
             "Gate A app-up recovery allowance does not match the live candidate"

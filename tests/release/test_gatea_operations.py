@@ -665,6 +665,42 @@ def test_run_compose_start_new_session_creates_a_process_group_boundary(
     assert int(result.stdout.strip()) != os.getpgrp()
 
 
+def test_run_compose_passes_frozen_identities_only_through_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+    input_text = '{"order_id":9301,"option_id":9201}'
+
+    def fake_run(command: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed["command"] = command
+        observed.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, "{}\n", "")
+
+    monkeypatch.setattr(gatea.subprocess, "run", fake_run)
+    result = gatea._run_compose(
+        values=_valid_values(),
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+        arguments=("run", "--rm", "app", "python3", "-B", "-m", "verifier"),
+        capture_output=True,
+        input_text=input_text,
+    )
+
+    assert result.returncode == 0
+    assert observed["input"] == input_text
+    assert not any(
+        raw_id in str(argument)
+        for raw_id in ("9301", "9201")
+        for argument in observed["command"]  # type: ignore[union-attr]
+    )
+    assert not any(
+        raw_id in str(value)
+        for raw_id in ("9301", "9201")
+        for value in observed["env"].values()  # type: ignore[union-attr]
+    )
+
+
 def _healthy_rows(*services: str) -> list[dict[str, str]]:
     return [
         {"Service": service, "State": "running", "Health": "healthy"}
@@ -1845,6 +1881,151 @@ def test_app_up_finalization_recovery_allows_only_one_exact_pending(
     assert image_validations == 1
 
 
+def test_app_up_failed_acceptance_retirement_allows_only_exact_b_journal_and_a_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_sha = "a" * 40
+    target_sha = "b" * 40
+    release_pending = tmp_path / (
+        f"{target_sha}.acceptance-retirement.pending.json"
+    )
+    release_pending.write_text("{}\n", encoding="utf-8")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    acceptance_pending = acceptance_dir / (
+        f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}{source_sha}"
+        f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+    )
+    acceptance_pending.write_text("{}\n", encoding="utf-8")
+    transition_allowance = gatea.CandidateTransitionRecoveryAllowance(
+        path=release_pending,
+        kind="failed-acceptance-retirement",
+        candidate_sha=target_sha,
+        runtime_candidate_sha=source_sha,
+    )
+    acceptance_allowance = gatea.M9AcceptanceSidecarRecoveryAllowance(
+        candidate_sha=source_sha,
+        pending_path=acceptance_pending,
+    )
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "_m9_acceptance_sidecar_lstat",
+        lambda path: SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o600,
+            st_uid=0,
+            st_gid=0,
+        ),
+    )
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _valid_values())
+    monkeypatch.setattr(
+        gatea,
+        "validate_app_image",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("retirement recovery passed both exact guards")
+        ),
+    )
+
+    with pytest.raises(AssertionError, match="passed both exact guards"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_transition_recovery=transition_allowance,
+            acceptance_sidecar_recovery=acceptance_allowance,
+            acceptance_record_dir=acceptance_dir,
+        )
+
+    with pytest.raises(GateAError, match="recovery allowance is invalid"):
+        gatea.reject_unresolved_candidate_transition_journals(
+            record_dir=tmp_path,
+            candidate_sha=target_sha,
+            recovery_allowance=gatea.CandidateTransitionRecoveryAllowance(
+                path=release_pending,
+                kind="failed-acceptance-retirement",
+                candidate_sha=target_sha,
+            ),
+        )
+
+
+def test_app_up_rejects_cross_candidate_retirement_sidecar_before_blocker_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime_sha = "a" * 40
+    target_sha = "b" * 40
+    unrelated_sidecar_sha = "c" * 40
+    blocker_inventory_calls: list[str] = []
+
+    monkeypatch.setattr(
+        gatea,
+        "reject_unresolved_candidate_transition_journals",
+        lambda **kwargs: blocker_inventory_calls.append("candidate-transition"),
+    )
+    monkeypatch.setattr(
+        gatea,
+        "reject_unresolved_m9_acceptance_sidecars",
+        lambda **kwargs: blocker_inventory_calls.append("acceptance-sidecar"),
+    )
+
+    with pytest.raises(
+        GateAError,
+        match="acceptance allowance does not match the retirement runtime candidate",
+    ):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            candidate_transition_recovery=(
+                gatea.CandidateTransitionRecoveryAllowance(
+                    path=(
+                        tmp_path
+                        / f"{target_sha}.acceptance-retirement.pending.json"
+                    ),
+                    kind="failed-acceptance-retirement",
+                    candidate_sha=target_sha,
+                    runtime_candidate_sha=runtime_sha,
+                )
+            ),
+            acceptance_sidecar_recovery=(
+                gatea.M9AcceptanceSidecarRecoveryAllowance(
+                    candidate_sha=unrelated_sidecar_sha,
+                    pending_path=(
+                        tmp_path
+                        / f"{gatea.M9_ACCEPTANCE_SIDECAR_PREFIX}"
+                        f"{unrelated_sidecar_sha}"
+                        f"{gatea.M9_ACCEPTANCE_PENDING_SUFFIX}"
+                    ),
+                )
+            ),
+            acceptance_record_dir=tmp_path,
+        )
+
+    assert blocker_inventory_calls == []
+
+
+def test_app_up_never_accepts_retirement_sidecar_allowance_without_retirement_journal(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(GateAError, match="restricted to failed-acceptance"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+            acceptance_sidecar_recovery=gatea.M9AcceptanceSidecarRecoveryAllowance(
+                candidate_sha="a" * 40,
+                pending_path=tmp_path / "not-used",
+            ),
+        )
+
+
 @pytest.mark.parametrize(
     ("kind", "pending_suffix"),
     (
@@ -2813,6 +2994,649 @@ def _write_m9_upgrade_evidence(tmp_path: Path) -> dict[str, object]:
         encoding="utf-8",
     )
     return success
+
+
+def _m9_content_snapshot(profile: str, digest: str) -> dict[str, object]:
+    return {"schema_version": 1, "profile": profile, "content_sha256": digest}
+
+
+def _allow_local_schema2_records(monkeypatch: pytest.MonkeyPatch) -> None:
+    """生产必须 root:root；单元测试仅绕过临时目录的宿主 owner。"""
+
+    real_validator = gatea._require_schema2_record_metadata
+
+    def local_metadata(metadata: os.stat_result, description: str) -> None:
+        adjusted = SimpleNamespace(
+            **{
+                field: getattr(metadata, field)
+                for field in (
+                    "st_dev",
+                    "st_ino",
+                    "st_mode",
+                    "st_nlink",
+                    "st_size",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                )
+            },
+            st_uid=0,
+            st_gid=0,
+        )
+        real_validator(adjusted, description)
+
+    monkeypatch.setattr(gatea, "_require_schema2_record_metadata", local_metadata)
+
+
+def _write_m9_adoption_evidence(tmp_path: Path) -> dict[str, object]:
+    candidate_sha = "b" * 40
+    source_sha = "a" * 40
+    lineage_sha = "c" * 40
+    image_id = "sha256:" + "1" * 64
+    source_image_id = "sha256:" + "2" * 64
+    lineage_image_id = "sha256:" + "3" * 64
+    backup_id = "20260911t120000z"
+    manifest_sha256 = "4" * 64
+    snapshot = _m9_database_snapshot()
+    images = {"files": 221, "sha256": "5" * 64}
+    m7_content = _m9_content_snapshot("m7-preserved-business-v1", "6" * 64)
+    m8_swatch_content = _m9_content_snapshot("m8-swatch-content-v1", "8" * 64)
+    m9_content = _m9_content_snapshot("m9-table-business-v1", "7" * 64)
+    reconcile = _empty_m9_reconcile() | {"scanned": 4}
+    common = {
+        "schema_version": 2,
+        "transition_kind": gatea.M9_ADOPTION_TRANSITION_KIND,
+        "candidate_sha": candidate_sha,
+        "image_id": image_id,
+        "source_candidate_sha": source_sha,
+        "source_image_id": source_image_id,
+        "lineage_source_candidate_sha": lineage_sha,
+        "lineage_source_image_id": lineage_image_id,
+        "source_version": 9,
+        "target_version": 9,
+        "source_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+        "target_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+        "backup_id": backup_id,
+        "manifest_sha256": manifest_sha256,
+        "stage_record_sha256": "8" * 64,
+        "activation_record_sha256": "9" * 64,
+        "predecessor_stage_record_sha256": "a" * 64,
+        "predecessor_activation_record_sha256": "b" * 64,
+        "predecessor_upgrade_record_sha256": "c" * 64,
+        "predecessor_upgrade_evidence_sha256": "d" * 64,
+        "predecessor_upgrade_plan_replay_record_sha256": "e" * 64,
+        "acceptance_retirement_record_sha256": "f" * 64,
+        "backup_record_sha256": "0" * 64,
+        "restore_record_sha256": "1" * 64,
+        "runtime_preflight": {
+            "app_env": "production",
+            "db_engine": "mysql",
+            "jwt_algorithm": "HS256",
+            "table_session_claims_enabled": True,
+            "validated": True,
+        },
+        "started_at": "2026-09-11T12:00:00+00:00",
+        "completed_at": "2026-09-11T12:01:00+00:00",
+        "source_database_snapshot": snapshot,
+        "final_database_snapshot": snapshot,
+        "source_image_manifest": images,
+        "final_image_manifest": images,
+        "source_m7_content_snapshot": m7_content,
+        "final_m7_content_snapshot": m7_content,
+        "source_m8_swatch_content_snapshot": m8_swatch_content,
+        "final_m8_swatch_content_snapshot": m8_swatch_content,
+        "source_m9_table_content_snapshot": m9_content,
+        "final_m9_table_content_snapshot": m9_content,
+        "database_changes_applied": False,
+        "migrations_applied": [],
+        "table_reconcile": reconcile,
+    }
+    evidence_path = tmp_path / (
+        f"{candidate_sha}.existing-database-upgrade.evidence.json"
+    )
+    evidence = {
+        **common,
+        "record_type": "existing-database-upgrade-evidence",
+        "status": "succeeded",
+        "current_stage": "completed",
+        "stopped_source_verified": True,
+        "steps": [],
+    }
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    success = {
+        **common,
+        "record_type": "existing-database-upgrade",
+        "passed": True,
+        "evidence_path": str(evidence_path),
+        "evidence_sha256": gatea._sha256(evidence_path),
+    }
+    success_path = gatea._upgrade_marker(tmp_path, candidate_sha)
+    success_path.write_text(json.dumps(success), encoding="utf-8")
+    replay = {
+        "schema_version": 2,
+        "transition_kind": gatea.M9_ADOPTION_TRANSITION_KIND,
+        "record_type": "gatea-m9-upgrade-plan-replay",
+        "passed": True,
+        "candidate_sha": candidate_sha,
+        "source_candidate_sha": source_sha,
+        "source_version": 9,
+        "image_id": image_id,
+        "backup_id": backup_id,
+        "manifest_sha256": manifest_sha256,
+        "lineage_source_candidate_sha": lineage_sha,
+        "lineage_source_image_id": lineage_image_id,
+        "acceptance_retirement_record_sha256": "f" * 64,
+        "database_changes_applied": False,
+        "migrations_applied": [],
+        "database_snapshot": snapshot,
+        "m8_swatch_content_snapshot": m8_swatch_content,
+        "image_manifest": images,
+        "table_reconcile": reconcile,
+        "upgrade_record_sha256": gatea._sha256(success_path),
+        "evidence_sha256": success["evidence_sha256"],
+        "result": {
+            "already_current": True,
+            "backup_id": backup_id,
+            "candidate_sha": candidate_sha,
+            "database_changes_applied": False,
+            "manifest_sha256": manifest_sha256,
+            "migrations_applied": [],
+            "mode": "plan-replay",
+            "source_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+            "source_version": 9,
+            "target_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+            "target_version": 9,
+            "transition_kind": gatea.M9_ADOPTION_TRANSITION_KIND,
+        },
+        "completed_at": "2026-09-11T12:02:00+00:00",
+        "secret_values_recorded": False,
+    }
+    gatea._upgrade_replay_marker(tmp_path, candidate_sha).write_text(
+        json.dumps(replay), encoding="utf-8"
+    )
+    assert set(success) == gatea.M9_ADOPTION_UPGRADE_RECORD_KEYS
+    assert set(evidence) == gatea.M9_ADOPTION_EVIDENCE_RECORD_KEYS
+    assert set(replay) == gatea.M9_ADOPTION_REPLAY_RECORD_KEYS
+    return success
+
+
+def test_m9_adoption_upgrade_and_replay_accept_closed_history(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+
+    assert gatea._require_upgrade_record(
+        record_dir=tmp_path,
+        candidate_sha="b" * 40,
+        image_id="sha256:" + "1" * 64,
+    ) == success
+    replay = gatea._require_m9_upgrade_replay_record(
+        record_dir=tmp_path,
+        candidate_sha="b" * 40,
+        image_id="sha256:" + "1" * 64,
+        upgrade_record=success,
+    )
+
+    assert replay["transition_kind"] == gatea.M9_ADOPTION_TRANSITION_KIND
+    assert replay["table_reconcile"]["scanned"] == 4
+    assert replay["database_changes_applied"] is False
+    assert replay["migrations_applied"] == []
+    assert (
+        replay["m8_swatch_content_snapshot"]
+        == success["final_m8_swatch_content_snapshot"]
+    )
+    assert "m8_swatch_content_snapshot" not in replay["result"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("schema_version", 1),
+        ("transition_kind", "m7-to-m9"),
+        ("source_version", 7),
+        ("target_version", 8),
+        ("database_changes_applied", True),
+        ("migrations_applied", ["9_20260910180000_add_table_sessions.py"]),
+        ("final_database_snapshot", {"aerich_versions": []}),
+        (
+            "final_m7_content_snapshot",
+            _m9_content_snapshot("m7-preserved-business-v1", "f" * 64),
+        ),
+        (
+            "final_m8_swatch_content_snapshot",
+            _m9_content_snapshot("m8-swatch-content-v1", "f" * 64),
+        ),
+        (
+            "final_m9_table_content_snapshot",
+            _m9_content_snapshot("m9-table-business-v1", "f" * 64),
+        ),
+        ("final_image_manifest", {"files": 220, "sha256": "5" * 64}),
+        ("table_reconcile", _empty_m9_reconcile() | {"open_sessions": 1}),
+    ),
+)
+def test_m9_adoption_upgrade_rejects_non_noop_or_unbound_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    _write_m9_adoption_evidence(tmp_path)
+    path = gatea._upgrade_marker(tmp_path, "b" * 40)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(GateAError, match="does not match"):
+        gatea._require_upgrade_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:" + "1" * 64,
+        )
+
+
+def test_m9_adoption_content_snapshot_requires_string_digest() -> None:
+    assert not gatea._validate_m9_adoption_content_snapshot(
+        {
+            "schema_version": 1,
+            "profile": "m8-swatch-content-v1",
+            "content_sha256": int("8" * 64),
+        },
+        profile="m8-swatch-content-v1",
+    )
+
+
+@pytest.mark.parametrize(
+    ("target", "field", "value"),
+    (
+        ("replay", "transition_kind", "wrong"),
+        ("replay", "database_changes_applied", True),
+        ("replay", "migrations_applied", ["m9"]),
+        ("replay", "table_reconcile", _empty_m9_reconcile() | {"occupancies": 1}),
+        (
+            "replay",
+            "m8_swatch_content_snapshot",
+            _m9_content_snapshot("m8-swatch-content-v1", "f" * 64),
+        ),
+        ("evidence", "status", "failed"),
+        ("evidence", "database_changes_applied", True),
+        (
+            "evidence",
+            "final_m8_swatch_content_snapshot",
+            _m9_content_snapshot("m8-swatch-content-v1", "f" * 64),
+        ),
+    ),
+)
+def test_m9_adoption_replay_rejects_tampered_or_live_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    target: str,
+    field: str,
+    value: object,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+    path = (
+        gatea._upgrade_replay_marker(tmp_path, "b" * 40)
+        if target == "replay"
+        else tmp_path / f"{'b' * 40}.existing-database-upgrade.evidence.json"
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(GateAError, match="replay evidence is invalid"):
+        gatea._require_m9_upgrade_replay_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:" + "1" * 64,
+            upgrade_record=success,
+        )
+
+
+def test_schema_v1_cannot_claim_an_m9_to_m9_transition(tmp_path: Path) -> None:
+    payload = _upgrade_record_payload(
+        source_versions=list(gatea.APPROVED_TARGET_M9_CHAIN),
+        target_versions=list(gatea.APPROVED_TARGET_M9_CHAIN),
+        source_version=9,
+    )
+    gatea._upgrade_marker(tmp_path, "b" * 40).write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+    with pytest.raises(GateAError, match="does not match"):
+        gatea._require_upgrade_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:target",
+        )
+
+
+def test_m9_adoption_record_supports_app_up_without_loosening_replay(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+    values = _valid_values() | {
+        "GATEA_APP_IMAGE": "pinkdoohub-gatea:" + "b" * 40
+    }
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: values)
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea,
+        "validate_app_image",
+        lambda value, **kwargs: "sha256:" + "1" * 64,
+    )
+    monkeypatch.setattr(
+        gatea,
+        "read_database_snapshot",
+        lambda **kwargs: success["final_database_snapshot"],
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_run_m9_table_reconcile",
+        lambda **kwargs: _empty_m9_reconcile() | {"scanned": 4},
+    )
+
+    def compose_ps(**kwargs: object) -> list[dict[str, object]]:
+        rows = _healthy_rows(*tuple(kwargs["services"]))
+        for row in rows:
+            if row["Service"] == "nginx":
+                row["Publishers"] = [
+                    {
+                        "URL": "127.0.0.1",
+                        "TargetPort": 8080,
+                        "PublishedPort": 18080,
+                        "Protocol": "tcp",
+                    }
+                ]
+        return rows
+
+    monkeypatch.setattr(gatea, "_compose_ps", compose_ps)
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+
+    gatea.app_up(
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        record_dir=tmp_path,
+        mode="loopback",
+        wait_timeout=180,
+    )
+
+    assert commands[0][:2] == ("up", "--detach")
+    assert "table-sweeper" in commands[0]
+
+
+def _consume_m9_adoption_records(
+    tmp_path: Path,
+    success: dict[str, object],
+    target: str,
+) -> None:
+    if target == "success":
+        gatea._require_upgrade_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:" + "1" * 64,
+        )
+        return
+    gatea._require_m9_upgrade_replay_record(
+        record_dir=tmp_path,
+        candidate_sha="b" * 40,
+        image_id="sha256:" + "1" * 64,
+        upgrade_record=success,
+    )
+
+
+def _m9_adoption_record_path(tmp_path: Path, target: str) -> Path:
+    if target == "success":
+        return gatea._upgrade_marker(tmp_path, "b" * 40)
+    if target == "evidence":
+        return tmp_path / f"{'b' * 40}.existing-database-upgrade.evidence.json"
+    return gatea._upgrade_replay_marker(tmp_path, "b" * 40)
+
+
+@pytest.mark.parametrize(
+    ("target", "field"),
+    (
+        ("success", "source_m8_swatch_content_snapshot"),
+        ("evidence", "final_m8_swatch_content_snapshot"),
+        ("replay", "m8_swatch_content_snapshot"),
+    ),
+)
+def test_m9_adoption_consumers_require_swatch_binding_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    target: str,
+    field: str,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+    path = _m9_adoption_record_path(tmp_path, target)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.pop(field)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(GateAError, match="does not match|replay evidence is invalid"):
+        _consume_m9_adoption_records(tmp_path, success, target)
+
+
+@pytest.mark.parametrize("target", ("success", "evidence", "replay"))
+def test_m9_adoption_consumers_reject_symlink_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    target: str,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+    path = _m9_adoption_record_path(tmp_path, target)
+    real_path = tmp_path / f"real-{target}.json"
+    path.rename(real_path)
+    path.symlink_to(real_path)
+
+    with pytest.raises(GateAError, match="unsafe|unavailable"):
+        _consume_m9_adoption_records(tmp_path, success, target)
+
+
+@pytest.mark.parametrize("target", ("success", "evidence", "replay"))
+def test_m9_adoption_consumers_reject_hardlinked_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    target: str,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+    path = _m9_adoption_record_path(tmp_path, target)
+    (tmp_path / f"alias-{target}.json").hardlink_to(path)
+
+    with pytest.raises(GateAError, match="unsafe|unavailable"):
+        _consume_m9_adoption_records(tmp_path, success, target)
+
+
+@pytest.mark.parametrize("target", ("success", "evidence", "replay"))
+def test_m9_adoption_consumers_reject_duplicate_json_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    target: str,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+    path = _m9_adoption_record_path(tmp_path, target)
+    raw = path.read_text(encoding="utf-8").replace(
+        '"schema_version": 2',
+        '"schema_version": 2, "schema_version": 2',
+        1,
+    )
+    path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(GateAError, match="unavailable"):
+        _consume_m9_adoption_records(tmp_path, success, target)
+
+
+def test_schema2_stable_reader_rejects_path_replacement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    path = tmp_path / "record.json"
+    replacement = tmp_path / "replacement.json"
+    path.write_text('{"schema_version": 2}\n', encoding="utf-8")
+    replacement.write_text('{"schema_version": 2}\n', encoding="utf-8")
+    real_read = os.read
+    replaced = False
+
+    def replacing_read(descriptor: int, length: int) -> bytes:
+        nonlocal replaced
+        content = real_read(descriptor, length)
+        if content and not replaced:
+            replaced = True
+            os.replace(replacement, path)
+        return content
+
+    monkeypatch.setattr(gatea.os, "read", replacing_read)
+
+    with pytest.raises(GateAError, match="unsafe metadata|changed during validation"):
+        gatea._load_schema2_record_with_sha256(path, "schema2 record")
+
+
+def test_schema2_upgrade_classification_uses_one_stable_fd_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    success = _write_m9_adoption_evidence(tmp_path)
+
+    def unexpected_read_text(*args: object, **kwargs: object) -> str:
+        raise AssertionError("schema classification must not use Path.read_text")
+
+    monkeypatch.setattr(Path, "read_text", unexpected_read_text)
+
+    assert gatea._require_upgrade_record(
+        record_dir=tmp_path,
+        candidate_sha="b" * 40,
+        image_id="sha256:" + "1" * 64,
+    ) == success
+
+
+def test_schema2_upgrade_classification_rejects_path_replacement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    _write_m9_adoption_evidence(tmp_path)
+    path = gatea._upgrade_marker(tmp_path, "b" * 40)
+    replacement = tmp_path / "replacement-upgrade.json"
+    replacement.write_bytes(path.read_bytes())
+    real_read = os.read
+    replaced = False
+
+    def replacing_read(descriptor: int, length: int) -> bytes:
+        nonlocal replaced
+        content = real_read(descriptor, length)
+        if content and not replaced:
+            replaced = True
+            os.replace(replacement, path)
+        return content
+
+    monkeypatch.setattr(gatea.os, "read", replacing_read)
+
+    with pytest.raises(GateAError, match="changed during validation"):
+        gatea._require_upgrade_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:" + "1" * 64,
+        )
+
+
+def test_m9_adoption_success_rejects_completion_before_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _allow_local_schema2_records(monkeypatch)
+    _write_m9_adoption_evidence(tmp_path)
+    path = gatea._upgrade_marker(tmp_path, "b" * 40)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["completed_at"] = "2026-09-11T11:59:59+00:00"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(GateAError, match="does not match"):
+        gatea._require_upgrade_record(
+            record_dir=tmp_path,
+            candidate_sha="b" * 40,
+            image_id="sha256:" + "1" * 64,
+        )
+
+
+def test_app_up_rejects_ambiguous_initial_and_upgrade_markers_before_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    gatea._write_migration_record(
+        record_dir=tmp_path,
+        candidate_sha="a" * 40,
+        image_id="sha256:image",
+    )
+    gatea._upgrade_marker(tmp_path, "a" * 40).write_text(
+        json.dumps(
+            _upgrade_record_payload(
+                source_versions=list(gatea.APPROVED_SOURCE_M2_CHAIN),
+                target_versions=list(gatea.APPROVED_TARGET_M9_CHAIN),
+                source_version=2,
+            )
+            | {"candidate_sha": "a" * 40, "image_id": "sha256:image"}
+        ),
+        encoding="utf-8",
+    )
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: _valid_values())
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(gatea, "validate_app_image", lambda *args, **kwargs: "sha256:image")
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"])),
+    )
+
+    with pytest.raises(GateAError, match="ambiguous"):
+        gatea.app_up(
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            record_dir=tmp_path,
+            mode="loopback",
+            wait_timeout=180,
+        )
+
+    assert commands == []
+
+
+@pytest.mark.parametrize("marker_kind", ("initial", "upgrade"))
+def test_deployment_record_rejects_symlink_marker(
+    tmp_path: Path,
+    marker_kind: str,
+) -> None:
+    candidate_sha = "b" * 40
+    target = tmp_path / "untrusted.json"
+    target.write_text("{}", encoding="utf-8")
+    marker = (
+        gatea._migration_marker(tmp_path, candidate_sha)
+        if marker_kind == "initial"
+        else gatea._upgrade_marker(tmp_path, candidate_sha)
+    )
+    marker.symlink_to(target)
+
+    with pytest.raises(GateAError, match="ambiguous or unsafe"):
+        gatea._require_deployment_record(
+            record_dir=tmp_path,
+            candidate_sha=candidate_sha,
+            image_id="sha256:image",
+        )
 
 
 @pytest.mark.parametrize(

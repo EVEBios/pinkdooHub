@@ -1,6 +1,6 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；persistent Gate A remains M7；current M9 repair candidate still awaits a fresh complete 9/9 required-Job run
+> **Status:** Phase 9.2 historical baseline complete；live Gate A is predecessor A/M9 while `current` remains finalized lineage S/M7；A acceptance failed after order creation and the recovery candidate B still awaits its own fresh complete 9/9 required-Job run
 > **Last Updated:** 2026-09-11
 > **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / historical M8 success [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2 / latest persistent M9 diagnostic [Run 34523689519](https://github.com/EVEBios/pinkdooHub/actions/runs/34523689519)）
 
@@ -155,14 +155,15 @@ updater 在内的 9 个 required Jobs 全部关闭。该 Job 名为兼容历史 
   `63445 → 10948` bytes，同时验证 PNG 兼容回退。最终上传边界为 20 文件
   allowlist/Secret scan；`run` 清理后，workflow 第二次幂等 cleanup 再次通过并确认
   container/volume/network/image/port/workspace 零残留。
-- 这个 PASS 关闭的是仓库候选的完整 updater 可执行性和隔离恢复证据；持久
-  Gate A 权威检查点仍为 M7，M8 尚未应用。真实 Origin/TLS/RC、iOS/Android
+- 这个 PASS 关闭的是当时仓库候选的完整 updater 可执行性和隔离恢复证据；在该
+  2026-09-09 历史检查点，持久 Gate A 权威状态仍为 M7，M8 尚未应用。后续 live
+  A/M9 失败检查点见 §0.7。真实 Origin/TLS/RC、iOS/Android
   真机、微信上传、灰度和发布授权仍是独立阻断项。
 
 完整身份、Job、阶段、Backup/Restore、artifact 和 cleanup 数值见
 [Gate A M7→M8 完整更新器远端 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
 
-### 0.7 M9 更新器候选与当前未关闭项（2026-09-10）
+### 0.7 M9 现场失败检查点与前滚候选（2026-09-11）
 
 required-check 的兼容名称仍为 `gatea-m7-m8-updater`，避免改变分支保护配置；从 M9
 候选开始，它执行的实际链路是 M7→M8→M9：先恢复受控 M7 source，连续应用 M8/M9，
@@ -202,12 +203,18 @@ M9 Backup/Restore 新增精确、只输出摘要的 `m9-table-business-v1` 内�
 evidence 并由成功 Record 绑定；停写 plan replay 只重跑只读 reconcile 与 SQL invariant，
 不重跑可能写库的 sweep。旧 M7 镜像缺少 `--no-access-log` 的兼容只能由精确 M7
 Backup 内部恢复分支在停写前/恢复时双重验链后启用；默认、M8 和 M9 仍严格。本地
-验证口径为后端等价完整 `2858 passed, 39 skipped`（沙箱 `2854 passed`，四项 loopback
-bind 在允许环境另为 `4 passed`）与 Release 等价完整 `736 passed`（沙箱 `734 passed`，
-其中两项 loopback bind 在允许环境另为 `2 passed`）；隔离 MySQL 探针也已覆盖上述修复。
-这些都不是远端 required Job 证据。只有同一当前 SHA 从干净
-checkout 完成全新 9/9，才能关闭 M9 disposable updater 缺口；持久 Gate A 在此之前
-仍为 M7，M8/M9 均未应用。
+验证口径为后端完整 `3067 passed, 39 skipped` 与 Release 完整 `945 passed`；其中新增覆盖
+A→B 失败验收退休、M9→M9 零迁移接管、M8 色块内容摘要、跨候选恢复 allowance、订单钱包
+流水/完整库存审计链与恢复错误优先级；隔离 MySQL 探针也已覆盖前序 M9 迁移与运行时门槛。
+这些都不是 B 的远端 required Job 证据。旧候选 A
+`d6c09482ee0f5583d79bd847e995746c9c6ee1a3` 已把 live 配置、数据库和五项常驻服务带到
+M9，但 acceptance 在 `order_created` 后因桌台身份读取绕过 Entrypoint Secret 加载而安全
+失败；补偿已取消订单、恢复库存、下线 fixture、撤销会话，且未产生资金或桌台会话数据。
+`current` 仍指向 finalized lineage S `73dca350505d43775fb1ff1158ccf6aabc221998`，canonical
+schema v3 failure pending 必须保留到 B 的受控退休动作。只有同一 B SHA 从干净 checkout
+完成全新 9/9，才允许依次执行 stage、失败验收退休、新 A/M9 Backup/Restore、M9→M9
+零迁移 adoption/replay、B acceptance/resilience、数据后 Backup/Restore 与 finalize；禁止
+手工删除 pending、临时注入 Secret、数据库降级或重跑 M7→M9。
 
 ## 1. 全局规则
 
@@ -224,7 +231,8 @@ checkout 完成全新 9/9，才能关闭 M9 disposable updater 缺口；持久 G
 
 当前 workflow 共有 9 个 required Jobs；历史报告中的 8/8 是当时尚未加入
 `gatea-m7-m8-updater` 时的完整集合，应保留其原有证据边界。该名称为分支保护兼容名；
-当前 Job 的实际候选语义为 M7→M8→M9，且尚待新的完整 9/9 验证。
+当前 Job 在一次性环境中的实际候选语义仍为 M7→M8→M9，用于验证完整新装/升级路径；
+B 现场接管则是独立的 M9→M9 零迁移路径。两者都必须由同一 B SHA 的全新 9/9 绑定。
 
 | Job | 服务 | 关键命令/动作 | 阻断规则 | Artifact/证据 | 负责人 |
 |-----|------|---------------|----------|---------------|--------|

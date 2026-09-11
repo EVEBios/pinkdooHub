@@ -608,6 +608,51 @@ def test_finalization_recovery_sigint_is_deferred_and_propagates_same_instance(
     assert caught.value is deferred[0]
 
 
+def test_finalization_ordinary_work_error_wins_over_deferred_recovery_sigint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _capture_candidate_signal_handlers(monkeypatch)
+    work_failure = RuntimeError("injected work failure")
+    recovery_interruption = KeyboardInterrupt("injected recovery interruption")
+    restore_calls = 0
+
+    def fail_work() -> None:
+        raise work_failure
+
+    def restore(**kwargs: object) -> None:
+        nonlocal restore_calls
+        del kwargs
+        restore_calls += 1
+        if restore_calls == 1:
+            raise recovery_interruption
+
+    monkeypatch.setattr(candidate, "_restore_finalization_runtime", restore)
+
+    with pytest.raises(RuntimeError) as caught:
+        with candidate._mutation_termination_controller("finalize") as termination:
+            _, work_error = candidate._run_finalization_work_then_restore(
+                termination=termination,
+                work=fail_work,
+                gatea=object(),
+                values={},
+                config_file=Path("config"),
+                secret_dir=Path("secrets"),
+                release_record_dir=Path("records"),
+            )
+            propagated = candidate._finalization_error_after_recovery(
+                termination=termination,
+                work_error=work_error,
+            )
+
+            assert work_error is work_failure
+            assert termination.recovery_interruption is recovery_interruption
+            assert propagated is work_failure
+            raise propagated
+
+    assert caught.value is work_failure
+    assert restore_calls == 2
+
+
 def test_stage_cleanup_defers_first_sigint_after_an_ordinary_work_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -2676,6 +2721,11 @@ def test_post_backup_requires_comma_delimited_m9_aerich_versions(
         "profile": "m7-preserved-business-v1",
         "content_sha256": "1" * 64,
     }
+    m8_swatch_snapshot = {
+        "schema_version": 1,
+        "profile": "m8-swatch-content-v1",
+        "content_sha256": "8" * 64,
+    }
     m9_snapshot = {
         "schema_version": 1,
         "profile": "m9-table-business-v1",
@@ -2690,6 +2740,7 @@ def test_post_backup_requires_comma_delimited_m9_aerich_versions(
         "completed_at": "2026-09-10T12:01:00+00:00",
         "database_snapshot": {"aerich_versions": ",".join(M9_CHAIN)},
         "m7_content_snapshot": m7_snapshot,
+        "m8_swatch_content_snapshot": m8_swatch_snapshot,
         "m9_table_content_snapshot": m9_snapshot,
         "artifacts": {
             "mysql": {"sha256": "3" * 64},
@@ -2711,8 +2762,10 @@ def test_post_backup_requires_comma_delimited_m9_aerich_versions(
         "completed_at": "2026-09-10T12:03:00+00:00",
         "host_ports_published": False,
         "m7_content_matches": True,
+        "m8_swatch_content_matches": True,
         "m9_table_content_matches": True,
         "m7_content_snapshot": m7_snapshot,
+        "m8_swatch_content_snapshot": m8_swatch_snapshot,
         "m9_table_content_snapshot": m9_snapshot,
         "database_matches": True,
         "images_match": True,
@@ -2736,6 +2789,9 @@ def test_post_backup_requires_comma_delimited_m9_aerich_versions(
             tmp_path / "images.tar.gz",
         ),
         _validate_m7_content_snapshot=gatea_backup._validate_m7_content_snapshot,
+        _validate_m8_swatch_content_snapshot=(
+            gatea_backup._validate_m8_swatch_content_snapshot
+        ),
         _validate_m9_table_content_snapshot=(
             gatea_backup._validate_m9_table_content_snapshot
         ),
@@ -2757,6 +2813,35 @@ def test_post_backup_requires_comma_delimited_m9_aerich_versions(
     assert backup["database_snapshot"] == {
         "aerich_versions": ",".join(M9_CHAIN)
     }
+
+    backup_payload.pop("m8_swatch_content_snapshot")
+    write_records()
+    with pytest.raises(candidate.GateACandidateError, match="content evidence"):
+        candidate._validate_post_backup(
+            backup_id=BACKUP_ID,
+            target_sha=TARGET_SHA,
+            image_id=IMAGE_ID,
+            backup_root=backup_root,
+            backup_record_dir=backup_record_dir,
+            restore_record_dir=restore_record_dir,
+        )
+    backup_payload["m8_swatch_content_snapshot"] = m8_swatch_snapshot
+
+    restore_payload["m8_swatch_content_snapshot"] = {
+        **m8_swatch_snapshot,
+        "content_sha256": "a" * 64,
+    }
+    write_records()
+    with pytest.raises(candidate.GateACandidateError, match="backup/restore record"):
+        candidate._validate_post_backup(
+            backup_id=BACKUP_ID,
+            target_sha=TARGET_SHA,
+            image_id=IMAGE_ID,
+            backup_root=backup_root,
+            backup_record_dir=backup_record_dir,
+            restore_record_dir=restore_record_dir,
+        )
+    restore_payload["m8_swatch_content_snapshot"] = m8_swatch_snapshot
 
     backup_payload["database_snapshot"] = {"aerich_versions": M9_CHAIN}
     write_records()
@@ -2870,6 +2955,11 @@ def test_final_live_recheck_matches_backup_and_reconciliation_evidence() -> None
         "profile": "m7-preserved-business-v1",
         "content_sha256": "a" * 64,
     }
+    m8_swatch_snapshot = {
+        "schema_version": 1,
+        "profile": "m8-swatch-content-v1",
+        "content_sha256": "8" * 64,
+    }
     m9_snapshot = {
         "schema_version": 1,
         "profile": "m9-table-business-v1",
@@ -2881,6 +2971,7 @@ def test_final_live_recheck_matches_backup_and_reconciliation_evidence() -> None
     fake_backup = SimpleNamespace(
         _source_snapshot=lambda *args: database_snapshot,
         _source_m7_content_snapshot=lambda *args: m7_snapshot,
+        _source_m8_swatch_content_snapshot=lambda *args: m8_swatch_snapshot,
         _source_m9_table_content_snapshot=lambda *args: m9_snapshot,
         _source_image_manifest=lambda *args: images,
     )
@@ -2894,6 +2985,7 @@ def test_final_live_recheck_matches_backup_and_reconciliation_evidence() -> None
     backup_record = {
         "database_snapshot": database_snapshot,
         "m7_content_snapshot": m7_snapshot,
+        "m8_swatch_content_snapshot": m8_swatch_snapshot,
         "m9_table_content_snapshot": m9_snapshot,
         "image_manifest": images,
     }
@@ -2915,6 +3007,7 @@ def test_final_live_recheck_matches_backup_and_reconciliation_evidence() -> None
 
     assert result["database_snapshot"] == database_snapshot
     assert result["m7_content_snapshot"] == m7_snapshot
+    assert result["m8_swatch_content_snapshot"] == m8_swatch_snapshot
     assert result["m9_table_content_snapshot"] == m9_snapshot
     assert result["image_file_count"] == 2
     assert result["table_reconcile"] == table_reconcile
@@ -2981,6 +3074,11 @@ def _resilience_payload() -> dict[str, object]:
                 "schema_version": 1,
                 "profile": "m7-preserved-business-v1",
                 "content_sha256": "b" * 64,
+            },
+            "m8_swatch_content": {
+                "schema_version": 1,
+                "profile": "m8-swatch-content-v1",
+                "content_sha256": "8" * 64,
             },
             "m9_table_business": {
                 "schema_version": 1,
@@ -3541,6 +3639,11 @@ def test_finalize_switches_current_only_when_source_evidence_matches(
                     "profile": "m7-preserved-business-v1",
                     "content_sha256": "b" * 64,
                 },
+                "m8_swatch_content": {
+                    "schema_version": 1,
+                    "profile": "m8-swatch-content-v1",
+                    "content_sha256": "8" * 64,
+                },
                 "m9_table_business": {
                     "schema_version": 1,
                     "profile": "m9-table-business-v1",
@@ -3564,6 +3667,11 @@ def test_finalize_switches_current_only_when_source_evidence_matches(
                     "schema_version": 1,
                     "profile": "m7-preserved-business-v1",
                     "content_sha256": "b" * 64,
+                },
+                "m8_swatch_content_snapshot": {
+                    "schema_version": 1,
+                    "profile": "m8-swatch-content-v1",
+                    "content_sha256": "8" * 64,
                 },
                 "m9_table_content_snapshot": {
                     "schema_version": 1,
@@ -3600,6 +3708,11 @@ def test_finalize_switches_current_only_when_source_evidence_matches(
                 "schema_version": 1,
                 "profile": "m7-preserved-business-v1",
                 "content_sha256": "b" * 64,
+            },
+            "m8_swatch_content_snapshot": {
+                "schema_version": 1,
+                "profile": "m8-swatch-content-v1",
+                "content_sha256": "8" * 64,
             },
             "m9_table_content_snapshot": {
                 "schema_version": 1,
@@ -3811,6 +3924,11 @@ def _build_signal_finalization_case(
         "profile": "m7-preserved-business-v1",
         "content_sha256": "b" * 64,
     }
+    m8_swatch_snapshot = {
+        "schema_version": 1,
+        "profile": "m8-swatch-content-v1",
+        "content_sha256": "8" * 64,
+    }
     m9_snapshot = {
         "schema_version": 1,
         "profile": "m9-table-business-v1",
@@ -3822,6 +3940,7 @@ def _build_signal_finalization_case(
         "representative_record_sha256": "a" * 64,
         "database_content_snapshots": {
             "m7_preserved_business": m7_snapshot,
+            "m8_swatch_content": m8_swatch_snapshot,
             "m9_table_business": m9_snapshot,
         },
         "image_file_count": 2,
@@ -3846,6 +3965,7 @@ def _build_signal_finalization_case(
         "completed_at": "2026-09-10T12:05:00+00:00",
         "database_snapshot": {"aerich_versions": M9_CHAIN},
         "m7_content_snapshot": m7_snapshot,
+        "m8_swatch_content_snapshot": m8_swatch_snapshot,
         "m9_table_content_snapshot": m9_snapshot,
         "image_manifest": ["fixture-1", "fixture-2"],
     }
@@ -3914,6 +4034,7 @@ def _build_signal_finalization_case(
     live_payload = {
         "database_snapshot": backup_payload["database_snapshot"],
         "m7_content_snapshot": m7_snapshot,
+        "m8_swatch_content_snapshot": m8_swatch_snapshot,
         "m9_table_content_snapshot": m9_snapshot,
         "image_manifest_sha256": candidate._sha256_bytes(
             b"fixture-1\nfixture-2\n"
@@ -4412,3 +4533,1286 @@ def test_finalize_cli_forwards_guarded_acceptance_and_resilience_directories(
     assert len(calls) == 1
     assert calls[0]["acceptance_record_dir"] == acceptance_dir
     assert calls[0]["resilience_record_dir"] == resilience_dir
+
+
+def _preclaim_failure_payload(old_sha: str = "a" * 40) -> dict[str, object]:
+    fixture = {
+        "experience_product_id": 101,
+        "kit_product_id": 102,
+        "option_ids": [201, 202, 203],
+        "option_durations_minutes": [60, 60, 120],
+        "option_participants": [1, 2, 1],
+        "option_price": "1.00",
+        "kit_price": "1.00",
+        "kit_opening_stock": 10,
+        "product_images_created": 2,
+        "option_images_created": 3,
+        "products_online": True,
+    }
+    order_evidence = {
+        "order_id": 301,
+        "expected_timer_items": [
+            {"order_item_id": 401, "duration_minutes": 60, "quantity": 2},
+            {"order_item_id": 402, "duration_minutes": 60, "quantity": 1},
+            {"order_item_id": 403, "duration_minutes": 120, "quantity": 1},
+        ],
+        "kit_order_item_id": 404,
+        "eligible_duration_groups": [
+            {
+                "duration_minutes": 60,
+                "buffer_minutes": 10,
+                "experience_item_count": 2,
+                "total_quantity": 3,
+            },
+            {
+                "duration_minutes": 120,
+                "buffer_minutes": 10,
+                "experience_item_count": 1,
+                "total_quantity": 1,
+            },
+        ],
+    }
+    attempt_id = "1" * 32
+    return {
+        "schema_version": 3,
+        "record_type": "gatea-m9-internal-acceptance-pending",
+        "environment": "gatea",
+        "candidate_sha": old_sha,
+        "image_id": "sha256:" + "a" * 64,
+        "operations_sha": old_sha,
+        "ci_run_id": RUN_ID,
+        "source_candidate_sha": SOURCE_SHA,
+        "upgrade_record_sha256": "2" * 64,
+        "upgrade_plan_replay_record_sha256": "3" * 64,
+        "representative_record_sha256": "4" * 64,
+        "credentials_sha256": "5" * 64,
+        "started_at": "2026-09-11T00:00:00+00:00",
+        "attempt_id": attempt_id,
+        "attempt_id_sha256": hashlib.sha256(attempt_id.encode()).hexdigest(),
+        "updated_at": "2026-09-11T00:01:00+00:00",
+        "stage": "order_created",
+        "pre_reconcile": dict(EMPTY_TABLE_RECONCILE),
+        "pre_wallet_reconcile": {
+            "scanned": 1,
+            "mismatches": 0,
+            "violations": 0,
+        },
+        "fixture_ids": [101, 102],
+        "fixture": fixture,
+        "fixture_sha256": candidate._canonical_json_sha256(fixture),
+        "order_id": 301,
+        "order_evidence": order_evidence,
+        "order_evidence_sha256": candidate._canonical_json_sha256(
+            order_evidence
+        ),
+        "table_no": None,
+        "session_no_sha256": None,
+        "payment_deadline_offset_seconds": None,
+        "payment_evidence": None,
+        "timer_evidence": None,
+        "claim_replay_verified": False,
+        "payment_replay_verified": False,
+        "admin_visibility_verified": False,
+        "release_replay_verified": False,
+        "payment_committed": False,
+        "session_released": False,
+        "cleanup": {
+            "order_cancelled": True,
+            "fixture_products_offline": True,
+            "synthetic_session_revoked": True,
+            "super_admin_session_revoked": True,
+        },
+        "failure": True,
+        "secret_values_recorded": False,
+        "source_volume_restored": False,
+        "passed": False,
+    }
+
+
+def _write_preclaim_failure(path: Path, payload: dict[str, object]) -> str:
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+    return candidate._sha256(path)
+
+
+def test_preclaim_failure_allowance_is_exact_and_non_mutating(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    release_records = tmp_path / "release-records"
+    acceptance_records = tmp_path / "acceptance-records"
+    release_records.mkdir()
+    acceptance_records.mkdir()
+    old_sha = "a" * 40
+    path = candidate._acceptance_pending_path(acceptance_records, old_sha)
+    digest = _write_preclaim_failure(path, _preclaim_failure_payload(old_sha))
+    before = path.read_bytes()
+    monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
+    monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
+    monkeypatch.setattr(candidate, "_require_root_directory", lambda *args: None)
+    monkeypatch.setattr(candidate, "_require_root_file", lambda *args: None)
+
+    validated = candidate._reject_unresolved_transition_journals(
+        release_record_dir=release_records,
+        acceptance_record_dir=acceptance_records,
+        allowed_acceptance_candidate_sha=old_sha,
+        allowed_acceptance_pending_sha256=digest,
+    )
+
+    assert validated == _preclaim_failure_payload(old_sha)
+    assert path.read_bytes() == before
+    with pytest.raises(candidate.GateACandidateError, match="pair"):
+        candidate._reject_unresolved_transition_journals(
+            release_record_dir=release_records,
+            acceptance_record_dir=acceptance_records,
+            allowed_acceptance_candidate_sha=old_sha,
+        )
+    second = acceptance_records / (
+        f"gatea-m9-runtime-acceptance-{'9' * 40}.json.complete"
+    )
+    second.write_text("{}", encoding="utf-8")
+    with pytest.raises(candidate.GateACandidateError, match="sidecar"):
+        candidate._reject_unresolved_transition_journals(
+            release_record_dir=release_records,
+            acceptance_record_dir=acceptance_records,
+            allowed_acceptance_candidate_sha=old_sha,
+            allowed_acceptance_pending_sha256=digest,
+        )
+
+
+def test_preclaim_failure_state_drift_is_not_retireable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    payload = _preclaim_failure_payload()
+    payload["payment_committed"] = True
+    path = tmp_path / "failed.json.pending"
+    digest = _write_preclaim_failure(path, payload)
+    monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
+    monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
+    monkeypatch.setattr(candidate, "_require_root_file", lambda *args: None)
+
+    with pytest.raises(candidate.GateACandidateError, match="not safely retireable"):
+        candidate._validate_preclaim_failed_acceptance(
+            path=path,
+            expected_candidate_sha="a" * 40,
+            expected_sha256=digest,
+        )
+
+
+def test_failed_acceptance_business_verifier_uses_b_and_exact_option_ids() -> None:
+    failed = _preclaim_failure_payload()
+    observed: dict[str, object] = {}
+    expected = {
+        "schema_version": 1,
+        "passed": True,
+        "counts": dict(candidate.FAILED_ACCEPTANCE_BUSINESS_COUNTS),
+        "evidence_sha256": candidate.FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256,
+        "secret_values_recorded": False,
+    }
+
+    class FakeGateA:
+        @staticmethod
+        def _run_compose(**kwargs: object) -> SimpleNamespace:
+            observed.update(kwargs)
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(expected, separators=(",", ":")) + "\n",
+            )
+
+    result = candidate._failed_acceptance_business_verification(
+        gatea=FakeGateA,
+        values={"GATEA_APP_IMAGE": "old"},
+        config_file=Path("config"),
+        secret_dir=Path("secrets"),
+        target_image_id=IMAGE_ID,
+        failed_acceptance=failed,
+    )
+
+    assert result == expected
+    assert observed["values"] == {"GATEA_APP_IMAGE": IMAGE_ID}
+    arguments = observed["arguments"]
+    assert isinstance(arguments, tuple)
+    assert arguments[5:9] == (
+        "python3",
+        "-B",
+        "-m",
+        "app.tasks.gatea_m9_failed_acceptance_verify",
+    )
+    assert arguments[:5] == ("run", "--rm", "--no-deps", "-T", "app")
+    assert not any(
+        str(raw_id) in argument
+        for raw_id in (101, 102, 201, 202, 203, 301, 401, 402, 403, 404)
+        for argument in arguments
+    )
+    verifier_input = json.loads(str(observed["input_text"]))
+    assert verifier_input["order_id"] == 301
+    assert verifier_input["experience_items"] == [
+        {
+            "day_type": "weekday",
+            "duration_minutes": 60,
+            "option_id": 201,
+            "order_item_id": 401,
+            "participants": 1,
+            "price": "1.00",
+            "quantity": 2,
+        },
+        {
+            "day_type": "weekday",
+            "duration_minutes": 60,
+            "option_id": 202,
+            "order_item_id": 402,
+            "participants": 2,
+            "price": "1.00",
+            "quantity": 1,
+        },
+        {
+            "day_type": "weekday",
+            "duration_minutes": 120,
+            "option_id": 203,
+            "order_item_id": 403,
+            "participants": 1,
+            "price": "1.00",
+            "quantity": 1,
+        },
+    ]
+
+
+def test_failed_acceptance_unlink_rechecks_stable_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tmp_path / "pending.json"
+    path.write_text("before", encoding="utf-8")
+    identity = candidate._file_identity(path.stat())
+    path.write_text("after", encoding="utf-8")
+    monkeypatch.setattr(candidate, "_require_root_directory", lambda *args: None)
+
+    with pytest.raises(candidate.GateACandidateError, match="changed"):
+        candidate._unlink_exact_protected_file(
+            path, identity, description="acceptance pending"
+        )
+    assert path.exists()
+
+
+def test_adoption_finalization_journal_uses_immediate_and_lineage_sources() -> None:
+    binding = {
+        "transition_kind": "m9-candidate-adoption",
+        "source_image_id": "sha256:" + "a" * 64,
+        "lineage_source_candidate_sha": SOURCE_SHA,
+        "lineage_source_image_id": "sha256:" + "7" * 64,
+        "predecessor_stage_record_sha256": "a" * 64,
+        "predecessor_activation_record_sha256": "b" * 64,
+        "predecessor_upgrade_record_sha256": "c" * 64,
+        "predecessor_upgrade_evidence_sha256": "d" * 64,
+        "predecessor_upgrade_plan_replay_record_sha256": "e" * 64,
+        "acceptance_retirement_record_sha256": "f" * 64,
+    }
+    payload = {
+        "schema_version": 2,
+        "record_type": "gatea-current-finalization-pending",
+        "source_candidate_sha": "a" * 40,
+        "candidate_sha": TARGET_SHA,
+        "image_id": IMAGE_ID,
+        "source_link": f"/releases/{SOURCE_SHA}",
+        "target_link": f"/releases/{TARGET_SHA}",
+        "stage_record_sha256": "1" * 64,
+        "activation_record_sha256": "2" * 64,
+        "upgrade_record_sha256": "3" * 64,
+        "upgrade_plan_replay_record_sha256": "4" * 64,
+        "runtime_acceptance_record_sha256": "5" * 64,
+        "resilience_record_sha256": "6" * 64,
+        "post_backup_id": BACKUP_ID,
+        "post_backup_record_sha256": "7" * 64,
+        "post_restore_record_sha256": "8" * 64,
+        "runtime_services": list(candidate.M9_RUNTIME_SERVICES),
+        "started_at": "2026-09-11T01:00:00+00:00",
+        "phase": "prepared",
+        "live_recheck": None,
+        "secret_values_recorded": False,
+        **binding,
+    }
+    expected = {
+        key: value
+        for key, value in payload.items()
+        if key
+        not in {
+            "schema_version",
+            "record_type",
+            "runtime_services",
+            "started_at",
+            "phase",
+            "live_recheck",
+            "secret_values_recorded",
+        }
+    }
+
+    assert candidate._validate_finalization_journal(
+        payload,
+        expected=expected,
+        expected_live_recheck={},
+        final=False,
+        adoption_binding=binding,
+    ) == payload
+    invalid = dict(payload)
+    invalid["lineage_source_candidate_sha"] = "9" * 40
+    with pytest.raises(candidate.GateACandidateError, match="journal"):
+        candidate._validate_finalization_journal(
+            invalid,
+            expected=expected,
+            expected_live_recheck={},
+            final=False,
+            adoption_binding=binding,
+        )
+
+
+def _retirement_live_evidence() -> dict[str, object]:
+    return {
+        "business_verification": {
+            "schema_version": 1,
+            "passed": True,
+            "counts": dict(candidate.FAILED_ACCEPTANCE_BUSINESS_COUNTS),
+            "evidence_sha256": (
+                candidate.FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+            ),
+            "secret_values_recorded": False,
+        },
+        "database_snapshot": {"aerich_versions": M9_CHAIN},
+        "runtime_services": list(candidate.M9_RUNTIME_SERVICES),
+        "database_services_healthy": list(
+            candidate.RETIREMENT_DATABASE_SERVICES
+        ),
+        "writer_services_stopped": list(candidate.RETIREMENT_WRITER_SERVICES),
+        "table_reconcile": dict(EMPTY_TABLE_RECONCILE),
+        "wallet_reconcile": {
+            "scanned": 1,
+            "mismatches": 0,
+            "violations": 0,
+        },
+        "checked_at": "2026-09-11T01:00:00+00:00",
+    }
+
+
+def _retirement_case(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> SimpleNamespace:
+    old_sha = "a" * 40
+    release_root = tmp_path / "releases"
+    release_records = tmp_path / "release-records"
+    acceptance_records = tmp_path / "acceptance-records"
+    archive_dir = tmp_path / "acceptance-failures"
+    for directory in (release_root, release_records, acceptance_records):
+        directory.mkdir()
+    canonical = candidate._acceptance_pending_path(acceptance_records, old_sha)
+    failed_payload = _preclaim_failure_payload(old_sha)
+    failed_digest = _write_preclaim_failure(canonical, failed_payload)
+    target_stage_path = candidate._stage_record_path(
+        release_records, TARGET_SHA
+    )
+    target_stage_path.write_text("stage\n", encoding="utf-8")
+    target_stage_path.chmod(0o644)
+    predecessor = {
+        "source_candidate_sha": old_sha,
+        "source_image_id": failed_payload["image_id"],
+        "lineage_source_candidate_sha": SOURCE_SHA,
+        "lineage_source_image_id": "sha256:" + "7" * 64,
+        "predecessor_stage_record_sha256": "1" * 64,
+        "predecessor_activation_record_sha256": "6" * 64,
+        "predecessor_upgrade_record_sha256": failed_payload[
+            "upgrade_record_sha256"
+        ],
+        "predecessor_upgrade_evidence_sha256": "8" * 64,
+        "predecessor_upgrade_plan_replay_record_sha256": failed_payload[
+            "upgrade_plan_replay_record_sha256"
+        ],
+    }
+    target_stage = {
+        "schema_version": 2,
+        "transition_kind": "m9-candidate-adoption",
+        "superseded_candidate_sha": old_sha,
+        "failed_acceptance_sha256": failed_digest,
+        "image_id": IMAGE_ID,
+    }
+    source_stage = {"schema_version": 1, "ci_run_id": RUN_ID}
+    live_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
+    monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
+    monkeypatch.setattr(candidate, "_require_root", lambda: None)
+    monkeypatch.setattr(candidate, "_require_root_file", lambda *args: None)
+    monkeypatch.setattr(candidate, "_require_execution_release", lambda *args: None)
+
+    def ensure_directory(path: Path, mode: int, description: str) -> None:
+        del description
+        path.mkdir(mode=mode, exist_ok=True)
+
+    monkeypatch.setattr(candidate, "_require_root_directory", lambda *args: None)
+    monkeypatch.setattr(candidate, "_ensure_root_directory", ensure_directory)
+    monkeypatch.setattr(candidate, "_exclusive_lock", lambda path: nullcontext())
+    _local_writers(monkeypatch)
+    monkeypatch.setattr(
+        candidate,
+        "_load_stage",
+        lambda **kwargs: (
+            target_stage
+            if kwargs["target_sha"] == TARGET_SHA
+            else source_stage
+        ),
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_load_adoption_predecessor_binding",
+        lambda **kwargs: dict(predecessor),
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_read_current_target",
+        lambda current_link, root: root / SOURCE_SHA,
+    )
+    runtime_events: list[str] = []
+    monkeypatch.setattr(
+        candidate,
+        "_retirement_source_runtime_context",
+        lambda **kwargs: (
+            SimpleNamespace(),
+            SimpleNamespace(),
+            {"GATEA_LOOPBACK_PORT": "18080"},
+        ),
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_stop_retirement_writers",
+        lambda **kwargs: runtime_events.append("stopped"),
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_restore_retirement_runtime",
+        lambda **kwargs: runtime_events.append("restored"),
+    )
+
+    def live_verification(**kwargs: object) -> dict[str, object]:
+        live_calls.append(kwargs)
+        return _retirement_live_evidence()
+
+    monkeypatch.setattr(
+        candidate, "_retirement_live_verification", live_verification
+    )
+    pending = candidate._retirement_pending_path(release_records, TARGET_SHA)
+    record = candidate._retirement_record_path(release_records, TARGET_SHA)
+    archive = candidate._retirement_archive_path(
+        archive_dir, old_sha, failed_digest
+    )
+    arguments = {
+        "source_candidate_sha": old_sha,
+        "lineage_source_candidate_sha": SOURCE_SHA,
+        "target_sha": TARGET_SHA,
+        "failed_acceptance_sha256": failed_digest,
+        "confirm_source_sha": old_sha,
+        "confirm_lineage_source_sha": SOURCE_SHA,
+        "confirm_target_sha": TARGET_SHA,
+        "confirm_failed_acceptance_sha256": failed_digest,
+        "config_file": tmp_path / "config.env",
+        "secret_dir": tmp_path / "secrets",
+        "release_root": release_root,
+        "release_record_dir": release_records,
+        "acceptance_record_dir": acceptance_records,
+        "acceptance_failure_archive_dir": archive_dir,
+        "current_link": tmp_path / "current",
+        "lock_file": tmp_path / "operation.lock",
+    }
+    return SimpleNamespace(
+        arguments=arguments,
+        canonical=canonical,
+        pending=pending,
+        record=record,
+        archive=archive,
+        archive_dir=archive_dir,
+        acceptance_records=acceptance_records,
+        release_records=release_records,
+        live_calls=live_calls,
+        runtime_events=runtime_events,
+    )
+
+
+def test_retire_failed_acceptance_first_success_and_success_replay(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    raw_pending = case.canonical.read_bytes()
+
+    first = candidate.retire_failed_acceptance(**case.arguments)
+
+    assert first["passed"] is True
+    assert first["phase"] == "record-published"
+    assert not case.canonical.exists()
+    assert not case.pending.exists()
+    assert case.archive.read_bytes() == raw_pending
+    assert case.record.exists()
+    assert len(case.live_calls) == 1
+    assert case.runtime_events == ["stopped", "restored"]
+
+    replay = candidate.retire_failed_acceptance(**case.arguments)
+
+    assert replay == first
+    assert len(case.live_calls) == 1
+    assert case.runtime_events == ["stopped", "restored"]
+    assert not case.canonical.exists()
+    assert not case.pending.exists()
+
+
+def test_retirement_success_replay_rejects_archive_parent_symlink(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    candidate.retire_failed_acceptance(**case.arguments)
+    real_archive_dir = tmp_path / "real-acceptance-failures"
+    case.archive_dir.rename(real_archive_dir)
+    case.archive_dir.symlink_to(real_archive_dir, target_is_directory=True)
+
+    def require_local_protected_directory(
+        path: Path,
+        mode: int,
+        description: str,
+    ) -> None:
+        metadata = path.lstat()
+        if (
+            path.is_symlink()
+            or not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != mode
+        ):
+            raise candidate.GateACandidateError(
+                f"{description} is not a protected directory"
+            )
+
+    monkeypatch.setattr(
+        candidate,
+        "_require_root_directory",
+        require_local_protected_directory,
+    )
+
+    with pytest.raises(candidate.GateACandidateError, match="protected directory"):
+        candidate.retire_failed_acceptance(**case.arguments)
+
+    assert len(case.live_calls) == 1
+    assert case.record.exists()
+    assert case.runtime_events == ["stopped", "restored"]
+    assert not case.canonical.exists()
+    assert not case.pending.exists()
+
+
+@pytest.mark.parametrize(
+    "failure_point",
+    (
+        "pending-published",
+        "write-free-phase-published",
+        "archive-published",
+        "archive-phase-published",
+        "record-published",
+        "record-phase-published",
+        "canonical-unlinked",
+        "canonical-phase-published",
+        "runtime-restored-published",
+        "own-pending-unlinked",
+    ),
+)
+def test_retire_failed_acceptance_recovers_every_durable_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure_point: str,
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    base_write_bytes = candidate._write_bytes_exclusive
+    base_write_json = candidate._write_json_exclusive
+    base_atomic_json = candidate._atomic_replace_json
+    base_unlink_exact = candidate._unlink_exact_protected_file
+    base_path_unlink = Path.unlink
+    raised = False
+
+    if failure_point == "pending-published":
+
+        def fail_write_json(
+            path: Path,
+            payload: dict[str, object],
+            mode: int = 0o644,
+        ) -> None:
+            nonlocal raised
+            base_write_json(path, payload, mode)
+            if path == case.pending and not raised:
+                raised = True
+                raise RuntimeError("injected pending publication crash")
+
+        monkeypatch.setattr(candidate, "_write_json_exclusive", fail_write_json)
+    elif failure_point in {
+        "write-free-phase-published",
+        "archive-phase-published",
+        "record-phase-published",
+        "canonical-phase-published",
+        "runtime-restored-published",
+    }:
+        phase_by_failure = {
+            "write-free-phase-published": "write-free-verified",
+            "archive-phase-published": "acceptance-archived",
+            "record-phase-published": "record-published",
+            "canonical-phase-published": "canonical-removed",
+            "runtime-restored-published": "runtime-restored",
+        }
+        expected_phase = phase_by_failure[failure_point]
+
+        def fail_phase(
+            path: Path,
+            payload: dict[str, object],
+            mode: int,
+        ) -> None:
+            nonlocal raised
+            base_atomic_json(path, payload, mode)
+            if (
+                path == case.pending
+                and payload.get("phase") == expected_phase
+                and not raised
+            ):
+                raised = True
+                raise RuntimeError("injected phase publication crash")
+
+        monkeypatch.setattr(candidate, "_atomic_replace_json", fail_phase)
+    elif failure_point == "archive-published":
+
+        def fail_archive(path: Path, content: bytes, mode: int) -> None:
+            nonlocal raised
+            base_write_bytes(path, content, mode)
+            if path == case.archive and not raised:
+                raised = True
+                raise RuntimeError("injected archive publication crash")
+
+        monkeypatch.setattr(candidate, "_write_bytes_exclusive", fail_archive)
+    elif failure_point == "record-published":
+
+        def fail_record(path: Path, content: bytes, mode: int) -> None:
+            nonlocal raised
+            base_write_bytes(path, content, mode)
+            if path == case.record and not raised:
+                raised = True
+                raise RuntimeError("injected record publication crash")
+
+        monkeypatch.setattr(candidate, "_write_bytes_exclusive", fail_record)
+    elif failure_point == "canonical-unlinked":
+
+        def fail_canonical_unlink(
+            path: Path,
+            identity: tuple[int, ...],
+            *,
+            description: str,
+        ) -> None:
+            nonlocal raised
+            base_unlink_exact(path, identity, description=description)
+            if path == case.canonical and not raised:
+                raised = True
+                raise RuntimeError("injected canonical unlink crash")
+
+        monkeypatch.setattr(
+            candidate, "_unlink_exact_protected_file", fail_canonical_unlink
+        )
+    else:
+
+        def fail_own_pending_unlink(
+            path: Path,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            nonlocal raised
+            base_path_unlink(path, *args, **kwargs)
+            if path == case.pending and not raised:
+                raised = True
+                raise RuntimeError("injected own pending unlink crash")
+
+        monkeypatch.setattr(Path, "unlink", fail_own_pending_unlink)
+
+    with pytest.raises(RuntimeError, match="injected"):
+        candidate.retire_failed_acceptance(**case.arguments)
+    assert raised is True
+
+    monkeypatch.setattr(candidate, "_write_bytes_exclusive", base_write_bytes)
+    monkeypatch.setattr(candidate, "_write_json_exclusive", base_write_json)
+    monkeypatch.setattr(candidate, "_atomic_replace_json", base_atomic_json)
+    monkeypatch.setattr(
+        candidate, "_unlink_exact_protected_file", base_unlink_exact
+    )
+    monkeypatch.setattr(Path, "unlink", base_path_unlink)
+
+    recovered = candidate.retire_failed_acceptance(**case.arguments)
+
+    assert recovered["passed"] is True
+    assert not case.canonical.exists()
+    assert not case.pending.exists()
+    assert case.archive.exists()
+    assert case.record.exists()
+    expected_live_calls = (
+        1
+        if failure_point in {"pending-published", "own-pending-unlinked"}
+        else 2
+    )
+    assert len(case.live_calls) == expected_live_calls
+
+
+def test_retire_failed_acceptance_live_failure_restores_runtime_and_keeps_recovery_journal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        candidate,
+        "_retirement_live_verification",
+        lambda **kwargs: (_ for _ in ()).throw(
+            candidate.GateACandidateError("live verifier failed")
+        ),
+    )
+
+    with pytest.raises(candidate.GateACandidateError, match="live verifier"):
+        candidate.retire_failed_acceptance(**case.arguments)
+
+    assert case.canonical.exists()
+    assert case.pending.exists()
+    assert json.loads(case.pending.read_text())["phase"] == "prepared"
+    assert not case.record.exists()
+    assert not case.archive.exists()
+    assert not case.archive_dir.exists()
+    assert case.runtime_events == ["stopped", "restored"]
+
+
+def test_retire_failed_acceptance_recovery_reverifies_and_rejects_drift(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    base_write_bytes = candidate._write_bytes_exclusive
+    crashed = False
+
+    def crash_after_archive(path: Path, content: bytes, mode: int) -> None:
+        nonlocal crashed
+        base_write_bytes(path, content, mode)
+        if path == case.archive and not crashed:
+            crashed = True
+            raise RuntimeError("injected archive crash")
+
+    monkeypatch.setattr(candidate, "_write_bytes_exclusive", crash_after_archive)
+    with pytest.raises(RuntimeError, match="archive crash"):
+        candidate.retire_failed_acceptance(**case.arguments)
+    monkeypatch.setattr(candidate, "_write_bytes_exclusive", base_write_bytes)
+
+    drifted = _retirement_live_evidence()
+    drifted["wallet_reconcile"] = {
+        "scanned": 2,
+        "mismatches": 0,
+        "violations": 0,
+    }
+
+    def drifted_verification(**kwargs: object) -> dict[str, object]:
+        case.live_calls.append(kwargs)
+        return drifted
+
+    monkeypatch.setattr(
+        candidate, "_retirement_live_verification", drifted_verification
+    )
+    with pytest.raises(candidate.GateACandidateError, match="drifted"):
+        candidate.retire_failed_acceptance(**case.arguments)
+
+    assert case.canonical.exists()
+    assert case.pending.exists()
+    assert not case.record.exists()
+    assert case.runtime_events == [
+        "stopped",
+        "restored",
+        "stopped",
+        "restored",
+    ]
+    assert len(case.live_calls) == 2
+
+
+def test_retire_failed_acceptance_recovery_failure_wins_and_keeps_blocker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    work_error = ValueError("injected work failure")
+    recovery_error = OSError("injected recovery failure")
+    monkeypatch.setattr(
+        candidate,
+        "_retirement_live_verification",
+        lambda **kwargs: (_ for _ in ()).throw(work_error),
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_restore_retirement_runtime",
+        lambda **kwargs: (_ for _ in ()).throw(recovery_error),
+    )
+
+    with pytest.raises(
+        candidate.GateACandidateError,
+        match="source runtime recovery failed",
+    ) as caught:
+        candidate.retire_failed_acceptance(**case.arguments)
+
+    assert caught.value.__cause__ is recovery_error
+    assert case.pending.exists()
+    assert case.canonical.exists()
+    assert not case.record.exists()
+
+
+def test_restore_retirement_runtime_uses_exact_allowances_and_reproves_a_m9(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_sha = "a" * 40
+    source_image_id = "sha256:" + "a" * 64
+    transition_allowance = object()
+    acceptance_allowance = object()
+    values = {
+        "GATEA_APP_IMAGE": "pinkdoohub-gatea:old",
+        "GATEA_LOOPBACK_PORT": "18080",
+        "TABLE_SESSION_CLAIMS_ENABLED": "true",
+    }
+    calls: list[tuple[str, object]] = []
+
+    class FakeGateA:
+        APPROVED_TARGET_M9_CHAIN = tuple(M9_CHAIN)
+
+        @staticmethod
+        def app_up(**kwargs: object) -> None:
+            calls.append(("app-up", dict(kwargs)))
+
+        @staticmethod
+        def _validated_inputs(**kwargs: object) -> dict[str, str]:
+            assert kwargs["require_available_port"] is False
+            calls.append(("inputs", kwargs.get("mode")))
+            return dict(values)
+
+        @staticmethod
+        def _candidate_sha(current_values: object) -> str:
+            assert current_values == values
+            return source_sha
+
+        @staticmethod
+        def validate_app_image(
+            current_values: object,
+            *,
+            start_new_session: bool,
+        ) -> str:
+            assert current_values == values
+            assert start_new_session is True
+            calls.append(("image", start_new_session))
+            return source_image_id
+
+        @staticmethod
+        def read_database_snapshot(**kwargs: object) -> dict[str, object]:
+            assert kwargs["start_new_session"] is True
+            calls.append(("database", kwargs["start_new_session"]))
+            return {"aerich_versions": list(M9_CHAIN)}
+
+        @staticmethod
+        def _compose_ps(**kwargs: object) -> list[dict[str, object]]:
+            assert kwargs["start_new_session"] is True
+            assert kwargs["services"] == candidate.M9_RUNTIME_SERVICES
+            calls.append(("compose-ps", kwargs["services"]))
+            return []
+
+        @staticmethod
+        def _ensure_services_healthy(rows: object, *services: str) -> None:
+            assert rows == []
+            assert services == candidate.M9_RUNTIME_SERVICES
+            calls.append(("healthy", services))
+
+        @staticmethod
+        def _validate_loopback_publishers(rows: object, port: int) -> None:
+            assert rows == []
+            calls.append(("publishers", port))
+
+    monkeypatch.setattr(
+        candidate,
+        "_validated_retirement_recovery_allowances",
+        lambda **kwargs: (transition_allowance, acceptance_allowance),
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_read_current_target",
+        lambda current_link, release_root: release_root / SOURCE_SHA,
+    )
+
+    candidate._restore_retirement_runtime(
+        gatea=FakeGateA,
+        values=values,
+        config_file=tmp_path / "config.env",
+        secret_dir=tmp_path / "secrets",
+        release_root=tmp_path / "releases",
+        release_record_dir=tmp_path / "records",
+        acceptance_record_dir=tmp_path / "acceptance",
+        current_link=tmp_path / "current",
+        source_candidate_sha=source_sha,
+        source_image_id=source_image_id,
+        lineage_source_candidate_sha=SOURCE_SHA,
+        target_sha=TARGET_SHA,
+        failed_acceptance_sha256="b" * 64,
+        pending_path=tmp_path / "retirement.pending.json",
+        expected_binding={"candidate_sha": TARGET_SHA},
+    )
+
+    app_up = calls[0]
+    assert app_up[0] == "app-up"
+    app_up_kwargs = app_up[1]
+    assert isinstance(app_up_kwargs, dict)
+    assert app_up_kwargs["candidate_transition_recovery"] is transition_allowance
+    assert app_up_kwargs["acceptance_sidecar_recovery"] is acceptance_allowance
+    assert app_up_kwargs["include_table_sweeper"] is True
+    assert app_up_kwargs["allow_existing_gatea_publisher"] is True
+    assert app_up_kwargs["_start_new_session"] is True
+    assert ("database", True) in calls
+    assert ("compose-ps", candidate.M9_RUNTIME_SERVICES) in calls
+    assert ("healthy", candidate.M9_RUNTIME_SERVICES) in calls
+    assert ("publishers", 18080) in calls
+
+
+@pytest.mark.parametrize(
+    ("signum", "expected_type"),
+    [
+        pytest.param(
+            signal.SIGHUP,
+            candidate.GateACandidateOperationInterrupted,
+            id="sighup",
+        ),
+        pytest.param(
+            signal.SIGTERM,
+            candidate.GateACandidateOperationInterrupted,
+            id="sigterm",
+        ),
+        pytest.param(signal.SIGINT, KeyboardInterrupt, id="sigint"),
+    ],
+)
+def test_retirement_work_signal_restores_before_propagation_and_defers_next_signal(
+    monkeypatch: pytest.MonkeyPatch,
+    signum: int,
+    expected_type: type[BaseException],
+) -> None:
+    active, _, _ = _capture_candidate_signal_handlers(monkeypatch)
+    restore_calls = 0
+    observed: candidate._MutationTerminationController | None = None
+
+    def restore(**kwargs: object) -> None:
+        nonlocal restore_calls
+        del kwargs
+        restore_calls += 1
+        assert observed is not None
+        assert observed.recovery_started is True
+        repeated = signal.SIGTERM if signum == signal.SIGHUP else signal.SIGHUP
+        assert callable(active[repeated])
+        assert active[repeated](repeated, None) is None  # type: ignore[operator]
+
+    monkeypatch.setattr(candidate, "_restore_retirement_runtime", restore)
+
+    with pytest.raises(expected_type) as caught:
+        with candidate._mutation_termination_controller(
+            "retire-failed-acceptance"
+        ) as termination:
+            observed = termination
+
+            def work() -> None:
+                assert callable(active[signum])
+                active[signum](signum, None)  # type: ignore[operator]
+
+            _, work_error = candidate._run_retirement_work_then_restore(
+                termination=termination,
+                work=work,
+                restore_arguments={},
+            )
+            propagated = candidate._finalization_error_after_recovery(
+                termination=termination,
+                work_error=work_error,
+            )
+            assert propagated is termination.work_interruption
+            raise propagated
+
+    assert observed is not None
+    assert caught.value is observed.work_interruption
+    assert observed.recovery_interruption is not None
+    assert restore_calls == 1
+
+
+def test_retirement_recovery_retries_control_error_and_propagates_it_after_health(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _capture_candidate_signal_handlers(monkeypatch)
+    first_interrupt = KeyboardInterrupt("injected recovery interruption")
+    restore_calls = 0
+
+    def restore(**kwargs: object) -> None:
+        nonlocal restore_calls
+        del kwargs
+        restore_calls += 1
+        if restore_calls == 1:
+            raise first_interrupt
+
+    monkeypatch.setattr(candidate, "_restore_retirement_runtime", restore)
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        with candidate._mutation_termination_controller(
+            "retire-failed-acceptance"
+        ) as termination:
+            _, work_error = candidate._run_retirement_work_then_restore(
+                termination=termination,
+                work=lambda: None,
+                restore_arguments={},
+            )
+            assert work_error is None
+            propagated = candidate._finalization_error_after_recovery(
+                termination=termination,
+                work_error=work_error,
+            )
+            assert propagated is first_interrupt
+            raise propagated
+
+    assert caught.value is first_interrupt
+    assert restore_calls == 2
+
+
+def test_retirement_stops_writers_before_every_live_domain_read_and_detects_restart(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    values = {
+        "GATEA_APP_IMAGE": "source-image",
+        "TABLE_SESSION_CLAIMS_ENABLED": "true",
+    }
+    source_sha = "a" * 40
+    source_image_id = "sha256:" + "a" * 64
+
+    class FakeGateA:
+        APPROVED_TARGET_M9_CHAIN = tuple(M9_CHAIN)
+
+        @staticmethod
+        def _validated_inputs(**kwargs: object) -> dict[str, str]:
+            events.append("inputs")
+            return dict(values)
+
+        @staticmethod
+        def _candidate_sha(current: object) -> str:
+            return source_sha
+
+        @staticmethod
+        def validate_app_image(current: object) -> str:
+            events.append("image")
+            return source_image_id
+
+        @staticmethod
+        def _run_compose(**kwargs: object) -> None:
+            assert kwargs["arguments"] == (
+                "stop",
+                "--timeout",
+                "30",
+                *candidate.RETIREMENT_WRITER_SERVICES,
+            )
+            events.append("stop")
+
+        @staticmethod
+        def _compose_ps(**kwargs: object) -> list[dict[str, object]]:
+            events.append("ps")
+            return [
+                {
+                    "Service": service,
+                    "State": (
+                        "running"
+                        if service in candidate.RETIREMENT_DATABASE_SERVICES
+                        else "exited"
+                    ),
+                    "Health": (
+                        "healthy"
+                        if service in candidate.RETIREMENT_DATABASE_SERVICES
+                        else ""
+                    ),
+                }
+                for service in candidate.M9_RUNTIME_SERVICES
+            ]
+
+        @staticmethod
+        def _ensure_services_healthy(rows: object, *services: str) -> None:
+            assert services == candidate.RETIREMENT_DATABASE_SERVICES
+            events.append("database-healthy")
+
+        @staticmethod
+        def read_database_snapshot(**kwargs: object) -> dict[str, object]:
+            events.append("database-read")
+            return {"aerich_versions": M9_CHAIN}
+
+        @staticmethod
+        def _run_m9_table_reconcile(**kwargs: object) -> dict[str, int]:
+            events.append("table-read")
+            return dict(EMPTY_TABLE_RECONCILE)
+
+    class FakeUpgrade:
+        @staticmethod
+        def _ensure_not_running(rows: object, *services: str) -> None:
+            assert services == candidate.RETIREMENT_WRITER_SERVICES
+            assert all(
+                row["State"] == "exited"  # type: ignore[index]
+                for row in rows  # type: ignore[union-attr]
+                if row["Service"] in services  # type: ignore[index]
+            )
+            events.append("writers-stopped")
+
+    monkeypatch.setattr(
+        candidate,
+        "_read_current_target",
+        lambda link, root: root / SOURCE_SHA,
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_final_wallet_reconcile",
+        lambda **kwargs: events.append("wallet-read")
+        or {"scanned": 1, "mismatches": 0, "violations": 0},
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_failed_acceptance_business_verification",
+        lambda **kwargs: events.append("business-read")
+        or _retirement_live_evidence()["business_verification"],
+    )
+    common = {
+        "gatea": FakeGateA,
+        "upgrade": FakeUpgrade,
+        "values": values,
+        "config_file": tmp_path / "config",
+        "secret_dir": tmp_path / "secrets",
+        "current_link": tmp_path / "current",
+        "release_root": tmp_path / "releases",
+        "source_candidate_sha": source_sha,
+        "source_image_id": source_image_id,
+        "lineage_source_candidate_sha": SOURCE_SHA,
+    }
+
+    candidate._stop_retirement_writers(**common)
+    candidate._retirement_live_verification(
+        **common,
+        target_image_id=IMAGE_ID,
+        failed_acceptance=_preclaim_failure_payload(source_sha),
+    )
+
+    assert events.index("stop") < events.index("database-read")
+    for read_event in ("database-read", "table-read", "wallet-read", "business-read"):
+        read_index = events.index(read_event)
+        assert "writers-stopped" in events[:read_index]
+        assert events[read_index - 1] == "writers-stopped"
+
+    original_ps = FakeGateA._compose_ps
+    calls = 0
+
+    def restarted_ps(**kwargs: object) -> list[dict[str, object]]:
+        nonlocal calls
+        calls += 1
+        rows = original_ps(**kwargs)
+        if calls == 2:
+            next(row for row in rows if row["Service"] == "app")["State"] = (
+                "running"
+            )
+        return rows
+
+    monkeypatch.setattr(FakeGateA, "_compose_ps", restarted_ps)
+    with pytest.raises(candidate.GateACandidateError, match="write-free"):
+        candidate._retirement_live_verification(
+            **common,
+            target_image_id=IMAGE_ID,
+            failed_acceptance=_preclaim_failure_payload(source_sha),
+        )
+
+
+@pytest.mark.parametrize(
+    "drift",
+    ("missing", "tampered", "wrong-path", "file-symlink", "hardlink", "parent-symlink"),
+)
+def test_adoption_retirement_archive_remains_a_protected_downstream_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    drift: str,
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    retirement = candidate.retire_failed_acceptance(**case.arguments)
+
+    def require_local_protected_directory(
+        path: Path, mode: int, description: str
+    ) -> None:
+        metadata = path.lstat()
+        if (
+            path.is_symlink()
+            or not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != mode
+        ):
+            raise candidate.GateACandidateError(
+                f"{description} is not a protected directory"
+            )
+
+    monkeypatch.setattr(
+        candidate,
+        "_require_root_directory",
+        require_local_protected_directory,
+    )
+    helper_arguments = {
+        "acceptance_failure_archive_dir": case.archive_dir,
+        "source_candidate_sha": case.arguments["source_candidate_sha"],
+        "failed_acceptance_sha256": case.arguments[
+            "failed_acceptance_sha256"
+        ],
+        "lineage_source_candidate_sha": SOURCE_SHA,
+        "source_image_id": "sha256:" + "a" * 64,
+        "retirement": retirement,
+    }
+    assert candidate._validate_adoption_retirement_archive(
+        **helper_arguments
+    )["candidate_sha"] == case.arguments["source_candidate_sha"]
+
+    if drift == "missing":
+        case.archive.unlink()
+    elif drift == "tampered":
+        case.archive.write_bytes(b"{}\n")
+    elif drift == "wrong-path":
+        helper_arguments["retirement"] = {
+            **retirement,
+            "acceptance_archive_path": str(tmp_path / "outside.json"),
+        }
+    elif drift == "file-symlink":
+        raw = case.archive.read_bytes()
+        outside = tmp_path / "outside.json"
+        outside.write_bytes(raw)
+        outside.chmod(0o600)
+        case.archive.unlink()
+        case.archive.symlink_to(outside)
+    elif drift == "hardlink":
+        os.link(case.archive, tmp_path / "archive-alias.json")
+    else:
+        real_archive_dir = tmp_path / "real-archive"
+        case.archive_dir.rename(real_archive_dir)
+        case.archive_dir.symlink_to(real_archive_dir, target_is_directory=True)
+
+    with pytest.raises(candidate.GateACandidateError):
+        candidate._validate_adoption_retirement_archive(**helper_arguments)
+
+
+def test_retire_failed_acceptance_rejects_impossible_or_competing_states(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    case = _retirement_case(monkeypatch, tmp_path)
+    blocker = case.release_records / (
+        f"{'9' * 40}.config-activation.pending.json"
+    )
+    blocker.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(candidate.GateACandidateError, match="blocks mutation"):
+        candidate.retire_failed_acceptance(**case.arguments)
+    assert case.canonical.exists()
+    assert not case.archive.exists()
+
+    blocker.unlink()
+    case.archive_dir.mkdir()
+    case.archive.write_bytes(case.canonical.read_bytes())
+    case.archive.chmod(0o600)
+    case.canonical.unlink()
+    with pytest.raises(candidate.GateACandidateError, match="incomplete"):
+        candidate.retire_failed_acceptance(**case.arguments)
+
+    case.pending.write_text("{}", encoding="utf-8")
+    case.pending.chmod(0o600)
+    with pytest.raises(candidate.GateACandidateError, match="incomplete"):
+        candidate.retire_failed_acceptance(**case.arguments)

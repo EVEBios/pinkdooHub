@@ -690,19 +690,29 @@ def _validate_runtime_acceptance_record(
         raise ResilienceError(
             "Gate A M9 runtime acceptance prerequisite record is unavailable"
         ) from error
+    is_m7_upgrade = bool(
+        deployment_record.get("schema_version") == 1
+        and deployment_record.get("record_type")
+        == "existing-database-upgrade"
+        and deployment_record.get("source_version") == 7
+        and deployment_record.get("source_aerich_versions")
+        == list(gatea.APPROVED_TARGET_M7_CHAIN)
+        and deployment_record.get("target_aerich_versions")
+        == list(gatea.APPROVED_TARGET_M9_CHAIN)
+    )
+    is_m9_adoption = _is_m9_candidate_adoption(deployment_record)
+    representative_source_sha = (
+        deployment_record.get("lineage_source_candidate_sha")
+        if is_m9_adoption
+        else deployment_record.get("source_candidate_sha")
+    )
     if (
-        deployment_record.get("record_type") != "existing-database-upgrade"
-        or deployment_record.get("source_version") != 7
-        or deployment_record.get("source_aerich_versions")
-        != list(gatea.APPROVED_TARGET_M7_CHAIN)
-        or deployment_record.get("target_aerich_versions")
-        != list(gatea.APPROVED_TARGET_M9_CHAIN)
+        not (is_m7_upgrade or is_m9_adoption)
         or payload.get("candidate_sha") != candidate_sha
         or payload.get("image_id") != image_id
         or payload.get("operations_sha") != operations_sha
         or payload.get("ci_run_id") != ci_run_id
-        or payload.get("source_candidate_sha")
-        != deployment_record.get("source_candidate_sha")
+        or payload.get("source_candidate_sha") != representative_source_sha
         or payload.get("representative_record_sha256")
         != representative_record_sha256
         or payload.get("credentials_sha256")
@@ -762,6 +772,7 @@ def _validated_record_content_snapshots(
     if gatea_backup._requires_m7_content_snapshot(live_snapshot):
         expected_keys.add("m7_preserved_business")
     if gatea_backup._requires_m9_table_content_snapshot(live_snapshot):
+        expected_keys.add("m8_swatch_content")
         expected_keys.add("m9_table_business")
     if set(payload) != expected_keys:
         raise ResilienceError(
@@ -773,6 +784,12 @@ def _validated_record_content_snapshots(
             validated["m7_preserved_business"] = (
                 gatea_backup._validate_m7_content_snapshot(
                     payload["m7_preserved_business"]
+                )
+            )
+        if "m8_swatch_content" in payload:
+            validated["m8_swatch_content"] = (
+                gatea_backup._validate_m8_swatch_content_snapshot(
+                    payload["m8_swatch_content"]
                 )
             )
         if "m9_table_business" in payload:
@@ -1497,12 +1514,42 @@ def _representative_binding(
 ) -> tuple[str, str]:
     """解析当前部署或受控升级来源所对应的代表性数据证据。"""
 
+    if _is_m9_candidate_adoption(deployment_record):
+        return (
+            str(deployment_record["lineage_source_candidate_sha"]),
+            str(deployment_record["lineage_source_image_id"]),
+        )
     if deployment_record.get("record_type") == "existing-database-upgrade":
         return (
             str(deployment_record["source_candidate_sha"]),
             str(deployment_record["source_image_id"]),
         )
     return candidate_sha, image_id
+
+
+def _is_m9_candidate_adoption(
+    deployment_record: Mapping[str, Any],
+) -> bool:
+    """识别经 Operations 严格验证的 M9→M9 零迁移候选接管证据。"""
+
+    return bool(
+        deployment_record.get("schema_version") == 2
+        and deployment_record.get("record_type")
+        == "existing-database-upgrade"
+        and deployment_record.get("transition_kind")
+        == "m9-candidate-adoption"
+        and deployment_record.get("source_version") == 9
+        and deployment_record.get("target_version") == 9
+        and deployment_record.get("source_aerich_versions")
+        == list(gatea.APPROVED_TARGET_M9_CHAIN)
+        and deployment_record.get("target_aerich_versions")
+        == list(gatea.APPROVED_TARGET_M9_CHAIN)
+        and gatea.GIT_SHA_PATTERN.fullmatch(
+            str(deployment_record.get("lineage_source_candidate_sha", ""))
+        )
+        is not None
+        and isinstance(deployment_record.get("lineage_source_image_id"), str)
+    )
 
 
 def _representative_record_path(
@@ -1516,7 +1563,10 @@ def _representative_record_path(
         return configured
     if (
         deployment_record.get("record_type") == "existing-database-upgrade"
-        and deployment_record.get("source_version") == 7
+        and (
+            deployment_record.get("source_version") == 7
+            or _is_m9_candidate_adoption(deployment_record)
+        )
     ):
         return DEFAULT_REPRESENTATIVE_RECORD.parent / (
             "gatea-m7-representative-data-"
@@ -1560,6 +1610,14 @@ def _database_content_snapshots(
             )
         )
     if gatea_backup._requires_m9_table_content_snapshot(snapshot):
+        content["m8_swatch_content"] = (
+            gatea_backup._source_m8_swatch_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                "loopback",
+            )
+        )
         content["m9_table_business"] = (
             gatea_backup._source_m9_table_content_snapshot(
                 values,
@@ -1811,7 +1869,10 @@ def execute(
     )
     require_m7_record = (
         deployment_record.get("record_type") == "existing-database-upgrade"
-        and deployment_record.get("source_version") == 7
+        and (
+            deployment_record.get("source_version") == 7
+            or _is_m9_candidate_adoption(deployment_record)
+        )
     )
     _validate_representative_record_file(selected_representative_record)
     representative_record_sha256 = gatea._sha256(selected_representative_record)

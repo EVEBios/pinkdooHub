@@ -1,7 +1,7 @@
 # Phase 9 微信发布风险登记
 
 > **Status:** Active
-> **Last Updated:** 2026-09-10
+> **Last Updated:** 2026-09-11
 > **Current Gate:** Gate A — 内部微信测试版
 
 风险状态使用 `open`、`mitigating`、`accepted-until`、`closed`、`deferred`。只有满足“关闭证据”才能标记 `closed`；降低优先级或口头接受不等于关闭。
@@ -13,18 +13,24 @@
 head `4d6430c...` 的 Run 34129910349 已 8/8 并关闭 R-026。持久 Gate A 随后
 在 Runtime `73dca350...` 上完成 M2→M7、Wallet/MARD、韧性、综合数据和
 数据后 Backup/Restore；Operations `353455bb...` 的 Run 34178908663 为 8/8。M8 基线
-head `4e745848...` 的 Run 34242753255 也已 8/8，但持久 Gate A 仍为 M7；其后新增的
+head `4e745848...` 的 Run 34242753255 也已 8/8，但在该历史检查点持久 Gate A 仍为 M7；其后新增的
 M7→M8/Online no-op 保护已由 head `fa6fce05...` / Run 34281512196 在干净远端完成
 8/8；head `62b1b15...` / merge-ref `a9ff3d2...` 的 Run 34288613644 又在
 GitHub-hosted disposable Linux 中完成全链路 updater 14/14 阶段、M7/M8 双
 Backup/Restore、221 HEX/gzip/PNG Runtime、artifact 扫描和零残留，最终 CI
 9/9。该结论只关闭当时 M8 候选的一次性证据缺口。required Job 的兼容名称仍为
-`gatea-m7-m8-updater`，但当前 M9 候选实际执行 M7→M8→M9，尚未取得完整 9/9。
+`gatea-m7-m8-updater`，后续 M9 候选实际执行 M7→M8→M9。
 Run 34455514865、34466953348、34477579769 依次暴露版本化 sweeper 恢复、MySQL CLI
 字符集和 Runtime full-snapshot 读取缺陷；当前仓库修复及本地测试/隔离探针不能替代
-新的远端 PASS。持久 Gate A 仍为 M7，尚无 M8/M9 的当次预检、新 Backup/Restore、
-窗口和最终成功验收。因此 Gate A 同时受 R-038、持久 M8/M9 升级、容量 Gate 处置、
-真实 HTTPS/微信合法域名、RC、真机与最终签署阻断。
+新的远端 PASS。
+
+2026-09-11 的 live 现场已经不再是 M7：旧候选 A `d6c09482...` 已把 config、数据库和
+MySQL/Redis/App/Nginx/`table-sweeper` 推进到 M9，但 `current` 仍指向最后已 finalized 的
+M7 lineage S `73dca350...`。A acceptance 在 `order_created` 后因桌台 bootstrap identity
+读取进程没有继承 Entrypoint Secret 而安全失败；订单取消、fixture 下架、库存恢复、会话
+撤销均完成，没有 Payment/Settlement/Refund、TableSession、Timer 或 Occupancy，失败
+pending 保留。该状态不等于 M9 PASS，也不能按 M7 重新迁移。当前受 R-039、R-038、容量
+Gate、真实 HTTPS/微信合法域名、RC、真机与最终签署共同阻断。
 
 ## 1. 活跃风险
 
@@ -64,10 +70,11 @@ Run 34455514865、34466953348、34477579769 依次暴露版本化 sweeper 恢复
 | R-032 | P1 | Gate A 的 Wallet 历史用户/legacy manual Order 需要 backfill/reconcile，否则启用资金入口可能形成缺账户或矛盾结算 | 高×极高 | 按冻结上界完成 wallet `would_create=1 → created=1 → 0`、legacy settlement `would_create=1 → created=1 → 0`，升级对账 `1/0/0`；综合数据后二次对账为 `scanned=4, mismatches=0, violations=0`，真实充值/Provider 仍关闭 | Yijie Shen | Gate A | closed |
 | R-033 | P2 | Reservation N1 只在页面展示状态，店休取消没有主动微信通知 | 高×中 | Gate A 明确 N1 边界并保留人工电话兜底；若 Gate B 要求通知，完成订阅授权、加密投递地址、durable outbox/worker/重试/监控和真机验收 | Yijie Shen | Gate B / N2 | deferred |
 | R-034 | P2 | MARD 网页 HEX/RGB 未经实体拼豆样本校色，图片是确定性纯色而非实物照片 | 中×中 | Gate A 内部说明来源限制；公开使用前按批准色样校准并更新 manifest/图片/checksum/验收记录 | Yijie Shen | Gate B 或正式销售前 | deferred |
-| R-035 | P0 | 持久 Gate A 已是 M7，而 M8 的成功基线早于 M9；误用默认 M2、旧 Run/Record、跳过 M8 或把历史 M8 9/9 当成 M9 证据，可能造成部分 DDL 和不可发布状态 | 确定×极高 | 显式 `--source-version 7`、连续 M8→M9、`m7-preserved-business-v1`、raw M7 目录/221 PNG 预检和启动前 live replay 已经 Review；Run 34288613644 只关闭历史 M8 updater。当前必须先取得同一 M9 SHA 的全新 9/9，再以持久 Gate A 当次只读盘点、新 Backup/Restore、精确 target SHA/Image、停写窗口、既有写授权和 M9 数据后恢复关闭 | Yijie Shen | Gate A M9 前 | mitigating |
-| R-036 | P1 | 已有 Online 自选色商品下的 exact no-op publisher 与 M8 HEX/gzip 尚未在持久 Runtime 现场验证；直接 SQL 或宿主图片旁路写入会越过应用锁边界 | 确定×高 | Run 34288613644 已在一次性 Runtime 实测 Online 221 项 exact no-op、启动前 replay、221 HEX、63,445→10,948 bytes gzip、正确 `Vary`、PNG 不压缩和 M8 Backup/Restore。这降低候选实现风险，但维护窗口仍必须停止 App/Nginx 并排除 DB/文件旁路 writer；关闭仍需持久 Gate A 的三次 no-op/紧邻 replay、221 HEX/API/零色块 PNG 请求、单次 gzip/图片不压缩和数据后 Backup/Restore | Yijie Shen | Gate A M8 前 | mitigating |
+| R-035 | P0 | 从 M7 起步时误用默认 M2、旧 Run/Record、跳过 M8 或把历史 M8 9/9 当成 M9 证据，可能造成部分 DDL 和不可发布状态 | 确定×极高 | A 已通过显式 `--source-version 7`、连续 M8→M9、`m7-preserved-business-v1`、raw M7/221 PNG 预检与 live replay 把现场推进到 M9；该事实不关闭整体 M9 发布，因为 acceptance/finalize 未通过。当前数据库已是 M9，M7 起点路径永久不再适用；后续风险和关闭证据转由 R-039 的 B 零迁移接管与 R-038 的数据后恢复跟踪 | Yijie Shen | Gate A M9 前 | mitigating |
+| R-036 | P1 | 已有 Online 自选色商品下的 exact no-op publisher 与 M8 HEX/gzip 必须由最终候选持久 Runtime 证明；直接 SQL 或宿主图片旁路写入会越过应用锁边界 | 确定×高 | Run 34288613644 已在一次性 Runtime 实测 Online 221 项 exact no-op、启动前 replay、221 HEX、gzip 与 PNG 不压缩；A 随后把持久现场推进到 M9，但整体 acceptance/finalize 失败，不能关闭最终候选证据。B adoption 必须以独立 `m8-swatch-content-v1` 证明 `id/slot_no/swatch_hex`，并与 M7 保留、M9 桌台内容和图片 manifest 一起证明零漂移；随后重新完成 221 HEX/API、零色块 PNG 请求、单次 gzip/图片不压缩和 post-acceptance M7/M8/M9 Backup/Restore 摘要核验 | Yijie Shen | Gate A M9 前 | mitigating |
 | R-037 | P1 | 共享 5Mbps 下，10 VU 持续请求未压缩 51,063-byte 色板 JSON 会形成出口队列和尾延迟 | 确定×高 | 本地完整探索矩阵已把该路径稳定复现为 428 qdisc drops、P95/P99 1,510/2,442ms；gzip 后 10,023 bytes、减少 80.371%，同一 10 VU 为 271/290ms 且零 drops。代码已由 `fa6fce05...` / Run 34281512196 关闭干净远端 CI，但该 Run 不执行容量矩阵；保持 App/Nginx gzip、客户端不禁用压缩并监控 gzip 命中/drops/尾延迟。关闭仍需基于干净候选的 candidate-pre 三轮和独立 2 vCPU/4GiB Linux/真实网络复现全部门槛，或由风险接受人签署有期限处置 | Yijie Shen | Gate A M8 前 | mitigating |
-| R-038 | P1 | M9 Runtime/Restore 证据曾只读取旧核心 snapshot 或只比较旧业务摘要，可能把有效桌台数据误判失败（假阴性），也可能在 30 桌/会话/计时/占用内容丢失时仍错误通过（假阳性） | 确定×高 | Run 34477579769 已证明 core-only Runtime reader 的假阴性；当前仓库候选改用 M9 full snapshot、共享 11 项 count-only invariant，artifact 扫描拒绝 `qr_token` 与未脱敏桌台码 payload/URL，并以 `m9-table-business-v1` 精确摘要覆盖四张 M9 表的 Backup/Restore 内容。本地 release 测试和隔离 MySQL 探针已有，但仅实现证据；关闭必须同时满足当前精确 SHA 的 `gatea-m7-m8-updater`（兼容名、实际 M7→M8→M9）完整 9/9，以及持久 Gate A M9 数据后 Backup/独立 Restore 内容摘要一致 | Yijie Shen | Gate A M9 前 | mitigating |
+| R-038 | P1 | M9 Runtime/Restore 证据曾只读取旧核心 snapshot 或只比较旧业务摘要，可能把有效桌台数据误判失败（假阴性），也可能在 M8 HEX 或 30 桌/会话/计时/占用内容丢失时仍错误通过（假阳性） | 确定×高 | Run 34477579769 已证明 core-only Runtime reader 的假阴性；当前工具改用 M9 full snapshot、共享 11 项 count-only invariant，artifact 扫描拒绝 `qr_token` 与未脱敏桌台码 payload/URL，并以 `m8-swatch-content-v1` 精确覆盖 `bead_colors.id/slot_no/swatch_hex`、以 `m9-table-business-v1` 覆盖四张 M9 表。新 Backup/Restore、异机副本、M9 resilience/finalize 均重算摘要；本地测试仍仅是实现证据。关闭必须同时满足 B 精确 SHA 9/9、A/M9 source Backup/Restore、adoption 三份内容摘要零漂移，以及 B acceptance 后 M9 Backup/Restore 摘要一致 | Yijie Shen | Gate A M9 前 | mitigating |
+| R-039 | P0 | A 已运行 M9、`current` 仍为 M7 S，且 A acceptance 留有 cleaned pre-claim failure pending；手工删 pending、临时注入 Secret、重跑 M7→M9 或错误 finalize 会切断审计 lineage，重复迁移或掩盖业务漂移 | 确定×极高 | B 必须先取得自身全新 9/9；stage 绑定 A+pending digest。retirement 是计划停写操作：先写 `prepared`，停止 App/Nginx/`table-sweeper`，在 MySQL/Redis 健康且三写入方持续停止的窗口中，于 snapshot、wallet/table reconcile 和 B 只读 verifier 前后重复断言 A/S lineage；verifier 按 pending 精确身份证明取消、fixture 精确 `OFFLINE` 且未删除、完整 Option/Item 快照、唯一库存链 `0→10→9→10`、无 Payment/Settlement/Refund/订单 WalletTransaction 和无 Session/Timer/Occupancy。journal 只按 `prepared` → `write-free-verified` → `acceptance-archived` → `record-published` → `canonical-removed` → `runtime-restored` 六阶段推进，archive 是原始 `0600` no-clobber 文件，canonical 删除绑定稳定 inode；无论 work/control error 都强制恢复并复验 A/M9 五服务，恢复/清理错误优先。archive 必须原位保留为 activate/rollback/finalize 的持续依赖并重验 digest/attempt/source/image；只保留 retirement Record 不足。`app-up` 的 transition/acceptance own-recovery allowance 必须交叉绑定同一 runtime candidate。再用含 M7/M8/M9 三摘要的新 A/M9 Backup/Restore 执行 schema v2 M9→M9 adoption，证据固定 `database_changes_applied=false`、`migrations_applied=[]`。仅当完整 `succeeded/completed` evidence 已耐久而 success 缺失时，才可带原确认值重验现场并补发 success；其他 evidence 状态不得推断。`app-up` 还对 initial/upgrade Record 做严格二选一。最后完成 B acceptance/resilience/post-backup-restore 并以 source=S、predecessor=A、target=B finalize；任一步失败保持 No-Go，现场尚未执行 | Yijie Shen | Gate A M9 恢复前 | mitigating |
 
 ## 2. 风险例外规则
 

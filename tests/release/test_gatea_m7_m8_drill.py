@@ -288,7 +288,7 @@ def test_runtime_verification_artifact_contains_exact_shared_m9_invariants(
             drill._runtime_verification_payload({}, invalid)
 
 
-def test_m9_target_backup_restore_records_require_both_content_snapshots() -> None:
+def test_m9_target_backup_restore_records_require_all_content_snapshots() -> None:
     m7_content = {
         "content_sha256": "7" * 64,
         "profile": drill.backup.M7_CONTENT_SNAPSHOT_PROFILE,
@@ -299,10 +299,18 @@ def test_m9_target_backup_restore_records_require_both_content_snapshots() -> No
         "profile": drill.backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE,
         "schema_version": drill.backup.M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION,
     }
+    m8_swatch_content = {
+        "content_sha256": "8" * 64,
+        "profile": drill.backup.M8_SWATCH_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": (
+            drill.backup.M8_SWATCH_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        ),
+    }
     backup_record = {
         "backup_id": "20260910t120000z",
         "candidate_sha": TARGET_SHA,
         "m7_content_snapshot": m7_content,
+        "m8_swatch_content_snapshot": m8_swatch_content,
         "m9_table_content_snapshot": m9_content,
         "table_sweeper_restarted": True,
         "passed": True,
@@ -314,6 +322,8 @@ def test_m9_target_backup_restore_records_require_both_content_snapshots() -> No
         **{field: True for field in drill.upgrade.RESTORE_TRUE_FIELDS},
         "m7_content_matches": True,
         "m7_content_snapshot": m7_content,
+        "m8_swatch_content_matches": True,
+        "m8_swatch_content_snapshot": m8_swatch_content,
         "m9_table_content_matches": True,
         "m9_table_content_snapshot": m9_content,
     }
@@ -325,7 +335,30 @@ def test_m9_target_backup_restore_records_require_both_content_snapshots() -> No
         backup_id="20260910t120000z",
     )
 
+    with pytest.raises(drill.DrillError, match="records are invalid"):
+        drill._assert_m9_target_backup_restore_records(
+            {
+                key: value
+                for key, value in backup_record.items()
+                if key != "m8_swatch_content_snapshot"
+            },
+            restore_record,
+            target_sha=TARGET_SHA,
+            backup_id="20260910t120000z",
+        )
+
     for invalid_restore in (
+        restore_record | {"m8_swatch_content_matches": False},
+        restore_record
+        | {
+            "m8_swatch_content_snapshot": m8_swatch_content
+            | {"content_sha256": "a" * 64}
+        },
+        {
+            key: value
+            for key, value in restore_record.items()
+            if key != "m8_swatch_content_snapshot"
+        },
         restore_record | {"m9_table_content_matches": False},
         restore_record | {
             "m9_table_content_snapshot": m9_content | {"content_sha256": "8" * 64}

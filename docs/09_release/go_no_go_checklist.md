@@ -1,7 +1,7 @@
 # 微信发布 Go/No-Go Checklist
 
-> **Status:** No-Go / Not Authorized — GitHub-hosted disposable M7→M8 完整 updater 与最终 9/9 CI 已通过；持久 Gate A 仍为 M7，5Mbps 容量失败处置、持久升级、真实 HTTPS RC 与真机仍阻断
-> **Last Updated:** 2026-09-09
+> **Status:** No-Go / Not Authorized — live Gate A 已是旧候选 A/M9，但 acceptance 失败且 `current` 仍是 S/M7；只允许新候选 B 在自身全新 9/9 后按受控 M9→M9 前滚链恢复，容量、真实 HTTPS RC 与真机仍阻断公开发布
+> **Last Updated:** 2026-09-11
 > **Current Scope:** 微信小程序内部测试版（Gate A）
 
 本清单是发布决策索引，不替代 CI、演练或验收证据。勾选项必须附证据链接、执行时间和责任人；“本机试过”“历史通过”“应该没问题”不能勾选。Phase 9.1 只建立清单，不授权微信上传、体验版分发、提审或公开发布。
@@ -48,6 +48,17 @@ TLS/truststore 异常，同一 clean checkout 原样重跑后 51 秒通过。Gat
 [Gate A M7→M8 完整更新器远程 CI 演练报告](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md)。
 这关闭了一次性完整 updater 门槛，不关闭持久 Gate A 的当次只读预检、
 新 Backup/Restore、写授权、Runtime 切换和数据后恢复。
+
+2026-09-11 当前覆盖说明：旧候选 A
+`d6c09482ee0f5583d79bd847e995746c9c6ee1a3` 已把 live 配置、数据库和 App/Nginx/MySQL/
+Redis/`table-sweeper` 带到 M9，但 `current` 仍是 finalized lineage S
+`73dca350505d43775fb1ff1158ccf6aabc221998`。A acceptance 在创建订单后读取 T01 身份时
+因 Compose `exec` 绕过 Entrypoint Secret 加载而安全失败；补偿已取消订单、恢复 Kit
+库存、使两个 fixture 精确 OFFLINE、撤销会话，且无 Payment/Settlement/Refund 或
+TableSession/Timer/Occupancy。canonical schema v3 pending 是恢复输入，不得手工删除。
+当前唯一允许的现场链是：B 自身全新 9/9 → stage 绑定 A/pending → 受控退休失败证据 →
+新 A/M9 Backup/Restore → M9→M9 零迁移 adoption/replay → B acceptance → resilience →
+数据后 Backup/Restore → finalize。任一步失败即停止；禁止回退数据库或重跑 M7→M9。
 
 ## 1. Gate A：内部微信测试版
 
@@ -121,6 +132,10 @@ TLS/truststore 异常，同一 clean checkout 原样重跑后 51 秒通过。Gat
 - [x] M7 后核验 `reservation_settings` 只有一条 `singleton_key=1`、默认/当前周一、CHECK/UNIQUE 存在，已有数据不漂移；
 - [x] 部署 Runtime `73dca350...`并写入匹配的受控升级 Record；综合数据后新 Backup `20260908t021224z`/独立 Restore 与 loopback 纵向数据链路通过；
 - [x] 保留期、删除审批、恢复授权、RPO/RTO 和周期演练频率已冻结；当前 M7 数据后 Backup/Restore Record 已生成；
+
+以下 M8/M7→M9 项是旧现场路径的历史清单，保留用于审计，但对当前 live A/M9 不得执行、
+不得补勾，也不构成 B 接管步骤。当前恢复项接在该历史块之后。
+
 - [ ] M8 写前重新只读确认当前 Gate A 精确为 M0–M7，数据库/225 图片与 M7 Record 一致，并冻结目标 SHA/Image、停写窗口、执行/复核人与明确写授权；
 - [ ] 为当次 M7→M8 创建新的同点 MySQL/图片 Backup；M7/M8 Record 必须包含 `m7-preserved-business-v1`，对 20 个非 `bead_colors` 表和该表 M7 投影（共 21 个业务表）做内容 SHA-256，独立无端口 Restore 必须重算并精确匹配，同时验证 Schema、225 图片、空 Redis 和 Restore App；不得仅复用 `20260908t021224z` 或只比较聚合计数；
 - [x] 受保护的 M7→M8 仓库候选已经实现：必须显式 `--source-version 7`，只执行 M8，比较版本化 21 表内容摘要、Aerich 精确链与完整图片 manifest，并要求三次 MARD 结果精确 no-op；旧调用默认 M2 且误用时在写前 fail closed；
@@ -135,6 +150,18 @@ TLS/truststore 异常，同一 clean checkout 原样重跑后 51 秒通过。Gat
 - [ ] 持久 Gate A 成功升级后继续保持 App/Nginx 停止，以完全相同的 source version/SHA/Backup ID 紧邻重放 upgrade plan；只有 live DB、完整图片 manifest、21 表内容摘要和只读 MARD preview 均匹配且输出 `already_current=true` 才可 `app-up`。不得误认为 `app-up` 自身会执行这些 live 检查；
 - [ ] 整个 Backup→升级→replay→`app-up` 维护窗口已证明没有直接 SQL、其他迁移进程或宿主图片旁路写入；不能把 DB 锁/内容摘要/图片原子替换描述为跨 DB/文件系统绝对原子事务；
 - [ ] M8 数据后创建新的 Backup/独立 Restore/加密异机副本，并把 Runtime、Operations、upgrade、backup 与 restore Record 精确绑定。
+
+当前 A/M9→B 恢复链：
+
+- [x] live 配置/数据库/五服务为 A/M9、`current` 为 S/M7，且 A 失败后的业务补偿边界已经只读确认；
+- [ ] B 的同一 SHA 在干净 checkout 完成全新 9/9 required Jobs；
+- [ ] B stage 精确绑定 predecessor A、lineage S、A Image 与 canonical failure pending digest；
+- [ ] `retire-failed-acceptance` 在停写窗口完成六阶段 journal、B 只读 verifier、原始 pending archive、脱敏 Record、canonical 删除，并恢复及复验 A/M9 五服务；
+- [ ] 创建新的 A/M9 Backup 并完成同 ID 独立 Restore；两者同时包含 M7 保留、M8 swatch 与 M9 table 三类内容摘要；
+- [ ] A→B `activate-config` 后以 schema v2/source version 9 完成零迁移 adoption 与 replay，证据明确 `database_changes_applied=false`、`migrations_applied=[]`；
+- [ ] B `app-up`、admin-assisted acceptance、显式绑定 acceptance 的 resilience 全部通过；
+- [ ] 创建 B 验收后的 M9 Backup/Restore，随后以 source=S、predecessor=A、target=B finalize；
+- [ ] retirement archive 在 activate/rollback/finalize 全程保持原位且逐次通过路径、权限、单链接和 digest 重验。
 
 ### 1.5 运行时与运维
 
@@ -204,7 +231,8 @@ Gate A 全部重新绑定公开 RC 后，还必须：
 - artifact、Git SHA、OpenAPI 或环境来源不能证明一致；
 - CI 必需 Job 未运行、被无批准跳过或结果不可复核；
 - 连接目标身份不明、备份未恢复验证或迁移状态无法解释；
-- 当前数据库为 M7 却省略显式 `--source-version 7`、新 Backup/Restore 缺少或不匹配 `m7-preserved-business-v1`、raw M7 色板/schema/PNG 预检失败、所绑定候选未通过完整 updater 隔离 MySQL 门槛，或绕过编排直接执行 M8 内部原语/独立 publisher；
+- 对仍经只读证明为 M7 的其他环境省略显式 `--source-version 7`、缺少匹配的 M7 内容级 Backup/Restore，或绕过编排直接执行 M8/M9 内部原语；
+- 对当前 live A/M9 手工删除/修改 failure pending、重跑 M7→M9、数据库降级、临时注入 Secret、缺少 B 自身 9/9，或未按 retirement → 新 A/M9 Backup/Restore → schema v2 M9→M9 adoption/replay → acceptance/resilience → 数据后 Backup/Restore → finalize 的顺序执行；
 - 成功 Record 后未在同一停写窗口紧邻完成 live replay verification、把 `app-up` 的 Record 校验误当实时 DB/图片/MARD 校验，或存在不能排除的直接 SQL/宿主图片旁路写入；
 - 存在越权、Secret/个人敏感信息泄漏、数据破坏或不可恢复风险；
 - 订单/库存/支付出现重复、伪造、金额不一致或 unknown 无安全处置；

@@ -12,17 +12,21 @@
 - 新增公开二维码解析、可选订单、创建/当前/订单最新会话和 ADMIN 桌台/会话/启停/释放 API；严格认证、资源隐藏、幂等、Redis fail-closed 限流和生产 claims 开关同步进入 OpenAPI。占用对 table/session/user/order 四列分别 UNIQUE；跨域锁序保持 `User -> Order -> StoreTable -> Session/Occupancy -> 资金 -> Wallet/Kit`。
 - 小程序增加扫码入口、登录后意图恢复、选择/新建订单、钱包付款、服务端权威倒计时，以及 ADMIN 30 桌列表、10 秒轮询、详情和应急释放；普通二维码仅用于备案前 `develop` 内部验收，不冒充正式微信小程序码。
 - Gate A 运维链已扩展为 M7→M8→M9：迁移后执行 30 桌 bootstrap/replay、结构/内容/一致性核验，常驻 `table-sweeper` 与 App 一起启动；disposable updater CI 同步覆盖 M7 source Backup/Restore、M9 target Backup/Restore、M8 HEX/gzip/PNG 与 M9 Runtime。真实持久状态和验收证据必须在 CI 通过后另行记录，本文条目本身不代表已部署。
-- 持久候选交付新增 `stage`、`activate-config`、`rollback-config`、`finalize` 四阶段状态机：source archive、当前 Run/attempt updater artifact、目标镜像、配置激活、迁移前回退和最终 `current` 切换分别留不可覆盖证据。四类 candidate pending 现在跨全部候选 SHA/所有进入下一发布阶段的受保护入口扫描；M9 acceptance pending/complete 也跨全部候选扫描。畸形名称、symlink/目录/FIFO 或第二个 blocker 均 fail closed；只有原动作严格绑定 candidate/kind/path/checkpoint 的 own recovery 可以继续。`infra-up`/`safe-stop` 只作为持锁故障处置原语，不消费或清除这些状态。
-- 全局 operation lock 与 unresolved-state inventory 已接入 candidate、Backup/Restore、upgrade、Bootstrap、两类代表数据、`initial-migrate`、`app-up`、M9 acceptance 和 resilience。不可变 Record/artifact 统一采用同目录随机临时文件、完整写入与 file `fsync`、hard-link no-clobber 和目录 `fsync`；Backup/Restore 以 durable pending 和三个 artifact/Record digest 防止半提交，Upgrade 以 canonical success 与 `succeeded/completed` evidence 的 digest 组合作为提交点。resilience final 已可见时只允许前后两次现场一致性复验并清理最多一个同 inode writer temp，不重跑故障；孤儿/额外 alias fail closed。所有持久变更入口在 CLI work 前覆盖 SIGHUP/SIGTERM/SIGINT，SIGINT 保持 Python `KeyboardInterrupt`；强制恢复/清理子命令使用新 session/独立进程组，避免终端中断同时终止补偿子进程。常驻服务 stop 以 Compose `ps` 状态为完成条件；Restore 清理最多两轮 `down`→inventory，逐项确认容器、两个临时卷和 internal network 消失；candidate 临时镜像清理最多两轮并以精确 reference inventory 为空为准。异常优先级固定为 recovery/cleanup failure > original work/control error > deferred signal；SIGKILL/断电只能依靠 journal/已提交 Record 严格恢复或人工 No-Go 审计。
-- M9 admin-assisted acceptance 使用 schema v3 pending、认证前 `authentication_started` checkpoint 和两阶段 `.complete`→final 发布；只允许无副作用且首次登录精确返回 HTTP 400/业务码 `1003` 的新 journal 被安全丢弃，其他不确定结果保留 pending。success 独立保持 schema v1，并将 Payment ID、Payment No SHA-256、`succeeded_at` 与 pending payment evidence 绑定。M9 resilience 现在强制显式接收 acceptance Record 及确认 SHA-256，在演练前后直接复验 candidate/Image、Operations/CI、upgrade/replay、代表数据/凭据、五服务、attempt digest 与完成时间，并生成 schema v2 绑定；M2/M7/M8 legacy resilience 保持 schema v1。上述仓库硬化仍须由当前候选自己的完整 CI 与持久现场流程验证，Gate A 仍停留在 M7。
+- 持久候选交付最初新增 `stage`、`activate-config`、`rollback-config`、`finalize` 四阶段状态机：source archive、当前 Run/attempt updater artifact、目标镜像、配置激活、迁移前回退和最终 `current` 切换分别留不可覆盖证据。初始四类 candidate pending 跨全部候选 SHA/所有进入下一发布阶段的受保护入口扫描；M9 acceptance pending/complete 也跨全部候选扫描。畸形名称、symlink/目录/FIFO 或第二个 blocker 均 fail closed；只有原动作严格绑定 candidate/kind/path/checkpoint 的 own recovery 可以继续。`infra-up`/`safe-stop` 只作为持锁故障处置原语，不消费或清除这些状态。下文的 A→B 接管再加入第五类 retirement pending 与第五个候选动作。
+- 全局 operation lock 与 unresolved-state inventory 已接入 candidate、Backup/Restore、upgrade、Bootstrap、两类代表数据、`initial-migrate`、`app-up`、M9 acceptance 和 resilience。不可变 Record/artifact 统一采用同目录随机临时文件、完整写入与 file `fsync`、hard-link no-clobber 和目录 `fsync`；Backup/Restore 以 durable pending 和三个 artifact/Record digest 防止半提交，Upgrade 以 canonical success 与 `succeeded/completed` evidence 的 digest 组合作为提交点。schema v2 adoption 若只留下完整耐久的 `succeeded/completed` evidence，可在原 apply 全确认和现场零漂移复验后唯一补发 success，不重跑迁移或业务写；其他 evidence 状态 fail closed。`app-up` 对同候选 initial-migration/existing-database upgrade Record 做严格 XOR，双份、零份或 symlink 在 Compose 前拒绝。resilience final 已可见时只允许前后两次现场一致性复验并清理最多一个同 inode writer temp，不重跑故障；孤儿/额外 alias fail closed。所有持久变更入口在 CLI work 前覆盖 SIGHUP/SIGTERM/SIGINT，SIGINT 保持 Python `KeyboardInterrupt`；强制恢复/清理子命令使用新 session/独立进程组，避免终端中断同时终止补偿子进程。常驻服务 stop 以 Compose `ps` 状态为完成条件；Restore 清理最多两轮 `down`→inventory，逐项确认容器、两个临时卷和 internal network 消失；candidate 临时镜像清理最多两轮并以精确 reference inventory 为空为准。异常优先级固定为 recovery/cleanup failure > original work/control error > deferred signal；SIGKILL/断电只能依靠 journal/已提交 Record 严格恢复或人工 No-Go 审计。
+- M9 admin-assisted acceptance 使用 schema v3 pending、认证前 `authentication_started` checkpoint 和两阶段 `.complete`→final 发布；只允许无副作用且首次登录精确返回 HTTP 400/业务码 `1003` 的新 journal 被安全丢弃，其他不确定结果保留 pending。success 独立保持 schema v1，并将 Payment ID、Payment No SHA-256、`succeeded_at` 与 pending payment evidence 绑定。M9 resilience 现在强制显式接收 acceptance Record 及确认 SHA-256，在演练前后直接复验 candidate/Image、Operations/CI、upgrade/replay、代表数据/凭据、五服务、attempt digest 与完成时间，并生成 schema v2 绑定；M2/M7/M8 legacy resilience 保持 schema v1。该条形成时仓库硬化仍须由候选自己的完整 CI 与持久现场流程验证，Gate A 当时仍停留在 M7；后续 live A/M9 失败检查点由下文新条目取代。
 - candidate `finalize` 新增 acceptance/resilience guarded record directory 绑定；两份 Record 的 lexical 父目录必须分别匹配 canonical 默认或显式目录。它先扫描全候选 acceptance sidecar，且只消费 `root:root 0644`、`nlink=1`、身份/digest 稳定且没有 `.tmp-*` 或未知 alias/sidecar 的已收口 resilience final，不替上游清理崩溃残留。
 - Run 34455514865 暴露 source Backup 后通用 `app-up` 在 M7 Schema 上误启动 M9 `table-sweeper`；备份器现按精确 M7/M8/M9 Aerich 链选择恢复服务，M7/M8 只恢复 App/Nginx，M9 则要求 sweeper 备份前健康、随 App/Nginx 一起停写并在备份后严格恢复。未知链和停写期间版本变化保持 fail closed，完整 updater 必须由后续当前 SHA 的 CI 重新证明。
 - Run 34466953348 证明上述 M7 Backup/Restore 与服务恢复修复已生效，随后在 M9 最终不变量处暴露 MySQL 8.0.46 CLI 的字符集边界：非交互客户端默认 `latin1`，把 SQL 中的 UTF-8 `号桌` 后缀误解码，因而把 30 个由 asyncmy 正确写入的显示名全部计为无效。最终快照现显式使用 `--default-character-set=utf8mb4`，并用 `CONVERT(0xE58FB7E6A18C USING utf8mb4)` 固化后缀字节；桌号、显示名、Token 长度和 Token 字符四项另存脱敏聚合计数，失败证据不输出二维码 Token。隔离 MySQL A/B 探针确认同一批合法显示名的误报由 `3` 降为 `0`；当前修复仍须由下一次完整 updater CI 端到端证明后，才允许触碰持久 Gate A。
 - Run 34477579769 已越过 M9 迁移、bootstrap、最终数据库不变量、停写 plan replay、五服务启动和 M7 数据后恢复，随后暴露 Runtime 验收误用了只包含 Core 字段的通用数据库快照，导致所有 M9 `.get()` 都得到 `None`。Runtime 现复用升级器的完整实时快照，升级与演练共享同一组 11 项空桌不变量，并对缺失/漂移输出仅含 key、expected、actual 的安全错误；脱敏分项会进入 Runtime artifact，Artifact 扫描则显式拒绝原始 `qr_token`、占位码 payload 和未脱敏的桌台 URL。同轮审查发现 M9 target Restore 原先只比较 Core 聚合，现增加 `m9-table-business-v1`：停写后对四张桌台业务表做稳定主键顺序内容 SHA-256，独立 Restore 必须精确重算一致；Record 只保存 profile/schema version/digest，不保存 Token 或行内容。这些修复仍须由后续完整 updater CI 证明，持久 Gate A 未触碰。
 - Run 34520442209 的其他 8 个 required Job 均通过，disposable updater 则在 source Backup 已完成后暴露 `gatea_backup.verify_restore()` 新增必填 `release_record_dir`、而真实编排调用未同步透传的接线遗漏。当前实现将同一受保护 Release Record 目录显式传给 Backup 与 Restore，并新增端到端参数接线回归；该失败 Run 只作为诊断证据，修复必须由后续当前 SHA 的全新 9/9 关闭。
 - Run 34523689519 已为 head `41ad3cd...` / merge target `ceb664e...` 完成 9/9，持久 Gate A 随后成功执行 candidate stage 及全新 M7 Backup/独立 Restore `20260911t013550z`，但在只读 `activate-config` plan 前由完整性校验阻断：按旧 Runbook 从已安装 Release 执行宿主 `python3 -m scripts.release.gatea_*` 会生成 `__pycache__`/`.pyc`，把 stage 冻结的 968 文件 source manifest 改为 971 文件。配置仍为 M7、数据库仍为 M0–M7、四服务恢复健康，未产生 activation Record/pending，也未执行 M8/M9 迁移；该 target 保留为不可继续提升的诊断证据。当前 Runbook 已将所有宿主 Release CLI 和校验过的 stage launcher 显式改为 `python3 -B`，保持全树 manifest fail closed，不忽略可执行 bytecode；新增真实 staged release + fresh subprocess 回归，复验 manifest 三元组不变、无 Python cache 且真实 `_load_stage()` 继续通过。修复必须由后续全新 SHA 的 9/9 和新 target stage 证明，不得删除旧 release cache 后续跑。
+- 后续持久执行已由旧候选 A `d6c09482...` 把 live config、数据库和五服务推进到 M9，但 `current` 仍指向最后已 finalized 的 M7 lineage S `73dca350...`。A 的 admin-assisted acceptance 在 `order_created` 后读取 T01 bootstrap identity 时失败：旧读取器使用 `docker compose exec`，该新进程没有经过 App Entrypoint 把文件型 Secret 导出为数据库环境，因而只返回安全通用错误。补偿已取消该订单、下架两个 fixture、恢复 Kit 库存并撤销会话；现场没有 Payment/Settlement/Refund、TableSession、Timer 或 Occupancy，schema v3 失败 pending 按设计保留。该状态不是 M9 PASS，也不能再按 M7 数据库起点重跑。
+- 桌台身份读取修复改用一次性 `docker compose run --rm --no-deps app` 并保留默认 Entrypoint，仅在进程内解析 T01 Token；`OSError`、Compose 子进程失败、非法 JSON/字段/Token 均收敛为不含 Secret 的错误。对“`order_created` + failure=true + 订单/fixture/session cleanup 全部完成、尚未 claim/payment”的 pending，原 acceptance 明确标记为终态并要求新候选前滚，不允许当前候选重跑。
+- 新增受控 M9 候选接管：B `stage` 必须同时绑定 superseded A 与失败 pending SHA-256；`retire-failed-acceptance` 是计划停写状态机，先写 `prepared` 并停止 App/Nginx/`table-sweeper`，在 MySQL/Redis 健康且三个写入方持续停止的窗口内，于数据库 snapshot、wallet/table reconcile 和 B 镜像只读 verifier 前后重复断言 A/S lineage。verifier 按 pending 的精确 Product/Option/Order/Item 身份验证取消订单、总额/remark、候选后缀名称/固定描述、五张图片绑定、完整 Option/Item 销售快照、fixture 精确 `OFFLINE` 且未删除、唯一 SUPER_ADMIN supply +10 与订单扣减/恢复构成的库存链 `0→10→9→10`、无 Payment/Settlement/Refund/订单 WalletTransaction 与无桌台历史；原始数据库 ID 只经有界、拒绝重复字段的 stdin JSON 传递，不进入 argv、环境、错误或 Record。完整 journal 只按 `prepared` → `write-free-verified` → `acceptance-archived` → `record-published` → `canonical-removed` → `runtime-restored` 六阶段耐久推进，其中 archive 为原始 `root:root 0600` no-clobber 文件，canonical 删除绑定稳定 inode。无论 work/control error 都会进入屏蔽信号的强制恢复并复验 A/M9 五服务，恢复/清理失败优先于原错误，延迟信号最后传播；新增 retirement pending 也进入全局 fail-closed inventory 和崩溃恢复。`app-up` 的 transition/acceptance 两个 own-recovery allowance 还必须交叉绑定同一 runtime candidate，避免不同候选各自获得豁免。
+- `gatea_candidate`、`gatea_upgrade`、`gatea_operations`、acceptance 与 resilience 新增 schema v2 `m9-candidate-adoption` 链：以 immediate predecessor A、lineage source S、retirement digest、新 A/M9 Backup/Restore 和 B stage/activation 为直接绑定，在 source/target 都为精确 M0–M9 时只切换候选实现。retirement archive 还是 activate/rollback/finalize 的持续 lineage 依赖，后续动作会从同一 guarded 目录重开并校验精确路径、`root:root 0600`、单链接稳定文件、digest 及 attempt/source/image，不能在退休后移动、删除或替换。成功 Record/evidence/replay 必须记录 `database_changes_applied=false` 与 `migrations_applied=[]`，并证明数据库、图片以及 M7 保留、M8 色块、M9 桌台内容摘要零漂移；不得重跑迁移、30 桌 bootstrap、MARD/Wallet 或任何修复写入。新增 `m8-swatch-content-v1` 按 `bead_colors.id` 顺序独立哈希 `id/slot_no/swatch_hex`，新 M8/M9 Backup/Restore、异机副本、M9 resilience 与 finalize 都要求精确匹配，避免旧 M7 投影不含 `swatch_hex` 而漏报漂移。早于该 profile 且 Backup/Restore/match 三个 swatch 字段全部缺失的历史 M8/M9 pair 仍可兼容读取和异机 export/verify，部分出现或不匹配必须拒绝；all-absent 历史 pair 不得充当本次 A→B source、post-acceptance、resilience 或 finalize 证据。B 后续仍须重新完成 acceptance、resilience、post-acceptance Backup/Restore，`finalize` 再以 source=S、predecessor=A、target=B 和 retirement digest 原子切换 `current`。本条只是恢复能力实现；现场接管尚未执行，必须先取得 B 自身全新 9/9，任一步阻断即停止，禁止手工删 pending、注入 Secret 或数据库 downgrade。
 - 新增直接依赖 `segno==1.6.6` 仅用于离线生成 PNG 占位二维码；真实微信支付、微信官方小程序码、预约绑定、换桌/加时/暂停和公开发布均不在 M9 首版。
-- 当前本地门槛为后端等价完整 `2858 passed, 39 skipped`（沙箱 `2854 passed`，四项 loopback bind 在允许环境另为 `4 passed`）、Release 等价完整 `736 passed`（沙箱 `734 passed`，其中两项 loopback bind 在允许环境另为 `2 passed`）；前端完整 `102 suites / 719 tests`，TypeScript、ESLint、Stylelint、CI policy 和 OpenAPI 类型均通过；一次性 MySQL 8.0.46 从 M0→M9 后的 M9 迁移/约束/并发/领域门槛为 `39 passed`，完整迁移编排与资源清理通过。微信 CI 改用独立 `.env.ci`，避免生产占位 Origin 覆盖 CI 注入值；页头纹理提升为全局 CSS 变量后只内联一次，当前不可发布微信产物主包约 0.86 MiB、总包约 1.42 MiB。Gate A 目标的非 Secret 标识已固定为 `ubuntu@118.195.195.59`，微信内部验收环境为 `develop`；私钥和其他凭据不进入仓库。
+- 当前修复候选的本地门槛为后端完整 `3067 passed, 39 skipped`、Release 完整 `945 passed`；新增覆盖 A→B 失败验收退休、M9→M9 零迁移接管、M8 色块内容摘要、跨候选恢复 allowance、订单钱包流水/完整库存审计链与恢复错误优先级。前端最近完整结果仍为 `102 suites / 719 tests`，TypeScript、ESLint、Stylelint、CI policy 和 OpenAPI 类型均通过；一次性 MySQL 8.0.46 从 M0→M9 后的 M9 迁移/约束/并发/领域门槛为 `39 passed`，完整迁移编排与资源清理通过。这些均不能替代 B 自身的全新远端 9/9。微信 CI 改用独立 `.env.ci`，避免生产占位 Origin 覆盖 CI 注入值；页头纹理提升为全局 CSS 变量后只内联一次，当前不可发布微信产物主包约 0.86 MiB、总包约 1.42 MiB。Gate A 目标的非 Secret 标识已固定为 `ubuntu@118.195.195.59`，微信内部验收环境为 `develop`；私钥和其他凭据不进入仓库。
 
 ## Frontend ADMIN+ 独立店铺工作台（仓库实现候选，2026-09-09）
 
@@ -296,8 +300,8 @@
 
 ## Gate A M7 综合代表性测试数据入口（本地候选，2026-09-08）
 
-- 新增 `scripts.release.gatea_m7_representative_data`，只扩展已经具备历史 M2 代表数据、
-  当前候选 M2→M7 成功 Record、24 小时内当前候选 Backup 与独立 Restore PASS 的持久
+- 新增 `scripts.release.gatea_m7_representative_data`，只扩展当时已经具备历史 M2 代表数据、
+  当时 M7 候选 M2→M7 成功 Record、24 小时内该 M7 候选 Backup 与独立 Restore PASS 的持久
   Gate A；写前再次要求四项服务 Healthy、唯一 loopback publisher、数据库/图片与备份
   完全相同，并严格匹配 M7 空扩展基线。入口必须从具有 source/CI sidecar 的版本化
   Operations Release 执行，拒绝未版本化工作树、既有成功 Record 或既有凭据文件。
@@ -348,7 +352,7 @@
   `source_image_id`；来源 image ID 直接取自 24 小时内且已独立恢复通过的 Backup
   Record，不接受调用方另行伪造。
 - 韧性演练在首次部署继续要求代表性数据精确绑定当前 SHA/Image；在 M2→M7 路径只接受
-  升级 Record 冻结的来源 SHA/Image 对应历史代表数据 Record，再对当前 M7 完整数据库与
+  升级 Record 冻结的来源 SHA/Image 对应历史代表数据 Record，再对该历史检查点的 M7 完整数据库与
   图片执行演练前后零漂移检查。历史数据不重建、不删 Record，也不冒充当前候选新数据。
 
 ## Runtime 镜像构建上下文收口（本地候选，2026-09-07）
@@ -362,7 +366,7 @@
 - 韧性演练成功 Record 从全局固定文件改为
   `gatea-resilience-<40位candidate SHA>.json`：同一不可变候选仍然拒绝覆盖，历史 M2
   证据继续保留但不再阻断升级后的 M7 镜像重新验证。
-- 该改动只修正留证边界，不复用或提升历史 PASS；当前 M7 的 MySQL/Redis 故障、App
+- 该改动只修正留证边界，不复用或提升历史 PASS；本节形成时目标 M7 的 MySQL/Redis 故障、App
   重启、数据/图片保持、日志轮转和脱敏仍须在 Gate A 升级并启动当前镜像后真实执行。
 
 ## Gate A 非空 M2→M7 升级编排（本地候选，2026-09-07）
@@ -400,7 +404,7 @@
   ProductKitColor、不启用颜色、不写库存，也不替代升级编排的停写与 Backup/Restore。
 - 9 项共享/发布单元测试与 14 项相关 Product/Model 回归通过；一次性 MySQL 8.0.46
   完成 221 行/221 文件真实 apply 和 no-op 重放（`1 passed in 0.92s`），容器及 13319
-  端口已清理。R-030 转为 mitigating，但 Gate A 尚未应用，仍为 **No-Go**。
+  端口已清理。R-030 转为 mitigating；在本条形成时 Gate A 尚未应用，仍为 **No-Go**。
 
 ## Gate A 单步迁移与 Wallet 准备原语（本地候选，2026-09-07）
 
@@ -454,7 +458,7 @@
 > **历史状态说明：** 本节冻结 2026-09-07 候选形成时的证据与阻断项；其中“未应用
 > Gate A / 尚无升级入口”已由 2026-09-08 的持久 M2→M7 检查点关闭，不是当前状态。
 
-- 本地提交 `58d8435` 将 MySQL CI/release gate 收口到 M7，对 `reservation_settings` 单例、默认周一、约束/索引与历史 Reservation 重放加入结构及真实并发验证。在一次性 MySQL 8.0.46 中完成空库 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 和 Inventory + Reservation 联合 `21 passed`；专用 Schema、容器与端口已清理。包含该修复的当前候选后续已由 Run 34129910349 远端 8/8；任何迁移仍未应用 Gate A、共享、预发布或生产 MySQL。
+- 本地提交 `58d8435` 将 MySQL CI/release gate 收口到 M7，对 `reservation_settings` 单例、默认周一、约束/索引与历史 Reservation 重放加入结构及真实并发验证。在一次性 MySQL 8.0.46 中完成空库 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 和 Inventory + Reservation 联合 `21 passed`；专用 Schema、容器与端口已清理。包含该修复的当时候选后续已由 Run 34129910349 远端 8/8；“任何迁移仍未应用 Gate A”只描述本条形成时的历史状态，共享、预发布和生产 MySQL 至今仍未因此自动迁移。
 - 本地持久 `db.sqlite3` 的结构对比只发现 `refunds.inventory_restored` 和一单一退款 `UNIQUE(order_id)` 缺失。提交 `35e8630` 新增精确、默认预览、双显式确认的 SQLite 修复脚本；实际 apply 写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-refunds-repair-20260907-105304-874045.bak`，权限 `0600`，修复后完整性、外键、目标字段/唯一索引和幂等重放均通过。该脚本不写 Aerich，不是 MySQL/发布迁移证据；数据库设计和 API 文档已是目标形状，无需修改契约。
 - 同次 Schema 对比发现 `ProductKitColor.Meta.indexes` 使用 ORM 关系名时会在新 SQLite 生成表达式索引。提交 `9ffebe7` 改为物理外键列 `product_id` / `bead_color_id` 并增加生成 Schema 契约测试；本地持久库、M6 MySQL DDL、`database_design.md` 与 DBML 原本已是正确物理索引，因此无需新迁移。
 - 综合 demo seed 已通过正式 Service/Repository 链路应用到本地开发库。写前备份 `backups/local-demo-data/db.sqlite3.pre-local-demo-20260907-105320-455438.bak` 与被 Git 忽略的 `backups/local-demo-data/synthetic-credentials.json` 均为 `0600`，不记录、输出或提交任何凭据值。专用 verifier 通过，`wallet_reconcile` 为 `scanned=11 mismatches=0 violations=0`。
@@ -470,12 +474,13 @@
 
 - 管理端店休页拆分为“每周固定店休”和“添加单日店休”两个独立操作，按钮、说明、确认弹窗和恢复动作均明确表达作用范围；顾客预约页动态展示当前固定店休日。
 - 新增 `ReservationSettings` 单例、星期枚举、管理查询/更换 API 与 M7 候选迁移。固定店休默认周一；更换后旧星期立即恢复可预约，未来 30 天内命中新星期且尚未开始的 pending/confirmed 预约原子取消为 `store_closed`，单日店休与历史取消记录不变。
-- M7 未应用持久环境；其一次性 MySQL 8.0.46 候选门槛已由上述 `58d8435` 证据完成，当前候选也已远端 8/8，但目标环境部署验收仍未完成；N2 微信主动通知仍未实现。
+- 本节形成时 M7 尚未应用持久环境；其一次性 MySQL 8.0.46 候选门槛已由上述 `58d8435` 证据完成，当时当前候选也已远端 8/8，但目标环境部署验收仍未完成；N2 微信主动通知仍未实现。后续 live Gate A 已由 A 进入 M9，当前状态以前文 A/M9 检查点为准。
 
 ## M6 Color-selectable Kit — 仓库实现与本地验证完成 / 真实 MySQL 待验（2026-09-06–07）
 
 > **历史状态说明：** 标题与正文冻结 M6 候选当时的门槛；真实 MySQL 门槛和当前 Gate A
-> M6/MARD 发布已于后续阶段完成。M8 HEX 仍未应用 Gate A，其他环境仍须分别授权。
+> M6/MARD 发布已于后续阶段完成；“M8 HEX 未应用 Gate A”只描述本节形成时的历史状态。
+> 后续 live Gate A 已由 A 进入 M9，其他环境仍须分别授权。
 
 - 冻结 `KitKind = fixed | color_selectable`。省略仍创建既有 fixed Kit，历史 ProductKit 迁移时保持 fixed 与原 `stock` 语义；自选颜色 Kit 使用 `stock=NULL`、`sale_unit_grams=10`，`price` 表示每 10g 单价，KitKind 创建后不可修改。
 - 冻结全局 `bead_colors` 221 槽与商品级 `product_kit_colors`：全局槽可暂缺 code/name/色板图，非空 code 唯一；每个自选颜色商品原子关联全部槽，初始禁用/零库存。`is_enabled/stock_units` 属于商品，不同商品引用同一颜色时库存不共享。
@@ -491,7 +496,7 @@
 - 新增保留数据的本地 SQLite M6 版本化升级脚本 `scripts/local/upgrade_sqlite_m6.py`：默认只读预览，显式 `--apply` 前用 SQLite Backup API 建立一致性备份，在单事务内重建 `product_kits` 并扩展订单/库存表、建立两张颜色表及 221 个占位槽；提交前核对原业务表行数、字段、槽位和外键，已升级时幂等零写入，未知或含数据的部分状态 fail closed。脚本先在当前 13 商品 `db.sqlite3` 的临时副本演练，随后于 2026-09-07 经用户授权应用本地持久库；写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-m6-20260907-015954.bak`。升级后保留 13 个商品、6 个 fixed Kit，建立 221 个占位槽/零商品颜色映射，SQLite integrity/FK 与 ORM 13 商品读取均通过。脚本不写 Aerich，也不替代 MySQL M6 发布迁移证据。
 - 用户于 2026-09-07 指定公开的 MARD 221 标准色卡页；`scripts/local/fetch_mard_bead_colors.py` 仅允许该 HTTPS host，抓取并严格验证 A1–M15 固定序列、221 项数量、CSS RGB/展示 RGB/HEX 一致以及色号/HEX 唯一。版本化 `app/tasks/manifests/mard_221.json` 保存来源 URL、UTC 时间、HTML SHA-256 `04179ce05e16f6575fee5071ac817c93387a559d2009596b7487ea6d080b513f`、HEX/RGB、槽位/排序和确定性图片名；来源只有 CSS 色块，没有逐色图片或独立名称，因此 `color_code=name=页面色号`。
 - `scripts/local/import_mard_bead_colors.py` 以标准库从来源 RGB 生成 221 张确定性 256×256 sRGB PNG，默认 dry-run，显式 `--apply --confirm-local-only` 才更新项目内 M6 SQLite 与忽略图片目录；现有冲突、Online 商品引用、异常槽位/清单/文件 fail closed，写库前备份，图片原子发布，事务失败完整回滚并补偿本轮文件，完全相同重放零写入。5 项专项覆盖来源解析、清单/PNG、预览/apply/重放、冲突/Online 拒绝和故障补偿。
-- 本地 apply 已写入 221 个 code/name/URL/sort 并全部全局激活，生成图片内容总计 128,325 bytes，写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-mard-221-20260907-024129-065769.bak`；重放预览为 `database_changes=0 / images_reused=221 / already_current=true`，外键检查无结果。ProductKitColor 仍为独立商品配置：导入步骤不创建商品、不启用颜色、不写库存；本地此前已有草稿 Product `14`（`221自选颜色`）的 221 条关联，当前全部禁用且库存为 0，本次只让其关联的全局色板资料变为完整。M6 未应用 Gate A、共享、预发布或生产 MySQL，生产对象存储/CDN 发布与实体拼豆校色仍待完成；未新增依赖，未 commit/push/tag/release。
+- 本地 apply 已写入 221 个 code/name/URL/sort 并全部全局激活，生成图片内容总计 128,325 bytes，写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-mard-221-20260907-024129-065769.bak`；重放预览为 `database_changes=0 / images_reused=221 / already_current=true`，外键检查无结果。ProductKitColor 仍为独立商品配置：导入步骤不创建商品、不启用颜色、不写库存；本地此前已有草稿 Product `14`（`221自选颜色`）的 221 条关联，当前全部禁用且库存为 0，本次只让其关联的全局色板资料变为完整。“M6 未应用 Gate A”只描述本条形成时的历史状态；共享、预发布或生产 MySQL 仍未因此自动迁移，生产对象存储/CDN 发布与实体拼豆校色仍待完成。未新增依赖，未 commit/push/tag/release。
 
 ## Reservation N1 — 仓库实现候选（2026-09-06）
 
@@ -514,7 +519,7 @@
 ## Wallet / Payment / Refund v1 — 仓库实现（2026-09-05）
 
 > **历史状态说明：** 本节冻结 M4 候选形成时的门槛；M4、两个历史补齐、只读对账和远端
-> workflow 后续已在当前持久 Gate A M7 / 对应候选中完成。真实 Provider 与其他环境仍关闭。
+> workflow 后续已在 Gate A 的 M7 阶段完成，并由当前 live A/M9 继承。真实 Provider 与其他环境仍关闭。
 
 - 新增封闭式会员钱包：新建普通 `USER` 创建一个 `0.00–1000.00` 权威余额账户，历史 backfill 仅补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补；ADMIN/SUPER_ADMIN 始终不建钱包，均只能查询和调整普通客户。单笔充值金额冻结为 `1.00–1000.00`，资金写请求只接受固定两位小数字符串。
 - 密码注册和微信首次登录现将 `User + WalletAccount(0.00) + Audit/ExternalIdentity` 放在同一事务；runtime seed 只给合成 USER 建钱包。账号注销新增处理中资金、可退款钱包结算敞口和非零余额检查并关闭已有钱包；即使余额为零，未成功退款的 PAID 或 30 天内 COMPLETED 钱包结算仍阻断注销，历史资金事实继续由 RESTRICT 外键保留。注销以 DB commit 为权威成功点；提交后 Redis refresh-family 清理改为 best-effort，失败仍返回成功，依靠 `status/auth_version` 阻断会话，并记录不含 Token/JTI 的高优先级安全事件供运维重试清理。
@@ -609,7 +614,7 @@ Refresh 改为每次轮换双 Token，并通过 Redis Lua 原子消费、重放�
 
 ## Release Phase 9.4.2 — Gate A 持久部署拓扑（本地实现，2026-09-02）
 
-开始 Phase 9.4 真实内部测试环境准备。本节只记录本地仓库实现；尚未把应用部署到腾讯云主机，未写真实 Secret、运行持久迁移、启动 Gate A 容器、开放 80/443、配置 DNS/证书/微信后台或上传体验版，Gate A 仍为 No-Go。
+开始 Phase 9.4 真实内部测试环境准备。本节只记录当时的本地仓库实现；在本节形成时尚未把应用部署到腾讯云主机，未写真实 Secret、运行持久迁移、启动 Gate A 容器、开放 80/443、配置 DNS/证书/微信后台或上传体验版，Gate A 仍为 No-Go。后续 live 状态以前文 A/M9 失败检查点为准。
 
 - 将 Phase 9.3 已验证的 Python 3.10.9 非 root App Runtime 提升到共享 `deploy/runtime/`；演练编排改为构建同一 Runtime，避免 Gate A 复制并漂移入口脚本。MySQL 8.0.46、Redis 8.0.1、Nginx 1.27.5 和应用依赖没有升级。
 - 新增 `deploy/gatea/`：长期 MySQL/Redis/App/Nginx 使用固定 named volumes；只有 Nginx 加入 edge network，MySQL 3306、Redis 6379 和 App 8000 均不发布。备案等待期 override 只绑定 `127.0.0.1:18080`；TLS override 单独发布 80/443，必须显式提供已批准域名、证书和 ACME 目录。

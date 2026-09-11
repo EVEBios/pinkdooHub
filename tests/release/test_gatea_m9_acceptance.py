@@ -52,6 +52,37 @@ def _wallet_reconcile(*, scanned: int = 11) -> dict[str, int]:
     return {"scanned": scanned, "mismatches": 0, "violations": 0}
 
 
+def _allow_local_schema2_records(monkeypatch: pytest.MonkeyPatch) -> None:
+    """生产必须 root:root；单元测试仅绕过临时目录的宿主 owner。"""
+
+    real_validator = acceptance.gatea._require_schema2_record_metadata
+
+    def local_metadata(metadata: os.stat_result, description: str) -> None:
+        adjusted = SimpleNamespace(
+            **{
+                field: getattr(metadata, field)
+                for field in (
+                    "st_dev",
+                    "st_ino",
+                    "st_mode",
+                    "st_nlink",
+                    "st_size",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                )
+            },
+            st_uid=0,
+            st_gid=0,
+        )
+        real_validator(adjusted, description)
+
+    monkeypatch.setattr(
+        acceptance.gatea,
+        "_require_schema2_record_metadata",
+        local_metadata,
+    )
+
+
 def _context(tmp_path: Path) -> acceptance.PreparedContext:
     tmp_path.chmod(0o755)
     return acceptance.PreparedContext(
@@ -487,6 +518,168 @@ def test_upgrade_plan_replay_sidecar_is_strictly_bound(
         )
 
 
+def test_upgrade_plan_replay_accepts_zero_write_m9_adoption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upgrade_record_path = tmp_path / f"{CANDIDATE_SHA}.existing-database-upgrade.json"
+    evidence_path = tmp_path / (
+        f"{CANDIDATE_SHA}.existing-database-upgrade.evidence.json"
+    )
+    evidence_path.write_text('{"status":"succeeded"}\n', encoding="utf-8")
+    database_snapshot = {
+        "aerich_versions": list(acceptance.gatea.APPROVED_TARGET_M9_CHAIN)
+    }
+    image_manifest = {"count": 2, "sha256": "5" * 64}
+    m8_swatch_content = {
+        "schema_version": 1,
+        "profile": "m8-swatch-content-v1",
+        "content_sha256": "4" * 64,
+    }
+    # Candidate adoption may preserve already-closed M9 history; only live/open
+    # inconsistency must remain zero.
+    table_reconcile = _zero_reconcile(scanned=2)
+    predecessor_sha = "8" * 40
+    lineage_sha = SOURCE_SHA
+    upgrade_record = {
+        "schema_version": 2,
+        "record_type": "existing-database-upgrade",
+        "transition_kind": "m9-candidate-adoption",
+        "source_version": 9,
+        "target_version": 9,
+        "source_candidate_sha": predecessor_sha,
+        "source_image_id": "sha256:" + "8" * 64,
+        "lineage_source_candidate_sha": lineage_sha,
+        "lineage_source_image_id": "sha256:" + "7" * 64,
+        "source_aerich_versions": list(acceptance.gatea.APPROVED_TARGET_M9_CHAIN),
+        "target_aerich_versions": list(acceptance.gatea.APPROVED_TARGET_M9_CHAIN),
+        "backup_id": "20260910t010000z",
+        "manifest_sha256": "6" * 64,
+        "final_database_snapshot": database_snapshot,
+        "final_image_manifest": image_manifest,
+        "source_m8_swatch_content_snapshot": m8_swatch_content,
+        "final_m8_swatch_content_snapshot": m8_swatch_content,
+        "table_reconcile": table_reconcile,
+        "evidence_sha256": acceptance._sha256(evidence_path),
+        "acceptance_retirement_record_sha256": "9" * 64,
+    }
+    upgrade_record_path.write_text(
+        json.dumps(upgrade_record) + "\n", encoding="utf-8"
+    )
+    sidecar = {
+        "schema_version": 2,
+        "record_type": "gatea-m9-upgrade-plan-replay",
+        "transition_kind": "m9-candidate-adoption",
+        "passed": True,
+        "candidate_sha": CANDIDATE_SHA,
+        "source_candidate_sha": predecessor_sha,
+        "source_version": 9,
+        "image_id": IMAGE_ID,
+        "backup_id": upgrade_record["backup_id"],
+        "manifest_sha256": upgrade_record["manifest_sha256"],
+        "database_snapshot": database_snapshot,
+        "image_manifest": image_manifest,
+        "table_reconcile": table_reconcile,
+        "upgrade_record_sha256": acceptance._sha256(upgrade_record_path),
+        "evidence_sha256": acceptance._sha256(evidence_path),
+        "lineage_source_candidate_sha": lineage_sha,
+        "lineage_source_image_id": upgrade_record["lineage_source_image_id"],
+        "acceptance_retirement_record_sha256": (
+            upgrade_record["acceptance_retirement_record_sha256"]
+        ),
+        "database_changes_applied": False,
+        "migrations_applied": [],
+        "m8_swatch_content_snapshot": m8_swatch_content,
+        "result": {
+            "already_current": True,
+            "backup_id": upgrade_record["backup_id"],
+            "candidate_sha": CANDIDATE_SHA,
+            "manifest_sha256": upgrade_record["manifest_sha256"],
+            "mode": "plan-replay",
+            "source_aerich_versions": list(
+                acceptance.gatea.APPROVED_TARGET_M9_CHAIN
+            ),
+            "source_version": 9,
+            "target_aerich_versions": list(
+                acceptance.gatea.APPROVED_TARGET_M9_CHAIN
+            ),
+            "target_version": 9,
+            "transition_kind": "m9-candidate-adoption",
+            "database_changes_applied": False,
+            "migrations_applied": [],
+        },
+        "completed_at": "2026-09-10T00:50:00+00:00",
+        "secret_values_recorded": False,
+    }
+    sidecar_path = tmp_path / f"{CANDIDATE_SHA}.upgrade-plan-replay.json"
+    sidecar_path.write_text(json.dumps(sidecar) + "\n", encoding="utf-8")
+    monkeypatch.setattr(acceptance, "_validate_root_file", lambda *args: None)
+    _allow_local_schema2_records(monkeypatch)
+
+    assert acceptance._load_upgrade_plan_replay(
+        path=sidecar_path,
+        upgrade_record_path=upgrade_record_path,
+        upgrade_record=upgrade_record,
+        candidate_sha=CANDIDATE_SHA,
+        image_id=IMAGE_ID,
+    ) == acceptance._sha256(sidecar_path)
+
+    sidecar["migrations_applied"] = ["9_20260910180000_m9_table_session.py"]
+    sidecar_path.write_text(json.dumps(sidecar) + "\n", encoding="utf-8")
+    with pytest.raises(acceptance.M9AcceptanceError, match="does not match"):
+        acceptance._load_upgrade_plan_replay(
+            path=sidecar_path,
+            upgrade_record_path=upgrade_record_path,
+            upgrade_record=upgrade_record,
+            candidate_sha=CANDIDATE_SHA,
+            image_id=IMAGE_ID,
+        )
+
+    sidecar["m8_swatch_content_snapshot"] = m8_swatch_content
+    raw_sidecar = (json.dumps(sidecar) + "\n").replace(
+        '"schema_version": 2',
+        '"schema_version": 1, "schema_version": 2',
+        1,
+    )
+    sidecar_path.write_text(raw_sidecar, encoding="utf-8")
+    with pytest.raises(acceptance.M9AcceptanceError, match="invalid"):
+        acceptance._load_upgrade_plan_replay(
+            path=sidecar_path,
+            upgrade_record_path=upgrade_record_path,
+            upgrade_record=upgrade_record,
+            candidate_sha=CANDIDATE_SHA,
+            image_id=IMAGE_ID,
+        )
+
+    sidecar_path.write_text(json.dumps(sidecar) + "\n", encoding="utf-8")
+    alias_path = tmp_path / "upgrade-plan-replay-alias.json"
+    alias_path.hardlink_to(sidecar_path)
+    with pytest.raises(acceptance.M9AcceptanceError, match="invalid"):
+        acceptance._load_upgrade_plan_replay(
+            path=sidecar_path,
+            upgrade_record_path=upgrade_record_path,
+            upgrade_record=upgrade_record,
+            candidate_sha=CANDIDATE_SHA,
+            image_id=IMAGE_ID,
+        )
+    alias_path.unlink()
+
+    sidecar["migrations_applied"] = []
+    sidecar["m8_swatch_content_snapshot"] = {
+        **m8_swatch_content,
+        "content_sha256": "3" * 64,
+    }
+    sidecar_path.write_text(json.dumps(sidecar) + "\n", encoding="utf-8")
+    with pytest.raises(acceptance.M9AcceptanceError, match="does not match"):
+        acceptance._load_upgrade_plan_replay(
+            path=sidecar_path,
+            upgrade_record_path=upgrade_record_path,
+            upgrade_record=upgrade_record,
+            candidate_sha=CANDIDATE_SHA,
+            image_id=IMAGE_ID,
+        )
+
+
 def test_representative_credentials_must_match_the_strict_m7_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -558,6 +751,113 @@ def test_representative_credentials_must_match_the_strict_m7_record(
             source_candidate_sha=SOURCE_SHA,
             source_image_id="sha256:" + "e" * 64,
         )
+
+
+def test_table_secret_reader_uses_ephemeral_app_with_default_entrypoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    observed: dict[str, Any] = {}
+
+    def run_compose(**kwargs: Any) -> SimpleNamespace:
+        observed.update(kwargs)
+        return SimpleNamespace(
+            stdout=json.dumps(
+                {"table_no": "T01", "qr_token": QR_TOKEN},
+                separators=(",", ":"),
+            )
+            + "\n",
+            returncode=0,
+        )
+
+    monkeypatch.setattr(acceptance.gatea, "_run_compose", run_compose)
+
+    assert acceptance._read_table_secret(context) == ("T01", QR_TOKEN)
+    assert observed == {
+        "values": context.values,
+        "config_file": context.config_file,
+        "secret_dir": context.secret_dir,
+        "mode": "loopback",
+        "arguments": (
+            "run",
+            "--rm",
+            "--no-deps",
+            "app",
+            "python",
+            "-c",
+            acceptance.TABLE_SECRET_COMMAND,
+        ),
+        "capture_output": True,
+    }
+    assert "--entrypoint" not in observed["arguments"]
+
+
+@pytest.mark.parametrize("failure_kind", ["compose", "os-error", "non-json"])
+def test_table_secret_reader_hides_command_output_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_kind: str,
+) -> None:
+    context = _context(tmp_path)
+    leaked_value = "Z" * 32
+
+    def run_compose(**kwargs: Any) -> SimpleNamespace:
+        del kwargs
+        if failure_kind == "compose":
+            raise acceptance.subprocess.CalledProcessError(
+                1,
+                ["docker", "compose", "run"],
+                output=leaked_value,
+                stderr=leaked_value,
+            )
+        if failure_kind == "os-error":
+            raise OSError(leaked_value)
+        return SimpleNamespace(stdout=leaked_value, returncode=0)
+
+    monkeypatch.setattr(acceptance.gatea, "_run_compose", run_compose)
+
+    with pytest.raises(
+        acceptance.M9AcceptanceError,
+        match="table bootstrap identity could not be read safely",
+    ) as caught:
+        acceptance._read_table_secret(context)
+
+    assert leaked_value not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {"table_no": "T01", "qr_token": "Z" * 31},
+        {"table_no": "T02", "qr_token": "Z" * 32},
+        {"table_no": "T01", "qr_token": "Z" * 32, "extra": False},
+    ],
+)
+def test_table_secret_reader_rejects_invalid_identity_without_echoing_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload: object,
+) -> None:
+    context = _context(tmp_path)
+    leaked_value = "Z" * 32
+    monkeypatch.setattr(
+        acceptance.gatea,
+        "_run_compose",
+        lambda **kwargs: SimpleNamespace(
+            stdout=json.dumps(payload, separators=(",", ":")),
+            returncode=0,
+        ),
+    )
+
+    with pytest.raises(
+        acceptance.M9AcceptanceError,
+        match="table bootstrap identity is invalid",
+    ) as caught:
+        acceptance._read_table_secret(context)
+
+    assert leaked_value not in str(caught.value)
 
 
 def test_active_timer_verifier_proves_grouping_quantity_and_kit_exclusion() -> None:
@@ -935,6 +1235,35 @@ def _released_pending_context(
                 "super_admin_session_revoked": True,
             },
         )
+    pending = json.loads(context.pending_path.read_text(encoding="utf-8"))
+    return replace(context, pending=pending)
+
+
+def _cleaned_preclaim_failure_context(
+    tmp_path: Path,
+) -> acceptance.PreparedContext:
+    context = _context(tmp_path)
+    acceptance._create_pending(context)
+    order_evidence = acceptance._build_order_evidence(
+        order_id=91,
+        expected_timer_items={101: (60, 2), 102: (60, 1), 103: (120, 1)},
+        kit_order_item_id=104,
+        eligible_duration_groups=acceptance._expected_duration_groups(),
+    )
+    acceptance._update_pending(
+        context,
+        stage="order_created",
+        fixture_ids=(11, 12),
+        fixture=_fixture(),
+        order_evidence=order_evidence,
+        cleanup_updates={
+            "order_cancelled": True,
+            "fixture_products_offline": True,
+            "synthetic_session_revoked": True,
+            "super_admin_session_revoked": True,
+        },
+        failure=True,
+    )
     pending = json.loads(context.pending_path.read_text(encoding="utf-8"))
     return replace(context, pending=pending)
 
@@ -1684,6 +2013,112 @@ def test_clean_no_write_failure_retries_with_the_same_attempt(
     assert record["attempt_id_sha256"] == acceptance._sha256_text("a" * 32)
     assert authentication_checkpoints == [(False, False), (False, False)]
     assert not context.pending_path.exists()
+
+
+def test_cleaned_preclaim_failure_requires_forward_candidate_before_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _cleaned_preclaim_failure_context(tmp_path)
+    before = context.pending_path.read_bytes()
+    termination_started = False
+
+    class _UnexpectedTerminationController:
+        def __init__(self, description: str) -> None:
+            nonlocal termination_started
+            del description
+            termination_started = True
+
+    monkeypatch.setattr(
+        acceptance.backup,
+        "_RecoveryTerminationController",
+        _UnexpectedTerminationController,
+    )
+
+    plan = acceptance._plan_payload(context)
+    assert plan["disposition"] == "terminal_failure_requires_forward_candidate"
+    assert plan["ready_for_admin_assisted_acceptance"] is False
+    assert plan["resume_pending"] is True
+    assert plan["resume_stage"] == "order_created"
+
+    with pytest.raises(
+        acceptance.M9AcceptanceError,
+        match="requires a forward candidate",
+    ):
+        acceptance.execute(
+            context,
+            admin_username="admin-user-secret",
+            admin_password="admin-password-secret",
+        )
+
+    assert termination_started is False
+    assert context.pending_path.read_bytes() == before
+
+
+def test_cli_rejects_cleaned_preclaim_failure_before_reading_tty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    context = _cleaned_preclaim_failure_context(tmp_path)
+    tty_read = False
+    execute_called = False
+
+    @contextmanager
+    def no_op_guard() -> Any:
+        yield
+
+    def unexpected_tty_read() -> tuple[str, str]:
+        nonlocal tty_read
+        tty_read = True
+        return ("unexpected", "unexpected")
+
+    def unexpected_execute(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal execute_called
+        del args, kwargs
+        execute_called = True
+        return {}
+
+    monkeypatch.setattr(acceptance.gatea, "operation_lock", no_op_guard)
+    monkeypatch.setattr(
+        acceptance.gatea,
+        "operation_termination_guard",
+        no_op_guard,
+    )
+    monkeypatch.setattr(acceptance, "prepare", lambda **kwargs: context)
+    monkeypatch.setattr(
+        acceptance,
+        "_read_admin_identity_from_tty",
+        unexpected_tty_read,
+    )
+    monkeypatch.setattr(acceptance, "execute", unexpected_execute)
+
+    assert acceptance.main(["--apply-admin-assisted"]) == 1
+    assert tty_read is False
+    assert execute_called is False
+    assert "requires a forward candidate" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("stage", "authenticated", id="pre-order-stage"),
+        pytest.param("failure", False, id="not-failed"),
+        pytest.param("payment_committed", True, id="payment-committed"),
+        pytest.param("table_no", "T01", id="table-bound"),
+        pytest.param("session_no_sha256", "f" * 64, id="session-bound"),
+    ],
+)
+def test_forward_candidate_disposition_is_exact(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    context = _cleaned_preclaim_failure_context(tmp_path)
+    pending = dict(context.pending or {})
+    pending[field] = value
+
+    assert acceptance._is_terminal_cleaned_preclaim_failure(pending) is False
 
 
 def test_no_write_pending_without_complete_session_cleanup_fails_closed(

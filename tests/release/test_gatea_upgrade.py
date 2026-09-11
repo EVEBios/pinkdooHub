@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,6 +22,8 @@ SOURCE_SHA = "a" * 40
 TARGET_SHA = "b" * 40
 BACKUP_ID = "20260907t120000z"
 MANIFEST_SHA = "c" * 64
+LINEAGE_SHA = "d" * 40
+RETIREMENT_SHA = "e" * 64
 
 
 def test_upgrade_module_imports_with_standard_library_only() -> None:
@@ -248,6 +252,146 @@ def _empty_table_sweep_result() -> dict[str, object]:
     return {"status": "ok", "closed": 0}
 
 
+def _adoption_content_snapshot(profile: str, digest: str) -> dict[str, object]:
+    return {"schema_version": 1, "profile": profile, "content_sha256": digest}
+
+
+def _adoption_backup_record() -> dict[str, object]:
+    return {
+        "candidate_sha": SOURCE_SHA,
+        "image_id": "sha256:" + "1" * 64,
+        "database_snapshot": _source_backup_snapshot(9),
+        "image_manifest": _mard_image_manifest(),
+        "m7_content_snapshot": _adoption_content_snapshot(
+            "m7-preserved-business-v1", "2" * 64
+        ),
+        "m8_swatch_content_snapshot": _adoption_content_snapshot(
+            "m8-swatch-content-v1", "a" * 64
+        ),
+        "m9_table_content_snapshot": _adoption_content_snapshot(
+            "m9-table-business-v1", "3" * 64
+        ),
+    }
+
+
+def _bound_backup(
+    backup_record: dict[str, object],
+    *,
+    backup_record_sha256: str = "a" * 64,
+    restore_record: dict[str, object] | None = None,
+    restore_record_sha256: str = "d" * 64,
+) -> upgrade._BoundBackupRecords:
+    return upgrade._BoundBackupRecords(
+        backup_record=backup_record,
+        backup_record_sha256=backup_record_sha256,
+        restore_record=restore_record or {},
+        restore_record_sha256=restore_record_sha256,
+    )
+
+
+def _patch_verified_backup_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+) -> None:
+    """语义测试绕过文件 owner；稳定 reader 本身由独立回归覆盖。"""
+
+    def load_record(path: Path, description: str) -> tuple[dict[str, object], str]:
+        if description == "verified backup record":
+            return payload, "a" * 64
+        try:
+            content = path.read_bytes()
+            loaded = json.loads(content)
+        except (OSError, json.JSONDecodeError) as error:
+            raise upgrade.GateAUpgradeError(
+                f"Gate A {description} is unavailable"
+            ) from error
+        return loaded, upgrade.hashlib.sha256(content).hexdigest()
+
+    monkeypatch.setattr(upgrade, "_load_bound_json_with_sha256", load_record)
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_validate_loaded_backup_record",
+        lambda **kwargs: (
+            kwargs["payload"],
+            Path("/db.sql"),
+            Path("/images.tar"),
+        ),
+    )
+
+
+def _allow_local_bound_records(monkeypatch: pytest.MonkeyPatch) -> None:
+    """生产必须 root:root；测试只替换临时文件的 owner。"""
+
+    real_validator = upgrade._require_adoption_record_metadata
+
+    def local_metadata(metadata: os.stat_result, description: str) -> None:
+        adjusted = SimpleNamespace(
+            **{
+                field: getattr(metadata, field)
+                for field in (
+                    "st_dev",
+                    "st_ino",
+                    "st_mode",
+                    "st_nlink",
+                    "st_size",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                )
+            },
+            st_uid=0,
+            st_gid=0,
+        )
+        real_validator(adjusted, description)
+
+    monkeypatch.setattr(upgrade, "_require_adoption_record_metadata", local_metadata)
+
+
+def _adoption_context() -> dict[str, object]:
+    return {
+        "stage_record_sha256": "4" * 64,
+        "activation_record_sha256": "5" * 64,
+        "lineage_source_candidate_sha": LINEAGE_SHA,
+        "lineage_source_image_id": "sha256:" + "6" * 64,
+        "acceptance_retirement_record_sha256": RETIREMENT_SHA,
+        "backup_record_sha256": "7" * 64,
+        "restore_record_sha256": "8" * 64,
+        "predecessor_stage_record_sha256": "9" * 64,
+        "predecessor_activation_record_sha256": "a" * 64,
+        "predecessor_upgrade_record_sha256": "b" * 64,
+        "predecessor_upgrade_evidence_sha256": "c" * 64,
+        "predecessor_upgrade_plan_replay_record_sha256": "d" * 64,
+    }
+
+
+def _adoption_state() -> dict[str, object]:
+    snapshot = _final_snapshot() | {
+        "table_sessions": 4,
+        "table_session_timers": 3,
+        "table_occupancies": 0,
+    }
+    m7_content = _adoption_content_snapshot(
+        "m7-preserved-business-v1", "2" * 64
+    )
+    m8_swatch_content = _adoption_content_snapshot(
+        "m8-swatch-content-v1", "a" * 64
+    )
+    m9_content = _adoption_content_snapshot("m9-table-business-v1", "3" * 64)
+    images = _manifest_summary_fixture(_mard_image_manifest())
+    return {
+        "source_database_snapshot": snapshot,
+        "final_database_snapshot": snapshot,
+        "source_m7_content_snapshot": m7_content,
+        "final_m7_content_snapshot": m7_content,
+        "source_m8_swatch_content_snapshot": m8_swatch_content,
+        "final_m8_swatch_content_snapshot": m8_swatch_content,
+        "source_m9_table_content_snapshot": m9_content,
+        "final_m9_table_content_snapshot": m9_content,
+        "source_image_manifest": images,
+        "final_image_manifest": images,
+        "table_reconcile": _empty_table_reconcile_result() | {"scanned": 4},
+    }
+
+
 def _replay_task_result(
     description: str,
     *,
@@ -469,10 +613,10 @@ def test_m7_plan_requires_explicit_source_version_before_loading_backup(
         lambda **kwargs: _source_status(7),
     )
 
-    def load_backup(**kwargs: object) -> dict[str, object]:
+    def load_backup(**kwargs: object) -> upgrade._BoundBackupRecords:
         nonlocal backup_loads
         backup_loads += 1
-        return _backup_record(7)
+        return _bound_backup(_backup_record(7))
 
     monkeypatch.setattr(upgrade, "_load_verified_backup", load_backup)
     monkeypatch.setattr(upgrade, "_manifest_sha256", lambda: MANIFEST_SHA)
@@ -2027,11 +2171,7 @@ def test_verified_backup_must_be_fresh_and_have_exact_restore_record(
         "image_manifest": [],
     }
     monkeypatch.setattr(upgrade.backup, "_validate_backup_directories", lambda **kwargs: None)
-    monkeypatch.setattr(
-        upgrade.backup,
-        "_load_backup_record",
-        lambda **kwargs: (payload, Path("/db.sql"), Path("/images.tar")),
-    )
+    _patch_verified_backup_payload(monkeypatch, payload)
     monkeypatch.setattr(upgrade.backup, "_sha256", lambda path: "a" * 64)
 
     with pytest.raises(upgrade.GateAUpgradeError, match="within 24 hours"):
@@ -2074,12 +2214,12 @@ def test_verified_backup_rejects_pending_before_loading_backup_record(
         lambda **kwargs: None,
     )
 
-    def unexpected_load(**kwargs: object) -> object:
+    def unexpected_load(*args: object, **kwargs: object) -> object:
         nonlocal loaded
         loaded = True
         raise AssertionError("pending backup must fail before record loading")
 
-    monkeypatch.setattr(upgrade.backup, "_load_backup_record", unexpected_load)
+    monkeypatch.setattr(upgrade, "_load_bound_json_with_sha256", unexpected_load)
 
     with pytest.raises(
         upgrade.GateAUpgradeError,
@@ -2139,11 +2279,7 @@ def test_verified_m7_backup_requires_restore_record_with_exact_content_digest(
         "_validate_backup_directories",
         lambda **kwargs: None,
     )
-    monkeypatch.setattr(
-        upgrade.backup,
-        "_load_backup_record",
-        lambda **kwargs: (payload, Path("/db.sql"), Path("/images.tar")),
-    )
+    _patch_verified_backup_payload(monkeypatch, payload)
     monkeypatch.setattr(
         upgrade.backup,
         "_sha256",
@@ -2161,7 +2297,7 @@ def test_verified_m7_backup_requires_restore_record_with_exact_content_digest(
         backup_root=backup_root,
         backup_record_dir=backup_records,
         restore_record_dir=restore_records,
-    ) == payload
+    ).backup_record == payload
 
     restore_payload["m7_content_snapshot"] = _m7_content_snapshot("8" * 64)
     restore_path.write_text(json.dumps(restore_payload), encoding="utf-8")
@@ -2174,6 +2310,399 @@ def test_verified_m7_backup_requires_restore_record_with_exact_content_digest(
             backup_record_dir=backup_records,
             restore_record_dir=restore_records,
         )
+
+
+def test_m9_adoption_backup_requires_exact_swatch_restore_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    backup_root = tmp_path / "backups"
+    backup_records = tmp_path / "backup-records"
+    restore_records = tmp_path / "restore-records"
+    restore_records.mkdir()
+    completed = datetime.now(timezone.utc) - timedelta(minutes=10)
+    backup_payload = {
+        **_adoption_backup_record(),
+        "completed_at": completed.isoformat(),
+        "consistency": "nginx-and-app-stopped",
+        "application_restarted": True,
+        "passed": True,
+    }
+    restore_payload: dict[str, object] = {
+        "schema_version": 1,
+        "backup_id": BACKUP_ID,
+        "candidate_sha": SOURCE_SHA,
+        "restore_project": upgrade.backup.restore_project(BACKUP_ID),
+        "completed_at": (completed + timedelta(minutes=1)).isoformat(),
+        "host_ports_published": False,
+        "backup_record_sha256": "a" * 64,
+        "mysql_artifact_sha256": "b" * 64,
+        "image_artifact_sha256": "c" * 64,
+        "m7_content_matches": True,
+        "m7_content_snapshot": backup_payload["m7_content_snapshot"],
+        "m8_swatch_content_matches": True,
+        "m8_swatch_content_snapshot": backup_payload[
+            "m8_swatch_content_snapshot"
+        ],
+        "m9_table_content_matches": True,
+        "m9_table_content_snapshot": backup_payload[
+            "m9_table_content_snapshot"
+        ],
+    }
+    restore_payload.update({field: True for field in upgrade.RESTORE_TRUE_FIELDS})
+    restore_path = restore_records / f"{BACKUP_ID}.json"
+    restore_path.write_text(json.dumps(restore_payload), encoding="utf-8")
+    monkeypatch.setattr(
+        upgrade.backup, "_validate_backup_directories", lambda **kwargs: None
+    )
+    _patch_verified_backup_payload(monkeypatch, backup_payload)
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_sha256",
+        lambda path: {
+            f"{BACKUP_ID}.json": "a" * 64,
+            "db.sql": "b" * 64,
+            "images.tar": "c" * 64,
+        }[path.name],
+    )
+
+    assert upgrade._load_verified_backup(
+        values=_values(backup_root),
+        backup_id=BACKUP_ID,
+        source_candidate_sha=SOURCE_SHA,
+        backup_root=backup_root,
+        backup_record_dir=backup_records,
+        restore_record_dir=restore_records,
+        require_m8_swatch_content_snapshot=True,
+    ).backup_record == backup_payload
+
+    missing_backup = dict(backup_payload)
+    missing_backup.pop("m8_swatch_content_snapshot")
+    _patch_verified_backup_payload(monkeypatch, missing_backup)
+    with pytest.raises(upgrade.GateAUpgradeError, match="lacks M8 swatch"):
+        upgrade._load_verified_backup(
+            values=_values(backup_root),
+            backup_id=BACKUP_ID,
+            source_candidate_sha=SOURCE_SHA,
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+            restore_record_dir=restore_records,
+            require_m8_swatch_content_snapshot=True,
+        )
+
+    _patch_verified_backup_payload(monkeypatch, backup_payload)
+    restore_payload.pop("m8_swatch_content_snapshot")
+    restore_path.write_text(json.dumps(restore_payload), encoding="utf-8")
+    with pytest.raises(upgrade.GateAUpgradeError, match="restore PASS record"):
+        upgrade._load_verified_backup(
+            values=_values(backup_root),
+            backup_id=BACKUP_ID,
+            source_candidate_sha=SOURCE_SHA,
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+            restore_record_dir=restore_records,
+            require_m8_swatch_content_snapshot=True,
+        )
+
+    restore_payload["m8_swatch_content_snapshot"] = _adoption_content_snapshot(
+        "m8-swatch-content-v1", "f" * 64
+    )
+    restore_path.write_text(json.dumps(restore_payload), encoding="utf-8")
+    with pytest.raises(upgrade.GateAUpgradeError, match="restore PASS record"):
+        upgrade._load_verified_backup(
+            values=_values(backup_root),
+            backup_id=BACKUP_ID,
+            source_candidate_sha=SOURCE_SHA,
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+            restore_record_dir=restore_records,
+            require_m8_swatch_content_snapshot=True,
+        )
+
+
+def _write_verified_m9_backup_pair(
+    tmp_path: Path,
+    *,
+    completed_at: datetime | None = None,
+) -> tuple[
+    Path,
+    Path,
+    Path,
+    dict[str, object],
+    dict[str, object],
+    bytes,
+    bytes,
+]:
+    backup_root = tmp_path / "backups"
+    backup_records = tmp_path / "backup-records"
+    restore_records = tmp_path / "restore-records"
+    database_path, image_path = upgrade.backup._backup_paths(
+        backup_root,
+        BACKUP_ID,
+    )
+    for directory in (
+        database_path.parent,
+        image_path.parent,
+        backup_records,
+        restore_records,
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    database_path.write_bytes(b"verified mysql backup\n")
+    image_path.write_bytes(b"verified image backup\n")
+    completed_at = completed_at or (
+        datetime.now(timezone.utc) - timedelta(minutes=10)
+    )
+    backup_payload = {
+        **_adoption_backup_record(),
+        "schema_version": 1,
+        "backup_id": BACKUP_ID,
+        "completed_at": completed_at.isoformat(),
+        "consistency": "nginx-and-app-stopped",
+        "application_restarted": True,
+        "passed": True,
+        "artifacts": {
+            "mysql": {
+                "path": str(database_path),
+                "bytes": database_path.stat().st_size,
+                "sha256": upgrade.backup._sha256(database_path),
+            },
+            "images": {
+                "path": str(image_path),
+                "bytes": image_path.stat().st_size,
+                "sha256": upgrade.backup._sha256(image_path),
+            },
+        },
+    }
+    backup_path = backup_records / f"{BACKUP_ID}.json"
+    backup_bytes = (
+        json.dumps(backup_payload, ensure_ascii=False, sort_keys=True) + "\n"
+    ).encode()
+    backup_path.write_bytes(backup_bytes)
+    backup_path.chmod(0o644)
+    restore_payload: dict[str, object] = {
+        "schema_version": 1,
+        "backup_id": BACKUP_ID,
+        "candidate_sha": SOURCE_SHA,
+        "restore_project": upgrade.backup.restore_project(BACKUP_ID),
+        "completed_at": (completed_at + timedelta(minutes=1)).isoformat(),
+        "host_ports_published": False,
+        "backup_record_sha256": upgrade.hashlib.sha256(backup_bytes).hexdigest(),
+        "mysql_artifact_sha256": upgrade.backup._sha256(database_path),
+        "image_artifact_sha256": upgrade.backup._sha256(image_path),
+        "m7_content_matches": True,
+        "m7_content_snapshot": backup_payload["m7_content_snapshot"],
+        "m8_swatch_content_matches": True,
+        "m8_swatch_content_snapshot": backup_payload[
+            "m8_swatch_content_snapshot"
+        ],
+        "m9_table_content_matches": True,
+        "m9_table_content_snapshot": backup_payload[
+            "m9_table_content_snapshot"
+        ],
+    }
+    restore_payload.update({field: True for field in upgrade.RESTORE_TRUE_FIELDS})
+    restore_path = restore_records / f"{BACKUP_ID}.json"
+    restore_bytes = (
+        json.dumps(restore_payload, ensure_ascii=False, sort_keys=True) + "\n"
+    ).encode()
+    restore_path.write_bytes(restore_bytes)
+    restore_path.chmod(0o644)
+    return (
+        backup_root,
+        backup_path,
+        restore_path,
+        backup_payload,
+        restore_payload,
+        backup_bytes,
+        restore_bytes,
+    )
+
+
+def test_verified_backup_digests_are_from_the_semantically_validated_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (
+        backup_root,
+        backup_path,
+        restore_path,
+        backup_payload,
+        restore_payload,
+        backup_bytes,
+        restore_bytes,
+    ) = _write_verified_m9_backup_pair(tmp_path)
+    _allow_local_bound_records(monkeypatch)
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_validate_backup_directories",
+        lambda **kwargs: None,
+    )
+    real_backup_validator = upgrade.backup._validate_loaded_backup_record
+    real_restore_validator = upgrade._validate_restore_record
+
+    def replace_backup_after_read(
+        **kwargs: object,
+    ) -> tuple[dict[str, object], Path, Path]:
+        replacement = backup_path.with_name("replacement-backup.json")
+        replacement.write_text('{"replacement":true}\n', encoding="utf-8")
+        replacement.chmod(0o644)
+        replacement.replace(backup_path)
+        return real_backup_validator(**kwargs)
+
+    def replace_restore_after_read(**kwargs: object) -> dict[str, object]:
+        replacement = restore_path.with_name("replacement-restore.json")
+        replacement.write_text('{"replacement":true}\n', encoding="utf-8")
+        replacement.chmod(0o644)
+        replacement.replace(restore_path)
+        return real_restore_validator(**kwargs)
+
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_validate_loaded_backup_record",
+        replace_backup_after_read,
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_validate_restore_record",
+        replace_restore_after_read,
+    )
+
+    verified = upgrade._load_verified_backup(
+        values=_values(backup_root),
+        backup_id=BACKUP_ID,
+        source_candidate_sha=SOURCE_SHA,
+        backup_root=backup_root,
+        backup_record_dir=backup_path.parent,
+        restore_record_dir=restore_path.parent,
+        require_m8_swatch_content_snapshot=True,
+    )
+
+    assert verified.backup_record == backup_payload
+    assert verified.restore_record == restore_payload
+    assert verified.backup_record_sha256 == upgrade.hashlib.sha256(
+        backup_bytes
+    ).hexdigest()
+    assert verified.restore_record_sha256 == upgrade.hashlib.sha256(
+        restore_bytes
+    ).hexdigest()
+    assert backup_path.read_bytes() != backup_bytes
+    assert restore_path.read_bytes() != restore_bytes
+
+
+@pytest.mark.parametrize(
+    "description",
+    ("verified backup record", "restore PASS record"),
+)
+def test_bound_backup_reader_rejects_path_swap_during_open(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    description: str,
+) -> None:
+    record_path = tmp_path / "record.json"
+    replacement_path = tmp_path / "replacement.json"
+    displaced_path = tmp_path / "displaced.json"
+    record_path.write_text('{"schema_version":1}\n', encoding="utf-8")
+    replacement_path.write_text('{"schema_version":1}\n', encoding="utf-8")
+    record_path.chmod(0o644)
+    replacement_path.chmod(0o644)
+    _allow_local_bound_records(monkeypatch)
+    real_open = upgrade.os.open
+    swapped = False
+
+    def swapping_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        nonlocal swapped
+        if Path(path) == record_path and not swapped:
+            swapped = True
+            assert flags & os.O_NOFOLLOW
+            record_path.replace(displaced_path)
+            replacement_path.replace(record_path)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(upgrade.os, "open", swapping_open)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="changed during validation"):
+        upgrade._load_bound_json_with_sha256(record_path, description)
+
+
+@pytest.mark.parametrize(
+    "description",
+    ("verified backup record", "restore PASS record"),
+)
+def test_bound_backup_reader_rejects_fd_metadata_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    description: str,
+) -> None:
+    record_path = tmp_path / "record.json"
+    record_path.write_text('{"schema_version":1}\n', encoding="utf-8")
+    record_path.chmod(0o644)
+    _allow_local_bound_records(monkeypatch)
+    real_fstat = upgrade.os.fstat
+    fstat_calls = 0
+
+    def drifting_fstat(descriptor: int) -> object:
+        nonlocal fstat_calls
+        metadata = real_fstat(descriptor)
+        fstat_calls += 1
+        if fstat_calls == 1:
+            return metadata
+        return SimpleNamespace(
+            st_dev=metadata.st_dev,
+            st_ino=metadata.st_ino,
+            st_mode=metadata.st_mode,
+            st_nlink=metadata.st_nlink,
+            st_uid=metadata.st_uid,
+            st_gid=metadata.st_gid,
+            st_size=metadata.st_size,
+            st_mtime_ns=metadata.st_mtime_ns + 1,
+            st_ctime_ns=metadata.st_ctime_ns,
+        )
+
+    monkeypatch.setattr(upgrade.os, "fstat", drifting_fstat)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="changed during validation"):
+        upgrade._load_bound_json_with_sha256(record_path, description)
+
+
+@pytest.mark.parametrize(
+    ("description", "mutation"),
+    (
+        ("verified backup record", "duplicate-key"),
+        ("verified backup record", "symlink"),
+        ("verified backup record", "hardlink"),
+        ("restore PASS record", "duplicate-key"),
+        ("restore PASS record", "symlink"),
+        ("restore PASS record", "hardlink"),
+    ),
+)
+def test_bound_backup_reader_rejects_ambiguous_or_aliased_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    description: str,
+    mutation: str,
+) -> None:
+    record_path = tmp_path / "record.json"
+    target_path = tmp_path / "target.json"
+    alias_path = tmp_path / "alias.json"
+    if mutation == "duplicate-key":
+        record_path.write_text(
+            '{"schema_version":1,"schema_version":1}\n',
+            encoding="utf-8",
+        )
+    elif mutation == "symlink":
+        target_path.write_text('{"schema_version":1}\n', encoding="utf-8")
+        record_path.symlink_to(target_path)
+    else:
+        record_path.write_text('{"schema_version":1}\n', encoding="utf-8")
+        alias_path.hardlink_to(record_path)
+    _allow_local_bound_records(monkeypatch)
+
+    with pytest.raises(
+        upgrade.GateAUpgradeError,
+        match="unsafe metadata|unavailable",
+    ):
+        upgrade._load_bound_json_with_sha256(record_path, description)
+
 
 def test_final_snapshot_rejects_core_drift_wallet_or_mard_gap() -> None:
     source = _source_backup_snapshot()
@@ -2783,3 +3312,1254 @@ def test_deployment_record_accepts_upgrade_and_rejects_tampering(
             candidate_sha=TARGET_SHA,
             image_id="sha256:target",
         )
+
+
+def _patch_m9_adoption_entry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    state: dict[str, object] | None = None,
+) -> list[tuple[str, ...]]:
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        gatea, "_validated_inputs", lambda **kwargs: _values(tmp_path / "backups")
+    )
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    monkeypatch.setattr(
+        gatea, "validate_app_image", lambda values: "sha256:" + "0" * 64
+    )
+    monkeypatch.setattr(upgrade, "_manifest_sha256", lambda: MANIFEST_SHA)
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [
+            {
+                "Service": service,
+                "State": "running",
+                "Health": "healthy",
+            }
+            for service in kwargs["services"]
+        ],
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_plan_m9_adoption",
+        lambda **kwargs: (
+            TARGET_SHA,
+            "sha256:" + "0" * 64,
+            _adoption_backup_record(),
+            _adoption_context(),
+        ),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_read_m9_adoption_state",
+        lambda **kwargs: state or _adoption_state(),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_runtime_preflight",
+        lambda **kwargs: {
+            "app_env": "production",
+            "db_engine": "mysql",
+            "jwt_algorithm": "HS256",
+            "table_session_claims_enabled": True,
+            "validated": True,
+        },
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_run_compose",
+        lambda **kwargs: commands.append(tuple(kwargs["arguments"]))
+        or subprocess.CompletedProcess(args=[], returncode=0),
+    )
+    return commands
+
+
+def _m9_adoption_arguments(tmp_path: Path, *, apply: bool) -> dict[str, object]:
+    return {
+        **_common_arguments(tmp_path, apply=apply, source_version=9),
+        "lineage_source_candidate_sha": LINEAGE_SHA,
+        "acceptance_retirement_record_sha256": RETIREMENT_SHA,
+        "confirm_lineage_source_sha": LINEAGE_SHA if apply else None,
+        "confirm_acceptance_retirement_record_sha256": (
+            RETIREMENT_SHA if apply else None
+        ),
+    }
+
+
+def _write_succeeded_adoption_evidence(
+    tmp_path: Path,
+    *,
+    context: dict[str, object] | None = None,
+    started_at: str = "2026-09-11T12:00:00+00:00",
+    completed_at: str = "2026-09-11T12:01:00+00:00",
+) -> Path:
+    evidence_path = (
+        tmp_path / f"{TARGET_SHA}.existing-database-upgrade.evidence.json"
+    )
+    evidence = {
+        "schema_version": 2,
+        "transition_kind": upgrade.M9_ADOPTION_TRANSITION_KIND,
+        "record_type": "existing-database-upgrade-evidence",
+        "status": "succeeded",
+        "current_stage": "completed",
+        "candidate_sha": TARGET_SHA,
+        "image_id": "sha256:" + "0" * 64,
+        "source_candidate_sha": SOURCE_SHA,
+        "source_image_id": _adoption_backup_record()["image_id"],
+        "source_version": 9,
+        "target_version": 9,
+        "source_aerich_versions": list(APPROVED_MIGRATIONS),
+        "target_aerich_versions": list(APPROVED_MIGRATIONS),
+        "backup_id": BACKUP_ID,
+        "manifest_sha256": MANIFEST_SHA,
+        "runtime_preflight": {
+            "app_env": "production",
+            "db_engine": "mysql",
+            "jwt_algorithm": "HS256",
+            "table_session_claims_enabled": True,
+            "validated": True,
+        },
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "database_changes_applied": False,
+        "migrations_applied": [],
+        "steps": [],
+        **(context or _adoption_context()),
+        **_adoption_state(),
+        "stopped_source_verified": True,
+    }
+    assert set(evidence) == gatea.M9_ADOPTION_EVIDENCE_RECORD_KEYS
+    upgrade._write_json_exclusive(evidence_path, evidence)
+    return evidence_path
+
+
+def _patch_stopped_adoption_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    state: dict[str, object] | None = None,
+) -> list[tuple[str, ...]]:
+    commands = _patch_m9_adoption_entry(
+        monkeypatch,
+        tmp_path,
+        state=state,
+    )
+    monkeypatch.setattr(
+        upgrade, "_require_adoption_record_metadata", lambda *args: None
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_compose_ps",
+        lambda **kwargs: [
+            {
+                "Service": service,
+                "State": (
+                    "running" if service in {"mysql", "redis"} else "exited"
+                ),
+                "Health": (
+                    "healthy" if service in {"mysql", "redis"} else ""
+                ),
+            }
+            for service in kwargs["services"]
+        ],
+    )
+    return commands
+
+
+def test_m9_adoption_plan_is_read_only_and_preserves_closed_history(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands = _patch_m9_adoption_entry(monkeypatch, tmp_path)
+
+    result = upgrade.upgrade_existing_database(
+        **_m9_adoption_arguments(tmp_path, apply=False)
+    )
+
+    assert result == {
+        "already_current": False,
+        "backup_id": BACKUP_ID,
+        "candidate_sha": TARGET_SHA,
+        "database_changes_applied": False,
+        "manifest_sha256": MANIFEST_SHA,
+        "migrations_applied": [],
+        "mode": "plan",
+        "source_aerich_versions": list(APPROVED_MIGRATIONS),
+        "source_version": 9,
+        "target_aerich_versions": list(APPROVED_MIGRATIONS),
+        "target_version": 9,
+        "transition_kind": upgrade.M9_ADOPTION_TRANSITION_KIND,
+        "restore_verified": True,
+        "source_candidate_sha": SOURCE_SHA,
+        "lineage_source_candidate_sha": LINEAGE_SHA,
+        "lineage_source_image_id": "sha256:" + "6" * 64,
+        "acceptance_retirement_record_sha256": RETIREMENT_SHA,
+        "table_reconcile": _empty_table_reconcile_result() | {"scanned": 4},
+    }
+    assert commands == []
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_m9_adoption_apply_writes_schema2_without_database_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands = _patch_m9_adoption_entry(monkeypatch, tmp_path)
+    compose_calls = 0
+
+    def compose_ps(**kwargs: object) -> list[dict[str, str]]:
+        nonlocal compose_calls
+        compose_calls += 1
+        stopped = compose_calls > 1
+        return [
+            {
+                "Service": service,
+                "State": (
+                    "exited"
+                    if stopped and service in {"app", "table-sweeper", "nginx"}
+                    else "running"
+                ),
+                "Health": (
+                    "healthy" if service in {"mysql", "redis"} or not stopped else ""
+                ),
+            }
+            for service in kwargs["services"]
+        ]
+
+    monkeypatch.setattr(gatea, "_compose_ps", compose_ps)
+
+    result = upgrade.upgrade_existing_database(
+        **_m9_adoption_arguments(tmp_path, apply=True)
+    )
+
+    assert commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
+    assert result["database_changes_applied"] is False
+    assert result["migrations_applied"] == []
+    success = json.loads(
+        gatea._upgrade_marker(tmp_path, TARGET_SHA).read_text(encoding="utf-8")
+    )
+    evidence = json.loads(
+        (
+            tmp_path
+            / f"{TARGET_SHA}.existing-database-upgrade.evidence.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert set(success) == gatea.M9_ADOPTION_UPGRADE_RECORD_KEYS
+    assert set(evidence) == gatea.M9_ADOPTION_EVIDENCE_RECORD_KEYS
+    assert success["schema_version"] == 2
+    assert success["transition_kind"] == upgrade.M9_ADOPTION_TRANSITION_KIND
+    assert success["source_database_snapshot"] == success["final_database_snapshot"]
+    assert success["source_m7_content_snapshot"] == success["final_m7_content_snapshot"]
+    assert (
+        success["source_m8_swatch_content_snapshot"]
+        == success["final_m8_swatch_content_snapshot"]
+        == _adoption_backup_record()["m8_swatch_content_snapshot"]
+    )
+    assert (
+        success["source_m9_table_content_snapshot"]
+        == success["final_m9_table_content_snapshot"]
+    )
+    assert success["source_image_manifest"] == success["final_image_manifest"]
+    assert "table_sweep" not in success
+    assert "table_bootstrap" not in success
+    assert "mard_publication" not in success
+    assert "wallet_preparation" not in success
+
+
+@pytest.mark.parametrize("error_kind", ("sigterm", "keyboard-interrupt", "runtime"))
+def test_m9_adoption_preserves_succeeded_evidence_when_success_publish_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    error_kind: str,
+) -> None:
+    commands = _patch_m9_adoption_entry(monkeypatch, tmp_path)
+    compose_calls = 0
+
+    def compose_ps(**kwargs: object) -> list[dict[str, str]]:
+        nonlocal compose_calls
+        compose_calls += 1
+        stopped = compose_calls > 1
+        return [
+            {
+                "Service": service,
+                "State": (
+                    "exited"
+                    if stopped and service in {"app", "table-sweeper", "nginx"}
+                    else "running"
+                ),
+                "Health": (
+                    "healthy" if service in {"mysql", "redis"} or not stopped else ""
+                ),
+            }
+            for service in kwargs["services"]
+        ]
+
+    monkeypatch.setattr(gatea, "_compose_ps", compose_ps)
+    monkeypatch.setattr(
+        upgrade, "_require_adoption_record_metadata", lambda *args: None
+    )
+    publish_error: BaseException
+    if error_kind == "sigterm":
+        publish_error = gatea.GateAOperationInterrupted("received SIGTERM")
+    elif error_kind == "keyboard-interrupt":
+        publish_error = KeyboardInterrupt("received SIGINT")
+    else:
+        publish_error = RuntimeError("success publish failed")
+    success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
+    original_writer = upgrade._write_json_exclusive
+
+    def interrupted_writer(path: Path, payload: dict[str, object]) -> None:
+        if path == success_path:
+            raise publish_error
+        original_writer(path, payload)
+
+    monkeypatch.setattr(upgrade, "_write_json_exclusive", interrupted_writer)
+
+    with pytest.raises(type(publish_error)) as raised:
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    evidence_path = (
+        tmp_path / f"{TARGET_SHA}.existing-database-upgrade.evidence.json"
+    )
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert raised.value is publish_error
+    assert commands == [
+        ("stop", "--timeout", "30", "nginx", "table-sweeper", "app")
+    ]
+    assert evidence["status"] == "succeeded"
+    assert evidence["current_stage"] == "completed"
+    assert "error_type" not in evidence
+    assert not success_path.exists()
+
+
+def test_m9_adoption_checkpoint_error_precedes_success_publish_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_m9_adoption_entry(monkeypatch, tmp_path)
+    compose_calls = 0
+
+    def compose_ps(**kwargs: object) -> list[dict[str, str]]:
+        nonlocal compose_calls
+        compose_calls += 1
+        stopped = compose_calls > 1
+        return [
+            {
+                "Service": service,
+                "State": (
+                    "exited"
+                    if stopped and service in {"app", "table-sweeper", "nginx"}
+                    else "running"
+                ),
+                "Health": (
+                    "healthy" if service in {"mysql", "redis"} or not stopped else ""
+                ),
+            }
+            for service in kwargs["services"]
+        ]
+
+    monkeypatch.setattr(gatea, "_compose_ps", compose_ps)
+    monkeypatch.setattr(
+        upgrade, "_require_adoption_record_metadata", lambda *args: None
+    )
+    success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
+    publish_error = RuntimeError("success publish failed")
+    checkpoint_error = upgrade.GateAUpgradeError("checkpoint validation failed")
+    original_writer = upgrade._write_json_exclusive
+
+    def interrupted_writer(path: Path, payload: dict[str, object]) -> None:
+        if path == success_path:
+            raise publish_error
+        original_writer(path, payload)
+
+    def reject_checkpoint(**kwargs: object) -> dict[str, object]:
+        raise checkpoint_error
+
+    monkeypatch.setattr(upgrade, "_write_json_exclusive", interrupted_writer)
+    monkeypatch.setattr(
+        upgrade,
+        "_m9_adoption_success_from_evidence",
+        reject_checkpoint,
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError) as raised:
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    evidence_path = (
+        tmp_path / f"{TARGET_SHA}.existing-database-upgrade.evidence.json"
+    )
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert raised.value is checkpoint_error
+    assert raised.value.__cause__ is publish_error
+    assert evidence["status"] == "succeeded"
+    assert "error_type" not in evidence
+    assert not success_path.exists()
+
+
+def test_m9_adoption_recovers_success_after_succeeded_evidence_sigkill_window(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    evidence_path = _write_succeeded_adoption_evidence(tmp_path)
+    monkeypatch.setattr(
+        upgrade,
+        "_run_task",
+        lambda **kwargs: pytest.fail("adoption recovery ran a database task"),
+    )
+
+    result = upgrade.upgrade_existing_database(
+        **_m9_adoption_arguments(tmp_path, apply=True)
+    )
+
+    success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
+    success = json.loads(success_path.read_text(encoding="utf-8"))
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert commands == []
+    assert result["mode"] == "apply"
+    assert result["database_changes_applied"] is False
+    assert result["migrations_applied"] == []
+    assert set(success) == gatea.M9_ADOPTION_UPGRADE_RECORD_KEYS
+    assert success["evidence_sha256"] == upgrade._sha256(evidence_path)
+    assert success["completed_at"] == evidence["completed_at"]
+    assert success["source_database_snapshot"] == success[
+        "final_database_snapshot"
+    ]
+
+
+def test_m9_adoption_succeeded_evidence_recovers_after_backup_max_age(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    original_plan = upgrade._plan_m9_adoption
+    original_metadata_validator = upgrade._require_adoption_record_metadata
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    monkeypatch.setattr(upgrade, "_plan_m9_adoption", original_plan)
+    monkeypatch.setattr(
+        upgrade,
+        "_require_adoption_record_metadata",
+        original_metadata_validator,
+    )
+    stale_completed_at = datetime.now(timezone.utc) - timedelta(hours=48)
+    (
+        backup_root,
+        _,
+        _,
+        _,
+        _,
+        backup_bytes,
+        restore_bytes,
+    ) = _write_verified_m9_backup_pair(
+        tmp_path,
+        completed_at=stale_completed_at,
+    )
+    context = {
+        **_adoption_context(),
+        "backup_record_sha256": upgrade.hashlib.sha256(
+            backup_bytes
+        ).hexdigest(),
+        "restore_record_sha256": upgrade.hashlib.sha256(
+            restore_bytes
+        ).hexdigest(),
+    }
+    _write_succeeded_adoption_evidence(
+        tmp_path,
+        context=context,
+        started_at=(stale_completed_at + timedelta(minutes=2)).isoformat(),
+        completed_at=(stale_completed_at + timedelta(minutes=3)).isoformat(),
+    )
+    _allow_local_bound_records(monkeypatch)
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_validate_backup_directories",
+        lambda **kwargs: None,
+    )
+
+    def validate_lineage(**kwargs: object) -> dict[str, object]:
+        records = kwargs["bound_backup_records"]
+        assert isinstance(records, upgrade._BoundBackupRecords)
+        assert records.backup_record_sha256 == context[
+            "backup_record_sha256"
+        ]
+        assert records.restore_record_sha256 == context[
+            "restore_record_sha256"
+        ]
+        return context
+
+    monkeypatch.setattr(
+        upgrade,
+        "_validate_m9_adoption_lineage",
+        validate_lineage,
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_task",
+        lambda **kwargs: pytest.fail("adoption recovery ran a database task"),
+    )
+
+    result = upgrade.upgrade_existing_database(
+        **_m9_adoption_arguments(tmp_path, apply=True)
+    )
+
+    success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
+    success = json.loads(success_path.read_text(encoding="utf-8"))
+    assert backup_root == tmp_path / "backups"
+    assert commands == []
+    assert result["mode"] == "apply"
+    assert success["backup_record_sha256"] == context[
+        "backup_record_sha256"
+    ]
+    assert success["restore_record_sha256"] == context[
+        "restore_record_sha256"
+    ]
+
+
+@pytest.mark.parametrize("require_activation", (False, True))
+def test_m9_adoption_plan_and_apply_keep_backup_max_age(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    require_activation: bool,
+) -> None:
+    monkeypatch.setattr(gatea, "_candidate_sha", lambda values: TARGET_SHA)
+    monkeypatch.setattr(
+        gatea,
+        "validate_app_image",
+        lambda values: "sha256:" + "0" * 64,
+    )
+    monkeypatch.setattr(upgrade, "_manifest_sha256", lambda: MANIFEST_SHA)
+
+    def reject_stale_backup(**kwargs: object) -> upgrade._BoundBackupRecords:
+        assert kwargs["enforce_backup_max_age"] is True
+        raise upgrade.GateAUpgradeError(
+            "Gate A backup must have completed within 24 hours"
+        )
+
+    monkeypatch.setattr(upgrade, "_load_verified_backup", reject_stale_backup)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="within 24 hours"):
+        upgrade._plan_m9_adoption(
+            values=_values(tmp_path / "backups"),
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            source_candidate_sha=SOURCE_SHA,
+            lineage_source_candidate_sha=LINEAGE_SHA,
+            acceptance_retirement_record_sha256=RETIREMENT_SHA,
+            backup_id=BACKUP_ID,
+            backup_root=tmp_path / "backups",
+            backup_record_dir=tmp_path / "backup-records",
+            restore_record_dir=tmp_path / "restore-records",
+            release_record_dir=tmp_path,
+            require_activation=require_activation,
+        )
+
+
+def test_m9_adoption_success_replay_keeps_backup_max_age(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    evidence_path = _write_succeeded_adoption_evidence(tmp_path)
+    evidence, evidence_sha256 = upgrade._load_bound_json_with_sha256(
+        evidence_path,
+        "M9 adoption upgrade evidence",
+    )
+    success = upgrade._m9_adoption_success_from_evidence(
+        evidence_path=evidence_path,
+        evidence=evidence,
+        evidence_sha256=evidence_sha256,
+    )
+    upgrade._write_json_exclusive(
+        gatea._upgrade_marker(tmp_path, TARGET_SHA),
+        success,
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_require_upgrade_record",
+        lambda **kwargs: success,
+    )
+
+    def reject_stale_backup(**kwargs: object) -> upgrade._BoundBackupRecords:
+        assert kwargs.get("enforce_backup_max_age", True) is True
+        raise upgrade.GateAUpgradeError(
+            "Gate A backup must have completed within 24 hours"
+        )
+
+    monkeypatch.setattr(upgrade, "_load_verified_backup", reject_stale_backup)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="within 24 hours"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    assert commands == []
+
+
+@pytest.mark.parametrize("status", ("in_progress", "failed"))
+def test_m9_adoption_does_not_recover_incomplete_or_failed_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    status: str,
+) -> None:
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    evidence_path = _write_succeeded_adoption_evidence(tmp_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["status"] = status
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    monkeypatch.setattr(
+        upgrade,
+        "_plan_m9_adoption",
+        lambda **kwargs: pytest.fail(
+            "incomplete evidence must not receive stale-backup recovery"
+        ),
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="manual review"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    assert commands == []
+    assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("candidate_sha", "c" * 40),
+        ("backup_id", "20260910t000000z"),
+        ("backup_record_sha256", "f" * 64),
+        ("restore_record_sha256", "f" * 64),
+    ),
+)
+def test_m9_adoption_stale_backup_recovery_rejects_evidence_binding_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    evidence_path = _write_succeeded_adoption_evidence(tmp_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence[field] = value
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="binding changed"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    assert commands == []
+    assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
+
+
+def test_m9_adoption_succeeded_evidence_recovery_requires_apply_confirmations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    _write_succeeded_adoption_evidence(tmp_path)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="requires apply"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=False)
+        )
+
+    assert commands == []
+    assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
+
+
+def test_m9_adoption_succeeded_evidence_recovery_rejects_live_state_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    drifted = _adoption_state()
+    drifted["final_m9_table_content_snapshot"] = _adoption_content_snapshot(
+        "m9-table-business-v1", "f" * 64
+    )
+    commands = _patch_stopped_adoption_recovery(
+        monkeypatch,
+        tmp_path,
+        state=drifted,
+    )
+    _write_succeeded_adoption_evidence(tmp_path)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="persistent state"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    assert commands == []
+    assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
+
+
+def test_m9_adoption_succeeded_evidence_recovery_rechecks_live_swatch_digest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    drifted = _adoption_state()
+    drifted["final_m8_swatch_content_snapshot"] = _adoption_content_snapshot(
+        "m8-swatch-content-v1", "f" * 64
+    )
+    commands = _patch_stopped_adoption_recovery(
+        monkeypatch,
+        tmp_path,
+        state=drifted,
+    )
+    _write_succeeded_adoption_evidence(tmp_path)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="persistent state"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    assert commands == []
+    assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
+
+
+def test_m9_adoption_succeeded_evidence_recovery_rejects_reversed_time(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    evidence_path = _write_succeeded_adoption_evidence(tmp_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["completed_at"] = "2026-09-11T11:59:59+00:00"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="precedes"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    assert commands == []
+    assert not gatea._upgrade_marker(tmp_path, TARGET_SHA).exists()
+
+
+def test_m9_adoption_succeeded_evidence_recovery_never_clobbers_racing_success(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands = _patch_stopped_adoption_recovery(monkeypatch, tmp_path)
+    _write_succeeded_adoption_evidence(tmp_path)
+    success_path = gatea._upgrade_marker(tmp_path, TARGET_SHA)
+    original_writer = upgrade._write_json_exclusive
+
+    def racing_writer(path: Path, payload: dict[str, object]) -> None:
+        if path == success_path:
+            path.write_text('{"untrusted": true}\n', encoding="utf-8")
+        original_writer(path, payload)
+
+    monkeypatch.setattr(upgrade, "_write_json_exclusive", racing_writer)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="already reserved"):
+        upgrade.upgrade_existing_database(
+            **_m9_adoption_arguments(tmp_path, apply=True)
+        )
+
+    assert commands == []
+    assert json.loads(success_path.read_text(encoding="utf-8")) == {
+        "untrusted": True
+    }
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("lineage_source_candidate_sha", "acceptance_retirement_record_sha256"),
+)
+def test_m9_adoption_requires_explicit_lineage_and_retirement_before_compose(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+) -> None:
+    monkeypatch.setattr(
+        gatea, "_validated_inputs", lambda **kwargs: _values(tmp_path / "backups")
+    )
+    monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
+    arguments = _m9_adoption_arguments(tmp_path, apply=False)
+    arguments[field] = None
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="requires lineage"):
+        upgrade.upgrade_existing_database(**arguments)
+
+
+def test_legacy_upgrade_rejects_adoption_only_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_plan(monkeypatch, tmp_path, source_version=7)
+    arguments = _common_arguments(tmp_path, apply=False, source_version=7)
+    arguments["lineage_source_candidate_sha"] = LINEAGE_SHA
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="invalid for an M2/M7"):
+        upgrade.upgrade_existing_database(**arguments)
+
+
+def test_m9_adoption_state_check_is_read_only_and_allows_closed_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _adoption_state()["source_database_snapshot"]
+    backup_record = _adoption_backup_record()
+    final_reads = 0
+
+    def read_final(**kwargs: object) -> dict[str, object]:
+        nonlocal final_reads
+        final_reads += 1
+        return dict(snapshot)
+
+    monkeypatch.setattr(upgrade, "_read_final_snapshot", read_final)
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_snapshot",
+        lambda *args: backup_record["database_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m7_content_snapshot",
+        lambda *args: backup_record["m7_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m9_table_content_snapshot",
+        lambda *args: backup_record["m9_table_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m8_swatch_content_snapshot",
+        lambda *args: backup_record["m8_swatch_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_image_manifest",
+        lambda *args: backup_record["image_manifest"],
+    )
+    task_calls: list[str] = []
+    monkeypatch.setattr(
+        upgrade,
+        "_run_task",
+        lambda **kwargs: task_calls.append(str(kwargs["module"]))
+        or (_empty_table_reconcile_result() | {"scanned": 4}),
+    )
+
+    state = upgrade._read_m9_adoption_state(
+        values={},
+        config_file=Path("/config.env"),
+        secret_dir=Path("/secrets"),
+        mode="loopback",
+        backup_record=backup_record,
+    )
+
+    assert final_reads == 2
+    assert task_calls == ["app.tasks.table_reconcile"]
+    assert state["source_database_snapshot"] == state["final_database_snapshot"]
+    assert (
+        state["source_m8_swatch_content_snapshot"]
+        == state["final_m8_swatch_content_snapshot"]
+        == backup_record["m8_swatch_content_snapshot"]
+    )
+    assert state["table_reconcile"]["scanned"] == 4
+
+
+def test_m9_adoption_state_rejects_same_count_swatch_digest_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _adoption_state()["source_database_snapshot"]
+    backup_record = _adoption_backup_record()
+    swatch_snapshots = iter(
+        (
+            backup_record["m8_swatch_content_snapshot"],
+            _adoption_content_snapshot("m8-swatch-content-v1", "f" * 64),
+        )
+    )
+    monkeypatch.setattr(
+        upgrade, "_read_final_snapshot", lambda **kwargs: dict(snapshot)
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m7_content_snapshot",
+        lambda *args: backup_record["m7_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m8_swatch_content_snapshot",
+        lambda *args: next(swatch_snapshots),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m9_table_content_snapshot",
+        lambda *args: backup_record["m9_table_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_image_manifest",
+        lambda *args: backup_record["image_manifest"],
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_task",
+        lambda **kwargs: _empty_table_reconcile_result() | {"scanned": 4},
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="changed persistent state"):
+        upgrade._read_m9_adoption_state(
+            values={},
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            backup_record=None,
+        )
+
+
+def test_m9_adoption_state_rejects_live_swatch_not_matching_backup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _adoption_state()["source_database_snapshot"]
+    backup_record = _adoption_backup_record()
+    monkeypatch.setattr(
+        upgrade, "_read_final_snapshot", lambda **kwargs: dict(snapshot)
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_snapshot",
+        lambda *args: backup_record["database_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m7_content_snapshot",
+        lambda *args: backup_record["m7_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m8_swatch_content_snapshot",
+        lambda *args: _adoption_content_snapshot(
+            "m8-swatch-content-v1", "f" * 64
+        ),
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m9_table_content_snapshot",
+        lambda *args: backup_record["m9_table_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_image_manifest",
+        lambda *args: backup_record["image_manifest"],
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_task",
+        lambda **kwargs: pytest.fail("backup mismatch must precede reconcile"),
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="verified backup"):
+        upgrade._read_m9_adoption_state(
+            values={},
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            backup_record=backup_record,
+        )
+
+
+@pytest.mark.parametrize("key", ("open_sessions", "occupancies", "violations"))
+def test_m9_adoption_state_rejects_live_or_inconsistent_tables(
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+) -> None:
+    snapshot = _adoption_state()["source_database_snapshot"]
+    monkeypatch.setattr(
+        upgrade, "_read_final_snapshot", lambda **kwargs: dict(snapshot)
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m7_content_snapshot",
+        lambda *args: _adoption_backup_record()["m7_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m9_table_content_snapshot",
+        lambda *args: _adoption_backup_record()["m9_table_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_m8_swatch_content_snapshot",
+        lambda *args: _adoption_backup_record()["m8_swatch_content_snapshot"],
+    )
+    monkeypatch.setattr(
+        upgrade.backup,
+        "_source_image_manifest",
+        lambda *args: _mard_image_manifest(),
+    )
+    monkeypatch.setattr(
+        upgrade,
+        "_run_task",
+        lambda **kwargs: _empty_table_reconcile_result() | {key: 1},
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="reconciliation"):
+        upgrade._read_m9_adoption_state(
+            values={},
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            backup_record=None,
+        )
+
+
+def test_adoption_bound_json_rejects_duplicate_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "record.json"
+    path.write_text('{"schema_version":2,"schema_version":1}\n', encoding="utf-8")
+    path.chmod(0o644)
+    monkeypatch.setattr(
+        upgrade, "_require_adoption_record_metadata", lambda *args: None
+    )
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="unavailable"):
+        upgrade._load_bound_json_with_sha256(path, "adoption record")
+
+
+def test_adoption_bound_record_requires_single_root_owned_link(tmp_path: Path) -> None:
+    path = tmp_path / "record.json"
+    alias = tmp_path / "record.alias.json"
+    path.write_text("{}\n", encoding="utf-8")
+    path.chmod(0o644)
+    alias.hardlink_to(path)
+
+    with pytest.raises(upgrade.GateAUpgradeError, match="unsafe metadata"):
+        upgrade._require_adoption_record_metadata(path.stat(), "adoption record")
+
+
+def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_image_id = "sha256:" + "1" * 64
+    lineage_image_id = "sha256:" + "6" * 64
+    target_image_id = "sha256:" + "0" * 64
+    failed_acceptance_sha256 = "f" * 64
+    digests = {
+        "candidate stage record": "1" * 64,
+        "predecessor stage record": "2" * 64,
+        "predecessor upgrade record": "3" * 64,
+        "predecessor activation record": "4" * 64,
+        "predecessor upgrade evidence": "5" * 64,
+        "predecessor upgrade replay record": "6" * 64,
+        "acceptance retirement record": RETIREMENT_SHA,
+        "candidate activation record": "7" * 64,
+        "M9 adoption backup record": "8" * 64,
+        "M9 adoption restore record": "9" * 64,
+    }
+    predecessor_digests = {
+        "predecessor_stage_record_sha256": digests["predecessor stage record"],
+        "predecessor_activation_record_sha256": digests[
+            "predecessor activation record"
+        ],
+        "predecessor_upgrade_record_sha256": digests[
+            "predecessor upgrade record"
+        ],
+        "predecessor_upgrade_evidence_sha256": digests[
+            "predecessor upgrade evidence"
+        ],
+        "predecessor_upgrade_plan_replay_record_sha256": digests[
+            "predecessor upgrade replay record"
+        ],
+    }
+    predecessor_upgrade = {
+        "schema_version": 1,
+        "source_version": 7,
+        "source_candidate_sha": LINEAGE_SHA,
+        "source_image_id": lineage_image_id,
+        "source_aerich_versions": list(APPROVED_MIGRATIONS[:8]),
+        "target_aerich_versions": list(APPROVED_MIGRATIONS),
+        "candidate_sha": SOURCE_SHA,
+        "image_id": source_image_id,
+        "backup_id": "20260911t000000z",
+        "manifest_sha256": MANIFEST_SHA,
+    }
+    predecessor_replay = {"validated": True}
+    records: dict[str, dict[str, object]] = {
+        "candidate stage record": {
+            "schema_version": 2,
+            "transition_kind": upgrade.M9_ADOPTION_TRANSITION_KIND,
+            "record_type": "gatea-candidate-stage",
+            "passed": True,
+            "candidate_sha": TARGET_SHA,
+            "image_id": target_image_id,
+            "superseded_candidate_sha": SOURCE_SHA,
+            "failed_acceptance_sha256": failed_acceptance_sha256,
+            "secret_values_recorded": False,
+        },
+        "predecessor stage record": {
+            "schema_version": 1,
+            "record_type": "gatea-candidate-stage",
+            "passed": True,
+            "candidate_sha": SOURCE_SHA,
+            "image_id": source_image_id,
+            "secret_values_recorded": False,
+        },
+        "predecessor upgrade record": predecessor_upgrade,
+        "predecessor activation record": {
+            "schema_version": 1,
+            "record_type": "gatea-config-activation",
+            "passed": True,
+            "source_candidate_sha": LINEAGE_SHA,
+            "candidate_sha": SOURCE_SHA,
+            "image_id": source_image_id,
+            "stage_record_sha256": digests["predecessor stage record"],
+            "backup_id": predecessor_upgrade["backup_id"],
+            "manifest_sha256": MANIFEST_SHA,
+            "secret_values_recorded": False,
+        },
+        "predecessor upgrade evidence": {"status": "succeeded"},
+        "predecessor upgrade replay record": predecessor_replay,
+        "M9 adoption backup record": {},
+        "M9 adoption restore record": {},
+    }
+    retirement = {
+        key: None for key in upgrade.ADOPTION_RETIREMENT_RECORD_KEYS
+    }
+    retirement.update(
+        {
+            "schema_version": 1,
+            "record_type": "gatea-m9-failed-acceptance-retirement",
+            "candidate_sha": TARGET_SHA,
+            "image_id": target_image_id,
+            "source_candidate_sha": SOURCE_SHA,
+            "source_image_id": source_image_id,
+            "lineage_source_candidate_sha": LINEAGE_SHA,
+            "lineage_source_image_id": lineage_image_id,
+            "stage_record_sha256": digests["candidate stage record"],
+            **predecessor_digests,
+            "acceptance_pending_sha256": failed_acceptance_sha256,
+            "acceptance_attempt_id_sha256": "a" * 64,
+            "acceptance_archive_path": "/root-only/raw-archive.json",
+            "acceptance_archive_sha256": failed_acceptance_sha256,
+            "live_verification": {
+                "business_verification": {
+                    "schema_version": 1,
+                    "passed": True,
+                    "counts": {
+                        "orders": 1,
+                        "fixtures": 2,
+                        "fixture_images": 5,
+                        "experience_options": 3,
+                        "order_items": 4,
+                        "experience_items": 3,
+                        "kit_items": 1,
+                        "payments": 0,
+                        "settlements": 0,
+                        "refunds": 0,
+                        "wallet_transactions": 0,
+                        "table_sessions": 0,
+                        "admin_adjustments": 1,
+                        "order_deductions": 1,
+                        "cancellation_restores": 1,
+                    },
+                    "evidence_sha256": (
+                        "9f262cb7c7a500cfd3b245f045c9ff8a887a640a6576539b"
+                        "421a61add81c1012"
+                    ),
+                    "secret_values_recorded": False,
+                },
+                "database_snapshot": {
+                    "aerich_versions": list(APPROVED_MIGRATIONS)
+                },
+                "runtime_services": [
+                    "mysql",
+                    "redis",
+                    "app",
+                    "table-sweeper",
+                    "nginx",
+                ],
+                "table_reconcile": _empty_table_reconcile_result(),
+                "wallet_reconcile": {
+                    "scanned": 1,
+                    "mismatches": 0,
+                    "violations": 0,
+                },
+                "checked_at": "2026-09-11T00:00:00+00:00",
+            },
+            "started_at": "2026-09-11T00:00:00+00:00",
+            "phase": "record-published",
+            "secret_values_recorded": False,
+            "completed_at": "2026-09-11T00:01:00+00:00",
+            "passed": True,
+        }
+    )
+    records["acceptance retirement record"] = retirement
+    records["candidate activation record"] = {
+        "schema_version": 2,
+        "transition_kind": upgrade.M9_ADOPTION_TRANSITION_KIND,
+        "record_type": "gatea-config-activation",
+        "passed": True,
+        "changed_keys": ["GATEA_APP_IMAGE"],
+        "source_candidate_sha": SOURCE_SHA,
+        "source_image_id": source_image_id,
+        "candidate_sha": TARGET_SHA,
+        "image_id": target_image_id,
+        "lineage_source_candidate_sha": LINEAGE_SHA,
+        "lineage_source_image_id": lineage_image_id,
+        "backup_id": BACKUP_ID,
+        "manifest_sha256": MANIFEST_SHA,
+        "stage_record_sha256": digests["candidate stage record"],
+        "acceptance_retirement_record_sha256": RETIREMENT_SHA,
+        **predecessor_digests,
+        "started_at": "2026-09-11T00:02:00+00:00",
+        "completed_at": "2026-09-11T00:03:00+00:00",
+        "config_values_recorded": False,
+        "secret_values_recorded": False,
+    }
+
+    monkeypatch.setattr(
+        upgrade,
+        "_load_bound_json_with_sha256",
+        lambda path, description: (records[description], digests[description]),
+    )
+    monkeypatch.setattr(
+        gatea, "_require_upgrade_record", lambda **kwargs: predecessor_upgrade
+    )
+    monkeypatch.setattr(
+        gatea,
+        "_require_m9_upgrade_replay_record",
+        lambda **kwargs: predecessor_replay,
+    )
+
+    context = upgrade._validate_m9_adoption_lineage(
+        release_record_dir=tmp_path,
+        backup_id=BACKUP_ID,
+        bound_backup_records=_bound_backup(
+            {},
+            backup_record_sha256=digests["M9 adoption backup record"],
+            restore_record_sha256=digests["M9 adoption restore record"],
+        ),
+        manifest_sha256=MANIFEST_SHA,
+        candidate_sha=TARGET_SHA,
+        image_id=target_image_id,
+        source_candidate_sha=SOURCE_SHA,
+        source_image_id=source_image_id,
+        lineage_source_candidate_sha=LINEAGE_SHA,
+        acceptance_retirement_record_sha256=RETIREMENT_SHA,
+        require_activation=True,
+    )
+
+    assert context == {
+        "stage_record_sha256": digests["candidate stage record"],
+        "activation_record_sha256": digests["candidate activation record"],
+        "lineage_source_candidate_sha": LINEAGE_SHA,
+        "lineage_source_image_id": lineage_image_id,
+        "acceptance_retirement_record_sha256": RETIREMENT_SHA,
+        "backup_record_sha256": digests["M9 adoption backup record"],
+        "restore_record_sha256": digests["M9 adoption restore record"],
+        **predecessor_digests,
+    }

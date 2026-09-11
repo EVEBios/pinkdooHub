@@ -24,6 +24,18 @@ def _m7_content_snapshot(digest: str = "7" * 64) -> dict[str, object]:
     }
 
 
+def _m8_swatch_content_snapshot(
+    digest: str = "8" * 64,
+) -> dict[str, object]:
+    return {
+        "content_sha256": digest,
+        "profile": offsite.gatea_backup.M8_SWATCH_CONTENT_SNAPSHOT_PROFILE,
+        "schema_version": (
+            offsite.gatea_backup.M8_SWATCH_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        ),
+    }
+
+
 def _m9_table_content_snapshot(digest: str = "9" * 64) -> dict[str, object]:
     return {
         "content_sha256": digest,
@@ -51,9 +63,12 @@ def _add_m9_content_evidence(backup: dict, restore: dict) -> None:
         "tables": 27,
     }
     backup["m7_content_snapshot"] = _m7_content_snapshot()
+    backup["m8_swatch_content_snapshot"] = _m8_swatch_content_snapshot()
     backup["m9_table_content_snapshot"] = _m9_table_content_snapshot()
     restore["m7_content_matches"] = True
     restore["m7_content_snapshot"] = _m7_content_snapshot()
+    restore["m8_swatch_content_matches"] = True
+    restore["m8_swatch_content_snapshot"] = _m8_swatch_content_snapshot()
     restore["m9_table_content_matches"] = True
     restore["m9_table_content_snapshot"] = _m9_table_content_snapshot()
 
@@ -189,14 +204,43 @@ def test_m9_source_records_and_bundle_round_trip_with_versioned_content_evidence
     assert offsite._inspect_bundle(bundle) == manifest
 
 
+def test_historical_m9_source_pair_without_swatch_evidence_remains_valid(
+    tmp_path: Path,
+) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    _add_m9_content_evidence(backup, restore)
+    backup.pop("m8_swatch_content_snapshot")
+    restore.pop("m8_swatch_content_matches")
+    restore.pop("m8_swatch_content_snapshot")
+    _persist_source_records(local_paths, backup, restore)
+
+    assert offsite._validate_source_records(
+        backup_id=BACKUP_ID,
+        local_paths=local_paths,
+    ) == (backup, restore)
+
+    bundle = tmp_path / "historical-m9-bundle.tar.gz"
+    manifest = offsite._build_bundle(
+        backup_id=BACKUP_ID,
+        local_paths=local_paths,
+        backup=backup,
+        restore=restore,
+        bundle_path=bundle,
+    )
+    assert offsite._inspect_bundle(bundle) == manifest
+
+
 @pytest.mark.parametrize(
     "case",
     (
         "missing_m7_backup",
+        "missing_m8_swatch_backup",
         "missing_m9_restore",
         "m7_match_false",
+        "m8_swatch_match_false",
         "m9_match_false",
         "m7_snapshot_mismatch",
+        "m8_swatch_snapshot_mismatch",
         "m9_snapshot_mismatch",
     ),
 )
@@ -208,14 +252,22 @@ def test_m9_source_records_fail_closed_on_incomplete_or_mismatched_evidence(
     _add_m9_content_evidence(backup, restore)
     if case == "missing_m7_backup":
         backup.pop("m7_content_snapshot")
+    elif case == "missing_m8_swatch_backup":
+        backup.pop("m8_swatch_content_snapshot")
     elif case == "missing_m9_restore":
         restore.pop("m9_table_content_snapshot")
     elif case == "m7_match_false":
         restore["m7_content_matches"] = False
+    elif case == "m8_swatch_match_false":
+        restore["m8_swatch_content_matches"] = False
     elif case == "m9_match_false":
         restore["m9_table_content_matches"] = False
     elif case == "m7_snapshot_mismatch":
         restore["m7_content_snapshot"] = _m7_content_snapshot("8" * 64)
+    elif case == "m8_swatch_snapshot_mismatch":
+        restore["m8_swatch_content_snapshot"] = (
+            _m8_swatch_content_snapshot("a" * 64)
+        )
     else:
         restore["m9_table_content_snapshot"] = _m9_table_content_snapshot(
             "a" * 64
@@ -270,6 +322,20 @@ def test_non_m9_source_records_reject_any_m9_evidence(tmp_path: Path) -> None:
     backup["m9_table_content_snapshot"] = _m9_table_content_snapshot()
     restore["m9_table_content_matches"] = True
     restore["m9_table_content_snapshot"] = _m9_table_content_snapshot()
+    _persist_source_records(local_paths, backup, restore)
+
+    with pytest.raises(offsite.OffsiteBackupError, match="source records"):
+        offsite._validate_source_records(
+            backup_id=BACKUP_ID,
+            local_paths=local_paths,
+        )
+
+
+def test_pre_m8_source_records_reject_any_swatch_evidence(tmp_path: Path) -> None:
+    local_paths, backup, restore = _source_fixture(tmp_path)
+    backup["m8_swatch_content_snapshot"] = _m8_swatch_content_snapshot()
+    restore["m8_swatch_content_matches"] = True
+    restore["m8_swatch_content_snapshot"] = _m8_swatch_content_snapshot()
     _persist_source_records(local_paths, backup, restore)
 
     with pytest.raises(offsite.OffsiteBackupError, match="source records"):

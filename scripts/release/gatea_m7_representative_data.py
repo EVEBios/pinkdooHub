@@ -601,7 +601,7 @@ def prepare(
         backup_root=backup_root,
         backup_record_dir=backup_record_dir,
         restore_record_dir=restore_record_dir,
-    )
+    ).backup_record
     if backup_payload.get("image_id") != image_id:
         raise M7RepresentativeDataError(
             "Gate A M7 verified backup image does not match the candidate"

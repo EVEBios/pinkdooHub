@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """通过 Gate A loopback API 执行 M9 桌台计时的受控内部验收。
 
-默认模式只执行只读 plan。``--apply-admin-assisted`` 仅在精确 M7→M9、当前
-CI Operations、五项健康服务和 root-only M7 合成凭据全部绑定后，才从
+默认模式只执行只读 plan。``--apply-admin-assisted`` 仅在精确 M7→M9 或受控
+M9 候选接管、当前 CI Operations、五项健康服务和 root-only M7 合成凭据全部绑定后，才从
 ``/dev/tty`` 隐藏读取并确认当前 SUPER_ADMIN 身份。业务写入只调用正式 HTTP API；
 工具不会写数据库、恢复来源卷、接入真实支付或覆盖既有 Record。
 """
@@ -303,6 +303,17 @@ UPGRADE_PLAN_REPLAY_KEYS = frozenset(
         "result",
         "completed_at",
         "secret_values_recorded",
+    }
+)
+UPGRADE_PLAN_REPLAY_V2_KEYS = UPGRADE_PLAN_REPLAY_KEYS | frozenset(
+    {
+        "transition_kind",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "acceptance_retirement_record_sha256",
+        "database_changes_applied",
+        "migrations_applied",
+        "m8_swatch_content_snapshot",
     }
 )
 CLEANUP_RECORD_KEYS = frozenset(
@@ -1177,29 +1188,69 @@ def _load_upgrade_plan_replay(
 ) -> str:
     """验证停写窗口中生成、并在 app-up 前冻结的 M9 plan replay sidecar。"""
 
-    _validate_root_file(path, 0o644, "Gate A M9 upgrade plan replay record")
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
-        raise M9AcceptanceError(
-            "Gate A M9 upgrade plan replay record is invalid"
-        ) from error
-    result = payload.get("result") if isinstance(payload, dict) else None
     evidence_path = upgrade_record_path.with_name(
         f"{candidate_sha}.existing-database-upgrade.evidence.json"
     )
-    _validate_root_file(
-        upgrade_record_path,
-        0o644,
-        "Gate A M9 upgrade record",
-    )
-    _validate_root_file(
-        evidence_path,
-        0o644,
-        "Gate A M9 upgrade evidence",
-    )
-    upgrade_record_sha256 = _sha256(upgrade_record_path)
+    is_adoption = resilience._is_m9_candidate_adoption(upgrade_record)
+    if is_adoption:
+        try:
+            payload, replay_record_sha256 = (
+                gatea._load_schema2_record_with_sha256(
+                    path,
+                    "M9 upgrade plan replay record",
+                )
+            )
+            stable_upgrade_record, upgrade_record_sha256 = (
+                gatea._load_schema2_record_with_sha256(
+                    upgrade_record_path,
+                    "M9 adoption upgrade record",
+                )
+            )
+            _, evidence_record_sha256 = gatea._load_schema2_record_with_sha256(
+                evidence_path,
+                "M9 adoption upgrade evidence",
+            )
+        except gatea.GateAError as error:
+            raise M9AcceptanceError(
+                "Gate A M9 upgrade plan replay record is invalid"
+            ) from error
+        if stable_upgrade_record != upgrade_record:
+            raise M9AcceptanceError(
+                "Gate A M9 upgrade record changed during replay validation"
+            )
+    else:
+        _validate_root_file(path, 0o644, "Gate A M9 upgrade plan replay record")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise M9AcceptanceError(
+                "Gate A M9 upgrade plan replay record is invalid"
+            ) from error
+        _validate_root_file(
+            upgrade_record_path,
+            0o644,
+            "Gate A M9 upgrade record",
+        )
+        _validate_root_file(
+            evidence_path,
+            0o644,
+            "Gate A M9 upgrade evidence",
+        )
+        replay_record_sha256 = _sha256(path)
+        upgrade_record_sha256 = _sha256(upgrade_record_path)
+        evidence_record_sha256 = _sha256(evidence_path)
+    result = payload.get("result") if isinstance(payload, dict) else None
     expected_source = str(upgrade_record.get("source_candidate_sha", ""))
+    expected_schema = 2 if is_adoption else 1
+    expected_source_version = 9 if is_adoption else 7
+    expected_source_chain = (
+        list(gatea.APPROVED_TARGET_M9_CHAIN)
+        if is_adoption
+        else list(gatea.APPROVED_TARGET_M7_CHAIN)
+    )
+    expected_payload_keys = (
+        UPGRADE_PLAN_REPLAY_V2_KEYS if is_adoption else UPGRADE_PLAN_REPLAY_KEYS
+    )
     expected_result_keys = {
         "already_current",
         "backup_id",
@@ -1211,15 +1262,21 @@ def _load_upgrade_plan_replay(
         "target_aerich_versions",
         "target_version",
     }
+    if is_adoption:
+        expected_result_keys |= {
+            "transition_kind",
+            "database_changes_applied",
+            "migrations_applied",
+        }
     if (
         not isinstance(payload, dict)
-        or set(payload) != UPGRADE_PLAN_REPLAY_KEYS
-        or payload.get("schema_version") != 1
+        or set(payload) != expected_payload_keys
+        or payload.get("schema_version") != expected_schema
         or payload.get("record_type") != "gatea-m9-upgrade-plan-replay"
         or payload.get("passed") is not True
         or payload.get("candidate_sha") != candidate_sha
         or payload.get("source_candidate_sha") != expected_source
-        or payload.get("source_version") != 7
+        or payload.get("source_version") != expected_source_version
         or payload.get("image_id") != image_id
         or payload.get("backup_id") != upgrade_record.get("backup_id")
         or payload.get("manifest_sha256") != upgrade_record.get("manifest_sha256")
@@ -1238,31 +1295,57 @@ def _load_upgrade_plan_replay(
         or result.get("backup_id") != upgrade_record.get("backup_id")
         or result.get("candidate_sha") != candidate_sha
         or result.get("manifest_sha256") != upgrade_record.get("manifest_sha256")
-        or result.get("source_version") != 7
+        or result.get("source_version") != expected_source_version
         or result.get("source_aerich_versions")
-        != list(gatea.APPROVED_TARGET_M7_CHAIN)
+        != expected_source_chain
         or result.get("target_version") != 9
         or result.get("target_aerich_versions")
         != list(gatea.APPROVED_TARGET_M9_CHAIN)
+        or (
+            is_adoption
+            and (
+                payload.get("transition_kind") != "m9-candidate-adoption"
+                or payload.get("lineage_source_candidate_sha")
+                != upgrade_record.get("lineage_source_candidate_sha")
+                or payload.get("lineage_source_image_id")
+                != upgrade_record.get("lineage_source_image_id")
+                or payload.get("acceptance_retirement_record_sha256")
+                != upgrade_record.get("acceptance_retirement_record_sha256")
+                or payload.get("database_changes_applied") is not False
+                or payload.get("migrations_applied") != []
+                or payload.get("m8_swatch_content_snapshot")
+                != upgrade_record.get("final_m8_swatch_content_snapshot")
+                or result.get("transition_kind") != "m9-candidate-adoption"
+                or result.get("database_changes_applied") is not False
+                or result.get("migrations_applied") != []
+            )
+        )
     ):
         raise M9AcceptanceError(
             "Gate A M9 upgrade plan replay record does not match the live candidate"
         )
     try:
         _parse_datetime(payload["completed_at"], "upgrade-plan-replay")
-        upgrade._validate_empty_table_reconcile_result(payload["table_reconcile"])
-    except (upgrade.GateAUpgradeError, KeyError) as error:
+        if is_adoption:
+            backup._validate_m8_swatch_content_snapshot(
+                payload["m8_swatch_content_snapshot"]
+            )
+            upgrade._validate_adoption_table_reconcile_result(
+                payload["table_reconcile"]
+            )
+        else:
+            upgrade._validate_empty_table_reconcile_result(
+                payload["table_reconcile"]
+            )
+    except (gatea.GateAError, upgrade.GateAUpgradeError, KeyError) as error:
         raise M9AcceptanceError(
             "Gate A M9 upgrade plan replay consistency evidence is invalid"
         ) from error
-    if (
-        not evidence_path.is_file()
-        or _sha256(evidence_path) != payload["evidence_sha256"]
-    ):
+    if evidence_record_sha256 != payload["evidence_sha256"]:
         raise M9AcceptanceError(
             "Gate A M9 upgrade plan replay evidence digest does not match"
         )
-    return _sha256(path)
+    return replay_record_sha256
 
 
 def _read_synthetic_user(context: PreparedContext) -> tuple[str, str]:
@@ -1568,15 +1651,18 @@ def prepare(
         candidate_sha=candidate_sha,
         image_id=image_id,
     )
-    if (
-        upgrade_record.get("source_version") != 7
-        or upgrade_record.get("source_aerich_versions")
-        != list(gatea.APPROVED_TARGET_M7_CHAIN)
-        or upgrade_record.get("target_aerich_versions")
-        != list(gatea.APPROVED_TARGET_M9_CHAIN)
-    ):
+    is_m7_upgrade = bool(
+        upgrade_record.get("schema_version") == 1
+        and upgrade_record.get("source_version") == 7
+        and upgrade_record.get("source_aerich_versions")
+        == list(gatea.APPROVED_TARGET_M7_CHAIN)
+        and upgrade_record.get("target_aerich_versions")
+        == list(gatea.APPROVED_TARGET_M9_CHAIN)
+    )
+    is_m9_adoption = resilience._is_m9_candidate_adoption(upgrade_record)
+    if not (is_m7_upgrade or is_m9_adoption):
         raise M9AcceptanceError(
-            "Gate A M9 acceptance requires an exact M7 to M9 upgrade record"
+            "Gate A M9 acceptance requires an approved deployment record"
         )
     upgrade_record_path = (
         release_record_dir / f"{candidate_sha}.existing-database-upgrade.json"
@@ -1591,8 +1677,20 @@ def prepare(
         candidate_sha=candidate_sha,
         image_id=image_id,
     )
-    source_candidate_sha = str(upgrade_record["source_candidate_sha"])
-    source_image_id = str(upgrade_record["source_image_id"])
+    source_candidate_sha = str(
+        upgrade_record[
+            "lineage_source_candidate_sha"
+            if is_m9_adoption
+            else "source_candidate_sha"
+        ]
+    )
+    source_image_id = str(
+        upgrade_record[
+            "lineage_source_image_id"
+            if is_m9_adoption
+            else "source_image_id"
+        ]
+    )
     selected_record = representative_record or (
         DEFAULT_REPRESENTATIVE_DIR
         / f"gatea-m7-representative-data-{source_candidate_sha}.json"
@@ -1824,8 +1922,9 @@ def _read_table_secret(context: PreparedContext) -> tuple[str, str]:
             secret_dir=context.secret_dir,
             mode="loopback",
             arguments=(
-                "exec",
-                "--no-TTY",
+                "run",
+                "--rm",
+                "--no-deps",
                 "app",
                 "python",
                 "-c",
@@ -1834,7 +1933,7 @@ def _read_table_secret(context: PreparedContext) -> tuple[str, str]:
             capture_output=True,
         )
         payload = json.loads(result.stdout.strip())
-    except (subprocess.SubprocessError, json.JSONDecodeError) as error:
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         raise M9AcceptanceError(
             "Gate A M9 table bootstrap identity could not be read safely"
         ) from error
@@ -4297,6 +4396,10 @@ def execute(
 
     if context.staged_success is not None:
         return _publish_staged_success(context)
+    if _is_terminal_cleaned_preclaim_failure(context.pending):
+        raise M9AcceptanceError(
+            "Gate A M9 cleaned acceptance failure requires a forward candidate"
+        )
     termination = backup._RecoveryTerminationController("M9 acceptance")
     termination.install()
     try:
@@ -5351,6 +5454,9 @@ def _execute_active_acceptance(
 
 
 def _plan_payload(context: PreparedContext) -> dict[str, Any]:
+    terminal_cleaned_failure = _is_terminal_cleaned_preclaim_failure(
+        context.pending
+    )
     return {
         "schema_version": 1,
         "record_type": "gatea-m9-runtime-acceptance-plan",
@@ -5369,8 +5475,64 @@ def _plan_payload(context: PreparedContext) -> dict[str, Any]:
             context.pending.get("stage") if context.pending is not None else None
         ),
         "staged_success_recovery": context.staged_success is not None,
-        "ready_for_admin_assisted_acceptance": context.staged_success is None,
+        "disposition": (
+            "terminal_failure_requires_forward_candidate"
+            if terminal_cleaned_failure
+            else "ready"
+        ),
+        "ready_for_admin_assisted_acceptance": (
+            context.staged_success is None and not terminal_cleaned_failure
+        ),
     }
+
+
+def _is_terminal_cleaned_preclaim_failure(
+    pending: Mapping[str, Any] | None,
+) -> bool:
+    """识别只能保留证据并由新候选接管的未付款、未开台失败终态。"""
+
+    if pending is None:
+        return False
+    fixture = pending.get("fixture")
+    order_evidence = pending.get("order_evidence")
+    cleanup = pending.get("cleanup")
+    pre_reconcile = pending.get("pre_reconcile")
+    pre_wallet = pending.get("pre_wallet_reconcile")
+    return bool(
+        pending.get("schema_version") == 3
+        and pending.get("record_type")
+        == "gatea-m9-internal-acceptance-pending"
+        and pending.get("stage") == "order_created"
+        and pending.get("failure") is True
+        and isinstance(fixture, dict)
+        and isinstance(order_evidence, dict)
+        and isinstance(pending.get("fixture_ids"), list)
+        and len(pending["fixture_ids"]) == 2
+        and pending.get("order_id") is not None
+        and pending.get("table_no") is None
+        and pending.get("session_no_sha256") is None
+        and pending.get("payment_deadline_offset_seconds") is None
+        and pending.get("payment_evidence") is None
+        and pending.get("timer_evidence") is None
+        and pending.get("claim_replay_verified") is False
+        and pending.get("payment_replay_verified") is False
+        and pending.get("admin_visibility_verified") is False
+        and pending.get("release_replay_verified") is False
+        and pending.get("payment_committed") is False
+        and pending.get("session_released") is False
+        and isinstance(cleanup, dict)
+        and set(cleanup) == PENDING_CLEANUP_KEYS
+        and all(cleanup.get(key) is True for key in PENDING_CLEANUP_KEYS)
+        and isinstance(pre_reconcile, dict)
+        and set(pre_reconcile) == RECONCILE_KEYS
+        and all(value == 0 for value in pre_reconcile.values())
+        and isinstance(pre_wallet, dict)
+        and set(pre_wallet) == WALLET_RECONCILE_KEYS
+        and type(pre_wallet.get("scanned")) is int
+        and pre_wallet["scanned"] > 0
+        and pre_wallet.get("mismatches") == 0
+        and pre_wallet.get("violations") == 0
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -5418,6 +5580,13 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
                 return 0
+            # A fully-cleaned pre-claim failure is an immutable predecessor
+            # checkpoint.  Refuse it before touching /dev/tty so the retired
+            # candidate cannot solicit or load administrator credentials.
+            if _is_terminal_cleaned_preclaim_failure(context.pending):
+                raise M9AcceptanceError(
+                    "Gate A M9 cleaned acceptance failure requires a forward candidate"
+                )
             if context.staged_success is None:
                 admin_username, admin_password = _read_admin_identity_from_tty()
             record = execute(

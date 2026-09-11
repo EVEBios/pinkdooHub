@@ -155,6 +155,23 @@ Run 最终为 9/9 Success。这是依赖安装失败，不是 OpenAPI Schema 漂
 灰度授权与 iOS/Android 真机也仍未完成，故 Gate A 继续为
 **No-Go / Not Authorized**。
 
+### 0.6 M9 失败验收与受控前滚检查点（2026-09-11）
+
+§0.3–§0.5 保留的是各自日期的历史事实，不能作为当前操作指令。旧候选 A
+`d6c09482ee0f5583d79bd847e995746c9c6ee1a3` 此后已将 live Gate A 配置、数据库和五项
+常驻服务带到 M9；但 `current` 仍指向 finalized lineage S
+`73dca350505d43775fb1ff1158ccf6aabc221998`。A 的 admin-assisted acceptance 在
+`order_created` 后读取 T01 bootstrap identity 时绕过 Entrypoint Secret 加载而安全失败。
+补偿已取消订单、恢复 Kit 库存、下线 fixture、撤销会话，且没有资金或桌台会话数据；
+canonical schema v3 failure pending 必须保留，A 不得原地重跑。
+
+当前只授权候选 B 在自身同一 SHA 的全新 9/9 required Jobs 后，按受控链执行：stage 绑定
+A/S/pending digest，退休失败验收并保存原始 archive，新建 A/M9 Backup/Restore，执行
+M9→M9 零迁移 adoption/replay，随后重新完成 B acceptance、resilience、数据后
+Backup/Restore 与 finalize。禁止手工删除 pending、临时注入 Secret、数据库降级或重跑
+M7→M9；任一步失败都保持 **No-Go** 并停止。该恢复授权不扩展到真实微信支付、正式微信
+小程序码、微信后台上传/分发、提审或公开发布。
+
 ## 1. 决策
 
 本版发布目标冻结为微信小程序，不同时发布支付宝、抖音或 H5。发布采用两道门：

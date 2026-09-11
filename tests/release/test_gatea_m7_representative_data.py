@@ -189,14 +189,19 @@ def test_prepare_binds_upgrade_base_data_current_backup_and_empty_m7_baseline(
     monkeypatch.setattr(
         representative.upgrade,
         "_load_verified_backup",
-        lambda **kwargs: {
-            "image_id": "sha256:image",
-            "database_snapshot": before_snapshot,
-            "image_manifest": before_images,
-            "completed_at": (
-                datetime.now(timezone.utc) - timedelta(minutes=1)
-            ).isoformat(),
-        },
+        lambda **kwargs: representative.upgrade._BoundBackupRecords(
+            backup_record={
+                "image_id": "sha256:image",
+                "database_snapshot": before_snapshot,
+                "image_manifest": before_images,
+                "completed_at": (
+                    datetime.now(timezone.utc) - timedelta(minutes=1)
+                ).isoformat(),
+            },
+            backup_record_sha256="a" * 64,
+            restore_record={},
+            restore_record_sha256="b" * 64,
+        ),
     )
     monkeypatch.setattr(
         representative.backup,
@@ -292,11 +297,16 @@ def test_prepare_rejects_drift_after_verified_backup(
     monkeypatch.setattr(
         representative.upgrade,
         "_load_verified_backup",
-        lambda **kwargs: {
-            "image_id": "sha256:image",
-            "database_snapshot": {"users": 2},
-            "image_manifest": [],
-        },
+        lambda **kwargs: representative.upgrade._BoundBackupRecords(
+            backup_record={
+                "image_id": "sha256:image",
+                "database_snapshot": {"users": 2},
+                "image_manifest": [],
+            },
+            backup_record_sha256="a" * 64,
+            restore_record={},
+            restore_record_sha256="b" * 64,
+        ),
     )
     monkeypatch.setattr(
         representative.backup,

@@ -1004,11 +1004,19 @@ def _assert_m9_target_backup_restore_records(
         m7_content = backup._validate_m7_content_snapshot(
             backup_record.get("m7_content_snapshot")
         )
+        m8_swatch_content = backup._validate_m8_swatch_content_snapshot(
+            backup_record.get("m8_swatch_content_snapshot")
+        )
         m9_table_content = backup._validate_m9_table_content_snapshot(
             backup_record.get("m9_table_content_snapshot")
         )
         restored_m7_content = backup._validate_m7_content_snapshot(
             restore_record.get("m7_content_snapshot")
+        )
+        restored_m8_swatch_content = (
+            backup._validate_m8_swatch_content_snapshot(
+                restore_record.get("m8_swatch_content_snapshot")
+            )
         )
         restored_m9_table_content = backup._validate_m9_table_content_snapshot(
             restore_record.get("m9_table_content_snapshot")
@@ -1029,6 +1037,8 @@ def _assert_m9_target_backup_restore_records(
         )
         or restore_record.get("m7_content_matches") is not True
         or restored_m7_content != m7_content
+        or restore_record.get("m8_swatch_content_matches") is not True
+        or restored_m8_swatch_content != m8_swatch_content
         or restore_record.get("m9_table_content_matches") is not True
         or restored_m9_table_content != m9_table_content
     ):
@@ -2017,6 +2027,9 @@ class GateAM7M9Drill:
             "backup_id": state.target_backup_id,
             "same_id_restore": True,
             "restore_app_ready": True,
+            "m8_swatch_content_profile": (
+                backup.M8_SWATCH_CONTENT_SNAPSHOT_PROFILE
+            ),
             "m9_table_content_profile": (
                 backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE
             ),

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install and activate one CI-proven Gate A candidate without touching data.
 
-The four commands in this module deliberately keep release installation,
+The five commands in this module deliberately keep release installation,
 non-Secret configuration activation, guarded pre-migration rollback, and the
 ``current`` operations symlink separate from database migration.  Database and
 runtime changes remain owned by ``gatea_upgrade`` and the other reviewed Gate A
@@ -57,6 +57,9 @@ DEFAULT_RESILIENCE_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/resilience")
 DEFAULT_ACCEPTANCE_RECORD_DIR = Path(
     "/srv/pinkdoohub/gatea/records/m9-acceptance"
 )
+DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR = Path(
+    "/srv/pinkdoohub/gatea/records/m9-acceptance-failures"
+)
 DEFAULT_CURRENT_LINK = Path("/srv/pinkdoohub/gatea/current")
 DEFAULT_LOCK_FILE = Path("/run/lock/pinkdoohub-gatea-operation.lock")
 
@@ -74,6 +77,8 @@ EXPECTED_APP_COMMAND = [
 ]
 M9_RUNTIME_SERVICES = ("mysql", "redis", "app", "table-sweeper", "nginx")
 M9_WRITER_SERVICES = ("nginx", "table-sweeper", "app", "image-init")
+RETIREMENT_DATABASE_SERVICES = ("mysql", "redis")
+RETIREMENT_WRITER_SERVICES = ("nginx", "table-sweeper", "app")
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_ARCHIVE_MEMBER_BYTES = 64 * 1024 * 1024
@@ -81,8 +86,11 @@ MAX_SOURCE_ARCHIVE_FILE_BYTES = 160 * 1024 * 1024
 MAX_CI_MEMBERS = 100
 MAX_CI_BYTES = 32 * 1024 * 1024
 MAX_JSON_BYTES = 4 * 1024 * 1024
+MAX_ACCEPTANCE_PENDING_BYTES = 1024 * 1024
 MAX_GITHUB_RESPONSE_BYTES = 8 * 1024 * 1024
 CANDIDATE_CLEANUP_ATTEMPTS = 2
+ROOT_UID = 0
+ROOT_GID = 0
 
 GITHUB_API_ORIGIN = "https://api.github.com"
 GITHUB_API_VERSION = "2022-11-28"
@@ -185,6 +193,179 @@ UPGRADE_REPLAY_RECORD_KEYS = frozenset(
         "secret_values_recorded",
     }
 )
+PRECLAIM_ACCEPTANCE_RECONCILE_KEYS = frozenset(
+    {
+        "open_sessions",
+        "occupancies",
+        "closed_with_occupancy",
+        "awaiting_with_timers",
+        "active_without_timers",
+        "scanned",
+        "violations",
+    }
+)
+PRECLAIM_ACCEPTANCE_WALLET_KEYS = frozenset(
+    {"scanned", "mismatches", "violations"}
+)
+PRECLAIM_ACCEPTANCE_CLEANUP_KEYS = frozenset(
+    {
+        "order_cancelled",
+        "fixture_products_offline",
+        "synthetic_session_revoked",
+        "super_admin_session_revoked",
+    }
+)
+PRECLAIM_ACCEPTANCE_PENDING_KEYS = frozenset(
+    {
+        "schema_version",
+        "record_type",
+        "environment",
+        "candidate_sha",
+        "image_id",
+        "operations_sha",
+        "ci_run_id",
+        "source_candidate_sha",
+        "upgrade_record_sha256",
+        "upgrade_plan_replay_record_sha256",
+        "representative_record_sha256",
+        "credentials_sha256",
+        "started_at",
+        "attempt_id",
+        "attempt_id_sha256",
+        "updated_at",
+        "stage",
+        "pre_reconcile",
+        "pre_wallet_reconcile",
+        "fixture_ids",
+        "fixture",
+        "fixture_sha256",
+        "order_id",
+        "order_evidence",
+        "order_evidence_sha256",
+        "table_no",
+        "session_no_sha256",
+        "payment_deadline_offset_seconds",
+        "payment_evidence",
+        "timer_evidence",
+        "claim_replay_verified",
+        "payment_replay_verified",
+        "admin_visibility_verified",
+        "release_replay_verified",
+        "payment_committed",
+        "session_released",
+        "cleanup",
+        "failure",
+        "secret_values_recorded",
+        "source_volume_restored",
+        "passed",
+    }
+)
+PRECLAIM_ACCEPTANCE_FIXTURE_KEYS = frozenset(
+    {
+        "experience_product_id",
+        "kit_product_id",
+        "option_ids",
+        "option_durations_minutes",
+        "option_participants",
+        "option_price",
+        "kit_price",
+        "kit_opening_stock",
+        "product_images_created",
+        "option_images_created",
+        "products_online",
+    }
+)
+PRECLAIM_ACCEPTANCE_ORDER_KEYS = frozenset(
+    {
+        "order_id",
+        "expected_timer_items",
+        "kit_order_item_id",
+        "eligible_duration_groups",
+    }
+)
+PRECLAIM_ACCEPTANCE_TIMER_ITEM_KEYS = frozenset(
+    {"order_item_id", "duration_minutes", "quantity"}
+)
+RETIREMENT_LIVE_VERIFICATION_KEYS = frozenset(
+    {
+        "business_verification",
+        "database_snapshot",
+        "runtime_services",
+        "database_services_healthy",
+        "writer_services_stopped",
+        "table_reconcile",
+        "wallet_reconcile",
+        "checked_at",
+    }
+)
+FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS = frozenset(
+    {
+        "schema_version",
+        "passed",
+        "counts",
+        "evidence_sha256",
+        "secret_values_recorded",
+    }
+)
+FAILED_ACCEPTANCE_BUSINESS_COUNTS = {
+    "orders": 1,
+    "fixtures": 2,
+    "fixture_images": 5,
+    "experience_options": 3,
+    "order_items": 4,
+    "experience_items": 3,
+    "kit_items": 1,
+    "payments": 0,
+    "settlements": 0,
+    "refunds": 0,
+    "wallet_transactions": 0,
+    "table_sessions": 0,
+    "admin_adjustments": 1,
+    "order_deductions": 1,
+    "cancellation_restores": 1,
+}
+FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 = (
+    "9f262cb7c7a500cfd3b245f045c9ff8a887a640a6576539b421a61add81c1012"
+)
+RETIREMENT_PENDING_PHASES = frozenset(
+    {
+        "prepared",
+        "write-free-verified",
+        "acceptance-archived",
+        "record-published",
+        "canonical-removed",
+        "runtime-restored",
+    }
+)
+RETIREMENT_PENDING_KEYS = frozenset(
+    {
+        "schema_version",
+        "record_type",
+        "candidate_sha",
+        "image_id",
+        "source_candidate_sha",
+        "source_image_id",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "stage_record_sha256",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+        "acceptance_pending_sha256",
+        "acceptance_attempt_id_sha256",
+        "acceptance_archive_path",
+        "acceptance_archive_sha256",
+        "live_verification",
+        "started_at",
+        "phase",
+        "secret_values_recorded",
+    }
+)
+RETIREMENT_RECORD_KEYS = RETIREMENT_PENDING_KEYS | frozenset(
+    {"completed_at", "passed"}
+)
 ACCEPTANCE_REQUIRED_TRUE_FIELDS = (
     "upgrade_plan_replayed",
     "wallet_reconcile_passed",
@@ -274,6 +455,31 @@ STAGE_PENDING_KEYS = (
         "phase",
     }
 )
+ADOPTION_STAGE_RECORD_KEYS = STAGE_RECORD_KEYS | frozenset(
+    {"transition_kind", "superseded_candidate_sha", "failed_acceptance_sha256"}
+)
+ADOPTION_STAGE_PENDING_KEYS = (
+    ADOPTION_STAGE_RECORD_KEYS
+    - frozenset(
+        {
+            "record_type",
+            "passed",
+            "image",
+            "architecture",
+            "image_id",
+            "operating_system",
+            "completed_at",
+        }
+    )
+) | frozenset(
+    {
+        "record_type",
+        "final_image",
+        "temporary_image",
+        "started_at",
+        "phase",
+    }
+)
 ACTIVATION_RECORD_KEYS = frozenset(
     {
         "schema_version",
@@ -298,6 +504,23 @@ ACTIVATION_RECORD_KEYS = frozenset(
 ACTIVATION_PENDING_KEYS = ACTIVATION_RECORD_KEYS - frozenset(
     {"completed_at", "passed"}
 )
+ADOPTION_ACTIVATION_RECORD_KEYS = ACTIVATION_RECORD_KEYS | frozenset(
+    {
+        "transition_kind",
+        "source_image_id",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+        "acceptance_retirement_record_sha256",
+    }
+)
+ADOPTION_ACTIVATION_PENDING_KEYS = ADOPTION_ACTIVATION_RECORD_KEYS - frozenset(
+    {"completed_at", "passed"}
+)
 ROLLBACK_PENDING_KEYS = frozenset(
     {
         "schema_version",
@@ -315,10 +538,28 @@ ROLLBACK_PENDING_KEYS = frozenset(
 ROLLBACK_RECORD_KEYS = ROLLBACK_PENDING_KEYS | frozenset(
     {"completed_at", "passed"}
 )
+ADOPTION_ROLLBACK_PENDING_KEYS = ROLLBACK_PENDING_KEYS | frozenset(
+    {
+        "transition_kind",
+        "source_image_id",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "acceptance_retirement_record_sha256",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+    }
+)
+ADOPTION_ROLLBACK_RECORD_KEYS = ADOPTION_ROLLBACK_PENDING_KEYS | frozenset(
+    {"completed_at", "passed"}
+)
 FINAL_LIVE_RECHECK_KEYS = frozenset(
     {
         "database_snapshot",
         "m7_content_snapshot",
+        "m8_swatch_content_snapshot",
         "m9_table_content_snapshot",
         "image_manifest_sha256",
         "image_file_count",
@@ -356,6 +597,23 @@ FINAL_PENDING_KEYS = frozenset(
     }
 )
 FINAL_RECORD_KEYS = FINAL_PENDING_KEYS | frozenset({"completed_at", "passed"})
+ADOPTION_FINAL_PENDING_KEYS = FINAL_PENDING_KEYS | frozenset(
+    {
+        "transition_kind",
+        "source_image_id",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+        "acceptance_retirement_record_sha256",
+    }
+)
+ADOPTION_FINAL_RECORD_KEYS = ADOPTION_FINAL_PENDING_KEYS | frozenset(
+    {"completed_at", "passed"}
+)
 RESILIENCE_RECORD_KEYS = frozenset(
     {
         "schema_version",
@@ -1649,6 +1907,14 @@ def _rollback_pending_path(record_dir: Path, target_sha: str) -> Path:
     return record_dir / f"{target_sha}.config-rollback.pending.json"
 
 
+def _retirement_record_path(record_dir: Path, target_sha: str) -> Path:
+    return record_dir / f"{target_sha}.acceptance-retirement.json"
+
+
+def _retirement_pending_path(record_dir: Path, target_sha: str) -> Path:
+    return record_dir / f"{target_sha}.acceptance-retirement.pending.json"
+
+
 def _upgrade_replay_record_path(record_dir: Path, target_sha: str) -> Path:
     return record_dir / f"{target_sha}.upgrade-plan-replay.json"
 
@@ -1673,6 +1939,7 @@ _CANDIDATE_PENDING_KINDS = (
     "candidate-stage",
     "config-activation",
     "config-rollback",
+    "acceptance-retirement",
     "current-finalization",
 )
 _CANDIDATE_PENDING_NAME_PATTERN = re.compile(
@@ -1732,12 +1999,281 @@ def _require_regular_blocker(path: Path, description: str) -> None:
         raise GateACandidateError(f"{description} is not a regular file")
 
 
+def _acceptance_pending_path(record_dir: Path, candidate_sha: str) -> Path:
+    return record_dir / f"gatea-m9-runtime-acceptance-{candidate_sha}.json.pending"
+
+
+def _canonical_json_sha256(payload: object) -> str:
+    content = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return _sha256_bytes(content)
+
+
+def _read_stable_protected_bytes(
+    path: Path,
+    *,
+    mode: int,
+    max_bytes: int,
+    description: str,
+    allowed_link_counts: frozenset[int] = frozenset({1}),
+) -> tuple[bytes, tuple[int, ...]]:
+    """Read one root-owned file through a stable no-follow descriptor."""
+
+    _require_root_file(path, mode, description)
+    descriptor: int | None = None
+    try:
+        path_metadata = path.lstat()
+        if (
+            path_metadata.st_nlink not in allowed_link_counts
+            or path_metadata.st_size > max_bytes
+        ):
+            raise GateACandidateError(f"{description} has unsafe metadata")
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        )
+        before_metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before_metadata.st_mode)
+            or stat.S_IMODE(before_metadata.st_mode) != mode
+            or before_metadata.st_uid != ROOT_UID
+            or before_metadata.st_gid != ROOT_GID
+            or before_metadata.st_nlink not in allowed_link_counts
+            or before_metadata.st_size > max_bytes
+            or _file_identity(path_metadata) != _file_identity(before_metadata)
+        ):
+            raise GateACandidateError(f"{description} changed during validation")
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if remaining == 0:
+            raise GateACandidateError(f"{description} is unexpectedly large")
+        after_metadata = os.fstat(descriptor)
+        final_metadata = path.lstat()
+        if not (
+            _file_identity(before_metadata)
+            == _file_identity(after_metadata)
+            == _file_identity(final_metadata)
+        ):
+            raise GateACandidateError(f"{description} changed during validation")
+        return b"".join(chunks), _file_identity(after_metadata)
+    except GateACandidateError:
+        raise
+    except OSError as error:
+        raise GateACandidateError(f"{description} could not be read safely") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _validate_preclaim_failed_acceptance(
+    *,
+    path: Path,
+    expected_candidate_sha: str,
+    expected_sha256: str,
+) -> tuple[dict[str, Any], bytes, tuple[int, ...]]:
+    """Accept only the one known pre-claim, fully-cleaned schema-v3 failure."""
+
+    raw_payload, identity = _read_stable_protected_bytes(
+        path,
+        mode=0o600,
+        max_bytes=MAX_ACCEPTANCE_PENDING_BYTES,
+        description="Gate A pre-claim failed acceptance journal",
+    )
+    if _sha256_bytes(raw_payload) != expected_sha256:
+        raise GateACandidateError(
+            "Gate A pre-claim failed acceptance digest does not match"
+        )
+    try:
+        payload = json.loads(
+            raw_payload,
+            object_pairs_hook=_json_object_without_duplicates,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise GateACandidateError(
+            "Gate A pre-claim failed acceptance journal is invalid"
+        ) from error
+    if not isinstance(payload, dict):
+        raise GateACandidateError(
+            "Gate A pre-claim failed acceptance journal is invalid"
+        )
+
+    reconcile = payload.get("pre_reconcile")
+    wallet = payload.get("pre_wallet_reconcile")
+    cleanup = payload.get("cleanup")
+    fixture_ids = payload.get("fixture_ids")
+    fixture = payload.get("fixture")
+    order_evidence = payload.get("order_evidence")
+    timer_items = (
+        order_evidence.get("expected_timer_items")
+        if isinstance(order_evidence, dict)
+        else None
+    )
+    started_at = payload.get("started_at")
+    updated_at = payload.get("updated_at")
+    if (
+        set(payload) != PRECLAIM_ACCEPTANCE_PENDING_KEYS
+        or payload.get("schema_version") != 3
+        or payload.get("record_type")
+        != "gatea-m9-internal-acceptance-pending"
+        or payload.get("environment") != "gatea"
+        or payload.get("candidate_sha") != expected_candidate_sha
+        or payload.get("operations_sha") != expected_candidate_sha
+        or not isinstance(payload.get("image_id"), str)
+        or re.fullmatch(
+            r"sha256:[0-9a-f]{64}", str(payload.get("image_id", ""))
+        )
+        is None
+        or SHA_PATTERN.fullmatch(str(payload.get("source_candidate_sha", "")))
+        is None
+        or payload.get("source_candidate_sha") == expected_candidate_sha
+        or not isinstance(payload.get("ci_run_id"), str)
+        or RUN_ID_PATTERN.fullmatch(str(payload.get("ci_run_id", ""))) is None
+        or any(
+            SHA256_PATTERN.fullmatch(str(payload.get(field, ""))) is None
+            for field in (
+                "upgrade_record_sha256",
+                "upgrade_plan_replay_record_sha256",
+                "representative_record_sha256",
+                "credentials_sha256",
+                "attempt_id_sha256",
+                "fixture_sha256",
+                "order_evidence_sha256",
+            )
+        )
+        or re.fullmatch(r"[0-9a-f]{32}", str(payload.get("attempt_id", "")))
+        is None
+        or payload.get("attempt_id_sha256")
+        != _sha256_bytes(str(payload.get("attempt_id", "")).encode("utf-8"))
+        or not _is_utc_timestamp(started_at)
+        or not _is_utc_timestamp(updated_at)
+        or _parse_utc_timestamp(updated_at, "acceptance updated-at")
+        < _parse_utc_timestamp(started_at, "acceptance started-at")
+        or payload.get("stage") != "order_created"
+        or not isinstance(reconcile, dict)
+        or set(reconcile) != PRECLAIM_ACCEPTANCE_RECONCILE_KEYS
+        or any(type(value) is not int or value != 0 for value in reconcile.values())
+        or not isinstance(wallet, dict)
+        or set(wallet) != PRECLAIM_ACCEPTANCE_WALLET_KEYS
+        or any(type(value) is not int or value < 0 for value in wallet.values())
+        or wallet.get("scanned", 0) <= 0
+        or wallet.get("mismatches") != 0
+        or wallet.get("violations") != 0
+        or not isinstance(cleanup, dict)
+        or set(cleanup) != PRECLAIM_ACCEPTANCE_CLEANUP_KEYS
+        or any(cleanup.get(key) is not True for key in cleanup)
+        or payload.get("failure") is not True
+        or payload.get("payment_committed") is not False
+        or payload.get("session_released") is not False
+        or any(
+            payload.get(field) is not False
+            for field in (
+                "claim_replay_verified",
+                "payment_replay_verified",
+                "admin_visibility_verified",
+                "release_replay_verified",
+            )
+        )
+        or any(
+            payload.get(field) is not None
+            for field in (
+                "table_no",
+                "session_no_sha256",
+                "payment_deadline_offset_seconds",
+                "payment_evidence",
+                "timer_evidence",
+            )
+        )
+        or payload.get("secret_values_recorded") is not False
+        or payload.get("source_volume_restored") is not False
+        or payload.get("passed") is not False
+        or not isinstance(fixture_ids, list)
+        or len(fixture_ids) != 2
+        or any(type(value) is not int or value <= 0 for value in fixture_ids)
+        or len(set(fixture_ids)) != 2
+        or not isinstance(fixture, dict)
+        or set(fixture) != PRECLAIM_ACCEPTANCE_FIXTURE_KEYS
+        or payload.get("fixture_sha256") != _canonical_json_sha256(fixture)
+        or fixture_ids
+        != [fixture.get("experience_product_id"), fixture.get("kit_product_id")]
+        or fixture.get("option_durations_minutes") != [60, 60, 120]
+        or fixture.get("option_participants") != [1, 2, 1]
+        or fixture.get("option_price") != "1.00"
+        or fixture.get("kit_price") != "1.00"
+        or fixture.get("kit_opening_stock") != 10
+        or fixture.get("product_images_created") != 2
+        or fixture.get("option_images_created") != 3
+        or fixture.get("products_online") is not True
+        or not isinstance(fixture.get("option_ids"), list)
+        or len(fixture["option_ids"]) != 3
+        or any(type(value) is not int or value <= 0 for value in fixture["option_ids"])
+        or len(set(fixture["option_ids"])) != 3
+        or type(payload.get("order_id")) is not int
+        or payload["order_id"] <= 0
+        or not isinstance(order_evidence, dict)
+        or set(order_evidence) != PRECLAIM_ACCEPTANCE_ORDER_KEYS
+        or order_evidence.get("order_id") != payload.get("order_id")
+        or payload.get("order_evidence_sha256")
+        != _canonical_json_sha256(order_evidence)
+        or not isinstance(timer_items, list)
+        or len(timer_items) != 3
+        or any(
+            not isinstance(item, dict)
+            or set(item) != PRECLAIM_ACCEPTANCE_TIMER_ITEM_KEYS
+            or type(item.get("order_item_id")) is not int
+            or item["order_item_id"] <= 0
+            or item.get("duration_minutes") not in {60, 120}
+            or type(item.get("quantity")) is not int
+            or item["quantity"] <= 0
+            for item in timer_items
+        )
+        or [item["duration_minutes"] for item in timer_items]
+        != [60, 60, 120]
+        or [item["quantity"] for item in timer_items] != [2, 1, 1]
+        or len({item["order_item_id"] for item in timer_items}) != 3
+        or type(order_evidence.get("kit_order_item_id")) is not int
+        or order_evidence["kit_order_item_id"] <= 0
+        or order_evidence["kit_order_item_id"]
+        in {item["order_item_id"] for item in timer_items}
+        or order_evidence.get("eligible_duration_groups")
+        != [
+            {
+                "duration_minutes": 60,
+                "buffer_minutes": 10,
+                "experience_item_count": 2,
+                "total_quantity": 3,
+            },
+            {
+                "duration_minutes": 120,
+                "buffer_minutes": 10,
+                "experience_item_count": 1,
+                "total_quantity": 1,
+            },
+        ]
+    ):
+        raise GateACandidateError(
+            "Gate A pre-claim failed acceptance journal is not safely retireable"
+        )
+    return dict(payload), raw_payload, identity
+
+
 def _reject_unresolved_transition_journals(
     *,
     release_record_dir: Path,
     acceptance_record_dir: Path,
     allowed_release_pending: Path | None = None,
-) -> None:
+    allowed_acceptance_candidate_sha: str | None = None,
+    allowed_acceptance_pending_sha256: str | None = None,
+) -> dict[str, Any] | None:
     """Fail closed on every cross-candidate transition and acceptance sidecar."""
 
     allowed = (
@@ -1754,6 +2290,28 @@ def _reject_unresolved_transition_journals(
             raise GateACandidateError(
                 "Gate A candidate transition recovery allowance is invalid"
             )
+    has_acceptance_candidate = allowed_acceptance_candidate_sha is not None
+    has_acceptance_digest = allowed_acceptance_pending_sha256 is not None
+    if has_acceptance_candidate != has_acceptance_digest:
+        raise GateACandidateError(
+            "Gate A acceptance recovery allowance must be confirmed as one pair"
+        )
+    allowed_acceptance_path: Path | None = None
+    if has_acceptance_candidate:
+        allowed_acceptance_candidate_sha = _validate_sha(
+            str(allowed_acceptance_candidate_sha),
+            "superseded candidate SHA",
+        )
+        allowed_acceptance_pending_sha256 = _validate_sha256(
+            str(allowed_acceptance_pending_sha256),
+            "failed acceptance digest",
+        )
+        allowed_acceptance_path = _lexical_absolute_path(
+            _acceptance_pending_path(
+                acceptance_record_dir,
+                allowed_acceptance_candidate_sha,
+            )
+        )
 
     for path in _direct_children(
         release_record_dir, "Gate A release record directory"
@@ -1784,6 +2342,7 @@ def _reject_unresolved_transition_journals(
             acceptance_record_dir,
             "Gate A M9 runtime acceptance record directory",
         )
+    allowed_acceptance: dict[str, Any] | None = None
     for path in acceptance_children:
         if not _is_acceptance_sidecar_name(path.name):
             continue
@@ -1792,9 +2351,25 @@ def _reject_unresolved_transition_journals(
             raise GateACandidateError(
                 "Gate A malformed M9 runtime acceptance sidecar blocks mutation"
             )
-        raise GateACandidateError(
-            "Gate A M9 runtime acceptance sidecar blocks candidate mutation"
+        if (
+            allowed_acceptance_path is None
+            or _lexical_absolute_path(path) != allowed_acceptance_path
+            or allowed_acceptance is not None
+        ):
+            raise GateACandidateError(
+                "Gate A M9 runtime acceptance sidecar blocks candidate mutation"
+            )
+        payload, _, _ = _validate_preclaim_failed_acceptance(
+            path=path,
+            expected_candidate_sha=str(allowed_acceptance_candidate_sha),
+            expected_sha256=str(allowed_acceptance_pending_sha256),
         )
+        allowed_acceptance = payload
+    if allowed_acceptance_path is not None and allowed_acceptance is None:
+        raise GateACandidateError(
+            "Gate A confirmed failed acceptance journal is unavailable"
+        )
+    return allowed_acceptance
 
 
 def _validate_stage_pending(
@@ -1804,9 +2379,14 @@ def _validate_stage_pending(
     target_sha: str,
 ) -> dict[str, Any]:
     temporary_image = payload.get("temporary_image")
+    adoption = expected.get("transition_kind") == "m9-candidate-adoption"
+    expected_keys = (
+        ADOPTION_STAGE_PENDING_KEYS if adoption else STAGE_PENDING_KEYS
+    )
+    expected_schema = 2 if adoption else 1
     if (
-        set(payload) != STAGE_PENDING_KEYS
-        or payload.get("schema_version") != 1
+        set(payload) != expected_keys
+        or payload.get("schema_version") != expected_schema
         or payload.get("record_type") != "gatea-candidate-stage-pending"
         or payload.get("phase") != "source-and-ci-verified"
         or any(payload.get(key) != value for key, value in expected.items())
@@ -1850,6 +2430,8 @@ def stage_candidate(
     release_root: Path,
     staging_root: Path,
     release_record_dir: Path,
+    superseded_candidate_sha: str | None = None,
+    failed_acceptance_sha256: str | None = None,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
@@ -1869,6 +2451,23 @@ def stage_candidate(
     _validate_sha256(launcher_sha256, "launcher digest")
     if confirmed_required_jobs != 9:
         raise GateACandidateError("Exactly nine required CI jobs must be confirmed")
+    if (superseded_candidate_sha is None) != (failed_acceptance_sha256 is None):
+        raise GateACandidateError(
+            "Gate A failed acceptance stage allowance requires paired confirmations"
+        )
+    if superseded_candidate_sha is not None:
+        superseded_candidate_sha = _validate_sha(
+            superseded_candidate_sha,
+            "superseded candidate SHA",
+        )
+        failed_acceptance_sha256 = _validate_sha256(
+            str(failed_acceptance_sha256),
+            "failed acceptance digest",
+        )
+        if superseded_candidate_sha == target_sha:
+            raise GateACandidateError(
+                "Gate A superseded and target candidates must differ"
+            )
     expected_artifact_name = (
         f"gatea-m7-m9-updater-{target_sha}-{ci_run_id}-{ci_run_attempt}"
     )
@@ -1881,6 +2480,8 @@ def stage_candidate(
         release_record_dir=release_record_dir,
         acceptance_record_dir=acceptance_record_dir,
         allowed_release_pending=_stage_pending_path(release_record_dir, target_sha),
+        allowed_acceptance_candidate_sha=superseded_candidate_sha,
+        allowed_acceptance_pending_sha256=failed_acceptance_sha256,
     )
     _require_root_file(source_archive, 0o600, "Gate A source archive")
     _require_root_file(ci_artifact, 0o600, "Gate A CI artifact")
@@ -1948,6 +2549,15 @@ def stage_candidate(
                 },
                 "final_image": final_image,
                 "secret_values_recorded": False,
+                **(
+                    {
+                        "transition_kind": "m9-candidate-adoption",
+                        "superseded_candidate_sha": superseded_candidate_sha,
+                        "failed_acceptance_sha256": failed_acceptance_sha256,
+                    }
+                    if superseded_candidate_sha is not None
+                    else {}
+                ),
             }
             if record_path.exists() or record_path.is_symlink():
                 final_record = _load_stage(
@@ -2017,7 +2627,9 @@ def stage_candidate(
                         "Gate A temporary image tag already exists"
                     )
                 pending = {
-                    "schema_version": 1,
+                    "schema_version": (
+                        2 if superseded_candidate_sha is not None else 1
+                    ),
                     "record_type": "gatea-candidate-stage-pending",
                     **expected_pending,
                     "temporary_image": temporary_image,
@@ -2130,7 +2742,9 @@ def stage_candidate(
                 f"{ci_run_attempt}\n".encode(),
             )
             payload = {
-                "schema_version": 1,
+                "schema_version": (
+                    2 if superseded_candidate_sha is not None else 1
+                ),
                 "record_type": "gatea-candidate-stage",
                 "passed": True,
                 "candidate_sha": target_sha,
@@ -2154,6 +2768,15 @@ def stage_candidate(
                 **final_metadata,
                 "completed_at": _utc_now(),
                 "secret_values_recorded": False,
+                **(
+                    {
+                        "transition_kind": "m9-candidate-adoption",
+                        "superseded_candidate_sha": superseded_candidate_sha,
+                        "failed_acceptance_sha256": failed_acceptance_sha256,
+                    }
+                    if superseded_candidate_sha is not None
+                    else {}
+                ),
             }
             _write_json_exclusive(record_path, payload)
             pending_path.unlink()
@@ -2193,9 +2816,16 @@ def _load_stage(
     ci_run_id = payload.get("ci_run_id")
     ci_run_attempt = payload.get("ci_run_attempt")
     source_head_sha = payload.get("source_head_sha")
+    schema_version = payload.get("schema_version")
+    adoption = (
+        schema_version == 2
+        and payload.get("transition_kind") == "m9-candidate-adoption"
+    )
+    expected_keys = ADOPTION_STAGE_RECORD_KEYS if adoption else STAGE_RECORD_KEYS
     if (
-        set(payload) != STAGE_RECORD_KEYS
-        or payload.get("schema_version") != 1
+        set(payload) != expected_keys
+        or schema_version not in {1, 2}
+        or (schema_version == 2 and not adoption)
         or payload.get("record_type") != "gatea-candidate-stage"
         or payload.get("passed") is not True
         or payload.get("candidate_sha") != target_sha
@@ -2263,6 +2893,20 @@ def _load_stage(
         or not _is_utc_timestamp(payload.get("completed_at"))
         or payload.get("secret_values_recorded") is not False
         or any(payload.get(key) != value for key, value in current_manifest.items())
+        or (
+            adoption
+            and (
+                SHA_PATTERN.fullmatch(
+                    str(payload.get("superseded_candidate_sha", ""))
+                )
+                is None
+                or payload.get("superseded_candidate_sha") == target_sha
+                or SHA256_PATTERN.fullmatch(
+                    str(payload.get("failed_acceptance_sha256", ""))
+                )
+                is None
+            )
+        )
     ):
         raise GateACandidateError("Gate A candidate stage record is invalid")
     if (
@@ -2408,9 +3052,21 @@ def _plan_upgrade(
     backup_record_dir: Path,
     restore_record_dir: Path,
     release_record_dir: Path,
+    lineage_source_candidate_sha: str | None = None,
+    acceptance_retirement_record_sha256: str | None = None,
 ) -> dict[str, Any]:
     _, _, upgrade = _runtime_modules()
     try:
+        adoption_arguments: dict[str, Any] = {}
+        if source_version == 9:
+            adoption_arguments = {
+                "lineage_source_candidate_sha": lineage_source_candidate_sha,
+                "acceptance_retirement_record_sha256": (
+                    acceptance_retirement_record_sha256
+                ),
+                "confirm_lineage_source_sha": None,
+                "confirm_acceptance_retirement_record_sha256": None,
+            }
         return upgrade.upgrade_existing_database(
             config_file=config_file,
             secret_dir=secret_dir,
@@ -2427,6 +3083,7 @@ def _plan_upgrade(
             confirm_backup_id=None,
             confirm_manifest_sha256=None,
             source_version=source_version,
+            **adoption_arguments,
         )
     except Exception as error:
         raise GateACandidateError("Gate A upgrade plan failed") from error
@@ -2442,12 +3099,28 @@ def _validate_activation_journal(
     history_path: Path,
     release_record_dir: Path,
     final: bool,
+    adoption_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    expected_keys = ACTIVATION_RECORD_KEYS if final else ACTIVATION_PENDING_KEYS
+    adoption = adoption_binding is not None
+    expected_keys = (
+        ADOPTION_ACTIVATION_RECORD_KEYS
+        if adoption and final
+        else ADOPTION_ACTIVATION_PENDING_KEYS
+        if adoption
+        else ACTIVATION_RECORD_KEYS
+        if final
+        else ACTIVATION_PENDING_KEYS
+    )
     expected_type = "gatea-config-activation" if final else "gatea-config-activation-pending"
+    expected_changed_keys = (
+        ["GATEA_APP_IMAGE"]
+        if adoption
+        else ["GATEA_APP_IMAGE", "TABLE_SESSION_CLAIMS_ENABLED"]
+    )
+    adoption_keys = ADOPTION_ACTIVATION_RECORD_KEYS - ACTIVATION_RECORD_KEYS
     if (
         set(payload) != expected_keys
-        or payload.get("schema_version") != 1
+        or payload.get("schema_version") != (2 if adoption else 1)
         or payload.get("record_type") != expected_type
         or payload.get("source_candidate_sha") != source_sha
         or payload.get("candidate_sha") != target_sha
@@ -2463,14 +3136,20 @@ def _validate_activation_journal(
             str(payload.get("target_config_sha256", ""))
         )
         is None
-        or payload.get("changed_keys")
-        != ["GATEA_APP_IMAGE", "TABLE_SESSION_CLAIMS_ENABLED"]
+        or payload.get("changed_keys") != expected_changed_keys
         or payload.get("history_path") != str(history_path)
         or payload.get("stage_record_sha256")
         != _sha256(_stage_record_path(release_record_dir, target_sha))
         or not _is_utc_timestamp(payload.get("started_at"))
         or payload.get("config_values_recorded") is not False
         or payload.get("secret_values_recorded") is not False
+        or (
+            adoption
+            and any(
+                payload.get(key) != adoption_binding.get(key)
+                for key in adoption_keys
+            )
+        )
         or (final and payload.get("passed") is not True)
         or (final and not _is_utc_timestamp(payload.get("completed_at")))
     ):
@@ -2540,7 +3219,12 @@ def activate_config(
     backup_record_dir: Path,
     restore_record_dir: Path,
     current_link: Path,
+    lineage_source_candidate_sha: str | None = None,
+    acceptance_retirement_record_sha256: str | None = None,
+    confirm_lineage_source_sha: str | None = None,
+    confirm_acceptance_retirement_record_sha256: str | None = None,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
+    acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
 ) -> dict[str, Any]:
@@ -2549,8 +3233,39 @@ def activate_config(
     _require_root()
     target_sha = _validate_sha(target_sha, "target SHA")
     source_candidate_sha = _validate_sha(source_candidate_sha, "source SHA")
-    if source_version != 7 or source_candidate_sha == target_sha:
-        raise GateACandidateError("Gate A config activation requires the M7-to-M9 path")
+    adoption = source_version == 9
+    if source_version not in {7, 9} or source_candidate_sha == target_sha:
+        raise GateACandidateError(
+            "Gate A config activation source transition is invalid"
+        )
+    adoption_values = (
+        lineage_source_candidate_sha,
+        acceptance_retirement_record_sha256,
+        confirm_lineage_source_sha,
+        confirm_acceptance_retirement_record_sha256,
+    )
+    if adoption:
+        if (
+            lineage_source_candidate_sha is None
+            or acceptance_retirement_record_sha256 is None
+        ):
+            raise GateACandidateError(
+                "Gate A M9 adoption lineage and retirement binding are required"
+            )
+        lineage_source_candidate_sha = _validate_sha(
+            lineage_source_candidate_sha,
+            "lineage source candidate SHA",
+        )
+        acceptance_retirement_record_sha256 = _validate_sha256(
+            acceptance_retirement_record_sha256,
+            "acceptance retirement record digest",
+        )
+        if lineage_source_candidate_sha in {source_candidate_sha, target_sha}:
+            raise GateACandidateError("Gate A M9 adoption lineage is invalid")
+    elif any(value is not None for value in adoption_values):
+        raise GateACandidateError(
+            "Gate A M7-to-M9 activation cannot accept adoption bindings"
+        )
     if BACKUP_ID_PATTERN.fullmatch(backup_id) is None:
         raise GateACandidateError("Gate A backup ID is invalid")
     _require_execution_release(release_root, target_sha)
@@ -2562,6 +3277,14 @@ def activate_config(
         and confirm_backup_id == backup_id
         and isinstance(confirm_manifest_sha256, str)
         and SHA256_PATTERN.fullmatch(confirm_manifest_sha256) is not None
+        and (
+            not adoption
+            or (
+                confirm_lineage_source_sha == lineage_source_candidate_sha
+                and confirm_acceptance_retirement_record_sha256
+                == acceptance_retirement_record_sha256
+            )
+        )
     )
     _reject_unresolved_transition_journals(
         release_record_dir=release_record_dir,
@@ -2576,6 +3299,22 @@ def activate_config(
         release_root=release_root,
         release_record_dir=release_record_dir,
         target_sha=target_sha,
+    )
+    adoption_context: dict[str, Any] | None = None
+    if adoption:
+        adoption_context = _load_adoption_context(
+            release_root=release_root,
+            release_record_dir=release_record_dir,
+            source_candidate_sha=source_candidate_sha,
+            lineage_source_candidate_sha=str(lineage_source_candidate_sha),
+            target_sha=target_sha,
+            acceptance_retirement_record_sha256=str(
+                acceptance_retirement_record_sha256
+            ),
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        )
+    current_source_sha = (
+        str(lineage_source_candidate_sha) if adoption else source_candidate_sha
     )
     unresolved_journals = (
         _stage_pending_path(release_record_dir, target_sha),
@@ -2602,7 +3341,16 @@ def activate_config(
             or confirm_target_sha != target_sha
             or confirm_backup_id != backup_id
             or _read_current_target(current_link, release_root)
-            != release_root / source_candidate_sha
+            != release_root / current_source_sha
+            or (
+                adoption
+                and (
+                    confirm_lineage_source_sha
+                    != lineage_source_candidate_sha
+                    or confirm_acceptance_retirement_record_sha256
+                    != acceptance_retirement_record_sha256
+                )
+            )
             or _rollback_record_path(release_record_dir, target_sha).exists()
             or _rollback_record_path(release_record_dir, target_sha).is_symlink()
         ):
@@ -2624,6 +3372,7 @@ def activate_config(
                 history_path=history_path,
                 release_record_dir=release_record_dir,
                 final=False,
+                adoption_binding=adoption_context,
             )
             if confirm_manifest_sha256 != selected.get("manifest_sha256"):
                 raise GateACandidateError(
@@ -2641,10 +3390,16 @@ def activate_config(
                     history_path=history_path,
                     release_record_dir=release_record_dir,
                     final=True,
+                    adoption_binding=adoption_context,
                 )
                 if any(
                     selected.get(key) != completed.get(key)
-                    for key in ACTIVATION_PENDING_KEYS - {"record_type"}
+                    for key in (
+                        ADOPTION_ACTIVATION_PENDING_KEYS
+                        if adoption
+                        else ACTIVATION_PENDING_KEYS
+                    )
+                    - {"record_type"}
                 ):
                     raise GateACandidateError(
                         "Gate A config activation records differ"
@@ -2686,6 +3441,7 @@ def activate_config(
             history_path=history_path,
             release_record_dir=release_record_dir,
             final=True,
+            adoption_binding=adoption_context,
         )
         if (
             confirm_manifest_sha256 != validated.get("manifest_sha256")
@@ -2701,16 +3457,29 @@ def activate_config(
     source_values = gatea.parse_env_file(config_file)
     if gatea._candidate_sha(source_values) != source_candidate_sha:
         raise GateACandidateError("Gate A config does not identify the approved source")
-    if source_values.get("TABLE_SESSION_CLAIMS_ENABLED") not in {None, "false"}:
-        raise GateACandidateError("Gate A source config already enables table claims")
-    if _read_current_target(current_link, release_root) != (release_root / source_candidate_sha):
+    if (
+        adoption
+        and source_values.get("TABLE_SESSION_CLAIMS_ENABLED") != "true"
+    ) or (
+        not adoption
+        and source_values.get("TABLE_SESSION_CLAIMS_ENABLED") not in {None, "false"}
+    ):
+        raise GateACandidateError("Gate A source config claims state is invalid")
+    if _read_current_target(current_link, release_root) != (
+        release_root / current_source_sha
+    ):
         raise GateACandidateError("Gate A current release does not match the source")
     if any(path.exists() or path.is_symlink() for path in _upgrade_evidence_paths(
         release_record_dir, target_sha
     )):
         raise GateACandidateError("Gate A target upgrade evidence already exists")
     target_content, changed_keys = _rewrite_config(original, target_sha)
-    if changed_keys != ["GATEA_APP_IMAGE", "TABLE_SESSION_CLAIMS_ENABLED"]:
+    expected_changed_keys = (
+        ["GATEA_APP_IMAGE"]
+        if adoption
+        else ["GATEA_APP_IMAGE", "TABLE_SESSION_CLAIMS_ENABLED"]
+    )
+    if changed_keys != expected_changed_keys:
         raise GateACandidateError("Gate A config activation change set is invalid")
 
     temporary = config_file.parent / f".{config_file.name}.candidate-{target_sha}"
@@ -2735,6 +3504,15 @@ def activate_config(
             backup_record_dir=backup_record_dir,
             restore_record_dir=restore_record_dir,
             release_record_dir=release_record_dir,
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            acceptance_retirement_record_sha256=(
+                acceptance_retirement_record_sha256
+            ),
+        )
+        expected_source_chain = (
+            list(gatea.APPROVED_TARGET_M9_CHAIN)
+            if adoption
+            else list(gatea.APPROVED_TARGET_M7_CHAIN)
         )
         if (
             plan.get("mode") != "plan"
@@ -2742,16 +3520,26 @@ def activate_config(
             or plan.get("candidate_sha") != target_sha
             or plan.get("source_candidate_sha") != source_candidate_sha
             or plan.get("backup_id") != backup_id
-            or plan.get("source_version") != 7
+            or plan.get("source_version") != source_version
             or plan.get("restore_verified") is not True
             or plan.get("source_aerich_versions")
-            != list(gatea.APPROVED_TARGET_M7_CHAIN)
+            != expected_source_chain
             or plan.get("target_aerich_versions")
             != list(gatea.APPROVED_TARGET_M9_CHAIN)
             or plan.get("target_version") != 9
             or SHA256_PATTERN.fullmatch(str(plan.get("manifest_sha256", ""))) is None
+            or (
+                adoption
+                and (
+                    plan.get("transition_kind") != "m9-candidate-adoption"
+                    or plan.get("lineage_source_candidate_sha")
+                    != lineage_source_candidate_sha
+                    or plan.get("acceptance_retirement_record_sha256")
+                    != acceptance_retirement_record_sha256
+                )
+            )
         ):
-            raise GateACandidateError("Gate A upgrade plan is not an initial M7-to-M9 plan")
+            raise GateACandidateError("Gate A upgrade plan is not the approved transition")
         if not apply:
             return {
                 "mode": "plan",
@@ -2766,6 +3554,14 @@ def activate_config(
             or confirm_target_sha != target_sha
             or confirm_backup_id != backup_id
             or confirm_manifest_sha256 != plan["manifest_sha256"]
+            or (
+                adoption
+                and (
+                    confirm_lineage_source_sha != lineage_source_candidate_sha
+                    or confirm_acceptance_retirement_record_sha256
+                    != acceptance_retirement_record_sha256
+                )
+            )
         ):
             raise GateACandidateError(
                 "Gate A config activation confirmations do not match the plan"
@@ -2801,7 +3597,7 @@ def activate_config(
             else:
                 _write_bytes_exclusive(history_path, original, 0o600)
             pending = {
-                "schema_version": 1,
+                "schema_version": 2 if adoption else 1,
                 "record_type": "gatea-config-activation-pending",
                 "source_candidate_sha": source_candidate_sha,
                 "candidate_sha": target_sha,
@@ -2818,7 +3614,29 @@ def activate_config(
                 "started_at": _utc_now(),
                 "config_values_recorded": False,
                 "secret_values_recorded": False,
+                **(
+                    {
+                        key: adoption_context[key]
+                        for key in (
+                            ADOPTION_ACTIVATION_RECORD_KEYS
+                            - ACTIVATION_RECORD_KEYS
+                        )
+                    }
+                    if adoption_context is not None
+                    else {}
+                ),
             }
+            _validate_activation_journal(
+                pending,
+                source_sha=source_candidate_sha,
+                target_sha=target_sha,
+                stage=stage,
+                backup_id=backup_id,
+                history_path=history_path,
+                release_record_dir=release_record_dir,
+                final=False,
+                adoption_binding=adoption_context,
+            )
             _write_json_exclusive(pending_path, pending, 0o600)
             os.replace(temporary, config_file)
             _fsync_directory(config_file.parent)
@@ -2830,6 +3648,17 @@ def activate_config(
                 "completed_at": _utc_now(),
                 "passed": True,
             }
+            _validate_activation_journal(
+                final_payload,
+                source_sha=source_candidate_sha,
+                target_sha=target_sha,
+                stage=stage,
+                backup_id=backup_id,
+                history_path=history_path,
+                release_record_dir=release_record_dir,
+                final=True,
+                adoption_binding=adoption_context,
+            )
             _write_json_exclusive(activation_path, final_payload)
             pending_path.unlink()
             _fsync_directory(release_record_dir)
@@ -2847,12 +3676,23 @@ def _validate_rollback_journal(
     activation: Mapping[str, Any],
     database_chain: Sequence[str],
     final: bool,
+    adoption_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    expected_keys = ROLLBACK_RECORD_KEYS if final else ROLLBACK_PENDING_KEYS
+    adoption = adoption_binding is not None
+    expected_keys = (
+        ADOPTION_ROLLBACK_RECORD_KEYS
+        if adoption and final
+        else ADOPTION_ROLLBACK_PENDING_KEYS
+        if adoption
+        else ROLLBACK_RECORD_KEYS
+        if final
+        else ROLLBACK_PENDING_KEYS
+    )
     expected_type = "gatea-config-rollback" if final else "gatea-config-rollback-pending"
+    adoption_keys = ADOPTION_ROLLBACK_RECORD_KEYS - ROLLBACK_RECORD_KEYS
     if (
         set(payload) != expected_keys
-        or payload.get("schema_version") != 1
+        or payload.get("schema_version") != (2 if adoption else 1)
         or payload.get("record_type") != expected_type
         or payload.get("source_candidate_sha") != source_sha
         or payload.get("candidate_sha") != target_sha
@@ -2865,6 +3705,13 @@ def _validate_rollback_journal(
         or payload.get("database_chain") != list(database_chain)
         or not _is_utc_timestamp(payload.get("started_at"))
         or payload.get("secret_values_recorded") is not False
+        or (
+            adoption
+            and any(
+                payload.get(key) != adoption_binding.get(key)
+                for key in adoption_keys
+            )
+        )
         or (final and payload.get("passed") is not True)
         or (final and not _is_utc_timestamp(payload.get("completed_at")))
     ):
@@ -2915,11 +3762,16 @@ def rollback_config(
     release_root: Path,
     release_record_dir: Path,
     current_link: Path,
+    lineage_source_candidate_sha: str | None = None,
+    acceptance_retirement_record_sha256: str | None = None,
+    confirm_lineage_source_sha: str | None = None,
+    confirm_acceptance_retirement_record_sha256: str | None = None,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
+    acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
 ) -> dict[str, Any]:
-    """Restore the M7 config only while the database is still exact M7."""
+    """Restore the immediate source config before deployment evidence exists."""
 
     _require_root()
     source_sha = _validate_sha(source_sha, "source SHA")
@@ -2955,38 +3807,66 @@ def rollback_config(
     activation = _load_json(activation_path, "Gate A config activation record")
     if _sha256(activation_path) != confirm_activation_record_sha256:
         raise GateACandidateError("Gate A activation record digest does not match")
-    if (
-        set(activation) != ACTIVATION_RECORD_KEYS
-        or activation.get("schema_version") != 1
-        or activation.get("record_type") != "gatea-config-activation"
-        or activation.get("passed") is not True
-        or activation.get("source_candidate_sha") != source_sha
-        or activation.get("candidate_sha") != target_sha
-        or activation.get("image_id") != stage.get("image_id")
-        or BACKUP_ID_PATTERN.fullmatch(str(activation.get("backup_id", ""))) is None
-        or SHA256_PATTERN.fullmatch(str(activation.get("manifest_sha256", "")))
-        is None
-        or SHA256_PATTERN.fullmatch(
-            str(activation.get("source_config_sha256", ""))
+    adoption = activation.get("schema_version") == 2
+    adoption_context: dict[str, Any] | None = None
+    if adoption:
+        if (
+            activation.get("transition_kind") != "m9-candidate-adoption"
+            or lineage_source_candidate_sha is None
+            or acceptance_retirement_record_sha256 is None
+        ):
+            raise GateACandidateError("Gate A adoption rollback binding is invalid")
+        lineage_source_candidate_sha = _validate_sha(
+            lineage_source_candidate_sha,
+            "lineage source candidate SHA",
         )
-        is None
-        or SHA256_PATTERN.fullmatch(
-            str(activation.get("target_config_sha256", ""))
+        acceptance_retirement_record_sha256 = _validate_sha256(
+            acceptance_retirement_record_sha256,
+            "acceptance retirement record digest",
         )
-        is None
-        or activation.get("changed_keys")
-        != ["GATEA_APP_IMAGE", "TABLE_SESSION_CLAIMS_ENABLED"]
-        or activation.get("stage_record_sha256")
-        != _sha256(_stage_record_path(release_record_dir, target_sha))
-        or activation.get("config_values_recorded") is not False
-        or activation.get("secret_values_recorded") is not False
-        or not _is_utc_timestamp(activation.get("started_at"))
-        or not _is_utc_timestamp(activation.get("completed_at"))
+        if (
+            confirm_lineage_source_sha != lineage_source_candidate_sha
+            or confirm_acceptance_retirement_record_sha256
+            != acceptance_retirement_record_sha256
+        ):
+            raise GateACandidateError(
+                "Gate A adoption rollback confirmations do not match"
+            )
+        adoption_context = _load_adoption_context(
+            release_root=release_root,
+            release_record_dir=release_record_dir,
+            source_candidate_sha=source_sha,
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            target_sha=target_sha,
+            acceptance_retirement_record_sha256=(
+                acceptance_retirement_record_sha256
+            ),
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        )
+    elif any(
+        value is not None
+        for value in (
+            lineage_source_candidate_sha,
+            acceptance_retirement_record_sha256,
+            confirm_lineage_source_sha,
+            confirm_acceptance_retirement_record_sha256,
+        )
     ):
-        raise GateACandidateError("Gate A config activation record is invalid")
+        raise GateACandidateError(
+            "Gate A legacy rollback cannot accept adoption bindings"
+        )
     history_path = config_history_dir / f"{target_sha}.pre-activation.env"
-    if activation.get("history_path") != str(history_path):
-        raise GateACandidateError("Gate A config rollback copy path is invalid")
+    _validate_activation_journal(
+        activation,
+        source_sha=source_sha,
+        target_sha=target_sha,
+        stage=stage,
+        backup_id=str(activation.get("backup_id", "")),
+        history_path=history_path,
+        release_record_dir=release_record_dir,
+        final=True,
+        adoption_binding=adoption_context,
+    )
     _require_root_file(history_path, 0o600, "Gate A config rollback copy")
     source_content = history_path.read_bytes()
     if _sha256_bytes(source_content) != activation.get("source_config_sha256"):
@@ -3002,7 +3882,13 @@ def rollback_config(
         allowed_config_digests.add(activation.get("source_config_sha256"))
     if config_digest not in allowed_config_digests:
         raise GateACandidateError("Gate A active config changed after activation")
-    if _read_current_target(current_link, release_root) != release_root / source_sha:
+    current_source_sha = (
+        str(lineage_source_candidate_sha) if adoption else source_sha
+    )
+    if (
+        _read_current_target(current_link, release_root)
+        != release_root / current_source_sha
+    ):
         raise GateACandidateError("Gate A current release no longer matches the source")
     if any(
         path.exists() or path.is_symlink()
@@ -3022,8 +3908,15 @@ def rollback_config(
         secret_dir=secret_dir,
         mode="loopback",
     )
-    if snapshot.get("aerich_versions") != list(gatea.APPROVED_TARGET_M7_CHAIN):
-        raise GateACandidateError("Gate A config rollback requires the exact M7 chain")
+    expected_chain = (
+        gatea.APPROVED_TARGET_M9_CHAIN
+        if adoption
+        else gatea.APPROVED_TARGET_M7_CHAIN
+    )
+    if snapshot.get("aerich_versions") != list(expected_chain):
+        raise GateACandidateError(
+            "Gate A config rollback requires the exact approved chain"
+        )
     rows = gatea._compose_ps(
         values=values,
         config_file=config_file,
@@ -3031,8 +3924,11 @@ def rollback_config(
         mode="loopback",
         services=M9_RUNTIME_SERVICES,
     )
-    gatea._ensure_services_healthy(rows, "mysql", "redis", "app", "nginx")
-    upgrade._ensure_not_running(rows, "table-sweeper")
+    if adoption:
+        gatea._ensure_services_healthy(rows, *M9_RUNTIME_SERVICES)
+    else:
+        gatea._ensure_services_healthy(rows, "mysql", "redis", "app", "nginx")
+        upgrade._ensure_not_running(rows, "table-sweeper")
 
     with nullcontext() if lock_file is None else _exclusive_lock(lock_file):
         if any(
@@ -3042,7 +3938,10 @@ def rollback_config(
             raise GateACandidateError(
                 "Gate A upgrade started before config rollback"
             )
-        if _read_current_target(current_link, release_root) != release_root / source_sha:
+        if (
+            _read_current_target(current_link, release_root)
+            != release_root / current_source_sha
+        ):
             raise GateACandidateError("Gate A current release changed before rollback")
         final_snapshot = gatea.read_database_snapshot(
             values=values,
@@ -3050,9 +3949,7 @@ def rollback_config(
             secret_dir=secret_dir,
             mode="loopback",
         )
-        if final_snapshot.get("aerich_versions") != list(
-            gatea.APPROVED_TARGET_M7_CHAIN
-        ):
+        if final_snapshot.get("aerich_versions") != list(expected_chain):
             raise GateACandidateError("Gate A database changed before config rollback")
         if has_pending:
             pending = _validate_rollback_journal(
@@ -3065,8 +3962,9 @@ def rollback_config(
                 target_sha=target_sha,
                 activation_record_sha256=confirm_activation_record_sha256,
                 activation=activation,
-                database_chain=gatea.APPROVED_TARGET_M7_CHAIN,
+                database_chain=expected_chain,
                 final=False,
+                adoption_binding=adoption_context,
             )
             if has_rollback:
                 recovered = _validate_rollback_journal(
@@ -3077,12 +3975,18 @@ def rollback_config(
                     target_sha=target_sha,
                     activation_record_sha256=confirm_activation_record_sha256,
                     activation=activation,
-                    database_chain=gatea.APPROVED_TARGET_M7_CHAIN,
+                    database_chain=expected_chain,
                     final=True,
+                    adoption_binding=adoption_context,
                 )
                 if any(
                     pending.get(key) != recovered.get(key)
-                    for key in ROLLBACK_PENDING_KEYS - {"record_type"}
+                    for key in (
+                        ADOPTION_ROLLBACK_PENDING_KEYS
+                        if adoption
+                        else ROLLBACK_PENDING_KEYS
+                    )
+                    - {"record_type"}
                 ):
                     raise GateACandidateError(
                         "Gate A config rollback records differ"
@@ -3107,8 +4011,9 @@ def rollback_config(
                 target_sha=target_sha,
                 activation_record_sha256=confirm_activation_record_sha256,
                 activation=activation,
-                database_chain=gatea.APPROVED_TARGET_M7_CHAIN,
+                database_chain=expected_chain,
                 final=True,
+                adoption_binding=adoption_context,
             )
         if has_rollback:
             recovered = _validate_rollback_journal(
@@ -3117,8 +4022,9 @@ def rollback_config(
                 target_sha=target_sha,
                 activation_record_sha256=confirm_activation_record_sha256,
                 activation=activation,
-                database_chain=gatea.APPROVED_TARGET_M7_CHAIN,
+                database_chain=expected_chain,
                 final=True,
+                adoption_binding=adoption_context,
             )
             if _sha256(config_file) != activation["source_config_sha256"]:
                 raise GateACandidateError(
@@ -3128,24 +4034,54 @@ def rollback_config(
         if _sha256(config_file) != activation["target_config_sha256"]:
             raise GateACandidateError("Gate A config changed before rollback")
         pending = {
-            "schema_version": 1,
+            "schema_version": 2 if adoption else 1,
             "record_type": "gatea-config-rollback-pending",
             "source_candidate_sha": source_sha,
             "candidate_sha": target_sha,
             "activation_record_sha256": confirm_activation_record_sha256,
             "source_config_sha256": activation["source_config_sha256"],
             "target_config_sha256": activation["target_config_sha256"],
-            "database_chain": list(gatea.APPROVED_TARGET_M7_CHAIN),
+            "database_chain": list(expected_chain),
             "started_at": _utc_now(),
             "secret_values_recorded": False,
+            **(
+                {
+                    key: adoption_context[key]
+                    for key in (
+                        ADOPTION_ROLLBACK_RECORD_KEYS - ROLLBACK_RECORD_KEYS
+                    )
+                }
+                if adoption_context is not None
+                else {}
+            ),
         }
+        _validate_rollback_journal(
+            pending,
+            source_sha=source_sha,
+            target_sha=target_sha,
+            activation_record_sha256=confirm_activation_record_sha256,
+            activation=activation,
+            database_chain=expected_chain,
+            final=False,
+            adoption_binding=adoption_context,
+        )
         _write_json_exclusive(pending_path, pending, 0o600)
-        return _finish_rollback_journal(
+        completed = _finish_rollback_journal(
             pending=pending,
             pending_path=pending_path,
             rollback_path=rollback_path,
             config_file=config_file,
             source_content=source_content,
+        )
+        return _validate_rollback_journal(
+            completed,
+            source_sha=source_sha,
+            target_sha=target_sha,
+            activation_record_sha256=confirm_activation_record_sha256,
+            activation=activation,
+            database_chain=expected_chain,
+            final=True,
+            adoption_binding=adoption_context,
         )
 
 
@@ -3192,6 +4128,34 @@ def _validate_upgrade_replay_record(
     upgrade: Any,
 ) -> dict[str, Any]:
     payload = _load_json(path, "Gate A M9 upgrade plan-replay record")
+    if (
+        upgrade_record.get("schema_version") == 2
+        and upgrade_record.get("transition_kind") == "m9-candidate-adoption"
+    ):
+        try:
+            validated = gatea._require_m9_upgrade_replay_record(
+                record_dir=upgrade_path.parent,
+                candidate_sha=target_sha,
+                image_id=image_id,
+                upgrade_record=upgrade_record,
+            )
+        except Exception as error:
+            raise GateACandidateError(
+                "Gate A M9 adoption upgrade plan-replay record is invalid"
+            ) from error
+        if (
+            validated != payload
+            or payload.get("source_candidate_sha") != source_sha
+            or payload.get("source_version") != 9
+            or payload.get("database_changes_applied") is not False
+            or payload.get("migrations_applied") != []
+            or payload.get("upgrade_record_sha256") != _sha256(upgrade_path)
+            or payload.get("evidence_sha256") != _sha256(evidence_path)
+        ):
+            raise GateACandidateError(
+                "Gate A M9 adoption upgrade plan-replay record is invalid"
+            )
+        return dict(payload)
     result = payload.get("result")
     expected_result_keys = {
         "already_current",
@@ -3249,6 +4213,1508 @@ def _validate_upgrade_replay_record(
     ):
         raise GateACandidateError("Gate A M9 upgrade plan-replay record is invalid")
     return payload
+
+
+def _retirement_archive_path(
+    archive_dir: Path,
+    source_candidate_sha: str,
+    acceptance_pending_sha256: str,
+) -> Path:
+    return archive_dir / (
+        "gatea-m9-failed-acceptance-"
+        f"{source_candidate_sha}-{acceptance_pending_sha256}.json"
+    )
+
+
+def _load_adoption_predecessor_binding(
+    *,
+    release_root: Path,
+    release_record_dir: Path,
+    source_candidate_sha: str,
+    lineage_source_candidate_sha: str,
+) -> dict[str, Any]:
+    """Validate the complete schema-v1 M7-to-M9 predecessor lineage."""
+
+    gatea, _, upgrade = _runtime_modules()
+    source_stage_path = _stage_record_path(
+        release_record_dir, source_candidate_sha
+    )
+    source_stage = _load_stage(
+        release_root=release_root,
+        release_record_dir=release_record_dir,
+        target_sha=source_candidate_sha,
+    )
+    source_image_id = str(source_stage.get("image_id", ""))
+    source_activation_path = _activation_record_path(
+        release_record_dir, source_candidate_sha
+    )
+    source_activation = _load_json(
+        source_activation_path,
+        "Gate A predecessor config activation record",
+    )
+    activation_backup_id = source_activation.get("backup_id")
+    activation_history_path = source_activation.get("history_path")
+    if (
+        not isinstance(activation_backup_id, str)
+        or BACKUP_ID_PATTERN.fullmatch(activation_backup_id) is None
+        or not isinstance(activation_history_path, str)
+        or not activation_history_path
+    ):
+        raise GateACandidateError(
+            "Gate A predecessor config activation is invalid"
+        )
+    _validate_activation_journal(
+        source_activation,
+        source_sha=lineage_source_candidate_sha,
+        target_sha=source_candidate_sha,
+        stage=source_stage,
+        backup_id=activation_backup_id,
+        history_path=Path(activation_history_path),
+        release_record_dir=release_record_dir,
+        final=True,
+    )
+    source_upgrade_path = release_record_dir / (
+        f"{source_candidate_sha}.existing-database-upgrade.json"
+    )
+    source_upgrade = gatea._require_upgrade_record(
+        record_dir=release_record_dir,
+        candidate_sha=source_candidate_sha,
+        image_id=source_image_id,
+    )
+    source_evidence_path = release_record_dir / (
+        f"{source_candidate_sha}.existing-database-upgrade.evidence.json"
+    )
+    source_replay_path = _upgrade_replay_record_path(
+        release_record_dir, source_candidate_sha
+    )
+    if (
+        source_upgrade.get("schema_version") != 1
+        or source_upgrade.get("record_type") != "existing-database-upgrade"
+        or source_upgrade.get("source_version") != 7
+        or source_upgrade.get("source_candidate_sha")
+        != lineage_source_candidate_sha
+        or source_upgrade.get("source_image_id") in {None, ""}
+        or source_upgrade.get("candidate_sha") != source_candidate_sha
+        or source_upgrade.get("image_id") != source_image_id
+        or source_upgrade.get("backup_id") != activation_backup_id
+        or source_upgrade.get("manifest_sha256")
+        != source_activation.get("manifest_sha256")
+        or source_upgrade.get("target_aerich_versions")
+        != list(gatea.APPROVED_TARGET_M9_CHAIN)
+        or SHA256_PATTERN.fullmatch(
+            str(source_upgrade.get("evidence_sha256", ""))
+        )
+        is None
+        or _sha256(source_evidence_path) != source_upgrade.get("evidence_sha256")
+    ):
+        raise GateACandidateError(
+            "Gate A predecessor M7-to-M9 deployment evidence is invalid"
+        )
+    try:
+        replay = gatea._require_m9_upgrade_replay_record(
+            record_dir=release_record_dir,
+            candidate_sha=source_candidate_sha,
+            image_id=source_image_id,
+            upgrade_record=source_upgrade,
+        )
+    except Exception as error:
+        raise GateACandidateError(
+            "Gate A predecessor M9 replay evidence is invalid"
+        ) from error
+    if (
+        replay.get("source_candidate_sha") != lineage_source_candidate_sha
+        or replay.get("source_version") != 7
+        or replay.get("upgrade_record_sha256") != _sha256(source_upgrade_path)
+        or replay.get("evidence_sha256") != _sha256(source_evidence_path)
+    ):
+        raise GateACandidateError(
+            "Gate A predecessor M9 replay lineage is invalid"
+        )
+    return {
+        "source_candidate_sha": source_candidate_sha,
+        "source_image_id": source_image_id,
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "lineage_source_image_id": str(source_upgrade["source_image_id"]),
+        "predecessor_stage_record_sha256": _sha256(source_stage_path),
+        "predecessor_activation_record_sha256": _sha256(
+            source_activation_path
+        ),
+        "predecessor_upgrade_record_sha256": _sha256(source_upgrade_path),
+        "predecessor_upgrade_evidence_sha256": _sha256(
+            source_evidence_path
+        ),
+        "predecessor_upgrade_plan_replay_record_sha256": _sha256(
+            source_replay_path
+        ),
+    }
+
+
+def _failed_acceptance_business_verification(
+    *,
+    gatea: Any,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    target_image_id: str,
+    failed_acceptance: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Run B's read-only verifier against the exact identities frozen by A."""
+
+    fixture = failed_acceptance.get("fixture")
+    order_evidence = failed_acceptance.get("order_evidence")
+    if not isinstance(fixture, dict) or not isinstance(order_evidence, dict):
+        raise GateACandidateError(
+            "Gate A failed acceptance business identities are unavailable"
+        )
+    timer_items = order_evidence.get("expected_timer_items")
+    option_ids = fixture.get("option_ids")
+    option_participants = fixture.get("option_participants")
+    if (
+        not isinstance(timer_items, list)
+        or len(timer_items) != 3
+        or not isinstance(option_ids, list)
+        or len(option_ids) != 3
+        or not isinstance(option_participants, list)
+        or len(option_participants) != 3
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance business identities are invalid"
+        )
+    command = (
+        "run",
+        "--rm",
+        "--no-deps",
+        "-T",
+        "app",
+        "python3",
+        "-B",
+        "-m",
+        "app.tasks.gatea_m9_failed_acceptance_verify",
+    )
+    verifier_input = {
+        "schema_version": 1,
+        "candidate_sha": failed_acceptance["candidate_sha"],
+        "order_id": failed_acceptance["order_id"],
+        "experience_product_id": fixture["experience_product_id"],
+        "kit_product_id": fixture["kit_product_id"],
+        "experience_items": [
+            {
+                "order_item_id": item["order_item_id"],
+                "option_id": option_id,
+                "duration_minutes": item["duration_minutes"],
+                "participants": participants,
+                "day_type": "weekday",
+                "price": fixture["option_price"],
+                "quantity": item["quantity"],
+            }
+            for option_id, participants, item in zip(
+                option_ids,
+                option_participants,
+                timer_items,
+                strict=True,
+            )
+        ],
+        "kit_item_id": order_evidence["kit_order_item_id"],
+        "kit_price": fixture["kit_price"],
+    }
+    verifier_input_text = json.dumps(
+        verifier_input,
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    pinned_values = dict(values)
+    pinned_values["GATEA_APP_IMAGE"] = target_image_id
+    try:
+        result = gatea._run_compose(
+            values=pinned_values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            arguments=command,
+            capture_output=True,
+            check=False,
+            input_text=verifier_input_text,
+        )
+        lines = result.stdout.splitlines()
+        if result.returncode != 0 or len(lines) != 1 or not lines[0]:
+            raise GateACandidateError(
+                "Gate A failed acceptance business verifier refused the state"
+            )
+        payload = json.loads(
+            lines[0], object_pairs_hook=_json_object_without_duplicates
+        )
+    except GateACandidateError:
+        raise
+    except Exception as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance business verification failed"
+        ) from error
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS
+        or payload.get("schema_version") != 1
+        or payload.get("passed") is not True
+        or payload.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
+        or payload.get("evidence_sha256")
+        != FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+        or payload.get("secret_values_recorded") is not False
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance business verification is invalid"
+        )
+    return dict(payload)
+
+
+def _retirement_source_runtime_context(
+    *,
+    config_file: Path,
+    secret_dir: Path,
+    current_link: Path,
+    release_root: Path,
+    source_candidate_sha: str,
+    source_image_id: str,
+    lineage_source_candidate_sha: str,
+) -> tuple[Any, Any, dict[str, str]]:
+    """Load and pin the exact A runtime which retirement must restore."""
+
+    gatea, _, upgrade = _runtime_modules()
+    try:
+        values = gatea._validated_inputs(
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            require_available_port=False,
+        )
+        if (
+            gatea._candidate_sha(values) != source_candidate_sha
+            or gatea.validate_app_image(values) != source_image_id
+            or values.get("TABLE_SESSION_CLAIMS_ENABLED") != "true"
+            or _read_current_target(current_link, release_root)
+            != release_root / lineage_source_candidate_sha
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance runtime lineage is invalid"
+            )
+    except GateACandidateError:
+        raise
+    except Exception as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance runtime lineage could not be verified"
+        ) from error
+    return gatea, upgrade, dict(values)
+
+
+def _assert_retirement_write_free_window(
+    *,
+    gatea: Any,
+    upgrade: Any,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    current_link: Path,
+    release_root: Path,
+    source_candidate_sha: str,
+    source_image_id: str,
+    lineage_source_candidate_sha: str,
+) -> None:
+    """Recheck A/S lineage and prove all three runtime writers are stopped."""
+
+    try:
+        current_values = gatea._validated_inputs(
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            require_available_port=False,
+        )
+        if (
+            gatea._candidate_sha(current_values) != source_candidate_sha
+            or gatea.validate_app_image(current_values) != source_image_id
+            or current_values.get("TABLE_SESSION_CLAIMS_ENABLED") != "true"
+            or _read_current_target(current_link, release_root)
+            != release_root / lineage_source_candidate_sha
+            or dict(current_values) != dict(values)
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance runtime lineage changed"
+            )
+        rows = gatea._compose_ps(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            services=M9_RUNTIME_SERVICES,
+        )
+        gatea._ensure_services_healthy(rows, *RETIREMENT_DATABASE_SERVICES)
+        upgrade._ensure_not_running(rows, *RETIREMENT_WRITER_SERVICES)
+    except (GateACandidateOperationInterrupted, KeyboardInterrupt, SystemExit):
+        raise
+    except GateACandidateError:
+        raise
+    except Exception as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance write-free state is invalid"
+        ) from error
+
+
+def _stop_retirement_writers(
+    *,
+    gatea: Any,
+    upgrade: Any,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    current_link: Path,
+    release_root: Path,
+    source_candidate_sha: str,
+    source_image_id: str,
+    lineage_source_candidate_sha: str,
+) -> None:
+    """Establish retirement's write-free window before any business read."""
+
+    pinned_values = dict(values)
+    pinned_values["GATEA_APP_IMAGE"] = source_image_id
+    try:
+        gatea._run_compose(
+            values=pinned_values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            arguments=(
+                "stop",
+                "--timeout",
+                "30",
+                *RETIREMENT_WRITER_SERVICES,
+            ),
+        )
+        _assert_retirement_write_free_window(
+            gatea=gatea,
+            upgrade=upgrade,
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            current_link=current_link,
+            release_root=release_root,
+            source_candidate_sha=source_candidate_sha,
+            source_image_id=source_image_id,
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+        )
+    except (GateACandidateOperationInterrupted, KeyboardInterrupt, SystemExit):
+        raise
+    except GateACandidateError:
+        raise
+    except Exception as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement could not establish the write-free window"
+        ) from error
+
+
+def _retirement_live_verification(
+    *,
+    gatea: Any,
+    upgrade: Any,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    current_link: Path,
+    release_root: Path,
+    source_candidate_sha: str,
+    source_image_id: str,
+    lineage_source_candidate_sha: str,
+    target_image_id: str,
+    failed_acceptance: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Recompute all clean-state evidence while A's writers remain stopped."""
+
+    assertion_arguments = {
+        "gatea": gatea,
+        "upgrade": upgrade,
+        "values": values,
+        "config_file": config_file,
+        "secret_dir": secret_dir,
+        "current_link": current_link,
+        "release_root": release_root,
+        "source_candidate_sha": source_candidate_sha,
+        "source_image_id": source_image_id,
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+    }
+    try:
+        _assert_retirement_write_free_window(**assertion_arguments)
+        database_snapshot = gatea.read_database_snapshot(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+        )
+        _assert_retirement_write_free_window(**assertion_arguments)
+        table_reconcile = gatea._run_m9_table_reconcile(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+        )
+        _assert_retirement_write_free_window(**assertion_arguments)
+        wallet_reconcile = _final_wallet_reconcile(
+            gatea=gatea,
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+        )
+        _assert_retirement_write_free_window(**assertion_arguments)
+        business_verification = _failed_acceptance_business_verification(
+            gatea=gatea,
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            target_image_id=target_image_id,
+            failed_acceptance=failed_acceptance,
+        )
+        _assert_retirement_write_free_window(**assertion_arguments)
+    except (GateACandidateOperationInterrupted, KeyboardInterrupt, SystemExit):
+        raise
+    except GateACandidateError:
+        raise
+    except Exception as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance live verification failed"
+        ) from error
+    if (
+        database_snapshot.get("aerich_versions")
+        != list(gatea.APPROVED_TARGET_M9_CHAIN)
+        or not isinstance(table_reconcile, dict)
+        or set(table_reconcile) != PRECLAIM_ACCEPTANCE_RECONCILE_KEYS
+        or any(
+            type(value) is not int or value != 0
+            for value in table_reconcile.values()
+        )
+        or set(wallet_reconcile) != PRECLAIM_ACCEPTANCE_WALLET_KEYS
+        or wallet_reconcile.get("scanned", 0) <= 0
+        or wallet_reconcile.get("mismatches") != 0
+        or wallet_reconcile.get("violations") != 0
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance live verification is not clean"
+        )
+    return {
+        "business_verification": business_verification,
+        "database_snapshot": dict(database_snapshot),
+        "runtime_services": list(M9_RUNTIME_SERVICES),
+        "database_services_healthy": list(RETIREMENT_DATABASE_SERVICES),
+        "writer_services_stopped": list(RETIREMENT_WRITER_SERVICES),
+        "table_reconcile": dict(table_reconcile),
+        "wallet_reconcile": dict(wallet_reconcile),
+        "checked_at": _utc_now(),
+    }
+
+
+def _validate_retirement_live_verification(payload: object) -> dict[str, Any]:
+    gatea, _, _ = _runtime_modules()
+    business = (
+        payload.get("business_verification")
+        if isinstance(payload, dict)
+        else None
+    )
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != RETIREMENT_LIVE_VERIFICATION_KEYS
+        or not isinstance(business, dict)
+        or set(business) != FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS
+        or business.get("schema_version") != 1
+        or business.get("passed") is not True
+        or business.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
+        or business.get("evidence_sha256")
+        != FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+        or business.get("secret_values_recorded") is not False
+        or not isinstance(payload.get("database_snapshot"), dict)
+        or payload["database_snapshot"].get("aerich_versions")
+        != list(gatea.APPROVED_TARGET_M9_CHAIN)
+        or payload.get("runtime_services") != list(M9_RUNTIME_SERVICES)
+        or payload.get("database_services_healthy")
+        != list(RETIREMENT_DATABASE_SERVICES)
+        or payload.get("writer_services_stopped")
+        != list(RETIREMENT_WRITER_SERVICES)
+        or not isinstance(payload.get("table_reconcile"), dict)
+        or set(payload["table_reconcile"])
+        != PRECLAIM_ACCEPTANCE_RECONCILE_KEYS
+        or any(
+            type(value) is not int or value != 0
+            for value in payload["table_reconcile"].values()
+        )
+        or not isinstance(payload.get("wallet_reconcile"), dict)
+        or set(payload["wallet_reconcile"])
+        != PRECLAIM_ACCEPTANCE_WALLET_KEYS
+        or any(
+            type(value) is not int or value < 0
+            for value in payload["wallet_reconcile"].values()
+        )
+        or payload["wallet_reconcile"].get("scanned", 0) <= 0
+        or payload["wallet_reconcile"].get("mismatches") != 0
+        or payload["wallet_reconcile"].get("violations") != 0
+        or not _is_utc_timestamp(payload.get("checked_at"))
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance live verification is invalid"
+        )
+    return dict(payload)
+
+
+def _validate_retirement_journal(
+    payload: Mapping[str, Any],
+    *,
+    expected: Mapping[str, Any],
+    final: bool,
+) -> dict[str, Any]:
+    expected_keys = RETIREMENT_RECORD_KEYS if final else RETIREMENT_PENDING_KEYS
+    expected_type = (
+        "gatea-m9-failed-acceptance-retirement"
+        if final
+        else "gatea-m9-failed-acceptance-retirement-pending"
+    )
+    if (
+        set(payload) != expected_keys
+        or payload.get("schema_version") != 1
+        or payload.get("record_type") != expected_type
+        or any(payload.get(key) != value for key, value in expected.items())
+        or payload.get("phase") not in RETIREMENT_PENDING_PHASES
+        or not _is_utc_timestamp(payload.get("started_at"))
+        or payload.get("secret_values_recorded") is not False
+        or (final and payload.get("phase") != "record-published")
+        or (final and payload.get("passed") is not True)
+        or (final and not _is_utc_timestamp(payload.get("completed_at")))
+        or (
+            final
+            and _parse_utc_timestamp(
+                payload.get("completed_at"), "retirement completed-at"
+            )
+            < _parse_utc_timestamp(
+                payload.get("started_at"), "retirement started-at"
+            )
+        )
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement journal is invalid"
+        )
+    if payload.get("phase") == "prepared":
+        if payload.get("live_verification") is not None:
+            raise GateACandidateError(
+                "Gate A failed acceptance retirement prepared journal is invalid"
+            )
+    else:
+        _validate_retirement_live_verification(payload.get("live_verification"))
+    return dict(payload)
+
+
+def _retirement_live_identity(payload: object) -> dict[str, Any]:
+    """Compare repeat verifications while excluding only their observation time."""
+
+    validated = _validate_retirement_live_verification(payload)
+    return {
+        key: value
+        for key, value in validated.items()
+        if key != "checked_at"
+    }
+
+
+def _require_retirement_live_match(
+    current: Mapping[str, Any],
+    recorded: object,
+) -> None:
+    if _retirement_live_identity(current) != _retirement_live_identity(recorded):
+        raise GateACandidateError(
+            "Gate A failed acceptance state drifted during retirement recovery"
+        )
+
+
+def _unlink_exact_protected_file(
+    path: Path,
+    expected_identity: tuple[int, ...],
+    *,
+    description: str,
+) -> None:
+    _require_root_directory(path.parent, 0o755, f"{description} parent directory")
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            path.parent,
+            os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        current = os.stat(path.name, dir_fd=descriptor, follow_symlinks=False)
+        if _file_identity(current) != expected_identity:
+            raise GateACandidateError(f"{description} changed before removal")
+        os.unlink(path.name, dir_fd=descriptor)
+        os.fsync(descriptor)
+    except GateACandidateError:
+        raise
+    except OSError as error:
+        raise GateACandidateError(f"{description} could not be removed") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _load_retirement_record(
+    *,
+    release_record_dir: Path,
+    target_sha: str,
+    expected_sha256: str,
+    expected_binding: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    _validate_sha256(expected_sha256, "acceptance retirement record digest")
+    path = _retirement_record_path(release_record_dir, target_sha)
+    raw_payload, _ = _read_stable_protected_bytes(
+        path,
+        mode=0o644,
+        max_bytes=MAX_JSON_BYTES,
+        description="Gate A failed acceptance retirement record",
+    )
+    if _sha256_bytes(raw_payload) != expected_sha256:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement digest does not match"
+        )
+    try:
+        payload = json.loads(
+            raw_payload,
+            object_pairs_hook=_json_object_without_duplicates,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement record is invalid"
+        ) from error
+    if not isinstance(payload, dict):
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement record is invalid"
+        )
+    expected = dict(expected_binding or {})
+    return _validate_retirement_journal(payload, expected=expected, final=True)
+
+
+def _validate_adoption_retirement_archive(
+    *,
+    acceptance_failure_archive_dir: Path,
+    source_candidate_sha: str,
+    failed_acceptance_sha256: str,
+    lineage_source_candidate_sha: str,
+    source_image_id: str,
+    retirement: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Re-read the immutable raw failure on every downstream adoption step."""
+
+    _require_root_directory(
+        acceptance_failure_archive_dir,
+        0o700,
+        "Gate A failed acceptance archive directory",
+    )
+    expected_archive_path = _retirement_archive_path(
+        acceptance_failure_archive_dir,
+        source_candidate_sha,
+        failed_acceptance_sha256,
+    )
+    if (
+        _lexical_absolute_path(expected_archive_path.parent)
+        != _lexical_absolute_path(acceptance_failure_archive_dir)
+        or retirement.get("acceptance_archive_path")
+        != str(expected_archive_path)
+        or retirement.get("acceptance_archive_sha256")
+        != failed_acceptance_sha256
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance archive binding is invalid"
+        )
+    archived_acceptance, _, _ = _validate_preclaim_failed_acceptance(
+        path=expected_archive_path,
+        expected_candidate_sha=source_candidate_sha,
+        expected_sha256=failed_acceptance_sha256,
+    )
+    if (
+        archived_acceptance.get("attempt_id_sha256")
+        != retirement.get("acceptance_attempt_id_sha256")
+        or archived_acceptance.get("source_candidate_sha")
+        != lineage_source_candidate_sha
+        or archived_acceptance.get("image_id") != source_image_id
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance archive lineage is invalid"
+        )
+    return archived_acceptance
+
+
+def _load_adoption_context(
+    *,
+    release_root: Path,
+    release_record_dir: Path,
+    source_candidate_sha: str,
+    lineage_source_candidate_sha: str,
+    target_sha: str,
+    acceptance_retirement_record_sha256: str,
+    acceptance_failure_archive_dir: Path,
+) -> dict[str, Any]:
+    target_stage = _load_stage(
+        release_root=release_root,
+        release_record_dir=release_record_dir,
+        target_sha=target_sha,
+    )
+    predecessor = _load_adoption_predecessor_binding(
+        release_root=release_root,
+        release_record_dir=release_record_dir,
+        source_candidate_sha=source_candidate_sha,
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+    )
+    if (
+        target_stage.get("schema_version") != 2
+        or target_stage.get("transition_kind") != "m9-candidate-adoption"
+        or target_stage.get("superseded_candidate_sha")
+        != source_candidate_sha
+        or SHA256_PATTERN.fullmatch(
+            str(target_stage.get("failed_acceptance_sha256", ""))
+        )
+        is None
+    ):
+        raise GateACandidateError("Gate A adoption stage binding is invalid")
+    target_stage_sha256 = _sha256(
+        _stage_record_path(release_record_dir, target_sha)
+    )
+    _require_root_directory(
+        acceptance_failure_archive_dir,
+        0o700,
+        "Gate A failed acceptance archive directory",
+    )
+    expected_archive_path = _retirement_archive_path(
+        acceptance_failure_archive_dir,
+        source_candidate_sha,
+        str(target_stage["failed_acceptance_sha256"]),
+    )
+    if (
+        _lexical_absolute_path(expected_archive_path.parent)
+        != _lexical_absolute_path(acceptance_failure_archive_dir)
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance archive path is invalid"
+        )
+    expected_retirement = {
+        "candidate_sha": target_sha,
+        "image_id": target_stage["image_id"],
+        **predecessor,
+        "stage_record_sha256": target_stage_sha256,
+        "acceptance_pending_sha256": target_stage["failed_acceptance_sha256"],
+        "acceptance_archive_path": str(expected_archive_path),
+        "acceptance_archive_sha256": target_stage["failed_acceptance_sha256"],
+    }
+    retirement = _load_retirement_record(
+        release_record_dir=release_record_dir,
+        target_sha=target_sha,
+        expected_sha256=acceptance_retirement_record_sha256,
+        expected_binding=expected_retirement,
+    )
+    _validate_adoption_retirement_archive(
+        acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        source_candidate_sha=source_candidate_sha,
+        failed_acceptance_sha256=str(target_stage["failed_acceptance_sha256"]),
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+        source_image_id=str(predecessor["source_image_id"]),
+        retirement=retirement,
+    )
+    return {
+        "transition_kind": "m9-candidate-adoption",
+        "source_candidate_sha": source_candidate_sha,
+        "source_image_id": predecessor["source_image_id"],
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "lineage_source_image_id": predecessor["lineage_source_image_id"],
+        "candidate_sha": target_sha,
+        "image_id": target_stage["image_id"],
+        "stage_record_sha256": target_stage_sha256,
+        "predecessor_stage_record_sha256": predecessor[
+            "predecessor_stage_record_sha256"
+        ],
+        "predecessor_activation_record_sha256": predecessor[
+            "predecessor_activation_record_sha256"
+        ],
+        "predecessor_upgrade_record_sha256": predecessor[
+            "predecessor_upgrade_record_sha256"
+        ],
+        "predecessor_upgrade_evidence_sha256": predecessor[
+            "predecessor_upgrade_evidence_sha256"
+        ],
+        "predecessor_upgrade_plan_replay_record_sha256": predecessor[
+            "predecessor_upgrade_plan_replay_record_sha256"
+        ],
+        "acceptance_retirement_record_sha256": (
+            acceptance_retirement_record_sha256
+        ),
+        "retirement": retirement,
+        "stage": target_stage,
+    }
+
+
+def _validated_retirement_recovery_allowances(
+    *,
+    gatea: Any,
+    release_record_dir: Path,
+    acceptance_record_dir: Path,
+    source_candidate_sha: str,
+    target_sha: str,
+    failed_acceptance_sha256: str,
+    pending_path: Path,
+    expected_binding: Mapping[str, Any],
+) -> tuple[Any, Any | None]:
+    """Build only the two exact allowances needed to restart A."""
+
+    expected_path = _retirement_pending_path(release_record_dir, target_sha)
+    if _lexical_absolute_path(pending_path) != _lexical_absolute_path(expected_path):
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement recovery path is invalid"
+        )
+    canonical_pending = _acceptance_pending_path(
+        acceptance_record_dir, source_candidate_sha
+    )
+    acceptance_exists = _path_entry_exists(
+        canonical_pending,
+        "Gate A failed acceptance journal",
+    )
+    _reject_unresolved_transition_journals(
+        release_record_dir=release_record_dir,
+        acceptance_record_dir=acceptance_record_dir,
+        allowed_release_pending=expected_path,
+        allowed_acceptance_candidate_sha=(
+            source_candidate_sha if acceptance_exists else None
+        ),
+        allowed_acceptance_pending_sha256=(
+            failed_acceptance_sha256 if acceptance_exists else None
+        ),
+    )
+    _validate_retirement_journal(
+        _load_json(
+            expected_path,
+            "Gate A failed acceptance retirement pending journal",
+            mode=0o600,
+        ),
+        expected=expected_binding,
+        final=False,
+    )
+    try:
+        transition = gatea.CandidateTransitionRecoveryAllowance(
+            path=expected_path,
+            kind="failed-acceptance-retirement",
+            candidate_sha=target_sha,
+            runtime_candidate_sha=source_candidate_sha,
+        )
+        acceptance = (
+            gatea.M9AcceptanceSidecarRecoveryAllowance(
+                candidate_sha=source_candidate_sha,
+                pending_path=canonical_pending,
+            )
+            if acceptance_exists
+            else None
+        )
+    except (AttributeError, TypeError, ValueError) as error:
+        raise GateACandidateError(
+            "Gate A operations retirement recovery API is unavailable"
+        ) from error
+    return transition, acceptance
+
+
+def _restore_retirement_runtime(
+    *,
+    gatea: Any,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    release_root: Path,
+    release_record_dir: Path,
+    acceptance_record_dir: Path,
+    current_link: Path,
+    source_candidate_sha: str,
+    source_image_id: str,
+    lineage_source_candidate_sha: str,
+    target_sha: str,
+    failed_acceptance_sha256: str,
+    pending_path: Path,
+    expected_binding: Mapping[str, Any],
+) -> None:
+    """Restart and re-prove A's exact five-service M9 runtime."""
+
+    transition_allowance, acceptance_allowance = (
+        _validated_retirement_recovery_allowances(
+            gatea=gatea,
+            release_record_dir=release_record_dir,
+            acceptance_record_dir=acceptance_record_dir,
+            source_candidate_sha=source_candidate_sha,
+            target_sha=target_sha,
+            failed_acceptance_sha256=failed_acceptance_sha256,
+            pending_path=pending_path,
+            expected_binding=expected_binding,
+        )
+    )
+    try:
+        gatea.app_up(
+            config_file=config_file,
+            secret_dir=secret_dir,
+            record_dir=release_record_dir,
+            mode="loopback",
+            wait_timeout=120,
+            include_table_sweeper=True,
+            allow_existing_gatea_publisher=True,
+            candidate_transition_recovery=transition_allowance,
+            acceptance_sidecar_recovery=acceptance_allowance,
+            acceptance_record_dir=acceptance_record_dir,
+            _start_new_session=True,
+        )
+        current_values = gatea._validated_inputs(
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            require_available_port=False,
+        )
+        if (
+            dict(current_values) != dict(values)
+            or gatea._candidate_sha(current_values) != source_candidate_sha
+            or gatea.validate_app_image(
+                current_values, start_new_session=True
+            )
+            != source_image_id
+            or current_values.get("TABLE_SESSION_CLAIMS_ENABLED") != "true"
+            or _read_current_target(current_link, release_root)
+            != release_root / lineage_source_candidate_sha
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance source runtime changed during recovery"
+            )
+        snapshot = gatea.read_database_snapshot(
+            values=current_values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            start_new_session=True,
+        )
+        if snapshot.get("aerich_versions") != list(
+            gatea.APPROVED_TARGET_M9_CHAIN
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance source runtime is not exact M9"
+            )
+        rows = gatea._compose_ps(
+            values=current_values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode="loopback",
+            services=M9_RUNTIME_SERVICES,
+            start_new_session=True,
+        )
+        gatea._ensure_services_healthy(rows, *M9_RUNTIME_SERVICES)
+        gatea._validate_loopback_publishers(
+            rows, int(current_values.get("GATEA_LOOPBACK_PORT", "18080"))
+        )
+    except Exception as error:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement could not restore the source runtime"
+        ) from error
+
+
+def _restore_retirement_runtime_with_shield(
+    *,
+    termination: _MutationTerminationController,
+    **arguments: Any,
+) -> None:
+    """Ignore control-flow signals until A's five services are healthy again."""
+
+    termination.begin_recovery()
+    while True:
+        try:
+            _restore_retirement_runtime(**arguments)
+        except (KeyboardInterrupt, SystemExit) as error:
+            termination.remember_recovery_interruption(error)
+            continue
+        except BaseException as recovery_error:
+            raise GateACandidateError(
+                "Gate A failed acceptance source runtime recovery failed"
+            ) from recovery_error
+        return
+
+
+_RetirementWorkResult = TypeVar("_RetirementWorkResult")
+
+
+def _run_retirement_work_then_restore(
+    *,
+    termination: _MutationTerminationController,
+    work: Callable[[], _RetirementWorkResult],
+    restore_arguments: Mapping[str, Any],
+) -> tuple[_RetirementWorkResult | None, BaseException | None]:
+    """Run retirement work and unconditionally cross into shielded recovery."""
+
+    result: _RetirementWorkResult | None = None
+    work_error: BaseException | None = None
+    try:
+        try:
+            result = work()
+        except BaseException as error:
+            work_error = error
+            termination.begin_recovery()
+        else:
+            termination.begin_recovery()
+    finally:
+        termination.begin_recovery()
+        _restore_retirement_runtime_with_shield(
+            termination=termination,
+            **dict(restore_arguments),
+        )
+    return result, work_error
+
+
+@_serialized_operation
+def retire_failed_acceptance(
+    *,
+    source_candidate_sha: str,
+    lineage_source_candidate_sha: str,
+    target_sha: str,
+    failed_acceptance_sha256: str,
+    confirm_source_sha: str,
+    confirm_lineage_source_sha: str,
+    confirm_target_sha: str,
+    confirm_failed_acceptance_sha256: str,
+    config_file: Path,
+    secret_dir: Path,
+    release_root: Path,
+    release_record_dir: Path,
+    acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
+    acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    current_link: Path = DEFAULT_CURRENT_LINK,
+    lock_file: Path | None = DEFAULT_LOCK_FILE,
+    _termination_controller: _MutationTerminationController | None = None,
+) -> dict[str, Any]:
+    """Durably archive and retire one exact cleaned pre-claim failure."""
+
+    _require_root()
+    if _termination_controller is None:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement termination guard is unavailable"
+        )
+    target_sha = _validate_sha(target_sha, "target SHA")
+    source_candidate_sha = _validate_sha(
+        source_candidate_sha, "source candidate SHA"
+    )
+    lineage_source_candidate_sha = _validate_sha(
+        lineage_source_candidate_sha, "lineage source candidate SHA"
+    )
+    failed_acceptance_sha256 = _validate_sha256(
+        failed_acceptance_sha256, "failed acceptance digest"
+    )
+    if (
+        len(
+            {
+                target_sha,
+                source_candidate_sha,
+                lineage_source_candidate_sha,
+            }
+        )
+        != 3
+        or confirm_source_sha != source_candidate_sha
+        or confirm_lineage_source_sha != lineage_source_candidate_sha
+        or confirm_target_sha != target_sha
+        or confirm_failed_acceptance_sha256 != failed_acceptance_sha256
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement confirmations do not match"
+        )
+    _require_execution_release(release_root, target_sha)
+    _require_root_directory(
+        release_record_dir, 0o755, "Gate A release record directory"
+    )
+    canonical_pending = _acceptance_pending_path(
+        acceptance_record_dir, source_candidate_sha
+    )
+    pending_path = _retirement_pending_path(release_record_dir, target_sha)
+    record_path = _retirement_record_path(release_record_dir, target_sha)
+    acceptance_exists = _path_entry_exists(
+        canonical_pending,
+        "Gate A failed acceptance journal",
+    )
+    _reject_unresolved_transition_journals(
+        release_record_dir=release_record_dir,
+        acceptance_record_dir=acceptance_record_dir,
+        allowed_release_pending=pending_path,
+        allowed_acceptance_candidate_sha=(
+            source_candidate_sha if acceptance_exists else None
+        ),
+        allowed_acceptance_pending_sha256=(
+            failed_acceptance_sha256 if acceptance_exists else None
+        ),
+    )
+    target_stage = _load_stage(
+        release_root=release_root,
+        release_record_dir=release_record_dir,
+        target_sha=target_sha,
+    )
+    if (
+        target_stage.get("schema_version") != 2
+        or target_stage.get("transition_kind") != "m9-candidate-adoption"
+        or target_stage.get("superseded_candidate_sha")
+        != source_candidate_sha
+        or target_stage.get("failed_acceptance_sha256")
+        != failed_acceptance_sha256
+    ):
+        raise GateACandidateError(
+            "Gate A target stage does not bind the failed acceptance allowance"
+        )
+    predecessor = _load_adoption_predecessor_binding(
+        release_root=release_root,
+        release_record_dir=release_record_dir,
+        source_candidate_sha=source_candidate_sha,
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+    )
+    if (
+        _read_current_target(current_link, release_root)
+        != release_root / lineage_source_candidate_sha
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance current lineage changed"
+        )
+    target_stage_path = _stage_record_path(release_record_dir, target_sha)
+    archive_path = _retirement_archive_path(
+        acceptance_failure_archive_dir,
+        source_candidate_sha,
+        failed_acceptance_sha256,
+    )
+
+    raw_payload: bytes
+    acceptance_identity: tuple[int, ...] | None = None
+    if acceptance_exists:
+        failed, raw_payload, acceptance_identity = _validate_preclaim_failed_acceptance(
+            path=canonical_pending,
+            expected_candidate_sha=source_candidate_sha,
+            expected_sha256=failed_acceptance_sha256,
+        )
+    else:
+        if not _path_entry_exists(
+            archive_path, "Gate A failed acceptance archive"
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance disappeared without a durable archive"
+            )
+        _require_root_directory(
+            acceptance_failure_archive_dir,
+            0o700,
+            "Gate A failed acceptance archive directory",
+        )
+        failed, raw_payload, _ = _validate_preclaim_failed_acceptance(
+            path=archive_path,
+            expected_candidate_sha=source_candidate_sha,
+            expected_sha256=failed_acceptance_sha256,
+        )
+    if (
+        failed.get("source_candidate_sha") != lineage_source_candidate_sha
+        or failed.get("image_id") != predecessor["source_image_id"]
+        or failed.get("ci_run_id")
+        != _load_stage(
+            release_root=release_root,
+            release_record_dir=release_record_dir,
+            target_sha=source_candidate_sha,
+        ).get("ci_run_id")
+        or failed.get("upgrade_record_sha256")
+        != predecessor["predecessor_upgrade_record_sha256"]
+        or failed.get("upgrade_plan_replay_record_sha256")
+        != predecessor["predecessor_upgrade_plan_replay_record_sha256"]
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance predecessor binding is invalid"
+        )
+    final_acceptance = acceptance_record_dir / (
+        f"gatea-m9-runtime-acceptance-{source_candidate_sha}.json"
+    )
+    complete_acceptance = Path(f"{final_acceptance}.complete")
+    if any(
+        _path_entry_exists(path, "Gate A predecessor acceptance publication")
+        for path in (final_acceptance, complete_acceptance)
+    ):
+        raise GateACandidateError(
+            "Gate A successful or completing predecessor acceptance cannot retire"
+        )
+
+    expected_binding = {
+        "candidate_sha": target_sha,
+        "image_id": target_stage["image_id"],
+        **predecessor,
+        "stage_record_sha256": _sha256(target_stage_path),
+        "acceptance_pending_sha256": failed_acceptance_sha256,
+        "acceptance_attempt_id_sha256": failed["attempt_id_sha256"],
+        "acceptance_archive_path": str(archive_path),
+        "acceptance_archive_sha256": failed_acceptance_sha256,
+    }
+    has_pending = _path_entry_exists(
+        pending_path, "Gate A failed acceptance retirement pending journal"
+    )
+    has_record = _path_entry_exists(
+        record_path, "Gate A failed acceptance retirement record"
+    )
+    archive_exists = _path_entry_exists(
+        archive_path, "Gate A failed acceptance archive"
+    )
+    if archive_exists:
+        _require_root_directory(
+            acceptance_failure_archive_dir,
+            0o700,
+            "Gate A failed acceptance archive directory",
+        )
+    if not acceptance_exists and not has_record:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement recovery evidence is incomplete"
+        )
+
+    if has_pending:
+        pending = _validate_retirement_journal(
+            _load_json(
+                pending_path,
+                "Gate A failed acceptance retirement pending journal",
+                mode=0o600,
+            ),
+            expected=expected_binding,
+            final=False,
+        )
+    else:
+        if has_record:
+            if acceptance_exists:
+                raise GateACandidateError(
+                    "Gate A failed acceptance retirement journal is missing"
+                )
+            return _load_retirement_record(
+                release_record_dir=release_record_dir,
+                target_sha=target_sha,
+                expected_sha256=_sha256(record_path),
+                expected_binding=expected_binding,
+            )
+        if archive_exists:
+            raise GateACandidateError(
+                "Gate A failed acceptance archive has no retirement journal"
+            )
+        pending = {
+            "schema_version": 1,
+            "record_type": "gatea-m9-failed-acceptance-retirement-pending",
+            **expected_binding,
+            "live_verification": None,
+            "started_at": _utc_now(),
+            "phase": "prepared",
+            "secret_values_recorded": False,
+        }
+        _validate_retirement_journal(
+            pending,
+            expected=expected_binding,
+            final=False,
+        )
+        _write_json_exclusive(pending_path, pending, 0o600)
+    if has_record and pending["phase"] in {"prepared", "write-free-verified"}:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement record appeared too early"
+        )
+    if (
+        pending["phase"]
+        in {"record-published", "canonical-removed", "runtime-restored"}
+        and not has_record
+    ):
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement record is missing"
+        )
+
+    gatea, upgrade, values = _retirement_source_runtime_context(
+        config_file=config_file,
+        secret_dir=secret_dir,
+        current_link=current_link,
+        release_root=release_root,
+        source_candidate_sha=source_candidate_sha,
+        source_image_id=str(predecessor["source_image_id"]),
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+    )
+
+    def perform_retirement() -> tuple[dict[str, Any], dict[str, Any]]:
+        nonlocal pending
+        _stop_retirement_writers(
+            gatea=gatea,
+            upgrade=upgrade,
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            current_link=current_link,
+            release_root=release_root,
+            source_candidate_sha=source_candidate_sha,
+            source_image_id=str(predecessor["source_image_id"]),
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+        )
+        current_live_verification = _retirement_live_verification(
+            gatea=gatea,
+            upgrade=upgrade,
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            current_link=current_link,
+            release_root=release_root,
+            source_candidate_sha=source_candidate_sha,
+            source_image_id=str(predecessor["source_image_id"]),
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            target_image_id=str(target_stage["image_id"]),
+            failed_acceptance=failed,
+        )
+        if pending["live_verification"] is not None:
+            _require_retirement_live_match(
+                current_live_verification,
+                pending["live_verification"],
+            )
+        if has_record:
+            recorded = _load_retirement_record(
+                release_record_dir=release_record_dir,
+                target_sha=target_sha,
+                expected_sha256=_sha256(record_path),
+                expected_binding=expected_binding,
+            )
+            _require_retirement_live_match(
+                current_live_verification,
+                recorded["live_verification"],
+            )
+        if pending["phase"] == "prepared":
+            pending = {
+                **pending,
+                "live_verification": current_live_verification,
+                "phase": "write-free-verified",
+            }
+            _atomic_replace_json(pending_path, pending, 0o600)
+
+        if pending["phase"] == "write-free-verified":
+            _ensure_root_directory(
+                acceptance_failure_archive_dir,
+                0o700,
+                "Gate A failed acceptance archive directory",
+            )
+            if _path_entry_exists(
+                archive_path, "Gate A failed acceptance archive"
+            ):
+                archived_raw, _ = _read_stable_protected_bytes(
+                    archive_path,
+                    mode=0o600,
+                    max_bytes=MAX_ACCEPTANCE_PENDING_BYTES,
+                    description="Gate A failed acceptance archive",
+                )
+                if archived_raw != raw_payload:
+                    raise GateACandidateError(
+                        "Gate A failed acceptance archive differs"
+                    )
+            else:
+                _write_bytes_exclusive(archive_path, raw_payload, 0o600)
+            pending = {**pending, "phase": "acceptance-archived"}
+            _atomic_replace_json(pending_path, pending, 0o600)
+
+        _require_root_directory(
+            acceptance_failure_archive_dir,
+            0o700,
+            "Gate A failed acceptance archive directory",
+        )
+        archived_raw, _ = _read_stable_protected_bytes(
+            archive_path,
+            mode=0o600,
+            max_bytes=MAX_ACCEPTANCE_PENDING_BYTES,
+            description="Gate A failed acceptance archive",
+        )
+        if (
+            archived_raw != raw_payload
+            or _sha256_bytes(archived_raw) != failed_acceptance_sha256
+        ):
+            raise GateACandidateError(
+                "Gate A failed acceptance archive changed"
+            )
+
+        if _path_entry_exists(
+            record_path, "Gate A failed acceptance retirement record"
+        ):
+            final_payload = _load_retirement_record(
+                release_record_dir=release_record_dir,
+                target_sha=target_sha,
+                expected_sha256=_sha256(record_path),
+                expected_binding=expected_binding,
+            )
+            _require_retirement_live_match(
+                current_live_verification,
+                final_payload["live_verification"],
+            )
+        else:
+            final_payload = {
+                **pending,
+                "record_type": "gatea-m9-failed-acceptance-retirement",
+                "phase": "record-published",
+                "completed_at": _utc_now(),
+                "passed": True,
+            }
+            _validate_retirement_journal(
+                final_payload,
+                expected=expected_binding,
+                final=True,
+            )
+            _write_json_exclusive(record_path, final_payload)
+        if pending["phase"] in {
+            "acceptance-archived",
+        }:
+            pending = {**pending, "phase": "record-published"}
+            _atomic_replace_json(pending_path, pending, 0o600)
+
+        if pending["phase"] == "record-published":
+            if _path_entry_exists(
+                canonical_pending, "Gate A failed acceptance journal"
+            ):
+                if acceptance_identity is None:
+                    raise GateACandidateError(
+                        "Gate A failed acceptance identity is unavailable"
+                    )
+                _unlink_exact_protected_file(
+                    canonical_pending,
+                    acceptance_identity,
+                    description="Gate A failed acceptance journal",
+                )
+            pending = {**pending, "phase": "canonical-removed"}
+            _atomic_replace_json(pending_path, pending, 0o600)
+        return dict(final_payload), dict(pending)
+
+    restore_arguments = {
+        "gatea": gatea,
+        "values": values,
+        "config_file": config_file,
+        "secret_dir": secret_dir,
+        "release_root": release_root,
+        "release_record_dir": release_record_dir,
+        "acceptance_record_dir": acceptance_record_dir,
+        "current_link": current_link,
+        "source_candidate_sha": source_candidate_sha,
+        "source_image_id": str(predecessor["source_image_id"]),
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "target_sha": target_sha,
+        "failed_acceptance_sha256": failed_acceptance_sha256,
+        "pending_path": pending_path,
+        "expected_binding": expected_binding,
+    }
+    work_result, work_error = _run_retirement_work_then_restore(
+        termination=_termination_controller,
+        work=perform_retirement,
+        restore_arguments=restore_arguments,
+    )
+    if work_error is not None or _termination_controller.work_interruption is not None:
+        propagated_error = _finalization_error_after_recovery(
+            termination=_termination_controller,
+            work_error=work_error,
+        )
+        if propagated_error is not None:
+            raise propagated_error
+    if work_result is None:
+        raise GateACandidateError(
+            "Gate A failed acceptance retirement produced no durable result"
+        )
+    final_payload, completed_pending = work_result
+    restored_pending = {**completed_pending, "phase": "runtime-restored"}
+    _atomic_replace_json(pending_path, restored_pending, 0o600)
+    pending_path.unlink()
+    _fsync_directory(release_record_dir)
+    if (
+        propagated_error := _finalization_error_after_recovery(
+            termination=_termination_controller,
+            work_error=None,
+        )
+    ) is not None:
+        raise propagated_error
+    return dict(final_payload)
 
 
 def _acceptance_sidecar_paths(path: Path) -> tuple[Path, Path]:
@@ -3522,11 +5988,15 @@ def _validate_resilience_record(
 
         if not isinstance(content_snapshots, dict) or set(content_snapshots) != {
             "m7_preserved_business",
+            "m8_swatch_content",
             "m9_table_business",
         }:
             raise ValueError
         m7_content = backup._validate_m7_content_snapshot(
             content_snapshots["m7_preserved_business"]
+        )
+        m8_swatch_content = backup._validate_m8_swatch_content_snapshot(
+            content_snapshots["m8_swatch_content"]
         )
         m9_content = backup._validate_m9_table_content_snapshot(
             content_snapshots["m9_table_business"]
@@ -3594,6 +6064,8 @@ def _validate_resilience_record(
             )
         )
         or content_snapshots.get("m7_preserved_business") != m7_content
+        or content_snapshots.get("m8_swatch_content")
+        != m8_swatch_content
         or content_snapshots.get("m9_table_business") != m9_content
         or payload.get("runtime_services") != list(M9_RUNTIME_SERVICES)
         or not isinstance(log_rotation, dict)
@@ -3669,11 +6141,17 @@ def _validate_post_backup(
         m7_snapshot = backup._validate_m7_content_snapshot(
             backup_payload.get("m7_content_snapshot")
         )
+        m8_swatch_snapshot = backup._validate_m8_swatch_content_snapshot(
+            backup_payload.get("m8_swatch_content_snapshot")
+        )
         m9_snapshot = backup._validate_m9_table_content_snapshot(
             backup_payload.get("m9_table_content_snapshot")
         )
         restored_m7 = backup._validate_m7_content_snapshot(
             restore_payload.get("m7_content_snapshot")
+        )
+        restored_m8_swatch = backup._validate_m8_swatch_content_snapshot(
+            restore_payload.get("m8_swatch_content_snapshot")
         )
         restored_m9 = backup._validate_m9_table_content_snapshot(
             restore_payload.get("m9_table_content_snapshot")
@@ -3704,6 +6182,7 @@ def _validate_post_backup(
         or not _has_ordered_utc_interval(restore_payload)
         or restore_payload.get("host_ports_published") is not False
         or restore_payload.get("m7_content_matches") is not True
+        or restore_payload.get("m8_swatch_content_matches") is not True
         or restore_payload.get("m9_table_content_matches") is not True
         or any(
             restore_payload.get(field) is not True
@@ -3718,6 +6197,7 @@ def _validate_post_backup(
             )
         )
         or restored_m7 != m7_snapshot
+        or restored_m8_swatch != m8_swatch_snapshot
         or restored_m9 != m9_snapshot
     ):
         raise GateACandidateError("Gate A M9 backup/restore record is invalid")
@@ -3836,6 +6316,11 @@ def _final_live_recheck(
         m7_snapshot = backup_module._source_m7_content_snapshot(
             pinned_values, config_file, secret_dir, "loopback"
         )
+        m8_swatch_snapshot = (
+            backup_module._source_m8_swatch_content_snapshot(
+                pinned_values, config_file, secret_dir, "loopback"
+            )
+        )
         m9_snapshot = backup_module._source_m9_table_content_snapshot(
             pinned_values, config_file, secret_dir, "loopback"
         )
@@ -3863,6 +6348,8 @@ def _final_live_recheck(
     if (
         database_snapshot != backup_record.get("database_snapshot")
         or m7_snapshot != backup_record.get("m7_content_snapshot")
+        or m8_swatch_snapshot
+        != backup_record.get("m8_swatch_content_snapshot")
         or m9_snapshot != backup_record.get("m9_table_content_snapshot")
         or images != backup_record.get("image_manifest")
         or table_reconcile != acceptance_record.get("post_reconcile")
@@ -3878,6 +6365,7 @@ def _final_live_recheck(
     return {
         "database_snapshot": database_snapshot,
         "m7_content_snapshot": m7_snapshot,
+        "m8_swatch_content_snapshot": m8_swatch_snapshot,
         "m9_table_content_snapshot": m9_snapshot,
         "image_manifest_sha256": _sha256_bytes(manifest_bytes),
         "image_file_count": len(images),
@@ -4026,18 +6514,15 @@ def _finalization_error_after_recovery(
     termination: _MutationTerminationController,
     work_error: BaseException | None,
 ) -> BaseException | None:
-    """Choose the first control-flow error after successful recovery."""
+    """Preserve the original work failure ahead of a deferred recovery signal."""
 
     if termination.work_interruption is not None:
         return termination.work_interruption
-    if isinstance(
-        work_error,
-        (GateACandidateOperationInterrupted, KeyboardInterrupt, SystemExit),
-    ):
+    if work_error is not None:
         return work_error
     if termination.recovery_interruption is not None:
         return termination.recovery_interruption
-    return work_error
+    return None
 
 
 def _validate_final_live_recheck(payload: object) -> dict[str, Any]:
@@ -4046,6 +6531,7 @@ def _validate_final_live_recheck(payload: object) -> dict[str, Any]:
         or set(payload) != FINAL_LIVE_RECHECK_KEYS
         or not isinstance(payload.get("database_snapshot"), dict)
         or not isinstance(payload.get("m7_content_snapshot"), dict)
+        or not isinstance(payload.get("m8_swatch_content_snapshot"), dict)
         or not isinstance(payload.get("m9_table_content_snapshot"), dict)
         or SHA256_PATTERN.fullmatch(
             str(payload.get("image_manifest_sha256", ""))
@@ -4067,16 +6553,34 @@ def _validate_finalization_journal(
     expected: Mapping[str, Any],
     expected_live_recheck: Mapping[str, Any],
     final: bool,
+    adoption_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    expected_keys = FINAL_RECORD_KEYS if final else FINAL_PENDING_KEYS
+    adoption = adoption_binding is not None
+    expected_keys = (
+        ADOPTION_FINAL_RECORD_KEYS
+        if adoption and final
+        else ADOPTION_FINAL_PENDING_KEYS
+        if adoption
+        else FINAL_RECORD_KEYS
+        if final
+        else FINAL_PENDING_KEYS
+    )
     expected_type = (
         "gatea-current-finalization" if final else "gatea-current-finalization-pending"
     )
+    adoption_keys = ADOPTION_FINAL_RECORD_KEYS - FINAL_RECORD_KEYS
     if (
         set(payload) != expected_keys
-        or payload.get("schema_version") != 1
+        or payload.get("schema_version") != (2 if adoption else 1)
         or payload.get("record_type") != expected_type
         or any(payload.get(key) != value for key, value in expected.items())
+        or (
+            adoption
+            and any(
+                payload.get(key) != adoption_binding.get(key)
+                for key in adoption_keys
+            )
+        )
         or payload.get("runtime_services") != list(M9_RUNTIME_SERVICES)
         or payload.get("phase") not in FINAL_PENDING_PHASES
         or not _is_utc_timestamp(payload.get("started_at"))
@@ -4109,6 +6613,7 @@ def _validated_finalization_recovery_allowance(
     pending_path: Path,
     expected: Mapping[str, Any],
     expected_live_recheck: Mapping[str, Any],
+    adoption_binding: Mapping[str, Any] | None = None,
 ) -> Any:
     """Construct the operations bypass only after exact local journal validation."""
 
@@ -4131,6 +6636,7 @@ def _validated_finalization_recovery_allowance(
         expected=expected,
         expected_live_recheck=expected_live_recheck,
         final=False,
+        adoption_binding=adoption_binding,
     )
     try:
         return gatea.CandidateTransitionRecoveryAllowance(
@@ -4151,6 +6657,7 @@ def _finish_finalization_journal(
     record_path: Path,
     expected: Mapping[str, Any],
     expected_live_recheck: Mapping[str, Any],
+    adoption_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if pending.get("phase") != "runtime-restored":
         raise GateACandidateError(
@@ -4167,6 +6674,7 @@ def _finish_finalization_journal(
         expected=expected,
         expected_live_recheck=expected_live_recheck,
         final=True,
+        adoption_binding=adoption_binding,
     )
     if record_path.exists() or record_path.is_symlink():
         raise GateACandidateError(
@@ -4200,7 +6708,12 @@ def finalize_candidate(
     restore_record_dir: Path,
     current_link: Path,
     acceptance_record_dir: Path = DEFAULT_ACCEPTANCE_RECORD_DIR,
+    acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
     resilience_record_dir: Path = DEFAULT_RESILIENCE_RECORD_DIR,
+    predecessor_candidate_sha: str | None = None,
+    acceptance_retirement_record_sha256: str | None = None,
+    confirm_predecessor_sha: str | None = None,
+    confirm_acceptance_retirement_record_sha256: str | None = None,
     lock_file: Path | None = DEFAULT_LOCK_FILE,
     _termination_controller: _MutationTerminationController | None = None,
 ) -> dict[str, Any]:
@@ -4214,11 +6727,39 @@ def finalize_candidate(
     termination = _termination_controller
     source_sha = _validate_sha(source_sha, "source SHA")
     target_sha = _validate_sha(target_sha, "target SHA")
+    adoption_values = (
+        predecessor_candidate_sha,
+        acceptance_retirement_record_sha256,
+        confirm_predecessor_sha,
+        confirm_acceptance_retirement_record_sha256,
+    )
+    adoption = any(value is not None for value in adoption_values)
+    if adoption and any(value is None for value in adoption_values):
+        raise GateACandidateError(
+            "Gate A adoption finalization arguments must be supplied together"
+        )
+    if adoption:
+        predecessor_candidate_sha = _validate_sha(
+            str(predecessor_candidate_sha), "predecessor candidate SHA"
+        )
+        acceptance_retirement_record_sha256 = _validate_sha256(
+            str(acceptance_retirement_record_sha256),
+            "acceptance retirement record digest",
+        )
     if (
         confirm_source_sha != source_sha
         or confirm_target_sha != target_sha
         or confirm_post_backup_id != post_backup_id
         or BACKUP_ID_PATTERN.fullmatch(post_backup_id) is None
+        or (
+            adoption
+            and (
+                predecessor_candidate_sha in {source_sha, target_sha}
+                or confirm_predecessor_sha != predecessor_candidate_sha
+                or confirm_acceptance_retirement_record_sha256
+                != acceptance_retirement_record_sha256
+            )
+        )
     ):
         raise GateACandidateError("Gate A finalization confirmations do not match")
     _require_root_directory(release_record_dir, 0o755, "Gate A release record directory")
@@ -4275,15 +6816,31 @@ def finalize_candidate(
         or not activation_history_path
     ):
         raise GateACandidateError("Gate A config activation is not finalizable")
+    adoption_context: dict[str, Any] | None = None
+    if adoption:
+        adoption_context = _load_adoption_context(
+            release_root=release_root,
+            release_record_dir=release_record_dir,
+            source_candidate_sha=str(predecessor_candidate_sha),
+            lineage_source_candidate_sha=source_sha,
+            target_sha=target_sha,
+            acceptance_retirement_record_sha256=str(
+                acceptance_retirement_record_sha256
+            ),
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        )
     activation = _validate_activation_journal(
         activation,
-        source_sha=source_sha,
+        source_sha=(
+            str(predecessor_candidate_sha) if adoption else source_sha
+        ),
         target_sha=target_sha,
         stage=stage,
         backup_id=activation_backup_id,
         history_path=Path(activation_history_path),
         release_record_dir=release_record_dir,
         final=True,
+        adoption_binding=adoption_context,
     )
     if (
         _rollback_record_path(release_record_dir, target_sha).exists()
@@ -4311,7 +6868,65 @@ def finalize_candidate(
         candidate_sha=target_sha,
         image_id=image_id,
     )
-    if (
+    if adoption:
+        if adoption_context is None:
+            raise GateACandidateError(
+                "Gate A adoption finalization context is unavailable"
+            )
+        expected_upgrade_binding = {
+            "transition_kind": "m9-candidate-adoption",
+            "source_candidate_sha": adoption_context[
+                "source_candidate_sha"
+            ],
+            "source_image_id": adoption_context["source_image_id"],
+            "lineage_source_candidate_sha": source_sha,
+            "lineage_source_image_id": adoption_context[
+                "lineage_source_image_id"
+            ],
+            "stage_record_sha256": adoption_context[
+                "stage_record_sha256"
+            ],
+            "activation_record_sha256": _sha256(activation_path),
+            "predecessor_stage_record_sha256": adoption_context[
+                "predecessor_stage_record_sha256"
+            ],
+            "predecessor_activation_record_sha256": adoption_context[
+                "predecessor_activation_record_sha256"
+            ],
+            "predecessor_upgrade_record_sha256": adoption_context[
+                "predecessor_upgrade_record_sha256"
+            ],
+            "predecessor_upgrade_evidence_sha256": adoption_context[
+                "predecessor_upgrade_evidence_sha256"
+            ],
+            "predecessor_upgrade_plan_replay_record_sha256": (
+                adoption_context[
+                    "predecessor_upgrade_plan_replay_record_sha256"
+                ]
+            ),
+            "acceptance_retirement_record_sha256": adoption_context[
+                "acceptance_retirement_record_sha256"
+            ],
+        }
+        if (
+            upgrade_record.get("schema_version") != 2
+            or any(
+                upgrade_record.get(key) != value
+                for key, value in expected_upgrade_binding.items()
+            )
+            or upgrade_record.get("source_version") != 9
+            or upgrade_record.get("target_version") != 9
+            or upgrade_record.get("source_aerich_versions")
+            != list(gatea.APPROVED_TARGET_M9_CHAIN)
+            or upgrade_record.get("target_aerich_versions")
+            != list(gatea.APPROVED_TARGET_M9_CHAIN)
+            or upgrade_record.get("database_changes_applied") is not False
+            or upgrade_record.get("migrations_applied") != []
+        ):
+            raise GateACandidateError(
+                "Gate A target upgrade record is not the approved M9 adoption"
+            )
+    elif (
         upgrade_record.get("source_candidate_sha") != source_sha
         or upgrade_record.get("source_version") != 7
         or upgrade_record.get("backup_id") != activation.get("backup_id")
@@ -4320,13 +6935,23 @@ def finalize_candidate(
         != list(gatea.APPROVED_TARGET_M9_CHAIN)
     ):
         raise GateACandidateError("Gate A target upgrade record is not M7-to-M9")
+    if (
+        upgrade_record.get("backup_id") != activation.get("backup_id")
+        or upgrade_record.get("manifest_sha256")
+        != activation.get("manifest_sha256")
+    ):
+        raise GateACandidateError(
+            "Gate A target upgrade record does not bind config activation"
+        )
     evidence_path = release_record_dir / (
         f"{target_sha}.existing-database-upgrade.evidence.json"
     )
     replay_path = _upgrade_replay_record_path(release_record_dir, target_sha)
     replay = _validate_upgrade_replay_record(
         path=replay_path,
-        source_sha=source_sha,
+        source_sha=(
+            str(predecessor_candidate_sha) if adoption else source_sha
+        ),
         target_sha=target_sha,
         image_id=image_id,
         upgrade_path=upgrade_path,
@@ -4365,7 +6990,11 @@ def finalize_candidate(
         record_dir=resilience_record_dir,
         expected_sha256=resilience_sha256,
         source_sha=source_sha,
-        source_image_id=str(upgrade_record["source_image_id"]),
+        source_image_id=(
+            str(adoption_context["lineage_source_image_id"])
+            if adoption_context is not None
+            else str(upgrade_record["source_image_id"])
+        ),
         target_sha=target_sha,
         image_id=image_id,
         runtime_acceptance_record_sha256=runtime_acceptance_sha256,
@@ -4387,6 +7016,8 @@ def finalize_candidate(
         not isinstance(resilience_content, dict)
         or resilience_content.get("m7_preserved_business")
         != backup_record.get("m7_content_snapshot")
+        or resilience_content.get("m8_swatch_content")
+        != backup_record.get("m8_swatch_content_snapshot")
         or resilience_content.get("m9_table_business")
         != backup_record.get("m9_table_content_snapshot")
         or resilience.get("image_file_count")
@@ -4421,7 +7052,9 @@ def finalize_candidate(
         raise GateACandidateError("Gate A finalization evidence order is invalid")
 
     expected_journal = {
-        "source_candidate_sha": source_sha,
+        "source_candidate_sha": (
+            str(predecessor_candidate_sha) if adoption else source_sha
+        ),
         "candidate_sha": target_sha,
         "image_id": image_id,
         "source_link": str(release_root / source_sha),
@@ -4437,6 +7070,16 @@ def finalize_candidate(
         "post_backup_id": post_backup_id,
         "post_backup_record_sha256": _sha256(backup_path),
         "post_restore_record_sha256": _sha256(restore_path),
+        **(
+            {
+                key: adoption_context[key]
+                for key in (
+                    ADOPTION_FINAL_RECORD_KEYS - FINAL_RECORD_KEYS
+                )
+            }
+            if adoption_context is not None
+            else {}
+        ),
     }
     recorded_images = backup_record.get("image_manifest")
     if not isinstance(recorded_images, list) or any(
@@ -4451,6 +7094,9 @@ def finalize_candidate(
     expected_live_recheck = {
         "database_snapshot": backup_record.get("database_snapshot"),
         "m7_content_snapshot": backup_record.get("m7_content_snapshot"),
+        "m8_swatch_content_snapshot": backup_record.get(
+            "m8_swatch_content_snapshot"
+        ),
         "m9_table_content_snapshot": backup_record.get(
             "m9_table_content_snapshot"
         ),
@@ -4472,6 +7118,7 @@ def finalize_candidate(
                 expected=expected_journal,
                 expected_live_recheck=expected_live_recheck,
                 final=True,
+                adoption_binding=adoption_context,
             )
             if current_target != release_root / target_sha:
                 raise GateACandidateError(
@@ -4487,8 +7134,13 @@ def finalize_candidate(
                     expected=expected_journal,
                     expected_live_recheck=expected_live_recheck,
                     final=False,
+                    adoption_binding=adoption_context,
                 )
-                for key in FINAL_PENDING_KEYS - {"record_type"}:
+                for key in (
+                    ADOPTION_FINAL_PENDING_KEYS
+                    if adoption
+                    else FINAL_PENDING_KEYS
+                ) - {"record_type"}:
                     if pending_payload.get(key) != final_payload.get(key):
                         raise GateACandidateError(
                             "Gate A finalization records do not match"
@@ -4552,6 +7204,7 @@ def finalize_candidate(
                 expected=expected_journal,
                 expected_live_recheck=expected_live_recheck,
                 final=False,
+                adoption_binding=adoption_context,
             )
             recovery_allowance = _validated_finalization_recovery_allowance(
                 gatea=gatea,
@@ -4561,6 +7214,7 @@ def finalize_candidate(
                 pending_path=pending_path,
                 expected=expected_journal,
                 expected_live_recheck=expected_live_recheck,
+                adoption_binding=adoption_context,
             )
             if current_target not in {
                 release_root / source_sha,
@@ -4638,6 +7292,7 @@ def finalize_candidate(
                     record_path=record_path,
                     expected=expected_journal,
                     expected_live_recheck=expected_live_recheck,
+                    adoption_binding=adoption_context,
                 )
                 if (
                     propagated_error := _finalization_error_after_recovery(
@@ -4664,7 +7319,7 @@ def finalize_candidate(
                 rows, int(values.get("GATEA_LOOPBACK_PORT", "18080"))
             )
             pending = {
-                "schema_version": 1,
+                "schema_version": 2 if adoption else 1,
                 "record_type": "gatea-current-finalization-pending",
                 **expected_journal,
                 "runtime_services": list(M9_RUNTIME_SERVICES),
@@ -4683,6 +7338,7 @@ def finalize_candidate(
                 pending_path=pending_path,
                 expected=expected_journal,
                 expected_live_recheck=expected_live_recheck,
+                adoption_binding=adoption_context,
             )
 
         def perform_final_cutover() -> dict[str, Any]:
@@ -4788,6 +7444,7 @@ def finalize_candidate(
             record_path=record_path,
             expected=expected_journal,
             expected_live_recheck=expected_live_recheck,
+            adoption_binding=adoption_context,
         )
         if (
             propagated_error := _finalization_error_after_recovery(
@@ -4826,7 +7483,41 @@ def _parser() -> argparse.ArgumentParser:
     stage.add_argument("--ci-artifact-name", required=True)
     stage.add_argument("--confirm-required-jobs", type=int, required=True)
     stage.add_argument("--confirm-target-sha", required=True)
+    stage.add_argument("--superseded-candidate-sha")
+    stage.add_argument("--confirm-failed-acceptance-sha256")
+    stage.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_RECORD_DIR,
+    )
     stage.add_argument("--apply", action="store_true")
+
+    retire = subparsers.add_parser("retire-failed-acceptance")
+    _common_paths(retire)
+    retire.add_argument("--source-candidate-sha", required=True)
+    retire.add_argument("--lineage-source-candidate-sha", required=True)
+    retire.add_argument("--target-sha", required=True)
+    retire.add_argument("--failed-acceptance-sha256", required=True)
+    retire.add_argument("--confirm-source-sha", required=True)
+    retire.add_argument("--confirm-lineage-source-sha", required=True)
+    retire.add_argument("--confirm-target-sha", required=True)
+    retire.add_argument(
+        "--confirm-failed-acceptance-sha256", required=True
+    )
+    retire.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG_FILE)
+    retire.add_argument("--secret-dir", type=Path, default=DEFAULT_SECRET_DIR)
+    retire.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_RECORD_DIR,
+    )
+    retire.add_argument(
+        "--acceptance-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    )
+    retire.add_argument("--current-link", type=Path, default=DEFAULT_CURRENT_LINK)
+    retire.add_argument("--apply", action="store_true")
 
     activate = subparsers.add_parser("activate-config")
     _common_paths(activate)
@@ -4851,6 +7542,22 @@ def _parser() -> argparse.ArgumentParser:
     activate.add_argument("--confirm-target-sha")
     activate.add_argument("--confirm-backup-id")
     activate.add_argument("--confirm-manifest-sha256")
+    activate.add_argument("--lineage-source-candidate-sha")
+    activate.add_argument("--acceptance-retirement-record-sha256")
+    activate.add_argument("--confirm-lineage-source-sha")
+    activate.add_argument(
+        "--confirm-acceptance-retirement-record-sha256"
+    )
+    activate.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_RECORD_DIR,
+    )
+    activate.add_argument(
+        "--acceptance-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    )
     activate.add_argument("--apply", action="store_true")
 
     rollback = subparsers.add_parser("rollback-config")
@@ -4860,12 +7567,28 @@ def _parser() -> argparse.ArgumentParser:
     rollback.add_argument("--confirm-source-sha", required=True)
     rollback.add_argument("--confirm-target-sha", required=True)
     rollback.add_argument("--confirm-activation-record-sha256", required=True)
+    rollback.add_argument("--lineage-source-candidate-sha")
+    rollback.add_argument("--acceptance-retirement-record-sha256")
+    rollback.add_argument("--confirm-lineage-source-sha")
+    rollback.add_argument(
+        "--confirm-acceptance-retirement-record-sha256"
+    )
     rollback.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG_FILE)
     rollback.add_argument(
         "--config-history-dir", type=Path, default=DEFAULT_CONFIG_HISTORY_DIR
     )
     rollback.add_argument("--secret-dir", type=Path, default=DEFAULT_SECRET_DIR)
     rollback.add_argument("--current-link", type=Path, default=DEFAULT_CURRENT_LINK)
+    rollback.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_RECORD_DIR,
+    )
+    rollback.add_argument(
+        "--acceptance-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    )
     rollback.add_argument("--apply", action="store_true")
 
     finalize = subparsers.add_parser("finalize")
@@ -4886,10 +7609,21 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_RESILIENCE_RECORD_DIR,
     )
+    finalize.add_argument(
+        "--acceptance-failure-archive-dir",
+        type=Path,
+        default=DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    )
     finalize.add_argument("--post-backup-id", required=True)
     finalize.add_argument("--confirm-source-sha", required=True)
     finalize.add_argument("--confirm-target-sha", required=True)
     finalize.add_argument("--confirm-post-backup-id", required=True)
+    finalize.add_argument("--predecessor-candidate-sha")
+    finalize.add_argument("--acceptance-retirement-record-sha256")
+    finalize.add_argument("--confirm-predecessor-sha")
+    finalize.add_argument(
+        "--confirm-acceptance-retirement-record-sha256"
+    )
     finalize.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG_FILE)
     finalize.add_argument("--secret-dir", type=Path, default=DEFAULT_SECRET_DIR)
     finalize.add_argument("--backup-root", type=Path, default=DEFAULT_BACKUP_ROOT)
@@ -4928,6 +7662,39 @@ def main(argv: Sequence[str] | None = None) -> int:
                 release_root=args.release_root,
                 staging_root=args.staging_root,
                 release_record_dir=args.release_record_dir,
+                superseded_candidate_sha=args.superseded_candidate_sha,
+                failed_acceptance_sha256=(
+                    args.confirm_failed_acceptance_sha256
+                ),
+                acceptance_record_dir=args.acceptance_record_dir,
+            )
+        elif args.command == "retire-failed-acceptance":
+            if not args.apply:
+                raise GateACandidateError(
+                    "Gate A failed acceptance retirement requires --apply"
+                )
+            result = retire_failed_acceptance(
+                source_candidate_sha=args.source_candidate_sha,
+                lineage_source_candidate_sha=(
+                    args.lineage_source_candidate_sha
+                ),
+                target_sha=args.target_sha,
+                failed_acceptance_sha256=args.failed_acceptance_sha256,
+                confirm_source_sha=args.confirm_source_sha,
+                confirm_lineage_source_sha=args.confirm_lineage_source_sha,
+                confirm_target_sha=args.confirm_target_sha,
+                confirm_failed_acceptance_sha256=(
+                    args.confirm_failed_acceptance_sha256
+                ),
+                config_file=args.config_file,
+                secret_dir=args.secret_dir,
+                release_root=args.release_root,
+                release_record_dir=args.release_record_dir,
+                acceptance_record_dir=args.acceptance_record_dir,
+                acceptance_failure_archive_dir=(
+                    args.acceptance_failure_archive_dir
+                ),
+                current_link=args.current_link,
             )
         elif args.command == "activate-config":
             result = activate_config(
@@ -4949,6 +7716,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 backup_record_dir=args.backup_record_dir,
                 restore_record_dir=args.restore_record_dir,
                 current_link=args.current_link,
+                lineage_source_candidate_sha=(
+                    args.lineage_source_candidate_sha
+                ),
+                acceptance_retirement_record_sha256=(
+                    args.acceptance_retirement_record_sha256
+                ),
+                confirm_lineage_source_sha=args.confirm_lineage_source_sha,
+                confirm_acceptance_retirement_record_sha256=(
+                    args.confirm_acceptance_retirement_record_sha256
+                ),
+                acceptance_record_dir=args.acceptance_record_dir,
+                acceptance_failure_archive_dir=(
+                    args.acceptance_failure_archive_dir
+                ),
             )
         elif args.command == "rollback-config":
             if not args.apply:
@@ -4967,8 +7748,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 release_root=args.release_root,
                 release_record_dir=args.release_record_dir,
                 current_link=args.current_link,
+                lineage_source_candidate_sha=(
+                    args.lineage_source_candidate_sha
+                ),
+                acceptance_retirement_record_sha256=(
+                    args.acceptance_retirement_record_sha256
+                ),
+                confirm_lineage_source_sha=args.confirm_lineage_source_sha,
+                confirm_acceptance_retirement_record_sha256=(
+                    args.confirm_acceptance_retirement_record_sha256
+                ),
+                acceptance_record_dir=args.acceptance_record_dir,
+                acceptance_failure_archive_dir=(
+                    args.acceptance_failure_archive_dir
+                ),
             )
-        else:
+        elif args.command == "finalize":
             if not args.apply:
                 raise GateACandidateError("Gate A finalization requires --apply")
             result = finalize_candidate(
@@ -4992,7 +7787,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 current_link=args.current_link,
                 acceptance_record_dir=args.acceptance_record_dir,
                 resilience_record_dir=args.resilience_record_dir,
+                acceptance_failure_archive_dir=(
+                    args.acceptance_failure_archive_dir
+                ),
+                predecessor_candidate_sha=args.predecessor_candidate_sha,
+                acceptance_retirement_record_sha256=(
+                    args.acceptance_retirement_record_sha256
+                ),
+                confirm_predecessor_sha=args.confirm_predecessor_sha,
+                confirm_acceptance_retirement_record_sha256=(
+                    args.confirm_acceptance_retirement_record_sha256
+                ),
             )
+        else:  # pragma: no cover - argparse enforces the command choices.
+            raise GateACandidateError("Gate A candidate command is invalid")
     except (GateACandidateError, subprocess.SubprocessError) as error:
         print(f"Gate A candidate operation failed: {error}", file=sys.stderr)
         return 1

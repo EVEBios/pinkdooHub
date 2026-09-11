@@ -44,6 +44,11 @@ def _content_snapshots(*, include_m9: bool = True) -> dict[str, dict[str, object
         }
     }
     if include_m9:
+        snapshots["m8_swatch_content"] = {
+            "schema_version": 1,
+            "profile": gatea_backup.M8_SWATCH_CONTENT_SNAPSHOT_PROFILE,
+            "content_sha256": "8" * 64,
+        }
         snapshots["m9_table_business"] = {
             "schema_version": 1,
             "profile": gatea_backup.M9_TABLE_CONTENT_SNAPSHOT_PROFILE,
@@ -289,6 +294,7 @@ def _runtime_acceptance_fixture(
         "candidate_sha": candidate_sha,
         "image_id": image_id,
         "deployment_record": {
+            "schema_version": 1,
             "record_type": "existing-database-upgrade",
             "source_version": 7,
             "source_candidate_sha": source_candidate_sha,
@@ -1577,6 +1583,60 @@ def test_representative_binding_uses_verified_upgrade_source() -> None:
     ) == ("a" * 40, "sha256:target-image")
 
 
+def test_representative_binding_uses_m7_lineage_for_m9_adoption() -> None:
+    deployment_record = {
+        "schema_version": 2,
+        "record_type": "existing-database-upgrade",
+        "transition_kind": "m9-candidate-adoption",
+        "source_version": 9,
+        "target_version": 9,
+        "source_candidate_sha": "8" * 40,
+        "source_image_id": "sha256:" + "8" * 64,
+        "lineage_source_candidate_sha": "b" * 40,
+        "lineage_source_image_id": "sha256:" + "c" * 64,
+        "source_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+        "target_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+    }
+
+    assert resilience._representative_binding(
+        deployment_record,
+        "a" * 40,
+        "sha256:target-image",
+    ) == ("b" * 40, "sha256:" + "c" * 64)
+
+
+def test_runtime_acceptance_accepts_m9_adoption_with_m7_lineage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    path, digest, arguments, payload, _ = _runtime_acceptance_fixture(
+        monkeypatch,
+        tmp_path,
+    )
+    source_candidate_sha = str(payload["source_candidate_sha"])
+    arguments["deployment_record"] = {
+        "schema_version": 2,
+        "record_type": "existing-database-upgrade",
+        "transition_kind": "m9-candidate-adoption",
+        "source_version": 9,
+        "target_version": 9,
+        "source_candidate_sha": "8" * 40,
+        "source_image_id": "sha256:" + "8" * 64,
+        "lineage_source_candidate_sha": source_candidate_sha,
+        "lineage_source_image_id": "sha256:" + "7" * 64,
+        "source_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+        "target_aerich_versions": list(gatea.APPROVED_TARGET_M9_CHAIN),
+    }
+
+    evidence = resilience._validate_runtime_acceptance_record(
+        path=path,
+        confirmed_sha256=digest,
+        **arguments,
+    )
+
+    assert evidence.payload["source_candidate_sha"] == source_candidate_sha
+
+
 def test_m7_representative_record_uses_current_safe_shape(tmp_path: Path) -> None:
     record = tmp_path / "representative.json"
     payload = _m7_representative_payload(tmp_path / "credentials.json")
@@ -1798,6 +1858,11 @@ def test_database_content_snapshots_follow_the_exact_chain(
     )
     monkeypatch.setattr(
         resilience.gatea_backup,
+        "_source_m8_swatch_content_snapshot",
+        lambda *args: calls.append("m8") or {"profile": "m8"},
+    )
+    monkeypatch.setattr(
+        resilience.gatea_backup,
         "_source_m9_table_content_snapshot",
         lambda *args: calls.append("m9") or {"profile": "m9"},
     )
@@ -1826,9 +1891,51 @@ def test_database_content_snapshots_follow_the_exact_chain(
         **common,
     ) == {
         "m7_preserved_business": {"profile": "m7"},
+        "m8_swatch_content": {"profile": "m8"},
         "m9_table_business": {"profile": "m9"},
     }
-    assert calls == ["m7", "m7", "m9"]
+    assert calls == ["m7", "m7", "m8", "m9"]
+
+
+def test_m9_resilience_content_contract_requires_independent_swatch_evidence() -> None:
+    m9_snapshot = {
+        "aerich_versions": ",".join(gatea.APPROVED_TARGET_M9_CHAIN)
+    }
+    content = _content_snapshots()
+
+    assert resilience._validated_record_content_snapshots(
+        payload=content,
+        live_snapshot=m9_snapshot,
+    ) == content
+
+    missing = dict(content)
+    missing.pop("m8_swatch_content")
+    with pytest.raises(resilience.ResilienceError, match="content evidence"):
+        resilience._validated_record_content_snapshots(
+            payload=missing,
+            live_snapshot=m9_snapshot,
+        )
+
+    invalid = _content_snapshots()
+    invalid["m8_swatch_content"] = {
+        **invalid["m8_swatch_content"],
+        "content_sha256": "invalid",
+    }
+    with pytest.raises(resilience.ResilienceError, match="content evidence"):
+        resilience._validated_record_content_snapshots(
+            payload=invalid,
+            live_snapshot=m9_snapshot,
+        )
+
+    # M8 resilience remains schema-v1-compatible; only the M9 record contract
+    # gains the nested swatch projection.
+    legacy_m8 = _content_snapshots(include_m9=False)
+    assert resilience._validated_record_content_snapshots(
+        payload=legacy_m8,
+        live_snapshot={
+            "aerich_versions": ",".join(gatea.APPROVED_TARGET_M8_CHAIN)
+        },
+    ) == legacy_m8
 
 
 @pytest.mark.parametrize(

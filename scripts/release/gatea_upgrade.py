@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
-"""受控编排 Gate A 既有 M2 或 M7 数据库到当前 M9 候选的升级。
+"""受控编排 Gate A 既有 M2、M7 或 M9 数据库到当前 M9 候选。
 
 未指定 source version 的旧调用继续只接受经 Review 的精确 M2 起点；M7 起点必须显式
 指定 ``--source-version 7``。默认 plan 全程只读；apply 必须同时绑定 source/target SHA、
 Backup ID 与 MARD manifest SHA-256。写入前验证新鲜 Backup 与独立 Restore PASS Record，
 随后停止 App/Nginx、比较停写后的数据库/图片与备份，并只执行 source 后尚未应用的迁移
-及其数据任务。任一步失败都会保留脱敏证据并保持业务入口停止，不会 fake、downgrade、
-恢复或盲目重跑。
+及其数据任务。M9→M9 adoption 只轮换不可变候选，严禁执行迁移、bootstrap
+或业务写入。任一步失败都会保留脱敏证据并保持业务入口停止，不会
+fake、downgrade、恢复或盲目重跑。
 """
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 from typing import Any, Mapping, Sequence
@@ -36,8 +39,10 @@ APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M9_CHAIN
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_SOURCE_VERSION = 2
-SUPPORTED_SOURCE_VERSIONS = (2, 7)
+SUPPORTED_SOURCE_VERSIONS = (2, 7, 9)
 TARGET_VERSION = 9
+M9_ADOPTION_TRANSITION_KIND = "m9-candidate-adoption"
+MAX_ADOPTION_RECORD_BYTES = 4 * 1024 * 1024
 MAX_BACKUP_AGE = timedelta(hours=24)
 FUTURE_CLOCK_TOLERANCE = timedelta(minutes=5)
 MARD_MANIFEST = (
@@ -111,6 +116,54 @@ RESTORE_TRUE_FIELDS = (
     "refresh_sessions_invalidated",
     "temporary_resources_removed",
     "passed",
+)
+ADOPTION_RETIREMENT_RECORD_KEYS = frozenset(
+    {
+        "schema_version",
+        "record_type",
+        "candidate_sha",
+        "image_id",
+        "source_candidate_sha",
+        "source_image_id",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "stage_record_sha256",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+        "acceptance_pending_sha256",
+        "acceptance_attempt_id_sha256",
+        "acceptance_archive_path",
+        "acceptance_archive_sha256",
+        "live_verification",
+        "started_at",
+        "phase",
+        "secret_values_recorded",
+        "completed_at",
+        "passed",
+    }
+)
+FAILED_ACCEPTANCE_BUSINESS_COUNTS = {
+    "orders": 1,
+    "fixtures": 2,
+    "fixture_images": 5,
+    "experience_options": 3,
+    "order_items": 4,
+    "experience_items": 3,
+    "kit_items": 1,
+    "payments": 0,
+    "settlements": 0,
+    "refunds": 0,
+    "wallet_transactions": 0,
+    "table_sessions": 0,
+    "admin_adjustments": 1,
+    "order_deductions": 1,
+    "cancellation_restores": 1,
+}
+FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 = (
+    "9f262cb7c7a500cfd3b245f045c9ff8a887a640a6576539b421a61add81c1012"
 )
 RUNTIME_PREFLIGHT_COMMAND = """import json
 from app.core.config import settings
@@ -335,6 +388,16 @@ class GateAUpgradeError(gatea.GateAError):
     """不包含 Secret、PII、业务明细或外部命令原始输出的升级错误。"""
 
 
+@dataclass(frozen=True, slots=True)
+class _BoundBackupRecords:
+    """从稳定 fd 读取的 Backup/Restore payload 与同字节摘要。"""
+
+    backup_record: dict[str, Any]
+    backup_record_sha256: str
+    restore_record: dict[str, Any]
+    restore_record_sha256: str
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -541,7 +604,9 @@ def _validate_source_version(source_version: object) -> int:
         type(source_version) is not int
         or source_version not in SUPPORTED_SOURCE_VERSIONS
     ):
-        raise GateAUpgradeError("Gate A source version must be explicitly M2 or M7")
+        raise GateAUpgradeError(
+            "Gate A source version must be explicitly M2, M7 or M9"
+        )
     return source_version
 
 
@@ -568,26 +633,507 @@ def _validate_confirmations(
         )
 
 
-def _load_restore_record(
+def _validate_adoption_confirmations(
     *,
+    lineage_source_candidate_sha: str,
+    acceptance_retirement_record_sha256: str,
+    confirm_lineage_source_sha: str | None,
+    confirm_acceptance_retirement_record_sha256: str | None,
+) -> None:
+    if (
+        confirm_lineage_source_sha != lineage_source_candidate_sha
+        or confirm_acceptance_retirement_record_sha256
+        != acceptance_retirement_record_sha256
+    ):
+        raise GateAUpgradeError(
+            "Gate A M9 adoption confirmations must exactly match lineage and "
+            "acceptance retirement evidence"
+        )
+
+
+def _file_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _require_adoption_record_metadata(
+    metadata: os.stat_result,
+    description: str,
+) -> None:
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o644
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+        or metadata.st_nlink != 1
+        or metadata.st_size > MAX_ADOPTION_RECORD_BYTES
+    ):
+        raise GateAUpgradeError(f"Gate A {description} has unsafe metadata")
+
+
+def _json_object_without_duplicates(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError("duplicate JSON key")
+        payload[key] = value
+    return payload
+
+
+def _load_bound_json_with_sha256(
+    path: Path,
+    description: str,
+) -> tuple[dict[str, Any], str]:
+    """通过 no-follow fd 稳定读取不可变 Record，摘要与解析共用同一批字节。"""
+
+    descriptor: int | None = None
+    try:
+        path_metadata = path.lstat()
+        _require_adoption_record_metadata(path_metadata, description)
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        )
+        before_metadata = os.fstat(descriptor)
+        _require_adoption_record_metadata(before_metadata, description)
+        if _file_identity(path_metadata) != _file_identity(before_metadata):
+            raise GateAUpgradeError(
+                f"Gate A {description} changed during validation"
+            )
+        chunks: list[bytes] = []
+        remaining = MAX_ADOPTION_RECORD_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if remaining == 0:
+            raise GateAUpgradeError(f"Gate A {description} is unexpectedly large")
+        after_metadata = os.fstat(descriptor)
+        final_metadata = path.lstat()
+        _require_adoption_record_metadata(after_metadata, description)
+        _require_adoption_record_metadata(final_metadata, description)
+        if not (
+            _file_identity(before_metadata)
+            == _file_identity(after_metadata)
+            == _file_identity(final_metadata)
+        ):
+            raise GateAUpgradeError(
+                f"Gate A {description} changed during validation"
+            )
+        content = b"".join(chunks)
+        digest_before = hashlib.sha256(content).hexdigest()
+        digest_after = hashlib.sha256(content).hexdigest()
+        if digest_before != digest_after:
+            raise GateAUpgradeError(
+                f"Gate A {description} digest changed during validation"
+            )
+        payload = json.loads(
+            content.decode("utf-8"),
+            object_pairs_hook=_json_object_without_duplicates,
+        )
+    except GateAUpgradeError:
+        raise
+    except (
+        FileNotFoundError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as error:
+        raise GateAUpgradeError(f"Gate A {description} is unavailable") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if not isinstance(payload, dict):
+        raise GateAUpgradeError(f"Gate A {description} is invalid")
+    return payload, digest_after
+
+
+def _load_bound_json(path: Path, description: str) -> dict[str, Any]:
+    payload, _ = _load_bound_json_with_sha256(path, description)
+    return payload
+
+
+def _require_sha256(value: object, description: str) -> str:
+    if not isinstance(value, str) or SHA256_PATTERN.fullmatch(value) is None:
+        raise GateAUpgradeError(f"Gate A {description} digest is invalid")
+    return value
+
+
+def _adoption_record_paths(
+    record_dir: Path,
+    *,
+    source_candidate_sha: str,
+    candidate_sha: str,
+) -> dict[str, Path]:
+    return {
+        "stage": record_dir / f"{candidate_sha}.candidate-stage.json",
+        "activation": record_dir / f"{candidate_sha}.config-activation.json",
+        "retirement": record_dir / f"{candidate_sha}.acceptance-retirement.json",
+        "predecessor_stage": (
+            record_dir / f"{source_candidate_sha}.candidate-stage.json"
+        ),
+        "predecessor_activation": (
+            record_dir / f"{source_candidate_sha}.config-activation.json"
+        ),
+        "predecessor_upgrade": gatea._upgrade_marker(
+            record_dir, source_candidate_sha
+        ),
+        "predecessor_evidence": record_dir
+        / f"{source_candidate_sha}.existing-database-upgrade.evidence.json",
+        "predecessor_replay": gatea._upgrade_replay_marker(
+            record_dir, source_candidate_sha
+        ),
+    }
+
+
+def _validate_m9_adoption_lineage(
+    *,
+    release_record_dir: Path,
+    backup_id: str,
+    bound_backup_records: _BoundBackupRecords,
+    manifest_sha256: str,
+    candidate_sha: str,
+    image_id: str,
+    source_candidate_sha: str,
+    source_image_id: str,
+    lineage_source_candidate_sha: str,
+    acceptance_retirement_record_sha256: str,
+    require_activation: bool,
+) -> dict[str, Any]:
+    """将 B 的 adoption 绑定到 A 的完整 M7→M9 证据链与退役证据。"""
+
+    if (
+        SHA_PATTERN.fullmatch(lineage_source_candidate_sha) is None
+        or lineage_source_candidate_sha
+        in {source_candidate_sha, candidate_sha}
+    ):
+        raise GateAUpgradeError("Gate A M9 adoption lineage source is invalid")
+    acceptance_retirement_record_sha256 = _require_sha256(
+        acceptance_retirement_record_sha256,
+        "acceptance retirement record",
+    )
+    paths = _adoption_record_paths(
+        release_record_dir,
+        source_candidate_sha=source_candidate_sha,
+        candidate_sha=candidate_sha,
+    )
+
+    stage, stage_record_sha256 = _load_bound_json_with_sha256(
+        paths["stage"], "candidate stage record"
+    )
+    if (
+        stage.get("schema_version") != 2
+        or stage.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND
+        or stage.get("record_type") != "gatea-candidate-stage"
+        or stage.get("passed") is not True
+        or stage.get("candidate_sha") != candidate_sha
+        or stage.get("image_id") != image_id
+        or stage.get("superseded_candidate_sha") != source_candidate_sha
+        or SHA256_PATTERN.fullmatch(
+            str(stage.get("failed_acceptance_sha256", ""))
+        )
+        is None
+        or stage.get("secret_values_recorded") is not False
+    ):
+        raise GateAUpgradeError("Gate A candidate stage record is invalid")
+    predecessor_stage, predecessor_stage_record_sha256 = (
+        _load_bound_json_with_sha256(
+            paths["predecessor_stage"], "predecessor stage record"
+        )
+    )
+    if (
+        predecessor_stage.get("schema_version") != 1
+        or predecessor_stage.get("record_type") != "gatea-candidate-stage"
+        or predecessor_stage.get("passed") is not True
+        or predecessor_stage.get("candidate_sha") != source_candidate_sha
+        or predecessor_stage.get("image_id") != source_image_id
+        or predecessor_stage.get("secret_values_recorded") is not False
+    ):
+        raise GateAUpgradeError("Gate A predecessor stage record is invalid")
+
+    predecessor_upgrade_raw, predecessor_upgrade_record_sha256 = (
+        _load_bound_json_with_sha256(
+            paths["predecessor_upgrade"], "predecessor upgrade record"
+        )
+    )
+    predecessor_upgrade = gatea._require_upgrade_record(
+        record_dir=release_record_dir,
+        candidate_sha=source_candidate_sha,
+        image_id=source_image_id,
+    )
+    lineage_source_image_id = predecessor_upgrade.get("source_image_id")
+    if (
+        predecessor_upgrade != predecessor_upgrade_raw
+        or predecessor_upgrade.get("schema_version") != 1
+        or "transition_kind" in predecessor_upgrade
+        or predecessor_upgrade.get("source_version") != 7
+        or predecessor_upgrade.get("source_candidate_sha")
+        != lineage_source_candidate_sha
+        or not isinstance(lineage_source_image_id, str)
+        or not lineage_source_image_id
+        or predecessor_upgrade.get("source_aerich_versions")
+        != _expected_versions(7)
+        or predecessor_upgrade.get("target_aerich_versions")
+        != _expected_versions(9)
+    ):
+        raise GateAUpgradeError("Gate A predecessor upgrade lineage is invalid")
+
+    predecessor_activation, predecessor_activation_record_sha256 = (
+        _load_bound_json_with_sha256(
+            paths["predecessor_activation"], "predecessor activation record"
+        )
+    )
+    if (
+        predecessor_activation.get("schema_version") != 1
+        or "transition_kind" in predecessor_activation
+        or predecessor_activation.get("record_type") != "gatea-config-activation"
+        or predecessor_activation.get("passed") is not True
+        or predecessor_activation.get("source_candidate_sha")
+        != lineage_source_candidate_sha
+        or predecessor_activation.get("candidate_sha") != source_candidate_sha
+        or predecessor_activation.get("image_id") != source_image_id
+        or predecessor_activation.get("stage_record_sha256")
+        != predecessor_stage_record_sha256
+        or predecessor_activation.get("backup_id")
+        != predecessor_upgrade.get("backup_id")
+        or predecessor_activation.get("manifest_sha256")
+        != predecessor_upgrade.get("manifest_sha256")
+        or predecessor_activation.get("secret_values_recorded") is not False
+        or predecessor_activation.get("passed") is not True
+    ):
+        raise GateAUpgradeError("Gate A predecessor activation record is invalid")
+
+    predecessor_evidence, predecessor_upgrade_evidence_sha256 = (
+        _load_bound_json_with_sha256(
+            paths["predecessor_evidence"], "predecessor upgrade evidence"
+        )
+    )
+    predecessor_replay, predecessor_upgrade_plan_replay_record_sha256 = (
+        _load_bound_json_with_sha256(
+            paths["predecessor_replay"], "predecessor upgrade replay record"
+        )
+    )
+    validated_predecessor_replay = gatea._require_m9_upgrade_replay_record(
+        record_dir=release_record_dir,
+        candidate_sha=source_candidate_sha,
+        image_id=source_image_id,
+        upgrade_record=predecessor_upgrade,
+    )
+    if (
+        predecessor_evidence.get("status") != "succeeded"
+        or validated_predecessor_replay != predecessor_replay
+    ):
+        raise GateAUpgradeError("Gate A predecessor upgrade evidence is invalid")
+    predecessor_digests = {
+        "predecessor_stage_record_sha256": predecessor_stage_record_sha256,
+        "predecessor_activation_record_sha256": (
+            predecessor_activation_record_sha256
+        ),
+        "predecessor_upgrade_record_sha256": predecessor_upgrade_record_sha256,
+        "predecessor_upgrade_evidence_sha256": (
+            predecessor_upgrade_evidence_sha256
+        ),
+        "predecessor_upgrade_plan_replay_record_sha256": (
+            predecessor_upgrade_plan_replay_record_sha256
+        ),
+    }
+
+    retirement, retirement_record_sha256 = _load_bound_json_with_sha256(
+        paths["retirement"], "acceptance retirement record"
+    )
+    live_verification = retirement.get("live_verification")
+    live_reconcile = (
+        live_verification.get("table_reconcile")
+        if isinstance(live_verification, dict)
+        else None
+    )
+    live_wallet = (
+        live_verification.get("wallet_reconcile")
+        if isinstance(live_verification, dict)
+        else None
+    )
+    live_database = (
+        live_verification.get("database_snapshot")
+        if isinstance(live_verification, dict)
+        else None
+    )
+    live_business = (
+        live_verification.get("business_verification")
+        if isinstance(live_verification, dict)
+        else None
+    )
+    if (
+        set(retirement) != ADOPTION_RETIREMENT_RECORD_KEYS
+        or retirement_record_sha256 != acceptance_retirement_record_sha256
+        or retirement.get("schema_version") != 1
+        or retirement.get("record_type")
+        != "gatea-m9-failed-acceptance-retirement"
+        or retirement.get("passed") is not True
+        or retirement.get("phase") != "record-published"
+        or retirement.get("candidate_sha") != candidate_sha
+        or retirement.get("image_id") != image_id
+        or retirement.get("source_candidate_sha") != source_candidate_sha
+        or retirement.get("source_image_id") != source_image_id
+        or retirement.get("lineage_source_candidate_sha")
+        != lineage_source_candidate_sha
+        or retirement.get("lineage_source_image_id") != lineage_source_image_id
+        or retirement.get("stage_record_sha256") != stage_record_sha256
+        or any(
+            retirement.get(key) != value
+            for key, value in predecessor_digests.items()
+        )
+        or any(
+            SHA256_PATTERN.fullmatch(str(retirement.get(key, ""))) is None
+            for key in (
+                "acceptance_pending_sha256",
+                "acceptance_attempt_id_sha256",
+                "acceptance_archive_sha256",
+            )
+        )
+        or retirement.get("acceptance_pending_sha256")
+        != stage.get("failed_acceptance_sha256")
+        or retirement.get("acceptance_archive_sha256")
+        != stage.get("failed_acceptance_sha256")
+        or not isinstance(live_verification, dict)
+        or set(live_verification)
+        != {
+            "business_verification",
+            "database_snapshot",
+            "runtime_services",
+            "table_reconcile",
+            "wallet_reconcile",
+            "checked_at",
+        }
+        or not isinstance(live_business, dict)
+        or set(live_business)
+        != {
+            "schema_version",
+            "passed",
+            "counts",
+            "evidence_sha256",
+            "secret_values_recorded",
+        }
+        or live_business.get("schema_version") != 1
+        or live_business.get("passed") is not True
+        or live_business.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
+        or live_business.get("evidence_sha256")
+        != FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+        or live_business.get("secret_values_recorded") is not False
+        or not isinstance(live_database, dict)
+        or live_database.get("aerich_versions") != _expected_versions(9)
+        or live_verification.get("runtime_services")
+        != ["mysql", "redis", "app", "table-sweeper", "nginx"]
+        or not isinstance(live_reconcile, dict)
+        or not isinstance(live_wallet, dict)
+        or set(live_wallet) != {"scanned", "mismatches", "violations"}
+        or any(type(value) is not int or value < 0 for value in live_wallet.values())
+        or live_wallet.get("scanned", 0) <= 0
+        or live_wallet.get("mismatches") != 0
+        or live_wallet.get("violations") != 0
+        or retirement.get("secret_values_recorded") is not False
+    ):
+        raise GateAUpgradeError("Gate A acceptance retirement record is invalid")
+    _validate_adoption_table_reconcile_result(live_reconcile)
+    if any(live_reconcile.values()):
+        raise GateAUpgradeError("Gate A acceptance retirement record is invalid")
+    _parse_utc_timestamp(live_verification.get("checked_at"), "retirement check")
+    retirement_started_at = _parse_utc_timestamp(
+        retirement.get("started_at"), "retirement start"
+    )
+    retirement_completed_at = _parse_utc_timestamp(
+        retirement.get("completed_at"), "retirement completion"
+    )
+    if retirement_completed_at < retirement_started_at:
+        raise GateAUpgradeError("Gate A acceptance retirement time is invalid")
+
+    activation_record_sha256: str | None = None
+    if require_activation:
+        activation, activation_record_sha256 = _load_bound_json_with_sha256(
+            paths["activation"], "candidate activation record"
+        )
+        expected_activation = {
+            "source_candidate_sha": source_candidate_sha,
+            "source_image_id": source_image_id,
+            "candidate_sha": candidate_sha,
+            "image_id": image_id,
+            "lineage_source_candidate_sha": lineage_source_candidate_sha,
+            "lineage_source_image_id": lineage_source_image_id,
+            "backup_id": backup_id,
+            "manifest_sha256": manifest_sha256,
+            "stage_record_sha256": stage_record_sha256,
+            "acceptance_retirement_record_sha256": (
+                acceptance_retirement_record_sha256
+            ),
+            **predecessor_digests,
+        }
+        if (
+            activation.get("schema_version") != 2
+            or activation.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND
+            or activation.get("record_type") != "gatea-config-activation"
+            or activation.get("passed") is not True
+            or activation.get("changed_keys") != ["GATEA_APP_IMAGE"]
+            or any(
+                activation.get(key) != value
+                for key, value in expected_activation.items()
+            )
+            or activation.get("config_values_recorded") is not False
+            or activation.get("secret_values_recorded") is not False
+        ):
+            raise GateAUpgradeError("Gate A candidate activation record is invalid")
+        activation_started_at = _parse_utc_timestamp(
+            activation.get("started_at"), "candidate activation start"
+        )
+        activation_completed_at = _parse_utc_timestamp(
+            activation.get("completed_at"), "candidate activation completion"
+        )
+        if activation_completed_at < activation_started_at:
+            raise GateAUpgradeError("Gate A candidate activation time is invalid")
+
+    context: dict[str, Any] = {
+        "stage_record_sha256": stage_record_sha256,
+        "activation_record_sha256": activation_record_sha256,
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "lineage_source_image_id": lineage_source_image_id,
+        "acceptance_retirement_record_sha256": (
+            acceptance_retirement_record_sha256
+        ),
+        "backup_record_sha256": bound_backup_records.backup_record_sha256,
+        "restore_record_sha256": bound_backup_records.restore_record_sha256,
+        **predecessor_digests,
+    }
+    return context
+
+
+def _validate_restore_record(
+    *,
+    payload: dict[str, Any],
     backup_id: str,
     source_candidate_sha: str,
-    restore_record_dir: Path,
     backup_completed_at: datetime,
     now: datetime,
     backup_record_sha256: str,
     mysql_artifact_sha256: str,
     image_artifact_sha256: str,
     expected_m7_content_snapshot: Mapping[str, Any] | None = None,
+    expected_m8_swatch_content_snapshot: Mapping[str, Any] | None = None,
+    expected_m9_table_content_snapshot: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    path = restore_record_dir / f"{backup_id}.json"
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError) as error:
-        raise GateAUpgradeError("Gate A restore PASS record is unavailable") from error
     if (
-        not isinstance(payload, dict)
-        or payload.get("schema_version") != 1
+        payload.get("schema_version") != 1
         or payload.get("backup_id") != backup_id
         or payload.get("candidate_sha") != source_candidate_sha
         or payload.get("restore_project") != backup.restore_project(backup_id)
@@ -613,10 +1159,43 @@ def _load_restore_record(
             or restored_m7_content != expected_m7_content
         ):
             raise GateAUpgradeError("Gate A restore PASS record is invalid")
+    if expected_m9_table_content_snapshot is not None:
+        try:
+            expected_m9_content = backup._validate_m9_table_content_snapshot(
+                expected_m9_table_content_snapshot
+            )
+            restored_m9_content = backup._validate_m9_table_content_snapshot(
+                payload.get("m9_table_content_snapshot")
+            )
+        except gatea.GateAError as error:
+            raise GateAUpgradeError("Gate A restore PASS record is invalid") from error
+        if (
+            payload.get("m9_table_content_matches") is not True
+            or restored_m9_content != expected_m9_content
+        ):
+            raise GateAUpgradeError("Gate A restore PASS record is invalid")
+    if expected_m8_swatch_content_snapshot is not None:
+        try:
+            expected_m8_swatch = backup._validate_m8_swatch_content_snapshot(
+                expected_m8_swatch_content_snapshot
+            )
+            restored_m8_swatch = backup._validate_m8_swatch_content_snapshot(
+                payload.get("m8_swatch_content_snapshot")
+            )
+        except gatea.GateAError as error:
+            raise GateAUpgradeError("Gate A restore PASS record is invalid") from error
+        if (
+            payload.get("m8_swatch_content_matches") is not True
+            or restored_m8_swatch != expected_m8_swatch
+        ):
+            raise GateAUpgradeError("Gate A restore PASS record is invalid")
     completed_at = _parse_utc_timestamp(
         payload.get("completed_at"), "restore completion"
     )
-    if completed_at < backup_completed_at or completed_at > now + FUTURE_CLOCK_TOLERANCE:
+    if (
+        completed_at < backup_completed_at
+        or completed_at > now + FUTURE_CLOCK_TOLERANCE
+    ):
         raise GateAUpgradeError("Gate A restore PASS record time is invalid")
     return payload
 
@@ -629,7 +1208,9 @@ def _load_verified_backup(
     backup_root: Path,
     backup_record_dir: Path,
     restore_record_dir: Path,
-) -> dict[str, Any]:
+    require_m8_swatch_content_snapshot: bool = False,
+    enforce_backup_max_age: bool = True,
+) -> _BoundBackupRecords:
     backup._validate_backup_directories(
         values=values,
         backup_root=backup_root,
@@ -641,12 +1222,18 @@ def _load_verified_backup(
         raise GateAUpgradeError(
             "Gate A backup pending journal requires manual review"
         )
-    payload, database_path, image_path = backup._load_backup_record(
-        backup_id=backup_id,
-        backup_root=backup_root,
-        backup_record_dir=backup_record_dir,
+    payload, backup_record_sha256 = _load_bound_json_with_sha256(
+        backup_record_dir / f"{backup_id}.json",
+        "verified backup record",
     )
-    backup_record_sha256 = backup._sha256(backup_record_dir / f"{backup_id}.json")
+    try:
+        payload, database_path, image_path = backup._validate_loaded_backup_record(
+            payload=payload,
+            backup_id=backup_id,
+            backup_root=backup_root,
+        )
+    except gatea.GateAError as error:
+        raise GateAUpgradeError("Gate A verified backup record is invalid") from error
     mysql_artifact_sha256 = backup._sha256(database_path)
     image_artifact_sha256 = backup._sha256(image_path)
     if (
@@ -660,16 +1247,38 @@ def _load_verified_backup(
         or not isinstance(payload.get("image_manifest"), list)
     ):
         raise GateAUpgradeError("Gate A backup record does not match the source")
+    expected_m8_swatch_content_snapshot: Mapping[str, Any] | None = None
+    if require_m8_swatch_content_snapshot:
+        try:
+            expected_m8_swatch_content_snapshot = (
+                backup._validate_m8_swatch_content_snapshot(
+                    payload.get("m8_swatch_content_snapshot")
+                )
+            )
+        except gatea.GateAError as error:
+            raise GateAUpgradeError(
+                "Gate A M9 adoption backup lacks M8 swatch content evidence"
+            ) from error
     now = _utc_now()
     completed_at = _parse_utc_timestamp(
         payload.get("completed_at"), "backup completion"
     )
-    if completed_at > now + FUTURE_CLOCK_TOLERANCE or now - completed_at > MAX_BACKUP_AGE:
+    if (
+        completed_at > now + FUTURE_CLOCK_TOLERANCE
+        or (
+            enforce_backup_max_age
+            and now - completed_at > MAX_BACKUP_AGE
+        )
+    ):
         raise GateAUpgradeError("Gate A backup must have completed within 24 hours")
-    _load_restore_record(
+    restore_payload, restore_record_sha256 = _load_bound_json_with_sha256(
+        restore_record_dir / f"{backup_id}.json",
+        "restore PASS record",
+    )
+    restore_payload = _validate_restore_record(
+        payload=restore_payload,
         backup_id=backup_id,
         source_candidate_sha=source_candidate_sha,
-        restore_record_dir=restore_record_dir,
         backup_completed_at=completed_at,
         now=now,
         backup_record_sha256=backup_record_sha256,
@@ -680,8 +1289,25 @@ def _load_verified_backup(
             if backup._requires_m7_content_snapshot(payload["database_snapshot"])
             else None
         ),
+        expected_m8_swatch_content_snapshot=(
+            expected_m8_swatch_content_snapshot
+            if require_m8_swatch_content_snapshot
+            else payload.get("m8_swatch_content_snapshot")
+        ),
+        expected_m9_table_content_snapshot=(
+            payload.get("m9_table_content_snapshot")
+            if backup._requires_m9_table_content_snapshot(
+                payload["database_snapshot"]
+            )
+            else None
+        ),
     )
-    return payload
+    return _BoundBackupRecords(
+        backup_record=payload,
+        backup_record_sha256=backup_record_sha256,
+        restore_record=restore_payload,
+        restore_record_sha256=restore_record_sha256,
+    )
 
 
 def _ensure_stopped(rows: Sequence[Mapping[str, Any]], *services: str) -> None:
@@ -1075,6 +1701,58 @@ def _validate_empty_table_reconcile_result(result: Mapping[str, Any]) -> None:
         )
 
 
+def _validate_adoption_table_reconcile_result(
+    result: Mapping[str, Any],
+) -> dict[str, Any]:
+    """M9 adoption 允许已关闭历史，但不允许存量占用或不一致。"""
+
+    if (
+        set(result) != set(M9_EMPTY_TABLE_RECONCILE_KEYS)
+        or any(
+            type(result.get(key)) is not int or result[key] < 0
+            for key in M9_EMPTY_TABLE_RECONCILE_KEYS
+        )
+        or any(
+            result[key] != 0
+            for key in (
+                "open_sessions",
+                "occupancies",
+                "closed_with_occupancy",
+                "awaiting_with_timers",
+                "active_without_timers",
+                "violations",
+            )
+        )
+    ):
+        raise GateAUpgradeError(
+            "Gate A M9 adoption table reconciliation result is invalid"
+        )
+    return dict(result)
+
+
+def _validate_m9_adoption_snapshot(snapshot: Mapping[str, Any]) -> None:
+    """验证 M9 adoption 的静态结构，不把已关闭 Session/Timer 历史误当空表。"""
+
+    if snapshot.get("aerich_versions") != _expected_versions(TARGET_VERSION):
+        raise GateAUpgradeError("Gate A M9 adoption requires the exact M0-M9 chain")
+    for key, expected in M9_EMPTY_TABLE_INVARIANTS[:8]:
+        actual = snapshot.get(key)
+        if type(actual) is not int or actual != expected:
+            raise GateAUpgradeError(
+                "Gate A M9 adoption invariant failed: "
+                f"{key} expected={expected} actual={actual!r}"
+            )
+    for key in ("table_sessions", "table_session_timers", "table_occupancies"):
+        if type(snapshot.get(key)) is not int or snapshot[key] < 0:
+            raise GateAUpgradeError(
+                f"Gate A M9 adoption invariant failed: {key}"
+            )
+    if snapshot.get("table_occupancies") != 0:
+        raise GateAUpgradeError(
+            "Gate A M9 adoption requires zero table occupancies"
+        )
+
+
 def _validate_empty_table_sweep_result(result: Mapping[str, Any]) -> None:
     """要求空表期 sweep 成功且没有关闭任何会话。"""
 
@@ -1209,6 +1887,389 @@ def _write_plan_replay_record(
             "secret_values_recorded": False,
         },
     )
+
+
+def _m9_adoption_result(
+    *,
+    mode: str,
+    candidate_sha: str,
+    backup_id: str,
+    manifest_sha256: str,
+) -> dict[str, Any]:
+    return {
+        "already_current": mode in {"plan-replay", "apply-replay"},
+        "backup_id": backup_id,
+        "candidate_sha": candidate_sha,
+        "database_changes_applied": False,
+        "manifest_sha256": manifest_sha256,
+        "migrations_applied": [],
+        "mode": mode,
+        "source_aerich_versions": _expected_versions(9),
+        "source_version": 9,
+        "target_aerich_versions": _expected_versions(9),
+        "target_version": 9,
+        "transition_kind": M9_ADOPTION_TRANSITION_KIND,
+    }
+
+
+def _write_m9_adoption_plan_replay_record(
+    *,
+    record_dir: Path,
+    success_path: Path,
+    success_record: Mapping[str, Any],
+    table_reconcile: Mapping[str, Any],
+) -> None:
+    candidate_sha = str(success_record["candidate_sha"])
+    stable_success, success_sha256 = _load_bound_json_with_sha256(
+        success_path, "M9 adoption upgrade record"
+    )
+    if stable_success != success_record:
+        raise GateAUpgradeError(
+            "Gate A M9 adoption upgrade record changed before replay publication"
+        )
+    _write_json_exclusive(
+        gatea._upgrade_replay_marker(record_dir, candidate_sha),
+        {
+            "schema_version": 2,
+            "transition_kind": M9_ADOPTION_TRANSITION_KIND,
+            "record_type": "gatea-m9-upgrade-plan-replay",
+            "passed": True,
+            "candidate_sha": candidate_sha,
+            "source_candidate_sha": success_record["source_candidate_sha"],
+            "source_version": 9,
+            "image_id": success_record["image_id"],
+            "backup_id": success_record["backup_id"],
+            "manifest_sha256": success_record["manifest_sha256"],
+            "lineage_source_candidate_sha": success_record[
+                "lineage_source_candidate_sha"
+            ],
+            "lineage_source_image_id": success_record[
+                "lineage_source_image_id"
+            ],
+            "acceptance_retirement_record_sha256": success_record[
+                "acceptance_retirement_record_sha256"
+            ],
+            "database_changes_applied": False,
+            "migrations_applied": [],
+            "database_snapshot": dict(
+                success_record["final_database_snapshot"]
+            ),
+            "m8_swatch_content_snapshot": dict(
+                success_record["final_m8_swatch_content_snapshot"]
+            ),
+            "image_manifest": dict(success_record["final_image_manifest"]),
+            "table_reconcile": dict(table_reconcile),
+            "upgrade_record_sha256": success_sha256,
+            "evidence_sha256": success_record["evidence_sha256"],
+            "result": _m9_adoption_result(
+                mode="plan-replay",
+                candidate_sha=candidate_sha,
+                backup_id=str(success_record["backup_id"]),
+                manifest_sha256=str(success_record["manifest_sha256"]),
+            ),
+            "completed_at": _iso_now(),
+            "secret_values_recorded": False,
+        },
+    )
+
+
+def _read_m9_adoption_state(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    backup_record: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """只读抓取 adoption 状态，并证明 reconcile 前后无任何数据变化。"""
+
+    source_database_snapshot = _read_final_snapshot(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+    )
+    _validate_m9_adoption_snapshot(source_database_snapshot)
+    source_m7_content_snapshot = backup._source_m7_content_snapshot(
+        values, config_file, secret_dir, mode
+    )
+    source_m8_swatch_content_snapshot = (
+        backup._source_m8_swatch_content_snapshot(
+            values, config_file, secret_dir, mode
+        )
+    )
+    source_m9_table_content_snapshot = backup._source_m9_table_content_snapshot(
+        values, config_file, secret_dir, mode
+    )
+    source_images = backup._source_image_manifest(
+        values, config_file, secret_dir, mode
+    )
+    if backup_record is not None:
+        stopped_database_snapshot = backup._source_snapshot(
+            values, config_file, secret_dir, mode
+        )
+        if stopped_database_snapshot != backup_record.get("database_snapshot"):
+            raise GateAUpgradeError(
+                "Gate A M9 adoption database no longer matches the verified backup"
+            )
+        try:
+            expected_m7 = backup._validate_m7_content_snapshot(
+                backup_record.get("m7_content_snapshot")
+            )
+            expected_m8_swatch = backup._validate_m8_swatch_content_snapshot(
+                backup_record.get("m8_swatch_content_snapshot")
+            )
+            expected_m9 = backup._validate_m9_table_content_snapshot(
+                backup_record.get("m9_table_content_snapshot")
+            )
+        except gatea.GateAError as error:
+            raise GateAUpgradeError(
+                "Gate A M9 adoption backup content evidence is invalid"
+            ) from error
+        if (
+            source_m7_content_snapshot != expected_m7
+            or source_m8_swatch_content_snapshot != expected_m8_swatch
+            or source_m9_table_content_snapshot != expected_m9
+            or source_images != backup_record.get("image_manifest")
+        ):
+            raise GateAUpgradeError(
+                "Gate A M9 adoption content no longer matches the verified backup"
+            )
+
+    table_reconcile = _run_task(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        service="app",
+        module="app.tasks.table_reconcile",
+        description="m9-adoption-table-reconcile",
+    )
+    table_reconcile = _validate_adoption_table_reconcile_result(table_reconcile)
+    final_database_snapshot = _read_final_snapshot(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+    )
+    final_m7_content_snapshot = backup._source_m7_content_snapshot(
+        values, config_file, secret_dir, mode
+    )
+    final_m8_swatch_content_snapshot = (
+        backup._source_m8_swatch_content_snapshot(
+            values, config_file, secret_dir, mode
+        )
+    )
+    final_m9_table_content_snapshot = backup._source_m9_table_content_snapshot(
+        values, config_file, secret_dir, mode
+    )
+    final_images = backup._source_image_manifest(
+        values, config_file, secret_dir, mode
+    )
+    if (
+        final_database_snapshot != source_database_snapshot
+        or final_m7_content_snapshot != source_m7_content_snapshot
+        or final_m8_swatch_content_snapshot
+        != source_m8_swatch_content_snapshot
+        or final_m9_table_content_snapshot != source_m9_table_content_snapshot
+        or final_images != source_images
+    ):
+        raise GateAUpgradeError(
+            "Gate A M9 adoption read-only verification changed persistent state"
+        )
+    return {
+        "source_database_snapshot": source_database_snapshot,
+        "final_database_snapshot": final_database_snapshot,
+        "source_m7_content_snapshot": source_m7_content_snapshot,
+        "final_m7_content_snapshot": final_m7_content_snapshot,
+        "source_m8_swatch_content_snapshot": (
+            source_m8_swatch_content_snapshot
+        ),
+        "final_m8_swatch_content_snapshot": final_m8_swatch_content_snapshot,
+        "source_m9_table_content_snapshot": source_m9_table_content_snapshot,
+        "final_m9_table_content_snapshot": final_m9_table_content_snapshot,
+        "source_image_manifest": _manifest_summary(source_images),
+        "final_image_manifest": _manifest_summary(final_images),
+        "table_reconcile": table_reconcile,
+    }
+
+
+def _validate_m9_adoption_success_evidence(
+    *,
+    success_record: Mapping[str, Any],
+    evidence_path: Path,
+) -> dict[str, Any]:
+    evidence, evidence_sha256 = _load_bound_json_with_sha256(
+        evidence_path, "M9 adoption upgrade evidence"
+    )
+    bound_fields = (
+        "transition_kind",
+        "candidate_sha",
+        "image_id",
+        "source_candidate_sha",
+        "source_image_id",
+        "lineage_source_candidate_sha",
+        "lineage_source_image_id",
+        "source_version",
+        "target_version",
+        "source_aerich_versions",
+        "target_aerich_versions",
+        "backup_id",
+        "manifest_sha256",
+        "runtime_preflight",
+        "started_at",
+        "completed_at",
+        "stage_record_sha256",
+        "activation_record_sha256",
+        "predecessor_stage_record_sha256",
+        "predecessor_activation_record_sha256",
+        "predecessor_upgrade_record_sha256",
+        "predecessor_upgrade_evidence_sha256",
+        "predecessor_upgrade_plan_replay_record_sha256",
+        "acceptance_retirement_record_sha256",
+        "backup_record_sha256",
+        "restore_record_sha256",
+        "source_database_snapshot",
+        "final_database_snapshot",
+        "source_image_manifest",
+        "final_image_manifest",
+        "source_m7_content_snapshot",
+        "final_m7_content_snapshot",
+        "source_m8_swatch_content_snapshot",
+        "final_m8_swatch_content_snapshot",
+        "source_m9_table_content_snapshot",
+        "final_m9_table_content_snapshot",
+        "database_changes_applied",
+        "migrations_applied",
+        "table_reconcile",
+    )
+    if (
+        success_record.get("evidence_path") != str(evidence_path)
+        or evidence_sha256 != success_record.get("evidence_sha256")
+        or evidence.get("schema_version") != 2
+        or evidence.get("record_type") != "existing-database-upgrade-evidence"
+        or evidence.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND
+        or evidence.get("status") != "succeeded"
+        or evidence.get("current_stage") != "completed"
+        or evidence.get("stopped_source_verified") is not True
+        or evidence.get("steps") != []
+        or any(evidence.get(key) != success_record.get(key) for key in bound_fields)
+    ):
+        raise GateAUpgradeError("Gate A M9 adoption upgrade evidence is invalid")
+    started_at = _parse_utc_timestamp(evidence.get("started_at"), "adoption start")
+    completed_at = _parse_utc_timestamp(
+        evidence.get("completed_at"), "adoption completion"
+    )
+    if completed_at < started_at:
+        raise GateAUpgradeError("Gate A M9 adoption completion precedes its start")
+    _validate_adoption_table_reconcile_result(evidence.get("table_reconcile", {}))
+    return evidence
+
+
+def _m9_adoption_success_from_evidence(
+    *,
+    evidence_path: Path,
+    evidence: Mapping[str, Any],
+    evidence_sha256: str,
+) -> dict[str, Any]:
+    """从 durable succeeded evidence 唯一重建对应 success 提交点。"""
+
+    success_only = {"passed", "evidence_path", "evidence_sha256"}
+    differing = {
+        "record_type",
+        "status",
+        "current_stage",
+        "stopped_source_verified",
+        "steps",
+    }
+    shared_fields = gatea.M9_ADOPTION_UPGRADE_RECORD_KEYS - success_only - {
+        "record_type"
+    }
+    expected_evidence_fields = shared_fields | differing
+    if (
+        set(evidence) != expected_evidence_fields
+        or evidence.get("schema_version") != 2
+        or evidence.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND
+        or evidence.get("record_type") != "existing-database-upgrade-evidence"
+        or evidence.get("status") != "succeeded"
+        or evidence.get("current_stage") != "completed"
+        or evidence.get("stopped_source_verified") is not True
+        or evidence.get("steps") != []
+        or evidence.get("database_changes_applied") is not False
+        or evidence.get("migrations_applied") != []
+    ):
+        raise GateAUpgradeError(
+            "Gate A prior upgrade evidence requires manual review before retry"
+        )
+    return {
+        **{key: evidence[key] for key in shared_fields},
+        "record_type": "existing-database-upgrade",
+        "passed": True,
+        "evidence_path": str(evidence_path),
+        "evidence_sha256": evidence_sha256,
+    }
+
+
+def _plan_m9_adoption(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    source_candidate_sha: str,
+    lineage_source_candidate_sha: str,
+    acceptance_retirement_record_sha256: str,
+    backup_id: str,
+    backup_root: Path,
+    backup_record_dir: Path,
+    restore_record_dir: Path,
+    release_record_dir: Path,
+    require_activation: bool,
+    enforce_backup_max_age: bool = True,
+) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
+    candidate_sha = gatea._candidate_sha(values)
+    if (
+        SHA_PATTERN.fullmatch(candidate_sha) is None
+        or SHA_PATTERN.fullmatch(source_candidate_sha) is None
+        or candidate_sha == source_candidate_sha
+    ):
+        raise GateAUpgradeError("Gate A source and target candidate SHA are invalid")
+    image_id = gatea.validate_app_image(values)
+    manifest_sha256 = _manifest_sha256()
+    verified_backup = _load_verified_backup(
+        values=values,
+        backup_id=backup_id,
+        source_candidate_sha=source_candidate_sha,
+        backup_root=backup_root,
+        backup_record_dir=backup_record_dir,
+        restore_record_dir=restore_record_dir,
+        require_m8_swatch_content_snapshot=True,
+        enforce_backup_max_age=enforce_backup_max_age,
+    )
+    backup_record = verified_backup.backup_record
+    source_image_id = backup_record.get("image_id")
+    if not isinstance(source_image_id, str) or not source_image_id:
+        raise GateAUpgradeError("Gate A M9 adoption source image is invalid")
+    if backup_record.get("database_snapshot", {}).get("aerich_versions") != ",".join(
+        _expected_versions(9)
+    ):
+        raise GateAUpgradeError("Gate A verified backup is not from exact M9")
+    context = _validate_m9_adoption_lineage(
+        release_record_dir=release_record_dir,
+        backup_id=backup_id,
+        bound_backup_records=verified_backup,
+        manifest_sha256=manifest_sha256,
+        candidate_sha=candidate_sha,
+        image_id=image_id,
+        source_candidate_sha=source_candidate_sha,
+        source_image_id=source_image_id,
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+        acceptance_retirement_record_sha256=(
+            acceptance_retirement_record_sha256
+        ),
+        require_activation=require_activation,
+    )
+    return candidate_sha, image_id, backup_record, context
 
 
 def _plan(
@@ -1410,7 +2471,7 @@ def _plan(
         raise GateAUpgradeError(
             f"Gate A database is not the explicitly approved M{source_version} source"
         )
-    backup_record = _load_verified_backup(
+    verified_backup = _load_verified_backup(
         values=values,
         backup_id=backup_id,
         source_candidate_sha=source_candidate_sha,
@@ -1418,12 +2479,667 @@ def _plan(
         backup_record_dir=backup_record_dir,
         restore_record_dir=restore_record_dir,
     )
+    backup_record = verified_backup.backup_record
     backup_versions = backup_record["database_snapshot"].get("aerich_versions")
     if backup_versions != ",".join(expected_source_versions):
         raise GateAUpgradeError(
             f"Gate A verified backup is not from exact M{source_version}"
         )
     return candidate_sha, image_id, backup_record, source_status, manifest_sha256
+
+
+def _recover_m9_adoption_success(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    source_candidate_sha: str,
+    lineage_source_candidate_sha: str,
+    acceptance_retirement_record_sha256: str,
+    backup_id: str,
+    backup_root: Path,
+    backup_record_dir: Path,
+    restore_record_dir: Path,
+    release_record_dir: Path,
+    candidate_sha: str,
+    image_id: str,
+    manifest_sha256: str,
+    success_path: Path,
+    evidence_path: Path,
+    apply: bool,
+    confirm_target_sha: str | None,
+    confirm_source_sha: str | None,
+    confirm_backup_id: str | None,
+    confirm_manifest_sha256: str | None,
+    confirm_lineage_source_sha: str | None,
+    confirm_acceptance_retirement_record_sha256: str | None,
+) -> dict[str, Any]:
+    """只从完整 succeeded evidence 恢复 SIGKILL 后缺失的 success 提交点。"""
+
+    evidence, evidence_sha256 = _load_bound_json_with_sha256(
+        evidence_path, "M9 adoption upgrade evidence"
+    )
+    if not apply:
+        raise GateAUpgradeError(
+            "Gate A succeeded adoption evidence recovery requires apply confirmations"
+        )
+    _validate_confirmations(
+        candidate_sha=candidate_sha,
+        source_candidate_sha=source_candidate_sha,
+        backup_id=backup_id,
+        manifest_sha256=manifest_sha256,
+        confirm_target_sha=confirm_target_sha,
+        confirm_source_sha=confirm_source_sha,
+        confirm_backup_id=confirm_backup_id,
+        confirm_manifest_sha256=confirm_manifest_sha256,
+    )
+    _validate_adoption_confirmations(
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+        acceptance_retirement_record_sha256=acceptance_retirement_record_sha256,
+        confirm_lineage_source_sha=confirm_lineage_source_sha,
+        confirm_acceptance_retirement_record_sha256=(
+            confirm_acceptance_retirement_record_sha256
+        ),
+    )
+    success_payload = _m9_adoption_success_from_evidence(
+        evidence_path=evidence_path,
+        evidence=evidence,
+        evidence_sha256=evidence_sha256,
+    )
+    requested_identity = {
+        "candidate_sha": candidate_sha,
+        "image_id": image_id,
+        "source_candidate_sha": source_candidate_sha,
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "acceptance_retirement_record_sha256": (
+            acceptance_retirement_record_sha256
+        ),
+        "backup_id": backup_id,
+        "manifest_sha256": manifest_sha256,
+    }
+    if any(
+        evidence.get(key) != value
+        for key, value in requested_identity.items()
+    ):
+        raise GateAUpgradeError("Gate A succeeded adoption evidence binding changed")
+    stopped_rows = gatea._compose_ps(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=("mysql", "redis", "app", "table-sweeper", "nginx"),
+    )
+    gatea._ensure_services_healthy(stopped_rows, "mysql", "redis")
+    _ensure_stopped(stopped_rows, "app", "nginx")
+    _ensure_not_running(stopped_rows, "table-sweeper")
+    (
+        planned_candidate_sha,
+        planned_image_id,
+        backup_record,
+        context,
+    ) = _plan_m9_adoption(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        source_candidate_sha=source_candidate_sha,
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+        acceptance_retirement_record_sha256=(
+            acceptance_retirement_record_sha256
+        ),
+        backup_id=backup_id,
+        backup_root=backup_root,
+        backup_record_dir=backup_record_dir,
+        restore_record_dir=restore_record_dir,
+        release_record_dir=release_record_dir,
+        require_activation=True,
+        # 此分支只在上方稳定读取并精确验证 durable succeeded evidence
+        # 后可达。其 Backup/Restore 仍做完整语义与 digest 绑定校验；仅不因
+        # 运维恢复跨过 24 小时而把缺失 success 的提交点永久卡死。
+        enforce_backup_max_age=False,
+    )
+    if planned_candidate_sha != candidate_sha or planned_image_id != image_id:
+        raise GateAUpgradeError("Gate A adoption recovery candidate changed")
+    expected_identity = {
+        "candidate_sha": candidate_sha,
+        "image_id": image_id,
+        "source_candidate_sha": source_candidate_sha,
+        "source_image_id": backup_record.get("image_id"),
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "source_version": 9,
+        "target_version": 9,
+        "source_aerich_versions": _expected_versions(9),
+        "target_aerich_versions": _expected_versions(9),
+        "backup_id": backup_id,
+        "manifest_sha256": manifest_sha256,
+        "runtime_preflight": {
+            "app_env": "production",
+            "db_engine": "mysql",
+            "jwt_algorithm": "HS256",
+            "table_session_claims_enabled": True,
+            "validated": True,
+        },
+        "database_changes_applied": False,
+        "migrations_applied": [],
+        **context,
+    }
+    if any(evidence.get(key) != value for key, value in expected_identity.items()):
+        raise GateAUpgradeError("Gate A succeeded adoption evidence binding changed")
+    state = _read_m9_adoption_state(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        backup_record=backup_record,
+    )
+    if any(evidence.get(key) != value for key, value in state.items()):
+        raise GateAUpgradeError(
+            "Gate A succeeded adoption evidence no longer matches persistent state"
+        )
+    final_rows = gatea._compose_ps(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=("mysql", "redis", "app", "table-sweeper", "nginx"),
+    )
+    gatea._ensure_services_healthy(final_rows, "mysql", "redis")
+    _ensure_stopped(final_rows, "app", "nginx")
+    _ensure_not_running(final_rows, "table-sweeper")
+    _validate_m9_adoption_success_evidence(
+        success_record=success_payload,
+        evidence_path=evidence_path,
+    )
+    try:
+        gatea._require_m9_adoption_upgrade_record(
+            success_payload,
+            record_dir=release_record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+        )
+    except gatea.GateAError as error:
+        raise GateAUpgradeError(
+            "Gate A succeeded adoption evidence is invalid"
+        ) from error
+    _write_json_exclusive(success_path, success_payload)
+    published, _ = _load_bound_json_with_sha256(
+        success_path, "M9 adoption upgrade record"
+    )
+    if published != success_payload:
+        raise GateAUpgradeError("Gate A recovered adoption success record changed")
+    return {
+        **_m9_adoption_result(
+            mode="apply",
+            candidate_sha=candidate_sha,
+            backup_id=backup_id,
+            manifest_sha256=manifest_sha256,
+        ),
+        "application_stopped": True,
+        "record": str(success_path),
+        "source_candidate_sha": source_candidate_sha,
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "lineage_source_image_id": context["lineage_source_image_id"],
+        "acceptance_retirement_record_sha256": (
+            acceptance_retirement_record_sha256
+        ),
+    }
+
+
+def _adopt_m9_candidate(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    source_candidate_sha: str,
+    lineage_source_candidate_sha: str,
+    acceptance_retirement_record_sha256: str,
+    backup_id: str,
+    backup_root: Path,
+    backup_record_dir: Path,
+    restore_record_dir: Path,
+    release_record_dir: Path,
+    apply: bool,
+    confirm_target_sha: str | None,
+    confirm_source_sha: str | None,
+    confirm_backup_id: str | None,
+    confirm_manifest_sha256: str | None,
+    confirm_lineage_source_sha: str | None,
+    confirm_acceptance_retirement_record_sha256: str | None,
+) -> dict[str, Any]:
+    """在 M9 数据不变的前提下，为新候选发布 schema-v2 adoption 证据。"""
+
+    candidate_sha = gatea._candidate_sha(values)
+    image_id = gatea.validate_app_image(values)
+    manifest_sha256 = _manifest_sha256()
+    success_path, evidence_path = _upgrade_paths(release_record_dir, candidate_sha)
+
+    if success_path.exists() or success_path.is_symlink():
+        replay_rows = gatea._compose_ps(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            services=("mysql", "redis", "app", "table-sweeper", "nginx"),
+        )
+        gatea._ensure_services_healthy(replay_rows, "mysql", "redis")
+        _ensure_stopped(replay_rows, "app", "nginx")
+        _ensure_not_running(replay_rows, "table-sweeper")
+        raw_success_record, _ = _load_bound_json_with_sha256(
+            success_path, "M9 adoption upgrade record"
+        )
+        success_record = gatea._require_upgrade_record(
+            record_dir=release_record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+        )
+        if (
+            success_record != raw_success_record
+            or success_record.get("schema_version") != 2
+            or success_record.get("transition_kind")
+            != M9_ADOPTION_TRANSITION_KIND
+            or success_record.get("source_candidate_sha")
+            != source_candidate_sha
+            or success_record.get("lineage_source_candidate_sha")
+            != lineage_source_candidate_sha
+            or success_record.get("backup_id") != backup_id
+            or success_record.get("manifest_sha256") != manifest_sha256
+            or success_record.get("acceptance_retirement_record_sha256")
+            != acceptance_retirement_record_sha256
+        ):
+            raise GateAUpgradeError(
+                "Gate A recorded M9 adoption does not match the requested replay"
+            )
+        if apply:
+            _validate_confirmations(
+                candidate_sha=candidate_sha,
+                source_candidate_sha=source_candidate_sha,
+                backup_id=backup_id,
+                manifest_sha256=manifest_sha256,
+                confirm_target_sha=confirm_target_sha,
+                confirm_source_sha=confirm_source_sha,
+                confirm_backup_id=confirm_backup_id,
+                confirm_manifest_sha256=confirm_manifest_sha256,
+            )
+            _validate_adoption_confirmations(
+                lineage_source_candidate_sha=lineage_source_candidate_sha,
+                acceptance_retirement_record_sha256=(
+                    acceptance_retirement_record_sha256
+                ),
+                confirm_lineage_source_sha=confirm_lineage_source_sha,
+                confirm_acceptance_retirement_record_sha256=(
+                    confirm_acceptance_retirement_record_sha256
+                ),
+            )
+        bound_backup_records = _load_verified_backup(
+            values=values,
+            backup_id=backup_id,
+            source_candidate_sha=source_candidate_sha,
+            backup_root=backup_root,
+            backup_record_dir=backup_record_dir,
+            restore_record_dir=restore_record_dir,
+            require_m8_swatch_content_snapshot=True,
+        )
+        context = _validate_m9_adoption_lineage(
+            release_record_dir=release_record_dir,
+            backup_id=backup_id,
+            bound_backup_records=bound_backup_records,
+            manifest_sha256=manifest_sha256,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+            source_candidate_sha=source_candidate_sha,
+            source_image_id=str(success_record["source_image_id"]),
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            acceptance_retirement_record_sha256=(
+                acceptance_retirement_record_sha256
+            ),
+            require_activation=True,
+        )
+        if any(success_record.get(key) != value for key, value in context.items()):
+            raise GateAUpgradeError(
+                "Gate A recorded M9 adoption lineage no longer matches"
+            )
+        _validate_m9_adoption_success_evidence(
+            success_record=success_record,
+            evidence_path=evidence_path,
+        )
+        current_state = _read_m9_adoption_state(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            backup_record=None,
+        )
+        for key in (
+            "source_database_snapshot",
+            "final_database_snapshot",
+            "source_m7_content_snapshot",
+            "final_m7_content_snapshot",
+            "source_m8_swatch_content_snapshot",
+            "final_m8_swatch_content_snapshot",
+            "source_m9_table_content_snapshot",
+            "final_m9_table_content_snapshot",
+            "source_image_manifest",
+            "final_image_manifest",
+            "table_reconcile",
+        ):
+            expected_key = (
+                "final_database_snapshot"
+                if key == "source_database_snapshot"
+                else "final_m7_content_snapshot"
+                if key == "source_m7_content_snapshot"
+                else "final_m8_swatch_content_snapshot"
+                if key == "source_m8_swatch_content_snapshot"
+                else "final_m9_table_content_snapshot"
+                if key == "source_m9_table_content_snapshot"
+                else "final_image_manifest"
+                if key == "source_image_manifest"
+                else key
+            )
+            if current_state[key] != success_record.get(expected_key):
+                raise GateAUpgradeError(
+                    "Gate A recorded M9 adoption no longer matches persistent state"
+                )
+        result = _m9_adoption_result(
+            mode="apply-replay" if apply else "plan-replay",
+            candidate_sha=candidate_sha,
+            backup_id=backup_id,
+            manifest_sha256=manifest_sha256,
+        )
+        if not apply:
+            _write_m9_adoption_plan_replay_record(
+                record_dir=release_record_dir,
+                success_path=success_path,
+                success_record=success_record,
+                table_reconcile=current_state["table_reconcile"],
+            )
+        return result
+
+    if evidence_path.exists() or evidence_path.is_symlink():
+        return _recover_m9_adoption_success(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            source_candidate_sha=source_candidate_sha,
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            acceptance_retirement_record_sha256=(
+                acceptance_retirement_record_sha256
+            ),
+            backup_id=backup_id,
+            backup_root=backup_root,
+            backup_record_dir=backup_record_dir,
+            restore_record_dir=restore_record_dir,
+            release_record_dir=release_record_dir,
+            candidate_sha=candidate_sha,
+            image_id=image_id,
+            manifest_sha256=manifest_sha256,
+            success_path=success_path,
+            evidence_path=evidence_path,
+            apply=apply,
+            confirm_target_sha=confirm_target_sha,
+            confirm_source_sha=confirm_source_sha,
+            confirm_backup_id=confirm_backup_id,
+            confirm_manifest_sha256=confirm_manifest_sha256,
+            confirm_lineage_source_sha=confirm_lineage_source_sha,
+            confirm_acceptance_retirement_record_sha256=(
+                confirm_acceptance_retirement_record_sha256
+            ),
+        )
+    rows = gatea._compose_ps(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=("mysql", "redis", "app", "table-sweeper", "nginx"),
+    )
+    gatea._ensure_services_healthy(
+        rows, "mysql", "redis", "app", "table-sweeper", "nginx"
+    )
+    (
+        candidate_sha,
+        image_id,
+        backup_record,
+        context,
+    ) = _plan_m9_adoption(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        source_candidate_sha=source_candidate_sha,
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+        acceptance_retirement_record_sha256=(
+            acceptance_retirement_record_sha256
+        ),
+        backup_id=backup_id,
+        backup_root=backup_root,
+        backup_record_dir=backup_record_dir,
+        restore_record_dir=restore_record_dir,
+        release_record_dir=release_record_dir,
+        require_activation=apply,
+    )
+    if not apply:
+        if any(
+            value is not None
+            for value in (
+                confirm_target_sha,
+                confirm_source_sha,
+                confirm_backup_id,
+                confirm_manifest_sha256,
+                confirm_lineage_source_sha,
+                confirm_acceptance_retirement_record_sha256,
+            )
+        ):
+            raise GateAUpgradeError("Gate A plan does not accept apply confirmations")
+        plan_state = _read_m9_adoption_state(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            backup_record=backup_record,
+        )
+        return {
+            **_m9_adoption_result(
+                mode="plan",
+                candidate_sha=candidate_sha,
+                backup_id=backup_id,
+                manifest_sha256=manifest_sha256,
+            ),
+            "restore_verified": True,
+            "source_candidate_sha": source_candidate_sha,
+            "lineage_source_candidate_sha": lineage_source_candidate_sha,
+            "lineage_source_image_id": context["lineage_source_image_id"],
+            "acceptance_retirement_record_sha256": (
+                acceptance_retirement_record_sha256
+            ),
+            "table_reconcile": plan_state["table_reconcile"],
+        }
+
+    _validate_confirmations(
+        candidate_sha=candidate_sha,
+        source_candidate_sha=source_candidate_sha,
+        backup_id=backup_id,
+        manifest_sha256=manifest_sha256,
+        confirm_target_sha=confirm_target_sha,
+        confirm_source_sha=confirm_source_sha,
+        confirm_backup_id=confirm_backup_id,
+        confirm_manifest_sha256=confirm_manifest_sha256,
+    )
+    _validate_adoption_confirmations(
+        lineage_source_candidate_sha=lineage_source_candidate_sha,
+        acceptance_retirement_record_sha256=acceptance_retirement_record_sha256,
+        confirm_lineage_source_sha=confirm_lineage_source_sha,
+        confirm_acceptance_retirement_record_sha256=(
+            confirm_acceptance_retirement_record_sha256
+        ),
+    )
+    runtime_preflight = _run_runtime_preflight(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+    )
+    started_at = _iso_now()
+    evidence: dict[str, Any] = {
+        "schema_version": 2,
+        "transition_kind": M9_ADOPTION_TRANSITION_KIND,
+        "record_type": "existing-database-upgrade-evidence",
+        "status": "in_progress",
+        "current_stage": "validated",
+        "candidate_sha": candidate_sha,
+        "image_id": image_id,
+        "source_candidate_sha": source_candidate_sha,
+        "source_image_id": backup_record["image_id"],
+        "source_version": 9,
+        "target_version": 9,
+        "source_aerich_versions": _expected_versions(9),
+        "target_aerich_versions": _expected_versions(9),
+        "backup_id": backup_id,
+        "manifest_sha256": manifest_sha256,
+        "runtime_preflight": runtime_preflight,
+        "started_at": started_at,
+        "database_changes_applied": False,
+        "migrations_applied": [],
+        "steps": [],
+        **context,
+    }
+    _write_json_exclusive(evidence_path, evidence)
+    business_stopped = False
+    success_payload: dict[str, Any] | None = None
+    try:
+        evidence["current_stage"] = "stop-business-entry"
+        backup._write_json_atomic(evidence_path, evidence, 0o644)
+        gatea._run_compose(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            arguments=(
+                "stop",
+                "--timeout",
+                "30",
+                "nginx",
+                "table-sweeper",
+                "app",
+            ),
+        )
+        business_stopped = True
+        stopped_rows = gatea._compose_ps(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            services=("mysql", "redis", "app", "table-sweeper", "nginx"),
+        )
+        gatea._ensure_services_healthy(stopped_rows, "mysql", "redis")
+        _ensure_stopped(stopped_rows, "app", "nginx")
+        _ensure_not_running(stopped_rows, "table-sweeper")
+        evidence["current_stage"] = "verify-stopped-source"
+        state = _read_m9_adoption_state(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            backup_record=backup_record,
+        )
+        evidence.update(state)
+        evidence["stopped_source_verified"] = True
+        evidence["completed_at"] = _iso_now()
+        evidence["current_stage"] = "completed"
+        evidence["status"] = "succeeded"
+        backup._write_json_atomic(evidence_path, evidence, 0o644)
+
+        success_payload = {
+            "schema_version": 2,
+            "transition_kind": M9_ADOPTION_TRANSITION_KIND,
+            "record_type": "existing-database-upgrade",
+            "passed": True,
+            "candidate_sha": candidate_sha,
+            "image_id": image_id,
+            "source_candidate_sha": source_candidate_sha,
+            "source_image_id": backup_record["image_id"],
+            "source_version": 9,
+            "target_version": 9,
+            "source_aerich_versions": _expected_versions(9),
+            "target_aerich_versions": _expected_versions(9),
+            "backup_id": backup_id,
+            "manifest_sha256": manifest_sha256,
+            "runtime_preflight": runtime_preflight,
+            "started_at": started_at,
+            "completed_at": evidence["completed_at"],
+            "evidence_path": str(evidence_path),
+            "evidence_sha256": _sha256(evidence_path),
+            "database_changes_applied": False,
+            "migrations_applied": [],
+            **context,
+            **state,
+        }
+        _write_json_exclusive(success_path, success_payload)
+    except BaseException as error:
+        if success_path.exists() or success_path.is_symlink():
+            _validate_published_upgrade_commit(
+                success_path=success_path,
+                evidence_path=evidence_path,
+                success_payload=success_payload,
+                evidence=evidence,
+            )
+            raise
+        if evidence.get("status") == "succeeded":
+            try:
+                durable_evidence, durable_evidence_sha256 = (
+                    _load_bound_json_with_sha256(
+                        evidence_path,
+                        "M9 adoption upgrade evidence",
+                    )
+                )
+            except BaseException as recovery_error:
+                raise recovery_error from error
+            if durable_evidence.get("status") == "succeeded":
+                try:
+                    _m9_adoption_success_from_evidence(
+                        evidence_path=evidence_path,
+                        evidence=durable_evidence,
+                        evidence_sha256=durable_evidence_sha256,
+                    )
+                except BaseException as recovery_error:
+                    raise recovery_error from error
+                # succeeded evidence 是可恢复提交点。success 尚未发布时的
+                # 控制信号或工作异常不得把它降级为 failed；下次 apply 会在
+                # 停写状态下重新核验现场并只发布缺失的 success Record。
+                raise
+        evidence["completed_at"] = _iso_now()
+        evidence["error_type"] = type(error).__name__
+        evidence["status"] = "failed"
+        evidence["business_entry_stopped"] = business_stopped
+        try:
+            evidence["failure_database_status"] = _read_final_snapshot(
+                values=values,
+                config_file=config_file,
+                secret_dir=secret_dir,
+                mode=mode,
+            )
+        except BaseException as snapshot_error:
+            evidence["failure_snapshot_error_type"] = type(snapshot_error).__name__
+        backup._write_json_atomic(evidence_path, evidence, 0o644)
+        raise
+
+    return {
+        **_m9_adoption_result(
+            mode="apply",
+            candidate_sha=candidate_sha,
+            backup_id=backup_id,
+            manifest_sha256=manifest_sha256,
+        ),
+        "application_stopped": True,
+        "record": str(success_path),
+        "source_candidate_sha": source_candidate_sha,
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "lineage_source_image_id": context["lineage_source_image_id"],
+        "acceptance_retirement_record_sha256": (
+            acceptance_retirement_record_sha256
+        ),
+    }
 
 
 def upgrade_existing_database(
@@ -1442,10 +3158,14 @@ def upgrade_existing_database(
     confirm_source_sha: str | None,
     confirm_backup_id: str | None,
     confirm_manifest_sha256: str | None,
+    lineage_source_candidate_sha: str | None = None,
+    acceptance_retirement_record_sha256: str | None = None,
+    confirm_lineage_source_sha: str | None = None,
+    confirm_acceptance_retirement_record_sha256: str | None = None,
     source_version: int = DEFAULT_SOURCE_VERSION,
     acceptance_record_dir: Path = gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
 ) -> dict[str, Any]:
-    """规划或执行精确 M2/M7→M9 升级，生成 app-up 成功 Record。"""
+    """规划或执行精确 M2/M7→M9 升级或 M9→M9 adoption。"""
 
     gatea._require_loopback_write_mode(mode)
     source_version = _validate_source_version(source_version)
@@ -1465,6 +3185,51 @@ def upgrade_existing_database(
         mode=mode,
         require_available_port=False,
     )
+    if source_version == 9:
+        if (
+            not isinstance(lineage_source_candidate_sha, str)
+            or not isinstance(acceptance_retirement_record_sha256, str)
+        ):
+            raise GateAUpgradeError(
+                "Gate A M9 adoption requires lineage and retirement evidence"
+            )
+        return _adopt_m9_candidate(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            mode=mode,
+            source_candidate_sha=source_candidate_sha,
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            acceptance_retirement_record_sha256=(
+                acceptance_retirement_record_sha256
+            ),
+            backup_id=backup_id,
+            backup_root=backup_root,
+            backup_record_dir=backup_record_dir,
+            restore_record_dir=restore_record_dir,
+            release_record_dir=release_record_dir,
+            apply=apply,
+            confirm_target_sha=confirm_target_sha,
+            confirm_source_sha=confirm_source_sha,
+            confirm_backup_id=confirm_backup_id,
+            confirm_manifest_sha256=confirm_manifest_sha256,
+            confirm_lineage_source_sha=confirm_lineage_source_sha,
+            confirm_acceptance_retirement_record_sha256=(
+                confirm_acceptance_retirement_record_sha256
+            ),
+        )
+    if any(
+        value is not None
+        for value in (
+            lineage_source_candidate_sha,
+            acceptance_retirement_record_sha256,
+            confirm_lineage_source_sha,
+            confirm_acceptance_retirement_record_sha256,
+        )
+    ):
+        raise GateAUpgradeError(
+            "Gate A M9 adoption evidence is invalid for an M2/M7 source"
+        )
     candidate_sha, image_id, backup_record, source_status, manifest_sha256 = _plan(
         values=values,
         config_file=config_file,
@@ -2024,8 +3789,9 @@ def upgrade_existing_database(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Plan or apply the guarded Gate A M2/M7-to-M9 upgrade; "
-            "M7 requires explicit --source-version 7"
+            "Plan or apply the guarded Gate A M2/M7-to-M9 upgrade or "
+            "M9-to-M9 candidate adoption; M7 requires explicit "
+            "--source-version 7"
         ),
     )
     parser.add_argument("--mode", choices=tuple(gatea.MODE_COMPOSE), required=True)
@@ -2039,9 +3805,11 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_SOURCE_VERSION,
         help=(
             "approved source checkpoint; defaults to M2 only for legacy command "
-            "compatibility, and M7 must be selected explicitly"
+            "compatibility; M7 and M9 must be selected explicitly"
         ),
     )
+    parser.add_argument("--lineage-source-candidate-sha")
+    parser.add_argument("--acceptance-retirement-record-sha256")
     parser.add_argument("--backup-id", required=True)
     parser.add_argument("--backup-root", type=Path, default=backup.DEFAULT_BACKUP_ROOT)
     parser.add_argument(
@@ -2063,6 +3831,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--confirm-source-sha")
     parser.add_argument("--confirm-backup-id")
     parser.add_argument("--confirm-manifest-sha256")
+    parser.add_argument("--confirm-lineage-source-sha")
+    parser.add_argument("--confirm-acceptance-retirement-record-sha256")
     return parser
 
 
@@ -2086,6 +3856,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 confirm_source_sha=args.confirm_source_sha,
                 confirm_backup_id=args.confirm_backup_id,
                 confirm_manifest_sha256=args.confirm_manifest_sha256,
+                lineage_source_candidate_sha=args.lineage_source_candidate_sha,
+                acceptance_retirement_record_sha256=(
+                    args.acceptance_retirement_record_sha256
+                ),
+                confirm_lineage_source_sha=args.confirm_lineage_source_sha,
+                confirm_acceptance_retirement_record_sha256=(
+                    args.confirm_acceptance_retirement_record_sha256
+                ),
                 source_version=args.source_version,
             )
     except (gatea.GateAError, subprocess.SubprocessError) as error:
