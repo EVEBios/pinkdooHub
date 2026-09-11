@@ -113,9 +113,9 @@ dirty 工作树；同内容随后成为提交 `58d8435...`，并随 head `4d6430
 | M8 | HEX/API/小程序直绘/gzip 仓库实现完成；显式 M7→M8、21 表内容保护与 Online exact no-op 已实现 | 基线 0→8/Run 34242753255、加固 Run 34281512196，以及 head `62b1b15...` / Run 34288613644 的 GitHub-hosted 完整 updater 14/14 均 PASS；后者含双 Backup/Restore、221 HEX/gzip/PNG 和零残留 | NOT RUN；持久 Gate A 仍须当次只读预检、新 Backup/Restore、精确目标/窗口/写授权与数据后恢复 |
 | M9 | 二维码开台、订单绑定、支付后分组计时、15 分钟支付超时、10 分钟缓冲、30 桌管理与清扫均已完成仓库实现；受控升级器扩展到 M9 | 本地 SQLite 定向/完整门槛及一次性 MySQL 0→9、M9 迁移/并发/领域门槛 PASS；当前 SHA 远端证据待生成 | NOT RUN；只允许从精确 M7 经当次 Backup/Restore 与显式授权执行 M8→M9，并在启动前重放 plan |
 
-当前 M9 仓库候选的本地验证口径为后端等价完整 `2856 passed, 39 skipped`（沙箱
-`2852 passed`，四项 loopback bind 在允许环境另为 `4 passed`）与 Release 等价完整
-`734 passed`（沙箱 `732 passed`，其中两项 loopback bind 在允许环境另为 `2 passed`）。这些
+当前 M9 仓库候选的本地验证口径为后端等价完整 `2858 passed, 39 skipped`（沙箱
+`2854 passed`，四项 loopback bind 在允许环境另为 `4 passed`）与 Release 等价完整
+`736 passed`（沙箱 `734 passed`，其中两项 loopback bind 在允许环境另为 `2 passed`）。这些
 结果不代替当前 SHA 的远端 required Jobs，也不表示持久 Gate A 已从 M7 升级。
 
 任何“一次性 MySQL PASS”只关闭候选迁移实现风险，不等于已应用 Gate A。任何本地
@@ -302,6 +302,12 @@ source 或换端口，后续 Backup/activation/upgrade 仍在操作锁内重新�
 
 当前 M7→M9 的持久成功路径必须严格按以下顺序执行，完整参数形状见
 [`deploy/gatea/README.md`](../../deploy/gatea/README.md)：
+
+以下从已安装 target Release 执行的宿主 `scripts.release.gatea_*` CLI 必须使用
+`python3 -B -m`，避免在已冻结的 Release 树写入 `__pycache__`/`.pyc` 并改变 source
+manifest。唯一例外是从同一 source archive 提取并校验的 `stage` launcher；它直接以
+`python3 -B <launcher>` 运行。容器内 `python -m app.tasks.*` 和历史一次性 Phase 9.3
+工具不属于这项宿主 Release 约束。
 
 1. 先取得同一个 target checkout 的 source archive、当前 Run/attempt 的
    `gatea-m7-m9-updater-<target-sha>-<run-id>-<attempt>` artifact、两者 SHA-256 和 9/9
@@ -570,7 +576,7 @@ PASSWORD_REGISTRATION_ENABLED=true
 安装为单独版本化 Release 并保留 `.source-sha` 与 `.ci-run-id` sidecar，再从该目录执行：
 
 ```bash
-sudo python3 -m scripts.release.gatea_m7_representative_data \
+sudo python3 -B -m scripts.release.gatea_m7_representative_data \
   --super-admin-username '<current-super-admin>' \
   --confirm-super-admin-username '<current-super-admin>' \
   --backup-id '<current-m7-backup-id>' \
@@ -664,12 +670,12 @@ Runtime。单有 Record 不够：`app-up` 会重读 live M9 静态 Schema、运�
 
 ```bash
 # 两条命令都从已安装 target Release 目录执行；第一条零业务写入。
-sudo python3 -m scripts.release.gatea_m9_acceptance
-sudo python3 -m scripts.release.gatea_m9_acceptance --apply-admin-assisted
+sudo python3 -B -m scripts.release.gatea_m9_acceptance
+sudo python3 -B -m scripts.release.gatea_m9_acceptance --apply-admin-assisted
 
 acceptance_record=/srv/pinkdoohub/gatea/records/m9-acceptance/gatea-m9-runtime-acceptance-<target-sha>.json
 
-sudo python3 -m scripts.release.gatea_resilience \
+sudo python3 -B -m scripts.release.gatea_resilience \
   --runtime-acceptance-record "$acceptance_record" \
   --confirm-runtime-acceptance-record-sha256 <acceptance-record-sha256> \
   --apply

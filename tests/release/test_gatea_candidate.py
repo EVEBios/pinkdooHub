@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import signal
 import stat
+import subprocess
+import sys
 import tarfile
 from types import SimpleNamespace
 import zipfile
@@ -1483,6 +1485,144 @@ def test_stage_writes_immutable_source_image_and_ci_record(
     assert (release_root / TARGET_SHA).is_dir()
     assert (record_dir / f"{TARGET_SHA}.source-sha").read_text().strip() == TARGET_SHA
     assert any(command[:2] == ("docker", "build") and "--pull" in command for command in commands)
+
+
+def test_installed_release_commands_do_not_change_the_stage_manifest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    real_load_stage = candidate._load_stage
+    _mock_host_guards(monkeypatch)
+    release_root = tmp_path / "releases"
+    staging_root = tmp_path / "staging"
+    record_dir = tmp_path / "records"
+    for directory in (release_root, staging_root, record_dir):
+        directory.mkdir()
+
+    launcher = tmp_path / "launcher.py"
+    launcher.write_bytes(Path(candidate.__file__).read_bytes())
+    members = _source_members(launcher.read_bytes())
+    members["scripts/release/gatea_operations.py"] = Path(
+        gatea_operations.__file__
+    ).read_bytes()
+    source = tmp_path / "source.tar"
+    _write_source_tar(source, members=members)
+    artifact = tmp_path / "artifact.zip"
+    _write_ci_zip(artifact)
+    monkeypatch.setattr(
+        candidate,
+        "_verify_github_provenance",
+        lambda **kwargs: _github_stage_evidence(artifact),
+    )
+    monkeypatch.setattr(candidate, "_image_exists", lambda image: False)
+    monkeypatch.setattr(
+        candidate,
+        "_inspect_image",
+        lambda image, sha, **kwargs: {
+            "architecture": "amd64",
+            "image_id": IMAGE_ID,
+            "operating_system": "linux",
+        },
+    )
+    monkeypatch.setattr(
+        candidate,
+        "_run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0, stdout="", stderr=""
+        ),
+    )
+
+    staged = candidate.stage_candidate(
+        source_archive=source,
+        source_archive_sha256=candidate._sha256(source),
+        ci_artifact=artifact,
+        ci_artifact_sha256=candidate._sha256(artifact),
+        launcher=launcher,
+        launcher_sha256=candidate._sha256(launcher),
+        target_sha=TARGET_SHA,
+        source_head_sha=HEAD_SHA,
+        ci_run_id=RUN_ID,
+        ci_run_attempt=ATTEMPT,
+        ci_artifact_name=ARTIFACT_NAME,
+        confirmed_required_jobs=9,
+        release_root=release_root,
+        staging_root=staging_root,
+        release_record_dir=record_dir,
+        lock_file=tmp_path / "lock",
+    )
+    release_dir = release_root / TARGET_SHA
+    staged_manifest = {
+        key: staged[key]
+        for key in (
+            "source_file_count",
+            "source_total_bytes",
+            "source_manifest_sha256",
+        )
+    }
+
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    for module in (
+        "scripts.release.gatea_operations",
+        "scripts.release.gatea_candidate",
+    ):
+        subprocess.run(
+            (sys.executable, "-B", "-m", module, "--help"),
+            cwd=release_dir,
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    assert candidate._source_manifest(release_dir) == staged_manifest
+    assert not any(path.name == "__pycache__" for path in release_dir.rglob("*"))
+    assert not list(release_dir.rglob("*.pyc"))
+    assert not list(release_dir.rglob("*.pyo"))
+
+    monkeypatch.setattr(candidate, "_load_stage", real_load_stage)
+    assert candidate._load_stage(
+        release_root=release_root,
+        release_record_dir=record_dir,
+        target_sha=TARGET_SHA,
+    ) == staged
+
+
+def test_gatea_runbooks_disable_bytecode_for_installed_release_modules() -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    runbooks = (
+        repository_root / "deploy/gatea/README.md",
+        repository_root / "docs/09_release/release_drill_runbook.md",
+    )
+    marker = "-m scripts.release.gatea_"
+    unsafe_commands: list[str] = []
+    unsafe_stage_launchers: list[str] = []
+    for runbook in runbooks:
+        for line_number, line in enumerate(
+            runbook.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            location = f"{runbook.relative_to(repository_root)}:{line_number}"
+            if marker in line:
+                prefix = line[: line.index(marker)]
+                if "-B" not in prefix.split():
+                    unsafe_commands.append(f"{location}: {line.strip()}")
+            if "<checksum-confirmed-launcher>/gatea_candidate.py stage" in line:
+                prefix = line[: line.index("<checksum-confirmed-launcher>")]
+                if "-B" not in prefix.split():
+                    unsafe_stage_launchers.append(f"{location}: {line.strip()}")
+
+    failures: list[str] = []
+    if unsafe_commands:
+        failures.append(
+            "installed Gate A release modules must run with Python -B:\n"
+            + "\n".join(unsafe_commands)
+        )
+    if unsafe_stage_launchers:
+        failures.append(
+            "the checksum-confirmed Gate A stage launcher must run with Python -B:\n"
+            + "\n".join(unsafe_stage_launchers)
+        )
+
+    assert not failures, "\n".join(failures)
 
 
 def test_stage_recovers_after_release_publish_before_final_record(

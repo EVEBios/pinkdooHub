@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 import errno
 import json
 import os
@@ -2443,7 +2443,7 @@ def test_complete_recovery_rejects_payment_binding_mismatch(
         ),
         pytest.param(
             "payment_succeeded_at",
-            "2026-09-11T00:00:00+00:00",
+            "after-completion",
             id="payment-after-completion",
         ),
     ],
@@ -2455,6 +2455,10 @@ def test_success_record_strictly_validates_payment_identity_and_time(
     value: str,
 ) -> None:
     record = _valid_success_record(tmp_path, monkeypatch)
+    if value == "after-completion":
+        value = (
+            datetime.fromisoformat(record["completed_at"]) + timedelta(seconds=1)
+        ).isoformat()
     record["scenario"][field] = value
 
     with pytest.raises(acceptance.M9AcceptanceError, match="evidence is invalid"):

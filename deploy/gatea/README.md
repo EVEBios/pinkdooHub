@@ -164,7 +164,7 @@ upgrade 在操作锁内再次校验精确现有 publisher。不得为了让 `pre
 source、改用临时端口或绕过受保护生命周期：
 
 ```bash
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   preflight \
   --mode loopback
 ```
@@ -176,7 +176,7 @@ TLS 模式必须在真实证书和 ACME 目录准备完毕后才能预检：
 `archive/` 的软链接。
 
 ```bash
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   preflight \
   --mode tls
 ```
@@ -193,17 +193,17 @@ Secret 注入。
 
 ```bash
 # 只读输出精确 Aerich 链、Schema 数量/指纹和关键业务聚合。
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   database-status \
   --mode loopback
 
 # 只启动 MySQL/Redis；失败时停止服务但保留命名卷。
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   infra-up \
   --mode loopback
 
 # 只允许空 application schema；迁移成功后原子记录 SHA 与 Image ID。
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   initial-migrate \
   --mode loopback
 
@@ -211,17 +211,17 @@ sudo python -m scripts.release.gatea_operations \
 # 对 M7→M9，调用本命令前还必须按下文重放同一 gatea_upgrade plan 并取得
 # already_current=true 及不可覆盖 sidecar；app-up 会重读 live M9 并运行 table reconcile，
 # 但不会重算图片/M7 内容摘要或运行 MARD preview。
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   app-up \
   --mode loopback
 
 # 只输出 service/state/health、候选 SHA 和迁移记录布尔状态。
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   status \
   --mode loopback
 
 # 停止服务但不删除容器、命名卷、Secret 或迁移记录。
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   safe-stop \
   --mode loopback
 ```
@@ -270,6 +270,10 @@ profile、schema version 和 SHA-256。普通 `gatea_operations app-up` 仍默�
 `gatea_upgrade --source-version 7` 的完整保护。
 
 宿主机上的 `scripts.release.gatea_*` 编排入口只能依赖 Python 标准库和 Docker CLI；
+从已安装 Release 执行时必须显式使用 `python3 -B -m`，禁止 Python 在不可变 Release
+目录写入 `__pycache__`/`.pyc` 并改变后续 source manifest。`stage` 是唯一不能使用
+`-m` 的例外，因为它必须直接执行从同一 source archive 提取并校验过的 launcher；该入口
+仍必须使用 `python3 -B <launcher>`。容器内 `python -m app.tasks.*` 不适用这项宿主约束。
 不得在模块导入阶段加载 Aerich、Tortoise 或其他应用 Runtime 依赖。迁移、Wallet 与
 MARD 任务只允许通过目标 App 镜像内的 `app.tasks.*` 执行。
 
@@ -319,7 +323,7 @@ Record 都先向同目录随机临时文件完整写入并 file `fsync`，再用
 checkout，两者不得凭人工推断互换：
 
 ```bash
-sudo python3 <checksum-confirmed-launcher>/gatea_candidate.py stage \
+sudo python3 -B <checksum-confirmed-launcher>/gatea_candidate.py stage \
   --source-archive <root-owned-source-archive.tar> \
   --confirm-source-archive-sha256 <source-archive-sha256> \
   --ci-artifact <root-owned-updater-artifact.zip> \
@@ -342,13 +346,13 @@ sudo python3 <checksum-confirmed-launcher>/gatea_candidate.py stage \
 ```bash
 cd /srv/pinkdoohub/gatea/releases/<target-sha>
 
-sudo python3 -m scripts.release.gatea_candidate activate-config \
+sudo python3 -B -m scripts.release.gatea_candidate activate-config \
   --source-version 7 \
   --source-candidate-sha <source-sha> \
   --target-sha <target-sha> \
   --backup-id <source-backup-id>
 
-sudo python3 -m scripts.release.gatea_candidate activate-config \
+sudo python3 -B -m scripts.release.gatea_candidate activate-config \
   --source-version 7 \
   --source-candidate-sha <source-sha> \
   --target-sha <target-sha> \
@@ -365,7 +369,7 @@ sudo python3 -m scripts.release.gatea_candidate activate-config \
 `<target-sha>.config-activation.json`：
 
 ```bash
-sudo python3 -m scripts.release.gatea_candidate rollback-config \
+sudo python3 -B -m scripts.release.gatea_candidate rollback-config \
   --source-sha <source-sha> \
   --target-sha <target-sha> \
   --confirm-source-sha <source-sha> \
@@ -396,7 +400,7 @@ apply，把受保护配置切换到已经 stage 的目标 SHA 镜像。
 的身份：
 
 ```bash
-sudo python -m scripts.release.gatea_upgrade \
+sudo python3 -B -m scripts.release.gatea_upgrade \
   --mode loopback \
   --source-version 7 \
   --source-candidate-sha <source-40位-sha> \
@@ -406,7 +410,7 @@ sudo python -m scripts.release.gatea_upgrade \
 真正写入必须把 plan 输出的四个身份逐项原样确认：
 
 ```bash
-sudo python -m scripts.release.gatea_upgrade \
+sudo python3 -B -m scripts.release.gatea_upgrade \
   --mode loopback \
   --source-version 7 \
   --source-candidate-sha <source-40位-sha> \
@@ -455,14 +459,14 @@ App/Nginx/`table-sweeper` 继续保持停止。执行人复核 Record 后，必�
 
 ```bash
 # 使用与成功 apply 完全相同的 source SHA、Backup ID 和目标 config；不得增加 --apply。
-sudo python -m scripts.release.gatea_upgrade \
+sudo python3 -B -m scripts.release.gatea_upgrade \
   --mode loopback \
   --source-version 7 \
   --source-candidate-sha <source-40位-sha> \
   --backup-id <YYYYMMDDtHHMMSSz>
 
 # 上一命令必须成功且输出 already_current=true、mode=plan-replay 后才能执行。
-sudo python -m scripts.release.gatea_operations \
+sudo python3 -B -m scripts.release.gatea_operations \
   app-up \
   --mode loopback
 ```
@@ -517,7 +521,7 @@ publisher，以及精确重复的用户名确认。命令不接受任何密码�
 sudo install -d -o root -g root -m 0755 \
   /srv/pinkdoohub/gatea/records/bootstrap
 
-sudo python -m scripts.release.gatea_bootstrap \
+sudo python3 -B -m scripts.release.gatea_bootstrap \
   --username <approved-username> \
   --nickname <approved-nickname> \
   --phone <approved-phone> \
@@ -549,7 +553,7 @@ loopback publisher，再要求执行人通过 TTY 隐藏输入并确认当前 SU
 sudo install -d -o root -g root -m 0755 \
   /srv/pinkdoohub/gatea/records/representative-data
 
-sudo python -m scripts.release.gatea_representative_data \
+sudo python3 -B -m scripts.release.gatea_representative_data \
   --super-admin-username <approved-username> \
   --confirm-super-admin-username <approved-username> \
   --apply
@@ -587,10 +591,10 @@ sudo install -d -o root -g root -m 0755 \
   /srv/pinkdoohub/gatea/records/m9-acceptance
 
 # 只读 plan；不请求管理员凭据，不产生业务写入。
-sudo python3 -m scripts.release.gatea_m9_acceptance
+sudo python3 -B -m scripts.release.gatea_m9_acceptance
 
 # plan 明确 ready 后，仍从同一目标 Release 目录执行一次完整闭环。
-sudo python3 -m scripts.release.gatea_m9_acceptance \
+sudo python3 -B -m scripts.release.gatea_m9_acceptance \
   --apply-admin-assisted
 ```
 
@@ -660,12 +664,12 @@ M7/M8 的 `m7-preserved-business-v1` 由一次 20 表 `mysqldump --single-transa
 ```bash
 backup_id=20260902t120000z
 
-sudo python -m scripts.release.gatea_backup \
+sudo python3 -B -m scripts.release.gatea_backup \
   backup \
   --backup-id "$backup_id" \
   --mode loopback
 
-sudo python -m scripts.release.gatea_backup \
+sudo python3 -B -m scripts.release.gatea_backup \
   restore-verify \
   --backup-id "$backup_id" \
   --confirm-project "pinkdoohub-gatea-restore-$backup_id" \
@@ -706,11 +710,11 @@ verify 都会按精确 Aerich 链重新执行内容证据契约：M7/M8/M9 必�
 match 为 false、未知迁移链或版本证据混装均 fail closed；加密/文件哈希本身不代替这项语义校验。
 
 ```bash
-python -m scripts.release.gatea_offsite_backup keygen \
+python3 -B -m scripts.release.gatea_offsite_backup keygen \
   --private-key "$HOME/.config/pinkdoohub/gatea-backup/private.pem" \
   --public-key "$HOME/.config/pinkdoohub/gatea-backup/public.pem"
 
-python -m scripts.release.gatea_offsite_backup export \
+python3 -B -m scripts.release.gatea_offsite_backup export \
   --backup-id <YYYYMMDDtHHMMSSz> \
   --host <gate-a-host> \
   --user <ssh-user> \
@@ -718,7 +722,7 @@ python -m scripts.release.gatea_offsite_backup export \
   --public-key "$HOME/.config/pinkdoohub/gatea-backup/public.pem" \
   --destination-dir "$HOME/Backups/pinkdoohub/gatea"
 
-python -m scripts.release.gatea_offsite_backup verify \
+python3 -B -m scripts.release.gatea_offsite_backup verify \
   --copy "$HOME/Backups/pinkdoohub/gatea/<backup-id>.pdhb" \
   --record "$HOME/Backups/pinkdoohub/gatea/<backup-id>.pdhb.json" \
   --private-key "$HOME/.config/pinkdoohub/gatea-backup/private.pem"
@@ -767,7 +771,7 @@ sudo install -d -o root -g root -m 0755 \
 
 acceptance_record=/srv/pinkdoohub/gatea/records/m9-acceptance/gatea-m9-runtime-acceptance-<target-sha>.json
 
-sudo python -m scripts.release.gatea_resilience \
+sudo python3 -B -m scripts.release.gatea_resilience \
   --runtime-acceptance-record "$acceptance_record" \
   --confirm-runtime-acceptance-record-sha256 <acceptance-record-sha256> \
   --apply
@@ -815,7 +819,7 @@ Record 路径和 SHA-256 必须是实际生成值；数据后 Backup ID 不得�
 Backup ID：
 
 ```bash
-sudo python3 -m scripts.release.gatea_candidate finalize \
+sudo python3 -B -m scripts.release.gatea_candidate finalize \
   --source-sha <source-sha> \
   --target-sha <target-sha> \
   --runtime-acceptance-record \

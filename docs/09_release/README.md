@@ -1,8 +1,8 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** 持久 Gate A 仍为 M7；最近完整 updater 证据点 head `62b1b15f...` / CI checkout `a9ff3d24...` 的 Run 34288613644 attempt 2 已完成 9/9 required Jobs，包含完整 M7→M8 updater 的 GitHub-hosted 可销毁隔离演练；本地 5Mbps 完整探索轮仍因 10 VU 未压缩色板容量门槛为 FAIL，持久 M8、真实 Origin/TLS/RC、真机与微信上传灰度发布仍阻断 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** M9 仓库实现已完成，持久 Gate A 仍为 M7；Run 34523689519 已为 head `41ad3cd...` / merge target `ceb664e...` 完成 9/9，现场 candidate stage 与新 M7 Backup/Restore `20260911t013550z` 通过，但旧宿主 `python3 -m scripts.release.gatea_*` 调用生成 bytecode 并改变冻结 source manifest，`activate-config` 已在零写入 plan 阶段阻断。当前修复统一使用 `python3 -B` 并等待新 SHA 的 9/9 与重新 stage；本地 5Mbps 完整探索轮仍因 10 VU 未压缩色板容量门槛为 FAIL，持久 M8/M9、真实 Origin/TLS/RC、真机与微信上传灰度发布仍阻断 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
-> **Last Updated:** 2026-09-09
+> **Last Updated:** 2026-09-11
 > **Release Scope:** 微信小程序内部测试版（Gate A）
 
 本目录保存可以直接用于后续 CI、演练和发布决策的操作文档。长期路线与公开发布门槛仍以 [Phase 9 微信小程序发布规划](../08_frontend/phase9_wechat_release_plan.md) 为总纲；本目录负责记录当前版本的决定、证据、责任和可执行清单。
