@@ -11,7 +11,8 @@
     │   └── UnprocessableEntityException → 422  业务数据无法处理
     ├── AuthenticationException  → 401  未登录 / Token 失效
     ├── PermissionException      → 403  已登录但权限不足
-    └── NotFoundException        → 404  请求的资源不存在
+    ├── NotFoundException        → 404  请求的资源不存在
+    └── ServiceUnavailableException → 503  关键基础设施暂不可用
 
 使用方式（Service 层）：
 
@@ -86,6 +87,19 @@ class PermissionException(AppException):
         super().__init__(code=403, message=message, data=data)
 
 
+class TooManyRequestsException(AppException):
+    """请求频率超过安全阈值 → HTTP 429。"""
+
+    def __init__(
+        self,
+        message: str = "Too many requests",
+        data: dict | None = None,
+        *,
+        code: int = 42901,
+    ) -> None:
+        super().__init__(code=code, message=message, data=data)
+
+
 class NotFoundException(AppException):
     """请求的资源不存在 → HTTP 404。
 
@@ -106,3 +120,14 @@ class NotFoundException(AppException):
         code: int = 404,
     ) -> None:
         super().__init__(code=code, message=message, data=data)
+
+
+class ServiceUnavailableException(AppException):
+    """关键基础设施不可用 → HTTP 503。"""
+
+    def __init__(
+        self,
+        message: str = "Service unavailable",
+        data: dict | None = None,
+    ) -> None:
+        super().__init__(code=503, message=message, data=data)

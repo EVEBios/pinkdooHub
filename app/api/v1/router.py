@@ -5,7 +5,9 @@ Phase 1: 演示统一响应格式 + 异常处理流程。
 
 端点一览：
 
-  GET /api/v1/health      成功 + 数据   → {"code":0, "data":{...}}
+  GET /api/v1/health      兼容存活检查 → {"code":0, "data":{...}}
+  GET /api/v1/health/live 进程存活检查 → {"code":0, "data":{...}}
+  GET /api/v1/health/ready 依赖就绪检查 → 200 或 503
   GET /api/v1/ping        成功 + 无数据  → {"code":0, "data":null}
   GET /api/v1/error-demo  业务异常      → {"code":1001, "message":"..."}
 
@@ -14,6 +16,7 @@ Phase 1: 演示统一响应格式 + 异常处理流程。
 
 from fastapi import APIRouter
 
+from app.api.responses import success_responses
 from app.common.response import success
 from app.core.config import settings
 from app.core.exceptions import (
@@ -21,6 +24,14 @@ from app.core.exceptions import (
     BusinessException,
     NotFoundException,
     PermissionException,
+    ServiceUnavailableException,
+)
+from app.core.health import check_readiness
+from app.schemas.health import (
+    LegacyHealthOut,
+    LivenessOut,
+    ReadinessErrorResponse,
+    ReadinessOut,
 )
 
 router = APIRouter()
@@ -29,16 +40,57 @@ router = APIRouter()
 # ── 模式 1：成功 + 数据 ──────────────────────────
 
 
-@router.get("/health")
+@router.get(
+    "/health",
+    response_model=None,
+    responses=success_responses(LegacyHealthOut),
+)
 async def health() -> dict:
-    """健康检查 —— success(data=...)"""
-    return success(
-        data={
-            "app": settings.app_name,
-            "env": settings.app_env,
-            "status": "ok",
-        }
+    """兼容既有存活检查；不访问数据库或 Redis。"""
+
+    data = LegacyHealthOut(
+        app=settings.app_name,
+        env=settings.app_env,
+        status="ok",
     )
+    return success(data=data.model_dump())
+
+
+@router.get(
+    "/health/live",
+    response_model=None,
+    responses=success_responses(LivenessOut),
+)
+async def liveness() -> dict:
+    """证明应用进程能够响应，不访问任何外部依赖。"""
+
+    data = LivenessOut(app=settings.app_name, status="alive")
+    return success(data=data.model_dump())
+
+
+@router.get(
+    "/health/ready",
+    response_model=None,
+    responses={
+        **success_responses(ReadinessOut),
+        503: {"model": ReadinessErrorResponse},
+    },
+)
+async def readiness() -> dict:
+    """检查数据库与 Redis；任一失败时摘除业务流量。"""
+
+    result = await check_readiness()
+    data = ReadinessOut(
+        status="ready" if result.is_ready else "not_ready",
+        checks={
+            "database": "up" if result.database else "down",
+            "redis": "up" if result.redis else "down",
+        },
+    )
+    payload = data.model_dump()
+    if not result.is_ready:
+        raise ServiceUnavailableException(data=payload)
+    return success(data=payload)
 
 
 # ── 模式 2：成功 + 无数据 ────────────────────────

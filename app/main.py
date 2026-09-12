@@ -44,16 +44,32 @@ from fastapi import FastAPI
 
 from app.api.static import DeferredDirectoryStaticFiles
 from app.api.v1.admin import router as admin_router
+from app.api.v1.admin_inventory import router as admin_inventory_router
+from app.api.v1.admin_orders import router as admin_orders_router
+from app.api.v1.admin_reservations import router as admin_reservations_router
+from app.api.v1.admin_refunds import router as admin_refunds_router
+from app.api.v1.admin_wallet import router as admin_wallet_router
 from app.api.v1.admin_products import router as admin_products_router
 from app.api.v1.admin_users import router as admin_users_router
+from app.api.v1.admin_tables import router as admin_tables_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.router import router as v1_router
 from app.api.v1.products import router as products_router
+from app.api.v1.reservations import router as reservations_router
+from app.api.v1.orders import router as orders_router
+from app.api.v1.payments import router as payments_router
 from app.api.v1.users import router as users_router
+from app.api.v1.wallet import router as wallet_router
+from app.api.v1.tables import router as tables_router
+from app.common.constants.http import (
+    API_GZIP_COMPRESSION_LEVEL,
+    API_GZIP_MINIMUM_SIZE,
+)
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.redis import close_redis, init_redis
 from app.db.database import init_db
+from app.middleware.compression import SelectiveGZipMiddleware
 from app.middleware.exception import register_exception_handlers
 from app.schemas.common import RootResponse
 
@@ -164,6 +180,16 @@ app = FastAPI(
     lifespan=lifespan,  # ← 核心：把生命周期函数注入 FastAPI
 )
 
+# JSON/OpenAPI 等文本响应在客户端明确声明 gzip 时压缩。这同时
+# 覆盖直连 Uvicorn 的本地调试；Nginx 会透传已有 Content-Encoding，
+# 不会对同一响应二次压缩。
+app.add_middleware(
+    SelectiveGZipMiddleware,
+    minimum_size=API_GZIP_MINIMUM_SIZE,
+    compresslevel=API_GZIP_COMPRESSION_LEVEL,
+    excluded_path_prefixes=(f"{settings.product_image_base_url.rstrip('/')}/",),
+)
+
 # 本地开发存储的公开访问入口；目录在首次上传时创建。
 if settings.product_image_base_url.startswith("/"):
     app.mount(
@@ -187,6 +213,17 @@ app.include_router(admin_users_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(products_router, prefix="/api/v1")
 app.include_router(admin_products_router, prefix="/api/v1")
+app.include_router(admin_inventory_router, prefix="/api/v1")
+app.include_router(tables_router, prefix="/api/v1")
+app.include_router(admin_tables_router, prefix="/api/v1")
+app.include_router(orders_router, prefix="/api/v1")
+app.include_router(admin_orders_router, prefix="/api/v1")
+app.include_router(reservations_router, prefix="/api/v1")
+app.include_router(admin_reservations_router, prefix="/api/v1")
+app.include_router(wallet_router, prefix="/api/v1")
+app.include_router(admin_wallet_router, prefix="/api/v1")
+app.include_router(payments_router, prefix="/api/v1")
+app.include_router(admin_refunds_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────

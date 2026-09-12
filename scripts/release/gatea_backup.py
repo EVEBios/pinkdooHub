@@ -1,0 +1,1871 @@
+#!/usr/bin/env python3
+"""Gate A 权威数据备份与隔离恢复验证。
+
+MySQL 与商品图片是备份资产；Redis 只保存 refresh-token 会话，灾难恢复时使用
+空实例使既有会话失效，避免恢复旧快照重新激活已撤销 Token。
+"""
+
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+from typing import Any, Iterator, Mapping, Sequence
+
+from scripts.release import gatea_operations as gatea
+
+
+RESTORE_COMPOSE = gatea.GATEA_ROOT / "compose.restore.yml"
+DEFAULT_BACKUP_ROOT = Path("/srv/pinkdoohub/gatea/backups")
+DEFAULT_BACKUP_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/backups")
+DEFAULT_RESTORE_RECORD_DIR = Path("/srv/pinkdoohub/gatea/records/restores")
+BACKUP_ID_PATTERN = re.compile(r"^[0-9]{8}t[0-9]{6}z$")
+RESTORE_PROJECT_PREFIX = "pinkdoohub-gatea-restore-"
+RESTORE_CLEANUP_ATTEMPTS = 2
+M7_CONTENT_SNAPSHOT_PROFILE = "m7-preserved-business-v1"
+M7_CONTENT_SNAPSHOT_SCHEMA_VERSION = 1
+M7_CONTENT_SNAPSHOT_KEYS = frozenset(
+    {
+        "content_sha256",
+        "profile",
+        "schema_version",
+    }
+)
+M7_CONTENT_SNAPSHOT_AERICH_CHAINS = frozenset(
+    {
+        ",".join(gatea.APPROVED_TARGET_M7_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M9_CHAIN),
+    }
+)
+M7_PRESERVED_TABLES = (
+    "audit_logs",
+    "experience_options",
+    "external_identities",
+    "inventory_transactions",
+    "order_items",
+    "orders",
+    "payment_settlements",
+    "payments",
+    "product_images",
+    "product_kit_colors",
+    "product_kits",
+    "products",
+    "recharge_orders",
+    "refunds",
+    "reservation_settings",
+    "reservations",
+    "store_business_days",
+    "users",
+    "wallet_accounts",
+    "wallet_transactions",
+)
+M8_SWATCH_CONTENT_SNAPSHOT_PROFILE = "m8-swatch-content-v1"
+M8_SWATCH_CONTENT_SNAPSHOT_SCHEMA_VERSION = 1
+M8_SWATCH_CONTENT_SNAPSHOT_KEYS = frozenset(
+    {
+        "content_sha256",
+        "profile",
+        "schema_version",
+    }
+)
+M8_SWATCH_CONTENT_SNAPSHOT_AERICH_CHAINS = frozenset(
+    {
+        ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M9_CHAIN),
+    }
+)
+M9_TABLE_CONTENT_SNAPSHOT_PROFILE = "m9-table-business-v1"
+M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION = 1
+M9_TABLE_CONTENT_SNAPSHOT_TABLES = (
+    "store_tables",
+    "table_sessions",
+    "table_session_timers",
+    "table_occupancies",
+)
+M9_TABLE_CONTENT_SNAPSHOT_KEYS = frozenset(
+    {
+        "content_sha256",
+        "profile",
+        "schema_version",
+    }
+)
+M9_TABLE_CONTENT_SNAPSHOT_AERICH_CHAIN = ",".join(
+    gatea.APPROVED_TARGET_M9_CHAIN
+)
+MYSQL_DUMP_COMMAND = (
+    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" '
+    "exec mysqldump --host=127.0.0.1 --user=root "
+    "--single-transaction --routines --triggers --hex-blob "
+    "--set-gtid-purged=OFF --no-tablespaces --default-character-set=utf8mb4 "
+    '"$MYSQL_DATABASE"'
+)
+MYSQL_RESTORE_COMMAND = (
+    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" '
+    'exec mysql --host=127.0.0.1 --user=root "$MYSQL_DATABASE"'
+)
+MYSQL_SNAPSHOT_COMMAND = """MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+mysql --batch --skip-column-names --host=127.0.0.1 --user=root "$MYSQL_DATABASE" <<'SQL'
+SELECT JSON_OBJECT(
+  'aerich_versions', COALESCE((SELECT GROUP_CONCAT(version ORDER BY id SEPARATOR ',') FROM aerich), ''),
+  'tables', (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()),
+  'columns', (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE()),
+  'statistics', (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE()),
+  'constraints', (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema = DATABASE()),
+  'users', (SELECT COUNT(*) FROM users),
+  'products', (SELECT COUNT(*) FROM products),
+  'experience_options', (SELECT COUNT(*) FROM experience_options),
+  'product_images', (SELECT COUNT(*) FROM product_images),
+  'product_kits', (SELECT COUNT(*) FROM product_kits),
+  'kit_stock', (SELECT COALESCE(SUM(stock), 0) FROM product_kits),
+  'orders', (SELECT COUNT(*) FROM orders),
+  'order_items', (SELECT COUNT(*) FROM order_items),
+  'order_total', (SELECT CAST(COALESCE(SUM(total_amount), 0) AS CHAR) FROM orders),
+  'inventory_transactions', (SELECT COUNT(*) FROM inventory_transactions),
+  'inventory_change', (SELECT COALESCE(SUM(change_quantity), 0) FROM inventory_transactions),
+  'audit_logs', (SELECT COUNT(*) FROM audit_logs)
+);
+SQL"""
+M7_CONTENT_SNAPSHOT_COMMAND = f'''MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+umask 077
+snapshot_file="$(mktemp /tmp/pinkdoohub-m7-content.XXXXXX)"
+chmod 0600 "$snapshot_file"
+trap 'rm -f "$snapshot_file"' EXIT HUP INT TERM
+LC_ALL=C mysqldump --host=127.0.0.1 --user=root \
+  --single-transaction --hex-blob --set-gtid-purged=OFF --no-tablespaces \
+  --default-character-set=utf8mb4 --no-create-info --skip-triggers --compact \
+  --order-by-primary --skip-extended-insert "$MYSQL_DATABASE" \
+  {" ".join(M7_PRESERVED_TABLES)} > "$snapshot_file"
+printf '\\n-- bead-colors-m7-projection-v1 --\\n' >> "$snapshot_file"
+mysql --batch --skip-column-names --raw --host=127.0.0.1 --user=root \
+  "$MYSQL_DATABASE" >> "$snapshot_file" <<'SQL'
+SELECT CONCAT_WS(':',
+  `id`,
+  DATE_FORMAT(`created_at`, '%Y-%m-%dT%H:%i:%s.%f'),
+  DATE_FORMAT(`updated_at`, '%Y-%m-%dT%H:%i:%s.%f'),
+  `slot_no`,
+  COALESCE(HEX(CAST(`color_code` AS BINARY)), '<NULL>'),
+  COALESCE(HEX(CAST(`name` AS BINARY)), '<NULL>'),
+  COALESCE(HEX(CAST(`swatch_image_url` AS BINARY)), '<NULL>'),
+  `sort`,
+  `is_active` + 0
+)
+FROM `bead_colors`
+ORDER BY `id`;
+SQL
+content_sha256="$(sha256sum "$snapshot_file" | awk '{{print $1}}')"
+case "$content_sha256" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]* ) ;;
+  * ) exit 1 ;;
+esac
+if [ "${{#content_sha256}}" -ne 64 ]; then
+  exit 1
+fi
+printf '{{"content_sha256":"%s","profile":"{M7_CONTENT_SNAPSHOT_PROFILE}","schema_version":{M7_CONTENT_SNAPSHOT_SCHEMA_VERSION}}}\\n' \
+  "$content_sha256"
+'''
+M8_SWATCH_CONTENT_SNAPSHOT_COMMAND = f'''MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+umask 077
+snapshot_file="$(mktemp /tmp/pinkdoohub-m8-swatch-content.XXXXXX)"
+chmod 0600 "$snapshot_file"
+trap 'rm -f "$snapshot_file"' EXIT HUP INT TERM
+LC_ALL=C mysql --batch --skip-column-names --raw \
+  --host=127.0.0.1 --user=root "$MYSQL_DATABASE" > "$snapshot_file" <<'SQL'
+SELECT CONCAT_WS(':',
+  `id`,
+  `slot_no`,
+  COALESCE(HEX(CAST(`swatch_hex` AS BINARY)), '<NULL>')
+)
+FROM `bead_colors`
+ORDER BY `id`;
+SQL
+content_sha256="$(sha256sum "$snapshot_file" | awk '{{print $1}}')"
+case "$content_sha256" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]* ) ;;
+  * ) exit 1 ;;
+esac
+if [ "${{#content_sha256}}" -ne 64 ]; then
+  exit 1
+fi
+printf '{{"content_sha256":"%s","profile":"{M8_SWATCH_CONTENT_SNAPSHOT_PROFILE}","schema_version":{M8_SWATCH_CONTENT_SNAPSHOT_SCHEMA_VERSION}}}\n' \
+  "$content_sha256"
+'''
+M9_TABLE_CONTENT_SNAPSHOT_COMMAND = f'''MYSQL_PWD="$(cat /run/secrets/mysql_root_password)"
+export MYSQL_PWD
+umask 077
+snapshot_file="$(mktemp /tmp/pinkdoohub-m9-table-content.XXXXXX)"
+chmod 0600 "$snapshot_file"
+trap 'rm -f "$snapshot_file"' EXIT HUP INT TERM
+LC_ALL=C mysqldump --host=127.0.0.1 --user=root \
+  --single-transaction --hex-blob --set-gtid-purged=OFF --no-tablespaces \
+  --default-character-set=utf8mb4 --no-create-info --skip-triggers --compact \
+  --order-by-primary --skip-extended-insert "$MYSQL_DATABASE" \
+  {" ".join(M9_TABLE_CONTENT_SNAPSHOT_TABLES)} > "$snapshot_file"
+content_sha256="$(sha256sum "$snapshot_file" | awk '{{print $1}}')"
+case "$content_sha256" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]* ) ;;
+  * ) exit 1 ;;
+esac
+if [ "${{#content_sha256}}" -ne 64 ]; then
+  exit 1
+fi
+printf '{{"content_sha256":"%s","profile":"{M9_TABLE_CONTENT_SNAPSHOT_PROFILE}","schema_version":{M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION}}}\n' \
+  "$content_sha256"
+'''
+IMAGE_MANIFEST_COMMAND = (
+    "find /data/images -type f -exec sha256sum {} + | "
+    "sed 's# /data/images/# #' | sort"
+)
+RESTORED_IMAGE_MANIFEST_COMMAND = (
+    "find /restore -type f -exec sha256sum {} + | "
+    "sed 's# /restore/# #' | sort"
+)
+
+
+def _backup_id(value: str) -> str:
+    if BACKUP_ID_PATTERN.fullmatch(value) is None:
+        raise gatea.GateAError("Gate A backup ID must use YYYYMMDDtHHMMSSz")
+    return value
+
+
+def restore_project(backup_id: str) -> str:
+    return RESTORE_PROJECT_PREFIX + _backup_id(backup_id)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _fsync_directory(path: Path) -> None:
+    """同步目录项；发布或删除受保护文件后不能只依赖文件 fsync。"""
+
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+    )
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _unlink_and_fsync(path: Path) -> None:
+    """删除单个任务文件并持久化目录项变更。"""
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    _fsync_directory(path.parent)
+
+
+def _write_json_temporary(
+    path: Path,
+    payload: Mapping[str, Any],
+    mode: int,
+) -> Path:
+    """在目标目录完整落盘一个随机临时 JSON，但尚不发布到最终路径。"""
+
+    descriptor, raw_temporary = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.tmp-",
+    )
+    temporary = Path(raw_temporary)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = -1
+            json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        return temporary
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        _unlink_and_fsync(temporary)
+        raise
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, Any], mode: int) -> None:
+    """以原子替换语义更新可变 JSON journal，并同步文件与目录。"""
+
+    temporary = _write_json_temporary(path, payload, mode)
+    try:
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        _unlink_and_fsync(temporary)
+
+
+def _write_json_exclusive(path: Path, payload: Mapping[str, Any], mode: int) -> None:
+    """完整落盘后以 hard-link no-clobber 发布不可变 JSON。"""
+
+    temporary = _write_json_temporary(path, payload, mode)
+    try:
+        try:
+            os.link(temporary, path, follow_symlinks=False)
+        except FileExistsError as error:
+            raise gatea.GateAError(
+                "Gate A backup ID is already reserved"
+            ) from error
+        _fsync_directory(path.parent)
+    finally:
+        _unlink_and_fsync(temporary)
+
+
+class _RecoveryTerminationController:
+    """在停写工作与恢复之间原子切换终止信号语义。"""
+
+    def __init__(self, operation: str) -> None:
+        self.operation = operation
+        self.recovery_started = False
+        self.work_interruption: BaseException | None = None
+        self.deferred_interruptions: list[BaseException] = []
+        self._previous_handlers: dict[int, Any] = {}
+        self._installed_signals: list[int] = []
+
+    def begin_recovery(self) -> None:
+        self.recovery_started = True
+
+    def interrupt(self, signum: int, _frame: object) -> None:
+        signal_name = signal.Signals(signum).name
+        message = (
+            f"Gate A {self.operation} received {signal_name} and is recovering"
+        )
+        interruption: BaseException = (
+            KeyboardInterrupt(message)
+            if signum == signal.SIGINT
+            else gatea.GateAOperationInterrupted(message)
+        )
+        if not self.recovery_started:
+            # 必须先切换相位再抛出；异常展开进入 finally 后，第二个信号只会
+            # 被延迟记录，不能在 app_up 开始前再次打断恢复。
+            self.recovery_started = True
+            self.work_interruption = interruption
+            raise interruption
+        if not self.deferred_interruptions:
+            self.deferred_interruptions.append(interruption)
+
+    def install(self) -> None:
+        try:
+            for signum in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+                self._previous_handlers[signum] = signal.getsignal(signum)
+                signal.signal(signum, self.interrupt)
+                self._installed_signals.append(signum)
+        except BaseException:
+            self.restore_handlers()
+            raise
+
+    def restore_handlers(self) -> None:
+        while self._installed_signals:
+            signum = self._installed_signals.pop()
+            signal.signal(signum, self._previous_handlers[signum])
+
+
+@contextmanager
+def _recovery_termination_controller(
+    operation: str,
+) -> Iterator[_RecoveryTerminationController]:
+    """在首次可能停服务之前安装贯穿 work→recovery 的信号控制器。"""
+
+    controller = _RecoveryTerminationController(operation)
+
+    try:
+        controller.install()
+        yield controller
+    finally:
+        controller.restore_handlers()
+
+
+def _source_command(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    arguments: Sequence[str],
+) -> tuple[list[str], dict[str, str]]:
+    return (
+        gatea.compose_command(
+            config_file=config_file,
+            mode=mode,
+            arguments=arguments,
+        ),
+        gatea._operation_environment(values, config_file, secret_dir),
+    )
+
+
+def restore_command(
+    *,
+    project: str,
+    config_file: Path,
+    arguments: Sequence[str],
+    operations_profile: bool = False,
+) -> list[str]:
+    command = [
+        "docker",
+        "compose",
+        "--project-name",
+        project,
+        "--env-file",
+        str(config_file),
+        "--file",
+        str(RESTORE_COMPOSE),
+    ]
+    if operations_profile:
+        command.extend(("--profile", "operations"))
+    command.extend(arguments)
+    return command
+
+
+def _restore_environment(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> dict[str, str]:
+    return gatea._operation_environment(values, config_file, secret_dir) | {
+        "GATEA_RESTORE_PROJECT": project,
+    }
+
+
+def _run_restore(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+    arguments: Sequence[str],
+    operations_profile: bool = False,
+    capture_output: bool = False,
+    check: bool = True,
+    stdin: BinaryIO | None = None,
+    start_new_session: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        restore_command(
+            project=project,
+            config_file=config_file,
+            arguments=arguments,
+            operations_profile=operations_profile,
+        ),
+        check=check,
+        cwd=gatea.REPOSITORY_ROOT,
+        env=_restore_environment(values, config_file, secret_dir, project),
+        text=stdin is None,
+        capture_output=capture_output,
+        stdin=stdin,
+        start_new_session=start_new_session,
+    )
+
+
+def _parse_snapshot(output: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(output.strip())
+    except json.JSONDecodeError as error:
+        raise gatea.GateAError("Gate A database snapshot output is invalid") from error
+    if not isinstance(payload, dict) or not payload:
+        raise gatea.GateAError("Gate A database snapshot output has an invalid shape")
+    return payload
+
+
+def _requires_m7_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
+    return snapshot.get("aerich_versions") in M7_CONTENT_SNAPSHOT_AERICH_CHAINS
+
+
+def _requires_m8_swatch_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
+    return (
+        snapshot.get("aerich_versions")
+        in M8_SWATCH_CONTENT_SNAPSHOT_AERICH_CHAINS
+    )
+
+
+def _requires_m9_table_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
+    return (
+        snapshot.get("aerich_versions")
+        == M9_TABLE_CONTENT_SNAPSHOT_AERICH_CHAIN
+    )
+
+
+def _requires_table_sweeper(snapshot: Mapping[str, Any]) -> bool:
+    """只有精确 M9 Schema 才允许恢复 M9 桌台清理器。"""
+
+    aerich_versions = snapshot.get("aerich_versions")
+    supported_chains = {
+        ",".join(gatea.APPROVED_SOURCE_M2_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M7_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
+        ",".join(gatea.APPROVED_TARGET_M9_CHAIN),
+    }
+    if aerich_versions not in supported_chains:
+        raise gatea.GateAError(
+            "Gate A backup database migration chain is not approved"
+        )
+    return aerich_versions == ",".join(gatea.APPROVED_TARGET_M9_CHAIN)
+
+
+def _allows_legacy_m7_app_command(snapshot: Mapping[str, Any]) -> bool:
+    """仅精确 M7 数据库允许恢复既有的无 access-log 参数镜像。"""
+
+    return snapshot.get("aerich_versions") == ",".join(
+        gatea.APPROVED_TARGET_M7_CHAIN
+    )
+
+
+def _validate_m7_content_snapshot(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != M7_CONTENT_SNAPSHOT_KEYS:
+        raise gatea.GateAError("Gate A M7 content snapshot is invalid")
+    content_sha256 = payload.get("content_sha256")
+    if (
+        type(payload.get("schema_version")) is not int
+        or payload.get("schema_version") != M7_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        or payload.get("profile") != M7_CONTENT_SNAPSHOT_PROFILE
+        or not isinstance(content_sha256, str)
+        or gatea.SHA256_PATTERN.fullmatch(content_sha256) is None
+    ):
+        raise gatea.GateAError("Gate A M7 content snapshot is invalid")
+    return dict(payload)
+
+
+def _validate_m8_swatch_content_snapshot(payload: object) -> dict[str, Any]:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != M8_SWATCH_CONTENT_SNAPSHOT_KEYS
+    ):
+        raise gatea.GateAError("Gate A M8 swatch content snapshot is invalid")
+    content_sha256 = payload.get("content_sha256")
+    if (
+        type(payload.get("schema_version")) is not int
+        or payload.get("schema_version")
+        != M8_SWATCH_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        or payload.get("profile") != M8_SWATCH_CONTENT_SNAPSHOT_PROFILE
+        or not isinstance(content_sha256, str)
+        or gatea.SHA256_PATTERN.fullmatch(content_sha256) is None
+    ):
+        raise gatea.GateAError("Gate A M8 swatch content snapshot is invalid")
+    return dict(payload)
+
+
+def _validate_m9_table_content_snapshot(payload: object) -> dict[str, Any]:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != M9_TABLE_CONTENT_SNAPSHOT_KEYS
+    ):
+        raise gatea.GateAError("Gate A M9 table content snapshot is invalid")
+    content_sha256 = payload.get("content_sha256")
+    if (
+        type(payload.get("schema_version")) is not int
+        or payload.get("schema_version")
+        != M9_TABLE_CONTENT_SNAPSHOT_SCHEMA_VERSION
+        or payload.get("profile") != M9_TABLE_CONTENT_SNAPSHOT_PROFILE
+        or not isinstance(content_sha256, str)
+        or gatea.SHA256_PATTERN.fullmatch(content_sha256) is None
+    ):
+        raise gatea.GateAError("Gate A M9 table content snapshot is invalid")
+    return dict(payload)
+
+
+def _source_m7_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql",
+            "sh",
+            "-ec",
+            M7_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m7_content_snapshot(_parse_snapshot(result.stdout))
+
+
+def _source_m8_swatch_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql",
+            "sh",
+            "-ec",
+            M8_SWATCH_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m8_swatch_content_snapshot(
+        _parse_snapshot(result.stdout)
+    )
+
+
+def _source_m9_table_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql",
+            "sh",
+            "-ec",
+            M9_TABLE_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m9_table_content_snapshot(_parse_snapshot(result.stdout))
+
+
+def _source_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> dict[str, Any]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql",
+            "sh",
+            "-ec",
+            MYSQL_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _parse_snapshot(result.stdout)
+
+
+def _source_image_manifest(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+) -> list[str]:
+    result = gatea._run_compose(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=(
+            "run",
+            "--rm",
+            "--no-deps",
+            "--entrypoint",
+            "/bin/sh",
+            "image-init",
+            "-ec",
+            IMAGE_MANIFEST_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return result.stdout.splitlines()
+
+
+def _stream_source_artifact(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    arguments: Sequence[str],
+    path: Path,
+) -> None:
+    command, environment = _source_command(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        arguments=arguments,
+    )
+    descriptor, raw_temporary = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.tmp-",
+    )
+    temporary = Path(raw_temporary)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            subprocess.run(
+                command,
+                check=True,
+                cwd=gatea.REPOSITORY_ROOT,
+                env=environment,
+                stdout=stream,
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        if temporary.stat().st_size == 0:
+            raise gatea.GateAError("Gate A backup artifact is empty")
+        try:
+            os.link(temporary, path, follow_symlinks=False)
+        except FileExistsError as error:
+            raise gatea.GateAError(
+                "Gate A backup artifact path is already reserved"
+            ) from error
+        _fsync_directory(path.parent)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        _unlink_and_fsync(temporary)
+
+
+def _backup_paths(backup_root: Path, backup_id: str) -> tuple[Path, Path]:
+    return (
+        backup_root / "mysql" / f"{backup_id}.sql",
+        backup_root / "images" / f"{backup_id}.tar",
+    )
+
+
+def _remove_backup_artifacts(*paths: Path) -> None:
+    """清理失败备份资产，并分别同步 MySQL/图片目录。"""
+
+    for path in paths:
+        _unlink_and_fsync(path)
+
+
+def _validate_backup_directories(
+    *,
+    values: Mapping[str, str],
+    backup_root: Path,
+    backup_record_dir: Path,
+    restore_record_dir: Path | None = None,
+) -> None:
+    if values.get("GATEA_BACKUP_ROOT") != str(backup_root):
+        raise gatea.GateAError("Gate A backup root does not match protected config")
+    gatea._validate_root_directory(backup_root, 0o755, "Gate A backup root")
+    gatea._validate_root_directory(
+        backup_root / "mysql", 0o755, "Gate A MySQL backup directory"
+    )
+    gatea._validate_root_directory(
+        backup_root / "images", 0o755, "Gate A image backup directory"
+    )
+    gatea._validate_root_directory(
+        backup_record_dir, 0o755, "Gate A backup record directory"
+    )
+    if restore_record_dir is not None:
+        gatea._validate_root_directory(
+            restore_record_dir, 0o755, "Gate A restore record directory"
+        )
+
+
+def _reject_unresolved_release_state(
+    *,
+    release_record_dir: Path,
+    acceptance_record_dir: Path,
+) -> None:
+    """在任何 Compose/snapshot/restore 动作前阻断未收口发布状态。"""
+
+    gatea._validate_root_directory(
+        release_record_dir,
+        0o755,
+        "Gate A release record directory",
+    )
+    gatea.reject_unresolved_candidate_transition_journals(
+        record_dir=release_record_dir,
+    )
+    gatea.reject_unresolved_m9_acceptance_sidecars(
+        record_dir=acceptance_record_dir,
+    )
+
+
+def create_backup(
+    *,
+    backup_id: str,
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    backup_root: Path,
+    backup_record_dir: Path,
+    release_record_dir: Path,
+    wait_timeout: int,
+    acceptance_record_dir: Path = gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+) -> None:
+    """短暂停止 edge/App，生成一致 MySQL/图片备份后恢复服务。"""
+
+    backup_id = _backup_id(backup_id)
+    gatea._require_loopback_write_mode(mode)
+    _reject_unresolved_release_state(
+        release_record_dir=release_record_dir,
+        acceptance_record_dir=acceptance_record_dir,
+    )
+    values = gatea._validated_inputs(
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        require_available_port=False,
+    )
+    _validate_backup_directories(
+        values=values,
+        backup_root=backup_root,
+        backup_record_dir=backup_record_dir,
+    )
+    running_snapshot = _source_snapshot(values, config_file, secret_dir, mode)
+    include_table_sweeper = _requires_table_sweeper(running_snapshot)
+    allow_legacy_m7_command = _allows_legacy_m7_app_command(running_snapshot)
+    if allow_legacy_m7_command:
+        image_id = gatea.validate_app_image(
+            values,
+            allow_legacy_m7_command=True,
+        )
+    else:
+        image_id = gatea.validate_app_image(values)
+    gatea._require_deployment_record(
+        record_dir=release_record_dir,
+        candidate_sha=gatea._candidate_sha(values),
+        image_id=image_id,
+    )
+    required_services = (
+        ("mysql", "redis", "app", "table-sweeper", "nginx")
+        if include_table_sweeper
+        else ("mysql", "redis", "app", "nginx")
+    )
+    rows = gatea._compose_ps(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        services=required_services,
+    )
+    gatea._ensure_services_healthy(rows, *required_services)
+
+    database_path, image_path = _backup_paths(backup_root, backup_id)
+    record_path = backup_record_dir / f"{backup_id}.json"
+    pending_path = backup_record_dir / f".{backup_id}.pending.json"
+    for path in (database_path, image_path, record_path, pending_path):
+        if path.exists():
+            raise gatea.GateAError("Gate A backup ID already exists")
+
+    started_at = datetime.now(timezone.utc).isoformat()
+    _write_json_exclusive(
+        pending_path,
+        {
+            "schema_version": 1,
+            "record_type": "gatea-backup-in-progress",
+            "backup_id": backup_id,
+            "candidate_sha": gatea._candidate_sha(values),
+            "started_at": started_at,
+        },
+        0o600,
+    )
+    backup_error: BaseException | None = None
+    restart_error: BaseException | None = None
+    artifact_cleanup_error: BaseException | None = None
+    snapshot: dict[str, Any] = {}
+    m7_content_snapshot: dict[str, Any] | None = None
+    m8_swatch_content_snapshot: dict[str, Any] | None = None
+    m9_table_content_snapshot: dict[str, Any] | None = None
+    image_manifest: list[str] = []
+    with _recovery_termination_controller("backup") as termination:
+        try:
+            try:
+                stopped_services = (
+                    ("nginx", "table-sweeper", "app")
+                    if include_table_sweeper
+                    else ("nginx", "app")
+                )
+                gatea._run_compose(
+                    values=values,
+                    config_file=config_file,
+                    secret_dir=secret_dir,
+                    mode=mode,
+                    arguments=("stop", "--timeout", "30", *stopped_services),
+                )
+                snapshot = _source_snapshot(values, config_file, secret_dir, mode)
+                if (
+                    _requires_table_sweeper(snapshot) != include_table_sweeper
+                    or snapshot.get("aerich_versions")
+                    != running_snapshot.get("aerich_versions")
+                ):
+                    raise gatea.GateAError(
+                        "Gate A database migration chain changed during backup entry"
+                    )
+                if _requires_m7_content_snapshot(snapshot):
+                    m7_content_snapshot = _source_m7_content_snapshot(
+                        values,
+                        config_file,
+                        secret_dir,
+                        mode,
+                    )
+                if _requires_m8_swatch_content_snapshot(snapshot):
+                    m8_swatch_content_snapshot = (
+                        _source_m8_swatch_content_snapshot(
+                            values,
+                            config_file,
+                            secret_dir,
+                            mode,
+                        )
+                    )
+                if _requires_m9_table_content_snapshot(snapshot):
+                    m9_table_content_snapshot = _source_m9_table_content_snapshot(
+                        values,
+                        config_file,
+                        secret_dir,
+                        mode,
+                    )
+                image_manifest = _source_image_manifest(
+                    values, config_file, secret_dir, mode
+                )
+                _stream_source_artifact(
+                    values=values,
+                    config_file=config_file,
+                    secret_dir=secret_dir,
+                    mode=mode,
+                    arguments=(
+                        "exec",
+                        "--no-TTY",
+                        "mysql",
+                        "sh",
+                        "-ec",
+                        MYSQL_DUMP_COMMAND,
+                    ),
+                    path=database_path,
+                )
+                _stream_source_artifact(
+                    values=values,
+                    config_file=config_file,
+                    secret_dir=secret_dir,
+                    mode=mode,
+                    arguments=(
+                        "run",
+                        "--rm",
+                        "--no-deps",
+                        "--entrypoint",
+                        "tar",
+                        "image-init",
+                        "-C",
+                        "/data/images",
+                        "-cf",
+                        "-",
+                        ".",
+                    ),
+                    path=image_path,
+                )
+            except BaseException as error:
+                backup_error = error
+                termination.begin_recovery()
+            else:
+                # 正常路径也在离开 work block 前切换；不存在 finally 入口的
+                # 未保护窗口。
+                termination.begin_recovery()
+        finally:
+            # work signal handler 会先切换相位再抛异常；普通成功/异常则由
+            # 上面的 else/except 切换。这里保持幂等，保证 app_up 全程处于
+            # 只延迟信号的 recovery 相位。
+            termination.begin_recovery()
+            try:
+                gatea.app_up(
+                    config_file=config_file,
+                    secret_dir=secret_dir,
+                    record_dir=release_record_dir,
+                    mode=mode,
+                    wait_timeout=wait_timeout,
+                    include_table_sweeper=include_table_sweeper,
+                    allow_legacy_m7_command=allow_legacy_m7_command,
+                    allow_existing_gatea_publisher=True,
+                    acceptance_record_dir=acceptance_record_dir,
+                    _start_new_session=True,
+                )
+            except BaseException as error:
+                restart_error = error
+
+            if (
+                backup_error is not None
+                or restart_error is not None
+                or termination.work_interruption is not None
+                or termination.deferred_interruptions
+            ):
+                try:
+                    _remove_backup_artifacts(database_path, image_path)
+                except BaseException as error:
+                    artifact_cleanup_error = error
+
+    if (
+        backup_error is not None
+        or restart_error is not None
+        or termination.work_interruption is not None
+        or termination.deferred_interruptions
+    ) and artifact_cleanup_error is None:
+        try:
+            _remove_backup_artifacts(database_path, image_path)
+        except BaseException as error:
+            artifact_cleanup_error = error
+
+    if (
+        backup_error is not None
+        or restart_error is not None
+        or artifact_cleanup_error is not None
+        or termination.work_interruption is not None
+        or termination.deferred_interruptions
+    ):
+        interruption_types = (
+            KeyboardInterrupt,
+            gatea.GateAOperationInterrupted,
+            SystemExit,
+        )
+        if isinstance(restart_error, interruption_types):
+            raise restart_error
+        if restart_error is not None:
+            raise gatea.GateAError(
+                "Gate A backup did not restore application availability"
+            ) from restart_error
+        if termination.work_interruption is not None:
+            raise termination.work_interruption
+        if isinstance(backup_error, interruption_types):
+            raise backup_error
+        if termination.deferred_interruptions:
+            raise termination.deferred_interruptions[0]
+        if artifact_cleanup_error is not None:
+            raise gatea.GateAError(
+                "Gate A failed backup artifacts were not durably removed"
+            ) from artifact_cleanup_error
+        raise gatea.GateAError("Gate A backup creation failed") from backup_error
+
+    payload = {
+        "schema_version": 1,
+        "backup_id": backup_id,
+        "candidate_sha": gatea._candidate_sha(values),
+        "image_id": image_id,
+        "started_at": started_at,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "consistency": "nginx-and-app-stopped",
+        "database_snapshot": snapshot,
+        **(
+            {"m7_content_snapshot": m7_content_snapshot}
+            if m7_content_snapshot is not None
+            else {}
+        ),
+        **(
+            {"m8_swatch_content_snapshot": m8_swatch_content_snapshot}
+            if m8_swatch_content_snapshot is not None
+            else {}
+        ),
+        **(
+            {"m9_table_content_snapshot": m9_table_content_snapshot}
+            if m9_table_content_snapshot is not None
+            else {}
+        ),
+        "image_manifest": image_manifest,
+        "artifacts": {
+            "mysql": {
+                "path": str(database_path),
+                "bytes": database_path.stat().st_size,
+                "sha256": _sha256(database_path),
+            },
+            "images": {
+                "path": str(image_path),
+                "bytes": image_path.stat().st_size,
+                "sha256": _sha256(image_path),
+            },
+        },
+        "redis_recovery_policy": "start-empty-and-invalidate-refresh-sessions",
+        "application_restarted": True,
+        "table_sweeper_restarted": include_table_sweeper,
+        "passed": True,
+    }
+    try:
+        _write_json_exclusive(record_path, payload, 0o644)
+    except BaseException:
+        # hard-link 发布后即使后续临时项清理 fsync 失败，final Record 也只会
+        # 是完整 JSON；保留其引用的资产与 pending，使消费方 fail closed。
+        if not record_path.exists():
+            _remove_backup_artifacts(database_path, image_path)
+        raise
+    _unlink_and_fsync(pending_path)
+    print(f"Gate A backup {backup_id} completed and application health was restored")
+
+
+def _validate_loaded_backup_record(
+    *,
+    payload: dict[str, Any],
+    backup_id: str,
+    backup_root: Path,
+) -> tuple[dict[str, Any], Path, Path]:
+    """验证调用方已稳定读取的 Backup Record 与其不可变资产。"""
+
+    try:
+        artifacts = payload["artifacts"]
+        database_path, image_path = _backup_paths(backup_root, backup_id)
+        expected = {
+            "mysql": database_path,
+            "images": image_path,
+        }
+        if (
+            payload.get("schema_version") != 1
+            or payload.get("backup_id") != backup_id
+            or payload.get("passed") is not True
+            or not isinstance(payload.get("database_snapshot"), dict)
+        ):
+            raise ValueError
+        database_snapshot = payload["database_snapshot"]
+        # Restore supports only exact, already-reviewed migration chains.  This
+        # is also the authoritative gate for deciding which content evidence is
+        # required, so an unknown chain cannot downgrade verification.
+        _requires_table_sweeper(database_snapshot)
+        m7_content_snapshot = payload.get("m7_content_snapshot")
+        if _requires_m7_content_snapshot(database_snapshot):
+            if m7_content_snapshot is None:
+                raise ValueError
+            _validate_m7_content_snapshot(m7_content_snapshot)
+        elif m7_content_snapshot is not None:
+            _validate_m7_content_snapshot(m7_content_snapshot)
+        # Historical M8/M9 backups predate this independent projection.  They
+        # remain restorable, while every record that does carry the field must
+        # bind it to a chain where ``swatch_hex`` exists and validate exactly.
+        m8_swatch_content_snapshot = payload.get(
+            "m8_swatch_content_snapshot"
+        )
+        if m8_swatch_content_snapshot is not None:
+            if not _requires_m8_swatch_content_snapshot(database_snapshot):
+                raise ValueError
+            _validate_m8_swatch_content_snapshot(
+                m8_swatch_content_snapshot
+            )
+        m9_table_content_snapshot = payload.get("m9_table_content_snapshot")
+        if _requires_m9_table_content_snapshot(database_snapshot):
+            if m9_table_content_snapshot is None:
+                raise ValueError
+            _validate_m9_table_content_snapshot(m9_table_content_snapshot)
+        elif m9_table_content_snapshot is not None:
+            raise ValueError
+        for name, path in expected.items():
+            metadata = artifacts[name]
+            if metadata.get("path") != str(path):
+                raise ValueError
+            if path.stat().st_size != int(metadata["bytes"]):
+                raise ValueError
+            if _sha256(path) != metadata["sha256"]:
+                raise ValueError
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        OSError,
+        gatea.GateAError,
+    ) as error:
+        raise gatea.GateAError("Gate A verified backup record is invalid") from error
+    return payload, database_path, image_path
+
+
+def _load_backup_record(
+    *,
+    backup_id: str,
+    backup_root: Path,
+    backup_record_dir: Path,
+) -> tuple[dict[str, Any], Path, Path]:
+    record_path = backup_record_dir / f"{backup_id}.json"
+    pending_path = backup_record_dir / f".{backup_id}.pending.json"
+    if pending_path.exists() or pending_path.is_symlink():
+        raise gatea.GateAError(
+            "Gate A backup has an unresolved pending journal"
+        )
+    try:
+        payload = json.loads(record_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError) as error:
+        raise gatea.GateAError("Gate A verified backup record is invalid") from error
+    if not isinstance(payload, dict):
+        raise gatea.GateAError("Gate A verified backup record is invalid")
+    return _validate_loaded_backup_record(
+        payload=payload,
+        backup_id=backup_id,
+        backup_root=backup_root,
+    )
+
+
+def _require_restore_project_absent(
+    project: str,
+    *,
+    start_new_session: bool,
+) -> None:
+    """精确确认隔离恢复的容器、卷和网络均不存在。"""
+
+    result = subprocess.run(
+        (
+            "docker",
+            "ps",
+            "--all",
+            "--quiet",
+            "--filter",
+            f"label=com.docker.compose.project={project}",
+        ),
+        check=True,
+        text=True,
+        capture_output=True,
+        start_new_session=start_new_session,
+    )
+    if result.stdout.strip():
+        raise gatea.GateAError("Gate A restore project already exists")
+    volumes = subprocess.run(
+        ("docker", "volume", "ls", "--quiet"),
+        check=True,
+        text=True,
+        capture_output=True,
+        start_new_session=start_new_session,
+    )
+    volume_names = frozenset(volumes.stdout.splitlines())
+    for suffix in ("mysql-data", "product-images"):
+        if f"{project}-{suffix}" in volume_names:
+            raise gatea.GateAError("Gate A restore volume already exists")
+    networks = subprocess.run(
+        ("docker", "network", "ls", "--format", "{{.Name}}"),
+        check=True,
+        text=True,
+        capture_output=True,
+        start_new_session=start_new_session,
+    )
+    if f"{project}-internal" in frozenset(networks.stdout.splitlines()):
+        raise gatea.GateAError("Gate A restore network already exists")
+
+
+def _restore_project_absent(
+    project: str,
+    *,
+    start_new_session: bool = False,
+) -> None:
+    _require_restore_project_absent(
+        project,
+        start_new_session=start_new_session,
+    )
+
+
+def _restore_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> dict[str, Any]:
+    result = _run_restore(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        project=project,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql-restore",
+            "sh",
+            "-ec",
+            MYSQL_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _parse_snapshot(result.stdout)
+
+
+def _restored_m7_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> dict[str, Any]:
+    result = _run_restore(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        project=project,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql-restore",
+            "sh",
+            "-ec",
+            M7_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m7_content_snapshot(_parse_snapshot(result.stdout))
+
+
+def _restored_m8_swatch_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> dict[str, Any]:
+    result = _run_restore(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        project=project,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql-restore",
+            "sh",
+            "-ec",
+            M8_SWATCH_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m8_swatch_content_snapshot(
+        _parse_snapshot(result.stdout)
+    )
+
+
+def _restored_m9_table_content_snapshot(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> dict[str, Any]:
+    result = _run_restore(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        project=project,
+        arguments=(
+            "exec",
+            "--no-TTY",
+            "mysql-restore",
+            "sh",
+            "-ec",
+            M9_TABLE_CONTENT_SNAPSHOT_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return _validate_m9_table_content_snapshot(_parse_snapshot(result.stdout))
+
+
+def _restored_image_manifest(
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> list[str]:
+    result = _run_restore(
+        values=values,
+        config_file=config_file,
+        secret_dir=secret_dir,
+        project=project,
+        operations_profile=True,
+        arguments=(
+            "run",
+            "--rm",
+            "--no-deps",
+            "--entrypoint",
+            "/bin/sh",
+            "image-restore",
+            "-ec",
+            RESTORED_IMAGE_MANIFEST_COMMAND,
+        ),
+        capture_output=True,
+    )
+    return result.stdout.splitlines()
+
+
+def _restore_cleanup_verified(project: str) -> None:
+    _restore_project_absent(project, start_new_session=True)
+
+
+def _cleanup_restore_project(
+    *,
+    values: Mapping[str, str],
+    config_file: Path,
+    secret_dir: Path,
+    project: str,
+) -> None:
+    """隔离并有界重试 Compose down，以精确资源盘点作为完成条件。"""
+
+    last_error: Exception | None = None
+    for _ in range(RESTORE_CLEANUP_ATTEMPTS):
+        try:
+            _run_restore(
+                values=values,
+                config_file=config_file,
+                secret_dir=secret_dir,
+                project=project,
+                operations_profile=True,
+                arguments=("down", "--volumes", "--remove-orphans"),
+                check=False,
+                start_new_session=True,
+            )
+        except OSError as error:
+            last_error = error
+        try:
+            _restore_cleanup_verified(project)
+        except (OSError, subprocess.SubprocessError, gatea.GateAError) as error:
+            last_error = error
+            continue
+        return
+    raise gatea.GateAError(
+        "Gate A isolated restore cleanup could not be verified"
+    ) from last_error
+
+
+def verify_restore(
+    *,
+    backup_id: str,
+    confirm_project: str,
+    config_file: Path,
+    secret_dir: Path,
+    mode: str,
+    backup_root: Path,
+    backup_record_dir: Path,
+    restore_record_dir: Path,
+    wait_timeout: int,
+    release_record_dir: Path,
+    acceptance_record_dir: Path = gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+) -> None:
+    """恢复到隔离 project，比较快照并在所有退出路径删除临时资源。"""
+
+    backup_id = _backup_id(backup_id)
+    project = restore_project(backup_id)
+    if confirm_project != project:
+        raise gatea.GateAError("Gate A restore project confirmation does not match")
+    gatea._require_loopback_write_mode(mode)
+    _reject_unresolved_release_state(
+        release_record_dir=release_record_dir,
+        acceptance_record_dir=acceptance_record_dir,
+    )
+    values = gatea._validated_inputs(
+        config_file=config_file,
+        secret_dir=secret_dir,
+        mode=mode,
+        require_available_port=False,
+    )
+    _validate_backup_directories(
+        values=values,
+        backup_root=backup_root,
+        backup_record_dir=backup_record_dir,
+        restore_record_dir=restore_record_dir,
+    )
+    payload, database_path, image_path = _load_backup_record(
+        backup_id=backup_id,
+        backup_root=backup_root,
+        backup_record_dir=backup_record_dir,
+    )
+    backup_record_path = backup_record_dir / f"{backup_id}.json"
+    backup_record_sha256 = _sha256(backup_record_path)
+    mysql_artifact_sha256 = _sha256(database_path)
+    image_artifact_sha256 = _sha256(image_path)
+    if payload.get("candidate_sha") != gatea._candidate_sha(values):
+        raise gatea.GateAError("Gate A backup candidate does not match runtime")
+    record_path = restore_record_dir / f"{backup_id}.json"
+    if record_path.exists():
+        raise gatea.GateAError("Gate A restore record already exists")
+
+    _restore_project_absent(project)
+    started_at = datetime.now(timezone.utc).isoformat()
+    restored_snapshot: dict[str, Any] = {}
+    restored_m7_content_snapshot: dict[str, Any] | None = None
+    expected_m7_content_snapshot = payload.get("m7_content_snapshot")
+    restored_m8_swatch_content_snapshot: dict[str, Any] | None = None
+    expected_m8_swatch_content_snapshot = payload.get(
+        "m8_swatch_content_snapshot"
+    )
+    restored_m9_table_content_snapshot: dict[str, Any] | None = None
+    expected_m9_table_content_snapshot = payload.get(
+        "m9_table_content_snapshot"
+    )
+    restored_images: list[str] = []
+    redis_size = "unknown"
+    passed = False
+    operation_error: BaseException | None = None
+    cleanup_error: BaseException | None = None
+    termination = _RecoveryTerminationController("restore")
+    termination.install()
+    try:
+        _run_restore(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            project=project,
+            arguments=("config", "--quiet"),
+        )
+        _run_restore(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            project=project,
+            arguments=(
+                "up",
+                "--detach",
+                "--wait",
+                "--wait-timeout",
+                str(wait_timeout),
+                "mysql-restore",
+                "redis",
+            ),
+        )
+        with database_path.open("rb") as stream:
+            _run_restore(
+                values=values,
+                config_file=config_file,
+                secret_dir=secret_dir,
+                project=project,
+                arguments=(
+                    "exec",
+                    "--no-TTY",
+                    "mysql-restore",
+                    "sh",
+                    "-ec",
+                    MYSQL_RESTORE_COMMAND,
+                ),
+                stdin=stream,
+            )
+        with image_path.open("rb") as stream:
+            _run_restore(
+                values=values,
+                config_file=config_file,
+                secret_dir=secret_dir,
+                project=project,
+                operations_profile=True,
+                arguments=(
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "--entrypoint",
+                    "tar",
+                    "image-restore",
+                    "-C",
+                    "/restore",
+                    "-xf",
+                    "-",
+                ),
+                stdin=stream,
+            )
+        _run_restore(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            project=project,
+            arguments=(
+                "up",
+                "--detach",
+                "--wait",
+                "--wait-timeout",
+                str(wait_timeout),
+                "image-init",
+                "restore-app",
+            ),
+        )
+        restored_snapshot = _restore_snapshot(
+            values, config_file, secret_dir, project
+        )
+        if expected_m7_content_snapshot is not None:
+            restored_m7_content_snapshot = _restored_m7_content_snapshot(
+                values,
+                config_file,
+                secret_dir,
+                project,
+            )
+        if expected_m8_swatch_content_snapshot is not None:
+            restored_m8_swatch_content_snapshot = (
+                _restored_m8_swatch_content_snapshot(
+                    values,
+                    config_file,
+                    secret_dir,
+                    project,
+                )
+            )
+        if expected_m9_table_content_snapshot is not None:
+            restored_m9_table_content_snapshot = (
+                _restored_m9_table_content_snapshot(
+                    values,
+                    config_file,
+                    secret_dir,
+                    project,
+                )
+            )
+        restored_images = _restored_image_manifest(
+            values, config_file, secret_dir, project
+        )
+        redis_result = _run_restore(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            project=project,
+            arguments=(
+                "exec",
+                "--no-TTY",
+                "redis",
+                "/bin/sh",
+                "-ec",
+                'REDISCLI_AUTH="$(cat /run/secrets/redis_password)" redis-cli DBSIZE',
+            ),
+            capture_output=True,
+        )
+        redis_size = redis_result.stdout.strip()
+        _run_restore(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            project=project,
+            arguments=(
+                "exec",
+                "--no-TTY",
+                "restore-app",
+                "python",
+                "-c",
+                "import urllib.request; urllib.request.urlopen(" 
+                "'http://127.0.0.1:8000/api/v1/health/ready', timeout=3)",
+            ),
+        )
+        if restored_snapshot != payload["database_snapshot"]:
+            raise gatea.GateAError("Gate A restored database snapshot does not match")
+        if restored_m7_content_snapshot != expected_m7_content_snapshot:
+            raise gatea.GateAError(
+                "Gate A restored M7 content snapshot does not match"
+            )
+        if (
+            restored_m8_swatch_content_snapshot
+            != expected_m8_swatch_content_snapshot
+        ):
+            raise gatea.GateAError(
+                "Gate A restored M8 swatch content snapshot does not match"
+            )
+        if (
+            restored_m9_table_content_snapshot
+            != expected_m9_table_content_snapshot
+        ):
+            raise gatea.GateAError(
+                "Gate A restored M9 table content snapshot does not match"
+            )
+        if restored_images != payload["image_manifest"]:
+            raise gatea.GateAError("Gate A restored image manifest does not match")
+        if redis_size != "0":
+            raise gatea.GateAError("Gate A restore Redis must start empty")
+        rows_result = _run_restore(
+            values=values,
+            config_file=config_file,
+            secret_dir=secret_dir,
+            project=project,
+            arguments=("ps", "--all", "--format", "json"),
+            capture_output=True,
+        )
+        for row in gatea._parse_compose_ps_output(rows_result.stdout):
+            for publisher in row.get("Publishers") or []:
+                if int(publisher.get("PublishedPort") or 0) != 0:
+                    raise gatea.GateAError(
+                        "Gate A restore project must not publish host ports"
+                    )
+        termination.begin_recovery()
+        passed = True
+    except BaseException as error:
+        operation_error = error
+        termination.begin_recovery()
+    finally:
+        # work handler 在抛出前已经切换相位；普通成功/异常也在进入这里前
+        # 切换。cleanup 的首个或后续终止信号因而只能延期，不能中断 down。
+        termination.begin_recovery()
+        try:
+            try:
+                _cleanup_restore_project(
+                    values=values,
+                    config_file=config_file,
+                    secret_dir=secret_dir,
+                    project=project,
+                )
+            except BaseException as error:
+                cleanup_error = error
+        finally:
+            termination.restore_handlers()
+
+    if (
+        operation_error is not None
+        or cleanup_error is not None
+        or termination.work_interruption is not None
+        or termination.deferred_interruptions
+        or not passed
+    ):
+        interruption_types = (
+            KeyboardInterrupt,
+            gatea.GateAOperationInterrupted,
+            SystemExit,
+        )
+        if cleanup_error is not None:
+            if isinstance(cleanup_error, interruption_types):
+                raise cleanup_error
+            raise gatea.GateAError(
+                "Gate A isolated restore cleanup could not be verified"
+            ) from cleanup_error
+        if termination.work_interruption is not None:
+            raise termination.work_interruption
+        if isinstance(operation_error, interruption_types):
+            raise operation_error
+        if termination.deferred_interruptions:
+            raise termination.deferred_interruptions[0]
+        raise gatea.GateAError(
+            "Gate A isolated restore verification failed"
+        ) from operation_error
+
+    _write_json_exclusive(
+        record_path,
+        {
+            "schema_version": 1,
+            "backup_id": backup_id,
+            "restore_project": project,
+            "candidate_sha": payload["candidate_sha"],
+            "backup_record_sha256": backup_record_sha256,
+            "mysql_artifact_sha256": mysql_artifact_sha256,
+            "image_artifact_sha256": image_artifact_sha256,
+            "started_at": started_at,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "database_matches": True,
+            **(
+                {
+                    "m7_content_matches": True,
+                    "m7_content_snapshot": restored_m7_content_snapshot,
+                }
+                if restored_m7_content_snapshot is not None
+                else {}
+            ),
+            **(
+                {
+                    "m8_swatch_content_matches": True,
+                    "m8_swatch_content_snapshot": (
+                        restored_m8_swatch_content_snapshot
+                    ),
+                }
+                if restored_m8_swatch_content_snapshot is not None
+                else {}
+            ),
+            **(
+                {
+                    "m9_table_content_matches": True,
+                    "m9_table_content_snapshot": (
+                        restored_m9_table_content_snapshot
+                    ),
+                }
+                if restored_m9_table_content_snapshot is not None
+                else {}
+            ),
+            "images_match": True,
+            "restore_app_ready": True,
+            "redis_started_empty": True,
+            "refresh_sessions_invalidated": True,
+            "host_ports_published": False,
+            "temporary_resources_removed": True,
+            "passed": True,
+        },
+        0o644,
+    )
+    print(f"Gate A backup {backup_id} independent restore verification passed")
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run guarded Gate A backup and isolated restore verification",
+    )
+    parser.add_argument("command", choices=("backup", "restore-verify"))
+    parser.add_argument("--backup-id", required=True)
+    parser.add_argument("--confirm-project")
+    parser.add_argument("--mode", choices=tuple(gatea.MODE_COMPOSE), required=True)
+    parser.add_argument("--config-file", type=Path, default=gatea.DEFAULT_CONFIG_FILE)
+    parser.add_argument("--secret-dir", type=Path, default=gatea.DEFAULT_SECRET_DIR)
+    parser.add_argument("--backup-root", type=Path, default=DEFAULT_BACKUP_ROOT)
+    parser.add_argument(
+        "--backup-record-dir", type=Path, default=DEFAULT_BACKUP_RECORD_DIR
+    )
+    parser.add_argument(
+        "--restore-record-dir", type=Path, default=DEFAULT_RESTORE_RECORD_DIR
+    )
+    parser.add_argument(
+        "--release-record-dir", type=Path, default=gatea.DEFAULT_RECORD_DIR
+    )
+    parser.add_argument(
+        "--acceptance-record-dir",
+        type=Path,
+        default=gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+    )
+    parser.add_argument("--wait-timeout", type=int, default=180)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    if not 30 <= args.wait_timeout <= 600:
+        print(
+            "Gate A backup operation failed: --wait-timeout must be between 30 and 600",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        with gatea.operation_lock(), gatea.operation_termination_guard():
+            if args.command == "backup":
+                if args.confirm_project is not None:
+                    raise gatea.GateAError(
+                        "Gate A backup does not accept restore confirmation"
+                    )
+                create_backup(
+                    backup_id=args.backup_id,
+                    config_file=args.config_file,
+                    secret_dir=args.secret_dir,
+                    mode=args.mode,
+                    backup_root=args.backup_root,
+                    backup_record_dir=args.backup_record_dir,
+                    release_record_dir=args.release_record_dir,
+                    wait_timeout=args.wait_timeout,
+                    acceptance_record_dir=args.acceptance_record_dir,
+                )
+            else:
+                if args.confirm_project is None:
+                    raise gatea.GateAError(
+                        "Gate A restore requires exact project confirmation"
+                    )
+                verify_restore(
+                    backup_id=args.backup_id,
+                    confirm_project=args.confirm_project,
+                    config_file=args.config_file,
+                    secret_dir=args.secret_dir,
+                    mode=args.mode,
+                    backup_root=args.backup_root,
+                    backup_record_dir=args.backup_record_dir,
+                    restore_record_dir=args.restore_record_dir,
+                    wait_timeout=args.wait_timeout,
+                    release_record_dir=args.release_record_dir,
+                    acceptance_record_dir=args.acceptance_record_dir,
+                )
+    except (gatea.GateAError, subprocess.CalledProcessError) as error:
+        print(f"Gate A {args.command} failed: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

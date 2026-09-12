@@ -1,0 +1,160 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as patterns;
+@use '../../styles/customer' as customer;
+
+.wallet-ledger-page {
+  @include patterns.page-shell;
+
+  &__header {
+    @include customer.page-header(center 57%);
+  }
+
+  &__eyebrow,
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__eyebrow {
+    @include customer.eyebrow;
+
+    font-size: var(--pd-font-caption);
+    font-weight: 750;
+    letter-spacing: 1.4px;
+  }
+
+  &__title {
+    @include customer.title;
+
+    margin-top: 25px;
+  }
+
+  &__subtitle {
+    @include customer.subtitle;
+  }
+}
+
+.wallet-ledger {
+  max-width: 760px;
+  margin: 0 auto;
+
+  &__summary {
+    @include patterns.list-summary;
+  }
+
+  &__more {
+    @include patterns.secondary-button;
+
+    width: 100%;
+    margin-top: 20px;
+  }
+
+  &__error,
+  &__end {
+    display: block;
+    margin-top: 20px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    text-align: center;
+  }
+
+  &__error {
+    color: var(--pd-color-danger);
+  }
+}
+
+.wallet-transaction {
+  display: grid;
+  grid-template-columns: 5px minmax(0, 1fr);
+  margin-bottom: 13px;
+  overflow: hidden;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-medium);
+  box-shadow: var(--pd-shadow-small);
+
+  &__rail {
+    background: var(--pd-gradient-primary);
+  }
+
+  &__main {
+    padding: 20px 21px;
+  }
+
+  &__heading,
+  &__balance {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  &__type,
+  &__change,
+  &__reason,
+  &__meta,
+  &__operator {
+    display: block;
+  }
+
+  &__type {
+    font-size: var(--pd-font-body-size);
+    font-weight: 750;
+  }
+
+  &__change {
+    color: var(--pd-color-ink);
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+
+    &--income {
+      color: var(--pd-color-success);
+    }
+  }
+
+  &__reason {
+    margin-top: 8px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    line-height: 1.5;
+  }
+
+  &__balance {
+    justify-content: flex-start;
+    margin-top: 14px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__meta,
+  &__operator {
+    margin-top: 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+}
+
+.wallet-ledger-state {
+  @include patterns.state-shell;
+
+  &__title {
+    @include patterns.state-title;
+  }
+
+  &__description {
+    @include patterns.state-description;
+  }
+
+  &__action {
+    @include patterns.primary-button;
+
+    margin-top: 24px;
+  }
+}
+
+/* stylelint-enable at-rule-no-unknown */

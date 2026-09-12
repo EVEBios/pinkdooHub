@@ -1,0 +1,242 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
+.admin-products-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__header {
+    @include admin.page-header(true, center 50%);
+  }
+
+  &__title {
+    @include admin.header-title;
+  }
+
+  &__subtitle {
+    @include admin.header-subtitle;
+  }
+}
+
+.admin-products-create {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+
+  &__experience {
+    @include pd.primary-button(14px);
+  }
+
+  &__kit {
+    @include pd.secondary-button(14px);
+  }
+}
+
+.admin-product-filters {
+  @include pd.section-panel(22px);
+  @include admin.filter-panel;
+
+  margin: 20px 0 24px;
+
+  &__label {
+    @include pd.field-label;
+
+    &:first-child {
+      margin-top: 4px;
+    }
+  }
+
+  &__buttons,
+  &__actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  &__buttons {
+    overflow-x: auto;
+  }
+
+  &__button,
+  &__deleted {
+    @include pd.chip;
+  }
+
+  &__button--active,
+  &__deleted--active {
+    @include pd.chip-active;
+  }
+
+  &__input {
+    @include pd.field;
+
+    margin-top: 18px;
+  }
+
+  &__pending {
+    display: block;
+    margin-top: 14px;
+    color: var(--pd-color-warning);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+
+  &__actions {
+    margin-top: 20px;
+
+    button {
+      flex: 1;
+
+      &:first-child {
+        @include pd.primary-button(14px);
+      }
+
+      &:last-child {
+        @include pd.quiet-button(14px);
+      }
+    }
+  }
+}
+
+.admin-products-content {
+  &__summary {
+    @include pd.list-summary;
+  }
+
+  &__error,
+  &__end {
+    display: block;
+    padding: 22px 0;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-body-size);
+    text-align: center;
+  }
+
+  &__error {
+    color: var(--pd-color-danger);
+  }
+
+  > button {
+    @include pd.primary-button(999px);
+
+    width: 300px;
+    margin: 24px auto 0;
+  }
+}
+
+.admin-product-card {
+  @include pd.record-card(18px);
+  @include pd.tappable-card;
+
+  display: flex;
+  gap: 17px;
+  margin-bottom: 15px;
+
+  &--deleted {
+    opacity: 0.66;
+  }
+
+  &__image {
+    display: flex;
+    width: 150px;
+    height: 150px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    background: var(--pd-gradient-soft);
+    border-radius: var(--pd-radius-small);
+  }
+
+  &__body {
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 650;
+  }
+
+  &__badges text {
+    padding: 4px 9px;
+    background: var(--pd-color-primary-soft);
+    border-radius: 999px;
+  }
+
+  &__name,
+  &__price,
+  &__time {
+    display: block;
+  }
+
+  &__name {
+    margin-top: 10px;
+    overflow: hidden;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.38;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__price {
+    margin-top: 9px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__time {
+    margin-top: 9px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+}
+
+.admin-products-state {
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button(999px);
+
+    margin-top: 24px;
+  }
+}
+
+@media (width >= 768px) {
+  .admin-products-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+
+    &__summary,
+    &__error,
+    &__end,
+    > button {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .admin-product-card {
+    margin-bottom: 0;
+  }
+}

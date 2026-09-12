@@ -2,6 +2,8 @@
 
 > Phase 2 — 完整用户认证体系
 
+> **历史文档说明（2026-09-06）：** 本文主体保留 Phase 2 的实现复盘，不代表当前完整文件数或能力清单。Reservation N1 后续把账号生命周期与预约关联：普通 USER 创建预约必须读取当前手机号但不保存手机号快照；存在 `pending/confirmed` 且 `scheduled_end_at > now_utc` 的预约时，注销沿用 `1015` 阻断。注销匿名化后历史预约保留，但管理详情当前手机号为 null。当前规则见 [User Module](../01_requirements/user_module.md)、[Reservation Module](../01_requirements/reservation_module.md) 与 [Reservation API](../03_api/reservation_api.md)。
+
 ---
 
 ## 涉及文件（26 个）
@@ -159,7 +161,7 @@ Authorization: Bearer <token>
 | pydantic-settings | 2.14 | 配置管理 |
 | passlib[bcrypt] | 1.7.4 | 密码哈希 |
 | bcrypt | 3.2.2 | 加密后端 |
-| python-jose[cryptography] | 3.3.0 | JWT 签发与验证 |
+| python-jose + cryptography | 3.5.0 + 50.0.1 | JWT 签发与验证 |
 | tzdata | 2026.3 | 时区数据（Windows） |
 
 ---

@@ -1,0 +1,151 @@
+name: ${GATEA_RESTORE_PROJECT:?Set the exact isolated restore project}
+
+x-restore-app: &restore-app
+  image: ${GATEA_APP_IMAGE:?Set the immutable Gate A app image}
+  env_file:
+    - ${GATEA_CONFIG_FILE:-/etc/pinkdoohub/gatea/config.env}
+  environment:
+    DB_HOST: mysql-restore
+  secrets:
+    - mysql_app_password
+    - redis_password
+    - jwt_secret
+  networks:
+    - restore
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  mysql-restore:
+    image: mysql:8.0.46
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+      - --skip-name-resolve
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:?Set DB_NAME in the Gate A config file}
+      MYSQL_USER: ${DB_USER:?Set DB_USER in the Gate A config file}
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_app_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    secrets:
+      - mysql_app_password
+      - mysql_root_password
+    volumes:
+      - restore_mysql:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$$(cat /run/secrets/mysql_root_password)"
+          mysqladmin ping --host=127.0.0.1 --user=root --silent
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    mem_limit: 1400m
+    cpus: 1.0
+    networks:
+      - restore
+
+  redis:
+    image: redis:8.0.1-alpine
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        printf '%s\n'
+        "requirepass $$(cat /run/secrets/redis_password)"
+        'save ""'
+        'appendonly no'
+        > /tmp/pinkdoohub-restore-redis.conf;
+        exec redis-server /tmp/pinkdoohub-restore-redis.conf
+    secrets:
+      - redis_password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          REDISCLI_AUTH="$$(cat /run/secrets/redis_password)"
+          redis-cli ping | grep -q PONG
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 128m
+    cpus: 0.2
+    networks:
+      - restore
+
+  image-restore:
+    image: ${GATEA_APP_IMAGE:?Set the immutable Gate A app image}
+    profiles: ["operations"]
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["true"]
+    network_mode: none
+    volumes:
+      - restore_images:/restore
+    security_opt:
+      - no-new-privileges:true
+
+  image-init:
+    image: ${GATEA_APP_IMAGE:?Set the immutable Gate A app image}
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["chown -R 10001:10001 /data/images && chmod 0755 /data/images"]
+    network_mode: none
+    restart: "no"
+    volumes:
+      - restore_images:/data/images
+    security_opt:
+      - no-new-privileges:true
+
+  restore-app:
+    <<: *restore-app
+    restart: "no"
+    volumes:
+      - restore_images:/data/images
+    depends_on:
+      mysql-restore:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      image-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+secrets:
+  mysql_app_password:
+    file: ${GATEA_SECRET_DIR:-/etc/pinkdoohub/gatea/secrets}/mysql_app_password
+  mysql_root_password:
+    file: ${GATEA_SECRET_DIR:-/etc/pinkdoohub/gatea/secrets}/mysql_root_password
+  redis_password:
+    file: ${GATEA_SECRET_DIR:-/etc/pinkdoohub/gatea/secrets}/redis_password
+  jwt_secret:
+    file: ${GATEA_SECRET_DIR:-/etc/pinkdoohub/gatea/secrets}/jwt_secret
+
+volumes:
+  restore_mysql:
+    name: ${GATEA_RESTORE_PROJECT}-mysql-data
+  restore_images:
+    name: ${GATEA_RESTORE_PROJECT}-product-images
+
+networks:
+  restore:
+    name: ${GATEA_RESTORE_PROJECT}-internal
+    internal: true

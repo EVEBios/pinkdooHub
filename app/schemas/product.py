@@ -14,11 +14,17 @@ from pydantic import (
     model_validator,
 )
 
+from app.common.bead_color import normalize_bead_color_swatch_hex
 from app.common.constants.product import (
+    BEAD_COLOR_CODE_MAX_LENGTH,
+    BEAD_COLOR_NAME_MAX_LENGTH,
+    BEAD_COLOR_SWATCH_HEX_LENGTH,
+    BEAD_COLOR_SWATCH_HEX_PATTERN,
+    MAX_BEAD_COLOR_SORT,
     MIN_DURATION_MINUTES,
     MIN_IMAGE_SORT,
     MIN_PARTICIPANTS,
-    MIN_STOCK,
+    MIN_BEAD_COLOR_SORT,
     PRODUCT_DESCRIPTION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_NAME_MIN_LENGTH,
@@ -28,7 +34,7 @@ from app.common.constants.product import (
     PRODUCT_PRICE_PATTERN,
     PRODUCT_SEARCH_KEYWORD_MAX_LENGTH,
 )
-from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.enums.product import DayType, KitKind, ProductStatus, ProductType
 from app.common.pagination import PageParams
 
 _product_price_regex = re.compile(PRODUCT_PRICE_PATTERN)
@@ -114,7 +120,6 @@ ProductPriceInput = Annotated[
     ),
 ]
 
-StockInput = Annotated[int, Field(strict=True, ge=MIN_STOCK)]
 DurationMinutesInput = Annotated[
     int,
     Field(strict=True, ge=MIN_DURATION_MINUTES),
@@ -124,6 +129,42 @@ ParticipantsInput = Annotated[
     Field(strict=True, ge=MIN_PARTICIPANTS),
 ]
 ImageSortInput = Annotated[int, Field(strict=True, ge=MIN_IMAGE_SORT)]
+BeadColorSortInput = Annotated[
+    int,
+    Field(
+        strict=True,
+        ge=MIN_BEAD_COLOR_SORT,
+        le=MAX_BEAD_COLOR_SORT,
+    ),
+]
+BeadColorCodeInput = Annotated[
+    str,
+    Field(strict=True, min_length=1, max_length=BEAD_COLOR_CODE_MAX_LENGTH),
+]
+BeadColorNameInput = Annotated[
+    str,
+    Field(strict=True, min_length=1, max_length=BEAD_COLOR_NAME_MAX_LENGTH),
+]
+BeadColorSwatchHexInput = Annotated[
+    str,
+    BeforeValidator(normalize_bead_color_swatch_hex),
+    Field(
+        strict=True,
+        min_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        max_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        pattern=BEAD_COLOR_SWATCH_HEX_PATTERN,
+    ),
+    WithJsonSchema(
+        {
+            "type": "string",
+            "minLength": BEAD_COLOR_SWATCH_HEX_LENGTH,
+            "maxLength": BEAD_COLOR_SWATCH_HEX_LENGTH,
+            "pattern": BEAD_COLOR_SWATCH_HEX_PATTERN,
+            "examples": ["#F5B8C7"],
+        },
+        mode="validation",
+    ),
+]
 CoverFlagInput = Annotated[Literal[True], BeforeValidator(_parse_cover_flag)]
 ProductSearchKeyword = Annotated[
     str,
@@ -172,7 +213,7 @@ class KitProductCreate(_ProductCreateBase):
     """创建套装商品草稿请求。"""
 
     price: ProductPriceInput
-    stock: StockInput = MIN_STOCK
+    kit_kind: KitKind = KitKind.FIXED
 
 
 class ProductUpdate(_NonEmptyPatchRequest):
@@ -252,10 +293,29 @@ class KitPriceUpdate(_ProductRequest):
     price: ProductPriceInput
 
 
-class KitStockUpdate(_ProductRequest):
-    """直接设置套装商品当前库存请求。"""
+class BeadColorUpdate(_NonEmptyPatchRequest):
+    """修改全局颜色槽元数据；null 可清空展示与身份字段。"""
 
-    stock: StockInput
+    color_code: BeadColorCodeInput | None = None
+    name: BeadColorNameInput | None = None
+    swatch_hex: BeadColorSwatchHexInput | None = None
+    sort: BeadColorSortInput | None = None
+    is_active: bool | None = Field(default=None, strict=True)
+
+    @field_validator("sort", "is_active", mode="after")
+    @classmethod
+    def reject_null_non_nullable_fields(cls, value: object) -> object:
+        """排序和启用状态可以缺失，但不能显式提交 null。"""
+
+        if value is None:
+            raise ValueError("sort and is_active cannot be null")
+        return value
+
+
+class ProductKitColorUpdate(_ProductRequest):
+    """修改商品颜色是否启用；库存由 Inventory 单独维护。"""
+
+    is_enabled: bool = Field(strict=True)
 
 
 class ProductListQuery(PageParams):
@@ -279,3 +339,9 @@ class AdminProductListQuery(ProductListQuery):
 
     status: ProductStatus | None = None
     include_deleted: QueryBoolean = False
+
+
+class BeadColorListQuery(PageParams):
+    """管理端全局颜色目录分页查询。"""
+
+    model_config = ConfigDict(extra="forbid")

@@ -1,0 +1,3114 @@
+{
+  "schema_version": 1,
+  "catalog": "MARD 221 standard colors",
+  "source": {
+    "url": "https://peiseka.com/pindouseka.html",
+    "retrieved_at_utc": "2026-09-07T02:40:01.215952+00:00",
+    "html_sha256": "04179ce05e16f6575fee5071ac817c93387a559d2009596b7487ea6d080b513f",
+    "representation": "css_rgb_swatch",
+    "individual_image_files": false
+  },
+  "swatch": {
+    "format": "png",
+    "width": 256,
+    "height": 256,
+    "color_space": "sRGB",
+    "representation": "solid_color_generated_from_source_rgb"
+  },
+  "colors": [
+    {
+      "slot_no": 1,
+      "color_code": "A1",
+      "name": "A1",
+      "sort": 1,
+      "is_active": true,
+      "hex": "#FAF4C8",
+      "rgb": [
+        250,
+        244,
+        200
+      ],
+      "image_filename": "b53e790ef92777cb93e7e9cac3e72ddf.png"
+    },
+    {
+      "slot_no": 2,
+      "color_code": "A2",
+      "name": "A2",
+      "sort": 2,
+      "is_active": true,
+      "hex": "#FFFFD5",
+      "rgb": [
+        255,
+        255,
+        213
+      ],
+      "image_filename": "31f625f7453b6322994864c127a16564.png"
+    },
+    {
+      "slot_no": 3,
+      "color_code": "A3",
+      "name": "A3",
+      "sort": 3,
+      "is_active": true,
+      "hex": "#FEFF8B",
+      "rgb": [
+        254,
+        255,
+        139
+      ],
+      "image_filename": "612a4d0340552f964bb8b06c5aa58da0.png"
+    },
+    {
+      "slot_no": 4,
+      "color_code": "A4",
+      "name": "A4",
+      "sort": 4,
+      "is_active": true,
+      "hex": "#FBED56",
+      "rgb": [
+        251,
+        237,
+        86
+      ],
+      "image_filename": "cc9c31b76a4084df1957c1f450293c60.png"
+    },
+    {
+      "slot_no": 5,
+      "color_code": "A5",
+      "name": "A5",
+      "sort": 5,
+      "is_active": true,
+      "hex": "#F4D738",
+      "rgb": [
+        244,
+        215,
+        56
+      ],
+      "image_filename": "6418badc5b4bf2111a4a478d362d91c4.png"
+    },
+    {
+      "slot_no": 6,
+      "color_code": "A6",
+      "name": "A6",
+      "sort": 6,
+      "is_active": true,
+      "hex": "#FEAC4C",
+      "rgb": [
+        254,
+        172,
+        76
+      ],
+      "image_filename": "8ce62c32928c0bb2b02cb07139923490.png"
+    },
+    {
+      "slot_no": 7,
+      "color_code": "A7",
+      "name": "A7",
+      "sort": 7,
+      "is_active": true,
+      "hex": "#FE8B4C",
+      "rgb": [
+        254,
+        139,
+        76
+      ],
+      "image_filename": "70e6b876b0ac63e2a621be9159fc7783.png"
+    },
+    {
+      "slot_no": 8,
+      "color_code": "A8",
+      "name": "A8",
+      "sort": 8,
+      "is_active": true,
+      "hex": "#FFDA45",
+      "rgb": [
+        255,
+        218,
+        69
+      ],
+      "image_filename": "09483d5d3f89879c59f1da5244f4c52a.png"
+    },
+    {
+      "slot_no": 9,
+      "color_code": "A9",
+      "name": "A9",
+      "sort": 9,
+      "is_active": true,
+      "hex": "#FF995B",
+      "rgb": [
+        255,
+        153,
+        91
+      ],
+      "image_filename": "e5f42c3679df86f8326f27767049e59a.png"
+    },
+    {
+      "slot_no": 10,
+      "color_code": "A10",
+      "name": "A10",
+      "sort": 10,
+      "is_active": true,
+      "hex": "#F77C31",
+      "rgb": [
+        247,
+        124,
+        49
+      ],
+      "image_filename": "44ac1cc52bed1dd2b9ffb5ff54892dcf.png"
+    },
+    {
+      "slot_no": 11,
+      "color_code": "A11",
+      "name": "A11",
+      "sort": 11,
+      "is_active": true,
+      "hex": "#FFDD99",
+      "rgb": [
+        255,
+        221,
+        153
+      ],
+      "image_filename": "06423a466685d9dd91a28a6ccff8ac4a.png"
+    },
+    {
+      "slot_no": 12,
+      "color_code": "A12",
+      "name": "A12",
+      "sort": 12,
+      "is_active": true,
+      "hex": "#FE9F72",
+      "rgb": [
+        254,
+        159,
+        114
+      ],
+      "image_filename": "a7c40201c0c4a420893e438e5e8b0b49.png"
+    },
+    {
+      "slot_no": 13,
+      "color_code": "A13",
+      "name": "A13",
+      "sort": 13,
+      "is_active": true,
+      "hex": "#FFC365",
+      "rgb": [
+        255,
+        195,
+        101
+      ],
+      "image_filename": "ea9c4dff7218ce304898637f1da51446.png"
+    },
+    {
+      "slot_no": 14,
+      "color_code": "A14",
+      "name": "A14",
+      "sort": 14,
+      "is_active": true,
+      "hex": "#FD543D",
+      "rgb": [
+        253,
+        84,
+        61
+      ],
+      "image_filename": "41aa4a5467f3c6bd164e60e1a4032a1e.png"
+    },
+    {
+      "slot_no": 15,
+      "color_code": "A15",
+      "name": "A15",
+      "sort": 15,
+      "is_active": true,
+      "hex": "#FFF365",
+      "rgb": [
+        255,
+        243,
+        101
+      ],
+      "image_filename": "476d9649086771cae5fb0d52968d4371.png"
+    },
+    {
+      "slot_no": 16,
+      "color_code": "A16",
+      "name": "A16",
+      "sort": 16,
+      "is_active": true,
+      "hex": "#FFFF9F",
+      "rgb": [
+        255,
+        255,
+        159
+      ],
+      "image_filename": "49e52a9e14d2df541f14bfa911448abb.png"
+    },
+    {
+      "slot_no": 17,
+      "color_code": "A17",
+      "name": "A17",
+      "sort": 17,
+      "is_active": true,
+      "hex": "#FFE36E",
+      "rgb": [
+        255,
+        227,
+        110
+      ],
+      "image_filename": "705606aeeefdaa95ead6f87d9e5e395b.png"
+    },
+    {
+      "slot_no": 18,
+      "color_code": "A18",
+      "name": "A18",
+      "sort": 18,
+      "is_active": true,
+      "hex": "#FEBE7D",
+      "rgb": [
+        254,
+        190,
+        125
+      ],
+      "image_filename": "2a266d9163d781208fafa356db34c7d4.png"
+    },
+    {
+      "slot_no": 19,
+      "color_code": "A19",
+      "name": "A19",
+      "sort": 19,
+      "is_active": true,
+      "hex": "#FD7C72",
+      "rgb": [
+        253,
+        124,
+        114
+      ],
+      "image_filename": "0c051cf99d5306be66836b96e70f0f10.png"
+    },
+    {
+      "slot_no": 20,
+      "color_code": "A20",
+      "name": "A20",
+      "sort": 20,
+      "is_active": true,
+      "hex": "#FFD568",
+      "rgb": [
+        255,
+        213,
+        104
+      ],
+      "image_filename": "933bde81fb004d59e64b20a754e8dc0b.png"
+    },
+    {
+      "slot_no": 21,
+      "color_code": "A21",
+      "name": "A21",
+      "sort": 21,
+      "is_active": true,
+      "hex": "#FFE395",
+      "rgb": [
+        255,
+        227,
+        149
+      ],
+      "image_filename": "966c0fffbc5de8a0e6912e60dd7ce8b8.png"
+    },
+    {
+      "slot_no": 22,
+      "color_code": "A22",
+      "name": "A22",
+      "sort": 22,
+      "is_active": true,
+      "hex": "#F4F57D",
+      "rgb": [
+        244,
+        245,
+        125
+      ],
+      "image_filename": "39dfffaccd528bf58ca1add36b301713.png"
+    },
+    {
+      "slot_no": 23,
+      "color_code": "A23",
+      "name": "A23",
+      "sort": 23,
+      "is_active": true,
+      "hex": "#E6C9B7",
+      "rgb": [
+        230,
+        201,
+        183
+      ],
+      "image_filename": "1fbd9ab5e3bc038536d4ffcea9eb14a7.png"
+    },
+    {
+      "slot_no": 24,
+      "color_code": "A24",
+      "name": "A24",
+      "sort": 24,
+      "is_active": true,
+      "hex": "#F7F8A2",
+      "rgb": [
+        247,
+        248,
+        162
+      ],
+      "image_filename": "98b02e9e532a114f7fa90c7a537b0bbb.png"
+    },
+    {
+      "slot_no": 25,
+      "color_code": "A25",
+      "name": "A25",
+      "sort": 25,
+      "is_active": true,
+      "hex": "#FFD67D",
+      "rgb": [
+        255,
+        214,
+        125
+      ],
+      "image_filename": "e49aee1fd362bf4570749acccbd85b53.png"
+    },
+    {
+      "slot_no": 26,
+      "color_code": "A26",
+      "name": "A26",
+      "sort": 26,
+      "is_active": true,
+      "hex": "#FFC830",
+      "rgb": [
+        255,
+        200,
+        48
+      ],
+      "image_filename": "d4ca03203b2e5a218b8c9fae434345b8.png"
+    },
+    {
+      "slot_no": 27,
+      "color_code": "B1",
+      "name": "B1",
+      "sort": 27,
+      "is_active": true,
+      "hex": "#E6EE31",
+      "rgb": [
+        230,
+        238,
+        49
+      ],
+      "image_filename": "25d2517d8a703f5aba9f2fb52ecc69f4.png"
+    },
+    {
+      "slot_no": 28,
+      "color_code": "B2",
+      "name": "B2",
+      "sort": 28,
+      "is_active": true,
+      "hex": "#63F347",
+      "rgb": [
+        99,
+        243,
+        71
+      ],
+      "image_filename": "462ff4d5a37385723042dbc0e8a55220.png"
+    },
+    {
+      "slot_no": 29,
+      "color_code": "B3",
+      "name": "B3",
+      "sort": 29,
+      "is_active": true,
+      "hex": "#9EF780",
+      "rgb": [
+        158,
+        247,
+        128
+      ],
+      "image_filename": "57e1ac1f22cffdd1fd255fd319fabae6.png"
+    },
+    {
+      "slot_no": 30,
+      "color_code": "B4",
+      "name": "B4",
+      "sort": 30,
+      "is_active": true,
+      "hex": "#5DE035",
+      "rgb": [
+        93,
+        224,
+        53
+      ],
+      "image_filename": "5e1b77abca4b106afecf80e9f8a4a008.png"
+    },
+    {
+      "slot_no": 31,
+      "color_code": "B5",
+      "name": "B5",
+      "sort": 31,
+      "is_active": true,
+      "hex": "#35E352",
+      "rgb": [
+        53,
+        227,
+        82
+      ],
+      "image_filename": "2084e4c490be4fd9d410d472f9a56730.png"
+    },
+    {
+      "slot_no": 32,
+      "color_code": "B6",
+      "name": "B6",
+      "sort": 32,
+      "is_active": true,
+      "hex": "#65E2A6",
+      "rgb": [
+        101,
+        226,
+        166
+      ],
+      "image_filename": "393beeb55ad50289217069e2d784a19a.png"
+    },
+    {
+      "slot_no": 33,
+      "color_code": "B7",
+      "name": "B7",
+      "sort": 33,
+      "is_active": true,
+      "hex": "#3DAF80",
+      "rgb": [
+        61,
+        175,
+        128
+      ],
+      "image_filename": "9d2091349914896c7e99f3f5138330ac.png"
+    },
+    {
+      "slot_no": 34,
+      "color_code": "B8",
+      "name": "B8",
+      "sort": 34,
+      "is_active": true,
+      "hex": "#1C9C4F",
+      "rgb": [
+        28,
+        156,
+        79
+      ],
+      "image_filename": "bba5769324b2453100f06f509066f270.png"
+    },
+    {
+      "slot_no": 35,
+      "color_code": "B9",
+      "name": "B9",
+      "sort": 35,
+      "is_active": true,
+      "hex": "#27523A",
+      "rgb": [
+        39,
+        82,
+        58
+      ],
+      "image_filename": "1330ee70a8a4cd4e5f86611b8b0609de.png"
+    },
+    {
+      "slot_no": 36,
+      "color_code": "B10",
+      "name": "B10",
+      "sort": 36,
+      "is_active": true,
+      "hex": "#95D3C2",
+      "rgb": [
+        149,
+        211,
+        194
+      ],
+      "image_filename": "e1cbcfe6e5c124594a5ec7f4be6187e9.png"
+    },
+    {
+      "slot_no": 37,
+      "color_code": "B11",
+      "name": "B11",
+      "sort": 37,
+      "is_active": true,
+      "hex": "#5D722A",
+      "rgb": [
+        93,
+        114,
+        42
+      ],
+      "image_filename": "baea0db9f11c1f7bf04743c43216b329.png"
+    },
+    {
+      "slot_no": 38,
+      "color_code": "B12",
+      "name": "B12",
+      "sort": 38,
+      "is_active": true,
+      "hex": "#166F41",
+      "rgb": [
+        22,
+        111,
+        65
+      ],
+      "image_filename": "567bf8dd2555dad073c2321330093a41.png"
+    },
+    {
+      "slot_no": 39,
+      "color_code": "B13",
+      "name": "B13",
+      "sort": 39,
+      "is_active": true,
+      "hex": "#CAEB7B",
+      "rgb": [
+        202,
+        235,
+        123
+      ],
+      "image_filename": "781ca76f59f99e5b195908c2c48d7e3e.png"
+    },
+    {
+      "slot_no": 40,
+      "color_code": "B14",
+      "name": "B14",
+      "sort": 40,
+      "is_active": true,
+      "hex": "#ADE946",
+      "rgb": [
+        173,
+        233,
+        70
+      ],
+      "image_filename": "9c9871fe9d31509f7fab68ccdfc6efbf.png"
+    },
+    {
+      "slot_no": 41,
+      "color_code": "B15",
+      "name": "B15",
+      "sort": 41,
+      "is_active": true,
+      "hex": "#2E5132",
+      "rgb": [
+        46,
+        81,
+        50
+      ],
+      "image_filename": "0d6c545b68e1317be5de60fa5925cd2e.png"
+    },
+    {
+      "slot_no": 42,
+      "color_code": "B16",
+      "name": "B16",
+      "sort": 42,
+      "is_active": true,
+      "hex": "#C5ED9C",
+      "rgb": [
+        197,
+        237,
+        156
+      ],
+      "image_filename": "242615b499c207d52e85fedc55abadf5.png"
+    },
+    {
+      "slot_no": 43,
+      "color_code": "B17",
+      "name": "B17",
+      "sort": 43,
+      "is_active": true,
+      "hex": "#9BB13A",
+      "rgb": [
+        155,
+        177,
+        58
+      ],
+      "image_filename": "4247d9f11d0435f17bee6aea571b072b.png"
+    },
+    {
+      "slot_no": 44,
+      "color_code": "B18",
+      "name": "B18",
+      "sort": 44,
+      "is_active": true,
+      "hex": "#E6EE49",
+      "rgb": [
+        230,
+        238,
+        73
+      ],
+      "image_filename": "57c6b98b3a9dd106e63fa9fb8369a70a.png"
+    },
+    {
+      "slot_no": 45,
+      "color_code": "B19",
+      "name": "B19",
+      "sort": 45,
+      "is_active": true,
+      "hex": "#24B88C",
+      "rgb": [
+        36,
+        184,
+        140
+      ],
+      "image_filename": "2e371269ec9f29962a790454a87e8044.png"
+    },
+    {
+      "slot_no": 46,
+      "color_code": "B20",
+      "name": "B20",
+      "sort": 46,
+      "is_active": true,
+      "hex": "#C2F0CC",
+      "rgb": [
+        194,
+        240,
+        204
+      ],
+      "image_filename": "a480717e8f6d9ff281eefb650db4d0c8.png"
+    },
+    {
+      "slot_no": 47,
+      "color_code": "B21",
+      "name": "B21",
+      "sort": 47,
+      "is_active": true,
+      "hex": "#156A6B",
+      "rgb": [
+        21,
+        106,
+        107
+      ],
+      "image_filename": "7bf7a1bbbbf3a36f03e45e9164981467.png"
+    },
+    {
+      "slot_no": 48,
+      "color_code": "B22",
+      "name": "B22",
+      "sort": 48,
+      "is_active": true,
+      "hex": "#0B3C43",
+      "rgb": [
+        11,
+        60,
+        67
+      ],
+      "image_filename": "fd655375350f6a8311143220c7c2492f.png"
+    },
+    {
+      "slot_no": 49,
+      "color_code": "B23",
+      "name": "B23",
+      "sort": 49,
+      "is_active": true,
+      "hex": "#303A21",
+      "rgb": [
+        48,
+        58,
+        33
+      ],
+      "image_filename": "6b5ba28a8db11804ff10497e5b6fd1bb.png"
+    },
+    {
+      "slot_no": 50,
+      "color_code": "B24",
+      "name": "B24",
+      "sort": 50,
+      "is_active": true,
+      "hex": "#EEFCA5",
+      "rgb": [
+        238,
+        252,
+        165
+      ],
+      "image_filename": "c56afb63ec25af86aa24bcf82c760c5e.png"
+    },
+    {
+      "slot_no": 51,
+      "color_code": "B25",
+      "name": "B25",
+      "sort": 51,
+      "is_active": true,
+      "hex": "#4E846D",
+      "rgb": [
+        78,
+        132,
+        109
+      ],
+      "image_filename": "87f34830879329afa743f92480e37328.png"
+    },
+    {
+      "slot_no": 52,
+      "color_code": "B26",
+      "name": "B26",
+      "sort": 52,
+      "is_active": true,
+      "hex": "#8D7A35",
+      "rgb": [
+        141,
+        122,
+        53
+      ],
+      "image_filename": "58cc6b4b9ce94275eb966522d0b1e3f6.png"
+    },
+    {
+      "slot_no": 53,
+      "color_code": "B27",
+      "name": "B27",
+      "sort": 53,
+      "is_active": true,
+      "hex": "#CCE1AF",
+      "rgb": [
+        204,
+        225,
+        175
+      ],
+      "image_filename": "82eddcaf4078e748065f2b4ae79fdbd0.png"
+    },
+    {
+      "slot_no": 54,
+      "color_code": "B28",
+      "name": "B28",
+      "sort": 54,
+      "is_active": true,
+      "hex": "#9EE5B9",
+      "rgb": [
+        158,
+        229,
+        185
+      ],
+      "image_filename": "36804b440fec2487916b441748dd5818.png"
+    },
+    {
+      "slot_no": 55,
+      "color_code": "B29",
+      "name": "B29",
+      "sort": 55,
+      "is_active": true,
+      "hex": "#C5E254",
+      "rgb": [
+        197,
+        226,
+        84
+      ],
+      "image_filename": "5107e06cc44cc0300891f883a61c0f64.png"
+    },
+    {
+      "slot_no": 56,
+      "color_code": "B30",
+      "name": "B30",
+      "sort": 56,
+      "is_active": true,
+      "hex": "#E2FCB1",
+      "rgb": [
+        226,
+        252,
+        177
+      ],
+      "image_filename": "385cfb7b1d64d889ead0bbf625574116.png"
+    },
+    {
+      "slot_no": 57,
+      "color_code": "B31",
+      "name": "B31",
+      "sort": 57,
+      "is_active": true,
+      "hex": "#B0E792",
+      "rgb": [
+        176,
+        231,
+        146
+      ],
+      "image_filename": "bb15d86c4201ccede983a959699a04d2.png"
+    },
+    {
+      "slot_no": 58,
+      "color_code": "B32",
+      "name": "B32",
+      "sort": 58,
+      "is_active": true,
+      "hex": "#9CAB5A",
+      "rgb": [
+        156,
+        171,
+        90
+      ],
+      "image_filename": "2ec2d9f618c8b0a3bc967c44df8dde0d.png"
+    },
+    {
+      "slot_no": 59,
+      "color_code": "C1",
+      "name": "C1",
+      "sort": 59,
+      "is_active": true,
+      "hex": "#E8FFE7",
+      "rgb": [
+        232,
+        255,
+        231
+      ],
+      "image_filename": "5be0960dab3d2206de7b90dbea73e2a2.png"
+    },
+    {
+      "slot_no": 60,
+      "color_code": "C2",
+      "name": "C2",
+      "sort": 60,
+      "is_active": true,
+      "hex": "#A9F9FC",
+      "rgb": [
+        169,
+        249,
+        252
+      ],
+      "image_filename": "05738bc454e81069fec9de2416a27e1e.png"
+    },
+    {
+      "slot_no": 61,
+      "color_code": "C3",
+      "name": "C3",
+      "sort": 61,
+      "is_active": true,
+      "hex": "#A0E2FB",
+      "rgb": [
+        160,
+        226,
+        251
+      ],
+      "image_filename": "b577428aeb2aaf156c5fc349ceba93bb.png"
+    },
+    {
+      "slot_no": 62,
+      "color_code": "C4",
+      "name": "C4",
+      "sort": 62,
+      "is_active": true,
+      "hex": "#41CCFF",
+      "rgb": [
+        65,
+        204,
+        255
+      ],
+      "image_filename": "919c612799d0b9b3fac54168018e5634.png"
+    },
+    {
+      "slot_no": 63,
+      "color_code": "C5",
+      "name": "C5",
+      "sort": 63,
+      "is_active": true,
+      "hex": "#01ACEB",
+      "rgb": [
+        1,
+        172,
+        235
+      ],
+      "image_filename": "57b2fcefde01928a162e0ad0c906752b.png"
+    },
+    {
+      "slot_no": 64,
+      "color_code": "C6",
+      "name": "C6",
+      "sort": 64,
+      "is_active": true,
+      "hex": "#50AAF0",
+      "rgb": [
+        80,
+        170,
+        240
+      ],
+      "image_filename": "3076f90652100d2719d20f2a5743d194.png"
+    },
+    {
+      "slot_no": 65,
+      "color_code": "C7",
+      "name": "C7",
+      "sort": 65,
+      "is_active": true,
+      "hex": "#3677D2",
+      "rgb": [
+        54,
+        119,
+        210
+      ],
+      "image_filename": "e6c7eb9ba3e65b596c98fe16dd45428a.png"
+    },
+    {
+      "slot_no": 66,
+      "color_code": "C8",
+      "name": "C8",
+      "sort": 66,
+      "is_active": true,
+      "hex": "#0F54C0",
+      "rgb": [
+        15,
+        84,
+        192
+      ],
+      "image_filename": "dd996d109d3b9b29712397888e2b1a9b.png"
+    },
+    {
+      "slot_no": 67,
+      "color_code": "C9",
+      "name": "C9",
+      "sort": 67,
+      "is_active": true,
+      "hex": "#324BCA",
+      "rgb": [
+        50,
+        75,
+        202
+      ],
+      "image_filename": "4ba666099756d41a5959a425bf0eb0be.png"
+    },
+    {
+      "slot_no": 68,
+      "color_code": "C10",
+      "name": "C10",
+      "sort": 68,
+      "is_active": true,
+      "hex": "#3EBCE2",
+      "rgb": [
+        62,
+        188,
+        226
+      ],
+      "image_filename": "bea3ba18054c3f0e375a4ba929f0c7de.png"
+    },
+    {
+      "slot_no": 69,
+      "color_code": "C11",
+      "name": "C11",
+      "sort": 69,
+      "is_active": true,
+      "hex": "#28DDDE",
+      "rgb": [
+        40,
+        221,
+        222
+      ],
+      "image_filename": "0639228b3534da986c3f6c7e99120207.png"
+    },
+    {
+      "slot_no": 70,
+      "color_code": "C12",
+      "name": "C12",
+      "sort": 70,
+      "is_active": true,
+      "hex": "#1C334D",
+      "rgb": [
+        28,
+        51,
+        77
+      ],
+      "image_filename": "383a55bf2dcf399474155505c47fdf7e.png"
+    },
+    {
+      "slot_no": 71,
+      "color_code": "C13",
+      "name": "C13",
+      "sort": 71,
+      "is_active": true,
+      "hex": "#CDE8FF",
+      "rgb": [
+        205,
+        232,
+        255
+      ],
+      "image_filename": "a58fdf0bd47a32129389c3124d5706fa.png"
+    },
+    {
+      "slot_no": 72,
+      "color_code": "C14",
+      "name": "C14",
+      "sort": 72,
+      "is_active": true,
+      "hex": "#D5FDFF",
+      "rgb": [
+        213,
+        253,
+        255
+      ],
+      "image_filename": "de90d0cc739876351e38a206bb2369ea.png"
+    },
+    {
+      "slot_no": 73,
+      "color_code": "C15",
+      "name": "C15",
+      "sort": 73,
+      "is_active": true,
+      "hex": "#22C4C6",
+      "rgb": [
+        34,
+        196,
+        198
+      ],
+      "image_filename": "6dd3faa26f5d16ac65c1441b8b8e524f.png"
+    },
+    {
+      "slot_no": 74,
+      "color_code": "C16",
+      "name": "C16",
+      "sort": 74,
+      "is_active": true,
+      "hex": "#1557A8",
+      "rgb": [
+        21,
+        87,
+        168
+      ],
+      "image_filename": "faa984904e32fa6c4ffb0d9d249d4d96.png"
+    },
+    {
+      "slot_no": 75,
+      "color_code": "C17",
+      "name": "C17",
+      "sort": 75,
+      "is_active": true,
+      "hex": "#04D1F6",
+      "rgb": [
+        4,
+        209,
+        246
+      ],
+      "image_filename": "fd11a72d7892a41040e4b24b1b2b91ee.png"
+    },
+    {
+      "slot_no": 76,
+      "color_code": "C18",
+      "name": "C18",
+      "sort": 76,
+      "is_active": true,
+      "hex": "#1D3344",
+      "rgb": [
+        29,
+        51,
+        68
+      ],
+      "image_filename": "12daf69ff2be42c9770dfceee7519caa.png"
+    },
+    {
+      "slot_no": 77,
+      "color_code": "C19",
+      "name": "C19",
+      "sort": 77,
+      "is_active": true,
+      "hex": "#1887A2",
+      "rgb": [
+        24,
+        135,
+        162
+      ],
+      "image_filename": "78f930c01025ac7592cb81ae8c9d96cb.png"
+    },
+    {
+      "slot_no": 78,
+      "color_code": "C20",
+      "name": "C20",
+      "sort": 78,
+      "is_active": true,
+      "hex": "#176DAF",
+      "rgb": [
+        23,
+        109,
+        175
+      ],
+      "image_filename": "5044979ed626827784cd97974eb85093.png"
+    },
+    {
+      "slot_no": 79,
+      "color_code": "C21",
+      "name": "C21",
+      "sort": 79,
+      "is_active": true,
+      "hex": "#BEDDFF",
+      "rgb": [
+        190,
+        221,
+        255
+      ],
+      "image_filename": "686979394f91eef9ab619cd4e55d0595.png"
+    },
+    {
+      "slot_no": 80,
+      "color_code": "C22",
+      "name": "C22",
+      "sort": 80,
+      "is_active": true,
+      "hex": "#67B4BE",
+      "rgb": [
+        103,
+        180,
+        190
+      ],
+      "image_filename": "6ec02706065be33ec8a4e797a553fa30.png"
+    },
+    {
+      "slot_no": 81,
+      "color_code": "C23",
+      "name": "C23",
+      "sort": 81,
+      "is_active": true,
+      "hex": "#C8E2FF",
+      "rgb": [
+        200,
+        226,
+        255
+      ],
+      "image_filename": "a260daea3339726cd034041cf10551c6.png"
+    },
+    {
+      "slot_no": 82,
+      "color_code": "C24",
+      "name": "C24",
+      "sort": 82,
+      "is_active": true,
+      "hex": "#7CC4FF",
+      "rgb": [
+        124,
+        196,
+        255
+      ],
+      "image_filename": "19fa96929b2d971ae39adf3cf335798a.png"
+    },
+    {
+      "slot_no": 83,
+      "color_code": "C25",
+      "name": "C25",
+      "sort": 83,
+      "is_active": true,
+      "hex": "#A9E5E5",
+      "rgb": [
+        169,
+        229,
+        229
+      ],
+      "image_filename": "c7e2885376cdfad29ec40386abb5d34e.png"
+    },
+    {
+      "slot_no": 84,
+      "color_code": "C26",
+      "name": "C26",
+      "sort": 84,
+      "is_active": true,
+      "hex": "#3CAED8",
+      "rgb": [
+        60,
+        174,
+        216
+      ],
+      "image_filename": "780a5da377a69e8d33587e80c9626baa.png"
+    },
+    {
+      "slot_no": 85,
+      "color_code": "C27",
+      "name": "C27",
+      "sort": 85,
+      "is_active": true,
+      "hex": "#D3DFFA",
+      "rgb": [
+        211,
+        223,
+        250
+      ],
+      "image_filename": "ede7dcf20379a872038149ff7ab51280.png"
+    },
+    {
+      "slot_no": 86,
+      "color_code": "C28",
+      "name": "C28",
+      "sort": 86,
+      "is_active": true,
+      "hex": "#BBCFED",
+      "rgb": [
+        187,
+        207,
+        237
+      ],
+      "image_filename": "b6a72bacfc4ab60614256539d990a558.png"
+    },
+    {
+      "slot_no": 87,
+      "color_code": "C29",
+      "name": "C29",
+      "sort": 87,
+      "is_active": true,
+      "hex": "#34488E",
+      "rgb": [
+        52,
+        72,
+        142
+      ],
+      "image_filename": "8ada7e8f74fd134c02b62a50c3ab5052.png"
+    },
+    {
+      "slot_no": 88,
+      "color_code": "D1",
+      "name": "D1",
+      "sort": 88,
+      "is_active": true,
+      "hex": "#AEB4F2",
+      "rgb": [
+        174,
+        180,
+        242
+      ],
+      "image_filename": "e95404a9f91dc27162df06b68f18defd.png"
+    },
+    {
+      "slot_no": 89,
+      "color_code": "D2",
+      "name": "D2",
+      "sort": 89,
+      "is_active": true,
+      "hex": "#858EDD",
+      "rgb": [
+        133,
+        142,
+        221
+      ],
+      "image_filename": "b8aa8abe3126a522f89811f244395e1a.png"
+    },
+    {
+      "slot_no": 90,
+      "color_code": "D3",
+      "name": "D3",
+      "sort": 90,
+      "is_active": true,
+      "hex": "#2F54AF",
+      "rgb": [
+        47,
+        84,
+        175
+      ],
+      "image_filename": "c41aef4dc0d92c7fc6359353a797937a.png"
+    },
+    {
+      "slot_no": 91,
+      "color_code": "D4",
+      "name": "D4",
+      "sort": 91,
+      "is_active": true,
+      "hex": "#182A84",
+      "rgb": [
+        24,
+        42,
+        132
+      ],
+      "image_filename": "02624319fcb5ca021b521928d721e83c.png"
+    },
+    {
+      "slot_no": 92,
+      "color_code": "D5",
+      "name": "D5",
+      "sort": 92,
+      "is_active": true,
+      "hex": "#B843C5",
+      "rgb": [
+        184,
+        67,
+        197
+      ],
+      "image_filename": "a331e27e73085ea9c830cb961e39622b.png"
+    },
+    {
+      "slot_no": 93,
+      "color_code": "D6",
+      "name": "D6",
+      "sort": 93,
+      "is_active": true,
+      "hex": "#AC7BDE",
+      "rgb": [
+        172,
+        123,
+        222
+      ],
+      "image_filename": "dc909a4a113a7e93b85238d72d44d9c3.png"
+    },
+    {
+      "slot_no": 94,
+      "color_code": "D7",
+      "name": "D7",
+      "sort": 94,
+      "is_active": true,
+      "hex": "#8854B3",
+      "rgb": [
+        136,
+        84,
+        179
+      ],
+      "image_filename": "5f455c8df0899417e8ff481f7aee6687.png"
+    },
+    {
+      "slot_no": 95,
+      "color_code": "D8",
+      "name": "D8",
+      "sort": 95,
+      "is_active": true,
+      "hex": "#E2D3FF",
+      "rgb": [
+        226,
+        211,
+        255
+      ],
+      "image_filename": "1ba514b20fe0ab6aa6ae12e3fb9e4758.png"
+    },
+    {
+      "slot_no": 96,
+      "color_code": "D9",
+      "name": "D9",
+      "sort": 96,
+      "is_active": true,
+      "hex": "#D5B9F8",
+      "rgb": [
+        213,
+        185,
+        248
+      ],
+      "image_filename": "a6a03b30b120497fdb5afdaa5f583860.png"
+    },
+    {
+      "slot_no": 97,
+      "color_code": "D10",
+      "name": "D10",
+      "sort": 97,
+      "is_active": true,
+      "hex": "#361851",
+      "rgb": [
+        54,
+        24,
+        81
+      ],
+      "image_filename": "46468afcfde4db845198bab72effb99d.png"
+    },
+    {
+      "slot_no": 98,
+      "color_code": "D11",
+      "name": "D11",
+      "sort": 98,
+      "is_active": true,
+      "hex": "#B9BAE1",
+      "rgb": [
+        185,
+        186,
+        225
+      ],
+      "image_filename": "a3a1c30c0b4837cd7c8a49db3d975ea1.png"
+    },
+    {
+      "slot_no": 99,
+      "color_code": "D12",
+      "name": "D12",
+      "sort": 99,
+      "is_active": true,
+      "hex": "#DE9AD4",
+      "rgb": [
+        222,
+        154,
+        212
+      ],
+      "image_filename": "f3999307386c4bfc06039bbaefb1a562.png"
+    },
+    {
+      "slot_no": 100,
+      "color_code": "D13",
+      "name": "D13",
+      "sort": 100,
+      "is_active": true,
+      "hex": "#B90095",
+      "rgb": [
+        185,
+        0,
+        149
+      ],
+      "image_filename": "8b70636809c12f725b2a03c537b95d80.png"
+    },
+    {
+      "slot_no": 101,
+      "color_code": "D14",
+      "name": "D14",
+      "sort": 101,
+      "is_active": true,
+      "hex": "#8B279B",
+      "rgb": [
+        139,
+        39,
+        155
+      ],
+      "image_filename": "89620f85e05e895379635b170fc52137.png"
+    },
+    {
+      "slot_no": 102,
+      "color_code": "D15",
+      "name": "D15",
+      "sort": 102,
+      "is_active": true,
+      "hex": "#2F1F90",
+      "rgb": [
+        47,
+        31,
+        144
+      ],
+      "image_filename": "81d21ecf7a40ee9fdf6e46d0754caca2.png"
+    },
+    {
+      "slot_no": 103,
+      "color_code": "D16",
+      "name": "D16",
+      "sort": 103,
+      "is_active": true,
+      "hex": "#E3E1EE",
+      "rgb": [
+        227,
+        225,
+        238
+      ],
+      "image_filename": "cf76a420ff8fbea6145b560e2fbeea95.png"
+    },
+    {
+      "slot_no": 104,
+      "color_code": "D17",
+      "name": "D17",
+      "sort": 104,
+      "is_active": true,
+      "hex": "#C4D4F6",
+      "rgb": [
+        196,
+        212,
+        246
+      ],
+      "image_filename": "1b92bb12468f8260b0ca339bed3ce6ed.png"
+    },
+    {
+      "slot_no": 105,
+      "color_code": "D18",
+      "name": "D18",
+      "sort": 105,
+      "is_active": true,
+      "hex": "#A45EC7",
+      "rgb": [
+        164,
+        94,
+        199
+      ],
+      "image_filename": "0c65b11241431f6bcca627a1939b95bb.png"
+    },
+    {
+      "slot_no": 106,
+      "color_code": "D19",
+      "name": "D19",
+      "sort": 106,
+      "is_active": true,
+      "hex": "#D8C3D7",
+      "rgb": [
+        216,
+        195,
+        215
+      ],
+      "image_filename": "17c2287db5480c85f85257627caa6a19.png"
+    },
+    {
+      "slot_no": 107,
+      "color_code": "D20",
+      "name": "D20",
+      "sort": 107,
+      "is_active": true,
+      "hex": "#9C32B2",
+      "rgb": [
+        156,
+        50,
+        178
+      ],
+      "image_filename": "ebee24fe3ba53b9025ec3d2f3049d74b.png"
+    },
+    {
+      "slot_no": 108,
+      "color_code": "D21",
+      "name": "D21",
+      "sort": 108,
+      "is_active": true,
+      "hex": "#9A009B",
+      "rgb": [
+        154,
+        0,
+        155
+      ],
+      "image_filename": "fa0460ee76a4bd8d58c88f2e8b942e4c.png"
+    },
+    {
+      "slot_no": 109,
+      "color_code": "D22",
+      "name": "D22",
+      "sort": 109,
+      "is_active": true,
+      "hex": "#333A95",
+      "rgb": [
+        51,
+        58,
+        149
+      ],
+      "image_filename": "4b86adf6e7a547f72c2869539eb8abf1.png"
+    },
+    {
+      "slot_no": 110,
+      "color_code": "D23",
+      "name": "D23",
+      "sort": 110,
+      "is_active": true,
+      "hex": "#EBDAFC",
+      "rgb": [
+        235,
+        218,
+        252
+      ],
+      "image_filename": "5fe3dd39c455d7849670b52d70ee84db.png"
+    },
+    {
+      "slot_no": 111,
+      "color_code": "D24",
+      "name": "D24",
+      "sort": 111,
+      "is_active": true,
+      "hex": "#7786E5",
+      "rgb": [
+        119,
+        134,
+        229
+      ],
+      "image_filename": "c6de86371655327f05073ad72fb7bd8a.png"
+    },
+    {
+      "slot_no": 112,
+      "color_code": "D25",
+      "name": "D25",
+      "sort": 112,
+      "is_active": true,
+      "hex": "#494FC7",
+      "rgb": [
+        73,
+        79,
+        199
+      ],
+      "image_filename": "fac72bdd92711cb7ceb3c36533505f9e.png"
+    },
+    {
+      "slot_no": 113,
+      "color_code": "D26",
+      "name": "D26",
+      "sort": 113,
+      "is_active": true,
+      "hex": "#DFC2F8",
+      "rgb": [
+        223,
+        194,
+        248
+      ],
+      "image_filename": "623a0d43cd702c767b2e0751cf1019fe.png"
+    },
+    {
+      "slot_no": 114,
+      "color_code": "E1",
+      "name": "E1",
+      "sort": 114,
+      "is_active": true,
+      "hex": "#FDD3CC",
+      "rgb": [
+        253,
+        211,
+        204
+      ],
+      "image_filename": "ec74ca17942e1a3850b6fcac67ccdc6f.png"
+    },
+    {
+      "slot_no": 115,
+      "color_code": "E2",
+      "name": "E2",
+      "sort": 115,
+      "is_active": true,
+      "hex": "#FEC0DF",
+      "rgb": [
+        254,
+        192,
+        223
+      ],
+      "image_filename": "74e6741f4dd52b857dcf6e7e824f85de.png"
+    },
+    {
+      "slot_no": 116,
+      "color_code": "E3",
+      "name": "E3",
+      "sort": 116,
+      "is_active": true,
+      "hex": "#FFB7E7",
+      "rgb": [
+        255,
+        183,
+        231
+      ],
+      "image_filename": "093808d3d081da43caabe919aa652bef.png"
+    },
+    {
+      "slot_no": 117,
+      "color_code": "E4",
+      "name": "E4",
+      "sort": 117,
+      "is_active": true,
+      "hex": "#E8649E",
+      "rgb": [
+        232,
+        100,
+        158
+      ],
+      "image_filename": "5a0e27adaa70a79f982d800fbbe3f6b4.png"
+    },
+    {
+      "slot_no": 118,
+      "color_code": "E5",
+      "name": "E5",
+      "sort": 118,
+      "is_active": true,
+      "hex": "#F551A2",
+      "rgb": [
+        245,
+        81,
+        162
+      ],
+      "image_filename": "aad595ad4d07a9f953e39016898f8d23.png"
+    },
+    {
+      "slot_no": 119,
+      "color_code": "E6",
+      "name": "E6",
+      "sort": 119,
+      "is_active": true,
+      "hex": "#F13D74",
+      "rgb": [
+        241,
+        61,
+        116
+      ],
+      "image_filename": "a42607dcaa6331369e36332e72256ffe.png"
+    },
+    {
+      "slot_no": 120,
+      "color_code": "E7",
+      "name": "E7",
+      "sort": 120,
+      "is_active": true,
+      "hex": "#C63478",
+      "rgb": [
+        198,
+        52,
+        120
+      ],
+      "image_filename": "0859198f9923684e4c827712bb575a94.png"
+    },
+    {
+      "slot_no": 121,
+      "color_code": "E8",
+      "name": "E8",
+      "sort": 121,
+      "is_active": true,
+      "hex": "#FFDBE9",
+      "rgb": [
+        255,
+        219,
+        233
+      ],
+      "image_filename": "5bb54e231e6e1911c6158f29685f9c96.png"
+    },
+    {
+      "slot_no": 122,
+      "color_code": "E9",
+      "name": "E9",
+      "sort": 122,
+      "is_active": true,
+      "hex": "#E970CC",
+      "rgb": [
+        233,
+        112,
+        204
+      ],
+      "image_filename": "cfe3f3699f9c7a9a73abc587dc00184d.png"
+    },
+    {
+      "slot_no": 123,
+      "color_code": "E10",
+      "name": "E10",
+      "sort": 123,
+      "is_active": true,
+      "hex": "#D33793",
+      "rgb": [
+        211,
+        55,
+        147
+      ],
+      "image_filename": "32f73e6968dab4312f93ce6ec12f6caf.png"
+    },
+    {
+      "slot_no": 124,
+      "color_code": "E11",
+      "name": "E11",
+      "sort": 124,
+      "is_active": true,
+      "hex": "#FCDDD2",
+      "rgb": [
+        252,
+        221,
+        210
+      ],
+      "image_filename": "a63ca855fc340972c43bd162b244cb4e.png"
+    },
+    {
+      "slot_no": 125,
+      "color_code": "E12",
+      "name": "E12",
+      "sort": 125,
+      "is_active": true,
+      "hex": "#F78FC3",
+      "rgb": [
+        247,
+        143,
+        195
+      ],
+      "image_filename": "21d861ecaacbc167d39a41058e797c29.png"
+    },
+    {
+      "slot_no": 126,
+      "color_code": "E13",
+      "name": "E13",
+      "sort": 126,
+      "is_active": true,
+      "hex": "#B5006D",
+      "rgb": [
+        181,
+        0,
+        109
+      ],
+      "image_filename": "cb98c92bd572e8893c212d2c99a0593b.png"
+    },
+    {
+      "slot_no": 127,
+      "color_code": "E14",
+      "name": "E14",
+      "sort": 127,
+      "is_active": true,
+      "hex": "#FFD1BA",
+      "rgb": [
+        255,
+        209,
+        186
+      ],
+      "image_filename": "271adddfa95be505b321df79a074fa51.png"
+    },
+    {
+      "slot_no": 128,
+      "color_code": "E15",
+      "name": "E15",
+      "sort": 128,
+      "is_active": true,
+      "hex": "#F8C7C9",
+      "rgb": [
+        248,
+        199,
+        201
+      ],
+      "image_filename": "1093a19ea46371a977ac9d1619acafc0.png"
+    },
+    {
+      "slot_no": 129,
+      "color_code": "E16",
+      "name": "E16",
+      "sort": 129,
+      "is_active": true,
+      "hex": "#FFF3EB",
+      "rgb": [
+        255,
+        243,
+        235
+      ],
+      "image_filename": "b90554adc79ee8683c5f91f7c87c3043.png"
+    },
+    {
+      "slot_no": 130,
+      "color_code": "E17",
+      "name": "E17",
+      "sort": 130,
+      "is_active": true,
+      "hex": "#FFE2EA",
+      "rgb": [
+        255,
+        226,
+        234
+      ],
+      "image_filename": "d2467921a9e896e778fd92c6d6b11eac.png"
+    },
+    {
+      "slot_no": 131,
+      "color_code": "E18",
+      "name": "E18",
+      "sort": 131,
+      "is_active": true,
+      "hex": "#FFC7DB",
+      "rgb": [
+        255,
+        199,
+        219
+      ],
+      "image_filename": "3ae123103ba36f7c1895acb92dbc471e.png"
+    },
+    {
+      "slot_no": 132,
+      "color_code": "E19",
+      "name": "E19",
+      "sort": 132,
+      "is_active": true,
+      "hex": "#FEBAD5",
+      "rgb": [
+        254,
+        186,
+        213
+      ],
+      "image_filename": "68ccfac32d4820bb5543b9d988dd2fea.png"
+    },
+    {
+      "slot_no": 133,
+      "color_code": "E20",
+      "name": "E20",
+      "sort": 133,
+      "is_active": true,
+      "hex": "#D8C7D1",
+      "rgb": [
+        216,
+        199,
+        209
+      ],
+      "image_filename": "6c86f0af6ce264ddd2120b4ce10df98d.png"
+    },
+    {
+      "slot_no": 134,
+      "color_code": "E21",
+      "name": "E21",
+      "sort": 134,
+      "is_active": true,
+      "hex": "#BD9DA1",
+      "rgb": [
+        189,
+        157,
+        161
+      ],
+      "image_filename": "a20e8eb5fd481ac466922a783d7da092.png"
+    },
+    {
+      "slot_no": 135,
+      "color_code": "E22",
+      "name": "E22",
+      "sort": 135,
+      "is_active": true,
+      "hex": "#B785A1",
+      "rgb": [
+        183,
+        133,
+        161
+      ],
+      "image_filename": "85e2324261e731ad7b86a26ad7d839d5.png"
+    },
+    {
+      "slot_no": 136,
+      "color_code": "E23",
+      "name": "E23",
+      "sort": 136,
+      "is_active": true,
+      "hex": "#937A8D",
+      "rgb": [
+        147,
+        122,
+        141
+      ],
+      "image_filename": "1cec6cf5a56cdf588efd0270d743ccca.png"
+    },
+    {
+      "slot_no": 137,
+      "color_code": "E24",
+      "name": "E24",
+      "sort": 137,
+      "is_active": true,
+      "hex": "#E1BCE8",
+      "rgb": [
+        225,
+        188,
+        232
+      ],
+      "image_filename": "a97ef16e50edd4c35026756f664cdffb.png"
+    },
+    {
+      "slot_no": 138,
+      "color_code": "F1",
+      "name": "F1",
+      "sort": 138,
+      "is_active": true,
+      "hex": "#FD957B",
+      "rgb": [
+        253,
+        149,
+        123
+      ],
+      "image_filename": "d84f85897131681dca9cdec841bedbdb.png"
+    },
+    {
+      "slot_no": 139,
+      "color_code": "F2",
+      "name": "F2",
+      "sort": 139,
+      "is_active": true,
+      "hex": "#FC3D46",
+      "rgb": [
+        252,
+        61,
+        70
+      ],
+      "image_filename": "2557979d222e775318f5328ec921c515.png"
+    },
+    {
+      "slot_no": 140,
+      "color_code": "F3",
+      "name": "F3",
+      "sort": 140,
+      "is_active": true,
+      "hex": "#F74941",
+      "rgb": [
+        247,
+        73,
+        65
+      ],
+      "image_filename": "d25fa7f7b4faf66b82e0eee5ebfcedfd.png"
+    },
+    {
+      "slot_no": 141,
+      "color_code": "F4",
+      "name": "F4",
+      "sort": 141,
+      "is_active": true,
+      "hex": "#FC283C",
+      "rgb": [
+        252,
+        40,
+        60
+      ],
+      "image_filename": "168df079168e0c2652ba67e3f2dac730.png"
+    },
+    {
+      "slot_no": 142,
+      "color_code": "F5",
+      "name": "F5",
+      "sort": 142,
+      "is_active": true,
+      "hex": "#E7002F",
+      "rgb": [
+        231,
+        0,
+        47
+      ],
+      "image_filename": "f59f6e1822b358f98428b92f33b8490a.png"
+    },
+    {
+      "slot_no": 143,
+      "color_code": "F6",
+      "name": "F6",
+      "sort": 143,
+      "is_active": true,
+      "hex": "#943630",
+      "rgb": [
+        148,
+        54,
+        48
+      ],
+      "image_filename": "3cb6334edff29c9204dfe63780c02be4.png"
+    },
+    {
+      "slot_no": 144,
+      "color_code": "F7",
+      "name": "F7",
+      "sort": 144,
+      "is_active": true,
+      "hex": "#971937",
+      "rgb": [
+        151,
+        25,
+        55
+      ],
+      "image_filename": "0e8b23af0c12343b880997b61251e48d.png"
+    },
+    {
+      "slot_no": 145,
+      "color_code": "F8",
+      "name": "F8",
+      "sort": 145,
+      "is_active": true,
+      "hex": "#BC0028",
+      "rgb": [
+        188,
+        0,
+        40
+      ],
+      "image_filename": "53c143aa681f92c5eb4c9b492b187458.png"
+    },
+    {
+      "slot_no": 146,
+      "color_code": "F9",
+      "name": "F9",
+      "sort": 146,
+      "is_active": true,
+      "hex": "#E2677A",
+      "rgb": [
+        226,
+        103,
+        122
+      ],
+      "image_filename": "23d331ac3688a57087359052695175c2.png"
+    },
+    {
+      "slot_no": 147,
+      "color_code": "F10",
+      "name": "F10",
+      "sort": 147,
+      "is_active": true,
+      "hex": "#8A4526",
+      "rgb": [
+        138,
+        69,
+        38
+      ],
+      "image_filename": "f0ae90da5872e6c2eef8607c060401dc.png"
+    },
+    {
+      "slot_no": 148,
+      "color_code": "F11",
+      "name": "F11",
+      "sort": 148,
+      "is_active": true,
+      "hex": "#5A2121",
+      "rgb": [
+        90,
+        33,
+        33
+      ],
+      "image_filename": "10a4b33f6e3f484eb75ecac8d319fbea.png"
+    },
+    {
+      "slot_no": 149,
+      "color_code": "F12",
+      "name": "F12",
+      "sort": 149,
+      "is_active": true,
+      "hex": "#FD4E6A",
+      "rgb": [
+        253,
+        78,
+        106
+      ],
+      "image_filename": "c95305bb78836647e3428b92ae8ef994.png"
+    },
+    {
+      "slot_no": 150,
+      "color_code": "F13",
+      "name": "F13",
+      "sort": 150,
+      "is_active": true,
+      "hex": "#F35744",
+      "rgb": [
+        243,
+        87,
+        68
+      ],
+      "image_filename": "de86b3150e9ef55c6c9a3f27f024de47.png"
+    },
+    {
+      "slot_no": 151,
+      "color_code": "F14",
+      "name": "F14",
+      "sort": 151,
+      "is_active": true,
+      "hex": "#FFA9AD",
+      "rgb": [
+        255,
+        169,
+        173
+      ],
+      "image_filename": "8ac97d69584d348b1cf8f88d4ed93b20.png"
+    },
+    {
+      "slot_no": 152,
+      "color_code": "F15",
+      "name": "F15",
+      "sort": 152,
+      "is_active": true,
+      "hex": "#D30022",
+      "rgb": [
+        211,
+        0,
+        34
+      ],
+      "image_filename": "faa4d01dc865fa1cb144d89c72409abf.png"
+    },
+    {
+      "slot_no": 153,
+      "color_code": "F16",
+      "name": "F16",
+      "sort": 153,
+      "is_active": true,
+      "hex": "#FEC2A6",
+      "rgb": [
+        254,
+        194,
+        166
+      ],
+      "image_filename": "57e5d605c19b79292439835a240e6472.png"
+    },
+    {
+      "slot_no": 154,
+      "color_code": "F17",
+      "name": "F17",
+      "sort": 154,
+      "is_active": true,
+      "hex": "#E69C79",
+      "rgb": [
+        230,
+        156,
+        121
+      ],
+      "image_filename": "4bd2f3a0154c46fecabda11565d10886.png"
+    },
+    {
+      "slot_no": 155,
+      "color_code": "F18",
+      "name": "F18",
+      "sort": 155,
+      "is_active": true,
+      "hex": "#D37C46",
+      "rgb": [
+        211,
+        124,
+        70
+      ],
+      "image_filename": "e36760a9b2faeffda243b628bbce3b6f.png"
+    },
+    {
+      "slot_no": 156,
+      "color_code": "F19",
+      "name": "F19",
+      "sort": 156,
+      "is_active": true,
+      "hex": "#C1444A",
+      "rgb": [
+        193,
+        68,
+        74
+      ],
+      "image_filename": "b9fd05af47b1b3dfbc8e646a75ecafff.png"
+    },
+    {
+      "slot_no": 157,
+      "color_code": "F20",
+      "name": "F20",
+      "sort": 157,
+      "is_active": true,
+      "hex": "#CD9391",
+      "rgb": [
+        205,
+        147,
+        145
+      ],
+      "image_filename": "3425d1b6a1691706ca225e60d0633651.png"
+    },
+    {
+      "slot_no": 158,
+      "color_code": "F21",
+      "name": "F21",
+      "sort": 158,
+      "is_active": true,
+      "hex": "#F7B4C6",
+      "rgb": [
+        247,
+        180,
+        198
+      ],
+      "image_filename": "8565a93426380a9e9ba87caaec60b1a6.png"
+    },
+    {
+      "slot_no": 159,
+      "color_code": "F22",
+      "name": "F22",
+      "sort": 159,
+      "is_active": true,
+      "hex": "#FDC0D0",
+      "rgb": [
+        253,
+        192,
+        208
+      ],
+      "image_filename": "0d096f9e5a3df9a52275f8d8ae6964e3.png"
+    },
+    {
+      "slot_no": 160,
+      "color_code": "F23",
+      "name": "F23",
+      "sort": 160,
+      "is_active": true,
+      "hex": "#F67E66",
+      "rgb": [
+        246,
+        126,
+        102
+      ],
+      "image_filename": "f2623817d074ce5d7657856acf87eb1c.png"
+    },
+    {
+      "slot_no": 161,
+      "color_code": "F24",
+      "name": "F24",
+      "sort": 161,
+      "is_active": true,
+      "hex": "#E698AA",
+      "rgb": [
+        230,
+        152,
+        170
+      ],
+      "image_filename": "85e114969309f0a1503c836b85fd9a97.png"
+    },
+    {
+      "slot_no": 162,
+      "color_code": "F25",
+      "name": "F25",
+      "sort": 162,
+      "is_active": true,
+      "hex": "#E54B4F",
+      "rgb": [
+        229,
+        75,
+        79
+      ],
+      "image_filename": "99cad24945d0b15a91abf41cf6e544e3.png"
+    },
+    {
+      "slot_no": 163,
+      "color_code": "G1",
+      "name": "G1",
+      "sort": 163,
+      "is_active": true,
+      "hex": "#FFE2CE",
+      "rgb": [
+        255,
+        226,
+        206
+      ],
+      "image_filename": "7c5f6dd09b1fd46093fff7a1b10c26d9.png"
+    },
+    {
+      "slot_no": 164,
+      "color_code": "G2",
+      "name": "G2",
+      "sort": 164,
+      "is_active": true,
+      "hex": "#FFC4AA",
+      "rgb": [
+        255,
+        196,
+        170
+      ],
+      "image_filename": "f275326fea5c72ee589bb234bc4bc741.png"
+    },
+    {
+      "slot_no": 165,
+      "color_code": "G3",
+      "name": "G3",
+      "sort": 165,
+      "is_active": true,
+      "hex": "#F4C3A5",
+      "rgb": [
+        244,
+        195,
+        165
+      ],
+      "image_filename": "5bfcfb183deb4bed8f5c1d2d238ecdd0.png"
+    },
+    {
+      "slot_no": 166,
+      "color_code": "G4",
+      "name": "G4",
+      "sort": 166,
+      "is_active": true,
+      "hex": "#E1B383",
+      "rgb": [
+        225,
+        179,
+        131
+      ],
+      "image_filename": "5b1693c8dbb141a41677646272b095a4.png"
+    },
+    {
+      "slot_no": 167,
+      "color_code": "G5",
+      "name": "G5",
+      "sort": 167,
+      "is_active": true,
+      "hex": "#EDB045",
+      "rgb": [
+        237,
+        176,
+        69
+      ],
+      "image_filename": "51b7accae9a5f8633ff50ff95456efbb.png"
+    },
+    {
+      "slot_no": 168,
+      "color_code": "G6",
+      "name": "G6",
+      "sort": 168,
+      "is_active": true,
+      "hex": "#E99C17",
+      "rgb": [
+        233,
+        156,
+        23
+      ],
+      "image_filename": "c9a6f1fa396e791138cbec19b800c9ad.png"
+    },
+    {
+      "slot_no": 169,
+      "color_code": "G7",
+      "name": "G7",
+      "sort": 169,
+      "is_active": true,
+      "hex": "#9D5B3E",
+      "rgb": [
+        157,
+        91,
+        62
+      ],
+      "image_filename": "a38c61013a2c8ec7efa37c68fe083a03.png"
+    },
+    {
+      "slot_no": 170,
+      "color_code": "G8",
+      "name": "G8",
+      "sort": 170,
+      "is_active": true,
+      "hex": "#753832",
+      "rgb": [
+        117,
+        56,
+        50
+      ],
+      "image_filename": "70b5c8c473f18cf67596271f0a60b8e1.png"
+    },
+    {
+      "slot_no": 171,
+      "color_code": "G9",
+      "name": "G9",
+      "sort": 171,
+      "is_active": true,
+      "hex": "#E6B483",
+      "rgb": [
+        230,
+        180,
+        131
+      ],
+      "image_filename": "6db31c0fdd503a8f2c08364a457fd336.png"
+    },
+    {
+      "slot_no": 172,
+      "color_code": "G10",
+      "name": "G10",
+      "sort": 172,
+      "is_active": true,
+      "hex": "#D98C39",
+      "rgb": [
+        217,
+        140,
+        57
+      ],
+      "image_filename": "d8f82135187e0f21d873957eefbdfbba.png"
+    },
+    {
+      "slot_no": 173,
+      "color_code": "G11",
+      "name": "G11",
+      "sort": 173,
+      "is_active": true,
+      "hex": "#E0C593",
+      "rgb": [
+        224,
+        197,
+        147
+      ],
+      "image_filename": "fd2b21d64d8805d1f4eeb00ef00e36af.png"
+    },
+    {
+      "slot_no": 174,
+      "color_code": "G12",
+      "name": "G12",
+      "sort": 174,
+      "is_active": true,
+      "hex": "#FFC890",
+      "rgb": [
+        255,
+        200,
+        144
+      ],
+      "image_filename": "95bc3956f636827449354fcf6546650d.png"
+    },
+    {
+      "slot_no": 175,
+      "color_code": "G13",
+      "name": "G13",
+      "sort": 175,
+      "is_active": true,
+      "hex": "#B7714A",
+      "rgb": [
+        183,
+        113,
+        74
+      ],
+      "image_filename": "d7076c152202d6f77c6f60dfc5bf72a2.png"
+    },
+    {
+      "slot_no": 176,
+      "color_code": "G14",
+      "name": "G14",
+      "sort": 176,
+      "is_active": true,
+      "hex": "#8D614C",
+      "rgb": [
+        141,
+        97,
+        76
+      ],
+      "image_filename": "c101bc7b7dbb90d067506c0653010cf1.png"
+    },
+    {
+      "slot_no": 177,
+      "color_code": "G15",
+      "name": "G15",
+      "sort": 177,
+      "is_active": true,
+      "hex": "#FCF9E0",
+      "rgb": [
+        252,
+        249,
+        224
+      ],
+      "image_filename": "0cc58092006ec7b71963ba66c426c4bf.png"
+    },
+    {
+      "slot_no": 178,
+      "color_code": "G16",
+      "name": "G16",
+      "sort": 178,
+      "is_active": true,
+      "hex": "#F2D9BA",
+      "rgb": [
+        242,
+        217,
+        186
+      ],
+      "image_filename": "e5dce0b1ea438f9919676f9f1d64be09.png"
+    },
+    {
+      "slot_no": 179,
+      "color_code": "G17",
+      "name": "G17",
+      "sort": 179,
+      "is_active": true,
+      "hex": "#78524B",
+      "rgb": [
+        120,
+        82,
+        75
+      ],
+      "image_filename": "c41e734a753676a53d47119d3ec7ce10.png"
+    },
+    {
+      "slot_no": 180,
+      "color_code": "G18",
+      "name": "G18",
+      "sort": 180,
+      "is_active": true,
+      "hex": "#FFE4CC",
+      "rgb": [
+        255,
+        228,
+        204
+      ],
+      "image_filename": "d3b34e80bf65f56bd419f5fe3a0f9ffd.png"
+    },
+    {
+      "slot_no": 181,
+      "color_code": "G19",
+      "name": "G19",
+      "sort": 181,
+      "is_active": true,
+      "hex": "#E07935",
+      "rgb": [
+        224,
+        121,
+        53
+      ],
+      "image_filename": "ef50f1a5fa87f2ba7ce73fb453dec3f1.png"
+    },
+    {
+      "slot_no": 182,
+      "color_code": "G20",
+      "name": "G20",
+      "sort": 182,
+      "is_active": true,
+      "hex": "#A94023",
+      "rgb": [
+        169,
+        64,
+        35
+      ],
+      "image_filename": "e1d3c0aee912de1e5f79b59bd4221cd8.png"
+    },
+    {
+      "slot_no": 183,
+      "color_code": "G21",
+      "name": "G21",
+      "sort": 183,
+      "is_active": true,
+      "hex": "#B88558",
+      "rgb": [
+        184,
+        133,
+        88
+      ],
+      "image_filename": "16a73a6d33a7dc4f15754f735fc215e5.png"
+    },
+    {
+      "slot_no": 184,
+      "color_code": "H1",
+      "name": "H1",
+      "sort": 184,
+      "is_active": true,
+      "hex": "#FDFBFF",
+      "rgb": [
+        253,
+        251,
+        255
+      ],
+      "image_filename": "d6557d0a71c9c6a0994de2224f56d645.png"
+    },
+    {
+      "slot_no": 185,
+      "color_code": "H2",
+      "name": "H2",
+      "sort": 185,
+      "is_active": true,
+      "hex": "#FEFFFF",
+      "rgb": [
+        254,
+        255,
+        255
+      ],
+      "image_filename": "58deb134629e6400d4b61bd397d6d924.png"
+    },
+    {
+      "slot_no": 186,
+      "color_code": "H3",
+      "name": "H3",
+      "sort": 186,
+      "is_active": true,
+      "hex": "#B6B1BA",
+      "rgb": [
+        182,
+        177,
+        186
+      ],
+      "image_filename": "861c71c1adaaad038b749cc28b4d2130.png"
+    },
+    {
+      "slot_no": 187,
+      "color_code": "H4",
+      "name": "H4",
+      "sort": 187,
+      "is_active": true,
+      "hex": "#89858C",
+      "rgb": [
+        137,
+        133,
+        140
+      ],
+      "image_filename": "9f5f04996de0a05775d4b6b447c5dc45.png"
+    },
+    {
+      "slot_no": 188,
+      "color_code": "H5",
+      "name": "H5",
+      "sort": 188,
+      "is_active": true,
+      "hex": "#48464E",
+      "rgb": [
+        72,
+        70,
+        78
+      ],
+      "image_filename": "07f1e86f205db075d46b5d6a8b81c8d5.png"
+    },
+    {
+      "slot_no": 189,
+      "color_code": "H6",
+      "name": "H6",
+      "sort": 189,
+      "is_active": true,
+      "hex": "#2F2B2F",
+      "rgb": [
+        47,
+        43,
+        47
+      ],
+      "image_filename": "e5acc3b548ece8fea387bffc9248a245.png"
+    },
+    {
+      "slot_no": 190,
+      "color_code": "H7",
+      "name": "H7",
+      "sort": 190,
+      "is_active": true,
+      "hex": "#000000",
+      "rgb": [
+        0,
+        0,
+        0
+      ],
+      "image_filename": "7134aaf273554e9d19269a92319e130a.png"
+    },
+    {
+      "slot_no": 191,
+      "color_code": "H8",
+      "name": "H8",
+      "sort": 191,
+      "is_active": true,
+      "hex": "#E7D6DB",
+      "rgb": [
+        231,
+        214,
+        219
+      ],
+      "image_filename": "d2ffb73345680ac7c2b2e8291a602c71.png"
+    },
+    {
+      "slot_no": 192,
+      "color_code": "H9",
+      "name": "H9",
+      "sort": 192,
+      "is_active": true,
+      "hex": "#EDEDED",
+      "rgb": [
+        237,
+        237,
+        237
+      ],
+      "image_filename": "dbccdcbf79b1564387f8b7419dcb0e98.png"
+    },
+    {
+      "slot_no": 193,
+      "color_code": "H10",
+      "name": "H10",
+      "sort": 193,
+      "is_active": true,
+      "hex": "#EEE9EA",
+      "rgb": [
+        238,
+        233,
+        234
+      ],
+      "image_filename": "3a7323dae0780245e0c62c7def5bcd0b.png"
+    },
+    {
+      "slot_no": 194,
+      "color_code": "H11",
+      "name": "H11",
+      "sort": 194,
+      "is_active": true,
+      "hex": "#CECDD5",
+      "rgb": [
+        206,
+        205,
+        213
+      ],
+      "image_filename": "d9db90b78e853058b7ea6899de4eee5b.png"
+    },
+    {
+      "slot_no": 195,
+      "color_code": "H12",
+      "name": "H12",
+      "sort": 195,
+      "is_active": true,
+      "hex": "#FFF5ED",
+      "rgb": [
+        255,
+        245,
+        237
+      ],
+      "image_filename": "5911f1891e568e05cc38aec8d6694eae.png"
+    },
+    {
+      "slot_no": 196,
+      "color_code": "H13",
+      "name": "H13",
+      "sort": 196,
+      "is_active": true,
+      "hex": "#F5ECD2",
+      "rgb": [
+        245,
+        236,
+        210
+      ],
+      "image_filename": "c9e4ea344b4bdf92a350971a37a9d1ee.png"
+    },
+    {
+      "slot_no": 197,
+      "color_code": "H14",
+      "name": "H14",
+      "sort": 197,
+      "is_active": true,
+      "hex": "#CFD7D3",
+      "rgb": [
+        207,
+        215,
+        211
+      ],
+      "image_filename": "0188bb6c60e3a04a37768f67b0d57ad3.png"
+    },
+    {
+      "slot_no": 198,
+      "color_code": "H15",
+      "name": "H15",
+      "sort": 198,
+      "is_active": true,
+      "hex": "#98A6A8",
+      "rgb": [
+        152,
+        166,
+        168
+      ],
+      "image_filename": "c323b480d22d890f9281c10420023a25.png"
+    },
+    {
+      "slot_no": 199,
+      "color_code": "H16",
+      "name": "H16",
+      "sort": 199,
+      "is_active": true,
+      "hex": "#1D1414",
+      "rgb": [
+        29,
+        20,
+        20
+      ],
+      "image_filename": "db88abbcdf11fc57575f28ffc1e810dc.png"
+    },
+    {
+      "slot_no": 200,
+      "color_code": "H17",
+      "name": "H17",
+      "sort": 200,
+      "is_active": true,
+      "hex": "#F1EDED",
+      "rgb": [
+        241,
+        237,
+        237
+      ],
+      "image_filename": "7708079edb9d213e010fdf8e00bdf1c2.png"
+    },
+    {
+      "slot_no": 201,
+      "color_code": "H18",
+      "name": "H18",
+      "sort": 201,
+      "is_active": true,
+      "hex": "#FFFDF0",
+      "rgb": [
+        255,
+        253,
+        240
+      ],
+      "image_filename": "c3b973cf9b6202ed7dd80f6caaad54bc.png"
+    },
+    {
+      "slot_no": 202,
+      "color_code": "H19",
+      "name": "H19",
+      "sort": 202,
+      "is_active": true,
+      "hex": "#F6EFE2",
+      "rgb": [
+        246,
+        239,
+        226
+      ],
+      "image_filename": "bfd507d0b0678f4f0fb1c604adf81dd5.png"
+    },
+    {
+      "slot_no": 203,
+      "color_code": "H20",
+      "name": "H20",
+      "sort": 203,
+      "is_active": true,
+      "hex": "#949FA3",
+      "rgb": [
+        148,
+        159,
+        163
+      ],
+      "image_filename": "e822a1f35ce61df399268a06fac58ed8.png"
+    },
+    {
+      "slot_no": 204,
+      "color_code": "H21",
+      "name": "H21",
+      "sort": 204,
+      "is_active": true,
+      "hex": "#FFFBE1",
+      "rgb": [
+        255,
+        251,
+        225
+      ],
+      "image_filename": "1dd1249568d4c3cc3af9cf1dbc16eb28.png"
+    },
+    {
+      "slot_no": 205,
+      "color_code": "H22",
+      "name": "H22",
+      "sort": 205,
+      "is_active": true,
+      "hex": "#CACAD4",
+      "rgb": [
+        202,
+        202,
+        212
+      ],
+      "image_filename": "dfcfab12d3a35d0a7b7488e7ef1ed847.png"
+    },
+    {
+      "slot_no": 206,
+      "color_code": "H23",
+      "name": "H23",
+      "sort": 206,
+      "is_active": true,
+      "hex": "#9A9D94",
+      "rgb": [
+        154,
+        157,
+        148
+      ],
+      "image_filename": "941ea116173aa213e5738348736acc48.png"
+    },
+    {
+      "slot_no": 207,
+      "color_code": "M1",
+      "name": "M1",
+      "sort": 207,
+      "is_active": true,
+      "hex": "#BCC6B8",
+      "rgb": [
+        188,
+        198,
+        184
+      ],
+      "image_filename": "7de93b119c5e7688e9abb7fe5cb93fea.png"
+    },
+    {
+      "slot_no": 208,
+      "color_code": "M2",
+      "name": "M2",
+      "sort": 208,
+      "is_active": true,
+      "hex": "#8AA386",
+      "rgb": [
+        138,
+        163,
+        134
+      ],
+      "image_filename": "f03907daa3ee39730de81e2bd3b6eb01.png"
+    },
+    {
+      "slot_no": 209,
+      "color_code": "M3",
+      "name": "M3",
+      "sort": 209,
+      "is_active": true,
+      "hex": "#697D80",
+      "rgb": [
+        105,
+        125,
+        128
+      ],
+      "image_filename": "5af0ed31a29a65a1f0aa66a6e9527a1e.png"
+    },
+    {
+      "slot_no": 210,
+      "color_code": "M4",
+      "name": "M4",
+      "sort": 210,
+      "is_active": true,
+      "hex": "#E3D2BC",
+      "rgb": [
+        227,
+        210,
+        188
+      ],
+      "image_filename": "b3746e300f4b44cd1e885c8e817fac06.png"
+    },
+    {
+      "slot_no": 211,
+      "color_code": "M5",
+      "name": "M5",
+      "sort": 211,
+      "is_active": true,
+      "hex": "#D0CCAA",
+      "rgb": [
+        208,
+        204,
+        170
+      ],
+      "image_filename": "2fcbff5325c6a545120686d21745dfc8.png"
+    },
+    {
+      "slot_no": 212,
+      "color_code": "M6",
+      "name": "M6",
+      "sort": 212,
+      "is_active": true,
+      "hex": "#B0A782",
+      "rgb": [
+        176,
+        167,
+        130
+      ],
+      "image_filename": "cf4c8546486a2fbb19552bec5b951bc0.png"
+    },
+    {
+      "slot_no": 213,
+      "color_code": "M7",
+      "name": "M7",
+      "sort": 213,
+      "is_active": true,
+      "hex": "#B4A497",
+      "rgb": [
+        180,
+        164,
+        151
+      ],
+      "image_filename": "56729ebcede06db7690d2e709ff46cab.png"
+    },
+    {
+      "slot_no": 214,
+      "color_code": "M8",
+      "name": "M8",
+      "sort": 214,
+      "is_active": true,
+      "hex": "#B38281",
+      "rgb": [
+        179,
+        130,
+        129
+      ],
+      "image_filename": "9a813e6715cfb73c61720d6f79c0cfde.png"
+    },
+    {
+      "slot_no": 215,
+      "color_code": "M9",
+      "name": "M9",
+      "sort": 215,
+      "is_active": true,
+      "hex": "#A58767",
+      "rgb": [
+        165,
+        135,
+        103
+      ],
+      "image_filename": "8740668d4d133385eaafb747c6416966.png"
+    },
+    {
+      "slot_no": 216,
+      "color_code": "M10",
+      "name": "M10",
+      "sort": 216,
+      "is_active": true,
+      "hex": "#C5B2BC",
+      "rgb": [
+        197,
+        178,
+        188
+      ],
+      "image_filename": "aa7704651dca1bed7aa6256c550df41b.png"
+    },
+    {
+      "slot_no": 217,
+      "color_code": "M11",
+      "name": "M11",
+      "sort": 217,
+      "is_active": true,
+      "hex": "#9F7594",
+      "rgb": [
+        159,
+        117,
+        148
+      ],
+      "image_filename": "a0420dad7339ba62b16cbed04ebe7846.png"
+    },
+    {
+      "slot_no": 218,
+      "color_code": "M12",
+      "name": "M12",
+      "sort": 218,
+      "is_active": true,
+      "hex": "#644749",
+      "rgb": [
+        100,
+        71,
+        73
+      ],
+      "image_filename": "7471c221e13c6edcc929f375368f92b1.png"
+    },
+    {
+      "slot_no": 219,
+      "color_code": "M13",
+      "name": "M13",
+      "sort": 219,
+      "is_active": true,
+      "hex": "#D19066",
+      "rgb": [
+        209,
+        144,
+        102
+      ],
+      "image_filename": "9335c51317a72bbf0a29799a71f77642.png"
+    },
+    {
+      "slot_no": 220,
+      "color_code": "M14",
+      "name": "M14",
+      "sort": 220,
+      "is_active": true,
+      "hex": "#C77362",
+      "rgb": [
+        199,
+        115,
+        98
+      ],
+      "image_filename": "d894142f3ad1b5e70adb0464f74ca566.png"
+    },
+    {
+      "slot_no": 221,
+      "color_code": "M15",
+      "name": "M15",
+      "sort": 221,
+      "is_active": true,
+      "hex": "#757D78",
+      "rgb": [
+        117,
+        125,
+        120
+      ],
+      "image_filename": "5afa2a99eea0181d490714e030e63d43.png"
+    }
+  ]
+}

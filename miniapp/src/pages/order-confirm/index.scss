@@ -1,0 +1,321 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
+
+.order-confirm-page,
+.order-result-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+}
+
+.order-confirm-page {
+  &--state {
+    @include pd.state-shell;
+
+    min-height: 100vh;
+  }
+
+  &__header {
+    @include customer.page-header(center 48%);
+  }
+
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__title {
+    @include customer.title;
+  }
+
+  &__subtitle {
+    @include customer.subtitle;
+  }
+
+  &__notice {
+    @include customer.ledger-panel(#c97991, 5px);
+
+    max-width: 38em;
+    padding: 17px 19px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.58;
+    background: var(--pd-color-surface-muted);
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-small);
+  }
+
+  &__submit {
+    @include pd.primary-button(16px);
+
+    width: 100%;
+    margin-top: 24px;
+  }
+}
+
+.order-confirm-state {
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button(16px);
+
+    width: min(100%, 420px);
+    min-width: 240px;
+    margin-top: 26px;
+  }
+}
+
+.order-confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.order-confirm-item {
+  @include pd.record-card(22px);
+  @include customer.ledger-panel(var(--pd-color-line-strong), 4px);
+
+  &__type,
+  &__name,
+  &__configuration {
+    display: block;
+  }
+
+  &__type {
+    width: fit-content;
+    padding: 4px 10px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    background: var(--pd-color-primary-soft);
+    border-radius: 999px;
+  }
+
+  &__name {
+    margin-top: 10px;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.4;
+    overflow-wrap: break-word;
+  }
+
+  &__configuration {
+    margin-top: 8px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.5;
+  }
+
+  &__summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 15px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+  }
+}
+
+.order-confirm-remark {
+  @include pd.section-panel(22px);
+  @include customer.ledger-panel(#c97991, 5px);
+
+  margin-top: 20px;
+
+  &__label,
+  &__count {
+    display: block;
+  }
+
+  &__label {
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__input {
+    @include pd.textarea-field;
+
+    margin-top: 14px;
+  }
+
+  &__count {
+    margin-top: 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+}
+
+.order-confirm-feedback {
+  &--error {
+    @include pd.feedback-error;
+  }
+
+  &--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &__action {
+    @include pd.secondary-button(13px);
+
+    width: 100%;
+    margin-top: 14px;
+    color: var(--pd-color-warning);
+    border-color: rgb(118 83 28 / 22%);
+  }
+}
+
+.order-result-page {
+  color: var(--pd-color-ink);
+}
+
+.order-result-hero {
+  @include customer.identity-panel(center 52%);
+
+  padding: 32px 26px;
+  text-align: center;
+  border-radius: var(--pd-radius-large);
+
+  &__eyebrow,
+  &__number,
+  &__status,
+  &__total,
+  &__hint {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: rgb(255 244 248 / 86%);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+  }
+
+  &__number {
+    margin-top: 13px;
+    color: #fff;
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  &__status {
+    width: fit-content;
+    margin: 16px auto 0;
+    padding: 5px 12px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+    background: var(--pd-color-primary-soft);
+    border-radius: 999px;
+  }
+
+  &__total {
+    margin-top: 14px;
+    color: #fff;
+    font-size: var(--pd-font-display-size);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+  }
+
+  &__hint {
+    max-width: 28em;
+    margin: 9px auto 0;
+    color: rgb(255 244 248 / 84%);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+}
+
+.order-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.order-result-item {
+  @include pd.record-card(22px);
+
+  &__name,
+  &__configuration {
+    display: block;
+  }
+
+  &__name {
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  &__configuration {
+    margin-top: 8px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.5;
+  }
+
+  &__summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 14px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.order-result-meta {
+  @include pd.section-panel(20px, 18px);
+  @include pd.meta-text;
+
+  margin-top: 18px;
+
+  text {
+    display: block;
+  }
+}
+
+.order-result-warning {
+  @include pd.feedback-warning;
+}
+
+.order-result-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+
+  button {
+    @include pd.secondary-button(14px);
+  }
+
+  &__primary {
+    @include pd.primary-button(14px);
+  }
+
+  & &__primary {
+    @include pd.primary-button(14px);
+  }
+}
+
+@media (width >= 768px) {
+  .order-confirm-list,
+  .order-result-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,5 +1,6 @@
 """Product Service —— 编排 Product 业务操作。"""
 
+import hashlib
 import json
 import logging
 from collections.abc import Mapping
@@ -11,8 +12,23 @@ from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
-from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.bead_color import (
+    is_bead_color_configured,
+    normalize_bead_color_swatch_hex,
+)
+from app.common.constants.product import (
+    BEAD_COLOR_AUDIT_DESCRIPTION_MAX_LENGTH,
+    BEAD_COLOR_AUDIT_HASH_LENGTH,
+    BEAD_COLOR_SLOT_COUNT,
+    BEAD_COLOR_SLOT_MIN,
+    COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+)
+from app.common.enums.product import DayType, KitKind, ProductStatus, ProductType
 from app.common.exceptions import (
+    BeadColorCodeAlreadyExists,
+    BeadColorInUseByOnlineProduct,
+    BeadColorNotConfigured,
+    BeadColorNotFound,
     ExperienceOptionAlreadyDeleted,
     ExperienceOptionAlreadyExists,
     ExperienceOptionNotFound,
@@ -23,16 +39,19 @@ from app.common.exceptions import (
     ProductIsDeleted,
     ProductImageNotFound,
     ProductKitNotFound,
+    ProductKitColorNotFound,
     ProductMustBeOfflineBeforeDelete,
     ProductNotFound,
     ProductTypeMismatch,
 )
 from app.common.pagination import Page
 from app.models.audit_log import AuditLog
+from app.models.bead_color import BeadColor
 from app.models.experience_option import ExperienceOption
 from app.models.product import Product
 from app.models.product_image import ProductImage
 from app.models.product_kit import ProductKit
+from app.models.product_kit_color import ProductKitColor
 from app.repositories.product_repo import ProductRepository
 from app.services.audit_log_service import AuditLogService
 from app.validators.product_validator import ProductValidator
@@ -47,6 +66,68 @@ _OPTION_UPDATE_FIELDS = frozenset(
 _OPTION_DIMENSION_UPDATE_FIELDS = frozenset(
     {"duration_minutes", "participants", "day_type"},
 )
+_BEAD_COLOR_UPDATE_FIELD_ORDER = (
+    "color_code",
+    "name",
+    "swatch_hex",
+    "sort",
+    "is_active",
+)
+_BEAD_COLOR_UPDATE_FIELDS = frozenset(_BEAD_COLOR_UPDATE_FIELD_ORDER)
+
+
+def _summarize_bead_color_audit_value(value: object) -> object:
+    """用长度和 SHA-256 前缀稳定摘要可能撑爆审计列的字符串。"""
+
+    if not isinstance(value, str):
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return {
+        "len": len(value),
+        "sha256": digest[:BEAD_COLOR_AUDIT_HASH_LENGTH],
+    }
+
+
+def _bead_color_audit_description(
+    *,
+    changed_fields: list[str],
+    before: Mapping[str, object],
+    after: Mapping[str, object],
+) -> str:
+    """生成不超过 AuditLog.description 上限的完整 JSON 审计载荷。"""
+
+    payload = {
+        "changed_fields": changed_fields,
+        "before": [before[field] for field in changed_fields],
+        "after": [after[field] for field in changed_fields],
+    }
+    description = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    if len(description) <= BEAD_COLOR_AUDIT_DESCRIPTION_MAX_LENGTH:
+        return description
+
+    summarized_payload = {
+        "changed_fields": changed_fields,
+        "before": [
+            _summarize_bead_color_audit_value(before[field])
+            for field in changed_fields
+        ],
+        "after": [
+            _summarize_bead_color_audit_value(after[field])
+            for field in changed_fields
+        ],
+    }
+    description = json.dumps(
+        summarized_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    if len(description) > BEAD_COLOR_AUDIT_DESCRIPTION_MAX_LENGTH:
+        raise RuntimeError("Bead color audit description exceeds safe bound")
+    return description
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,12 +188,13 @@ class ProductService:
         name: str,
         description: str | None,
         price: Decimal,
-        stock: int,
+        kit_kind: KitKind = KitKind.FIXED,
         operator_id: int,
         ip_address: str,
     ) -> Product:
         """原子创建 Kit Draft 聚合并写入审计。"""
 
+        kit_kind = KitKind(kit_kind)
         async with in_transaction() as connection:
             product = await self.product_repository.create_product(
                 name=name,
@@ -120,12 +202,45 @@ class ProductService:
                 product_type=ProductType.KIT,
                 using_db=connection,
             )
-            await self.product_repository.create_kit(
-                product=product,
-                price=price,
-                stock=stock,
-                using_db=connection,
-            )
+            if kit_kind is KitKind.FIXED:
+                await self.product_repository.create_kit(
+                    product=product,
+                    price=price,
+                    using_db=connection,
+                )
+            else:
+                await self.product_repository.create_kit(
+                    product=product,
+                    price=price,
+                    stock=None,
+                    kit_kind=KitKind.COLOR_SELECTABLE,
+                    sale_unit_grams=COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+                    using_db=connection,
+                )
+                bead_colors = (
+                    await self.product_repository.ensure_bead_color_slots(
+                        using_db=connection,
+                    )
+                )
+                expected_slots = list(
+                    range(
+                        BEAD_COLOR_SLOT_MIN,
+                        BEAD_COLOR_SLOT_COUNT + 1,
+                    )
+                )
+                if (
+                    len(bead_colors) != BEAD_COLOR_SLOT_COUNT
+                    or [color.slot_no for color in bead_colors]
+                    != expected_slots
+                ):
+                    raise RuntimeError(
+                        "Global bead color catalog must contain slots 1 through 221"
+                    )
+                await self.product_repository.create_product_kit_colors(
+                    product=product,
+                    bead_colors=bead_colors,
+                    using_db=connection,
+                )
             await self.audit_log_service.log(
                 operator_id=operator_id,
                 action="CREATE_PRODUCT",
@@ -141,6 +256,265 @@ class ProductService:
             product.id,
         )
         return product
+
+    async def list_bead_colors(
+        self,
+        *,
+        page: int,
+        page_size: int,
+    ) -> Page[BeadColor]:
+        """分页读取全局拼豆颜色目录。"""
+
+        return await self.product_repository.list_bead_colors(
+            page=page,
+            page_size=page_size,
+        )
+
+    async def update_bead_color(
+        self,
+        bead_color_id: int,
+        *,
+        updates: Mapping[str, object],
+        operator_id: int,
+        ip_address: str,
+    ) -> BeadColor:
+        """原子修改未被 Online 商品使用的全局颜色元数据。"""
+
+        update_fields = dict(updates)
+        if (
+            not update_fields
+            or not update_fields.keys() <= _BEAD_COLOR_UPDATE_FIELDS
+        ):
+            raise ValueError("updates must contain only bead color fields")
+        if (
+            "swatch_hex" in update_fields
+            and update_fields["swatch_hex"] is not None
+        ):
+            update_fields["swatch_hex"] = normalize_bead_color_swatch_hex(
+                update_fields["swatch_hex"]
+            )
+
+        attempted_color_code: str | None = None
+        try:
+            async with in_transaction() as connection:
+                product_ids = (
+                    await self.product_repository.list_product_ids_by_bead_color(
+                        bead_color_id,
+                        using_db=connection,
+                    )
+                )
+                locked_products = (
+                    await self.product_repository.get_products_for_update(
+                        set(product_ids),
+                        using_db=connection,
+                    )
+                )
+                bead_color = (
+                    await self.product_repository.get_bead_color_for_update(
+                        bead_color_id,
+                        using_db=connection,
+                    )
+                )
+                if bead_color is None:
+                    raise BeadColorNotFound()
+
+                enabled_colors = await (
+                    self.product_repository.get_enabled_kit_colors_for_update(
+                        bead_color_id,
+                        using_db=connection,
+                    )
+                )
+                enabled_product_ids = {
+                    color.product_id for color in enabled_colors
+                }
+                if any(
+                    product.id in enabled_product_ids
+                    and not product.is_deleted
+                    and product.status == ProductStatus.ONLINE
+                    for product in locked_products
+                ):
+                    raise BeadColorInUseByOnlineProduct()
+
+                final_color_code = cast(
+                    str | None,
+                    update_fields["color_code"]
+                    if "color_code" in update_fields
+                    else bead_color.color_code,
+                )
+                final_name = cast(
+                    str | None,
+                    update_fields["name"]
+                    if "name" in update_fields
+                    else bead_color.name,
+                )
+                final_swatch_hex = cast(
+                    str | None,
+                    update_fields["swatch_hex"]
+                    if "swatch_hex" in update_fields
+                    else bead_color.swatch_hex,
+                )
+                final_is_active = cast(
+                    bool,
+                    update_fields["is_active"]
+                    if "is_active" in update_fields
+                    else bead_color.is_active,
+                )
+                if final_is_active and not is_bead_color_configured(
+                    color_code=final_color_code,
+                    name=final_name,
+                    swatch_hex=final_swatch_hex,
+                ):
+                    raise BeadColorNotConfigured()
+
+                changed_fields = [
+                    field
+                    for field in _BEAD_COLOR_UPDATE_FIELD_ORDER
+                    if field in update_fields
+                ]
+                before = {
+                    field: getattr(bead_color, field)
+                    for field in changed_fields
+                }
+                after = {
+                    "color_code": final_color_code,
+                    "name": final_name,
+                    "swatch_hex": final_swatch_hex,
+                    "sort": (
+                        update_fields["sort"]
+                        if "sort" in update_fields
+                        else bead_color.sort
+                    ),
+                    "is_active": final_is_active,
+                }
+                attempted_color_code = (
+                    final_color_code
+                    if "color_code" in update_fields
+                    else None
+                )
+                updated = await self.product_repository.update_bead_color(
+                    bead_color,
+                    using_db=connection,
+                    **update_fields,
+                )
+                await self.audit_log_service.log(
+                    operator_id=operator_id,
+                    action="UPDATE_BEAD_COLOR",
+                    target_type="bead_color",
+                    target_id=bead_color.id,
+                    ip_address=ip_address,
+                    description=_bead_color_audit_description(
+                        changed_fields=changed_fields,
+                        before=before,
+                        after=after,
+                    ),
+                    using_db=connection,
+                )
+        except IntegrityError as exc:
+            if attempted_color_code is not None:
+                raise BeadColorCodeAlreadyExists(
+                    color_code=attempted_color_code
+                ) from exc
+            raise
+
+        logger.info(
+            "Bead color updated: operator_id=%d bead_color_id=%d",
+            operator_id,
+            bead_color_id,
+        )
+        return updated
+
+    async def update_product_kit_color(
+        self,
+        kit_color_id: int,
+        *,
+        is_enabled: bool,
+        operator_id: int,
+        ip_address: str,
+    ) -> ProductKitColor:
+        """原子启用或禁用非 Online 自选颜色商品的一个颜色槽。"""
+
+        kit_color = (
+            await self.product_repository.get_product_kit_color_by_id(
+                kit_color_id
+            )
+        )
+        if kit_color is None:
+            raise ProductKitColorNotFound()
+        product_id = kit_color.product_id
+        async with in_transaction() as connection:
+            locked_product = (
+                await self.product_repository.get_product_for_update(
+                    product_id,
+                    using_db=connection,
+                )
+            )
+            if locked_product is None or locked_product.is_deleted:
+                raise ProductKitColorNotFound()
+            product = await self.product_repository.get_product_detail(
+                product_id,
+                include_deleted=True,
+                using_db=connection,
+            )
+            if product is None:
+                raise ProductKitColorNotFound()
+            locked_kit_color = next(
+                (
+                    color
+                    for color in product.kit_colors
+                    if color.id == kit_color_id
+                ),
+                None,
+            )
+            kit = product.kit
+            if (
+                locked_kit_color is None
+                or kit is None
+                or KitKind(kit.kit_kind) is not KitKind.COLOR_SELECTABLE
+            ):
+                raise ProductKitColorNotFound()
+            if locked_product.status == ProductStatus.ONLINE:
+                raise OnlineProductCannotBeModified()
+            if is_enabled and (
+                not locked_kit_color.bead_color.is_active
+                or not is_bead_color_configured(
+                    color_code=locked_kit_color.bead_color.color_code,
+                    name=locked_kit_color.bead_color.name,
+                    swatch_hex=locked_kit_color.bead_color.swatch_hex,
+                )
+            ):
+                raise BeadColorNotConfigured()
+
+            previous_is_enabled = locked_kit_color.is_enabled
+            updated = await self.product_repository.update_product_kit_color(
+                locked_kit_color,
+                is_enabled=is_enabled,
+                using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id,
+                action="UPDATE_PRODUCT_KIT_COLOR",
+                target_type="product",
+                target_id=product_id,
+                ip_address=ip_address,
+                description=json.dumps(
+                    {
+                        "kit_color_id": locked_kit_color.id,
+                        "before": {"is_enabled": previous_is_enabled},
+                        "after": {"is_enabled": is_enabled},
+                    },
+                    separators=(",", ":"),
+                ),
+                using_db=connection,
+            )
+
+        logger.info(
+            "Product kit color updated: operator_id=%d product_id=%d "
+            "kit_color_id=%d",
+            operator_id,
+            product_id,
+            kit_color_id,
+        )
+        return updated
 
     async def list_admin_products(
         self,
@@ -698,47 +1072,6 @@ class ProductService:
         )
         return updated
 
-    async def update_kit_stock(
-        self,
-        product_id: int,
-        *,
-        stock: int,
-        operator_id: int,
-        ip_address: str,
-    ) -> ProductKit:
-        """原子设置非 Online Kit Product 的当前库存最终值。"""
-
-        kit = await self._get_mutable_kit(product_id)
-        audit_description = json.dumps(
-            {
-                "before": {"stock": kit.stock},
-                "after": {"stock": stock},
-            },
-            separators=(",", ":"),
-        )
-        async with in_transaction() as connection:
-            updated = await self.product_repository.update_kit(
-                kit,
-                stock=stock,
-                using_db=connection,
-            )
-            await self.audit_log_service.log(
-                operator_id=operator_id,
-                action="UPDATE_STOCK",
-                target_type="product",
-                target_id=product_id,
-                ip_address=ip_address,
-                description=audit_description,
-                using_db=connection,
-            )
-
-        logger.info(
-            "Kit stock updated: operator_id=%d product_id=%d",
-            operator_id,
-            product_id,
-        )
-        return updated
-
     async def _get_mutable_kit(self, product_id: int) -> ProductKit:
         """加载可编辑 Kit，并按稳定顺序检查 Product 聚合状态。"""
 
@@ -1064,20 +1397,29 @@ class ProductService:
     ) -> Product:
         """校验 Product 聚合，并原子完成上架状态更新和审计。"""
 
-        product = await self.product_repository.get_product_detail(
-            product_id,
-            include_deleted=True,
-        )
-        if product is None:
-            raise ProductNotFound()
-        if product.is_deleted:
-            raise ProductIsDeleted()
-        if product.status == ProductStatus.ONLINE:
-            raise ProductAlreadyOnline()
-
-        ProductValidator.validate_before_online(product)
-
         async with in_transaction() as connection:
+            locked_product = (
+                await self.product_repository.get_product_for_update(
+                    product_id,
+                    using_db=connection,
+                )
+            )
+            if locked_product is None:
+                raise ProductNotFound()
+            if locked_product.is_deleted:
+                raise ProductIsDeleted()
+            if locked_product.status == ProductStatus.ONLINE:
+                raise ProductAlreadyOnline()
+
+            product = await self.product_repository.get_product_detail(
+                product_id,
+                include_deleted=True,
+                using_db=connection,
+            )
+            if product is None:
+                raise ProductNotFound()
+            ProductValidator.validate_before_online(product)
+
             updated = await self.product_repository.update_product(
                 product,
                 status=ProductStatus.ONLINE,

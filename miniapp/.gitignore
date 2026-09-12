@@ -1,0 +1,12 @@
+dist/
+deploy_versions/
+.temp/
+.cache/
+.taro-cache/
+.rn_temp/
+node_modules/
+coverage/
+.DS_Store
+.swc
+*.local
+project.private.config.json

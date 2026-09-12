@@ -14,10 +14,22 @@ from app.core.exceptions import (
     ConflictException,
     NotFoundException,
     PermissionException,
+    ServiceUnavailableException,
+    TooManyRequestsException,
     UnprocessableEntityException,
 )
 
 logger = logging.getLogger(__name__)
+_TABLE_CODE_PATH_PREFIX = "/api/v1/table-codes/"
+
+
+def _safe_request_path(request: Request) -> str:
+    """在异常日志中隐藏公开桌台定位符，保留可定位的路由形状。"""
+
+    path = request.url.path
+    if path.startswith(_TABLE_CODE_PATH_PREFIX):
+        return f"{_TABLE_CODE_PATH_PREFIX}<redacted>"
+    return path
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -44,7 +56,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         ]
         logger.warning(
             "HTTP 422: validation failed path=%s error_count=%d",
-            request.url.path,
+            _safe_request_path(request),
             len(errors),
         )
         return JSONResponse(
@@ -54,7 +66,12 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(BusinessException)
     async def handle_business(request: Request, exc: BusinessException) -> JSONResponse:
-        logger.warning("HTTP 400: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        logger.warning(
+            "HTTP 400: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
         return JSONResponse(status_code=400, content=error(exc.code, exc.message, exc.data))
 
     @app.exception_handler(UnprocessableEntityException)
@@ -62,7 +79,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: UnprocessableEntityException,
     ) -> JSONResponse:
-        logger.warning("HTTP 422: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        logger.warning(
+            "HTTP 422: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
         return JSONResponse(status_code=422, content=error(exc.code, exc.message, exc.data))
 
     @app.exception_handler(ConflictException)
@@ -70,30 +92,87 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: ConflictException,
     ) -> JSONResponse:
-        logger.warning("HTTP 409: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        logger.warning(
+            "HTTP 409: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
         return JSONResponse(status_code=409, content=error(exc.code, exc.message, exc.data))
 
     @app.exception_handler(AuthenticationException)
     async def handle_auth(request: Request, exc: AuthenticationException) -> JSONResponse:
-        logger.warning("HTTP 401: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        logger.warning(
+            "HTTP 401: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
         return JSONResponse(status_code=401, content=error(exc.code, exc.message, exc.data))
 
     @app.exception_handler(PermissionException)
     async def handle_permission(request: Request, exc: PermissionException) -> JSONResponse:
-        logger.warning("HTTP 403: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        logger.warning(
+            "HTTP 403: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
         return JSONResponse(status_code=403, content=error(exc.code, exc.message, exc.data))
+
+    @app.exception_handler(TooManyRequestsException)
+    async def handle_too_many_requests(
+        request: Request,
+        exc: TooManyRequestsException,
+    ) -> JSONResponse:
+        logger.warning(
+            "HTTP 429: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
+        return JSONResponse(
+            status_code=429,
+            content=error(exc.code, exc.message, exc.data),
+        )
 
     @app.exception_handler(NotFoundException)
     async def handle_not_found(request: Request, exc: NotFoundException) -> JSONResponse:
-        logger.warning("HTTP 404: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        logger.warning(
+            "HTTP 404: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
         return JSONResponse(status_code=404, content=error(exc.code, exc.message, exc.data))
+
+    @app.exception_handler(ServiceUnavailableException)
+    async def handle_service_unavailable(
+        request: Request,
+        exc: ServiceUnavailableException,
+    ) -> JSONResponse:
+        logger.warning(
+            "HTTP 503: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
+        return JSONResponse(
+            status_code=503,
+            content=error(exc.code, exc.message, exc.data),
+        )
 
     @app.exception_handler(AppException)
     async def handle_app(request: Request, exc: AppException) -> JSONResponse:
-        logger.warning("HTTP 400: code=%d message=%s path=%s", exc.code, exc.message, request.url.path)
+        logger.warning(
+            "HTTP 400: code=%d message=%s path=%s",
+            exc.code,
+            exc.message,
+            _safe_request_path(request),
+        )
         return JSONResponse(status_code=400, content=error(exc.code, exc.message, exc.data))
 
     @app.exception_handler(Exception)
     async def handle_unknown(request: Request, exc: Exception) -> JSONResponse:
-        logger.error("HTTP 500: path=%s error=%s", request.url.path, exc, exc_info=True)
+        logger.error("HTTP 500: path=%s error=%s", _safe_request_path(request), exc, exc_info=True)
         return JSONResponse(status_code=500, content=error(500, "Internal server error"))

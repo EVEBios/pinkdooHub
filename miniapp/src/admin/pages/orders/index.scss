@@ -1,0 +1,243 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
+.admin-orders-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__header {
+    @include admin.page-header(true, center 42%);
+  }
+
+  &__title {
+    @include admin.header-title;
+  }
+
+  &__subtitle {
+    @include admin.header-subtitle;
+  }
+
+  &__active-filter {
+    display: block;
+    margin-top: 20px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+    text-align: center;
+  }
+}
+
+.admin-order-filters {
+  @include pd.section-panel;
+  @include admin.filter-panel;
+
+  margin: 24px 0;
+
+  &__statuses {
+    display: flex;
+    overflow-x: auto;
+    gap: 9px;
+    margin-bottom: 16px;
+    padding-bottom: 2px;
+  }
+
+  &__status {
+    @include pd.chip;
+  }
+
+  &__status--active {
+    @include pd.chip-active;
+  }
+
+  &__input {
+    @include pd.field;
+
+    margin-top: 12px;
+  }
+
+  &__dates {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__pending {
+    @include pd.feedback-warning;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 14px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  &__actions button {
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__actions button:first-child {
+    @include pd.primary-button;
+  }
+}
+
+.admin-orders-content {
+  &__summary {
+    @include pd.list-summary;
+  }
+
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__end {
+    display: block;
+    padding: 24px 0 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    text-align: center;
+  }
+}
+
+.admin-order-card {
+  @include pd.record-card;
+  @include pd.tappable-card;
+
+  margin-bottom: 14px;
+
+  &__heading,
+  &__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  &__number {
+    min-width: 0;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-label);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  &__status {
+    flex: 0 0 auto;
+    padding: 6px 11px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    background: var(--pd-color-primary-soft);
+    border-radius: 999px;
+  }
+
+  &__status--paid,
+  &__status--completed {
+    color: var(--pd-color-success);
+    background: var(--pd-color-success-soft);
+  }
+
+  &__status--cancelled {
+    color: var(--pd-color-ink-faint);
+    background: var(--pd-color-surface-muted);
+  }
+
+  &__user,
+  &__time {
+    @include pd.meta-text;
+
+    display: block;
+    margin-top: 11px;
+  }
+
+  &__summary {
+    margin-top: 16px;
+    padding-top: 15px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    border-top: 1px solid var(--pd-color-line);
+  }
+
+  &__total {
+    flex: 0 0 auto;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+  }
+}
+
+.admin-orders-state {
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-order-filters {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-order-filters {
+    &__dates {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .admin-orders-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+
+    &__summary,
+    &__error,
+    &__end,
+    > button {
+      grid-column: 1 / -1;
+    }
+
+    .admin-order-card {
+      margin-bottom: 0;
+    }
+  }
+}

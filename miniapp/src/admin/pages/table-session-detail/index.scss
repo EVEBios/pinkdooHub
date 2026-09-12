@@ -1,0 +1,41 @@
+/* stylelint-disable selector-class-pattern -- Taro 页面沿用项目 BEM 命名。 */
+.admin-session-page {
+  min-height: 100vh;
+  padding: 24px;
+  color: var(--pd-color-ink);
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
+}
+
+.admin-session-page--state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-session-card,
+.admin-session-error {
+  display: flex;
+  max-width: 760px;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 auto 18px;
+  padding: 22px;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-large);
+  box-shadow: var(--pd-shadow-small);
+}
+
+.admin-session-card__title {
+  font-size: var(--pd-font-title);
+  font-weight: 750;
+}
+
+.admin-session-card button {
+  margin-top: 10px;
+}
+
+.admin-session-error {
+  color: var(--pd-color-danger);
+}

@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.enums.product import DayType, KitKind, ProductStatus, ProductType
 
 # 商品基本信息
 PRODUCT_NAME_MIN_LENGTH = 1
@@ -24,6 +24,20 @@ MIN_PARTICIPANTS = 1
 
 # 套装库存与图片排序
 MIN_STOCK = 0
+PRODUCT_KIT_COLOR_STOCK_UNITS_MAX = 999999
+COLOR_SELECTABLE_SALE_UNIT_GRAMS = 10
+
+# 全局拼豆色板
+BEAD_COLOR_SLOT_MIN = 1
+BEAD_COLOR_SLOT_COUNT = 221
+BEAD_COLOR_CODE_MAX_LENGTH = 50
+BEAD_COLOR_NAME_MAX_LENGTH = 100
+BEAD_COLOR_SWATCH_HEX_LENGTH = 7
+BEAD_COLOR_SWATCH_HEX_PATTERN = r"^#[0-9A-F]{6}$"
+MIN_BEAD_COLOR_SORT = 0
+MAX_BEAD_COLOR_SORT = 32767
+BEAD_COLOR_AUDIT_DESCRIPTION_MAX_LENGTH = 256
+BEAD_COLOR_AUDIT_HASH_LENGTH = 12
 PRODUCT_IMAGE_URL_MIN_LENGTH = 1
 PRODUCT_IMAGE_URL_MAX_LENGTH = 2048
 MIN_IMAGE_SORT = 0
@@ -46,6 +60,10 @@ PRODUCT_STATUS_LABELS = {
     ProductStatus.DRAFT: "草稿",
     ProductStatus.ONLINE: "已上架",
     ProductStatus.OFFLINE: "已下架",
+}
+KIT_KIND_LABELS = {
+    KitKind.FIXED: "固定套装",
+    KitKind.COLOR_SELECTABLE: "自选颜色",
 }
 DAY_TYPE_LABELS = {
     DayType.WEEKDAY: "工作日",

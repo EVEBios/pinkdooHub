@@ -1,9 +1,23 @@
 """AuditLog Repository。"""
 
+from dataclasses import dataclass
+
 from tortoise.backends.base.client import BaseDBAsyncClient
 
 from app.common.pagination import Page
 from app.models.audit_log import AuditLog
+
+
+@dataclass(frozen=True, slots=True)
+class AuditLogCreateData:
+    """批量审计写入的最小字段集合。"""
+
+    operator_id: int
+    action: str
+    target_type: str
+    target_id: int
+    ip_address: str
+    description: str | None = None
 
 
 class AuditLogRepository:
@@ -29,6 +43,84 @@ class AuditLogRepository:
             description=description,
             using_db=using_db,
         )
+
+    async def bulk_create(
+        self,
+        entries: list[AuditLogCreateData],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> None:
+        """一次写入一组已由调用方准备的审计事实。"""
+
+        if not entries:
+            return
+        await AuditLog.bulk_create(
+            [
+                AuditLog(
+                    operator_id=entry.operator_id,
+                    action=entry.action,
+                    target_type=entry.target_type,
+                    target_id=entry.target_id,
+                    ip_address=entry.ip_address,
+                    description=entry.description,
+                )
+                for entry in entries
+            ],
+            using_db=using_db,
+        )
+
+    async def count_by_action(
+        self,
+        action: str,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """统计指定动作的审计数量。"""
+
+        query = AuditLog.filter(action=action)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.count()
+
+    async def count_by_action_target(
+        self,
+        *,
+        action: str,
+        target_type: str,
+        target_id: int,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """统计指定动作与目标的审计数量。"""
+
+        query = AuditLog.filter(
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+        )
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.count()
+
+    async def list_by_action_targets(
+        self,
+        *,
+        action: str,
+        target_type: str,
+        target_ids: set[int],
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[AuditLog]:
+        """批量读取一组目标的同类审计，供受控事实核验任务使用。"""
+
+        if not target_ids:
+            return []
+        query = AuditLog.filter(
+            action=action,
+            target_type=target_type,
+            target_id__in=target_ids,
+        ).order_by("target_id", "created_at", "id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return list(await query)
 
     async def list_logs(
         self,

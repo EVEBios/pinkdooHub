@@ -1,0 +1,257 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
+
+.reservation-detail-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__rebook {
+    @include pd.primary-button;
+
+    width: 100%;
+    margin-top: 22px;
+  }
+
+  &__back {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 12px;
+  }
+}
+
+.reservation-detail-heading {
+  @include customer.page-header(center 46%);
+
+  &__topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+  }
+
+  &__title {
+    @include customer.title;
+  }
+
+  &__status {
+    flex: 0 0 auto;
+    padding: 7px 13px;
+    color: var(--pd-color-warning);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+    background: var(--pd-color-warning-soft);
+    border-radius: 999px;
+
+    &--confirmed {
+      color: var(--pd-color-success);
+      background: var(--pd-color-success-soft);
+    }
+
+    &--rejected,
+    &--store-closed {
+      color: var(--pd-color-danger);
+      background: var(--pd-color-danger-soft);
+    }
+
+    &--cancelled {
+      color: var(--pd-color-ink-faint);
+      background: var(--pd-color-surface-muted);
+    }
+  }
+
+  &__name {
+    display: block;
+    max-width: 22ch;
+    margin-top: 28px;
+    color: #fff;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.4;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+
+  &__time {
+    display: block;
+    margin-top: 14px;
+    color: rgb(255 244 248 / 84%);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__clock {
+    display: block;
+    margin-top: 5px;
+    color: #fff;
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.reservation-detail-message {
+  @include pd.feedback-warning;
+
+  margin-top: 0;
+
+  &--confirmed {
+    @include pd.feedback-success;
+
+    margin-top: 0;
+  }
+
+  &--rejected,
+  &--store-closed {
+    @include pd.feedback-error;
+
+    margin-top: 0;
+  }
+
+  &--cancelled {
+    color: var(--pd-color-ink-soft);
+    background: var(--pd-color-surface-muted);
+    border-color: var(--pd-color-line);
+  }
+}
+
+.reservation-detail-facts,
+.reservation-detail-cancellation {
+  @include pd.section-panel;
+
+  margin-top: 22px;
+
+  &__title {
+    display: block;
+    margin-bottom: 10px;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+}
+
+.reservation-detail-fact {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--pd-color-line);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  &__label {
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+
+  &__value {
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.55;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+}
+
+.reservation-detail-cancellation {
+  &__deadline,
+  &__hint {
+    display: block;
+    margin-top: 10px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.55;
+  }
+
+  &__hint {
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__action {
+    @include pd.danger-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+}
+
+.reservation-detail-feedback {
+  @include pd.feedback-error;
+
+  &--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &--success {
+    @include pd.feedback-success;
+  }
+
+  text {
+    display: block;
+  }
+
+  text + text {
+    margin-top: 6px;
+  }
+
+  button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 12px;
+  }
+}
+
+.reservation-detail-state {
+  @include pd.page-shell;
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action,
+  &__back {
+    @include pd.primary-button;
+
+    margin-top: 22px;
+  }
+
+  &__back {
+    @include pd.secondary-button;
+
+    margin-top: 12px;
+  }
+}
+
+@media (width >= 768px) {
+  .reservation-detail-page {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 20px;
+
+    &__rebook,
+    &__back {
+      width: min(100%, 420px);
+      grid-column: 1 / -1;
+      justify-self: end;
+    }
+  }
+
+  .reservation-detail-heading,
+  .reservation-detail-message,
+  .reservation-detail-feedback {
+    grid-column: 1 / -1;
+  }
+}

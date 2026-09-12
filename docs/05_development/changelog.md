@@ -4,6 +4,1911 @@
 
 ---
 
+## M9 二维码开台与多时长计时（仓库实现候选，2026-09-10）
+
+- 新增固定桌台、桌台会话、时长计时器和当前占用四个 Model/Repository/Schema/Mapper/Service/Validator，提供 M9 MySQL 迁移及 `T01`–`T30` 受控引导。环境专属 Token 为 32 位大小写敏感字母数字；普通占位二维码使用 `PINKDOOHUB_TABLE:v1:<token>`，清单只留 SHA-256 摘要，正式微信小程序码替换另行立项。
+- 用户可扫码选择本人含 Experience 的 Pending 订单，形成 15 分钟占台；纯 Kit 拒绝，混合订单仅忽略 Kit。付款以 `Payment.succeeded_at` 启动所有计时器，Experience 按分钟分组，同分钟合并、不同分钟分别计时，每组加 10 分钟，`quantity` 不乘时长；最长计时结束只释放桌台。
+- 钱包支付、ADMIN 人工结算、Pending 取消、ADMIN 完成和全额退款均在既有事务所有者内协调桌台 Repository，保持资金、订单、库存、Session、Timer 和 Occupancy 原子一致。定时 sweeper 每 30 秒收敛，读/扫码/付款/订单动作同时惰性收敛，不依赖每秒数据库写入。
+- 新增公开二维码解析、可选订单、创建/当前/订单最新会话和 ADMIN 桌台/会话/启停/释放 API；严格认证、资源隐藏、幂等、Redis fail-closed 限流和生产 claims 开关同步进入 OpenAPI。占用对 table/session/user/order 四列分别 UNIQUE；跨域锁序保持 `User -> Order -> StoreTable -> Session/Occupancy -> 资金 -> Wallet/Kit`。
+- 小程序增加扫码入口、登录后意图恢复、选择/新建订单、钱包付款、服务端权威倒计时，以及 ADMIN 30 桌列表、10 秒轮询、详情和应急释放；普通二维码仅用于备案前 `develop` 内部验收，不冒充正式微信小程序码。
+- Gate A 运维链已扩展为 M7→M8→M9：迁移后执行 30 桌 bootstrap/replay、结构/内容/一致性核验，常驻 `table-sweeper` 与 App 一起启动；disposable updater CI 同步覆盖 M7 source Backup/Restore、M9 target Backup/Restore、M8 HEX/gzip/PNG 与 M9 Runtime。真实持久状态和验收证据必须在 CI 通过后另行记录，本文条目本身不代表已部署。
+- 持久候选交付最初新增 `stage`、`activate-config`、`rollback-config`、`finalize` 四阶段状态机：source archive、当前 Run/attempt updater artifact、目标镜像、配置激活、迁移前回退和最终 `current` 切换分别留不可覆盖证据。初始四类 candidate pending 跨全部候选 SHA/所有进入下一发布阶段的受保护入口扫描；M9 acceptance pending/complete 也跨全部候选扫描。畸形名称、symlink/目录/FIFO 或第二个 blocker 均 fail closed；只有原动作严格绑定 candidate/kind/path/checkpoint 的 own recovery 可以继续。`infra-up`/`safe-stop` 只作为持锁故障处置原语，不消费或清除这些状态。下文的 A→B 接管再加入第五类 retirement pending 与第五个候选动作。
+- 全局 operation lock 与 unresolved-state inventory 已接入 candidate、Backup/Restore、upgrade、Bootstrap、两类代表数据、`initial-migrate`、`app-up`、M9 acceptance 和 resilience。不可变 Record/artifact 统一采用同目录随机临时文件、完整写入与 file `fsync`、hard-link no-clobber 和目录 `fsync`；Backup/Restore 以 durable pending 和三个 artifact/Record digest 防止半提交，Upgrade 以 canonical success 与 `succeeded/completed` evidence 的 digest 组合作为提交点。schema v2 adoption 若只留下完整耐久的 `succeeded/completed` evidence，可在原 apply 全确认和现场零漂移复验后唯一补发 success，不重跑迁移或业务写；其他 evidence 状态 fail closed。`app-up` 对同候选 initial-migration/existing-database upgrade Record 做严格 XOR，双份、零份或 symlink 在 Compose 前拒绝。resilience final 已可见时只允许前后两次现场一致性复验并清理最多一个同 inode writer temp，不重跑故障；孤儿/额外 alias fail closed。所有持久变更入口在 CLI work 前覆盖 SIGHUP/SIGTERM/SIGINT，SIGINT 保持 Python `KeyboardInterrupt`；强制恢复/清理子命令使用新 session/独立进程组，避免终端中断同时终止补偿子进程。常驻服务 stop 以 Compose `ps` 状态为完成条件；Restore 清理最多两轮 `down`→inventory，逐项确认容器、两个临时卷和 internal network 消失；candidate 临时镜像清理最多两轮并以精确 reference inventory 为空为准。异常优先级固定为 recovery/cleanup failure > original work/control error > deferred signal；SIGKILL/断电只能依靠 journal/已提交 Record 严格恢复或人工 No-Go 审计。
+- M9 admin-assisted acceptance 使用 schema v3 pending、认证前 `authentication_started` checkpoint 和两阶段 `.complete`→final 发布；只允许无副作用且首次登录精确返回 HTTP 400/业务码 `1003` 的新 journal 被安全丢弃，其他不确定结果保留 pending。success 独立保持 schema v1，并将 Payment ID、Payment No SHA-256、`succeeded_at` 与 pending payment evidence 绑定。M9 resilience 现在强制显式接收 acceptance Record 及确认 SHA-256，在演练前后直接复验 candidate/Image、Operations/CI、upgrade/replay、代表数据/凭据、五服务、attempt digest 与完成时间，并生成 schema v2 绑定；M2/M7/M8 legacy resilience 保持 schema v1。该条形成时仓库硬化仍须由候选自己的完整 CI 与持久现场流程验证，Gate A 当时仍停留在 M7；后续 live A/M9 失败检查点由下文新条目取代。
+- candidate `finalize` 新增 acceptance/resilience guarded record directory 绑定；两份 Record 的 lexical 父目录必须分别匹配 canonical 默认或显式目录。它先扫描全候选 acceptance sidecar，且只消费 `root:root 0644`、`nlink=1`、身份/digest 稳定且没有 `.tmp-*` 或未知 alias/sidecar 的已收口 resilience final，不替上游清理崩溃残留。
+- Run 34455514865 暴露 source Backup 后通用 `app-up` 在 M7 Schema 上误启动 M9 `table-sweeper`；备份器现按精确 M7/M8/M9 Aerich 链选择恢复服务，M7/M8 只恢复 App/Nginx，M9 则要求 sweeper 备份前健康、随 App/Nginx 一起停写并在备份后严格恢复。未知链和停写期间版本变化保持 fail closed，完整 updater 必须由后续当前 SHA 的 CI 重新证明。
+- Run 34466953348 证明上述 M7 Backup/Restore 与服务恢复修复已生效，随后在 M9 最终不变量处暴露 MySQL 8.0.46 CLI 的字符集边界：非交互客户端默认 `latin1`，把 SQL 中的 UTF-8 `号桌` 后缀误解码，因而把 30 个由 asyncmy 正确写入的显示名全部计为无效。最终快照现显式使用 `--default-character-set=utf8mb4`，并用 `CONVERT(0xE58FB7E6A18C USING utf8mb4)` 固化后缀字节；桌号、显示名、Token 长度和 Token 字符四项另存脱敏聚合计数，失败证据不输出二维码 Token。隔离 MySQL A/B 探针确认同一批合法显示名的误报由 `3` 降为 `0`；当前修复仍须由下一次完整 updater CI 端到端证明后，才允许触碰持久 Gate A。
+- Run 34477579769 已越过 M9 迁移、bootstrap、最终数据库不变量、停写 plan replay、五服务启动和 M7 数据后恢复，随后暴露 Runtime 验收误用了只包含 Core 字段的通用数据库快照，导致所有 M9 `.get()` 都得到 `None`。Runtime 现复用升级器的完整实时快照，升级与演练共享同一组 11 项空桌不变量，并对缺失/漂移输出仅含 key、expected、actual 的安全错误；脱敏分项会进入 Runtime artifact，Artifact 扫描则显式拒绝原始 `qr_token`、占位码 payload 和未脱敏的桌台 URL。同轮审查发现 M9 target Restore 原先只比较 Core 聚合，现增加 `m9-table-business-v1`：停写后对四张桌台业务表做稳定主键顺序内容 SHA-256，独立 Restore 必须精确重算一致；Record 只保存 profile/schema version/digest，不保存 Token 或行内容。这些修复仍须由后续完整 updater CI 证明，持久 Gate A 未触碰。
+- Run 34520442209 的其他 8 个 required Job 均通过，disposable updater 则在 source Backup 已完成后暴露 `gatea_backup.verify_restore()` 新增必填 `release_record_dir`、而真实编排调用未同步透传的接线遗漏。当前实现将同一受保护 Release Record 目录显式传给 Backup 与 Restore，并新增端到端参数接线回归；该失败 Run 只作为诊断证据，修复必须由后续当前 SHA 的全新 9/9 关闭。
+- Run 34523689519 已为 head `41ad3cd...` / merge target `ceb664e...` 完成 9/9，持久 Gate A 随后成功执行 candidate stage 及全新 M7 Backup/独立 Restore `20260911t013550z`，但在只读 `activate-config` plan 前由完整性校验阻断：按旧 Runbook 从已安装 Release 执行宿主 `python3 -m scripts.release.gatea_*` 会生成 `__pycache__`/`.pyc`，把 stage 冻结的 968 文件 source manifest 改为 971 文件。配置仍为 M7、数据库仍为 M0–M7、四服务恢复健康，未产生 activation Record/pending，也未执行 M8/M9 迁移；该 target 保留为不可继续提升的诊断证据。当前 Runbook 已将已安装 Release CLI 显式改为 `python3 -B -m`，把校验过的单文件 stage launcher 改为 `python3 -I -B <launcher>`，保持全树 manifest fail closed，不忽略可执行 bytecode；新增真实 staged release + fresh subprocess 回归，复验 manifest 三元组不变、无 Python cache 且真实 `_load_stage()` 继续通过。修复必须由后续全新 SHA 的 9/9 和新 target stage 证明，不得删除旧 release cache 后续跑。
+- 后续持久执行已由旧候选 A `d6c09482...` 把 live config、数据库和五服务推进到 M9，但 `current` 仍指向最后已 finalized 的 M7 lineage S `73dca350...`。A 的 admin-assisted acceptance 在 `order_created` 后读取 T01 bootstrap identity 时失败：旧读取器使用 `docker compose exec`，该新进程没有经过 App Entrypoint 把文件型 Secret 导出为数据库环境，因而只返回安全通用错误。补偿已取消该订单、下架两个 fixture、恢复 Kit 库存并撤销会话；现场没有 Payment/Settlement/Refund、TableSession、Timer 或 Occupancy，schema v3 失败 pending 按设计保留。该状态不是 M9 PASS，也不能再按 M7 数据库起点重跑。
+- 桌台身份读取修复改用一次性 `docker compose run --rm --no-deps app` 并保留默认 Entrypoint，仅在进程内解析 T01 Token；`OSError`、Compose 子进程失败、非法 JSON/字段/Token 均收敛为不含 Secret 的错误。对“`order_created` + failure=true + 订单/fixture/session cleanup 全部完成、尚未 claim/payment”的 pending，原 acceptance 明确标记为终态并要求新候选前滚，不允许当前候选重跑。
+- 上一版受控 M9 候选接管设计为：B `stage` 必须同时绑定 superseded A 与失败 pending SHA-256；`retire-failed-acceptance` 是计划停写状态机，先写 `prepared` 并停止 App/Nginx/`table-sweeper`，在 MySQL/Redis 健康且三个写入方持续停止的窗口内，于数据库 snapshot、wallet/table reconcile 和 B 镜像只读 verifier 前后重复断言 A/S lineage。verifier 按 pending 的精确 Product/Option/Order/Item 身份验证取消订单、总额/remark、候选后缀名称/固定描述、五张图片绑定、完整 Option/Item 销售快照、fixture 精确 `OFFLINE` 且未删除、唯一 SUPER_ADMIN supply +10 与订单扣减/恢复构成的库存链 `0→10→9→10`、无 Payment/Settlement/Refund/订单 WalletTransaction 与无桌台历史；原始数据库 ID 只经有界、拒绝重复字段的 stdin JSON 传递，不进入 argv、环境、错误或 Record。完整 journal 只按 `prepared` → `write-free-verified` → `acceptance-archived` → `record-published` → `canonical-removed` → `runtime-restored` 六阶段耐久推进，其中 archive 为原始 `root:root 0600` no-clobber 文件，canonical 删除绑定稳定 inode。无论 work/control error 都会进入屏蔽信号的强制恢复并复验 A/M9 五服务，恢复/清理失败优先于原错误，延迟信号最后传播；新增 retirement pending 也进入全局 fail-closed inventory 和崩溃恢复。`app-up` 的 transition/acceptance 两个 own-recovery allowance 还必须交叉绑定同一 runtime candidate，避免不同候选各自获得豁免。该设计的现场执行停在 B `prepared`，当前路径已由下文 A→B→C takeover 取代。
+- 上一版 `gatea_candidate`、`gatea_upgrade`、`gatea_operations`、acceptance 与 resilience 新增 schema v2 `m9-candidate-adoption` 链：以 immediate predecessor A、lineage source S、retirement digest、新 A/M9 Backup/Restore 和 B stage/activation 为直接绑定，在 source/target 都为精确 M0–M9 时只切换候选实现。retirement archive 还是 activate/rollback/finalize 的持续 lineage 依赖，后续动作会从同一 guarded 目录重开并校验精确路径、`root:root 0600`、单链接稳定文件、digest 及 attempt/source/image，不能在退休后移动、删除或替换。成功 Record/evidence/replay 必须记录 `database_changes_applied=false` 与 `migrations_applied=[]`，并证明数据库、图片以及 M7 保留、M8 色块、M9 桌台内容摘要零漂移；不得重跑迁移、30 桌 bootstrap、MARD/Wallet 或任何修复写入。新增 `m8-swatch-content-v1` 按 `bead_colors.id` 顺序独立哈希 `id/slot_no/swatch_hex`，新 M8/M9 Backup/Restore、异机副本、M9 resilience 与 finalize 都要求精确匹配，避免旧 M7 投影不含 `swatch_hex` 而漏报漂移。早于该 profile 且 Backup/Restore/match 三个 swatch 字段全部缺失的历史 M8/M9 pair 仍可兼容读取和异机 export/verify，部分出现或不匹配必须拒绝；all-absent 历史 pair 不得充当该 A→B source、post-acceptance、resilience 或 finalize 证据。B 原计划后续重新完成 acceptance、resilience、post-acceptance Backup/Restore，再以 source=S、predecessor=A、target=B finalization；该计划没有执行，已由下文 C takeover 取代。
+- 现场随后证明 B `ad2ac8c1eb6633daebf3d66d9b3669e441c3c6dd` 已 stage，但其 retirement 只创建了 `prepared` journal，`live_verification=null`，没有进入停写、归档、canonical 删除或配置切换。B stage Record digest 为 `4746500031255a70b38f0b1619ff8a27b043051be7775c5c4f1b57cd64054eab`，prepared pending digest 为 `9ad2da46bedf3b1058552c7747ee2f22a90925310ade5efc0fd9129371e8b4d5`；A failure pending digest 仍为 `89fce946b872a425e43c6db128e7734f74196fddbbc1b061b7537384cdd147a2`。live config/DB/五服务仍是 A `d6c09482ee0f5583d79bd847e995746c9c6ee1a3` / M9，`current` 与 finalized lineage 仍是 S `73dca350505d43775fb1ff1158ccf6aabc221998` / M7。
+- 新的阻塞恢复设计只允许全新候选 C：C 必须先取得自身干净 SHA 的远端 9/9；schema v3 stage 同时绑定 A failure digest、B stage Record digest 与 B prepared pending digest。takeover retirement 再按 `prepared` → `write-free-verified` → `superseded-retirement-archived` → `acceptance-archived` → `record-published` → `superseded-retirement-removed` → `canonical-removed` → `runtime-restored` 八阶段推进。B retirement 与 A acceptance 原文件分别 no-clobber 归档到 guarded `root:root 0700` 的 `/srv/pinkdoohub/gatea/records/m9-retirement-failures` 与 `/srv/pinkdoohub/gatea/records/m9-acceptance-failures`，归档文件保持 `root:root 0600`、`nlink=1`，并成为后续 A→C activation/rollback、M9→M9 zero-migration adoption、C acceptance/resilience、post-acceptance Backup/Restore 和 source=S/predecessor=A/target=C finalization 的持续依赖。禁止删除任一 pending、复用旧 CI、重跑迁移/bootstrap/backfill 或拼接旧证据。
+- 候选 C head `e909c42cebaf59931536ddc2c82a43f19a29925c` / merge target `c709d6252a07d65eb1457b23e7036ecb736f18b8` 已由 Run 34616037853 完成 required Jobs 9/9。真实 Gate A schema v3 stage 随后在任何 C pending、Image 或 Release 写入前安全失败：隔离单文件 launcher 在 pre-install takeover predecessor validation 中调用 `_runtime_modules()`，错误地要求从已安装 candidate Release 运行，因而提示 `activation must run from an installed candidate release`。清理后 S/A/B 身份、A failure/B stage/B prepared 三个 digest 与五服务均不变，C 没有现场残留；C 的 9/9 不能转换为 stage/takeover 证据，也不能由 C 原地重试。
+- 候选 D 修复该隔离边界：只有 source archive、launcher、CI artifact 与完整 GitHub provenance 全部通过后，才再次扫描全局 blocker，再以 stable no-follow exact-bytes 加载已验证归档内的标准库限定 `gatea_operations` validator 并执行 takeover predecessor validation。不得注入 `PYTHONPATH`，不得从 `current`、A/B Release 或现场工作树 fallback；第二次 scan 与 predecessor validation 未通过前不得写 candidate pending 或 build Image，保持 fail closed。D 当前本地门槛为 candidate 专项 `207 passed`、Release 完整 `1013 passed`、后端完整 `3135 passed, 39 skipped`；尚未取得远端 CI 或现场 stage 证据。唯一后续是 D 新 SHA 自身 9/9 后再按 A→B→D 八阶段 takeover、A→D 零迁移 adoption 与验收/finalize 链执行。
+- 新增直接依赖 `segno==1.6.6` 仅用于离线生成 PNG 占位二维码；真实微信支付、微信官方小程序码、预约绑定、换桌/加时/暂停和公开发布均不在 M9 首版。
+- A→B→C 阻塞恢复实现的上一轮完整本地门槛为后端 `3130 passed, 39 skipped`、Release `1008 passed`；C 已取得自己的远端 9/9，但现场 stage 失败证明该证据仍不能替代真实隔离入口。D 新增归档 validator 隔离加载和二次 blocker scan 回归后的当前计数以上一条为准。前端最近完整结果仍为 `102 suites / 719 tests`，TypeScript、ESLint、Stylelint、CI policy 和 OpenAPI 类型均通过；一次性 MySQL 8.0.46 从 M0→M9 后的 M9 迁移/约束/并发/领域门槛仍为 `39 passed`，完整迁移编排与资源清理通过。微信 CI 改用独立 `.env.ci`，避免生产占位 Origin 覆盖 CI 注入值；页头纹理提升为全局 CSS 变量后只内联一次，当前不可发布微信产物主包约 0.86 MiB、总包约 1.42 MiB。Gate A 目标的非 Secret 标识保持 `ubuntu@118.195.195.59`，微信内部验收环境为 `develop`；私钥和其他凭据不进入仓库。
+
+## Frontend ADMIN+ 独立店铺工作台（仓库实现候选，2026-09-09）
+
+- 本轮采用“方案二”：顾客的“商城 / 预约 / 订单 / 会员中心”四 Tab 保持不变，ADMIN/SUPER_ADMIN 则使用没有顾客底栏的独立“店铺工作台”。`app.config.ts` 新增无业务请求启动分流页和 `admin` 分包工作台，当前共 15 个主包页面、18 个管理分包页面，即 33 条已注册路由；本条取代上一轮把管理入口放在会员中心的当前落点，但保留其历史实现与验证记录。
+- 微信、抖音和 H5 从 `pages/entry/index` 等 `/users/me` 确认角色后分流：Guest/普通 USER `switchTab` 商城，ADMIN+ `reLaunch` 工作台。支付宝按平台“第一 Tab 同时是首页”约束保留商城为 `pages[0]`，由商城同一守卫分流。登录与注册页的已有会话使用角色相容固定白名单：普通 USER 只回顾客目标，ADMIN+ 只回工作台或六个管理顶层页；动态详情、外部地址和任意内部 URL 继续拒绝。登录后回根 Tab 用 `switchTab`，回普通/管理页用 `reLaunch`；登录与注册之间用 `redirectTo` 互换，不累积往返页栈。
+- Entry、登录和注册共用串行的“最新目标”导航器：原生导航不可取消时不并发第二次，旧请求结束后只重放最新角色落点，并以实际成功页面更新已落点状态，覆盖 A→B→A 回跳、迟到失败和显式重试。
+- 工作台沿用 Ribbon Ledger，以“今日处理 / 商品与库存 / 门店与权限”三组连接预约审核、订单处理、商品管理、库存流水、营业日历和用户与权限。六项全部复用现有页面并使用普通页面栈；工作台本身不发列表/汇总请求、不伪造待办数字，各管理顶层页提供轻量“店铺工作台”返回入口。预约审核与营业日历的对等捷径使用 `redirectTo` 替换当前子页，避免来回切换堆高页栈。
+- 用户选定的 Product Design Option 2 将工作台视觉收口为深莓纹理页头、白色身份层级和三组瓷白账簿。页头新增 `1500 × 501`、`86,761` bytes 的压缩 JPEG 分块纹理，并保留深莓实色与 `var(--pd-gradient-stock)` 回退；纹理来源和用途记录在 `miniapp/src/assets/admin/README.md`。三组分别使用深李子、核心莓色和灰粉的非语义 L 形装饰脊线，动作行右侧增加白字莓果渐变“进入”胶囊。脊线改为同一强调色基底在裁切容器内形成顶部与左侧连续转角，不再拼接边框或依赖内嵌阴影；它们只建立扫描节奏，不表达状态、优先级或权限。本轮没有新增图标、虚假经营指标、页面、路由或管理员底栏。
+- H5 实屏复核发现 Taro 会把正常按钮渲染为 `disabled="false"`；原属性存在选择器会误把正常“进入”胶囊显示成灰色禁用态。随后微信开发者工具截图又确认，即使覆盖透明度，原生 `disabled` 仍可能让完整按钮区域产生平台级变暗反馈。工作台动作行因此不再设置原生 `disabled`，导航中的视觉状态改由当前行的专用 class 只作用于右侧“进入”胶囊；按下时也只让胶囊轻微收紧并加深，白色行背景、左侧标题和说明始终不变，其余五项维持正常对比度。独立引用锁仍阻止原生导航在途时的第二次跳转，完整动作行继续是唯一触控目标，胶囊没有变成嵌套按钮。
+- 工作台之外的 17 个 ADMIN+ 页面通过新增的 `admin/styles/_surface.scss`、共享 `styles/_ribbon.scss` 和既有 `product-form.scss` 统一为同一套运营界面：全部顶部身份区复用真实深莓分块纹理并可按标题调整取景，瓷白筛选／表单、详情内容、库存／钱包正文仍保持高可读实色。管理顶层页头最多只保留一个右上角“店铺工作台”小按钮；管理预约与店休设置的互跳移到页头下方的独立关联卡片。圆角块的窄色带改用受圆角裁切的内嵌强调，不再拼接粗边框；成功、警告、危险、禁用、业务状态及权限提示继续保留既有语义色和文字说明。
+- 顾客的商城、预约、订单和会员中心四个根页，以及商品详情、购物车、下单确认、订单／预约详情和钱包流程，也通过 `styles/_customer.scss` 复用同一真实纹理身份区与克制的瓷白块内嵌强调带；真实商品图、业务状态、错误和高密度内容不覆盖纹理。登录页移除主按钮的 Taro `type='primary'`，以自定义莓果 `hoverClass` 取代微信原生绿色按压态。页面结构、路由、权限和业务请求均未变化。
+- 四个顾客根页以及商品详情、购物车、下单确认、顾客订单详情、预约创建/详情和钱包页都在各自 Product/Cart/Order/Reservation/Wallet 业务 Hook 挂载前隔离 ADMIN+，避免历史页栈、分享或深链重新进入顾客购买和会员资金流程。应用级 `CartProvider` 也只在 Guest 或服务端已确认的普通 USER 身份下挂载，不在初始化、认证错误、ADMIN+、资料缺失或未知角色期间恢复顾客购物车。authenticated-without-user 与未知角色保持 fail closed；FastAPI 的 owner-only/ADMIN+ 依赖仍是最终授权边界。
+- 工作台覆盖初始化错误、Guest、普通 USER、ADMIN 与 SUPER_ADMIN；入口导航合并重复点击并在失败后给出可重试反馈。退出会先废弃内存 Token/User，再删除设备持久凭据；删除失败时改用不含凭据且不可恢复为 Session 的 tombstone 覆盖。只有持久凭据已成功删除或覆盖后才向订阅者发布 Guest；若两步都失败，AuthProvider 进入全局可见 error，明确要求用户清理小程序数据，且不误报已安全清除或强行跳转。此后“重新检查”会先重试失效持久凭据，不会把退出前的旧 Session 重新恢复；损坏/旧版 Session 也复用同一安全清理语义。Session 的 Storage mutation 统一串行，clear/新登录递增 epoch；旧 profile 更新或 Token refresh 即使已进入延迟 `set`，也不能在退出后重写凭据、复活内存会话或发布 authenticated。ApiClient 的 JSON、上传、refresh 与终态失效清理同时绑定该 Session identity：同会话已有新 Token 时迟到 `1006` 直接重放，而旧 identity 的 `1005`/`1009`/`1006` 或 refresh 失败不会刷新、清除或覆盖新登录。
+- 本期明确不做管理员底部导航、顾客商城预览、工作台摘要 API 或待办角标。没有后端业务、FastAPI API、OpenAPI、数据库 Schema/Aerich、直接依赖或应用版本变化，也未连接或修改任何持久环境。
+- 当前增量验证已完成：前端完整 Jest `96 suites / 702 tests`，工作台专项 `1 suite / 10 tests`，TypeScript、ESLint `0 error / 0 warning` 与 Stylelint 均通过；Jest 只保留测试工具链既有 React `act` 弃用提示。用户已有微信开发者工具 watcher 已编译输出全部 18 个 ADMIN+ 页面和 12 个顾客业务页面的 WXSS，共享 JPEG 纹理均以真实图片数据进入微信产物；登录产物不再包含旧微信绿色色值。微信开发者工具 Stable `2.02.2608060` / 基础库 `3.17.2` 已使用本地 ADMIN 演示数据实屏验证管理预约的纹理页头、唯一工作台入口、关联卡片、筛选和记录层级，证据见 `docs/08_frontend/qa/admin-reservations-texture-production.jpg`。此前同一页面结构的微信、支付宝、抖音和 H5 隔离 production build、CI policy、OpenAPI 类型漂移与微信产物 checker 证据仍保留为基线，但本次样式增量未重复宣称四端全量发布构建。后端完整回归保持本次纯前端调整前的 `2351 passed, 33 skipped`；本轮没有改后端、API 或数据层。发布前仍需顾客真机视觉、真实 ADMIN 完整任务流与 iOS/Android 读屏专项。
+
+
+## Frontend 顾客四根页与瓷白丝带托盘（仓库实现候选，2026-09-09）
+
+- 顾客一级信息架构固定为“商城 / 预约 / 订单 / 会员中心”四个根 Tab；商品搜索、筛选、分页与详情入口只保留在商城，原商城首页的登录、账户、退出和 ADMIN+ 店铺管理入口迁入角色化会员中心。`app.config.ts` 继续注册 14 个主包页面和 17 个 `admin` 分包页面，共 31 条路由，没有新增业务页。
+- 微信端以 `custom: true` 接入 `miniapp/src/custom-tab-bar/` 的“瓷白丝带托盘”：四项等宽，未选中为柔莓墨灰轮廓图标，选中为深莓圆座、白色实心图标、加粗莓果文字和克制抬升；底部安全区、44px 最小触控、非纯颜色选中态和减少动态降级均纳入设计契约。支付宝、抖音和 H5 使用同一四项的原生 `custom: false` TabBar，不把微信私有材质当成跨端发布承诺。
+- `miniapp/src/navigation/root_tabs.ts` 统一四项文案、路径、索引与 `switchTab`；微信自定义栏在每个根页显示时同步当前索引。商品详情、购物车、下单确认、订单/预约详情、登录注册、钱包和所有管理页面仍使用普通页面栈且无底栏。
+- 本轮修复微信各根页拥有独立自定义栏实例时的错亮风险：实例初始值从当前路由解析，点击其他 Tab 只执行 `switchTab`，不在离开页乐观提交目标索引；只有目标根页显示生命周期确认选中态。跳转失败或旧跳转迟到失败都不再按全局最新路由回写源实例，源页始终保持自己的原当前项。
+- 本轮修复抬升圆座可能被组件边界裁切及几何过渡挤压的问题：外层 dock 提供源 158px 真实边界，普通 `View` surface 从顶部 30px 开始绘制其下 128px 瓷白托盘并直接承载四个 item；圆座绝对定位进入透明区但不越 dock，避免原生 cover 层及 sibling 叠层裁切。`width`/`height`/`top`/`margin` 不参与选中过渡，按压只保留 transform 微反馈并在减少动态偏好下禁用。
+- Guest 在四根页中只挂载公开商城的业务请求，预约/订单/会员根页显示登录引导；普通 USER 才挂载自己的预约、订单、资料与钱包；ADMIN+ 的预约/订单根页显示工作人员引导，会员中心提供店铺管理且不请求普通客户钱包。身份变化清理旧角色数据，迟到响应不得越过身份边界。
+- 商城 Tab 切换保留搜索、类型筛选与浏览上下文；预约、订单和会员中心再次显示时保留可读内容并刷新第一页/资料/余额，同时与首次挂载去重。该刷新只复用既有 API、Runtime Guard 和请求序号，不建立新的全局业务 Store。
+- 同一授权图标库导出轮廓灰、实心白、实心莓三组本地 PNG，分别服务共享未选中态、微信自定义选中态和其他平台原生选中态；资产来源与许可证随本地资源记录，不复制参考应用品牌资产，也不引入图标运行时依赖。
+- 本次没有后端业务、FastAPI API、OpenAPI 生成物、数据库 Schema/Aerich 迁移、Python/npm 依赖或应用版本变化，也未连接或修改任何持久环境。
+- 本轮两项缺陷修复后的验证已完成：导航专项 Jest `3 suites / 13 tests`、完整 Jest `89 suites / 609 tests`、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移及 CI policy `20/20` 均通过；微信、支付宝、抖音和 H5 四端 production build 均通过，H5 仅保留既有的 `298 KiB` app asset / `398 KiB` entrypoint 体积警告。微信产物 checker 通过（`157` files，主包 `688194` bytes，分包 `408353` bytes，总计 `1096547` bytes，manifest SHA-256 `eec0d423d879ba30b57bbc196dab5e81b6853276ca9cb7737862df852f5536a3`，`release_eligible=false`）。微信开发者工具 Stable `2.02.2608060` / 基础库 `3.17.2` 中，开发构建逐项切换四个根页，最终生产构建又验证“商城 → 订单 → 商城”：切页等待帧只保留源页唯一选中态，目标页显示后再原子切换；商城与订单圆座的完整圆周、阴影、白色图标和标签均未被托盘裁切。Product Design 同输入对照及迭代证据见仓库根 `design-qa.md`。
+- 缺陷修复前的前端验证基线：完整 Jest `88 suites / 605 tests`、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移检查与 CI policy `20/20` 均通过；微信、支付宝、抖音和 H5 四端 production build 均通过。微信产物 checker 通过（`157` files，主包 `695213` bytes，分包 `408353` bytes，总计 `1103566` bytes，manifest SHA-256 `601a6087d61dcd54024f8178e7efbb8e34148e154cc30e5a57afa5438253f10a`，`release_eligible=false`），且真实物理图标、四项配置、无 custom TabBar base64 均由阻断检查覆盖。H5 仍只有既有的 `298 KiB` app asset / `398 KiB` entrypoint 体积警告，没有构建失败。
+- 缺陷修复前的微信开发者工具基线：Stable `2.02.2608060` / 基础库 `3.17.2` 中已真实切换“商城 → 预约 → 订单 → 会员中心 → 商城”，路由、标题与莓红当前项逐项同步；当次设计对照见仓库根 `design-qa.md`，结论为 `passed`。生产候选绑定的 CI HTTPS Origin 在本机不可达，因此截图如实覆盖网络错误态，没有把远端商品/订单/预约数据误报为端到端通过；微信真机和 VoiceOver/TalkBack 仍未执行，也没有 upload、gray 或 release。
+- 本次虽未修改后端，仍按项目完整回归要求执行 `pytest tests/ -q`，结果为 `2351 passed, 33 skipped`；没有数据库迁移、持久数据写入或外部环境变更。
+
+## M8 Gate A 完整 updater 远端 CI 证据（2026-09-09）
+
+- 完整 updater 的受测实现 head `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、真实 CI checkout/merge-ref
+  `a9ff3d246c61a4aeede062596c32817a69834d7a` 已由 GitHub Actions
+  [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644) 最终
+  attempt 2 完成现行 9/9 required Job。第九个 `gatea-m7-m8-updater` 首 attempt 用时
+  4m02s，完整执行 14/14 阶段并通过。
+- updater 严格运行于 GitHub-hosted disposable Ubuntu/Linux root、本地 Unix Docker
+  daemon，未读取生产 Secret，也未使用 `/etc/pinkdoohub/gatea`、
+  `/srv/pinkdoohub/gatea`、持久卷或任何持久环境授权。source 固定为 M7 Runtime SHA
+  `73dca350505d43775fb1ff1158ccf6aabc221998`；M7 source Backup
+  `20260908t230214z` 及同 ID 独立 Restore、M8 target Backup `20260908t230329z` 及同 ID
+  独立 Restore 均 PASS。
+- Runtime 验收确认 221 个规范 HEX、现有 PNG 兼容回退，以及色板响应 gzip 从
+  `63445` bytes 降为 `10948` bytes、减少 `52497` bytes。安全 artifact 只有 20 个
+  allowlist 文件，上传前白名单和 Secret 扫描均通过；dump、图片 tar、配置、密码、Token
+  均不在上传集合。
+- 内部 cleanup 第一次 `compose-down` 遇到瞬态失败，编排器按有界策略第二次成功，并最终
+  证明容器、卷、网络、镜像、端口和任务工作目录零残留。Run attempt 1 的唯一整体失败是
+  `openapi-contract` 在安装工具链时触发 pip bundled truststore
+  `AttributeError: 'NoneType' object has no attribute 'get_unverified_chain'`；同一提交重跑
+  后通过，OpenAPI 导出、字节比较和类型检查没有漂移，不能把该瞬态安装错误记为 Schema
+  失败。
+- 此结果关闭了一次性 Linux/MySQL 8.0.46 完整 M7→M8 updater 与现行 9 Job 干净远端
+  证据缺口，但不改变发布权限或持久状态。持久 Gate A 仍以 2026-09-08 的 M7 Runtime
+  `73dca350...` / Backup `20260908t021224z` 为权威成功点；M8 尚未应用，下一步仍需重新
+  只读确认真实 M7、绑定目标 SHA/Image、创建当次 Backup/同 ID 独立 Restore、停写并取得
+  明确写授权。共享、预发布、生产数据库均未触碰，微信 upload/gray/release 也未授权，
+  当前继续 No-Go。
+
+## Miniapp Joi 传递依赖安全修复（2026-09-09）
+
+- Taro `@tarojs/service@4.2.1` 唯一声明的 `joi` 传递依赖范围为 `^17.12.3`；在不改变
+  Taro 版本和 `miniapp/package.json` 的前提下，仅更新 lockfile，将 `joi@17.13.4`
+  提升至同一兼容范围内的 `17.13.7`，并锁定官方 registry tarball 与 integrity。
+- 该补丁消除 `GHSA-gg4h-3hg2-grpc` 与 `GHSA-6w3j-5fw6-r9vr` 两条 Low 原型污染
+  公告；没有把 `joi` 增加为直接依赖，也没有添加 `overrides` 或执行会破坏性改变 Taro
+  依赖树的 `npm audit fix --force`。
+- 更新后的 `npm audit --omit=dev` 不再报告 `joi` 或上述两条公告，结果继续精确匹配既有
+  10 个受影响包、5 个叶子公告和 `4 moderate / 1 high / 5 critical` 的有期限策略；因此
+  `npm-policy.json` 与合成 fixture 均不扩例外、不改计数。没有应用代码、API/OpenAPI、
+  数据库 Schema/Aerich 迁移或应用版本变化。
+
+## M8 Gate A M7→M8 入口与 Online no-op 保护（仓库候选，2026-09-09）
+
+- 新增可复用的本机可销毁容量工具与独立 Compose 拓扑：MySQL 8.0.46、Redis、单 worker
+  App、Nginx 和唯一 TBF shaper 共享 CPU `0-1`，五个稳态容器禁用 swap 后内存上限合计
+  `4096MiB`，唯一 client-facing 出口固定为十进制 5Mbps。工具具备宿主/端口/路径/Compose
+  所有权预检、M0→M8/MARD/合成数据准备、原始样本有界保存、日志/statement/业务对账、
+  fail-closed continuation 与精确资源回收；没有连接或修改 Gate A。
+- A/B/C/D 冻结流量分别覆盖 221 色详情 identity/gzip、认证浏览、C v3 的 221 PNG 冷/热
+  完整页面加载，以及颜色订单取消/钱包支付/代客订单幂等写链路。C v3 保留完整启动窗口，
+  每个实际阶段另加 6 秒 completion drain，drain 后 incomplete 仍 terminal FAIL；取消路径会
+  显式 await 聚合 Future，避免遗留异步异常。提交前又将监控提前退出、日志/statement 缺证据、
+  TBF 实际参数漂移、清理判定优先级、D cadence/幂等身份、C Origin 和 A `Vary` 全部改为
+  fail-closed；最终性能工具回归为 `190 passed`。
+- Run `20260909t042800` 完整执行 12/12 个 5/10 VU Profile，共 `73,027` 请求且请求失败为
+  0，最终 150 个写旅程和订单/库存/钱包/Audit 严格对账通过。gzip 色板、认证浏览、PNG
+  冷/热和写链路的 5/10 VU 均通过；唯一失败是 A identity/10：51,063-byte 未压缩色板把
+  出口压至 4.992Mbps，产生 428 个 qdisc drops，P95/P99 为 1,510/2,442ms。整轮因此保持
+  `FAIL`，不能被其余结果覆盖；gzip 线传为 10,023 bytes、减少 80.371%，同一 10 VU 的
+  P95/P99 为 271/290ms 且零 drops。报告见
+  [M8 本地容量报告](../09_release/reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md)。
+- 本轮只是 dirty-tree、单轮、ARM64 Docker Desktop 下的 2 核/4GiB **服务容器包络**探索，
+  不包含宿主内核/daemon/Runner、TLS/公网 RTT、真实商品 WebP 或微信真机；不冒充独立
+  2 vCPU/4GiB Linux 主机、candidate-pre 三轮或发布容量证据。专属容器、网络、卷、唯一
+  镜像标签、临时工作目录和端口已清理并复核，原始忽略 artifact 以 `0700/0600` 保留。
+
+- `scripts.release.gatea_upgrade` 新增显式 `--source-version {2,7}`，旧调用仍默认 M2；当前
+  Gate A 的 M7 路径必须显式选择 7，遗漏时在读取 Backup、停止 App/Nginx 和任何写入前
+  fail closed。M7 路径只执行 M8，不重复 M3–M7、Wallet backfill 或代表数据；plan、apply、
+  replay、evidence 和成功 Record 均交叉校验精确 source/target 迁移链与 source version，
+  Deployment Record 只接受历史 M2→M7、M2→M8 和新 M7→M8 三种组合。
+- `gatea_backup` 新增版本化 `m7-preserved-business-v1` 内容摘要：20 个非 `bead_colors`
+  业务表使用稳定主键顺序的确定性 data dump，`bead_colors` 追加不含 M8 `swatch_hex` 的
+  M7 字段投影，共覆盖 21 个业务表；Aerich 精确链和完整图片 manifest 分别校验。M7/M8
+  Backup Record 必须携带该摘要，独立 Restore 重算并要求完全一致；旧 M7 Backup 缺少
+  此字段时 fail closed。停止源和 M8 最终态也重算同一摘要，替代仅靠旧聚合计数判断
+  业务内容未漂移；聚合计数继续只作诊断信息。
+- M7 停写且已与 Backup 对齐后，在 M8 任务前新增 raw source preflight：Schema 必须完全
+  没有 `swatch_hex` 列，221 条 M7 code/name/URL/sort/active 必须逐槽匹配冻结 manifest，
+  221 张预期兼容 PNG 必须为非软链接普通文件、内容 SHA-256 精确且权限 `0644`；额外商品
+  图片允许存在但完整 manifest 必须与 Backup 一致。任一部分 M8、目录或文件漂移均在迁移
+  原语调用前失败。
+- MARD preview/apply/replay 都必须为 221 项精确 no-op，包括 `database_changes=0`、
+  `images_to_create=0`、`images_reused=221`、`created_images=0`。升级成功后 App/Nginx 继续
+  停止；再次以相同参数调用 plan 会验证成功 Record/evidence 哈希、live 数据库、图片、
+  M7 内容摘要并重跑只读 MARD preview。运行 `app-up` 前必须紧邻完成这次
+  `already_current=true` replay，因为 `app-up` 本身只验证 Record/候选身份，不重读上述
+  live 状态。失败继续保留脱敏 evidence 和停服状态，不自动 downgrade、恢复或盲目重跑。
+- `app.tasks.gatea_mard_publish` 现允许已有 Online 自选色商品仅在数据库与 221 图片完全
+  一致时通过。apply 即使 no-op 也进入事务，锁定并重读完整 BeadColor、图片和 Online
+  引用；preview 后的目录/图片/引用漂移全部在写入前拒绝。精确 no-op 不调用批量更新、
+  不改变 `updated_at`、文件内容或 mtime；非 no-op 仍拒绝 Online 场景。
+- `gatea_backup`/Operations/upgrade 定向测试为 `94 passed`，完整 `tests/release` 为
+  `229 passed`；一次性 MySQL 8.0.46 的 MARD 并发/锁序门槛为 `3 passed`，另一个一次性
+  MySQL 还证明 M7 内容摘要重复计算一致、M8 前后不变且任一受保护业务值变化都会改变摘要。
+  临时容器、端口和内容文件已清理。本轮没有连接 Gate A 或持久 MySQL，也没有迁移、
+  Runtime 切换、持久数据写入、新依赖或版本提升；完整 updater 尚无独立 MySQL 执行证据。
+- 本轮本地候选的完整后端回归为 `2317 passed, 33 skipped in 125.31s`，compileall
+  通过；该结果随后收口进 `fa6fce05...`，但本地计数不冒充远端日志，也不能替代完整
+  updater 的 MySQL 与 Gate A 证据。
+- 独立只读代码审查先发现成功 Record 重放没有在 live 数据核验前重新证明 App/Nginx
+  仍然停服；现已改为先检查 MySQL/Redis healthy 与 App/Nginx stopped/exited，并为运行中、
+  缺失、unhealthy 和状态读取失败补齐 fail-closed 矩阵。修复后复核无未解决 P0–P3；该结论
+  已绑定下述 `fa6fce05...` 干净候选。剩余自动化门槛是同一候选的完整 M7→M8 updater
+  隔离 MySQL 复现。
+- 内容摘要由 20 表单事务 dump 与随后一次 `bead_colors` 投影查询组成，数据库与图片也
+  不是同一个原子事务；保护依赖 App/Nginx 停写窗口内不存在直接 SQL、其他迁移进程或
+  宿主图片旁路写入，不宣称跨数据库/文件系统的绝对原子性。
+- M7→M8/Online no-op 加固现已收口为 head
+  `fa6fce05a153321d5c4079cb50f123c7996695f2`、merge-ref
+  `b2f02ebc65bedf736197d54ed65228320d9962a4`；
+  [Run 34281512196](https://github.com/EVEBios/pinkdooHub/actions/runs/34281512196) 于
+  2026-09-09 05:36–05:41（Asia/Shanghai）从头执行八类 Job并取得 8/8，7 组应上传
+  artifact 均带 GitHub digest。`openapi-contract` 按 workflow 只做阻断检查，因此没有
+  第八组 artifact。完整身份与边界见
+  [M8 发布加固远端 CI 报告](../09_release/reports/m8_hardening_remote_ci_2026-09-09.md)。
+- 该远端 PASS 关闭最终干净 SHA/新远端 CI 缺口，但不执行 `deploy/gatea` 完整生命周期；
+  专用一次性 MySQL 完整 M7→M8 updater、新 Backup/Restore、持久写授权、candidate-pre
+  三轮和微信 `release_eligible=true` RC 仍未完成，Gate A 继续 No-Go。
+- 当前候选新增第九类 `gatea-m7-m8-updater` CI Job：只接受 GitHub-hosted disposable
+  Linux、root、精确 sentinel、本地默认 Docker daemon、干净固定资源和完整 Git 历史；
+  source 固定为 M7 `73dca350...`，target 绑定当次 `GITHUB_SHA`。Job 从空环境真实创建
+  M7 代表业务与 221 PNG，依次完成 source Backup/同 ID 独立 Restore、M8
+  plan/apply/停服 replay、target app-up、221 HEX/gzip/小响应/PNG Runtime 验收和 M8
+  数据后 Backup/Restore。
+- 编排器在内部 `finally` 与 workflow `always()` 两次按 ownership Record 精确回收容器、
+  卷、网络、镜像、端口和工作目录。上传目录使用白名单、随机 Secret 精确扫描、凭据形状
+  扫描与 cleanup 后轮换的安全 marker；任何扫描异常都会失效 marker、清空候选上传内容，
+  只重建安全 state/cleanup/失败摘要。中断临时文件不能阻止二次 cleanup，镜像也纳入最终
+  residual 判定。本地新增 30 项隔离测试后 `tests/release` 为 `259 passed`，完整后端为
+  `2348 passed, 33 skipped in 126.83s`；前端 `84 suites / 573 tests` 与 TypeScript、
+  ESLint、Stylelint、CI policy、OpenAPI 类型均通过。真实 disposable Linux 首轮仍必须由
+  下一个远端 Run 证明，本段不预先宣称通过。
+
+## 本地 2 核 / 4GiB / 5Mbps 容量探测（2026-09-08）
+
+- 使用当前工作区构建原生 ARM64 临时镜像，在完全隔离的 SQLite M8 副本、Redis、单
+  Uvicorn worker 和 Nginx/TBF 栈中执行容量探测；三个服务共享 CPU `0-1`，内存上限合计
+  4GiB，客户端出口为所有连接共享的 `5Mbit/s`。没有压当前 `8000 --reload` 服务，也没有
+  写持久数据库。
+- 5/10 个快速浏览用户各运行 30 秒，吞吐从 `9.55` 线性增加到 `19.12 req/s`，整体 P95
+  分别为 `30.42ms`、`33.98ms`，错误率和 readiness 失败均为 0；10 人仅使用
+  `0.549Mbps`、约 10.73% 的两核容量，内存峰值 `104.81MiB`。
+- 5/10 个无思考时间的 221 色详情持续请求分别为 `57.20`、`57.16 req/s`；qdisc 精确稳定
+  在 `5.000–5.001Mbps`，并发翻倍后吞吐不再增长、P95 从 `104.50ms` 增至 `191.22ms`，
+  但仍 0 错误、0 丢包、0 OOM/重启。CPU与内存有明显余量，当前饱和瓶颈明确为公网出口。
+- 当前合成图片只有 77–583 bytes，不能外推真实 WebP。10 人同时各取 200KiB/300KiB 图片的
+  带宽下界约为 3.28s/4.92s；真实商品图仍应进入对象存储/CDN并缓存，221 个数字色块继续只
+  传 HEX。后续压测按长期维护的
+  [容量与性能压测 Runbook](../09_release/capacity_load_test_runbook.md) 执行；本次不可变方法、
+  限制和清理证据见
+  [本地容量探测报告](../09_release/reports/local_2c4g_5mbps_load_test_2026-09-08.md)。本轮没有
+  应用代码、依赖、迁移、版本、远端或持久环境变更。
+
+## M8 HEX 色块直绘与文本压缩（仓库实现候选，2026-09-08）
+
+- `BeadColor` 新增 nullable `VARCHAR(7) swatch_hex`；请求接受首尾空白和小写后统一存储为
+  大写 `#RRGGBB`，其他格式严格拒绝。code、name 与有效 HEX 三项齐全才派生
+  `is_configured=true`；激活全局颜色、启用商品颜色、Product 上架、公开颜色输出和下单
+  的锁后复验均使用同一完整性规则。管理 API 继续输出 nullable 诊断态，公共 Online
+  颜色把 `swatch_hex` 固定为非空字段；`swatch_image_url` 仍为可选字段且不新增图片上传
+  API。OpenAPI 与小程序生成类型同步。
+- 新增 MySQL/Aerich M8：按 `slot_no=1..221` 精确回填冻结 MARD 清单中的规范 HEX，迁移
+  内嵌 221 值并绑定 manifest SHA-256。Gate A/CI 白名单和非空升级顺序扩展为
+  `M3→M4→Wallet→M5→M6→M7→M8→MARD`，MARD publisher、本地 importer、代表数据和
+  verifier 均逐槽核验 HEX。新增本地 SQLite preview/apply 工具，写前创建 `0600` 备份，
+  在一个事务内 ALTER、回填、精确核验并支持安全重放。2026-09-08 已在停止本地写入后
+  对当前持久 `db.sqlite3` 执行：写前备份为
+  `backups/local-sqlite-migrations/db.sqlite3.pre-m8-swatch-hex-20260908-130013-906106.bak`
+  且权限为 `0600`；备份完整性/外键通过并确认无 HEX 列，升级后 221 槽全部有唯一规范
+  HEX、与冻结清单逐项相等，完整性/外键与幂等 preview 通过。该 SQLite 操作不写 Aerich；
+  本任务仍未对任何 Gate A、共享、预发布或生产数据库执行 M8。
+- 小程序新增共享 `BeadColorSwatch`：商品详情、购物车和代客钱包下单优先用
+  `View.style.backgroundColor` 直绘 HEX，不发起图片请求；HEX 缺失才回退真实
+  `swatch_image_url`，图片失败再显示占位。购物车 v2 兼容旧记录并保存 nullable
+  `swatchHex`，不升存储版本；移除拿 Product 封面冒充色样的回退。现有 221 张确定性
+  PNG 只在迁移期保留，不转换为 WebP、不删除；新制作的商品照片和未来实拍校色色样约定
+  优先采用 WebP（既有 jpg/png 上传兼容未破坏），纯数字色块不再需要图片格式。
+- FastAPI 增加可排除路径的 gzip 中间件：客户端协商 gzip 且正文不小于 1 KiB 时使用
+  level 6；本地 Product 上传路径直接旁路。Gate A loopback/TLS 与 Rehearsal Nginx 用
+  相同阈值、级别和文本 MIME 白名单，设置 `Vary`，不重复压缩已有 `Content-Encoding`
+  或 PNG/JPEG/WebP。固定标准 Nginx 镜像没有 Brotli 模块，因此本次不为 Brotli 更换
+  镜像或引入第三方动态模块，避免扩大供应链和运维范围。
+- 定向验证已覆盖 Product `789 passed`、Order `426 passed`、Wallet 颜色资金链
+  `46 passed`、数据库/发布/CI/本地工具组合 `871 passed`，小程序 `84 suites / 570
+  tests`；合并修复后最终完整小程序为 `84 suites / 573 tests`，TypeScript、ESLint、
+  Stylelint 与 OpenAPI 生成链均通过。完整后端为 `2069 passed, 31 skipped`（122.64s），
+  skip 均为显式隔离的 MySQL-only 门槛。另在一次性 MySQL
+  8.0.46 真实执行 Aerich 0→8，并通过 M8 精确 HEX 和 Gate A publish/replay `2 passed`；
+  容器已删除、13308 已释放。没有新增依赖或版本提升；该 M8 基线随后由 head
+  `4e745848...` 的 Run 34242753255 远端 8/8。持久 M8 迁移和微信真机仍未执行；其后
+  M7→M8/Online no-op 候选的远端证据见上方独立条目。
+- 本地前两阶段验收另通过后端 M8/压缩/颜色订单定向 `46 passed`、小程序 11 套件
+  `146 passed` 与钱包只读对账 `scanned=11 mismatches=0 violations=0`。真实本地 API
+  管理目录返回 221 项并与清单一致；100 项目录响应经 gzip 从 20,200 bytes 降至
+  4,390 bytes（减少 78.3%）。微信开发者工具模拟器的 221 色商品以 HEX 直绘，选择 A1
+  未请求其兼容 PNG，控制台 0 error。颜色下单/取消库存恢复和代客钱包支付/幂等重放在
+  当前库的隔离副本中通过；隔离服务与临时库已清理，未向持久库写入测试订单。
+
+## 本地 Demo 活跃预约样本滚动刷新（仓库实现候选，2026-09-08）
+
+- 综合 Demo 的 pending/confirmed 预约此前被误按“合成用户终身只能一条”校验；即使其他
+  数据完全正确，运行时间越过三小时提前量后，只读 verifier 也会因没有当前可操作样本而
+  失败。N1 本身允许同一顾客保留多条预约历史，因此不删除、不改写旧预约。
+- apply 现在只在对应合成用户缺少当前预约窗口内样本时，经正式 `ReservationService`
+  新建 pending，并按场景确认 confirmed；新样本优先选择窗口后段的不同营业日。旧的
+  pending/confirmed 作为合成历史保留，未来超出窗口的异常数据、状态/原因冲突和多个
+  当前样本仍 fail closed。
+- 专项回归覆盖首次创建、同一时点零写重放、时间前进后的只读失败、仅新增两条当前样本、
+  旧行保留及刷新后再次零写重放。该变更不修改业务 API、Schema 或迁移，也不触碰 Gate A。
+- 已对本地持久 `db.sqlite3` 实际 apply：因最初指定的操作者不是原 Seed 审计操作者，
+  所有权预检在任何业务写入前拒绝，并保留完整性通过的 `0600` 备份
+  `db.sqlite3.pre-local-demo-20260908-024201-529629.bak`；改用原操作者后的写前备份为
+  `db.sqlite3.pre-local-demo-20260908-024217-469378.bak`。本轮只为 pending 场景新增 1 条
+  当前预约及其 1 条 `CREATE_RESERVATION` 审计，旧行未修改；全表 reservations 7→8、
+  audit logs 583→584，其他关键表计数不变。独立 verifier、SQLite `integrity_check`/
+  `foreign_key_check` 与钱包对账 `scanned=11 / mismatches=0 / violations=0` 均通过。
+
+## Gate A Backup 快速重启端口误判修复（真实主机发现，2026-09-08）
+
+- M7 综合数据写入后的 Backup 已完成数据库/图片导出，但在恢复 App/Nginx 前把刚关闭的
+  `127.0.0.1:18080` TCP 回收窗口误判为仍有监听者；工具按失败契约删除未留证的导出物，
+  未写 Backup Record。等待回收窗口后，既有候选可正常启动，数据库摘要和 225 个图片
+  manifest 与综合代表数据成功 Record 精确一致。
+- loopback 可用性探针在 `bind()` 前显式设置 `SO_REUSEADDR`，允许发布入口快速重启时复用
+  最近关闭的地址，同时仍由内核拒绝真实活动监听者。新增调用顺序回归；修复必须形成新的
+  CI 成功 Operations Release 后，才允许重新创建数据后 Backup 和独立 Restore。
+- 修复提交 `353455b` 已由 GitHub Actions Run 34178908663 在干净 PR checkout 完成
+  8/8；版本化 Operations Release 投放后，新 Backup `20260908t021224z` 已快速
+  恢复长期 App/Nginx，其独立无端口 Restore 的数据库、225 个图片、空 Redis、Restore
+  App 和临时资源清理全部通过。数据后对账为 `scanned=4 / mismatches=0 /
+  violations=0`，日志精确 Secret/高置信敏感模式匹配均为 0。详细脱敏证据见
+  `docs/09_release/reports/gatea_m7_upgrade_and_data_2026-09-08.md`。当次 Backup 同时已生成
+  AES-256-GCM/RSA-OAEP-SHA256 管理电脑异机副本，并立即完成解密、成员与
+  来源 checksum 复核；私钥与副本分离，不进入服务器或仓库。
+
+## Gate A M7 综合代表性测试数据入口（本地候选，2026-09-08）
+
+- 新增 `scripts.release.gatea_m7_representative_data`，只扩展当时已经具备历史 M2 代表数据、
+  当时 M7 候选 M2→M7 成功 Record、24 小时内该 M7 候选 Backup 与独立 Restore PASS 的持久
+  Gate A；写前再次要求四项服务 Healthy、唯一 loopback publisher、数据库/图片与备份
+  完全相同，并严格匹配 M7 空扩展基线。入口必须从具有 source/CI sidecar 的版本化
+  Operations Release 执行，拒绝未版本化工作树、既有成功 Record 或既有凭据文件。
+- 工具只经正式 loopback API 创建 3 个合成 NORMAL USER、1 个含 221 关联且启用 3 色的
+  Online 自选颜色 Kit、颜色库存与幂等重放、6 个订单/5 个结算/2 个退款、钱包正负调账、
+  6 个预约状态、单日/固定店休和 Refresh family 重放撤销场景；同时要求微信充值与微信
+  订单支付保持 503，并由最终 `recharge_orders=0` 等数据库断言证明零写入。
+- 三个合成账号的随机密码只写入 Record 目录内独立 `root:root 0600` 文件；SUPER_ADMIN
+  凭据、Token、手机号、请求/响应正文均不进入成功 Record 或日志。成功前所有登录会话
+  必须撤销，最终数据库聚合、订单状态、资金余额、库存余额、预约原因和图片增量必须精确
+  匹配。多次正式 API 调用不构成一个跨请求数据库事务；失败会保留 `.pending` 凭据供
+  诊断，现场必须停止写入并从已验证 Backup 恢复，不能删除现场后盲目重跑。
+- 真实 Gate A 重建 App 后发现，`docker compose exec app python` 不会继承 Entrypoint
+  只注入给 PID 1 的 Runtime Secret，因而不能通过重新构造完整 `Settings` 来读取开关。
+  运行时门槛改为从同 UID 的 `/proc/1/environ` 只投影六个非 Secret 开关并做精确比较；
+  除这六项外不解析或输出其他环境值，也不把容器配置文件值误当成长期进程值。
+- 密码注册默认关闭的 Gate A 不能经正式 API 创建合成用户；入口因此同时要求配置文件与
+  运行中 PID 1 的 `PASSWORD_REGISTRATION_ENABLED=true`。Runbook 将其冻结为仅在创建
+  合成账号期间临时开启的第六项开关，成功后必须恢复关闭并验证新注册被拒绝。
+
+## Gate A 升级 Runtime Secret 注入修复（真实主机发现，2026-09-08）
+
+- `b358ecc` 的 Gate A 正式 apply 在停写并证明数据库/图片与新 Backup 完全一致后，M3
+  一次性容器于应用配置导入阶段失败；数据库仍为精确 M2，Schema/聚合零漂移，M4–M7
+  未执行，App/Nginx 按失败契约保持停止。使用同一 Backup 的无宿主端口隔离 Restore
+  复现确认，M3 DDL 尚未开始，失败来自 `docker compose run --entrypoint python` 绕过
+  Runtime Entrypoint，导致挂载的 JWT Secret 没有导出为 `JWT_SECRET_KEY`。
+- 升级编排的 Migration、Wallet 和 MARD 子任务改为保留镜像默认 Entrypoint，再以
+  `python -m` 覆盖 service command；新增 apply 确认后、停止业务入口前的 Runtime
+  Settings 预检，使用同一 Secret 注入链验证 production/MySQL/HS256，失败不写升级
+  Evidence、不停 App/Nginx，且不回显子进程 stdout/stderr 或 Secret。真实 Secret 文件
+  本身权限和长度合规，无需轮换；修复必须形成新 SHA、通过完整 CI 并重新生成匹配镜像
+  后，才能使用新的 Backup/Restore Record 重启持久升级，禁止重跑已有失败 Evidence。
+
+## Gate A 升级宿主依赖收口（真实主机发现，2026-09-08）
+
+- 真实 Gate A 在成功完成 M2 只读采样、新 Backup 与独立 Restore 后，upgrade plan 于
+  导入阶段发现宿主仅有标准库 Python，而编排脚本为复用迁移常量导入了镜像内
+  `app.tasks.gatea_migrate_step`，间接要求宿主安装 Aerich。失败发生在 plan 阶段，未停
+  服务、未迁移；配置已原子恢复为运行中的 M2 镜像并复核四项 Healthy、数据库零漂移。
+- `gatea_upgrade` 改为复用宿主 `gatea_operations` 已冻结的 M0–M7 清单，不再导入应用
+  Runtime；新增 `python -S` 回归，固定宿主编排只依赖标准库，Aerich/Tortoise 继续只
+  存在于目标 App 镜像。修复需形成新 SHA、远端 8/8 和匹配 amd64 镜像后再继续执行。
+
+## Gate A 升级后代表性数据证据链（本地候选，2026-09-07）
+
+- 既有库升级成功 Record 新增并强制验证 `source_candidate_sha` 与
+  `source_image_id`；来源 image ID 直接取自 24 小时内且已独立恢复通过的 Backup
+  Record，不接受调用方另行伪造。
+- 韧性演练在首次部署继续要求代表性数据精确绑定当前 SHA/Image；在 M2→M7 路径只接受
+  升级 Record 冻结的来源 SHA/Image 对应历史代表数据 Record，再对该历史检查点的 M7 完整数据库与
+  图片执行演练前后零漂移检查。历史数据不重建、不删 Record，也不冒充当前候选新数据。
+
+## Runtime 镜像构建上下文收口（本地候选，2026-09-07）
+
+- `.dockerignore` 增加递归 Python bytecode 规则，避免本地测试/`compileall` 产生的嵌套
+  `__pycache__` 和 `*.pyc` 进入应用镜像，使同一 Git SHA 的构建内容不再受开发机临时
+  缓存影响；发布契约测试冻结该边界。
+
+## Gate A 候选级韧性留证（本地候选，2026-09-07）
+
+- 韧性演练成功 Record 从全局固定文件改为
+  `gatea-resilience-<40位candidate SHA>.json`：同一不可变候选仍然拒绝覆盖，历史 M2
+  证据继续保留但不再阻断升级后的 M7 镜像重新验证。
+- 该改动只修正留证边界，不复用或提升历史 PASS；本节形成时目标 M7 的 MySQL/Redis 故障、App
+  重启、数据/图片保持、日志轮转和脱敏仍须在 Gate A 升级并启动当前镜像后真实执行。
+
+## Gate A 非空 M2→M7 升级编排（本地候选，2026-09-07）
+
+- 新增 `scripts.release.gatea_upgrade`，默认 plan 只读，只接受精确 M2 起点；apply 必须
+  同时绑定 source/target 40 位 SHA、24 小时内的新 Backup ID/独立 Restore PASS Record
+  和冻结 MARD manifest SHA-256。目标镜像继续验证 revision、非 root 用户、Entrypoint
+  与 CMD。
+- apply 先停止 Nginx/App，证明 MySQL/Redis healthy 与业务入口退出，并要求停写后的
+  M2 数据库摘要、图片 manifest 和刚验证的备份完全一致；随后固定执行 M3、M4、Wallet
+  双 backfill/reconcile、M5、M6、MARD preview/apply/replay 与 M7，每步保存 Aerich、
+  Schema 指纹和聚合证据。
+- 最终核验 M2 核心 User/Product/Order/Inventory/Audit 数据不漂移、Wallet owner 完整、
+  221 色全配置/激活、持久图片完整和 ReservationSettings 单例/CHECK/UNIQUE；全部通过
+  才生成绑定 target SHA/Image ID 的 existing-database upgrade Record。`app-up`、后续
+  Bootstrap/代表数据/备份/韧性入口现可接受首次迁移或既有库升级 Record。
+- 失败/中断保留脱敏 evidence 和实际数据库摘要，不自动启动入口、恢复、downgrade、
+  fake 或删除现场；已有失败 evidence 阻断盲目重跑。发布工具全套 `154 passed`，完整
+  后端 `2024 passed, 31 skipped in 110.29s`；31 项均为显式 MySQL-only 门槛。
+- 一次性 MySQL 8.0.46 从精确 M2 逐步执行到 M7；3 个合成历史用户中为 2 个普通
+  NORMAL/DISABLED USER 补齐钱包并完成 reconcile，MARD 221 行/221 文件发布与重放、
+  最终 8 条 Aerich/Wallet/MARD/ReservationSettings 摘要均通过；容器、13320 与临时图片
+  已清理。该证据不等于 Gate A 已执行；当前 SSH 公钥不可用，真实起点、新 Backup/
+  Restore、持久升级和 matching image 部署仍阻断，发布继续 **No-Go**。
+
+## Gate A MARD 221 持久发布入口（本地候选，2026-09-07）
+
+- 把清单、稳定文件名和确定性 PNG 提取到镜像内共享 `mard_catalog`，抓取与本地 SQLite
+  导入继续复用同一契约；新生成公开图片统一为 `0644`，保证 Nginx 只读挂载可读取。
+- 新增 `gatea_mard_publish`：固定 production MySQL、`/data/images` 和无凭据 HTTPS
+  `/uploads/products`，默认 preview，apply 必须精确确认 manifest SHA-256；拒绝非 221
+  槽、部分冲突、异常文件权限/内容和 Online 已启用颜色。
+- apply 先原子发布确定性图片，再在单事务内锁定 221 槽、复查销售引用、批量更新并
+  回读；数据库失败只删除本轮新文件，已有文件保留，完全相同重放零写入。任务不创建
+  ProductKitColor、不启用颜色、不写库存，也不替代升级编排的停写与 Backup/Restore。
+- 9 项共享/发布单元测试与 14 项相关 Product/Model 回归通过；一次性 MySQL 8.0.46
+  完成 221 行/221 文件真实 apply 和 no-op 重放（`1 passed in 0.92s`），容器及 13319
+  端口已清理。R-030 转为 mitigating；在本条形成时 Gate A 尚未应用，仍为 **No-Go**。
+
+## Gate A 单步迁移与 Wallet 准备原语（本地候选，2026-09-07）
+
+- 新增 `gatea_migrate_step`，冻结 M0–M7 文件清单，只接受 M3–M7 目标；通过容器 `/tmp`
+  中的最小迁移目录和 Aerich 公开接口一次只前进一条，精确目标重放为 no-op，未知链、
+  跳级、未来迁移或非 production MySQL 均拒绝，且不使用 fake/downgrade。
+- 新增 `gatea_wallet_prepare`：先完成 Wallet account 与 legacy settlement 双 preview，
+  blocker 路径保持零写入；通过后复用冻结 ID 上界 apply、二次 preview，并要求全量
+  reconcile 的 mismatch/violation 均为 0。输出只包含聚合计数。
+- 一次性 MySQL 8.0.46 从真实 M0→M2 起点依次执行 M3、M4、M4 no-op 重放和空历史
+  Wallet 闭环，最终 Aerich 精确停在 M4；7 项编排测试通过，临时容器和 13318 端口已
+  清理。两个任务尚不构成持久操作入口，必须由后续验证停写、新 Backup/Restore、目标
+  与 Record 的 Gate A 编排调用。
+
+## Gate A 只读数据库起点采样（本地候选，2026-09-07）
+
+- 持久运维新增只读 `database-status`：在健康 MySQL 上输出当前候选、精确 Aerich 链、
+  Schema 数量/确定性指纹及 M2 关键业务聚合，不启动、停止或修改任何服务，不输出
+  Secret、PII 或业务明细。
+- 该入口用于 M2→M7 写前重新确认真实起点，不替代尚待实现和 Review 的非空升级、
+  新备份/恢复验证或持久写入授权；当前 Gate A 仍为 **No-Go**。
+
+## Wallet 扩展 MySQL 发布门槛（本地候选，2026-09-07）
+
+> **历史状态说明：** 本节记录 2026-09-07 当时的本地/远端门槛；Wallet workflow、
+> Gate A M4/backfill/reconcile 与后续 M7 持久检查点现已完成，真实资金能力仍关闭。
+
+- `backend-mysql-release` 现将 `tests/wallet/mysql` 与既有 Inventory/Reservation 门槛放在同一个 MySQL 8.0.46、同一 M0→M7 Schema 中执行；SQLite Job 显式忽略三类 MySQL-only 目录，CI 契约测试同步冻结该边界。
+- Wallet 专项从 2 项扩为 9 项：覆盖并发不同 key 调账无丢失、同 key 调账重放、并发余额支付只扣一次、并发退款只退款/恢复一次、真实 InnoDB 1205 后新事务重试、首轮已写资金与库存后模拟 1213 的整事务回滚重试，以及 Inventory 调账先持有 Kit 行锁时退款产生可观测 `performance_schema.data_lock_waits`、释放后双方无锁反转完成。
+- `EXPLAIN` 使用 2,000 条合法 WalletTransaction 与 2,000 条 Payment 基数样本，确认钱包 owner 锁、资金幂等查询、钱包流水分页、支付幂等查询和用户支付分页分别命中冻结唯一/组合索引；既有 `ascii_bin` 大小写敏感回归继续保留。
+- 一次性 `mysql:8.0.46` 在 `127.0.0.1:13316` 的专用 Schema 上先完成 Wallet `9 passed in 4.35s`，再以 CI 统一环境变量完成 Inventory + Reservation + Wallet `30 passed in 13.33s`；夹具收口为保留 M6/M7 迁移证据后最终联合复跑 `30 passed in 13.21s`。两次任务容器均已停止并由 `--rm` 删除，13316 已释放；未访问 3306，未修改本地持久 `db.sqlite3`、Gate A、共享或生产数据库。
+- 提交前 Wallet/CI 契约专项 `164 passed in 4.38s`，完整后端 `2000 passed, 30 skipped in 113.05s`；30 项 skip 全部来自三类显式 MySQL-only 门槛，已由上述真实联合 `30 passed` 覆盖。`compileall` 与 `git diff --check` 通过。
+- R-029 的仓库实现与本地候选证据已关闭；head `62f807a...` 的 Run 34134341829 随后
+  在干净 PR checkout 完成 8/8，Wallet 三域联合、cleanup 与 artifact 步骤全部 success，
+  7 组 artifact 的 merge-ref/大小/digest 已记录。发布状态继续 **No-Go**：M4 持久迁移、
+  两个 backfill、reconcile、Gate A 非空升级入口、MARD 持久发布、真实 RC/Origin/真机
+  均未完成。
+
+## M7 当前候选远端 CI 8/8 收口（2026-09-07）
+
+> **历史状态说明：** 本节的“当前”和剩余阻断项均以 2026-09-07 为时间点；Gate A
+> 后续已受控到 M7。M8、新候选 SHA/CI、真实 HTTPS RC 与真机仍按最新条目判断。
+
+- `feature/phase9-ci` 当时的 M7 PR head `4d6430c1bf9532d644bd7039ed7603fe9ee2c2bf` 已推送；PR #2 的 merge-ref `ccbbe9dcb675a99369867814386051befc5922f2` 在 GitHub Actions [Run 34129910349](https://github.com/EVEBios/pinkdooHub/actions/runs/34129910349) 完成 8/8 success。
+- 远端 `backend-sqlite` 为 `2000 passed, 2 skipped in 736.46s`；`backend-mysql-release` 在 MySQL 8.0.46 完成 M5→M6→M7 历史重放、M6/M7 snapshot、联合 `21 passed in 10.65s` 和 cleanup。前端质量、OpenAPI、微信构建、双依赖审计与仓库卫生同一 Run 全部通过。
+- Run 保存 7 组 artifact；名称绑定 merge-ref 与 Run ID，GitHub SHA-256 digest、大小和到期时间已冻结在 `docs/09_release/reports/m7_remote_ci_2026-09-07.md`。`openapi-contract` 不上传 artifact，8 个 Job 对应 7 组 artifact 符合 workflow 设计。
+- 旧 Run 34104680282 继续保留为 7/8 失败回归记录；R-026 已关闭。整体发布仍为 **No-Go**：Wallet 扩展 MySQL、Gate A 只读盘点与非空升级入口、backfill/reconcile、MARD 持久发布、真实 RC/HTTPS/合法域名和真机均未关闭。
+
+## M7 MySQL 候选门槛与本地综合演示基线（2026-09-07）
+
+> **历史状态说明：** 本节冻结 2026-09-07 候选形成时的证据与阻断项；其中“未应用
+> Gate A / 尚无升级入口”已由 2026-09-08 的持久 M2→M7 检查点关闭，不是当前状态。
+
+- 本地提交 `58d8435` 将 MySQL CI/release gate 收口到 M7，对 `reservation_settings` 单例、默认周一、约束/索引与历史 Reservation 重放加入结构及真实并发验证。在一次性 MySQL 8.0.46 中完成空库 Aerich 0→7、M0–M6 各历史起点→M7、M6/M7 snapshot 和 Inventory + Reservation 联合 `21 passed`；专用 Schema、容器与端口已清理。包含该修复的当时候选后续已由 Run 34129910349 远端 8/8；“任何迁移仍未应用 Gate A”只描述本条形成时的历史状态，共享、预发布和生产 MySQL 至今仍未因此自动迁移。
+- 本地持久 `db.sqlite3` 的结构对比只发现 `refunds.inventory_restored` 和一单一退款 `UNIQUE(order_id)` 缺失。提交 `35e8630` 新增精确、默认预览、双显式确认的 SQLite 修复脚本；实际 apply 写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-refunds-repair-20260907-105304-874045.bak`，权限 `0600`，修复后完整性、外键、目标字段/唯一索引和幂等重放均通过。该脚本不写 Aerich，不是 MySQL/发布迁移证据；数据库设计和 API 文档已是目标形状，无需修改契约。
+- 同次 Schema 对比发现 `ProductKitColor.Meta.indexes` 使用 ORM 关系名时会在新 SQLite 生成表达式索引。提交 `9ffebe7` 改为物理外键列 `product_id` / `bead_color_id` 并增加生成 Schema 契约测试；本地持久库、M6 MySQL DDL、`database_design.md` 与 DBML 原本已是正确物理索引，因此无需新迁移。
+- 综合 demo seed 已通过正式 Service/Repository 链路应用到本地开发库。写前备份 `backups/local-demo-data/db.sqlite3.pre-local-demo-20260907-105320-455438.bak` 与被 Git 忽略的 `backups/local-demo-data/synthetic-credentials.json` 均为 `0600`，不记录、输出或提交任何凭据值。专用 verifier 通过，`wallet_reconcile` 为 `scanned=11 mismatches=0 violations=0`。
+- 本地表当前摘要为 users 13、products 19、product_images 24、orders 8 / order_items 10、payments 6、settlements 6、refunds 2、inventory transactions 238、reservations 7、wallet accounts 11 / wallet transactions 9、audit logs 583、external identities 0；真实微信外部身份没有被伪造。其中新增 9 个合成用户；Product 非删除口径为 online 14 / offline 1 / draft 3，活跃类型为 Experience 8 / Kit 10，另 1 条逻辑删除；Order 为 pending 1 / cancelled 1 / paid 4 / completed 2；Payment 为 wallet 4 / manual 2，Refund 为 2。
+- Seed 新增 6 条 Reservation：pending 1 / confirmed 1 / rejected 1 / cancelled 3，取消中 `customer_request` 1 / `store_closed` 2；加原有历史后实际表共 7 条。Inventory seed 包含 `order_deduction` 8、`order_cancellation_restore` 2、`order_refund_restore` 2，自选颜色 Kit 启用三色；M7 每周固定店休已由默认周一收敛为本地演示用的周三。
+- 最终回归：后端完整 `2000 passed, 23 skipped`（112.25s），退款专项 `49 passed`，`compileall` 通过，`pip check` 无破损依赖；前端 Node 24.13.0 / npm 11.6.2 下 `83 suites / 562 tests`、TypeScript、ESLint、Stylelint 与 CI policy `17/17` 均通过。无新依赖、无版本提升。
+- 发布状态仍为 **No-Go**：Gate A 在 2026-09-02 的最后留证为非空 M2，当前真实状态尚未重新只读确认；现有 `initial-migrate` 只支持空库，尚无批准的 M2→M7 升级入口；MARD 缺持久 MySQL/对象存储导入；钱包扩展 MySQL 门槛、backfill/reconcile、真实 Origin/RC、iOS/Android 真机与微信外部条件均未完成。当前 SHA 远端 8/8 已关闭。
+
+## Reservation 可配置固定店休（仓库实现候选，2026-09-07）
+
+> **历史状态说明：** 本节记录 M7 应用前的候选状态；M7 后续已进入当前持久 Gate A，
+> 但共享、预发布、生产和真机仍不因该结果自动通过。
+
+- 管理端店休页拆分为“每周固定店休”和“添加单日店休”两个独立操作，按钮、说明、确认弹窗和恢复动作均明确表达作用范围；顾客预约页动态展示当前固定店休日。
+- 新增 `ReservationSettings` 单例、星期枚举、管理查询/更换 API 与 M7 候选迁移。固定店休默认周一；更换后旧星期立即恢复可预约，未来 30 天内命中新星期且尚未开始的 pending/confirmed 预约原子取消为 `store_closed`，单日店休与历史取消记录不变。
+- 本节形成时 M7 尚未应用持久环境；其一次性 MySQL 8.0.46 候选门槛已由上述 `58d8435` 证据完成，当时当前候选也已远端 8/8，但目标环境部署验收仍未完成；N2 微信主动通知仍未实现。后续 live Gate A 已由 A 进入 M9，当前状态以前文 A/M9 检查点为准。
+
+## M6 Color-selectable Kit — 仓库实现与本地验证完成 / 真实 MySQL 待验（2026-09-06–07）
+
+> **历史状态说明：** 标题与正文冻结 M6 候选当时的门槛；真实 MySQL 门槛和当前 Gate A
+> M6/MARD 发布已于后续阶段完成；“M8 HEX 未应用 Gate A”只描述本节形成时的历史状态。
+> 后续 live Gate A 已由 A 进入 M9，其他环境仍须分别授权。
+
+- 冻结 `KitKind = fixed | color_selectable`。省略仍创建既有 fixed Kit，历史 ProductKit 迁移时保持 fixed 与原 `stock` 语义；自选颜色 Kit 使用 `stock=NULL`、`sale_unit_grams=10`，`price` 表示每 10g 单价，KitKind 创建后不可修改。
+- 冻结全局 `bead_colors` 221 槽与商品级 `product_kit_colors`：全局槽可暂缺 code/name/色板图，非空 code 唯一；每个自选颜色商品原子关联全部槽，初始禁用/零库存。`is_enabled/stock_units` 属于商品，不同商品引用同一颜色时库存不共享。
+- 冻结公开与管理 Product 契约：列表/详情增加 kit_kind/sale_unit_grams，颜色型详情增加 colors，fixed 保持原库存行为并以空 colors/空销售单位兼容；新增 ADMIN+ 全局颜色分页/PATCH 与商品颜色开关 PATCH。颜色库存仍只能走 Inventory，不恢复 Product 直接 stock 写入口。
+- 冻结订单输入 `items[].kit_color_id` 与 Experience/fixed/color 三态；每色一条 OrderItem、每色数量 1–99、颜色行最多 20、非颜色行最多 10、总行最多 30，按 `(product_id, experience_option_id, kit_color_id)` 判重。颜色订单保存 code/name/slot/10g 单位快照，响应派生 `total_weight_grams`，价格/小计均按 10g 单位数计算。
+- 冻结颜色库存流水：InventoryTransaction 增可空 kit_color FK；fixed 保持 ProductKit 余额和既有端点，自选颜色锁定商品颜色余额并使用独立调整/流水路径。自动幂等身份加入 `:color:{kit_color_id}`，全局查询支持 kit_color_id；路径与 KitKind 不匹配使用 `40031`，颜色资源复用 Product `40406`。
+- 新增错误契约：Product `40405–40406`、`40913–40915`，Order `42233–42234`，Inventory `40031`；HTTP 状态继续由异常类型决定。上架要求自选颜色恰好关联 221 槽、至少一个启用色，且启用色必须全局激活且 code/name 完整；零库存允许上架并展示售罄。
+- 色板图属于全局 BeadColor，可为空，不复制为 ProductImage。实物图建议 192×192 或 256×256、sRGB、WebP；指定的 MARD 页面实际只有 CSS HEX/RGB 色块，因此后续以来源 manifest 生成纯色 PNG 并由默认 dry-run、显式 apply 的本地工具导入。现有单文件、2 MiB、jpg/png/webp Product 上传接口不承担 221 张首批导入。
+- 加固 M6 Product 并发边界：上架与商品颜色启停共用 Product 行锁并在锁后重载复验；全局颜色修改按引用 Product ID 升序、BeadColor、启用关联的固定顺序取锁，避免上架/最后一色禁用及 Online 色板突变竞态。管理颜色响应保留 enabled + inactive/unconfigured 诊断态，公共输出和上架仍只接受 sale-ready。BeadColor.sort 统一限制为 `0..32767`，最长 Unicode 修改审计以有效 JSON 的 `{len,sha256}` 摘要适配 256 字符列。
+- Product/Order/Inventory/Wallet/Refund 的 Model、Schema、Repository/Service/Mapper/Router 及 Aerich `6_20260906123000_add_color_selectable_kits.py` 已落盘；加入本地 SQLite 升级与 MARD 导入契约后的最终本地后端回归为 `1978 passed, 20 skipped`，回环端口发布探测已在完整主套件中直接通过；20 项 skip 均为需要显式环境的隔离门槛。
+- miniapp 已完成商品创建/配置、颜色搜索与 10g 数量选择、购物车 v1→v2 兼容迁移、确认页/订单快照、代客钱包订单、颜色库存调整与流水接入；缺图使用诚实槽位占位，远程色板图按需加载；当来源只有一个标签而使 `color_code=name` 时，顾客与代客下单展示去重为单个色号，有独立名称时仍显示“色号 · 名称”。同一自选商品的购物车颜色现在合并为一张商品主卡，卡内以圆色样逐色显示并保留独立 10g 步进与移除，下单映射仍严格保持每色一条明细；管理端代客扣款的自选颜色改为手机六列/宽屏十列的纯文字色号网格，选中后在下方逐色调整 10g 份数，不加载色板图，并修复请求投影及安全重试丢失 `kit_color_id` 的问题。商品颜色启停动作使用紧凑圆角矩形并显式双轴居中，避免胶囊在双字按钮上接近圆形；会员缺省头像的昵称首字母使用覆盖完整圆形的独立行盒双轴居中，并加入轻微光学校正。完整前端为 `83 suites / 562 tests`，TypeScript、ESLint、Stylelint、OpenAPI 类型漂移与 17 项 Node CI policy 均通过；微信 production 构建和产物检查通过，141 个文件、主包 649,739 bytes、分包 407,624 bytes、总计 1,057,363 bytes，manifest SHA-256 为 `693fb673df044e03c2865af2827e39ac7a5d6de86dbb1b3214f0b4237eeb69b4`，按既有规则保持 `release_eligible=false`。
+- MySQL CI 已把权威版本链收紧到 M0–M6，并增加“空库 0→6 → 仅回退 M6 → M5 fixed 非零库存样本 → 再升级 M6”的历史兼容演练；snapshot 会检查 221 槽、19 个关键列、4 个命名 FK，以及 7 个命名索引的列序与唯一性，Inventory MySQL 另有结构/EXPLAIN 与颜色集合真实锁等待入口。上述 M6 MySQL 门槛尚未在真实 Runner 执行，不能复用 M5 的 16 passed 结论。
+- 新增保留数据的本地 SQLite M6 版本化升级脚本 `scripts/local/upgrade_sqlite_m6.py`：默认只读预览，显式 `--apply` 前用 SQLite Backup API 建立一致性备份，在单事务内重建 `product_kits` 并扩展订单/库存表、建立两张颜色表及 221 个占位槽；提交前核对原业务表行数、字段、槽位和外键，已升级时幂等零写入，未知或含数据的部分状态 fail closed。脚本先在当前 13 商品 `db.sqlite3` 的临时副本演练，随后于 2026-09-07 经用户授权应用本地持久库；写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-m6-20260907-015954.bak`。升级后保留 13 个商品、6 个 fixed Kit，建立 221 个占位槽/零商品颜色映射，SQLite integrity/FK 与 ORM 13 商品读取均通过。脚本不写 Aerich，也不替代 MySQL M6 发布迁移证据。
+- 用户于 2026-09-07 指定公开的 MARD 221 标准色卡页；`scripts/local/fetch_mard_bead_colors.py` 仅允许该 HTTPS host，抓取并严格验证 A1–M15 固定序列、221 项数量、CSS RGB/展示 RGB/HEX 一致以及色号/HEX 唯一。版本化 `app/tasks/manifests/mard_221.json` 保存来源 URL、UTC 时间、HTML SHA-256 `04179ce05e16f6575fee5071ac817c93387a559d2009596b7487ea6d080b513f`、HEX/RGB、槽位/排序和确定性图片名；来源只有 CSS 色块，没有逐色图片或独立名称，因此 `color_code=name=页面色号`。
+- `scripts/local/import_mard_bead_colors.py` 以标准库从来源 RGB 生成 221 张确定性 256×256 sRGB PNG，默认 dry-run，显式 `--apply --confirm-local-only` 才更新项目内 M6 SQLite 与忽略图片目录；现有冲突、Online 商品引用、异常槽位/清单/文件 fail closed，写库前备份，图片原子发布，事务失败完整回滚并补偿本轮文件，完全相同重放零写入。5 项专项覆盖来源解析、清单/PNG、预览/apply/重放、冲突/Online 拒绝和故障补偿。
+- 本地 apply 已写入 221 个 code/name/URL/sort 并全部全局激活，生成图片内容总计 128,325 bytes，写前备份为 `backups/local-sqlite-migrations/db.sqlite3.pre-mard-221-20260907-024129-065769.bak`；重放预览为 `database_changes=0 / images_reused=221 / already_current=true`，外键检查无结果。ProductKitColor 仍为独立商品配置：导入步骤不创建商品、不启用颜色、不写库存；本地此前已有草稿 Product `14`（`221自选颜色`）的 221 条关联，当前全部禁用且库存为 0，本次只让其关联的全局色板资料变为完整。“M6 未应用 Gate A”只描述本条形成时的历史状态；共享、预发布或生产 MySQL 仍未因此自动迁移，生产对象存储/CDN 发布与实体拼豆校色仍待完成。未新增依赖，未 commit/push/tag/release。
+
+## Reservation N1 — 仓库实现候选（2026-09-06）
+
+> **历史状态说明：** 本节冻结 M5/M7 之前的 N1 规则与证据；其中“周一固定店休、周二至
+> 周五 weekday”是当时规则。当前规则为周一至周五始终映射 `weekday`，再由可配置的每周
+> 固定店休独立禁用一天；M5/M7 已进入当前持久 Gate A。
+
+- 新增独立体验预约，不要求下单或付款，也不创建 Order、Payment 或 Wallet 流水。正常普通 `USER` 以 `experience_option_id + reservation_date + start_time` 创建 `pending`；服务端按 `Asia/Shanghai` 返回未来第 0–30 日的合法日期/半小时时段，并统一执行 11:00–20:00、周一固定店休、周二至周五 weekday、周末 holiday、完整体验不跨营业结束时间和开始前至少 3 小时规则。
+- 冻结 Reservation 四状态 `pending/confirmed/rejected/cancelled`，不新增 `completed`、到店或支付状态。ADMIN+ 只可在开始前确认 pending 或以固定 `no_capacity` 拒绝；用户在精确开始前至少 3 小时可取消 pending/confirmed，改期必须取消旧预约后创建新记录，原记录、快照和审计不被覆盖。
+- N1 不维护座位容量、占座或同槽唯一约束。同一用户、同一 Option、同一开始时间允许重复成功提交并生成不同 Reservation ID，由店员逐条人工确认或拒绝；创建 POST 没有客户端幂等键，结果未知时客户端先查“我的预约”，不得自动重发。
+- 新增自定义店休：ADMIN+ 仅能设置上海当地今天或未来的非周一日期；PUT 首次 201、同一关闭状态重放 200。首次关闭在一个事务内按 Reservation ID 升序锁定并批量取消该日尚未开始的 pending/confirmed 预约，使用独立 `store_closed` 原因和顾客文案；DELETE 恢复营业但绝不复活历史预约，重复恢复返回 `40452`。
+- 顾客侧以“我的预约/详情”的四状态、原因和服务端 `customer_message` 获知确认、无空位拒绝或店休取消结果。N1 不包含主动微信通知、订阅授权、Outbox、Worker、投递重试或“已通知”状态；这些能力保留在 N2 Deferred 规划。门店可在管理详情读取 User 当前完整手机号作人工电话兜底，列表只返回后端掩码号码；手机号不写 Reservation 快照，顾客响应不返回手机号。
+- 新增 `StoreBusinessDay` 和 `Reservation` 数据模型：一日一行锁点、四个 `RESTRICT` 外键、UTC 起止、完整 Product/Option 创建快照、状态原因与状态时间；共 5 个 Reservation 普通索引，分别覆盖用户全部列表、用户按状态列表、注销活跃预约检查、店休批量取消和管理状态分页。普通用户存在未来 `pending/confirmed` 且 `scheduled_end_at > now` 的预约时继续以 User 错误 `1015` 阻止账号注销。
+- 新增 5 个顾客端与 8 个 ADMIN+ FastAPI 端点、严格请求/Query/响应 Schema、纯时间 Validator、Repository、事务 Service、零 SQL Mapper、统一业务错误 `40451–40452`、`40951–40953`、`42251–42255` 和审计动作；确认、拒绝、取消及店休恢复的无参数 mutation 均要求真正空 body。
+- 后端完整 SQLite 基线为 `1925 passed, 2 skipped, 1 deselected`：命令显式忽略 `tests/inventory/mysql` 与 `tests/reservation/mysql`，并只因当前沙箱不允许回环端口绑定而 deselect 对应环境探测项；该环境限制不被改写为业务测试跳过，真实 MySQL 门槛由后述一次性 MySQL 8.0.46 专项独立覆盖。
+- 新增 Reservation 小程序 Endpoint/Runtime Guard/Feature 与 6 个页面：顾客创建、我的预约、顾客详情，以及 ADMIN+ 列表、详情审核和店休设置；Experience 详情、首页顾客入口和 ADMIN 工作台入口均已接通。缺少手机号时复用 `PATCH /users/me` 保存当前号码，登录回跳仅接受精确白名单；非幂等写操作结果未知时冻结重复提交并引导查询权威状态，店休 unknown 使用目标日期精确查询收敛。完整前端 `77 suites / 488 tests`、Reservation 专项 `7 suites / 46 tests`、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移和 `17` 项 CI policy 测试通过，微信/支付宝/抖音/H5 production build 均成功；微信端另以 `https://api.ci.pinkdoohub.test` 固定 Origin 重建并通过 artifact checker（141 个文件、总计 968,329 bytes、manifest SHA-256 `70899686b0a6187f2eabafa54d55c4793b5701230892c202fc9c58afd9cf46e7`、`release_eligible=false`），H5 仅有既有 bundle-size 建议警告。该微信产物不是正式 RC；真实 API/角色/弱网/真机 Functional 尚未执行。
+- 新增 Aerich M5 离线迁移，仅创建 `store_business_days`、`reservations` 及约束/索引，不回填历史数据。M5 已在一次性 MySQL 8.0.46 专用 Schema 真实执行完整 Aerich 0→5；Reservation 专项 `7 passed` 覆盖创建/店休两个锁等待方向、同日并发店休、批量取消与审计回滚、真实 1205、1213 全事务重试及营业日唯一索引/五个 Reservation 查询索引的 EXPLAIN，与既有 Inventory 门槛联合运行 `16 passed`。容器由 `--rm` 删除、13307 端口释放、临时报告清理，未触碰持久数据库。
+- 同步新增 Reservation 需求/API 权威文档并更新 User/Product、数据库设计/DBML、API 通用约定、架构、AI Context、迁移流程及前端集成/架构/测试/路线/多端/发布契约。N2 详细规划独立保留，不纳入本次实现范围。本条记录的是未发布仓库候选；M5 仍未应用本地持久 SQLite、Gate A、共享、预发布或生产环境，不代表主动微信通知已启用、目标环境已验收或版本已经发布。
+
+## Wallet / Payment / Refund v1 — 仓库实现（2026-09-05）
+
+> **历史状态说明：** 本节冻结 M4 候选形成时的门槛；M4、两个历史补齐、只读对账和远端
+> workflow 后续已在 Gate A 的 M7 阶段完成，并由当前 live A/M9 继承。真实 Provider 与其他环境仍关闭。
+
+- 新增封闭式会员钱包：新建普通 `USER` 创建一个 `0.00–1000.00` 权威余额账户，历史 backfill 仅补 NORMAL/DISABLED 普通 USER，历史 DELETED 不补；ADMIN/SUPER_ADMIN 始终不建钱包，均只能查询和调整普通客户。单笔充值金额冻结为 `1.00–1000.00`，资金写请求只接受固定两位小数字符串。
+- 密码注册和微信首次登录现将 `User + WalletAccount(0.00) + Audit/ExternalIdentity` 放在同一事务；runtime seed 只给合成 USER 建钱包。账号注销新增处理中资金、可退款钱包结算敞口和非零余额检查并关闭已有钱包；即使余额为零，未成功退款的 PAID 或 30 天内 COMPLETED 钱包结算仍阻断注销，历史资金事实继续由 RESTRICT 外键保留。注销以 DB commit 为权威成功点；提交后 Redis refresh-family 清理改为 best-effort，失败仍返回成功，依靠 `status/auth_version` 阻断会话，并记录不含 Token/JTI 的高优先级安全事件供运维重试清理。
+- 新增用户会员/流水、ADMIN+ 客户钱包/流水/余额调整 API；调整使用 `change + reason + Idempotency-Key`，首次 201、完全一致重放 200，同 key 不同意图 409。disabled 客户不能主动消费/充值，但 ADMIN+ 人工余额纠错和法定义务退款仍允许；deleted 客户禁止资金写入。
+- 收紧全部已实现资金重放：调账必须复验 WalletTransaction 的账户、类型、金额、余额算术、来源、操作者和原因；余额支付及代客钱包订单必须复验 Order、成功 Payment、唯一 Settlement 与扣款流水；退款必须复验 Settlement、成功 Payment、Refund 及钱包渠道入账流水。任何部分事实、跨字段矛盾或篡改均拒绝重放，不会只凭 key 返回成功。
+- 新增 `POST /api/v1/admin/users/{user_id}/wallet-orders`：ADMIN+ 复用 `OrderCreate` 为正常普通 USER 按商品下单，在一个事务中创建真实 Order/Items、扣减 Kit 与钱包、写两类流水、创建成功 Payment/唯一 Settlement、直接 Paid 并顺序写 `CREATE_ORDER` + `PAY_ORDER`。余额不足或任一步失败全部回滚；disabled 目标因属于消费而拒绝；同 key 完全一致重放为 200。
+- ADMIN 正向调账新增全额退款预留不变量：`调整后余额 + 尚可退款的钱包支付敞口 ≤ 1000.00`。PAID 与完成未满 30 天的钱包订单在 Refund succeeded 前占用敞口；退款成功释放并原子退回同额。新增 `40947 WalletRefundCapacityExceeded`，既有超 30 天退款窗口错误顺延为 `40948 RefundWindowExpired`；未来真实充值成功也必须复用预留校验。
+- 新增余额支付与订单资金查询：Payment、PaymentSettlement、钱包扣款/流水、Order `pending → paid` 与 `PAY_ORDER` Audit 原子提交，Settlement 一对一唯一约束防止双结算。现有人工 Paid 在写入前先定位 owner，再按 `User → Order` 锁序复验；仅 NORMAL 普通 USER 订单可同事务登记 `method=manual` 的成功 Payment/Settlement，staff/disabled/deleted owner 均零写入拒绝。complete 在锁内拒绝 pending/succeeded Refund。
+- 新增 ADMIN+ 一次全额退款：只允许普通 USER 的 PAID/COMPLETED 已结算订单，Completed 窗口 30 天；退款前锁定并验证 Settlement 绑定 Payment 的用户、订单、金额、purpose、成功状态及空充值关联，矛盾事实零写入拒绝；退款不回退 OrderStatus。钱包渠道原子退回余额，人工渠道登记线下全额退款完成；PAID Kit/混合订单按 OrderItem 快照恢复并写 `order_refund_restore`，COMPLETED 不恢复。
+- 新增 Wallet/Payment/Refund 领域枚举、固定金额/编号/幂等常量、命名错误 `40441–40444`、`40941–40948`、`42241`，以及纯 Mapper、Repository、Service 和组合根。跨域写统一遵循 `User → Order/Recharge → Payment/Settlement/Refund → Wallet → sorted ProductKit` 锁序；仅 MySQL 1205/1213 对完整内部事务使用全新事务有限重试。六个用户侧 wallet/payment 路由共享 customer 依赖强制 NORMAL USER；资金 Out Schema 对 finite Decimal/UTC、Payment 用途与互斥关联、Payment/Refund 成功时间及 OrderFinancial/WalletPayment/AssistedWalletOrder 的订单、渠道、金额、成功状态做交叉校验，矛盾事实不输出为成功响应。
+- 新增 MySQL M4 离线迁移，创建 `wallet_accounts`、`wallet_transactions`、`recharge_orders`、`payments`、`payment_settlements`、`refunds` 并扩展 Inventory 退款恢复枚举。M4 未通过 Aerich 应用到本地持久 `db.sqlite3`、Gate A、共享或生产数据库；development 的 `generate_schemas` 可能在启动或热重载时为 SQLite 自动补建缺失表，但不会 ALTER 既有表或产生 Aerich 版本记录，也不构成发布迁移证据。`python -m app.tasks.wallet_account_backfill` 默认 preview 输出冻结的 `through_user_id=N`，apply 必须显式复用 `--through-user-id N --apply`。每批事务按 User ID 升序锁定并复验 USER + NORMAL/DISABLED，再重查钱包存在性，DELETED/staff/已有钱包均跳过；只创建 `0.00` 钱包且不造零流水。apply 后必须以同一上界 preview 至 `would_create=0`；`python -m app.tasks.wallet_reconcile` 全程只读，稳定核验余额净额、非零变化、单行算术/范围、余额链、末条余额及无流水零余额规则，任一违规退出非零且绝不自动改账。
+- M4 不在非事务 DDL 中猜测既有 PAID/COMPLETED 的支付渠道；新增 `legacy_manual_settlement_backfill` 受控命令，按固定 Order ID 上界、User→Order 锁序、普通 USER owner、唯一 `MARK_ORDER_PAID` Audit 和独立内部幂等键，默认 dry-run；deleted owner 永不新增事实，disabled owner 只允许补录停写前已经发生的历史人工收款。`--apply` 必须复用预览上界，并在全量零 blocker 预检后才分批原子补建 manual succeeded Payment/Settlement。完整事实可重放，非客户 owner、缺失/重复审计及部分或矛盾资金事实逐单阻断并以非零状态退出。正式启用顺序固定为 M4 → NORMAL/DISABLED USER wallet backfill → legacy manual settlement backfill → reconcile/发布门槛 → 启用。
+- 在一次性 `mysql:8.0.46` 容器真实执行完整 Aerich 0→4，`tests/wallet/mysql/test_wallet_mysql_flow.py` 以 `2 passed` 验证“ADMIN 调账 → 代客钱包 Kit 订单 → PAID 全额退款 → 幂等重放”闭环，以及四个资金 `idempotency_key` 列均使用 ASCII / `ascii_bin`、`Case-Sensitive-Key` 与 `case-sensitive-key` 分别提交。安全 fixture 拒绝非回环、默认 3306 和非 `pinkdoohub_wallet_` 专用 Schema；容器停止后由 `--rm` 删除，`docker ps` 复核无匹配，未触碰任何持久库。钱包专项并发、1205/1213 和 EXPLAIN 扩展门槛仍待完成。
+- 收紧密码与微信登录的注销竞态：密码凭据首次校验后锁定 User 并重验，微信既有身份和首次注册 `IntegrityError` 收敛分支也统一锁后复验；`last_login_at` 与登录 Audit 同事务先提交，Token 签发后再次锁定核对 `auth_version/status`，不一致时只撤销本次新 refresh family，不遗留可用 Redis 会话。
+- 小程序新增会员中心、个人资料与余额摘要、资金流水、充值准备页、订单余额支付，以及 ADMIN+ 用户钱包、增减余额、按商品代客扣款和全额退款界面。所有资金响应都在客户端再次白名单投影并绑定请求 URL、目标用户、原始金额/原因或代客订单的商品、配置、数量和备注；成功 mutation 还必须满足服务端定义的支付/退款终态，矛盾响应按契约错误处理，不清除原资金意图。
+- 小程序资金写入冻结完整请求与 `Idempotency-Key`；network/timeout/HTTP 5xx 的结果未知态不生成新意图，人工调账只能显式原样安全重放。用户端“取消/余额支付”和管理端“完成/退款”从确认弹窗开始使用同步互斥锁，结果未知时保持冻结并重读订单与资金事实；管理员切换目标用户时资金流水按 scope 立即清空，迟到响应不能写回另一客户页面。
+- 真实微信 Provider 保持强制 `disabled`；充值、微信订单支付和微信退款均返回 503 且零写入。商户号、AppID 关联、HTTPS notify、证书/密钥和经营进件资料均未填入仓库，待正式接入时通过受控 Secret 和发布记录配置。本阶段没有钱包提现/转账、混合支付、部分退款或用户自助退款。
+- 最终本地验证：后端完整套件的业务与契约测试 `1847 passed, 11 skipped`，唯一受沙箱限制的回环端口绑定项在本机权限下单独复验 `1 passed`；前端 `71 suites / 447 tests`、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移和 17 项 Node CI policy 全部通过。为避开用户既有 Taro watcher，微信登录模式在一次性隔离副本构建并校验为 117 个文件、主包 528,227 bytes、分包 302,591 bytes、总计 830,818 bytes，manifest SHA-256 为 `4df7b025afec4f1880f67de0c1559e9ac72c712183a0ec6b0d1b7e7c2e7d1a93`，明确 `release_eligible=false`；Taro test-utils 仍只有既有 React `act` 弃用警告。
+- 本条只记录仓库实现、一次性 MySQL 0→4、关键资金闭环、`ascii_bin` 幂等回归和迁移状态，不代表 M4 已通过 Aerich 应用到持久 MySQL/共享/生产库、钱包专项并发/1205/EXPLAIN 门槛已通过、微信支付已开通、版本已发布或任何线上资金能力已启用。development SQLite 由 `generate_schemas` 自动出现新表时同样不改变这一结论。
+
+## Frontend UI Refresh — Ribbon Ledger（完成，2026-09-03）
+
+- 完成小程序全部 20 个注册页面的 “Ribbon Ledger / 丝带账簿” 视觉重构，覆盖用户端登录、注册、首页、商品、购物车和订单流程，以及 ADMIN+ 商品、图片、库存、订单、用户与审计流程；保留现有功能、权限、API 契约和页面路由。
+- 新增共享 `theme.scss` 设计 Token 与 `_patterns.scss` 页面模式，统一暖纸色画布、低跨度莓果渐变、有限透明材质、排版层级、间距、圆角、阴影、状态色和 44px H5 触控目标；移除试验性的卡通图案与冗余“拼豆店”文案，并优化长中文标题、订单号和长标识符的换行行为。
+- 修正按钮和输入框的垂直对齐、字号与尺寸，移除 `size='mini'`，精确处理 Taro H5 的 `disabled='true'` 输出，并为依赖 `formType` 的主要操作补充显式点击处理；同时修复商品加入购物车的伪禁用状态、订单编号截断和管理员账号不可用操作的语义色。
+- 将首页登录后入口从横向滚动按钮托盘收敛为“我的 / 店铺管理”分组账簿列表，并将两个分组拆为带完整四角圆角和克制间距的独立模块：保留订单、库存、商品、订单、用户管理与退出功能，使用整行触控目标、右侧轻量提示和独立弱化退出动作，减少窄屏拥挤与横向滚动。
+- 新增 `PRODUCT.md`、`DESIGN.md`、`.impeccable/design.json`、页面设计说明与 `design-qa.md`，并更新根 README、小程序 README 和前端架构文档，说明设计目标、组件与 Token 用途、实现边界、Taro H5 注意事项和验证基线。
+- 完成全部 20 个注册路由的 390×844 验证，以及 10 个代表性用户端/ADMIN+ 页面在 768×900 下的验证，共 30 次视口检查；最终 Impeccable Review 结论为 `ship`。静态检测器结果为 `[]`，但因本机缺少可选解析依赖处于 degraded 状态，因此只作为辅助证据，不替代浏览器与自动化检查。
+- 最终验证通过：TypeScript、ESLint、Stylelint、OpenAPI 生成类型漂移检查、17 项 Node CI policy、61 个 Jest suite/392 项测试、完整后端 `1693 passed, 9 skipped`、微信生产构建与检查，以及 H5 生产构建。微信产物 97 个文件、总计 696,102 bytes，manifest SHA-256 为 `8bcce4cc0754e5a14ff3245a9c62ee2600874bf131fd862758481622c7fb3a0b`，按现有发布门禁保持 `release_eligible=false`；H5 仍有现存 Webpack 体积建议警告（App JS 284 KiB、入口 374 KiB）。
+- 本次没有修改后端业务行为、公共 API、数据库 Schema/Aerich 迁移、Python/npm 依赖或应用版本，也未提交、推送、上传、提审或发布。
+
+## Release Phase 9.5 — 公开身份与安全（仓库实现完成，2026-09-02）
+
+完成不依赖备案、真实微信后台或付费云资源的 Phase 9.5 范围。后端新增微信 `code2Session` 适配、外部身份显式绑定/冲突/解绑、微信首次登录普通用户创建、账号注销匿名化；数据库只保存独立 Pepper HMAC，不保存原始 OpenID/UnionID/session_key。新增 MySQL 迁移 3，让 User 密码/手机号可空并增加 `auth_version/deleted_at` 与外部身份唯一索引。
+
+Refresh 改为每次轮换双 Token，并通过 Redis Lua 原子消费、重放后撤销整个 family；认证限流以 HMAC 后的稳定来源/账号维度计数，Redis 故障 fail closed。密码登录统一无效凭据并执行 bcrypt dummy verify，避免枚举不存在或微信-only 账号。注销与订单创建共享 User 行锁，绑定/解绑/注销锁后重检角色，`deleted` 是管理禁用也不能改写的终态；客户端遇到 disabled/deleted 会立即清除 Session。
+
+本地最终验证为后端 `1693 passed, 9 skipped`、一次性 MySQL 8.0.46 Aerich 0→3 与 9 项 release gate、前端 61 套件/392 项和全部静态/OpenAPI/CI Node 门槛。微信身份模式非发布构建为 97 文件/605,381 bytes；真实微信、备案域名、集中 Secret/监控/对象存储和隐私材料仍是 Gate B blocker。
+
+认证会话改为 Refresh family 原子轮换；已消费 Token 重放撤销 family，密码修改/解绑/注销使旧 access/refresh 失效。密码登录按 IP+账号双限流，注册/refresh/微信登录/绑定使用独立 Redis 原子策略且依赖故障 fail closed。小程序新增显式 password/wechat 模式、`Taro.login` 适配和刷新双 Token 替换。订单创建事务锁后重检 User，封闭与注销的并发竞态。
+
+新增脱敏 `security_event` 基线、Gate B 集中 Secret/对象存储决策门和 `ImageStorage` 端口；Runtime 可选读取微信 AppSecret/身份 Pepper 文件。功能、迁移与自动化提交为 `94325fa...`，发布状态与剩余门槛随独立文档提交记录。没有向 Gate A 应用迁移 3，没有启用微信登录，没有创建或修改集中 Secret、监控或对象存储，也没有连接微信后台、上传、提审、tag 或发布。真实 AppID 真机、告警送达、正式存储/Secret 和微信隐私材料仍是 Gate B 阻断项。
+
+## Release Phase 9.4.7 — 备案前 Gate A 运维收口（真实通过，2026-09-02）
+
+- 新增 `gatea_offsite_backup.py` 客户端异机备份工具：只拉取精确 Backup ID 的 MySQL/图片 Artifact 与已经 PASS 的 Backup/Restore Record，重算来源大小/SHA-256 后形成固定成员 Bundle；使用随机 AES-256-GCM 加密并以独立 RSA-3072 OAEP-SHA256 公钥封装数据密钥，私钥与 copy 分离且全部位于仓库外。导出后必须完成 AEAD 解密、Tar 白名单、来源 checksum 和 Restore 证据复核；工具拒绝覆盖且不提供自动删除。
+- 新增 `gatea_resilience.py`：在真实代表性数据和 loopback 边界上依次验证 MySQL/Redis 故障时 readiness 503、liveness 200、依赖恢复和 App 重启；任何失败都先恢复四项服务。成功前比较数据库/图片零漂移，并验证四个长期容器 `json-file 10m × 5`、24 小时 Nginx 请求/4xx/5xx/时延可查询以及日志无四项真实 Secret 或高置信敏感模式。
+- 冻结 Gate A 备份最长 24 小时 RPO、计划停写 RPO 0、30 分钟 RTO、最近 7 个且停用后 30 日保留、Record 90 日、每 RC/月度恢复、精确删除审批和来源恢复授权；冻结初始测试人员、GitHub Issues 非敏感反馈、P0/P1 处置、14 日测试窗口、停用及数据清理流程。
+- Backup `20260902t014211z` 已导出为 14,319-byte AES-256-GCM 加密异机副本，RSA-3072 私钥与副本分离，FileVault、目录/文件权限和导出后完整解密/来源 checksum/Restore PASS 均通过；副本 SHA-256 为 `940a543...`。服务器长期服务和同机 Backup 保持不变。
+- 首次真实韧性执行完成依赖故障与 App 重启后，在最终收敛阶段发现恢复函数错误复用“首次启动端口必须空闲”断言；工具 fail closed、未写成功 Record，四项服务与数据独立复核健康。修复为幂等 Compose 恢复并新增已有 loopback publisher 回归；`b69ee74...` Run 33584388085 与 `c4d27a8...` Run 33584789525 均为 8/8 success 后重跑通过。
+- 真实 MySQL/Redis 故障均证明 readiness 503、liveness 200，依赖在约 5.5–5.7 秒恢复；App 重启总计 6.168 秒。数据库摘要和三图片零漂移，四容器 `json-file 10m × 5`，24 小时日志无真实 Secret/高置信敏感模式命中，Nginx 请求/4xx/5xx/median/p95/max 可聚合查询；成功 Record 为 `root:root 0644`。
+- 使用精确 Node 24.13.0/npm 11.6.2 在 `c4d27a8...` 完成备案前微信预 RC：61 suites/387 Jest、类型/样式/代码/OpenAPI/17 项 CI policy 全过；97 文件、603,624 bytes、0 source map，manifest `aeb81ef...` 严格标记 `release_eligible=false` 并使用保留 `.test` Origin。微信开发者工具 Stable 2.02.2608060 成功加载、编译并渲染首页；发现并修正被忽略的本机 `urlCheck=false` 覆盖，重编译后只按预期拒绝未进合法域名列表的保留 Origin。没有执行预览/上传，工具进程和监听已退出。
+- 详细脱敏证据见 `docs/09_release/reports/phase94_pre_icp_completion_2026-09-02.md`。备案、真实 DNS/HTTPS/合法域名、正式 RC、iOS/Android 真机和上传授权仍未完成，Gate A 保持 No-Go；未修改业务 API、数据库 Schema/Aerich、生产依赖、应用版本或 Runtime image。本机私有项目设置不进入 Git。
+
+## Release Phase 9.4.6 — Gate A 代表性数据与二次恢复（真实通过，2026-09-02）
+
+- 新增 `gatea_representative_data.py`，只允许在 Runtime/迁移/Bootstrap Record、四项健康、loopback publisher、Bootstrap 后精确空业务表和空图片卷全部匹配时执行一次；已有成功 Record、任何业务数据或图片都会在读取密码及写入前 fail closed。
+- 当前 SUPER_ADMIN 密码只从交互 TTY 隐藏双输入，不接受参数/环境变量或落盘；合成 USER 密码由进程随机生成并只存在于内存。所有写入经过当前 Nginx 与正式注册、认证、Product、上传、Inventory、Order、管理员状态 API，不直接写 SQL、Model 或卷文件。
+- 冻结最小数据集为一个最终禁用的合成 USER、一个 Online Experience/Option、一个 Online Kit、三张真实 PNG、`+10/-2/+2` 三条库存流水、一个 Cancelled 混合订单和一个 Completed 体验订单。成功前注销并验证撤销合成/管理员 Refresh 会话，禁用合成账号并验证其登录拒绝。
+- 成功 Record 只包含候选、Image ID、前后数据库摘要、业务计数、内部 ID、图片数量和会话/禁用布尔证据，不保存真实管理员身份、合成身份、手机号、密码、Token 或 hash。失败路径不写成功 Record，并尽力撤销会话和禁用已创建的合成账号；部分业务写入保持现场，不提供删除订单或绕过空基线的自动重跑。
+- 7 项定向测试、110 项 Release 工具测试和完整后端 `1650 passed, 9 skipped`；提交 `3511491...` 的 GitHub Actions Run 33576453364 为 8/8 success。真实 Gate A 随后完成 26 个 loopback API 请求：2 个用户、2 个 Online Product、3 张图片、2 笔终态订单、3 条库存流水、库存净值 10、订单合计 `248.00` 与 21 条 Audit 均匹配，合成用户禁用且两个 Refresh 会话撤销。
+- 非空 Backup `20260902t014211z` 生成 154,702-byte MySQL 与 10,240-byte 三图片 Artifact；独立无端口 Restore project 的数据库摘要、图片 manifest、空 Redis 和 Restore App readiness 全部通过，临时 container/volume/network 独立复核均为 0，来源四项服务恢复 Healthy。未修改业务 API、数据库 Schema/Aerich、依赖、应用版本或 Runtime image；同机备份仍需补充保留期、加密异机副本和周期演练，完整证据见 `docs/09_release/reports/phase94_gatea_representative_restore_2026-09-02.md`。
+
+## Release Phase 9.4.5 — Gate A 持久 SUPER_ADMIN Bootstrap（真实通过，2026-09-02）
+
+- 首次真实交互执行在任何数据库写入前发现 Compose v5 还会把 MySQL/Redis 镜像内部 `EXPOSE` 表示为 `URL=""`、`PublishedPort=0` 的未绑定 publisher；宿主实际监听复核仍只有 SSH 与 `127.0.0.1:18080`。运行时校验现先排除这种无宿主 listener 的元数据，再拒绝任何非 Nginx 的真实发布，并补充 MySQL/Redis Compose v5 回归；首次失败没有创建管理员、临时 Secret 或成功 Record。
+- 新增 `scripts/release/gatea_bootstrap.py` 作为持久 Gate A 唯一批准的管理员初始化入口。命令要求 Root、`--apply`、批准身份和精确 username 二次确认，不接受任何密码参数/环境变量；初始与最终密码均通过 TTY 隐藏双输入，最终密码必须不同。
+- 初始密码只短暂写入 `/run/pinkdoohub-gatea/bootstrap_password.pending`（`root:10001 0440`），供一次性 Compose Bootstrap 首次执行和严格重放；最终密码只在主机进程内存与 loopback API 请求体中使用。成功、失败和中断路径都删除临时 Secret，一次性容器必须由 `--rm` 清理。
+- 编排器在写入前验证完整 Runtime image、首次迁移 Record、MySQL/Redis/App/Nginx 健康和唯一 `127.0.0.1` publisher；首次/重放间比较唯一 SUPER_ADMIN、自指 Bootstrap Audit、用户 ID 与 `updated_at`，随后经 Nginx 验证初始登录、密码轮换、旧密码拒绝、新密码登录，并注销/验证撤销两个 Refresh 会话。
+- 成功 Record 固定写入 `records/bootstrap/super-admin-bootstrap.json`，只包含候选、Image ID、用户 ID、计数、UTC 时间和重放/登录/轮换/清理布尔值；明确不保存 username、nickname、phone、密码、Token 或 hash。已有 Record 时 fail closed，不提供第二个管理员或 Record 删除能力。
+- 9 项 Bootstrap 定向测试、103 项 Release 工具测试和完整后端 `1643 passed, 9 skipped`；实现 Run 33573459444 与 Compose v5 兼容修复 Run 33574718103 均为 8/8 success。真实 Gate A 已通过唯一 SUPER_ADMIN 首次/严格重放、Audit、初始/最终登录、密码轮换、旧密码拒绝、Refresh 撤销及 Secret/容器/投放文件清理；成功 Record 不含 PII、密码、Token 或 hash。未修改业务 API、数据库 Schema/Aerich、依赖或应用版本。
+
+## Release Phase 9.4.4 — Gate A 持久备份与隔离恢复（本地实现，2026-09-02）
+
+- 新增 `gatea_backup.py`：备份 ID 固定为 UTC `YYYYMMDDtHHMMSSz`，操作前验证 Root 配置/Secret、Runtime image、首次迁移 Record 和四项服务健康；短暂停止 Nginx/App 形成一致停写窗口，生成 `root:root 0600` 的 MySQL 单事务逻辑备份和图片卷 Tar，记录 SHA-256、数据库摘要、图片 manifest 与候选身份，并自动恢复 App/Nginx health。任何备份或恢复应用可用性失败都不写成功 Record。
+- 新增完全独立的 `compose.restore.yml`：动态 project、internal network、MySQL 8.0.46、空 Redis、临时图片卷和 Restore App 均无宿主端口，也不引用来源 volumes。恢复要求精确 project 确认与备份 checksum，比较 Schema/业务摘要和图片内容，验证 Restore App readiness；成功、失败和中断路径均精确执行 `down --volumes` 并复核恢复容器/卷消失，来源 Gate A 不属于清理目标。
+- Redis 只保存 refresh-token 会话，不作为权威备份资产；恢复使用空 Redis，使旧 refresh 会话全部失效，避免旧 AOF/RDB 重新激活已撤销 Token。当前同机 `0600` 备份只证明流程，保留期、加密异机副本和定期演练仍是 Gate A 后续门槛。
+- 9 项定向、94 项 Release 与完整后端 `1634 passed, 9 skipped`；提交 `d1f3379...` 的 GitHub Actions Run 33570862787 为 8/8 success。真实 Backup `20260901t232740z` 生成 148,782-byte MySQL 与 10,240-byte 空图片归档，独立无端口 Restore project 完成 10 表/90 列/26 约束/63 statistics、业务摘要、图片 manifest、空 Redis 和 Restore App readiness 比较，并删除全部临时容器/网络/卷；来源 4 项服务保持 Healthy。当前同机备份保留，Bootstrap 后代表性数据复验、保留期与加密异机副本仍未完成，完整证据见 `docs/09_release/reports/phase94_gatea_backup_restore_2026-09-02.md`。
+
+## Release Phase 9.4.3 — Gate A 首次部署生命周期（本地实现，2026-09-02）
+
+真实腾讯云 Gate A 主机的 loopback 首次部署已通过。Runtime candidate `51ad3152c8960bc133c25a600418f5f850d69199` 的 GitHub Actions Run 33568184860 与 Operations revision `17114d7278860c0e09901f493280a56bf6043c3f` 的 Run 33568983950 均为 8/8 success；后者只修改运维脚本、测试和本文，服务器逐文件确认 App、迁移、依赖与 Runtime 输入完全一致，因此首次迁移记录继续严格绑定前者的 App image，没有伪造候选迁移记录。
+
+- 扩展 `gatea_operations.py`，新增 `infra-up`、`initial-migrate`、`app-up`、脱敏 `status` 和 `safe-stop`；所有生命周期写操作当前严格限制为 loopback，TLS 模式 fail closed。
+- `infra-up` 只启动 MySQL/Redis 并等待 health；启动或 health 失败会停止本次服务但不删除命名卷。`initial-migrate` 要求两项依赖 healthy、目标 application schema 为 0 张表，才使用显式 operations profile 执行 Aerich；成功后以候选 SHA、Image ID 和 UTC 时间原子记录，匹配记录的严格重放为 no-op，非空未知状态拒绝迁移且停止基础设施。
+- `app-up` 验证镜像 SHA/revision、UID/GID、Entrypoint、CMD 和迁移记录，再启动 App/Nginx；失败时停止 App edge、保留基础设施与卷。成功条件同时包括 App/Nginx healthy，以及运行时唯一 publisher 精确为 `127.0.0.1:18080 -> nginx:8080`。
+- `safe-stop` 只执行有序 stop，命令中不存在 `down` 或 `--volumes`；脚本仍不提供 Bootstrap、备份、恢复、删卷、TLS 切换或公开发布能力。
+- 真实主机首次 `infra-up` 发现 Docker Compose v5.5 的 `ps --format json` 使用 newline-delimited JSON，而本地 v5.3 在空项目及既有契约中使用 JSON 数组；解析器已同时支持两种官方输出形状并新增回归。首次 MySQL/Redis 均曾达到 Healthy，但解析器按 fail-closed 自动停止两项服务；卷内尚无应用表或业务数据，未运行迁移。
+- 第二次 `infra-up` 通过后，首次迁移在非 root Entrypoint 读取 Secret 时发现 Compose 本地文件 Secret bind mount 保留宿主 `root:root 0400`，UID/GID 10001 无读取权限；入口在 Aerich 前退出，基础设施再次由 fail-closed 路径停止，迁移记录未创建。修复保持 Secret 目录 `root:root 0700`，将三个 App Runtime Secret 收敛为 `root:10001 0440`（宿主 GID 10001 未分配），Root Secret 保持 `root:root 0400` 且不挂载给 App；预检与测试固定这组精确元数据。
+- 首次 `app-up` 中 App/Nginx 均达到 Healthy，Compose v5.5 仍把 Nginx 镜像未绑定的 `EXPOSE 80/tcp` 表示为 `URL=""`、`PublishedPort=0` 的 publisher，导致精确端口断言按 fail-closed 停止 App edge。运行时 Docker 绑定已独立确认只有 `127.0.0.1:18080 -> nginx:8080`，无公网业务监听；校验器现只忽略这种无宿主 listener 的未发布元数据，任何额外、非 Nginx 或非环回宿主映射仍被严格拒绝，并新增 Compose v5 回归。
+- 最终 Runtime 真实完成空库 Aerich 0→1→2 并核验 10 张应用表，MySQL/Redis/App/Nginx 全部 Healthy，Liveness/Readiness 经 loopback Nginx 返回 200。MySQL、Redis 和 App 没有宿主 publisher，Nginx 唯一绑定为 `127.0.0.1:18080`，公网 18080 不可达；App 保持 UID/GID 10001、只读根文件系统和 `no-new-privileges`。三个 named volumes、4 个长期容器、版本化 Release/Record 与回滚备份按 Gate A 要求保留；DNS/HTTPS、Bootstrap、持久备份恢复、微信合法域名和真机仍未执行，Gate A 继续 No-Go。完整证据见 `docs/09_release/reports/phase94_gatea_loopback_2026-09-02.md`。
+
+## Release Phase 9.4.2 — Gate A 持久部署拓扑（本地实现，2026-09-02）
+
+开始 Phase 9.4 真实内部测试环境准备。本节只记录当时的本地仓库实现；在本节形成时尚未把应用部署到腾讯云主机，未写真实 Secret、运行持久迁移、启动 Gate A 容器、开放 80/443、配置 DNS/证书/微信后台或上传体验版，Gate A 仍为 No-Go。后续 live 状态以前文 A/M9 失败检查点为准。
+
+- 将 Phase 9.3 已验证的 Python 3.10.9 非 root App Runtime 提升到共享 `deploy/runtime/`；演练编排改为构建同一 Runtime，避免 Gate A 复制并漂移入口脚本。MySQL 8.0.46、Redis 8.0.1、Nginx 1.27.5 和应用依赖没有升级。
+- 新增 `deploy/gatea/`：长期 MySQL/Redis/App/Nginx 使用固定 named volumes；只有 Nginx 加入 edge network，MySQL 3306、Redis 6379 和 App 8000 均不发布。备案等待期 override 只绑定 `127.0.0.1:18080`；TLS override 单独发布 80/443，必须显式提供已批准域名、证书和 ACME 目录。
+- App 继续以 UID 10001、只读根文件系统、`no-new-privileges` 运行，迁移保留为显式 `operations` profile。Bootstrap 使用独立 override 和 `bootstrap_password.pending`，没有密码参数或常驻挂载。App 不获得 MySQL Root Secret，Nginx 不获得应用 Secret。
+- Nginx 覆盖客户端 `X-Forwarded-For`/`X-Real-IP` 为 `$remote_addr`，避免公网客户端伪造审计地址；access log 只记录方法与 `$uri`，不记录 query、Authorization、Cookie 或请求体。图片卷保持 App 可写/Nginx 只读。
+- 新增 `scripts/release/gatea_operations.py` 只读预检：拒绝 `latest`/短 SHA、非 production/Debug、SQLite、外部 DB 目标、错误图片 Origin 和非 Secret 配置中的敏感键；只检查 Root Secret 文件元数据/非空大小，不读取或输出值。当前故意不提供启动、迁移、Bootstrap、备份、恢复或销毁子命令，避免未经 Review 的服务器写操作。
+- 新增 32 项 Gate A/既有 Rehearsal 定向契约并通过，覆盖 Compose 双 mode 渲染、内部网络、唯一 Nginx 端口、固定镜像/卷、Secret 分离、显式迁移/Bootstrap、共享 Runtime、代理 Header、日志和预检命令边界；`tests/release` 74 项与完整后端 `1614 passed, 9 skipped` 同步通过。共享 Runtime 镜像完成真实构建，并验证 UID/GID、Entrypoint 与 Uvicorn CMD 后清理验证镜像。未修改业务 API、OpenAPI、数据库 Schema/Aerich 迁移、Python/npm 依赖或应用版本。
+
+## Release Phase 9.3 Complete — 隔离发布演练（2026-08-31）
+
+Phase 9.3 已在最终候选 `136a8bd8833f9b23433cfb3a2f9ceca7dab70db5` 完成。GitHub Actions Run 33408135841 的 8 个 Job 全部 success；Run ID `20260831t221625` 的可销毁生产相似环境完成 DR-01～DR-07 与 DR-09 服务端部分，完整脱敏证据见 `docs/09_release/reports/phase93_rehearsal_2026-08-31.md`。这不等于 Gate A 已通过，也不授权微信后台、上传、分发、提审或公开发布。
+
+- MySQL 8.0.46 真实完成空库 0→1→2、m0/m1 代表数据升级和 opening balance 核对；订单、Items、金额/Option 快照、Product/Kit/库存与 Audit 均保持。数据库和三类图片备份恢复到独立 Restore MySQL/volume，restore-app Ready 且轮换后账号登录通过。
+- 受控 migration 2 失败证明 MySQL DDL 部分提交：新表存在、Aerich 仍停 m1、opening balance 未写；失败前备份在独立 Schema 恢复后用官方迁移完成 m2。MySQL/Redis 分别中断时 Readiness 为 503，恢复后为 200；应用优雅重启后数据/图片保持。
+- SUPER_ADMIN Bootstrap 首次、严格重放、唯一用户/Audit、登录和凭据轮换通过。真实 Nginx HTTPS 完成 32 请求纵向 Smoke，覆盖五类身份、Product/Option/Kit、三类上传/读取、Inventory 幂等、混合订单/取消、Paid/Completed、权限、Refresh、禁用 Token 和凭据轮换。
+- 演练发现并修复四项工具问题：不存在的 Python Bookworm 标签改为 3.10.9 Bullseye；Compose one-off 环境参数改用 `--env`；m1 fixture 使用合法 OD+ULID 编号；Nginx 通过独立 edge network 发布回环 HTTPS，数据面仍在 internal network。每项均增加回归断言，发布工具契约从 50 增至 53 项。
+- R-004、R-006、R-011 已关闭；R-014 的 Gate A 持久化/恢复部分完成，Gate B 高可用存储仍待后续。DR-08、真实测试 Origin/DNS/证书、微信合法域名、iOS/Android 真机和弱网/前后台矩阵保持 Phase 9.4。
+- 最终精确删除 Compose containers/networks/volumes、任务端口、短期 Secret/CA/原始证据目录和任务 App 镜像；用户既有 `pinkdoohub-dev-redis` 未复用、未停止。没有访问开发 SQLite、默认 3306、持久/共享/生产数据库或微信后台；没有数据库迁移、版本升级或新增依赖。
+
+---
+
+## Release Phase 9.3.3–9.3.4 — 隔离拓扑与可审计演练编排（2026-08-31）
+
+完成 Phase 9.3 写操作前的生产相似拓扑和自动化工具；本节是本地实现状态，不代表 DR 场景已经执行或 Gate A 已通过。
+
+- 新增固定版本 Docker App 镜像、Compose 和 Nginx HTTPS：所有宿主端口只绑定回环且避开 3306，Source/Restore MySQL 8.0.46、认证 Redis 8.0.1、Source/Restore 图片卷、非 root FastAPI 和内部网络均使用唯一 project label 管理；现有 `pinkdoohub-dev-redis` 不复用、不接管。
+- 新增严格演练准备/运维工具：候选必须 Git clean 且 SHA/Compose digest 不漂移；Secret/短期 CA 仅写入 0700/0600 任务目录；命令覆盖镜像 digest、DR-01 空库、DR-02/03 旧迁移合成数据、DR-04 双实例数据库与图片备份恢复、DR-05 可控 DDL 部分失败、DR-06 依赖摘流量/恢复及优雅重启、DR-07 Bootstrap 首次/重放/轮换、DR-09 服务端真实 HTTPS 纵向 Smoke、脱敏摘要和精确资源回收。
+- 旧迁移与运行时 fixture 都使用 Repository、显式事务和合成身份；旧迁移 fixture 拒绝 production，运行时 fixture 只接受 Compose 内精确 production Source，二者都会拒绝未知主机、非冻结端口/Schema 或缺少显式启用。工具不会用手工 SQL fake Aerich 版本或修补业务状态；恢复、故障注入和删除卷均要求精确 project/数据库/工作区确认。
+- 发布工具契约 50 项通过，Docker Compose 标准化 JSON 可解析；未新增 Python/前端依赖，未修改数据库 Schema/迁移、业务 API、OpenAPI 或版本。尚未 commit/push，也未启动演练容器、连接持久/共享数据库、执行恢复/故障注入或删除 volume。
+
+下一步是完整回归、形成用户批准且 CI 通过的干净候选提交，再按 Runbook 取得精确写操作授权并执行 DR-01～DR-07、DR-09 服务端部分；DR-08 仍属于 9.4 真机。
+
+---
+
+## Backend Phase 9.3.2 — 受控 SUPER_ADMIN Bootstrap（2026-08-31）
+
+完成 Phase 9.3 的第二个代码前置能力；本地实现和自动化通过后，仍需 DR-07 在隔离 MySQL 环境执行并安全处置初始凭据，不能据此勾选 Gate A。
+
+- 新增 `python -m app.tasks.super_admin_bootstrap` 独立管理命令。命令要求 `--apply`，只接受 username/nickname/phone；故意不提供 `--password`，密码仅从 `PINKDOOHUB_BOOTSTRAP_PASSWORD` 或 TTY 隐藏双输入读取。非交互环境缺少 Secret 时直接拒绝，参数、校验、异常和成功日志均不回显密码。
+- `SuperAdminBootstrapService` 在单事务内创建首个正常状态 SUPER_ADMIN 和自指向 `BOOTSTRAP_SUPER_ADMIN` Audit。相同 username/phone/nickname/password 且唯一 Audit 完整时只返回 replay，不更新密码、昵称、角色、状态或时间戳，也不重复写审计。
+- 已有普通用户占用 username/phone、已有不同或多个 SUPER_ADMIN、手工 SUPER_ADMIN 无 Bootstrap Audit、Audit 无匹配用户、禁用账号或任一身份/密码变化都稳定拒绝；绝不把已有普通用户静默提权或把禁用管理员重新启用。审计失败时用户创建完整回滚。
+- 同进程先通过有界 asyncio 锁串行化；production MySQL 再使用参数化固定名称的 `GET_LOCK/RELEASE_LOCK` 覆盖多进程竞争。成功路径显式先提交用户与审计，再释放 session lock，关闭另一进程在提交前读取旧状态的窗口；SQLite 仅作为本地与自动化适配。
+- User/Audit Repository 只增加可选事务连接、角色锁定和审计计数原语；Service 不直接调用 Model、FastAPI 或 HTTP Schema。数据库字段、表、索引、Aerich 迁移、依赖、OpenAPI 和应用版本均未变化。
+
+---
+
+## Backend Phase 9.3.1 — Dependency-aware Liveness / Readiness（2026-08-31）
+
+完成 Phase 9.3 的第一个代码前置能力；这只是本地实现与自动化证据，不代表生产相似演练或 Gate A 已通过。
+
+- 保留既有无依赖 `/api/v1/health` 响应，新增 `/api/v1/health/live` 和 `/api/v1/health/ready`。Liveness 不触碰外部服务；Readiness 并行执行 Tortoise 默认数据库连接的 `SELECT 1` 与 Redis `PING`，每项独立限制 1 秒。
+- 数据库和 Redis 同时可用才返回 HTTP 200 / `ready`；任一失败或超时均通过新增 `ServiceUnavailableException` 与统一异常中间件返回 HTTP 503 / code `503` / `not_ready`，并保留两项独立 `up/down` 结果。
+- 探针响应不输出连接目标或驱动错误；失败日志只记录 `database/redis` 与异常类型，避免驱动异常中的 URL、用户名、密码或查询参数泄漏。
+- 新增严格 Pydantic 输出与 OpenAPI 200/503 契约，固定 OpenAPI JSON 和 TypeScript 生成类型同步更新。数据库 Schema、Aerich 迁移、依赖和应用版本均未变化。
+- 定向健康检查 11 项通过，覆盖真实测试 SQLite/fakeredis、兼容入口、无依赖 Liveness、全部 Up、数据库/Redis 单项及双项失败、超时、日志脱敏和 OpenAPI 类型；健康/OpenAPI 定向合计 16 项、完整后端 `1518 passed, 9 skipped`、前端 TypeScript 与 OpenAPI 类型漂移全部通过。9 项 skip 均为既有、显式隔离的 MySQL-only 门槛。R-011 调整为 `mitigating`；必须在 9.3 DR-06 使用隔离 MySQL/Redis 验证故障摘流量与恢复后才可关闭。
+
+---
+
+## Frontend Phase 9.2.6 — 真实 PR CI 与可移植性收口（2026-08-31）
+
+Phase 9.2 已完成。Draft PR [#2](https://github.com/EVEBios/pinkdooHub/pull/2) 面向 `develop` 创建并保持未合并；实现 head `23a0f08` 的 GitHub Actions [Run 33355935212](https://github.com/EVEBios/pinkdooHub/actions/runs/33355935212) 在真实 Ubuntu 干净 checkout 上 8/8 Job 全部通过。
+
+- 首轮 Run `33354728020` 为 6/8：`backend-sqlite` 暴露 Python 策略测试硬编码本地 `.venv/bin/python`，`weapp-build` 暴露检查器依赖本机构建残留。测试改用 `sys.executable`；微信检查器改为分别校验编译产物与项目根 `project.config.json`，把权威配置 SHA-256 写入 manifest，并兼容 Taro 只规范化 `miniprogramRoot` 的合法副本。
+- 第二轮 Run `33355556336` 暴露更早的真实构建错误 `taro: not found`：Job 级 `NODE_ENV=production` 使 npm 省略构建期 devDependencies，而没有 `pipefail` 的 `tee` 管道吞掉了失败。微信 Job 现显式安装锁定 devDependencies 并启用 `pipefail`；以后编译失败会在构建步骤直接失败。
+- 修复后本地完整后端为 `1507 passed, 9 skipped`，CI 契约 13 项、Node policy 17 项通过；一次性干净微信构建通过 97 文件/603,660 bytes 检查，临时目录已删除且未改动开发者工具使用的现有 `miniapp/dist`。
+- 成功远端 Run 的 `backend-sqlite`、`backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build`、双依赖审计和 repository hygiene 全部 `success`。7 组 artifact 绑定 PR merge-ref `eac0d5e8...` 与 Run ID；PR head `23a0f08...` 由 Run 元数据单独绑定。
+- 远端微信证据为 97 文件、主包 425,527 bytes、`admin` 分包 178,092 bytes、总计 603,619 bytes、`release_eligible=false`；manifest SHA-256 为 `d915912d...ece92`，不会自动上传微信。
+- 本阶段没有业务 API、OpenAPI Schema、数据库 Schema/迁移或新增依赖；没有连接持久数据库、修改微信后台、上传、提审、发布、合并 PR、tag 或 release。下一阶段是 9.3 隔离发布演练，仍需单独规划与授权。
+
+---
+
+## Frontend Phase 9.2.5 — Python/npm 依赖审计门槛（2026-08-31）
+
+完成两个依赖审计 Job、真实报告策略检查器和 Gate A 可达性分类的本地实现；workflow 仍未 commit/push 或产生真实 PR Run，因此 9.2 尚未完成，下一步为 9.2.6。
+
+- GitHub Actions 从 6 个 Job 扩展为 8 个，新增 `python-dependency-audit` 与 `npm-dependency-audit`。两者都保存绑定 Git SHA/run ID 的原始 JSON 与策略结果，不自动修改依赖、不发布、不迁移数据库。
+- Python 扫描器选用并锁定 `pip-audit==2.10.1`，在隔离 CI venv 安装。首次对 55 个精确 pin 扫描得到 4 个包/9 条记录；可修复项分别升级 asyncmy 0.2.11→0.2.14、cryptography 49.0.0→50.0.1、python-jose 3.3.0→3.5.0，复扫降为 ecdsa 0.19.2 的 1 条 `GHSA-wj6h-64fc-37mp`。
+- ecdsa 公告影响 P-256 私钥签名、密钥生成和 ECDH 的时序；项目 production 固定 HS256，只做对称 JWT encode/decode，当前路径不可达。上游没有 patched release，因此由安全负责人建议、项目负责人接受到 2026-11-30；任何 JWT 算法、包版本、公告集合或日期变化都会使门槛失败。
+- npm 11.6.2 显式使用官方 registry 并只审计 `--omit=dev` production tree，当前精确结果仍为 10 个受影响包、5 个叶子公告和 4 moderate/1 high/5 critical。完整含 dev 树此前观察到的 45 项不作为 Gate A runtime 集合，也没有被隐藏或误报为已修复。
+- npm 策略逐项固定 Taro 4.2.1、swiper 11.1.15、lodash-es 4.17.21、esbuild 0.21.5 的依赖路径与 actual usage：esbuild 公告只影响未启用的 development server；lodash/H5 Taro 链不进入 `TARO_ENV=weapp` artifact；业务源码不使用 Swiper，微信产物使用原生 swiper 映射而非 npm swiper 运行实现。全部例外到期日为 2026-11-30，未来 H5 Gate 或新增 Swiper 使用自动重新打开。
+- 两个策略检查器拒绝审计端点/JSON 失败、新增或消失漏洞、版本/严重性/direct/range/公告集合变化、缺少 Review 字段和到期策略；npm 不执行会破坏性降级到 Taro 3.x 的 `audit fix --force`，也不做未经上游验证的 override。
+- 新增 Python 与 Node 策略单元测试，覆盖当前精确报告、新公告、版本变化、过期和 registry 错误；workflow 契约同步固定 8 Job、官方 registry、原始 artifact 与禁止强制修复。
+- 本地真实复验通过：Python 原始审计 1 包/1 公告及 npm 原始审计 10 包/5 公告均通过策略检查；后端完整套件 `1507 passed, 9 skipped`，前端 61 套件/387 项、CI Node policy 13 项、TypeScript、ESLint、Stylelint、OpenAPI 字节/类型漂移和 97 文件微信 production artifact 检查均通过。
+- 因 asyncmy 属于生产 MySQL 边界，升级后重新启动一次性 MySQL 8.0.46，真实应用 Aerich 0→1→2 并通过 9 项并发/锁/1205/EXPLAIN/HTTP 门槛（2.30 秒）；cleanup 确认 Schema 删除、容器停止且端口 13306 关闭，容器对象和临时证据目录已删除。
+- 本阶段不修改业务 API、OpenAPI 或数据库 Schema/迁移；新增/升级的是三项生产依赖和仅在隔离 CI venv 使用的审计工具，没有持久环境变更、微信后台操作、上传、提审或发布。
+
+---
+
+## Frontend Phase 9.2.1–9.2.4 — 工具链、运行时与隔离 MySQL CI（2026-08-31）
+
+完成 9.2.1–9.2.4 本地实现；依赖审计、真实 PR Run 和完整 Gate 证据仍属于后续 9.2.5–9.2.6，本条不把 9.2 或 Gate A 标记为完成。
+
+- 仓库固定 Python 3.10.9、Node 24.13.0 和 npm 11.6.2，npm 使用官方 registry、严格 engine 与既有 legacy peer 策略；干净 Python/Node 安装已在本机验证。
+- production 启动现在强制 `APP_DEBUG=false`、MySQL、HS256、至少 32 字符且非已知弱值的 JWT Secret、非本机 redis/rediss，以及无凭据的绝对 HTTPS 图片地址；Pydantic 错误隐藏原始输入。
+- Redis 连接成功日志只保留 scheme/host/port/db，不再输出 username、password 或 query；OpenAPI CLI 主动把 stdout/stderr 切为 UTF-8，覆盖 CP1252 父环境的中文 `--help` 与真实导出。
+- 微信 `project.config.json` 关闭 source map 上传，当前发布 description 与 README 只声明 Gate A 微信内部测试版；支付宝、抖音和 H5 构建命令保留为未来能力，不是本版发布门槛。
+- 新增 GitHub Actions 初版，当前包含 `backend-sqlite`、`backend-mysql-release`、`frontend-quality`、`openapi-contract`、`weapp-build` 和 `repository-hygiene` 6 个 Job；PR、main push 和手工 dispatch 触发，权限仅 `contents: read`，不会迁移持久数据库或上传/提审微信。
+- `backend-mysql-release` 使用固定 MySQL 8.0.46 service、`127.0.0.1:13306` 与精确专用 Schema；安全脚本强制 Aerich 和 pytest 的 DB/Inventory 双配置完全一致，拒绝 3306、远端 host、非 testing、非专用 Schema 和目标漂移。Job 真实执行 Aerich 0→1→2、9 项 MySQL release gate，并保存 preflight、迁移日志、版本链、JUnit 和 cleanup JSON；`always()` 清理删除 Schema、停止准确 service container 并确认容器未运行和端口已关闭。
+- 微信检查器验证期望 Origin、不可发布标记、source map、Secret/H5 marker、主包/分包/总包原始大小和符号链接，并生成含 SHA/run/逐文件 SHA-256 的 manifest 与聚合 checksum；repository hygiene 拒绝数据库、上传、备份、虚拟环境、非法 env、缓存/构建产物和高置信 Secret，报告不回显命中内容。
+- 本地受控微信 production build 使用保留 CI Origin，通过 97 文件扫描：主包 425,527 bytes、`admin` 分包 178,092 bytes、总计 603,619 bytes、0 source map，明确为 `release_eligible=false`；它不是 Gate A RC，也没有上传。
+- 新增工具链、production 配置、Redis 日志、OpenAPI CLI、微信发布配置、workflow、MySQL gate 和 repository hygiene 契约测试；完整后端 `1502 passed, 9 skipped`，CI Node policy 9 项、前端 61 套件/387 项、TypeScript、ESLint、Stylelint、OpenAPI 真实导出字节比较与类型漂移通过。OpenAPI 固定文件中的应用版本从陈旧的 0.4.0 同步为真实 0.6.0，路径和 Schema 未变化。
+- 9.2.4 本地真实演练下载固定 `mysql:8.0.46` 镜像，启动唯一命名且只绑定 `127.0.0.1:13306` 的容器，成功应用三条迁移并通过 9 项门槛（2.32 秒）。清理报告确认专用 Schema 已删除、容器已停止、容器状态为非运行且端口关闭；随后删除容器对象和临时证据目录，未访问 3306 或任何持久/共享数据库。Docker 镜像作为共享缓存保留。
+- `npm ci` 按 lockfile 成功，但 npm 对完整含 dev 依赖树报告 45 项（16 moderate、23 high、6 critical）；本阶段未执行破坏性自动修复或风险降级，逐项审计与 reachability 仍由 9.2.5 处理。
+- 没有修改业务 API、数据库 Schema/迁移或依赖；除上述已销毁的专用 MySQL 容器外，没有连接微信后台、持久数据库或远端环境，也未上传、提审、commit、push、tag、release 或发布。
+
+---
+
+## Frontend Phase 9.1 — 微信发布基线审计执行（2026-08-29）
+
+按微信单平台 Gate A 目标完成仓库级发布审计，并把规划转换为可直接用于 9.2 CI、9.3 演练和 9.4 真机验收的八类控制文档。Yijie Shen 已于 2026-08-29 完成项目负责人 Review，Phase 9.1 状态为 **Complete**，当前进入 9.2；这不代表 Gate A 已通过或已授权发布。
+
+- 新增 `docs/09_release/` 发布文档目录：Release Decision、2026-08-29 基线证据、环境/Secret、CI Matrix、隔离演练 Runbook、微信 Functional/Smoke/E2E 矩阵、Risk Register 和 Gate A/Gate B Go/No-Go Checklist。
+- 本地重新验证后端完整套件为 `1465 passed, 9 skipped`（9 项均为 MySQL-only）；前端 TypeScript、ESLint、Stylelint、61 套件/387 项 Jest、OpenAPI 类型漂移全部通过。真实 FastAPI 导出为 45 paths/109 schemas，与固定 OpenAPI JSON 字节一致。
+- 微信 production build 成功（97 文件、603,604 bytes；主包侧 425,512 bytes、`admin` 分包 178,092 bytes、0 source map），但产物包含 `.example.invalid` API Origin，明确判为 Gate A No-Go，不把“编译成功”误报成可上传 RC。
+- 依赖完整性 `npm ls --depth=0` 与 `pip check` 通过；官方 npm registry 审计为 10 项（4 moderate、1 high、5 critical）。风险链含直接组件、构建工具和 H5 依赖，不能继续统一归类为 H5-only；9.2 必须分析微信运行时/构建时可达性。Python 漏洞扫描尚未建立，未安装依赖，也未执行破坏性 `audit fix --force`。
+- 审计确认仓库尚无 CI/部署/备份自动化、依赖 readiness 或受控 SUPER_ADMIN bootstrap；production 配置仍缺全面 fail-fast，Redis 日志存在完整 URL 泄漏风险，Node/npm 未 pin，OpenAPI CLI 在 Windows 非 UTF-8 帮助输出有编码缺口。这些均已登记责任角色、关闭 Gate 和所需证据。
+- 同步 Phase 9 总规划、测试策略、README 和 AI Context。没有修改运行时代码、API、OpenAPI、数据库 Schema/迁移、依赖或版本；未连接/修改微信后台、持久数据库或远端环境，未上传、提审、commit、push、tag、release 或发布。
+
+所有项目、前端、后端、CI/发布、测试和安全/合规责任角色统一映射为 Yijie Shen；其已确认微信单平台、Gate A 边界、production 安全配置、独立基础设施、CI→演练→真机顺序和外部操作禁区。当前进入 9.2 CI 与可重复构建；真实 MySQL、备份恢复、外部 HTTPS、微信体验版和真机证据仍未执行。
+
+---
+
+## Frontend Phase 9.1 — 微信发布目标与基线规划（2026-08-29）
+
+将原“微信/H5 Functional、支付宝/抖音 Smoke”的宽泛 Phase 9 收敛为本版只发布微信小程序，并把发布拆为受控内部测试版 Gate A 与对外公开版 Gate B。当前仅完成规划和基线审计，不代表 CI、演练、体验版或公开发布已经通过。
+
+- 新增 Phase 9 微信发布权威规划，定义 9.1–9.7 的输入、交付物和退出条件；内部测试版暂时沿用账号密码与 ADMIN+ 人工 Paid，公开版本必须单独关闭微信身份、安全、生产运维、隐私及在线收款时的微信支付门槛。
+- 记录当前可复用证据与真实缺口：最新前端基线为 61 套件/387 项；OpenAPI、微信构建、后端 SQLite 和历史 MySQL 9 项门槛已有基础，但仓库尚无 CI，生产 Origin 仍为占位值，缺少生产相似备份恢复、依赖 readiness、受控 SUPER_ADMIN 初始化和正式图片存储方案。
+- 冻结 CI 蓝图：后端 SQLite、隔离 MySQL 0→当前与 9 项门槛、前端 TypeScript/ESLint/Stylelint/Jest、OpenAPI 漂移、微信生产构建、生成物/Secret 和依赖审计。支付宝、抖音和 H5 不作为本版阻断项或发布承诺。
+- 冻结隔离发布演练、Guest/普通用户/ADMIN/SUPER_ADMIN/禁用用户、业务、iOS/Android、弱网/断网、前后台和 unknown 矩阵，以及 Gate A/Gate B Go/No-Go 清单。
+- 同步 README、学习路线、测试策略、多端策略、前端架构/API 集成契约和 AI Context。没有修改运行时代码、API、OpenAPI、数据库 Schema/迁移、依赖或版本；未启动 CI、外部服务或后台进程，未执行持久数据库迁移、微信后台变更、构建上传、提审、tag、release 或发布。
+
+下一步是 9.2 CI 与可重复构建，不是直接实现微信支付或直接上传正式版。
+
+---
+
+## Frontend 管理筛选按钮即时查询、输入反馈与日期掩码（2026-08-29）
+
+统一管理商品、管理订单、全局库存流水和指定 Kit 流水的查询交互：按钮型选项切换后立即请求第一页；文字输入继续保留显式“查询”提交，避免键入过程持续请求。管理用户的状态/角色按钮原本已经即时查询，本次补充回归覆盖但不改变行为。
+
+- 管理商品的类型、状态和删除记录按钮会立即与上一次已提交的商品名称组合查询；“不含删除记录 / 包含删除记录”使用两个并列的互斥按钮，选中状态与其他筛选一致。
+- 管理订单状态按钮会立即与上一次已提交的商品名称、订单号、用户 ID 和 UTC 日期组合；输入框中的新草稿不会因状态切换提前进入请求，只有点击“查询”并通过校验后才替换已提交快照。管理商品、管理订单和两个库存流水页在文字草稿与已提交快照不同时显示“输入条件尚未应用”浅色提示，提交或清空后消失。
+- 全局与指定 Kit 库存流水的 transaction/source 按钮立即生效，并保留上一次已提交的 Product ID、Order source ID 和日期。来源从 `order` 切到其他类型时同步移除已提交 `source_id`，避免产生服务端明确拒绝的不自洽 Query。
+- 管理订单和两个库存流水页复用单一数字输入源的日期掩码组件：用户可连续输入 `20260208`，界面始终按 `2026-02-08` 显示并固定两个横杠位置。查询前仍校验真实日期、闰年和起止顺序，API 仍接收原有 UTC ISO 半开区间。
+- “清空”仍同时清除按钮与文字条件并立即回到默认第一页；列表 Hook 继续使用不可变筛选快照、服务端分页和 sequence token 隔离迟到响应。
+- 定向 7 套件 / 39 项、完整前端 61 套件 / 387 项、TypeScript、ESLint、Stylelint、OpenAPI 类型漂移与微信端 production build 通过。支付宝/抖音/H5 并行构建在本机已有微信 watch 运行时长时间无输出，本次已精确停止任务所有进程，不记为通过。
+- 2026-08-29 用户完成微信端 Functional，确认按钮即时查询与已提交文字条件组合、待应用提示、删除记录双按钮、8 位连续日期输入、固定横杠显示、清空及日期校验全部通过。
+- 本次只改变前端交互与页面展示，没有后端 API、OpenAPI、数据库 Schema/迁移、新依赖或版本候选变化。
+
+---
+
+## Frontend 微信视觉兼容问题关闭（2026-08-29）
+
+关闭 Phase 8.2 延期的管理页白色图案与登录输入 `_` 闪烁。用户已在微信开发者工具和真机相关页面完成复测并确认两项问题均已解决。
+
+- 白色图案最终定位为原生 `Form` 同时承担提交语义和白色卡片背景、边框、圆角、内边距时的微信渲染异常。库存流水、管理商品、Kit 管理库存和管理订单统一改为外层 `View` 绘制卡片、内层透明 `Form` 只处理提交；没有提交语义的商品创建、编辑、Experience Option 和 Kit 价格配置容器直接改为 `View`。
+- 全项目复查后，登录/注册的白色卡片本来就由外层 `View` 绘制，`Form` 只负责字段与提交，因此无需套用管理页改法；其余管理页未发现直接把白色卡片视觉样式挂到原生 `Form` 的同类风险。
+- 登录输入 `_` 闪烁在后续复测中不再出现，用户确认已经消失，现按验收结论关闭；此前 `alwaysEmbed` 的单独尝试不足以证明因果关系，保留为历史排查记录而不将其表述为确定根因。
+- Taro 4.2.1 微信 development build 成功，结构审计确认管理页视觉卡片均由 `View` 承担；真机构建继续使用 `.env.development.local` 的局域网 API 覆盖。用户最终确认库存流水、管理商品、Kit 管理库存、管理订单和预防性调整页面全部验证通过。
+- 本次没有后端/API/OpenAPI、数据库 Schema/迁移、依赖或版本候选变化；未 commit、push、tag、release，也未执行持久数据库迁移。
+
+---
+
+## Frontend Phase 8.6 — Kit Inventory 管理（2026-08-28）
+
+完成 ADMIN+ Kit 库存调整、指定 Kit 流水和全局库存流水纵向切片。工程实现、自动化、四端构建与后端完整回归均已完成；2026-08-28 用户确认微信开发者工具 Functional 全部验证完成并通过。
+
+- 新增 `InventoryApi`，消费既有三个 ADMIN+ Inventory Endpoint；调整请求只发送 `change/reason` 和专属 `Idempotency-Key`，查询只投影允许的分页/type/source/product/UTC 条件。响应从 unknown 校验库存算术、transaction/source/operator/order 组合、UTC 与分页后白名单重建，不暴露内部 key 或额外字段。
+- `ApiClient` 新增向后兼容的 `requestWithMeta()`，只为需要区分最终 HTTP 201 首次提交与 200 幂等重放的调用保留 status；既有 `request()` 继续只返回 data，refresh 后 metadata 来自最终重放响应。
+- 新增调整业务意图状态机：每个新意图生成新 key，冻结 product/change/reason；进行中双击合并。network/timeout/cancel/contract/5xx 进入 unknown 且不自动重发，用户安全重试复用完全相同的 payload/key；明确失败或成功后清除意图。
+- `admin` 分包新增动态 Kit 库存页和固定全局流水页；Product 管理详情与首页增加入口。Draft/Offline/Online Kit 均可调整；逻辑删除 Kit 在挂载 Inventory Hook 前阻断。全局固定页加入登录白名单，动态页不加入并让 Guest 返回固定管理商品列表；普通用户不会挂载管理 Hook，FastAPI ADMIN+ 仍是最终授权边界。
+- 两类流水复用筛选/分页组件，支持 transaction/source、Order source ID、全局 Product ID 与 UTC 自然日；结束日期转次日排他上界，筛选换页保持服务端条件，sequence 隔离迟到响应。Order 来源可进入管理订单详情。
+- 定向 9 套件/42 项并补充共享 Client metadata 回归，完整前端 60 套件/375 项、TypeScript strict、ESLint、Stylelint、OpenAPI 类型漂移、weapp/alipay/tt/h5 production build 及完整后端 1465 项通过，9 项 MySQL-only 按配置跳过。三端 `admin` 分包约 167 KiB；H5 主 JS 283 KiB、入口 370 KiB，继续保留既有 244 KiB 和 `[hash]` 告警。
+- `npm ls --depth=0` 正常；官方 registry 审计仍为 Taro H5 上游链 10 项风险（4 moderate、1 high、5 critical），破坏性强制降级未执行。同步前端路线、架构、API 集成、测试策略、README、AI Context 与 Phase 8.6 学习笔记；后端业务/API 文档无需变化，因为没有修改任何后端契约。
+- 没有数据库 Schema/迁移、OpenAPI 生成物、依赖、版本候选变化；未 commit、push、tag、release，也未执行持久数据库迁移。Phase 8.2 管理页白色图案和登录 `_` 闪烁在本阶段结束时仍为延期项，后于 2026-08-29 完成专项复测并关闭。
+
+---
+
+## Frontend Phase 8.8–8.9 — Product Audit、ADMIN User 与管理端 Review（2026-08-28）
+
+完成 Product 操作历史、ADMIN 用户列表/筛选/禁用，并对当时已交付管理端执行权限、上传、幂等、隐私、分包、契约、包体与四端构建 Review。2026-08-28 用户确认微信开发者工具 Functional 全部通过，包括用独立 Swagger ADMIN Session 禁用普通用户后，旧 refresh 首次 `1005`、重放 `1006`，旧 access 触发前端 Session 清理；该次 Review 当时未包含尚未实施的 Phase 8.6，随后 8.6 已在上方独立条目完成工程与微信 Functional 收口。
+
+- Product Audit 复用既有 ADMIN+ 分页端点，新页面从 Product 管理详情进入，支持 Draft、Offline、Online 与逻辑删除历史；动态路由要求正安全整数 ID 和 Experience/Kit 类型，Runtime Guard 绑定 `target_type=product` 与目标 ID，只投影允许的审计字段，未知 action 安全回退到服务端原值。
+- ADMIN User 后端收口为严格 `page/page_size/status/role` Query、稳定 `created_at DESC,id DESC` 分页、显式 Mapper 和 typed Page；列表不返回 phone/avatar/password。禁用使用目标行锁，状态更新与 `DISABLE_USER` 审计同事务提交；重复禁用幂等且不重复写审计，审计失败会整体回滚。
+- 认证边界补齐当前状态检查：禁用账号的旧 access 立即返回 code `1005`；旧 refresh 首次返回 `1005` 并撤销，后续重放返回 `1006`。前端受保护 JSON/上传请求遇到 `1005` 立即清理 Session 且不 refresh；network/timeout/cancel/contract/5xx 的禁用结果保持 unknown，不自动重发。
+- `admin` 分包新增商品操作历史和用户管理页；首页只向 ADMIN+ 展示“管理用户”，管理详情新增“操作历史”。Guest 仅允许固定 `/admin/pages/users/index` 登录回跳，普通用户在挂载管理 Hook 前拦截；FastAPI ADMIN+ 仍是最终授权边界。不存在的用户详情、启用和头像上传未伪造页面按钮。
+- OpenAPI 已更新为 45 paths/109 schemas。完整前端 54 套件/350 项、完整后端 1465 项通过（9 项 MySQL-only 按配置跳过）；TypeScript strict、ESLint、Stylelint、OpenAPI 类型漂移、npm 依赖树和 weapp/alipay/tt/h5 production build 全部通过。微信 `admin` 分包约 131.2 KiB；H5 主 JS 282 KiB、入口 369 KiB，继续保留既有 244 KiB 体积建议和 `[hash]` 上游告警。
+- 官方 npm registry 审计报告 10 项当前 Taro H5 上游依赖链问题（4 moderate、1 high、5 critical）；建议修复会破坏性降级到 Taro 3.x，因此未执行 `npm audit fix`，需后续跟踪 Taro 升级窗口。同步 User 需求/API、前端路线/架构/集成/测试/README、AI Context 与学习笔记；没有数据库 Schema/迁移、依赖或版本候选变化。
+- Phase 8.2 的管理商品列表白色图案和登录 `_` 闪烁在本阶段结束时继续延期且未被误报修复；后于 2026-08-29 完成专项复测并关闭。未 commit、push、tag、release，也未执行持久数据库迁移。
+
+---
+
+## ADMIN Order 历史商品名称筛选（2026-08-28）
+
+补齐管理订单列表按商品名称查找能力。新增 `GET /api/v1/admin/orders?product_name=...`，trim 后限制 1 至 100 字符，并可与状态、精确订单号、用户 ID 和 UTC 时间范围组合；匹配事实来源固定为 `order_items.product_name` 下单快照，不关联当前 Product，因此商品改名、下架或逻辑删除不会改变历史订单检索结果。
+
+- Repository 通过匹配 Item 的 Order ID 子查询过滤外层 Order，再沿用原有计数、`Count(items)`、`created_at DESC,id DESC` 和数据库分页；同一订单多条 Item 命中时仍只返回一单，`total/pages/item_count` 不被放大。
+- 管理订单页新增“商品名称（支持部分匹配）”，筛选草稿 trim 后才提交；第一页、下一页与当前筛选提示携带同一关键词。OpenAPI、生成 TypeScript 类型和 `OrderApi` Query 白名单同步增加 `product_name`，列表响应形状不变。
+- 自动化覆盖 1–100 字符契约、Router/Service 转发、历史快照与当前 Product 名称隔离、多 Item 命中去重、组合筛选、分页元数据、HTTP/OpenAPI、Endpoint 白名单、Hook 翻页和页面输入。后端定向 128 项、Order 全模块 411 项、完整 SQLite 1457 项均通过，9 项 MySQL-only 按配置跳过；前端完整 47 套件/330 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移和 weapp/alipay/tt/h5 production build 均通过。
+- H5 继续只有既有的 Webpack `[hash]` 弃用与 244 KiB 体积建议：主 JS 281 KiB、入口 368 KiB；Jest 继续只有 Taro Test Utils 的 React `act` 弃用告警。
+- 同步 Order 需求/API、数据库查询与索引取舍、前端架构/集成/测试/学习笔记和 AI Context。包含查询的前导 `%` 无法利用普通 B-Tree；跨 MySQL 中文 FULLTEXT 与 SQLite FTS 的专用搜索设计需由生产数据和 `EXPLAIN` 驱动，因此本次不新增无效索引、数据库 Schema、迁移或依赖，也不改变版本候选。微信开发者工具的新增商品名称筛选 Functional 待用户补测。
+
+---
+
+## Product JPEG 导出尾部兼容与规范化（2026-08-27）
+
+修复微信导出的有效 JPEG 被误报为 `42221 invalid_image_content`：19 个真实样本均为可解码 JPEG，但在标准 `FF D9` 后附加固定 8 字节标记和 JPEG 本体的 16-byte MD5，旧 `content.endswith(FF D9)` 检测产生假阴性。
+
+- `LocalImageStorage` 只接受精确匹配的 24 字节尾部：JPEG 本体必须有正确头尾、固定前缀必须一致、MD5 必须匹配；随后剥离尾部并以 UUID 文件名原子保存规范化 JPEG。原始上传大小仍受 2 MiB 限制。
+- 任意尾随数据、错误摘要、伪造前缀和 MIME/内容不匹配继续分别按既有 `invalid_image_content` / `content_type_mismatch` 契约拒绝；MD5 只用于识别导出格式，不作为认证或安全摘要。
+- 存储单测覆盖成功规范化、错误 MD5、任意尾随、MIME 不匹配和规范化后 size/content；真实 multipart SQLite API 测试覆盖上传带尾部 JPEG、数据库/审计成功及静态文件只返回规范化 JPEG。定向 28 项通过；`D:\pinkdooPics` 的 19 个真实样本全部经正式存储类规范化成功且临时输出已清理；完整后端 1450 项通过，9 项 MySQL-only 按配置跳过。
+- 同步 Product 业务规则、API 文档、前端集成/学习笔记与 AI Context。没有 API 路径、请求/响应 Schema、错误码、数据库、迁移、依赖或版本候选变化。
+
+---
+
+## Frontend Phase 8.4–8.5 — ADMIN Product 图片与上下架/readiness（2026-08-26）
+
+在 Phase 8.1–8.3 管理读写聚合之上，完成 Product 公共图和 Experience Option 专属图的上传、排序、封面、逻辑删除，以及 Product 上下架和完整 readiness issues 展示。工程实现、自动化与四端构建已完成；微信 Functional 待用户验收，并包含 Phase 8.3 延期的旧/新订单价格快照联动。
+
+- `ApiClient` 新增可注入 Upload Transport；`TaroFileUploadTransport` 使用 `Taro.uploadFile`，解析字符串响应信封，分类取消/网络/超时，并复用 Bearer、code `1006` single-flight refresh 与最多一次重放。multipart boundary 由平台生成，不手工设置 `Content-Type`。
+- 新增跨端 `ImagePickerPort/TaroImagePickerAdapter`，管理页面不直接依赖平台原生 API。前端可用元数据预检 2 MiB 和 jpg/png/webp；后端继续权威验证签名、MIME/内容一致性、图片归属和封面唯一。
+- `AdminProductApi` 新增 Product/Option 图片上传、图片 sort/封面 PATCH、无 body DELETE，以及 online/offline empty-body PATCH；所有响应继续从 `unknown` 做联合 Runtime Guard 与白名单投影。
+- 新增图片/状态 mutation Hook 和图片管理页。Product 公共图可设唯一封面，Option 专属图无封面；Draft/Offline 可写，Online/逻辑删除只读。详情页增加“管理图片”“上架/下架”，上架失败完整、有序展示 `42201.data.issues`，不复制后端 ProductValidator。
+- 写命令使用 `idle/submitting/succeeded/failed/unknown`、进行中 Promise 合并和详情页同步命令互斥；network/timeout/cancel/contract/5xx unknown 不自动重发，成功或核对均重新读取服务端管理详情。
+- 定向 8 套件/66 项、完整前端 47 套件/328 项、TypeScript strict、ESLint、Stylelint、OpenAPI 漂移、weapp/alipay/tt/h5 production build、Product API 52 项及完整后端 1446 项均通过，9 项 MySQL-only 按配置跳过。保留 H5 体积、Webpack `[hash]` 和 React Test Utils `act` 既有告警。没有后端行为、数据库 Schema/迁移、OpenAPI 生成物、依赖或版本变化。
+- 新增 Phase 8.4–8.5 学习笔记和微信 Functional 清单，覆盖真实选图/上传、文件拒绝、封面/排序/删除、Option 图片归属、完整 readiness、Kit 零库存上架、下架不改库存/历史、unknown 核对与订单快照；Phase 8.2 的管理页白色图案和登录 `_` 闪烁在本阶段结束时仍是独立延期问题，后于 2026-08-29 完成专项复测并关闭。
+
+---
+
+## Frontend Phase 8.3 — ADMIN Experience Option 与 Kit 价格管理（2026-08-26）
+
+在 Phase 8.1 管理读模型和 8.2 Product 基本写入之上，完成 Experience Option 新增/恢复、部分修改、逻辑删除，以及 Kit 当前价格修改。图片、上下架/readiness、Inventory 与 Audit 仍由后续阶段负责。
+
+- `AdminProductApi` 新增 Option POST/PATCH/DELETE 和 Kit price PATCH；请求严格投影，Option 完整/Base、删除与 KitPrice 响应均从 unknown 做白名单 Runtime Guard。Kit 改价绝不发送 stock。
+- 新增配置 mutation Hook，四类动作共享 `idle/submitting/succeeded/failed/unknown` 与进行中 Promise 合并；network/timeout/cancel/contract/5xx 不自动重发，只引导重新加载管理详情核对。
+- 管理详情新增类型专属入口和分型配置页。Experience 表单按四维组合工作，PATCH 只发送真实差异，删除确认说明历史订单快照与“再建同组合恢复原 ID”；Kit 页面把库存固定为只读。
+- Online/已删除 Product 禁用配置写入只作即时反馈；FastAPI ADMIN+ 与 40001/404xx/40903/40905/40911/40912 仍是最终裁决。当前价格只影响未来下单，既有订单页面继续消费快照。
+- 新增 Endpoint、路由、状态机、页面、权限和表单回归测试。8.3 定向 5 套件/48 项、完整前端 43 套件/306 项、TypeScript、ESLint、Stylelint、OpenAPI 漂移与 weapp/alipay/tt/h5 production build 均通过；Product API 52 项及完整后端 1446 项通过，9 项 MySQL-only 跳过。H5 主 JS 278 KiB、入口 362 KiB，保留既有 244 KiB 体积建议与 Webpack `[hash]` 告警。2026-08-26 用户确认微信 Functional 除改价前后订单快照外全部通过；该联动场景因当前没有上下架按钮，延期到 Phase 8.5 后补测。没有后端行为、数据库 Schema/迁移、OpenAPI 生成物、依赖或版本变化。
+
+### Phase 8.2 视觉问题后续状态
+
+管理商品列表左上角白色图案与登录输入 `_` 闪烁在 2026-08-26 阶段结束时尚未修复，三处 Input 的 `alwaysEmbed` 已编译生效但首次复测无效，因此当时正确标记为延期。两项后于 2026-08-29 完成专项复测并关闭：白色图案通过把卡片视觉层从原生 `Form` 移到外层 `View` 解决；登录 `_` 闪烁后续无法复现并由用户确认消失。
+
+---
+
+## Frontend Phase 8.2 — ADMIN Product 基本写入（2026-08-26）
+
+在 Phase 8.1 管理读模型之上完成 Product 最小写入纵向切片：Experience/Kit 草稿创建、名称/描述编辑，以及 Draft/Offline Product 逻辑删除。范围不包含 Option、创建后的 Kit 价格、图片、上下架、Inventory、Audit 或删除恢复。
+
+- `AdminProductApi` 新增两类创建、基本信息 PATCH 和无 body DELETE；请求严格白名单投影，响应从 `unknown` 逐字段校验。Kit 创建不接受 stock，Experience 创建不混入 Option 价格。
+- 新增统一 mutation Hook，以 `idle/submitting/succeeded/failed/unknown` 表示写请求；进行中 Promise 合并，network/timeout/cancel/contract/5xx 结果未知且不自动重发。
+- 管理列表新增类型明确的创建入口；新增分型创建页与权威详情驱动的编辑页；详情页增加状态边界、编辑、删除确认和 unknown 后核对入口。PATCH 只发送真实改动，区分字段缺失与 `description: null`。
+- 普通用户在挂载查询或 mutation Hook 前拦截，Guest 只允许登录后返回固定管理列表；客户端禁用不替代 FastAPI ADMIN+ 与 40903/40904/40905 服务端裁决。
+- Phase 8.2 定向 7 套件/56 项、完整前端 41 套件/288 项与 TypeScript strict 通过。2026-08-26 用户确认微信业务 Functional 全部通过。管理页白色图案及登录输入 `_` 闪烁当时仍未解决，`alwaysEmbed` 已编译但首次复测无效，因此延期专项处理；两项已于 2026-08-29 完成复测并关闭。未修改后端行为、数据库 Schema、OpenAPI 生成物、依赖或版本。
+
+## Frontend Auth Backfill — 账号密码注册（2026-08-25）
+
+补齐 Phase 5 曾延后的 Guest 账号密码注册纵向链路。`AuthApi.register()` 使用生成 `UserCreate` 类型与 User Runtime Guard；`AuthContext.register()` 只返回服务端 User，不在缺少 Token 时建立 Session。登录页新增注册入口，注册页包含用户名、昵称、手机号、密码与确认密码，成功后由用户主动登录，并在登录/注册切换间保留固定白名单 redirect。
+
+- 注册请求只投影 username/password/nickname/phone；确认密码不进入 API。非密码字段 trim，密码不 trim、不进 URL/Storage/日志；成功响应白名单不含 password。
+- 同步 ref 门闩覆盖 React state 尚未提交时的快速双击；network/timeout/cancel/contract/5xx 视为非幂等 POST 结果未知，不自动重发，先引导尝试登录。1001/1007 分别显示用户名/手机号唯一性提示。
+- 审阅发现 `user_api.md` 的 username 字符集旧说明与实际 Pydantic/OpenAPI 无 pattern 不一致，已把 API 文档同步为当前事实；客户端只做实际 Schema 的长度校验，不以客户端规则代替后端安全边界。
+- 新增 Endpoint、路由、登录入口、页面、成功/未知/重复提交和字段边界测试；完整前端为 38 套件/255 项。没有后端行为、数据库 Schema、OpenAPI 生成物、依赖或版本变化。
+- 2026-08-25 用户确认微信注册 Functional 全部通过：普通注册、字段校验、用户名/手机号唯一性、快速连点、断网结果未知、密码不进入 URL/Storage/日志，以及订单列表 redirect 经注册和登录后正确返回“我的订单”。
+
+## Frontend Phase 8.1 — ADMIN Product 只读管理（2026-08-25）
+
+Phase 8 已按“安全读模型 → Product 基本写入 → Option/Kit 价格 → 图片 → readiness/状态 → Inventory → 既有 Order 整合 → Audit/User → 最终 Review”冻结为 8.1–8.9。8.1 完成 ADMIN Product 列表、组合筛选、服务端分页与 Experience/Kit 管理详情；管理读模型允许未完成 Draft 与逻辑删除历史，不复用只接受完整 Online 聚合的公开 Product Guard。
+
+- 新增认证 `AdminProductApi`、管理 Page/Detail Runtime Guard 与请求白名单；严格校验 Product 类型/状态、金额、UTC 时间、Kit stock 上限及 Experience dimensions/Option 一致性。
+- 新增管理 Product 列表/详情 Hook、正安全整数 ID + 类型动态路由、筛选换页重置、重复加载保护和 sequence 迟到响应隔离。
+- `admin` 分包新增管理商品列表与详情：首页只为 ADMIN+ 展示入口，Guest 只允许固定列表回跳，普通用户在挂载 Hook 前拦截；页面展示草稿空配置、状态与删除标记，但明确不提供任何 mutation。
+- 新增 Phase 8.1 Endpoint、Feature、路由和页面测试；同步学习路线、学习笔记、架构、API 集成契约、测试策略、README 与 AI Context。未改变后端 API、数据库、OpenAPI Schema 或依赖。
+- Phase 8.1 定向前端 8 套件/39 项、完整前端 37 套件/240 项、TypeScript strict、全 `src` ESLint、Stylelint、OpenAPI 类型漂移、Product API 52 项、完整后端 1445 项（9 项 MySQL-only 跳过）及 weapp/alipay/tt/h5 production build 全部通过。H5 保留 276 KiB 主 JS/360 KiB 入口体积及 `[hash]` 上游告警。首页账号信息与操作按钮同步拆为两层，按钮文字固定单行，窄屏按整颗按钮换行。
+- 新增受 development、仓库内 SQLite 和双显式参数保护的 `[LOCAL-ADMIN-FE]` Seed，通过正式 Product Service 幂等创建空配置 Experience Draft、无封面 Kit Draft 和逻辑删除 Kit，并保留正常审计链。2026-08-25 已写入本地开发库作为剩余 Functional 样本；不创建图片、不调整库存、不触碰既有 `[LOCAL-FE]` Online 商品。
+- 2026-08-25 用户确认上述 Draft/逻辑删除真实样本的筛选、详情、空配置、删除标记及无恢复按钮均通过，Phase 8.1 微信 Functional 全部收口。
+
+## Frontend Phase 7.4 — ADMIN 订单查询与人工 Paid/Completed（2026-08-24）
+
+### Summary
+
+完成 ADMIN+“全部订单列表/完整筛选 → 管理详情 → Pending 人工标记 Paid → Paid 完成 → 服务端详情核对”的最小纵向切片。状态操作严格复用现有 FastAPI 无 body PATCH；普通用户在挂载管理请求前即被页面角色边界拦截，后端 ADMIN+ 依赖仍是唯一授权事实。支付渠道、退款、任意状态编辑、订单删除和审计历史页面不在本阶段范围。
+
+### Implemented
+
+- 扩展 `OrderApi`：新增 ADMIN 列表/详情、`markOrderPaid()`、`completeOrder()`；列表只投影 7 个冻结 Query，响应逐字段校验并只输出 `user_id/user_nickname` 安全用户字段，两个状态 PATCH 不设置 body 且必须返回目标状态。
+- 新增管理列表 Feature/Page：固定 `page_size=20`，支持状态、精确订单号、用户 ID、UTC 起止日期和服务端分页；界面包含结束日并转换为 API 次日排他上界，非法订单号/用户 ID/日期/范围在请求前拒绝；sequence 与同步 ref 隔离迟到响应和重复下一页。
+- 新增管理详情状态机：服务端 Pending 只派生 `mark_paid`，Paid 只派生 `complete`，Cancelled/Completed 无命令；进行中 Promise 合并。明确 40921 后 GET 权威详情，network/timeout/cancel/contract/5xx 进入 unknown 且不自动重发；PATCH 成功后的 GET 失败不推翻成功。
+- `admin` 分包注册管理列表/详情；首页只为 ADMIN+ 显示入口。列表和详情在认证并确认角色后才挂载 Hook；普通用户直接进入页面不发 ADMIN API。登录 redirect 白名单只增加固定管理列表，不允许动态详情或任意内部 URL。
+- 新增 API/纯函数/Hook/页面/权限/路由和真实客户端纵向测试；纵向测试保留真实 `OrderApi → ApiClient`，固定列表→详情→Paid→详情→Complete→详情及 Bearer/Query/empty-body 契约。
+- 新增 Phase 7.4 学习笔记并同步路线图、API 集成契约、前端架构、测试策略、README 与 AI Context；Phase 7.3 当时的人工状态按用户结果更新为“除 40921 双端竞态外均通过”，该竞态后于 2026-08-25 补测完成。
+
+### Verification
+
+- 完整前端 Jest 31 套件 / 213 项通过；TypeScript strict、全 `src` ESLint `--max-warnings=0`、Stylelint 和 OpenAPI 类型漂移检查全部通过。Taro Test Utils 仍输出既有 React 18 `act` 上游弃用告警。
+- 后端 Order API 回归 107 项通过；完整后端 1445 项通过，9 项 MySQL-only 门槛按配置跳过。未修改后端代码、数据库或开发数据，未启动临时 MySQL。
+- weapp、alipay、tt、h5 四端 production build 均成功。H5 app 入口 359 KiB、主 JS 276 KiB，超过 Webpack 244 KiB 建议线；保留 Taro/Webpack `[hash]` 弃用告警。
+- 未新增 npm/Python 依赖、FastAPI 端点、数据库 Schema、迁移或生成 Schema；未 commit、push、tag 或 release。
+
+### Next
+
+2026-08-25 用户确认 Phase 7.3/7.4 剩余微信 Functional 全部通过：断网 unknown 显示“结果待确认”且不自动重发，独立 Swagger 客户端抢先变更后旧用户 cancel/旧 ADMIN 状态操作均收到 40921 并通过 GET 收敛，普通用户直调 ADMIN API 返回 403 且不 refresh。Slow 3G 约 310 ms 正常返回、未触发 timeout，严格 timeout 仅作为非阻断补测。Phase 7.1–7.4 已收口；下一步冻结 Phase 8 第一条 ADMIN Product 最小纵向切片，不提前实现审计页、退款、任意状态修改或支付占位。
+
+---
+
+## Frontend Phase 7.3 — 我的订单、详情与 Pending 取消（2026-08-24）
+
+### Summary
+
+完成用户侧“创建结果/unknown → 我的订单 → owner-only 详情 → Pending 取消 → 服务端权威重拉”的纵向切片。列表、详情、状态和取消严格复用现有 FastAPI Order/Inventory 契约；客户端不伪造支付状态、库存恢复或历史商品信息。ADMIN 人工 Paid/Completed 尚未实现，Phase 7.3 微信开发者工具 Functional 待验证。
+
+### Implemented
+
+- 扩展 `OrderApi`：新增认证 `GET /orders`、`GET /orders/{id}` 与无 body `PATCH /orders/{id}/cancel`；Query 只投影 page/page_size/status，Page/ListItem/Detail/Status 从 unknown 逐字段校验并白名单输出。
+- 新增订单列表 Hook/Page：固定 `page_size=20`，支持全部及四种状态筛选、Loading/Empty/Error/Content、下一页错误恢复、同步重复加载保护和 sequence 迟到响应隔离；分页只采用服务端 page/pages/total。
+- 新增严格 Order ID 路由和详情页：只展示服务端历史 Item/Option/金额/备注/时间快照；不存在和他人订单的 40411 使用同一不可访问提示。
+- 新增取消状态机：仅服务端 Pending 显示入口，同一进行中操作复用 Promise；network/timeout/cancel、5xx 或成功响应契约损坏进入 unknown 且不自动重发。成功后 GET 详情，重拉失败不推翻已确认成功；40921 后也重拉以收敛跨端状态竞态。
+- 7.2 创建成功与 unknown 均增加“我的订单”核对入口，首页 authenticated 区域增加入口；登录 redirect 白名单仅增加固定订单列表，不开放动态详情或任意内部 URL。
+- 新增 Phase 7.3 学习笔记，并同步路线图、API 集成契约、前端架构、测试策略、README 与 AI Context。
+
+### Verification
+
+- Phase 7.3 定向 Jest 8 套件 / 61 项、完整前端 Jest 25 套件 / 172 项通过；TypeScript strict、全 `src` ESLint `--max-warnings=0`、Stylelint 与 OpenAPI 类型漂移检查全部通过。Taro Test Utils 仍输出既有 React 18 `act` 上游弃用告警。
+- 真实 FastAPI + SQLite Order HTTP 集成/状态矩阵 53 项通过；完整后端 1445 项通过，9 项 MySQL-only 门槛按配置跳过。本阶段未修改或迁移数据库，未启动临时 MySQL。
+- weapp、alipay、tt、h5 四端 production build 均成功。H5 app 入口 350 KiB、主 JS 266 KiB，超过 Webpack 244 KiB 建议线；保留 Taro/Webpack `[hash]` 弃用告警。
+- 首次 Node 工具加载受 Windows 文件扫描影响出现长时间 I/O 等待；所有 PASS 均来自真实退出码。最终使用 Codex 工作区 Node 运行同一项目依赖，未改 `package.json` 或 lockfile。
+- 未新增 npm/Python 依赖、后端 API、数据库 Schema 或迁移；未 commit、push、tag 或 release。
+
+### Next
+
+按学习笔记完成微信开发者工具 Functional：登录回跳、筛选/分页、7.2 unknown 核对、历史快照、40411 资源隐藏、Pending 取消与 Kit 库存恢复、终态无按钮、弱网 unknown 和 40921 竞态。通过后进入 ADMIN 订单列表/详情及人工 Pending → Paid → Completed。
+
+---
+
+## Frontend Phase 7.2 — Order 创建纵向切片（2026-08-24）
+
+### Summary
+
+完成“本地购物清单 → 登录确认 → `POST /api/v1/orders` → 服务端订单结果 → Cart 对账”的最小纵向切片。Experience 请求严格携带真实 Option ID，Kit 严格省略 Option；提交状态明确区分失败与网络结果未知，成功页只消费 FastAPI Order 快照。Phase 7.2 交付时尚未实现 Order 查询/详情/取消和 ADMIN 状态操作；用户侧查询/取消已由 Phase 7.3 补齐。
+
+### Implemented
+
+- 新增 `OrderApi.createOrder()`：复用现有认证 HTTP Client，显式白名单投影 items/remark，并对 OrderDetail 的订单号、状态、UTC 时间、金额聚合、Experience 完整 Option/Kit 全 null Option 快照执行运行时校验。
+- 新增 `OrderSubmissionStore` 的 `idle/submitting/succeeded/failed/unknown` 判别状态机：开始时冻结 Cart/request，同一进行中提交复用 Promise；network/timeout 进入 unknown 且不自动 POST，明确失败允许修正后主动重试。
+- 新增确认页和受控 remark；Cart 页面增加确认入口。Guest 登录回跳只允许注册的确认页，登录成功 `reLaunch` 返回；外部、未注册和畸形 redirect 安全回退首页。
+- 成功页只展示服务端 order_no、状态、时间、Item/Option、单价/小计/总额和 remark，不使用本地预览金额生成权威结果。
+- `CartStore.reconcileSubmittedItems()` 与其他 mutation 串行：相等移除、大于提交量保留差额、小于提交量保守保留并报告 conflict、无关 Item 不变；持久化失败不发布伪清理。Cart 对账失败只能附加成功警告，不把已创建订单降级为失败。
+- 新增纵向集成测试，保留真实 CartStore → SubmissionStore → OrderApi → ApiClient 调用链，仅替换 Storage、transport 与 Auth 平台边界；同步新增 Phase 7.2 学习笔记并更新架构、API 契约、路线图、测试策略、README 与 AI Context。
+
+### Verification
+
+- 完整前端 Jest 19 套件 / 130 项通过；`npm run typecheck`、ESLint `--max-warnings=0`、Stylelint 与 OpenAPI 类型漂移检查全部通过。已知 Taro Test Utils 旧 `act` 告警不阻断。
+- 真实 FastAPI + SQLite Order 创建、边界和事务失败 34 项通过，覆盖 Experience、Kit、混合订单、Inventory 校验与回滚；完整后端为 1445 项通过、9 项 MySQL-only 门槛按当前配置跳过。本轮未修改或迁移数据库，未运行临时 MySQL。
+- weapp、alipay、tt、h5 四端 production build 均成功。H5 app 入口 343 KiB、主 JS 259 KiB，仍超过 244 KiB 性能建议线，并保留 Taro/Webpack `[hash]` 弃用警告。
+- 未新增 npm/Python 依赖、后端 API、数据库 Schema 或迁移；未 commit、push、tag 或 release。
+
+### Functional Result
+
+2026-08-24 用户完成微信开发者工具 Functional，确认 Guest 登录返回、真实 Experience/Kit/混合下单、库存不足、快速连点、弱网 unknown 与成功 Cart 对账全部通过；同时确认 Phase 7.1 剩余的有库存 Kit 加入分支通过。该结果不替代真机、H5、正式 HTTPS/合法域名验收；H5 真实联调继续等待 FastAPI 严格 CORS allowlist。unknown 的我的订单核对入口和 Pending 取消已由 Phase 7.3 完成工程实现，微信 Functional 另行验证。
+
+---
+
+## Frontend Phase 7.1 — 本地购物车纵向切片（2026-08-22）
+
+### Summary
+
+完成 Phase 7 的第一条本地纵向切片：游客或登录用户可从 Product 详情把真实 Experience Option 或 Kit 加入设备级购物车，重启后恢复，并修改数量或移除；本地展示快照与后端 Order 权威事实保持明确隔离。确认页、真实 Order 创建、查询/取消和 ADMIN 状态操作尚未实现，微信开发者工具 Functional 待人工验证。
+
+### Implemented
+
+- 新增 Experience/Kit `CartItem` 判别联合：Experience 在类型层要求正整数 Option 和完整配置说明，Kit 固定 null Option/配置；本地唯一身份与后端一致，为 `(productId, experienceOptionId)`。
+- 新增可独立测试的 `CartStore`：`pinkdoohub.cart.v1` 版本化格式、unknown Runtime Guard、白名单重写、坏数据清除、最多 10 个不同组合和每项 1–99 数量；重复组合合并，不同 Option 保持独立。
+- 所有 mutation 经 Promise 队列串行化，避免快速点击基于旧数量并发写入；采用先写 Storage、成功后发布 Context 的保守更新，持久化失败不展示伪成功。
+- 新增应用级 `CartProvider`，复用现有 `StoragePort`/`TaroStorageAdapter`。Cart 是不含 Token/User/密码/remark 的设备级游客状态，登录或退出不自动清除。
+- Product 详情加入“查看购物车/加入购物车”：Experience 保存当前真实 Option ID、组合、预览价和 Option 图片；Kit 保存 null Option，无库存时禁用。新增 Cart 页面四态、预览单价、数量增减和移除。
+- 新增 `buildOrderItems()` 白名单映射：Experience 只发送 Product/Option/quantity，Kit 只发送 Product/quantity；名称、配置、图片、预览价和 ProductType 不进入未来 Order create 请求。
+- 新增 Phase 7.1 学习笔记，解释本地状态与服务端权威、判别联合、Storage unknown、版本迁移、异步 lost update、保守更新和无客户端幂等的 Order create 边界。
+
+### Verification
+
+- 新增 3 个 Jest 套件 / 17 项，覆盖坏缓存、白名单、并发合并、不同 Option、10/99 边界、Storage 失败、修改/删除/清空、Product→Cart 和 Cart→Order 映射及 Cart 页面四态；完整前端为 14 套件 / 87 项通过。
+- `npm run typecheck`、ESLint `--max-warnings=0`、Stylelint 和 OpenAPI 类型漂移检查均通过。已知非阻断输出仍只有 Taro Test Utils 的旧 `act` 警告。
+- 用户现有 weapp watcher 已产出并注册 Cart 页面；未启动第二组微信构建。alipay、tt、h5 独立生产构建通过。H5 入口为 334 KiB、主 JS 251 KiB，仍超过 244 KiB 建议线，并保留 Taro/Webpack `[hash]` 上游弃用警告。
+- 后端完整 SQLite 回归 1442 项通过，9 项必须显式配置隔离 MySQL 的发布门槛按预期跳过；本轮未启动临时 MySQL。
+- 未新增 npm/Python 依赖、后端 API、数据库 Schema 或迁移。
+
+### Next
+
+先按学习笔记完成微信开发者工具 Cart Functional：真实第二 Option、重复合并、不同 Option 分行、Kit、数量/移除、重启恢复、登录/退出保留、坏缓存清理和无库存禁用。通过后进入 Phase 7.2 确认页、登录返回和一次性 Order 创建；在服务端支持客户端幂等键前，未知结果的 POST 不自动重试。
+
+---
+
+## Frontend Phase 6 — 公开 Product 列表纵向链路（2026-08-20）
+
+### Summary
+
+完成前端 Product 浏览纵向链路：游客可通过公开首页读取 Online Product，按服务端分页、类型和 keyword 浏览 Experience 与 Kit，并进入类型专属详情选择真实 Option；Product 数据状态与 AuthContext 解耦。Endpoint、运行时契约、图片地址、分页/搜索 Feature、四态 UI、详情、自动化、四端构建和微信开发者工具 Functional 均已完成。
+
+### Implemented
+
+- 新增严格限定为本地开发环境的 `python -m app.tasks.product_functional_seed`：要求 development、仓库内 SQLite/图片目录、`--apply` + `--confirm-local-only` 双确认和启用的 ADMIN/SUPER_ADMIN 操作者。脚本复用 Product Service、Validator、AuditLog 与 LocalImageStorage，生成 7 Experience、6 Kit、13 条 Online Product 和 21 张相对图片；其中专用多配置 Experience 有两个不同组合、价格和配色图片的 Option。完整同名数据可幂等跳过，冲突数据安全停止，图片登记失败执行文件补偿。
+- 修复 Seed PNG 夹具只有文件签名、无法真实解码的问题：改为生成带 IHDR、zlib IDAT、IEND 和逐 chunk CRC 的 2×2 RGB PNG；重复执行只原子修复 Seed Product 引用的旧错误内容或缺失文件，不覆盖其他图片。2026-08-21 首次修复当时 12 条目录的结果为 `created=0 / skipped=12 / repaired_images=18`。
+- 新增 `ProductApi.listProducts()`，直接复用 OpenAPI 生成的 Product Query/Page/Item 类型；HTTP Client 结果保持 `unknown`，Endpoint 校验并白名单投影 ID、名称、Product Enum、两位小数金额、图片地址和分页字段。公开请求固定 `auth: none`，不会因本地存在 Session 而附带 Token。
+- 新增唯一 `resolveAssetUrl()`：HTTP(S) 绝对 URL 原样使用，`/uploads/...` 相对已校验 API Origin 补全，其他路径拒绝；ProductCard 使用懒加载和图片失败占位。
+- 新增 `useProductList` Feature，首屏固定 `page=1&page_size=10`，按服务端 `page/pages/total` 加载下一页；防止同页重复点击，并以请求 sequence 隔离迟到旧响应，不依赖所有小程序运行时未必提供的 `AbortController`。
+- 首页改为公开 Product 页面，互斥展示 Loading/Empty/Error/Content；首屏失败可重试，下一页失败保留已有内容。Experience 按 `product_type.value` 显示“起”，Kit 显示固定价格；guest/authenticated/error 状态只影响账号操作，不阻断公开浏览。
+- Jest setup 集中 mock Taro 4.2.1 router 循环依赖，并为 jsdom 提供 `IntersectionObserver`，支持 `Image lazyLoad` 组件测试且不隐藏现有上游 `act` 弃用告警。
+- 新增 Phase 6 学习笔记，解释生成类型与 Runtime Guard、金额字符串、Enum、判别四态、服务端分页、请求竞态、相对图片和公开数据/认证状态边界。
+- 首页新增“全部 / 拼豆体验 / 材料套装”类型筛选和最长 100 字符的受控 keyword 搜索；类型立即生效，keyword 在 300ms 静默期后去除首尾空白并查询。筛选变化重置第 1 页，加载更多保留查询上下文，迟到响应继续由 sequence token 隔离。
+- 新增公开 Product 详情纵向链路：列表卡片根据服务端 ProductType 跳转单一详情页，严格解析正整数 ID 与 experience/kit 类型；Endpoint 分别调用两条无认证详情 API 并对 unknown JSON 执行白名单 Runtime Guard。详情 Hook 提供 Loading/Error/Content 与重试、迟到响应隔离；Experience 只允许选择服务端真实 Option 完整组合并同步价格/专属图片，Kit 展示价格、库存和 available 且明确下单仍需服务端校验。
+
+### Verification
+
+- 本地 Product seed 17 项隔离测试通过，覆盖环境/引擎/路径/双确认门槛、13 条两类型目录、重复执行、保留名称冲突、图片补偿、PNG chunk/CRC/像素解压、旧夹具精准修复、缺失文件恢复、旧默认 Option 配色迁移，以及一次性 SQLite + 临时图片目录中的真实 13 Product / 21 图片纵向创建；集成断言会从 Online 详情重读两个 Option 的完整组合、价格、图片关系和不同像素内容。
+- 完整 Jest 11 套件 / 70 项通过，覆盖公开 Product Query/无认证头、坏契约拒绝、动态详情路由、Experience/Kit Runtime Guard、图片 URL、列表/详情四态、分页追加、完整 Option 选择及旧响应隔离。只有 Taro Test Utils 间接旧 `act` 的已知上游警告。
+- `npm run typecheck`、ESLint `--max-warnings=0`、Stylelint 与 OpenAPI 类型漂移检查均以退出码 0 通过；后端完整套件为 1442 项通过、9 项显式隔离 MySQL 门槛跳过。
+- weapp/alipay/tt/h5 四端生产构建均通过；为避免用户微信 watcher 竞态，weapp 在复用同一依赖的系统临时副本中隔离构建并核对详情产物。冷启动支付宝 25.11 分钟，预热后抖音 39.45 秒、微信 2.97 秒，H5 2.72 分钟。H5 入口保持 327 KiB、app JS 245 KiB，仍有 Webpack 244 KiB 性能建议和 `[hash]` 上游弃用警告。
+- 未修改 FastAPI Web 运行链、数据库 Schema 或依赖；不需要迁移。2026-08-22 列表 Content、相对图片、第二页、类型筛选、keyword 防抖/组合搜索、Empty，以及详情/多配置 Option 切换微信 Functional 均已通过。本地开发库增量 Seed 先得到 `created=1 / skipped=12 / repaired_images=0`，再把多配置 Experience 第二张旧默认测试图精准迁移为备用配色，结果为 `created=0 / skipped=13 / repaired_images=1`；当前共有 13 条 Online Product 和 21 张图片，全部由 Windows `System.Drawing` 解码为 2×2 PNG。
+
+### Next
+
+Phase 6 自动化与微信 Functional 已收口。下一步进入 Phase 7 购物车、确认页和 Order 创建。
+
+---
+
+## Frontend Phase 5 — 账号密码登录纵向链路（2026-08-20）
+
+### Summary
+
+完成首条可运行的前端业务纵向链路：现有账号密码登录、Token 会话持久化、启动恢复、access token 刷新、`/users/me` 验证、页面守卫和登出。同步修复认证/用户成功响应在 OpenAPI 中为 `unknown`、以及 User `IntEnum` 数据库存储与 HTTP 字符串输出不一致的 Schema 描述；接口运行行为和数据库结构均未改变。
+
+### Implemented
+
+- 为 auth register/login/refresh/logout 和 users me/update/password 声明精确 `SuccessResponse[T]` / `ErrorResponse` OpenAPI 信封；User 输出 Schema 现在正确描述 `role=user|admin|super_admin` 与 `status=normal|disabled`，生成结果更新为 45 paths / 108 schemas。
+- 新增薄 `AuthApi` Endpoint，登录请求直接使用生成类型，登录/刷新/用户响应在运行时逐字段校验并重新构造白名单对象；坏 JSON 或意外额外敏感字段不会因 TypeScript 类型断言而进入应用状态/Storage。
+- 新增 Taro Storage Port/Adapter 与可注入 storage/clock/refresh 的 `SessionManager`；仅持久化 access token、refresh token、expiresAt 和公开 User，不保存密码。损坏缓存会删除，并发 refresh 共享一次 Promise。
+- 新增 React `AuthProvider`/`useAuth`：启动时恢复缓存，临近过期先 refresh，再用 `/users/me` 验证当前身份；缓存身份在服务端验证前不会被视为已认证。Session 失效清理会话，网络初始化失败保留为可重试 error 状态。
+- 新增受控登录表单、登录错误映射、提交中防重复、首页登录守卫、当前用户展示和登出。用户不存在与密码错误在 UI 统一为同一提示；密码提交失败后清空且永不写 Storage。
+- 新增阶段学习笔记，解释生成类型/Runtime Guard、受控表单、Context、Effect、Port/Adapter、Token 生命周期、判别状态与测试边界。
+
+### Verification
+
+- 后端完整 SQLite 套件 1425 项通过、9 项可选 MySQL 门槛跳过；其中认证/用户相关 33 项通过，OpenAPI 测试固定成功响应引用、密码排除及输出字符串 Enum。
+- 前端 `typecheck`、ESLint、Stylelint 和 OpenAPI 类型漂移检查通过；Jest 7 套件 / 29 项通过。Taro Test Utils 仍只有已记录的上游 `ReactDOMTestUtils.act` 弃用警告。
+- weapp/alipay/tt/h5 四端生产构建通过；加入认证链后 H5 入口为 327 KiB，仍超过 244 KiB 建议线，比 281 KiB 空应用基线增加 46 KiB。
+- 未新增 npm/Python 依赖、数据库迁移或配置密钥；尚未完成微信开发者工具/H5 对真实后端的人工 Functional，H5 仍受待实现的严格 CORS allowlist 阻挡。
+
+### Next
+
+先在微信开发者工具用隔离开发账号完成真实后端登录/刷新/重启恢复/登出 Functional；随后实现公开 Product 列表与详情纵向链路。微信登录仍是正式公开发布前门槛，不在本次账号密码 MVP 中伪实现。
+
+---
+
+## Frontend Phase 5 — 依赖复核与 API 基础层（2026-08-20）
+
+### Summary
+
+复核正式 `miniapp/` 的安装结果并完成下一步 OpenAPI 类型生成与 HTTP Client 基础层。依赖树已从 Spike `node_modules` 镜像残留状态收敛为 `package.json`/`package-lock.json` 可复现状态；当前尚未实现 auth Endpoint、Session Storage 或登录页面。
+
+### Implemented
+
+- 用官方 npm registry 确认 Taro 4.2.1 仍为最新版；清理 16 个 extraneous NutUI/React Spring 包，显式补齐 `solid-js@1.9.15` peer，并移除非目标平台插件、Taro Generator 与未启用的 Husky/Commitlint/Lint Staged，共减少 113 个未使用包。
+- 新增 `scripts/export_openapi.py`，以 `TESTING=1` 从真实 FastAPI `app.openapi()` 原子导出稳定 JSON；导出结果包含 45 条路径和 99 个组件 Schema。
+- 引入 `openapi-typescript@7.13.0`，使用 `--immutable --alphabetize` 生成 `miniapp/src/api/generated/schema.d.ts`，并通过 `api:types:check` 检查漂移。
+- 实现可注入 Transport/AuthSession 的 HTTP Client、Taro Request Transport、统一响应信封 Runtime Guard，以及 Network/Timeout/HTTP/Business/Contract/Session/Cancel 错误模型。
+- code `1006` 使用 single-flight refresh，多个并发请求共享一次刷新并各自最多重放一次；403 不刷新，普通超时和写请求不自动重试，empty-body PATCH 不添加 data/Content-Type。
+- 环境 Origin 现在要求无路径、无凭据的 HTTP(S) Origin；生产环境必须 HTTPS，并拒绝 localhost、127.0.0.1、0.0.0.0 与 `[::1]`。
+
+### Verification
+
+- `npm ls --depth=0` 与 `npm ls --all --omit=dev` 通过，无 missing/extraneous dependency。
+- `npm run typecheck`、`npm run lint`、`npm run lint:styles`、`npm run api:types:check` 全部通过。
+- Jest 4 套件 / 19 用例通过，其中 14 项覆盖 API Client 与环境配置；Taro Test Utils 仍输出上游 `ReactDOMTestUtils.act` 弃用警告。
+- weapp/alipay/tt/h5 四端生产构建通过；H5 空应用入口 281 KiB，超过 Webpack 244 KiB 建议线，作为后续依赖体积基线。
+- 官方 registry `npm audit --omit=dev` 仍报告 10 项 Taro 4.2.1 H5 上游风险（4 moderate、1 high、5 critical）；`audit fix --force` 会破坏性降级 Taro 组件/插件，因此未执行，正式发布前必须重审。
+- 未运行后端完整 pytest：后端运行时代码未修改；OpenAPI 导出脚本已通过 `py_compile` 和真实导出验证。未做真机或真实后端网络联调。
+
+### Next
+
+使用生成类型实现 auth Endpoint、Session/Token Storage、账号密码登录/刷新/登出纵向链路；H5 真实联调前仍需后端严格 CORS allowlist。
+
+---
+
+## Frontend Phase 5 — 正式 miniapp 工程创建（2026-08-15）
+
+### Summary
+
+创建正式跨端前端工程 `miniapp/`（Taro 4.2.1 + React 18.3.1 + TypeScript 5.9.3 strict + Webpack 5.91.0 + Jest 29.7.0），包含四端构建命令、环境变量文件、测试与 lint 工具链；工程代码目前尚未提交（待用户确认）。工程不是从 Spike 复制，Spike 仅作为依赖版本与测试 workaround 的依据。
+
+### Verified
+
+- `npm run typecheck`（`tsc --noEmit`，strict + skipLibCheck）、`npm test`（2 套件 / 5 用例）、`npm run lint`（`--max-warnings=0`）全部通过。
+- weapp/alipay/tt/h5 四端生产构建全部通过（weapp 3.7s），产物固定输出 `dist/<TARO_ENV>`；`project.config.json` 的 `miniprogramRoot` 指向 `dist/weapp`。
+- 生产包无 localhost/HTTP 泄漏；`TARO_APP_APP_ENV`/Origin 按 Spike 结论仅对字面量引用注入，当前页面尚未消费 API Origin，将在 HTTP Client 步骤生效。
+- `package-lock.json` 已生成（559 KB），锁定 Taro 4.2.1 / React 18.3.1 / Jest 29.7.0 / `@tarojs/test-utils-react` 0.1.1 等版本。
+
+### Fixed / Recorded
+
+- npmmirror 安装多次卡死（进程无网络/磁盘/CPU 活动、包半提取），清华源不支持 scoped 包（`@babel/core` 404）；最终以 Spike 同版本完整 `node_modules` 镜像（robocopy /MIR，53,377 文件 / 397.67 MB）兜底，再以 `npm install --package-lock-only` 生成 lockfile。
+- Jest 链路沿用 Spike 结论：`.npmrc` 保留 `legacy-peer-deps`、自定义 transformer 补私有方法插件、mock `@tarojs/router` 打破循环依赖。
+- 正式工程尚未引入 NutUI（ADR-005 按需引入要求留待组件开发步骤）；Spike 遗留的 NutUI 相关包已在 2026-08-20 依赖复核中清理。
+
+### Verification
+
+- 已运行：`npm run typecheck`、`npm test`、`npm run lint`、`npm run build:weapp|alipay|tt|h5`，全部通过。
+- 未运行：后端完整 pytest（本次未修改后端代码）；未做真机/开发者工具预览（需微信开发者工具导入 `dist/weapp`）。
+
+---
+
+## Frontend Phase 5 — Taro 四端最小技术 Spike（2026-08-15）
+
+### Summary
+
+完成前端阶段 2（Taro 四端最小技术 Spike），验证 Taro 4 + React 18 + TypeScript strict + Webpack 5 + NutUI + Jest 组合在 weapp/alipay/tt/h5 的技术风险，并把结论回写架构文档与 ADR。没有创建正式 `miniapp/`、没有提交前端工程代码、没有修改后端。
+
+### Verified
+
+- 四端生产构建全部通过（weapp/alipay/tt/h5，Webpack 5.91.0），产物固定 `dist/<TARO_ENV>`，微信项目根指向 `dist/weapp`。
+- 环境变量注入：Taro 只替换字面量 `process.env.TARO_APP_*`/`TARO_ENV`；修正后四端生产包均含生产 Origin 且无 localhost。
+- HTTP Client（`Taro.request`/`uploadFile` 适配层 + 统一错误模型）、Storage 封装与 NutUI Button/Toast/Dialog/Input 受控用法；13 项 Jest 测试通过，`tsc --noEmit`（strict + skipLibCheck）与 ESLint 通过。
+- H5 CORS 风险：实测 FastAPI 无 CORS 头，确认缺口。
+
+### Fixed / Recorded
+
+- `@tarojs/test-utils-react@0.1.1` 与 Taro 4.2.1 peer 冲突（需 `--legacy-peer-deps`）、官方 transformer 缺私有方法插件、`@tarojs/router` 循环依赖与 `html()` 爆栈问题均已在 Spike 工程记录 workaround。
+- NutUI 2.7.15 无按组件 JS 入口，桶导入 + 全量主题使 h5 入口 485 KiB；ADR-005 要求正式工程按需引入并纳入构建门槛。
+- TypeScript strict 需 `skipLibCheck`（Taro 声明文件本身不干净）；模板 `config/index.ts` 未用解构已修正。
+
+### Verification
+
+- `npm run typecheck`、`npm test`（13 项）、`npm run lint` 通过；四端 `taro build` 退出码 0。
+- 后端完整 pytest 未运行（本次未修改后端代码）；CORS 检查使用与测试夹具相同的 fakeredis + 临时 SQLite 隔离环境。
+
+---
+
+## v0.6.0 (Unreleased) — Inventory Module Final Review (Phase 4.3.12)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Completed the final architecture, security, transaction, concurrency, migration, API, test, and documentation review for Inventory v0.6. Phase 4.3 is code-complete and the local application candidate is now v0.6.0; this is not a Git tag, release, deployment, or persistent-database migration.
+
+### Reviewed
+
+- Confirmed API → Service → Repository → Model dependency direction, explicit transaction ownership, stable Product-ID lock ordering, post-lock validation, whole-use-case MySQL 1205/1213 retries, and no InventoryService call from OrderService.
+- Confirmed administrator adjustment, Order deduction, and Pending cancellation keep balance, immutable ledger, Order/Audit writes, and response reloads on the owning transaction connection.
+- Confirmed the idempotency UNIQUE, state-machine defense in depth, privacy-safe insufficient-stock payload, ADMIN+ ledger access, internal-key/log exclusions, strict request/query schemas, explicit response projections, and zero-SQL Mapper invariants.
+- Reconciled Model, MySQL migration, named foreign keys/indexes, database design, DBML, OpenAPI, Product/Order integration contracts, and current implementation status.
+
+### Fixed
+
+- Added the frozen `stock <= 999999` upper bound to both public and administrator Product Kit detail Out Schemas. Added two regression cases so abnormal data cannot escape through Product responses even though ordinary Model writes already enforce the same bound.
+- Replaced stale database-design, DBML, exception, and test descriptions that still called Kit OrderItem fields a future Phase 4.2 extension; they now describe the implemented pure Kit and mixed-order lifecycle.
+- Corrected the AI context's stale Experience-only Order input summary and advanced the code default, `.env.example`, version contract, README, architecture example, project context, Inventory requirement, and API status to the v0.6.0 unreleased candidate.
+
+### Verification
+
+- Product/Order/Inventory plus version regressions pass 1358 tests without the optional MySQL directory.
+- A new disposable MySQL Community Server 8.0.46 instance on `127.0.0.1:13306` applied the real Aerich 0 → 1 → 2 chain and passed all 9 Inventory MySQL concurrency, lock-wait, EXPLAIN, and HTTP gates.
+- The complete suite passes 1431 tests with SQLite and MySQL gates in the same pytest process. `compileall`, `pip check`, secret/log pattern scans, and `git diff --check` pass. Ruff is not installed and was not claimed as executed.
+- The temporary MySQL directory and schema were removed after a graceful shutdown. The existing 3306 `MySQL80` service remained running and was not connected or modified.
+
+### Release and Database Boundary
+
+- No new dependency or migration was added by the final Review. The reviewed Inventory migration remains required before any persistent environment can use the module.
+- No push, tag, GitHub Release, deployment, development-database rebuild, Aerich fake, or persistent/shared/production migration was performed.
+
+## Unreleased — Inventory MySQL Concurrency and HTTP Gate (Phase 4.3.11)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Completed the Inventory release gate with reproducible real-MySQL concurrency, driver-level lock-timeout retry, query-plan verification, a real MySQL FastAPI smoke, and the complete three-endpoint HTTP permission/error/boundary matrix. No Inventory business implementation, physical schema, migration, dependency, or application version changed.
+
+### Verified
+
+- Added a guarded MySQL test fixture that only permits explicit enablement, `127.0.0.1`, a non-3306 port, and the disposable `pinkdoohub_inventory_4311` schema prefix; it preserves Aerich versions and clears only business tables between tests. It also clears Tortoise 1.1.7's backend-agnostic global Executor SQL cache before and after MySQL tests, allowing SQLite and asyncmy suites to coexist without placeholder leakage.
+- Ran the real Aerich 0 → 1 → 2 chain on an isolated MySQL Community Server 8.0.46 instance before testing, without `--fake` or `generate_schemas()`.
+- Verified concurrent distinct adjustments accumulate without lost updates, while identical concurrent idempotency keys create one balance change, ledger, and Audit and return one committed result plus one replay.
+- Verified exactly one of two last-item orders commits; reversed two-Kit request orders both complete through stable Product-ID locking; and concurrent cancellation of one Pending Order restores stock exactly once.
+- Held an administrator adjustment row lock and observed the competing order in `performance_schema.data_lock_waits`; after release, the order read the committed balance. Induced a real MySQL 1205 with `innodb_lock_wait_timeout=1` and verified the Service succeeds in its second fresh transaction without duplicate writes.
+- Seeded representative selective data and 5,000 valid ledger rows, refreshed statistics, and verified `EXPLAIN` selects ProductKit `product_id`, `idx_inventory_product_created_id`, and `idx_inventory_created_id` for the frozen lock/Product/global pagination queries.
+- Added a real MySQL FastAPI concurrent replay/query smoke and 41 SQLite-backed HTTP matrix cases covering every Inventory route's authentication, authorization, resource errors, balance/idempotency conflicts, strict validation, filters, pagination, UTC bounds, Order source metadata, and privacy exclusions.
+
+### Verification
+
+- The isolated MySQL gate passes 9 tests; the new complete HTTP matrix passes 41 tests; all Inventory tests pass together with 241 tests. The complete project suite, with MySQL gates explicitly enabled in the same pytest process as SQLite regressions, passes 1429 tests. `compileall`, dependency integrity, documentation contracts, and diff whitespace checks also pass.
+- The temporary server and schema are destroyed after verification; the existing `MySQL80` service and all persistent/shared/production databases remain untouched.
+
+## Unreleased — Inventory Management API (Phase 4.3.10)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Exposed Inventory adjustment and ledger queries through three ADMIN+ FastAPI endpoints, with strict Header/Body/Query adaptation, exact success/error envelopes, explicit Mapper serialization, and first-create versus replay status handling. Completed the frozen v0.6 breaking switch by removing Product's direct stock overwrite route and Kit creation stock input.
+
+### Implemented
+
+- Added `get_inventory_service()` as the sole composition root for InventoryRepository, ProductRepository, and shared AuditLogService.
+- Registered POST adjustment, Product-scoped ledger GET, and global ledger GET routes under `/api/v1/admin`, all protected by the existing JWT ADMIN+ dependency.
+- Required and normalized `Idempotency-Key`; mapped first commits to HTTP 201 and exact committed replays to HTTP 200 without moving transport semantics into Service.
+- Adapted all validated filters explicitly and serialized every successful result through Inventory Mapper, strict Out Schema, and the shared success envelope. OpenAPI declares precise generic success models and 400/401/403/404/409/422 error envelopes.
+- Removed the legacy `PATCH .../stock` route, `KitStockUpdate`, `KitStockOut`, Product stock Mapper, and `ProductService.update_kit_stock()` so application business code has one stock-write path.
+- Removed `stock` from `KitProductCreate`; ProductService now creates ProductKit with the Repository's fixed zero default, and any initial stock must be added through Inventory adjustment.
+
+### Verification
+
+- Added composition, layering, registration, OpenAPI, permission, strict validation, query adaptation, privacy, real SQLite adjustment/replay/query, zero-opening Kit, and legacy-request rejection tests.
+- Product and Inventory regression suites pass together with 909 tests; the complete project suite passes 1379 tests. `compileall`, dependency integrity, documentation contracts, and diff whitespace checks also pass.
+
+## Unreleased — Inventory Query Service and API Mapper (Phase 4.3.9)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the two Inventory ledger query use cases and the synchronous API mapping boundary. Product-scoped reads now validate the complete Kit resource identity, global reads preserve filter-only semantics, and ledger/adjustment responses are explicitly projected without SQL, ORM mutation, internal idempotency data, or user privacy fields. Inventory composition and HTTP routes remain Phase 4.3.10.
+
+### Implemented
+
+- Added `InventoryService.list_product_transactions()` with the stable Product missing/deleted/type/Kit-extension error priority before delegating all frozen filters and pagination to InventoryRepository.
+- Added `InventoryService.list_transactions()` for global filtering; an unknown Product ID is not treated as a resource lookup and returns an ordinary empty `Page`.
+- Kept both reads transaction-free and lock-free, with no duplicated ORM filtering or ordering in Service.
+- Added synchronous Inventory transaction, list-item, page, and adjustment Mappers. Every output is built from an explicit field whitelist and validated by its strict Out Schema.
+- Consumed only Repository-preloaded operator nicknames and batched Order numbers. Mapping performs zero SQL and zero ORM mutation, and excludes `idempotency_key`, technical `updated_at`, username, phone, password, Token, and order remark.
+- Kept the adjustment Mapper independent from `InventoryAdjustmentResult`; the future Router supplies its domain values and retains ownership of first-create 201 versus replay 200.
+
+### Verification
+
+- Added 18 focused Service/Mapper tests covering exact filter forwarding, resource error priority, global empty results, all four ledger metadata shapes, pagination, adjustment consistency, field isolation, layer direction, real SQLite data, zero SQL, and zero ORM mutation.
+- All 172 Inventory tests and the complete 1382-test project suite pass. `compileall` and diff whitespace checks also pass.
+
+## Unreleased — Pending Order Inventory Restoration (Phase 4.3.8)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Extended the existing owner cancellation endpoint so Pending Kit and mixed orders restore every Kit balance exactly once. Restoration, immutable ledgers, Cancelled status, audit, and response reload now form one transaction; payment and completion remain inventory-neutral.
+
+### Implemented
+
+- Added server-owned restore identities and reason: `inventory:order:{order_id}:restore:product:{product_id}` and `Order cancellation stock restore`.
+- Added a minimal immutable Order cancellation projection containing only Product ID, nullable Option ID, and quantity, loaded on the caller's transaction connection in stable Item order.
+- Added one Inventory Repository batch lookup for restore identities; empty sets execute no SQL, and Repository remains free of transaction ownership and business exceptions.
+- Split owner cancellation from the generic payment/completion transition helper. Cancellation now locks the owner-visible Order first, rechecks Pending, loads Items, aggregates Kit quantities, locks all Kit rows in ascending Product ID order, and checks every restore identity before writes.
+- Restored balances with one bulk update and wrote all `order_cancellation_restore` rows with one bulk insert before committing Cancelled, `CANCEL_ORDER` audit, and response reload.
+- Preserved catalog independence: restoration uses immutable OrderItem quantities and does not require the Product to remain Online or reuse its current price. Missing Kit rows and Pending/restore-identity contradictions fail as consistency conflicts instead of silently skipping stock.
+- Enforced the `0..999999` balance range during restoration. Any inventory, ledger, status, audit, or reload failure rolls back the complete use case.
+- Kept duplicate cancellation safe through two layers: the locked Order state rejects ordinary repeats, while the restore UNIQUE identity protects transaction replay and future automatic cancellation paths.
+- Added whole-use-case retries only for MySQL 1205/1213, using a fresh transaction and at most three attempts; other database errors are not retried.
+
+### Verification
+
+- Added Repository, Service orchestration, real SQLite transaction, real HTTP, rollback, idempotency-conflict, balance-boundary, duplicate-cancel, and transient-retry tests. The complete project suite passes 1364 tests.
+
+## Unreleased — Kit and Mixed Order Deduction (Phase 4.3.7)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Enabled pure Kit and Experience/Kit mixed creation through the existing Order endpoint. Pending Order creation now owns stable Kit locking, post-lock sellability and sufficiency checks, bulk balance/ledger persistence, and atomic Order/Items/Audit response creation. Pending cancellation restoration remains Phase 4.3.8.
+
+### Implemented
+
+- Made `experience_option_id` optional at the request/domain boundary: Experience requires a valid owned Option, while Kit requires omission/null. Order responses accept either a complete Experience Option snapshot or an all-null Kit Option snapshot.
+- Added one batched ProductKit candidate-price loader to ProductRepository and one `bulk_update_stocks()` primitive to InventoryRepository; empty collections execute no SQL and multi-Kit writes do not loop over awaited saves.
+- Injected InventoryRepository directly into OrderService and the API composition root without calling InventoryService. Pure Experience creation short-circuits before any InventoryRepository operation.
+- Preserved the frozen transaction order: build authoritative candidate snapshots outside the transaction, create Pending Order first, acquire all ProductKit locks in ascending Product ID order, re-read Product state on the same connection, then bulk-write balances and `order_deduction` rows before Items, Audit, and detail reload.
+- Generated one stable Order-source ledger identity per Kit: `inventory:order:{order_id}:deduct:product:{product_id}`, with the requesting user as operator and `Order stock deduction` as the server-owned reason.
+- Returned the first insufficient Kit in request order through privacy-safe `40931` data containing only Product ID and requested quantity. Any unavailable/insufficient Kit or downstream failure rolls back the complete Order, stock, ledger, Item, and Audit write set.
+- Kept order-number collision attribution ahead of all inventory locks/writes. Added whole-write-transaction retries only for MySQL 1205/1213, with a fresh transaction and at most three attempts; IntegrityError remains reserved for order-number attribution.
+- Removed the obsolete `40922 KitOrderingRequiresInventory` constant, exception, exports, tests, and current API registration.
+- Moved shared database error-code extraction into a stateless utility used by InventoryService and OrderService while preserving Python 3.10 compatibility through `timezone.utc`.
+
+### Verification
+
+- Added unit, architecture, real SQLite Service, and real HTTP tests for pure Kit and mixed orders, null Option snapshots, server prices, stable ledger metadata, multi-Kit rollback, audit rollback, order-number collision before deduction, insufficient-stock privacy, and transient retry limits.
+- The complete project suite passes 1350 tests; `compileall`, dependency integrity, and diff whitespace checks also pass.
+
+## Unreleased — Inventory Admin Adjustment Service (Phase 4.3.6)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the administrator stock-adjustment use case with row-locked balance arithmetic, immutable ledger and shared-audit atomicity, exact idempotent replay, and bounded MySQL transient-error retries. No Inventory Mapper, composition dependency, or HTTP route is registered yet.
+
+### Implemented
+
+- Added `InventoryService.adjust_stock()` with constructor-injected Inventory/Product repositories and shared AuditLogService; the Service owns only the administrator-adjustment transaction and does not call ProductService or access Models directly.
+- Locked ProductKit before revalidating Product existence, deletion state, Kit type, extension presence, and the post-change `0..999999` balance boundary.
+- Persisted balance, `admin_adjustment` ledger row, compact `ADJUST_INVENTORY` Product audit, and response detail reload on the same transaction connection so any failure rolls back the complete write set.
+- Namespaced client keys as `inventory:admin:adjust:{key}` and bound an existing identity to the exact Product/change/normalized reason/operator tuple. Identical retries return the originally committed transaction and its original after-balance; mismatches raise `40933`.
+- Resolved concurrent unique-key races only after the failed transaction exits: a matching committed row becomes a replay, an absent row preserves the original IntegrityError, and a different payload becomes a business conflict.
+- Retried only MySQL 1205/1213 for the whole use case with a fresh transaction, at most three attempts. Logs include operator/product/error/attempt context but never the reason or idempotency key.
+- Added frozen `InventoryAdjustmentResult.is_replay` so a future Router can select HTTP 201 for first creation and 200 for replay without introducing transport concepts into the Service.
+
+### Verification
+
+- Added real SQLite transaction tests for Draft/Online/Offline Kits, closed balance boundaries, rollback at every write/reload failure, missing/deleted/wrong-type resources, exact replay after later adjustments, conflict dimensions, maximum client-key capacity, ledger/audit privacy, and atomicity.
+- Added isolated retry/error-chain tests for 1205, 1213, retry exhaustion, non-retryable errors, concurrent unique resolution, and preservation of unrelated database exceptions.
+- Added architecture contracts for dependency direction, transaction ownership, frozen results, no direct ORM persistence, and sensitive logging exclusions.
+- Inventory passes 150 tests, Order passes 375 regression tests, and the complete project suite passes 1331 tests.
+
+## Unreleased — Fix OrderStatus MySQL Persistence
+
+**Date:** 2026-08-14
+
+### Fixed
+
+- Fixed MySQL 1366 failures caused by passing `OrderStatus(IntEnum)` objects through Tortoise `SmallIntField` to asyncmy: the Model Pending default, Repository status updates, and Repository status filters now cross the persistence boundary as native integers.
+- Kept the public Order enum/API contract and physical `orders.status SMALLINT DEFAULT 0` Schema unchanged; no database migration or dependency change is required.
+- Added connection-parameter regression tests that reject `OrderStatus` objects and require exact `int` values for creation, updates, and filters.
+- Re-ran the complete 0 → 1 → 2 migration chain on an isolated MySQL 8.0.46 instance and verified default creation (`0`), Pending filtering, update to Paid (`1`), and Paid filtering through the real `OrderRepository` and asyncmy driver.
+
+## Unreleased — Real MySQL Migration and Repository Smoke
+
+**Date:** 2026-08-14
+
+### Verification
+
+- Ran the complete Aerich 0 → 1 → 2 chain against an isolated MySQL Community Server 8.0.46 instance and verified InnoDB/utf8mb4 table metadata, columns, named indexes, the idempotency UNIQUE, foreign keys, and Aerich version rows.
+- Downgraded only Inventory version 2 in the disposable schema, seeded stock=7 and stock=0 Kit fixtures, and re-upgraded: the positive Kit received exactly one `0 → 7` opening row, the zero Kit received none, and the mismatch query returned zero.
+- Ran a real asyncmy/MySQL `InventoryRepository` smoke covering ordered multi-Kit locks, atomic balance/ledger commit, forced rollback, unique-key propagation, bulk rows, same-connection reads, detail hydration, and Order-source pagination.
+- Did not apply migrations to any persistent/shared/production database and did not use `--fake`; the temporary instance and test Schema were destroyed after verification.
+- Found a pre-existing release blocker outside InventoryRepository: plain `IntField` writes of `OrderStatus` were encoded as Enum strings by asyncmy, so `OrderRepository.create_order()` defaults and `update_status()` failed with MySQL 1366. The subsequent OrderStatus persistence fix above resolves this blocker and has its own real-MySQL regression.
+
+## Unreleased — Inventory Repository (Phase 4.3.5)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the Inventory data-access primitives for stable row locking, balance persistence, immutable ledger writes, idempotency reads, detail hydration, and filtered pagination without adding business decisions or runtime endpoints.
+
+### Implemented
+
+- Added `InventoryRepository.get_kit_for_update()` and a deduplicated, single-query `get_kits_for_update()` using the caller connection, `ORDER BY product_id`, and `SELECT ... FOR UPDATE`.
+- Added final-balance persistence that updates only `stock`/`updated_at` and leaves sufficiency/range decisions to the owning Service.
+- Added an immutable `InventoryTransactionCreateData` DTO, single-row creation for admin adjustments, and one-statement bulk creation for multi-Kit automatic events; empty collections execute no SQL.
+- Added lightweight same-connection idempotency lookup and same-connection detail reload for uncommitted adjustment responses.
+- Added Product/type/source/UTC-range filters, `created_at DESC, id DESC` pagination, operator preloading, and one batched Order lookup for safe `source_order_no` hydration. Order-source pages remain a constant three SELECTs regardless of row count.
+- Kept the Repository free of FastAPI, Schema, Service, Validator, business exceptions, Redis, transaction ownership, retry loops, Product status checks, inventory arithmetic, and error translation.
+
+### Verification
+
+- Added 24 Inventory Repository contracts covering architecture, static lock/bulk guarantees, empty-set SQL avoidance, deterministic lock order, balance/ledger rollback, bulk rollback, uniqueness propagation, uncommitted visibility, metadata hydration, every filter, stable pagination, time boundaries, empty pages, and constant query count.
+- The complete project suite passes with 1297 tests; `compileall`, `pip check`, and `git diff --check` also pass.
+
+## Unreleased — Inventory Offline MySQL Migration (Phase 4.3.4)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Generated and statically reviewed the MySQL 8+ Inventory incremental migration, including deterministic opening-balance ledger rows for existing positive Kit stock, without connecting to or changing any database.
+
+### Implemented
+
+- Generated `2_20260814104655_add_inventory_transactions.py` with `AERICH_MYSQL_VERSION=8.0` and Aerich offline mode, preserving the generated model state for future diffs.
+- Reviewed the table DDL for exact fields, nullable generic source/operator columns, two `RESTRICT` foreign keys, the named idempotency UNIQUE, and four stable-pagination indexes.
+- Removed `CREATE TABLE IF NOT EXISTS` so Schema drift cannot be silently treated as success, and declared `RUN_IN_TRANSACTION=False` because MySQL DDL implicitly commits.
+- Added one ordered `INSERT ... SELECT` that writes `opening_balance` only for `product_kits.stock > 0`, with UTC microsecond timestamps, stable reason/idempotency identity, null source/operator, and no balance mutation.
+- Kept zero stock as an implicit baseline and rejected silent recovery constructs such as `INSERT IGNORE` or `ON DUPLICATE KEY UPDATE`.
+- Documented the required stock-range preflight, write-quiescence window, backup, temporary-MySQL rehearsal, post-migration one-to-one verification, partial-failure forward-recovery process, and destructive downgrade semantics.
+- Kept all runtime boundaries unchanged: the migration is not applied, Kit ordering remains blocked, and Inventory Repository/Service/Mapper/routes remain unimplemented.
+
+### Verification
+
+- Added five static migration contracts covering scope, fields/FKs/indexes, positive-only backfill, destructive downgrade boundary, and compressed model state.
+- The complete project suite passes with 1273 tests; `compileall`, `pip check`, and `git diff --check` also pass.
+
+## Unreleased — Inventory Model and Database Design (Phase 4.3.3)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the Inventory ledger persistence shape and synchronized its authoritative database design without generating or executing a migration.
+
+### Implemented
+
+- Added and registered `InventoryTransaction` with Product and nullable operator `RESTRICT` foreign keys, stable string Enum fields, non-zero/range Model validators, required source/reason, nullable generic `source_id`, and a 256-character internal idempotency identity.
+- Added the named unique idempotency index plus Product, source, transaction-type, and global stable-pagination indexes. The generic source ID deliberately has no polymorphic foreign key.
+- Kept `product_kits.stock` as the authoritative balance and aligned its Model plus transitional Product request boundary to `0..999999`.
+- Added a reusable non-zero integer Model validator and documented that cross-field arithmetic/type-source rules remain Service responsibilities rather than Model business behavior.
+- Updated the database design and DBML with the ledger table, relations, index rationale, BaseModel `updated_at` boundary, and the current no-`CHECK` cross-dialect strategy.
+- Kept runtime behavior unchanged: Kit ordering is still blocked, the old direct stock endpoint still exists, and no Inventory migration, Repository, Service, Mapper, route, or database operation was added.
+
+### Verification
+
+- Added Inventory Model metadata, field boundary, round-trip, nullable migration actor/source, idempotency uniqueness, FK deletion protection, reverse relation, and real SQLite DDL tests; expanded Product stock upper-bound regressions.
+- The complete project suite passes with 1268 tests; `compileall`, `pip check`, and `git diff --check` also pass.
+
+## Unreleased — Inventory Domain Language and Schema (Phase 4.3.2)
+
+**Date:** 2026-08-14
+
+### Summary
+
+Implemented the frozen Inventory domain vocabulary and strict Pydantic boundaries without introducing persistence or runtime endpoints.
+
+### Implemented
+
+- Added stable string Enums for four transaction types and three source types, plus named constants for stock/change limits, reason and idempotency-key lengths, audit identity, and bounded transaction retry attempts.
+- Added `InsufficientStock`, `InventoryBalanceExceeded`, and `InventoryTransactionConflict` as HTTP-semantic `ConflictException` subclasses and exported them through the common exception package.
+- Added strict adjustment input, standalone idempotency-header type, Product/global transaction queries, and UTC/time/source cross-field validation.
+- Added balance, transaction/list item, and adjustment response schemas with explicit field projection, internal-key/privacy isolation, UTC datetime enforcement, arithmetic consistency, transaction-direction/source metadata validation, and adjustment-result consistency.
+- Kept Order and Product runtime boundaries unchanged: Kit ordering remains blocked, direct stock setting remains available, and no Inventory table, migration, Repository, Service, Mapper, route, or database operation was added.
+
+### Verification
+
+- Added Inventory domain, exception middleware, request/query, response privacy, and cross-field contract tests.
+- The complete project suite passes with 1249 tests; `compileall` and `git diff --check` also pass.
+
+## Unreleased — Inventory Contract Freeze (Phase 4.3.1)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the Phase 4.3.1 current-state audit and froze the authoritative Inventory business/API contracts without implementing runtime Inventory code.
+
+### Important Decisions
+
+1. `product_kits.stock` remains the single authoritative sellable balance and will be paired with immutable same-transaction ledger entries.
+2. Pending Kit/mixed order creation deducts immediately; Pending cancellation restores idempotently; payment and completion do not change stock.
+3. Pure Experience, pure Kit, and mixed orders are supported by the target contract. Multi-Kit writes lock ProductKit rows in ascending Product ID order and remain atomic with Order/Items/Audit.
+4. ADMIN+ adjustments use strict `change`, a trimmed 1–256 character reason, and mandatory `Idempotency-Key`; Online Kit adjustment is allowed. Balance is bounded to `0..999999`.
+5. The v0.6.0 Inventory cutover will remove direct `PATCH .../stock` and non-zero stock from Kit creation instead of retaining a semantically ambiguous compatibility wrapper.
+6. Ledger types are `opening_balance`, `admin_adjustment`, `order_deduction`, and `order_cancellation_restore`. Existing positive balances receive migration baseline entries; zero balances do not create zero-change entries.
+7. User-facing insufficient-stock errors do not expose exact availability. Database unique identities, Order state validation, stable lock ordering, and bounded whole-transaction deadlock retries provide layered protection.
+8. Real MySQL 8+ concurrency tests are a release gate for v0.6.0. This step does not change the application version, schema, migration, dependencies, development database, or current runtime endpoints.
+
+### Documentation and Verification
+
+- Added authoritative Inventory requirement and API contract documents.
+- Synchronized Product, Order, API conventions, AI context, README, and project instructions while preserving clear implemented-versus-frozen boundaries.
+- Added documentation contract tests for the frozen decisions and current runtime boundary.
+
+## Unreleased — Test Suite Domain and Layer Layout
+
+**Date:** 2026-08-13
+
+### Summary
+
+Reorganized the previously flat 98-file test suite by business domain and application layer without changing test names or behavior. The root now contains only global fixtures, shared data factories, and a navigation document; Product and Order tests can be run independently or narrowed to API, Schema, Model, Repository, Service, Mapper, Validator, or storage boundaries.
+
+### Important Decisions
+
+1. Tests are grouped by domain first because this matches production ownership and makes Phase-focused verification discoverable.
+2. Product and Order are grouped by their principal tested layer instead of a rigid unit/integration split; many existing contracts deliberately combine boundary assertions with real SQLite behavior.
+3. Global fixtures remain in `tests/conftest.py`, and reusable response factories remain in `tests/support/`, so no duplicate fixture trees or nested override rules were introduced.
+4. Pytest configuration remains unchanged: recursive discovery under `tests/` collects the same suite, while paths such as `tests/order/` and `tests/product/services/` provide focused runs.
+
+### Verification
+
+- Pytest collection finds the unchanged total of 1178 tests after all moves.
+- The repository-root lookup in the relocated version contract was updated to remain location-correct.
+
+---
+
+## v0.5.0 (Unreleased) — Order Module Final Review (Phase 4.2.12)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the final architecture, security, transaction, query-performance, migration, test, and documentation review for Order v1.0. Phase 4.2 is code-complete and release-ready as the unreleased v0.5.0 candidate; Phase 4.3 Inventory is the next business stage.
+
+### Reviewed and Changed
+
+- Reviewed all nine HTTP operations against the frozen Order requirements/API contracts and verified API → Service → Repository → Model dependency direction, authenticated identity ownership, unified envelopes, and explicit user/admin response projection.
+- Reviewed creation and state-change transaction boundaries, post-lock state validation, sequential audit writes, rollback injection, order-number collision attribution/retry, stable pagination ordering, batch Product/Option loading, database item counts, and preloaded detail relations.
+- Reviewed `1_20260813130455_add_order_tables.py` as a MySQL 8+ additive migration: it creates only `orders` and `order_items`, preserves four historical `RESTRICT` foreign keys and five query indexes, declares the non-transactional DDL boundary, and contains no upgrade-side destructive SQL.
+- Added a cross-module amount-capacity invariant proving the maximum legal request (`10 × 99 × 99999.00`) remains below `DECIMAL(10,2)` Order capacity. This documents why no additional total-overflow business error is necessary while the existing Product price and Order item bounds remain unchanged.
+- Hardened shared audit IP extraction: only valid, length-safe IPv4/IPv6 literals are persisted; malformed, overlong, or IPv6 scope-bearing `X-Forwarded-For` values fall back to the direct peer, and an invalid/missing peer becomes `unknown`. A real Order HTTP test proves hostile proxy text cannot turn an otherwise valid audited mutation into a 500 or partial write.
+- Advanced the unreleased application candidate from v0.4.0 to v0.5.0 in code defaults, example environment, version contracts, README, project instructions, architecture context, and Order requirement/API status. Advanced the database design document to v1.4 for the Order table addition.
+
+### Important Decisions
+
+1. **Release candidate, not a release:** v0.5.0 identifies the completed local code candidate. No Git tag, GitHub Release, commit, push, MySQL migration execution, Aerich fake, or development-database rebuild is implied.
+2. **Aggregate constraints are reviewed together:** individual price, item-count, and quantity limits form a safe maximum total. A regression invariant now alerts future maintainers if any one bound changes enough to exceed storage capacity.
+3. **Proxy input remains a trust boundary:** syntax and storage safety are enforced in the application, while deployment must still configure the ingress proxy to overwrite untrusted forwarding headers.
+4. **Inventory remains out of scope:** Order continues to reject every Kit item before writes and never reads, deducts, or restores `ProductKit.stock`; those concurrency semantics belong to Phase 4.3.
+5. **Migration execution is separately authorized:** the reviewed Order migration remains offline and unapplied. Production rollout still requires target-schema audit, backup/snapshot, staging verification, explicit authorization, and a tested rollback plan.
+
+### Verification
+
+- All 392 Order-related tests pass, including contracts, Models, migration DDL, Repository, Service, Mapper, routes, real JWT/SQLite HTTP flows, transaction rollback, and amount-capacity invariants.
+- Six focused request-IP tests pass, plus the real Order audit integration regression.
+- The complete project suite passes with 1178 tests.
+- `compileall`, dependency integrity (`pip check`), and whitespace/error-marker review (`git diff --check`) pass.
+- Ruff was not run because it is not installed in the project environment or declared in `requirements.txt`.
+
+### Release Notes
+
+- No dependency was added.
+- The MySQL initial migration and Order incremental migration remain unapplied; the local development database was not rebuilt or mutated.
+- `docs/02_database/er_diagram.png` remains an untracked user-owned artifact and was not modified.
+
+---
+
+## Unreleased — Order HTTP Error and Boundary Matrix (Phase 4.2.11)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Completed the full real-JWT/SQLite HTTP error and boundary matrix for all nine Order endpoints. The matrix now verifies authoritative Experience snapshots and Decimal totals, request-shape anti-forgery, Product/Option/Kit rejection, visibility and ADMIN+ permissions, pagination and combined filters, every illegal state precondition, ordered audit history, transactional failure rollback, and order-number collision retry behavior.
+
+### Added
+
+- Real HTTP creation coverage for multiple distinct Options, exact Decimal arithmetic, immutable historical snapshots, 1/99 quantity bounds, 500-character remarks, empty-remark normalization, duplicate/empty/oversized item collections, strict scalar types, and all server-owned field forgery attempts.
+- Product and Option availability cases for missing, draft/offline/deleted, missing/deleted/mismatched Option, plus explicit Kit rejection with unchanged `ProductKit.stock` and no partial Order/audit writes.
+- Full authentication and ADMIN+ route matrices, uniform missing-order/resource-hiding 404 behavior, user/admin list visibility, pagination, exact lookup, status/user/time combined filters, UTC/range validation, and reverse-chronological audit pagination.
+- All nine illegal status-operation preconditions across cancel, mark-paid, and complete, with stable `40921` payloads and proof that neither status nor audit changes.
+- HTTP-level fault injection after audit writes and at post-write reloads, proving atomic rollback of Order/Items/status/audit, plus collision retry success and third-collision exhaustion without partial artifacts.
+- A shared transport dependency that rejects any non-empty request body on cancel/paid/complete while preserving body-free OpenAPI operations.
+
+### Important Decisions
+
+1. **Negative-space contracts are enforced:** omitting `requestBody` from OpenAPI is documentation, not runtime validation. The three fixed state-use-case PATCH routes now explicitly reject `{}`, `null`, or any other non-empty body with the unified HTTP 422 envelope before mutation.
+2. **HTTP tests exercise real boundaries:** business-error and rollback cases use real JWT authentication, SQLite, repositories, services, mappers, and exception middleware. Dependency overrides are limited to deterministic generators and deliberate failure injection.
+3. **Server authority is tested end to end:** authenticated identity, order status, Product/Option snapshots, unit prices, subtotals, and totals cannot be supplied by clients and remain frozen after source catalog changes.
+4. **Failure responses disclose no internals:** injected runtime and database-integrity failures are logged server-side, return only the shared generic 500 envelope, and leave no partial aggregate or audit state.
+
+### Verification
+
+- 79 new focused HTTP matrix test instances pass across creation boundaries, query/permission/state behavior, and transaction/collision failure injection.
+- Existing route architecture and mocked adaptation tests continue to pass with strict no-body enforcement and unchanged OpenAPI request-body declarations.
+- 104 focused Order HTTP/route/architecture tests pass together; all 390 Order-related tests pass.
+- The complete project suite passes with 1170 tests.
+
+### Release Notes
+
+- No dependency, database schema, migration, or application-version change was made in this step.
+- The existing offline MySQL Order migration remains unapplied; no development database was rebuilt.
+- Phase 4.2.12 final checklist, migration review, and version decision remain pending before declaring the Order module release-ready.
+
+---
+
+## Unreleased — Order FastAPI Routes (Phase 4.2.10)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Exposed the implemented Order domain through four authenticated user endpoints and five ADMIN+ endpoints. Added the Order composition root, strict request-to-domain adaptation, Mapper serialization, unified success/error envelopes, exact OpenAPI contracts, and core real JWT/SQLite HTTP lifecycle coverage. The exhaustive Phase 4.2.11 HTTP error/boundary matrix and Phase 4.2.12 final review remain pending.
+
+### Added
+
+- `get_order_service()` composition root wiring OrderRepository, ProductRepository, and the shared AuditLogService/AuditLogRepository.
+- User routes for Experience creation, paginated own-order listing, owner-scoped detail, and Pending cancellation.
+- ADMIN+ routes for filtered listing, unrestricted detail, manual payment confirmation, completion, and paginated Order audit history.
+- Explicit OrderCreate-item to `OrderItemInput` adaptation so Service remains independent of transport Schemas.
+- Authenticated identity as the sole source of `user_id`/`operator_id`, plus shared client-IP extraction for every audited HTTP mutation.
+- Precise `SuccessResponse[T]` and shared `ErrorResponse` declarations, HTTP 201 creation, HTTP 200 queries/mutations, PATCH operations without request bodies, and one-time router registration tests.
+- Real JWT/SQLite flows covering creation, Decimal snapshot response, user list, resource hiding, ADMIN+ access, paid/completed transitions, owner cancellation, ordered audits, source IPs, and audit privacy.
+- Unified missing-Bearer handling through `AuthenticationException` by setting HTTPBearer `auto_error=False`; all routes using the existing authentication dependency now return the project error envelope for missing credentials.
+
+### Important Decisions
+
+1. **Composition root:** concrete repositories and shared infrastructure are assembled only in `app/api/deps.py`. Route modules import Service/Mapper/Schemas but never business repositories or Order/Product persistence models.
+2. **Identity is server-owned:** create and owner-scoped routes use `current_user.id`; admin mutations use `current_admin.id`. Extra `user_id`, price, amount, or snapshot fields are rejected by strict request Schemas before Service execution.
+3. **Authentication versus authorization:** missing credentials return HTTP 401 with the unified envelope, while an authenticated normal user accessing ADMIN+ routes returns HTTP 403. The pre-existing invalid/expired Token exception remains code `1006`/HTTP 400 pending a separate User-contract migration, so Order OpenAPI documents both 400 and 401.
+4. **Single serialization pass:** routes call the dedicated Mapper and `model_dump(mode="json")`, then pass the validated data to `success()` with `response_model=None`; OpenAPI uses explicit generic response declarations without runtime Decimal revalidation.
+5. **No body for state PATCH:** cancel, paid, and complete select fixed Service use cases entirely through the path and authenticated identity; clients cannot submit an arbitrary target state.
+
+### Verification
+
+- 25 focused Order route/architecture/integration test instances were added and pass after the unified-auth additions.
+- 84 combined Order/User/Product route regressions pass after changing the shared HTTPBearer behavior.
+- All 311 Order-related contracts pass together.
+- Python compilation and dependency integrity checks pass; the complete suite passes with 1091 tests.
+
+### Release Notes
+
+- The nine documented Order endpoints are now registered and callable.
+- No new dependency, database schema change, migration, or application-version change was made.
+- The existing offline MySQL Order migration remains unapplied; no development database was rebuilt.
+- Phase 4.2.11 must still expand the complete HTTP business-error/input-boundary matrix. Phase 4.2.12 must perform final checklist/migration/version review before declaring the Order module release-ready.
+
+---
+
+## Unreleased — Order API Mapper (Phase 4.2.9)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the synchronous Order API mapping boundary for user/admin lists, user/admin details, OrderItem snapshots, and lightweight status-transition responses. The Mapper performs explicit field projection and strict Out Schema validation without querying or mutating ORM aggregates. Dependency wiring and HTTP routes remain outside this slice.
+
+### Added
+
+- Authoritative OrderStatus and DayType `{value, label}` mapping using the existing common registries.
+- Explicit OrderItem snapshot mapping with Decimal price/subtotal preservation and no live Product/Option reads.
+- Separate user/admin list and detail projections; user responses never read User relations, while admin responses add only `user_id` and `user_nickname`.
+- User/admin Page mapping that preserves total, page, page size, and pages while consuming Repository `item_count` annotations.
+- Lightweight status-response mapping from a relation-free Order returned by the status transaction reload.
+- Aggregate-integrity checks that reject an OrderItem attached to a different Order before serialization.
+- Architecture, atomic conversion, projection, strict validation, real Repository zero-SQL, and non-mutation tests.
+
+### Important Decisions
+
+1. **Explicit projection:** each endpoint class has a dedicated mapper and Out Schema. Fields are assembled from a whitelist rather than passing ORM models directly to Pydantic, making user/admin isolation visible in code.
+2. **Zero-SQL mapping:** lists consume the Repository's `item_count` annotation, details consume preloaded Items/User, and status responses consume a lightweight Order. Mapper functions contain no async code, Repository/Service imports, or ORM query calls.
+3. **Snapshot-only items:** historical Item output uses the stored name, Option dimensions, day type, unit price, quantity, and subtotal. It never follows Product or ExperienceOption relationships that may have changed since purchase.
+4. **Schema owns wire formatting:** Mapper preserves domain `Decimal` and Enum values; strict response Schemas validate arithmetic and serialize amounts as two-decimal strings. This avoids duplicating formatting rules in two layers.
+5. **Non-mutating composition:** Mapper builds new dictionaries and Schema objects. Real aggregate snapshots prove the source Order, User, Items, relationship lists, and annotated fields are unchanged.
+
+### Verification
+
+- 23 focused Order Mapper tests pass.
+- All 286 Order-related contracts pass together.
+- The complete suite passes with 1066 tests after the Mapper and documentation updates.
+
+### Release Notes
+
+- No new dependency, database schema change, migration, endpoint, or application-version change is required.
+- The existing offline Order migration remains unapplied; no development database was rebuilt.
+- Order HTTP APIs remain unavailable until dependency composition and user/admin routes are implemented.
+
+---
+
+## Unreleased — Order Status Transition Service (Phase 4.2.8)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the three frozen Order state-transition use cases: owner cancellation, ADMIN+ manual payment confirmation, and ADMIN+ completion. Each use case locks the visible Order inside its transaction, validates the latest state, and atomically persists the status, audit, and lightweight response reload. Mapping, dependency wiring, and HTTP routes remain outside this slice.
+
+### Added
+
+- `OrderService.cancel_order()` for owner-scoped `pending → cancelled` with SQL-level visibility hiding.
+- `OrderService.mark_order_paid()` for the temporary ADMIN+ `pending → paid` operational entry point.
+- `OrderService.complete_order()` for ADMIN+ `paid → completed`.
+- Stable `cancel`, `mark_paid`, and `complete` operation constants for `OrderStatusConflict` payloads.
+- A private transition template that performs transaction-bound row locking, post-lock state validation, status persistence, sequential audit, and response reload without exposing a generic public status mutator.
+- Unit and real SQLite tests for all success paths, status conflicts, missing/hidden resources, audit summaries, repeated-transition serial results, and audit/reload rollback.
+- A static Repository contract proving `get_order_for_update()` retains `select_for_update()` for MySQL pessimistic locking semantics.
+
+### Important Decisions
+
+1. **Lock then decide:** state validity is checked only after `SELECT ... FOR UPDATE` returns the latest visible row. A pre-transaction read cannot authorize a mutation because another transaction may change the state before the write.
+2. **Visibility in the lock query:** owner cancellation applies `(order_id, user_id)` before locking. Missing and foreign Orders therefore produce the same `40411 OrderNotFound`, without loading and revealing another user's row.
+3. **No generic transition API:** callers select one of three named use cases and cannot supply an arbitrary target status. The private template receives only constants fixed by those public methods.
+4. **Atomic status event:** status update, compact `before_status`/`after_status` audit, and response reload share one connection. Audit or reload failure restores the original status and leaves no audit row.
+5. **SQLite verification boundary:** real SQLite tests prove equivalent serial outcomes and rollback behavior; a static `select_for_update()` contract preserves the intended MySQL row-lock implementation because SQLite itself cannot demonstrate MySQL row-level locking.
+6. State transitions do not read or restore ProductKit stock. Inventory effects remain Phase 4.3 work.
+
+### Verification
+
+- 18 new status-transition test instances were added; the focused status-Service and architecture command passes with 20 tests including existing architecture guards.
+- All 262 Order-related contracts pass together.
+- The complete suite passes with 1043 tests after the status-Service and documentation updates.
+
+### Release Notes
+
+- No new dependency, database schema change, migration, endpoint, or application-version change is required.
+- The existing offline Order migration remains unapplied; no development database was rebuilt.
+- Order HTTP APIs remain unavailable until Mapper, dependency composition, and routes are implemented.
+
+---
+
+## Unreleased — Order Creation Service (Phase 4.2.7)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the Experience-only Order creation orchestration layer. The Service now validates Product/Option aggregates in batches, creates database-authoritative Decimal snapshots, and atomically persists the Order aggregate plus its non-sensitive audit record. Status transitions, mapping, dependency wiring, and HTTP routes remain outside this slice.
+
+### Added
+
+- `OrderItemInput` as a Service-domain input containing only Product ID, ExperienceOption ID, and quantity; no client-controlled snapshot fields enter the use case.
+- Batch Product/Option resolution with stable request-order errors, Kit-before-Option behavior, and unified unavailable semantics for missing, deleted, offline, or mismatched aggregates.
+- Database-authoritative Product name, Option configuration, price, subtotal, and total snapshots using `Decimal` arithmetic.
+- One transaction for Order creation, one-shot Item bulk insertion, sequential `CREATE_ORDER` audit, and complete aggregate reload on the same connection.
+- `OrderRepository.order_number_exists()` for post-rollback collision attribution and whole-transaction retry with a fresh order number, capped at three attempts.
+- Unit and real SQLite tests for validation priority, batch access, snapshot immutability, audit privacy, complete rollback, collision success, retry exhaustion, and non-collision `IntegrityError` preservation.
+
+### Important Decisions
+
+1. **Database source of truth:** clients cannot submit names, configuration, prices, subtotals, totals, status, user ID, or order number. Every persisted and returned snapshot is reconstructed from the current valid Product/Option rows.
+2. **Stable error priority:** bulk loading reduces query count without changing observable validation order. Items are checked in request order; each Item checks the known Kit boundary before Product availability and Option validity/ownership.
+3. **Atomic aggregate:** Order, Items, audit, and response reload use one transaction connection. Even an exception after the audit INSERT rolls back every write, and validation failures occur before a transaction or audit begins.
+4. **Fresh-transaction retry:** an `IntegrityError` leaves a transaction unusable. Collision attribution therefore occurs only after leaving the transaction context; a confirmed order-number collision opens a new transaction, while unrelated integrity errors retain their original cause.
+5. Phase 4.2 creation performs no ProductKit stock read or write. Kit remains an explicit `40922` boundary until the Inventory concurrency model is designed in Phase 4.3.
+
+### Verification
+
+- 16 focused creation-Service unit and real SQLite integration tests pass.
+- All 245 Order-related contracts pass together.
+- The complete suite passes with 1025 tests after the creation-Service and documentation updates.
+
+### Release Notes
+
+- No new dependency, database schema change, migration, endpoint, or application-version change is required by this slice.
+- The existing offline Order migration remains unapplied; no development database was rebuilt.
+- Order HTTP APIs remain unavailable until Mapper, dependency composition, and routes are implemented. State-transition Services also remain unimplemented.
+
+---
+
+## Unreleased — Order Query Service (Phase 4.2.6)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the read-only Order business orchestration layer: user/admin lists, user/admin details, and administrator Order audit-history queries. This slice adds visibility and error semantics without introducing creation, status transitions, response mapping, dependency wiring, or routes.
+
+### Added
+
+- `OrderService.list_user_orders()` / `get_user_order_detail()` with SQL-scoped user visibility and uniform `OrderNotFound` behavior for missing and foreign resources.
+- `OrderService.list_admin_orders()` / `get_admin_order_detail()` forwarding the frozen paging, exact order-number, user, status, and UTC time-range contract.
+- `OrderService.list_order_audit_logs()` with a lightweight Order existence check before delegation to the shared `AuditLogService` and `target_type="order"` pagination.
+- `OrderRepository.get_order_by_id()` as a relation-free existence lookup with optional caller connection.
+- A common `OrderStatusValue` API type plus complete `ORDER_STATUS_BY_VALUE` reverse registry for explicit API-string-to-database-Enum translation.
+- Mock orchestration, architecture, real SQLite visibility, aggregation, relation-preloading, audit isolation, orphan-audit, and named-exception tests.
+
+### Important Decisions
+
+1. **Resource-enumeration protection:** user detail always queries by `(order_id, user_id)`. Both a missing ID and another user's ID produce Repository `None` and the same `40411 OrderNotFound`; Service never loads a foreign Order and exposes a different ownership error.
+2. **Boundary translation:** Query Schema and Service accept stable API values (`pending`, `paid`, `cancelled`, `completed`), while Repository accepts `OrderStatus`. The explicit reverse registry is the only translation boundary, preventing HTTP strings from leaking into persistence code and IntEnum integers from leaking into the API.
+3. **Existence before history:** an Order audit query first proves the Order row exists. A stale or orphan `audit_logs` row cannot make a nonexistent Order appear queryable.
+4. Query Service performs no direct ORM operation, opens no transaction for pure reads, does not call ProductService, and delegates audit access only through the documented shared-service exception.
+
+### Verification
+
+- 59 focused Enum/Query Schema/Service/Repository tests pass after boundary translation.
+- All 212 `test_order_*.py` contracts pass together.
+- The complete suite passes with 1009 tests after the query-Service and documentation updates.
+
+### Release Notes
+
+- No database schema, migration, dependency, endpoint, or application-version change is required.
+- The Order API remains unavailable until Mapper and routes are implemented.
+- Order creation transaction, order-number collision retry, state-transition/audit transactions, Mapper, and routes remain unimplemented.
+
+---
+
+## Unreleased — Order Repository and Number Generator (Phase 4.2.5)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the Order data-access boundary and dependency-free order-number generator. This slice provides the transaction-aware primitives required by the later query, creation, and state-transition Services without introducing business exceptions, service orchestration, mapping, or HTTP routes.
+
+### Added
+
+- Standard-library `OD` + 26-character Crockford Base32 ULID generation using UTC Unix milliseconds and `secrets.token_bytes()`; no Redis, database sequence, third-party ULID package, or mutable generator state.
+- `OrderRepository` creation, one-shot OrderItem `bulk_create()`, ID/number detail loading, optional SQL-level user visibility, transaction-bound `SELECT ... FOR UPDATE`, status persistence, and user/admin pagination.
+- Database `COUNT(items)` list summaries, stable `created_at DESC, id DESC` pagination, exact admin order-number/user/status filters, inclusive `created_from`, exclusive `created_to`, and admin User preloading.
+- Product/ExperienceOption set loaders in `ProductRepository`; each executes one query, includes logically deleted rows for Service-level availability decisions, and accepts the caller's transaction connection.
+- Architecture, source-selection, real SQLite transaction, rollback, query-count, visibility, filtering, paging, snapshot, and order-number tests.
+
+### Important Decisions
+
+1. Repository methods do not raise Order business exceptions or decide ownership, availability, Kit policy, snapshot arithmetic, retry policy, or state transitions. User visibility is expressed as an optional SQL predicate so the query Service can hide missing and foreign resources uniformly.
+2. List queries aggregate Item row count and do not preload Item collections. Detail queries preload stable Item order and the User relation in constant query count; the later Mapper must perform zero SQL.
+3. `update_status()` persists only a status already approved by Service. Every state-transition Service must lock and recheck the row in the same transaction before calling it.
+4. The generator provides approximate time ordering only. `created_at DESC, id DESC` remains authoritative; the database unique constraint and later Service transaction retry remain the collision boundary.
+
+### Verification
+
+- 28 focused generator, Repository, Product batch-loader, architecture, transaction, and performance tests pass, including uncommitted aggregate reload on the caller's transaction connection.
+- All 195 `test_order_*.py` domain, Schema, Model, migration, generator, and Repository tests pass together; including the three Product batch-loader contracts, the combined slice has 198 passing tests.
+- The complete suite passes with 992 tests after the Repository and documentation updates.
+
+### Release Notes
+
+- No database schema, migration, dependency, endpoint, or application-version change is required.
+- The existing Order MySQL migration remains offline and unapplied. No development database was rebuilt or modified outside disposable test schemas.
+- Order query Service, creation transaction, status/audit Service, Mapper, and routes remain unimplemented.
+
+---
+
+## Unreleased — Order Models and MySQL Migration (Phase 4.2.4)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the Order persistence contract: registered `Order` / `OrderItem` Tortoise Models, verified their real SQLite schema and behavior, and generated a reviewed MySQL 8+ incremental migration without connecting to or changing any database.
+
+### Added
+
+- `Order` with unique `OD` + ULID order number, User `RESTRICT` relation, exact Decimal total, `SmallIntField` status with ORM/database default `0`, nullable remark, and four named stable-pagination indexes.
+- `OrderItem` with Order/Product/ExperienceOption `RESTRICT` relations, nullable future-Kit Option fields, immutable product/configuration/price snapshots, strict quantities and amounts, and the named `(order_id, id)` index.
+- Real temporary-SQLite contracts for Model metadata, default values, Decimal/Enum round trips, reverse relations, field boundaries, unique order numbers, physical-delete protection, exact index columns, nullable extension fields, and DDL foreign keys.
+- Offline MySQL migration `1_20260813130455_add_order_tables.py` plus static contracts for its exact table scope, field types, defaults, four foreign keys, five indexes, non-transactional MySQL DDL semantics, safe child-before-parent downgrade order, and Aerich model state.
+
+### Important Decisions
+
+1. Order status uses the project's actual Tortoise/MySQL integer-enum mapping, `SmallIntField` / `SMALLINT`, rather than the stale `TINYINT` wording in the frozen draft. Database design and DBML were corrected together.
+2. Cross-field Option completeness, duplicate Item combinations, Product availability, snapshot arithmetic, Kit rejection, and state transitions remain Schema/Service responsibilities; Models contain no business workflow or database queries.
+3. Nullable Option fields remain in the physical table for Phase 4.3 Kit compatibility, while Phase 4.2 Service must reject every Kit Item.
+4. Aerich's generated MySQL migration was reviewed to remove `IF NOT EXISTS`, declare `RUN_IN_TRANSACTION = False`, and drop `order_items` before `orders` on an explicitly authorized downgrade.
+
+### Verification
+
+- 22 focused Order Model tests pass.
+- 29 combined Order Model, Order migration, and initial MySQL migration tests pass.
+- The complete suite passes with 964 tests after the persistence and documentation updates.
+
+### Release Notes
+
+- The incremental migration was generated with `AERICH_MYSQL_VERSION=8.0` and `aerich --app models migrate --offline`; no `upgrade`, `downgrade`, `--fake`, development-database rebuild, or live database connection was performed.
+- Applying the migration later requires a separately authorized target, schema audit, backup, and execution plan. Its downgrade deletes all Order data and must never be treated as routine rollback.
+- No dependency, endpoint, or application-version change is required. Order Repository, Service, Mapper, routes, and order-number generator remain unimplemented.
+
+---
+
+## Unreleased — Order Schema Contracts (Phase 4.2.3)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented strict Order creation, list-query, and user/admin response Schema contracts without introducing database Models, business Services, Mappers, or routes.
+
+### Added
+
+- `OrderItemCreate` and `OrderCreate` with strict IDs/quantity, 1–10 Items, duplicate Product/Option rejection, remark normalization, unknown-field rejection, and server-owned field isolation.
+- `OrderListQuery` and `AdminOrderListQuery` with API-string status values, exact order-number filtering, safe query-ID parsing, UTC-aware date ranges, and strict range ordering.
+- `OrderItemOut`, user/admin list and detail outputs, and lightweight status output with explicit field whitelists.
+- Decimal-only response amounts serialized as fixed two-place strings, Product-price upper bounds, status/day-type value-label consistency, Item subtotal validation, and Order total validation.
+- User/admin isolation contracts: user responses omit all user data; admin responses add only `user_id` and `user_nickname`; detail responses do not repeat the list-derived `item_count`.
+
+### Important Decisions
+
+1. Query status accepts only API values (`pending`, `paid`, `cancelled`, `completed`) and never database IntEnum integers.
+2. Query datetimes and response datetimes must be explicitly UTC; naive and non-UTC-offset values are rejected.
+3. Out Schema accepts internal monetary values only as `Decimal`; strings and floats are rejected before fixed two-place serialization.
+4. The response layer validates snapshot arithmetic but does not query or mutate any ORM object.
+
+### Verification
+
+- 116 focused Order Schema tests pass; all 144 Order domain and Schema tests pass together.
+- The complete suite passes with 938 tests after all implementation and documentation updates.
+
+### Release Notes
+
+- No database migration, dependency, endpoint, or application-version change is required.
+- Order Model, Repository, Service, Mapper, routes, and migration remain unimplemented.
+
+---
+
+## Unreleased — Order Domain Contracts (Phase 4.2.2)
+
+**Date:** 2026-08-13
+
+### Summary
+
+Implemented the first Order code slice after the v1.0 contract freeze: database status Enum, fixed business boundaries, API display registries, audit constants, and HTTP-semantic named exceptions. No database, Schema, Service, or route behavior is introduced by this slice.
+
+### Added
+
+- `OrderStatus(IntEnum)` with stable database values 0–3.
+- Explicit OrderStatus API value and Chinese label registries, preventing IntEnum database integers from leaking into API status output.
+- Frozen constants for Item count, quantity, remark length, ULID order-number shape and retry limit, Phase 4.3 Kit boundary, and four audit actions.
+- `OrderNotFound`, `OrderStatusConflict`, `KitOrderingRequiresInventory`, `OrderProductUnavailable`, and `OrderOptionUnavailable`, exported through the common exception package.
+- Enum/constant and exception contracts covering inheritance, payloads, invalid construction, JSON behavior, and global HTTP 404/409/422 mappings.
+
+### Important Decisions
+
+1. OrderStatus remains an `IntEnum` for the database; API values are obtained only through an explicit registry.
+2. Named exceptions validate their structured payload at construction so invalid IDs or status types cannot produce unstable public error data.
+3. Request-shape errors remain the responsibility of the next Schema stage and are not duplicated as business exceptions.
+
+### Verification
+
+- 27 focused Order domain contract tests pass.
+- The complete suite passes with 821 tests after all implementation and documentation updates.
+
+### Release Notes
+
+- No database migration, dependency, endpoint, or application-version change is required.
+- Order Schema, Model, Repository, Service, Mapper, routes, and migration remain unimplemented.
+
+---
+
 ## v0.4.0 — Product Module Implementation (Unreleased)
 
 **Date:** 2026-08-13

@@ -1,13 +1,15 @@
 Table users {
   id bigint [pk, increment]
   username varchar(32) [not null, unique]
-  password varchar(128) [not null]
+  password varchar(128) [note: 'nullable for external-identity-only users; bcrypt hash when present']
   nickname varchar(32) [not null]
-  phone varchar(11) [not null, unique]
+  phone varchar(11) [unique, note: 'nullable for external-identity-only users']
   avatar varchar(256)
   role smallint [not null, note: 'ORM default 1; 1:user 2:admin 3:super_admin']
-  status smallint [not null, note: 'ORM default 1; 1:normal 2:disabled']
+  status smallint [not null, note: 'ORM default 1; 1:normal 2:disabled 3:deleted']
   last_login_at datetime
+  auth_version int [not null, default: 0, note: 'invalidates older access/refresh sessions after credential changes']
+  deleted_at datetime [note: 'UTC account anonymization timestamp']
   created_at datetime
   updated_at datetime
 
@@ -15,6 +17,25 @@ Table users {
     (status, role) [name: 'idx_users_status_role']
   }
 }
+
+Table external_identities {
+  id bigint [pk, increment]
+  provider varchar(32) [not null, note: 'wechat_miniprogram in Phase 9.5']
+  app_id varchar(64) [not null]
+  subject_id varchar(128) [not null, note: 'HMAC-SHA256 hex; never raw OpenID']
+  union_id varchar(128) [note: 'nullable HMAC-SHA256 hex; never raw UnionID']
+  user_id bigint [not null]
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (provider, app_id, subject_id) [unique, name: 'uidx_external_identity_subject']
+    (provider, union_id) [unique, name: 'uidx_external_identity_union']
+    (user_id, provider, created_at) [name: 'idx_external_identity_user_provider']
+  }
+}
+
+Ref: external_identities.user_id > users.id [delete: restrict]
 
 // ── Product ────────────────────────────────────
 
@@ -57,10 +78,47 @@ Table experience_options {
 Table product_kits {
   id bigint [pk, increment]
   product_id bigint [not null, unique]
-  price decimal(10,2) [not null, note: 'kit product price']
-  stock int [not null, default: 0, note: 'Phase 4.1 direct final-value setting; Phase 4.3 inventory ledger and automatic adjustments']
+  price decimal(10,2) [not null, note: 'fixed kit price or color-selectable per-10g unit price']
+  stock int [default: 0, note: 'nullable: authoritative fixed balance 0..999999; MUST be NULL for color_selectable']
+  kit_kind varchar(20) [not null, default: 'fixed', note: 'fixed | color_selectable; immutable; default preserves historical kits']
+  sale_unit_grams smallint [note: 'nullable: MUST be NULL for fixed and exactly 10 for color_selectable']
   created_at datetime
   updated_at datetime
+}
+
+Table bead_colors [note: 'M6/M8 global catalog has exactly slot_no 1..221; placeholder rows may have null code/name/hex/image'] {
+  id bigint [pk, increment]
+  slot_no smallint [not null, note: 'stable global slot, application range 1..221']
+  color_code varchar(50) [note: 'nullable placeholder; non-null value is globally unique']
+  name varchar(100) [note: 'nullable placeholder']
+  swatch_hex varchar(7) [note: 'nullable placeholder; canonical uppercase #RRGGBB; M8 backfills the frozen MARD manifest']
+  swatch_image_url varchar(2048) [note: 'optional calibrated real-swatch WebP or migration fallback; solid digital colors use swatch_hex']
+  sort smallint [not null, default: 0, note: 'range 0..32767; M6 CHECK enforces it; placeholder initialization uses slot_no']
+  is_active boolean [not null, default: false, note: 'Service only allows true when code, name and swatch_hex are configured']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (slot_no) [unique, name: 'uidx_bead_colors_slot_no']
+    (color_code) [unique, name: 'uidx_bead_colors_color_code']
+    (is_active, sort, slot_no) [name: 'idx_bead_colors_active_sort_slot']
+  }
+}
+
+Table product_kit_colors [note: 'M6 product-scoped sale flag and 10g-unit balance; stock is never shared between products'] {
+  id bigint [pk, increment]
+  product_id bigint [not null]
+  bead_color_id bigint [not null]
+  is_enabled boolean [not null, default: false]
+  stock_units int [not null, default: 0, note: 'authoritative product/color balance in 10g units; application range 0..999999']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (product_id, bead_color_id) [unique, name: 'uidx_product_kit_colors_product_color', note: 'one row per global color for a product']
+    (product_id, is_enabled) [name: 'idx_product_kit_colors_product_enabled']
+    (bead_color_id, is_enabled) [name: 'idx_product_kit_colors_color_enabled']
+  }
 }
 
 Table product_images {
@@ -84,6 +142,8 @@ Table product_images {
 // Product child FKs use RESTRICT. The nullable Option-image FK uses SET NULL only as a physical-delete fallback.
 Ref: experience_options.product_id > products.id [delete: restrict]
 Ref: product_kits.product_id > products.id [delete: restrict]
+Ref: product_kit_colors.product_id > products.id [delete: restrict]
+Ref: product_kit_colors.bead_color_id > bead_colors.id [delete: restrict]
 Ref: product_images.product_id > products.id [delete: restrict]
 Ref: product_images.experience_option_id > experience_options.id [delete: set null]
 
@@ -92,8 +152,8 @@ Ref: product_images.experience_option_id > experience_options.id [delete: set nu
 Table audit_logs {
   id bigint [pk, increment]
   operator_id bigint [not null, note: 'who performed the action']
-  action varchar(50) [not null, note: 'CREATE_PRODUCT | UPDATE_PRICE | ONLINE_PRODUCT | ...']
-  target_type varchar(50) [not null, note: 'product | user']
+  action varchar(50) [not null, note: 'CREATE_PRODUCT | CREATE_ORDER | CREATE_RESERVATION | CLOSE_STORE_BUSINESS_DAY | ADJUST_WALLET | REFUND_ORDER | ...']
+  target_type varchar(50) [not null, note: 'product | user | order | reservation | store_business_day | wallet | ...']
   target_id bigint [not null]
   description varchar(256) [note: 'e.g. price changed: 299 → 399']
   ip_address varchar(45) [not null]
@@ -106,48 +166,380 @@ Table audit_logs {
   }
 }
 
-// ── Order (placeholder, Phase 4.2) ──────────────
+// ── Order (v1.0 frozen contract, Phase 4.2 Models implemented) ──
 
 Table orders {
   id bigint [pk, increment]
-  order_no varchar [not null, unique, note: 'order number']
+  order_no varchar(28) [not null, unique, note: 'OD + 26-char uppercase Crockford Base32 ULID']
   user_id bigint [not null]
   total_amount decimal(10,2) [not null]
-  status tinyint [not null, default: 0, note: '0:pending 1:paid 2:cancelled 3:completed']
-  remark varchar
+  status smallint [not null, default: 0, note: 'OrderStatus(IntEnum): 0:pending 1:paid 2:cancelled 3:completed']
+  remark varchar(500)
   created_at datetime
   updated_at datetime
 
   indexes {
-    (user_id, status, created_at) [name: 'idx_orders_user_status_created']
-    (status, created_at) [name: 'idx_orders_status_created']
+    (user_id, created_at, id) [name: 'idx_orders_user_created_id']
+    (user_id, status, created_at, id) [name: 'idx_orders_user_status_created_id']
+    (status, created_at, id) [name: 'idx_orders_status_created_id']
+    (created_at, id) [name: 'idx_orders_created_id']
   }
 }
+
+// Lifecycle: pending -> cancelled | paid; paid -> completed.
+// Payment integration records a unique successful settlement for wallet/manual Paid transitions.
+// Phase 4.3 accepts Experience, Kit, and mixed orders. Pending fixed-Kit items
+// deduct ProductKit.stock; M6 color items deduct ProductKitColor.stock_units.
+// Pending cancellation and PAID full refund restore the same snapshotted balance.
+// ADMIN+ assisted wallet orders deduct once at creation and are committed directly as Paid.
 
 Table order_items {
   id bigint [pk, increment]
   order_id bigint [not null]
   product_id bigint [not null]
 
-  // Experience option snapshot (nullable — kit products don't use these)
-  experience_option_id bigint [note: 'FK to experience_options, nullable for kit products']
-  option_duration int [note: 'snapshot: positive minutes']
+  // Experience items reference an option; fixed Kit keeps option/color NULL;
+  // color-selectable Kit references one product-scoped color and snapshots metadata.
+  experience_option_id bigint [note: 'FK to experience_options; NULL for kit products']
+  kit_color_id bigint [note: 'FK to product_kit_colors; required only for color-selectable kit items']
+  option_duration_minutes int [note: 'snapshot: positive minutes']
   option_participants int [note: 'snapshot: positive participants']
   option_day_type varchar(20) [note: 'snapshot: weekday | holiday']
 
-  product_name varchar [not null, note: 'snapshot: product name at order time']
-  product_price decimal(10,2) [not null, note: 'snapshot: price at order time']
-  quantity int [not null, default: 1]
+  product_name varchar(100) [not null, note: 'snapshot: product name at order time']
+  kit_color_code varchar(50) [note: 'nullable color snapshot']
+  kit_color_name varchar(100) [note: 'nullable color snapshot']
+  kit_color_slot_no smallint [note: 'nullable color slot snapshot, application range 1..221']
+  sale_unit_grams smallint [note: 'nullable sales-unit snapshot; color-selectable is exactly 10']
+  product_price decimal(10,2) [not null, note: 'snapshot: price; color-selectable means per 10g unit']
+  quantity int [not null, note: 'application range 1..99; color-selectable means number of 10g units']
   subtotal decimal(10,2) [not null]
   created_at datetime
   updated_at datetime
 
   indexes {
-    (order_id) [name: 'idx_order_items_order']
+    (order_id, id) [name: 'idx_order_items_order_id']
   }
 }
 
-Ref: orders.user_id > users.id
-Ref: order_items.order_id > orders.id
-Ref: order_items.product_id > products.id
-Ref: order_items.experience_option_id > experience_options.id
+// Historical order references are protected from physical deletion.
+Ref: orders.user_id > users.id [delete: restrict]
+Ref: order_items.order_id > orders.id [delete: restrict]
+Ref: order_items.product_id > products.id [delete: restrict]
+Ref: order_items.experience_option_id > experience_options.id [delete: restrict]
+Ref: order_items.kit_color_id > product_kit_colors.id [delete: restrict]
+
+// ── Reservation N1 (M5 offline migration generated; not applied) ──
+
+Table reservation_settings {
+  id bigint [pk, increment]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  singleton_key boolean [not null, default: true, unique, note: 'CHECK true; 全店单例']
+  weekly_closed_weekday varchar(32) [not null, default: 'monday']
+}
+
+Table store_business_days {
+  id bigint [pk, increment]
+  business_date date [not null, note: 'Asia/Shanghai local date; one row per date; Monday fixed closure is enforced by Validator']
+  is_closed boolean [not null, default: false, note: 'custom administrator closure; reopening keeps the row']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (business_date) [unique, name: 'uidx_store_business_day_date']
+  }
+}
+
+Table reservations [note: 'N1 has no slot-capacity or user/option/start uniqueness; duplicate same-slot reservations are allowed and reviewed manually'] {
+  id bigint [pk, increment]
+  user_id bigint [not null, note: 'owner; current phone is intentionally not snapshotted']
+  business_day_id bigint [not null, note: 'shared create/closure row-lock boundary']
+  product_id bigint [not null]
+  experience_option_id bigint [not null]
+  scheduled_start_at datetime [not null, note: 'UTC authoritative start; request uses Asia/Shanghai local date/time']
+  scheduled_end_at datetime [not null, note: 'UTC authoritative end; full experience must fit local 11:00..20:00']
+  product_name varchar(100) [not null, note: 'immutable creation snapshot']
+  option_duration_minutes int [not null, note: 'immutable creation snapshot']
+  option_participants int [not null, note: 'immutable creation snapshot']
+  option_day_type varchar(20) [not null, note: 'snapshot: weekday | holiday']
+  option_price decimal(10,2) [not null, note: 'immutable creation snapshot used for arrival price']
+  status varchar(32) [not null, default: 'pending', note: 'pending | confirmed | rejected | cancelled']
+  rejection_reason varchar(32) [note: 'rejected only: no_capacity']
+  cancellation_reason varchar(32) [note: 'cancelled only: customer_request | store_closed']
+  confirmed_at datetime [note: 'UTC; retained if a confirmed reservation is later cancelled']
+  rejected_at datetime [note: 'UTC']
+  cancelled_at datetime [note: 'UTC']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (user_id, scheduled_start_at, id) [name: 'idx_reservations_user_start_id']
+    (user_id, status, scheduled_start_at, id) [name: 'idx_reservations_user_status_start_id']
+    (user_id, status, scheduled_end_at, id) [name: 'idx_reservations_user_status_end_id']
+    (business_day_id, status, scheduled_start_at, id) [name: 'idx_reservations_day_status_start_id']
+    (status, scheduled_start_at, id) [name: 'idx_reservations_status_start_id']
+  }
+}
+
+// All four Reservation FKs preserve history through RESTRICT.
+Ref: reservations.user_id > users.id [delete: restrict]
+Ref: reservations.business_day_id > store_business_days.id [delete: restrict]
+Ref: reservations.product_id > products.id [delete: restrict]
+Ref: reservations.experience_option_id > experience_options.id [delete: restrict]
+
+// ── Wallet / Payment / Refund (M4 offline migration generated; not applied) ──
+
+Table wallet_accounts {
+  id bigint [pk, increment]
+  user_id bigint [not null, unique, note: 'ordinary USER only; runtime NORMAL/DISABLED users have one; legacy DELETED users may have none; ADMIN/SUPER_ADMIN do not own wallets']
+  balance decimal(10,2) [not null, default: 0.00, note: 'authoritative balance; application range 0.00..1000.00; positive credits also preserve derived refundable wallet exposure']
+  status varchar(32) [not null, default: 'active', note: 'active | closed']
+  created_at datetime
+  updated_at datetime
+}
+
+Table wallet_transactions {
+  id bigint [pk, increment]
+  wallet_account_id bigint [not null]
+  transaction_type varchar(32) [not null, note: 'recharge | order_payment | admin_adjustment | refund']
+  change_amount decimal(10,2) [not null, note: 'application range -1000.00..1000.00, non-zero']
+  before_balance decimal(10,2) [not null, note: 'application range 0.00..1000.00']
+  after_balance decimal(10,2) [not null, note: 'equals before_balance + change_amount; range 0.00..1000.00']
+  source_type varchar(32) [not null, note: 'recharge_order | order | admin | refund']
+  source_id bigint [note: 'polymorphic business source; deliberately no FK']
+  operator_id bigint
+  reason varchar(256) [not null]
+  idempotency_key varchar(256) [not null, note: 'internal namespaced identity; MySQL ascii_bin bytewise comparison; never exposed by API']
+  created_at datetime
+  updated_at datetime [note: 'BaseModel technical field; ledger has no business update path']
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_wallet_transaction_idempotency']
+    (wallet_account_id, created_at, id) [name: 'idx_wallet_transaction_wallet_created_id']
+    (source_type, source_id, created_at, id) [name: 'idx_wallet_transaction_source_created_id']
+    (transaction_type, created_at, id) [name: 'idx_wallet_transaction_type_created_id']
+    (created_at, id) [name: 'idx_wallet_transaction_created_id']
+  }
+}
+
+Table recharge_orders {
+  id bigint [pk, increment]
+  recharge_no varchar(28) [not null, unique, note: 'RC + 26-char uppercase Crockford Base32 ULID']
+  user_id bigint [not null]
+  wallet_account_id bigint [not null]
+  amount decimal(10,2) [not null, note: 'application range 1.00..1000.00 inclusive']
+  status varchar(32) [not null, default: 'pending', note: 'pending | paid | failed | closed']
+  idempotency_key varchar(256) [not null, note: 'MySQL ascii_bin bytewise comparison']
+  succeeded_at datetime
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_recharge_order_idempotency']
+    (user_id, created_at, id) [name: 'idx_recharge_order_user_created_id']
+    (status, created_at, id) [name: 'idx_recharge_order_status_created_id']
+  }
+}
+
+Table payments {
+  id bigint [pk, increment]
+  payment_no varchar(28) [not null, unique, note: 'PY + 26-char uppercase Crockford Base32 ULID']
+  user_id bigint [not null]
+  purpose varchar(32) [not null, note: 'order | recharge']
+  method varchar(32) [not null, note: 'wallet | wechat | manual']
+  amount decimal(10,2) [not null]
+  status varchar(32) [not null, default: 'pending', note: 'pending | succeeded | failed | closed']
+  order_id bigint
+  recharge_order_id bigint
+  idempotency_key varchar(256) [not null, note: 'MySQL ascii_bin bytewise comparison']
+  provider_transaction_id varchar(128)
+  succeeded_at datetime
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_payment_idempotency']
+    (provider_transaction_id) [unique, name: 'uidx_payment_provider_transaction']
+    (user_id, created_at, id) [name: 'idx_payment_user_created_id']
+    (order_id, created_at, id) [name: 'idx_payment_order_created_id']
+    (recharge_order_id, created_at, id) [name: 'idx_payment_recharge_created_id']
+    (status, created_at, id) [name: 'idx_payment_status_created_id']
+  }
+}
+
+Table payment_settlements {
+  id bigint [pk, increment]
+  payment_id bigint [not null, unique]
+  order_id bigint [not null, unique]
+  amount decimal(10,2) [not null, note: 'must equal successful Payment and Order total; refundable wallet exposure is derived from settlement/payment/order/refund state, not stored']
+  created_at datetime
+  updated_at datetime
+}
+
+Table refunds {
+  id bigint [pk, increment]
+  refund_no varchar(28) [not null, unique, note: 'RF + 26-char uppercase Crockford Base32 ULID']
+  settlement_id bigint [not null, unique]
+  order_id bigint [not null, unique]
+  operator_id bigint [not null]
+  amount decimal(10,2) [not null, note: 'v1 full settlement amount only']
+  status varchar(32) [not null, default: 'pending', note: 'pending | succeeded | failed; succeeded releases refundable wallet exposure']
+  inventory_restored boolean [not null, default: false, note: 'true only for restored PAID Kit/mixed orders']
+  reason varchar(256) [not null]
+  idempotency_key varchar(256) [not null, note: 'MySQL ascii_bin bytewise comparison']
+  provider_refund_id varchar(128)
+  succeeded_at datetime
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_refund_idempotency']
+    (provider_refund_id) [unique, name: 'uidx_refund_provider_reference']
+    (order_id, created_at, id) [name: 'idx_refund_order_created_id']
+    (status, created_at, id) [name: 'idx_refund_status_created_id']
+  }
+}
+
+Ref: wallet_accounts.user_id > users.id [delete: restrict]
+Ref: wallet_transactions.wallet_account_id > wallet_accounts.id [delete: restrict]
+Ref: wallet_transactions.operator_id > users.id [delete: restrict]
+Ref: recharge_orders.user_id > users.id [delete: restrict]
+Ref: recharge_orders.wallet_account_id > wallet_accounts.id [delete: restrict]
+Ref: payments.user_id > users.id [delete: restrict]
+Ref: payments.order_id > orders.id [delete: restrict]
+Ref: payments.recharge_order_id > recharge_orders.id [delete: restrict]
+Ref: payment_settlements.payment_id > payments.id [delete: restrict]
+Ref: payment_settlements.order_id > orders.id [delete: restrict]
+Ref: refunds.settlement_id > payment_settlements.id [delete: restrict]
+Ref: refunds.order_id > orders.id [delete: restrict]
+Ref: refunds.operator_id > users.id [delete: restrict]
+
+// ── Inventory (Phase 4.3.4 MySQL migration generated offline; not applied) ──
+
+Table inventory_transactions {
+  id bigint [pk, increment]
+  product_id bigint [not null, note: 'public Kit Product ID']
+  kit_color_id bigint [note: 'NULL for fixed; product_kit_colors FK for color-selectable balance']
+  transaction_type varchar(40) [not null, note: 'opening_balance | admin_adjustment | order_deduction | order_cancellation_restore | order_refund_restore']
+  change_quantity int [not null, note: 'application range -999999..999999, non-zero']
+  before_quantity int [not null, note: 'application range 0..999999']
+  after_quantity int [not null, note: 'application range 0..999999; equals before_quantity + change_quantity']
+  source_type varchar(30) [not null, note: 'migration | admin | order']
+  source_id bigint [note: 'Order ID only when source_type=order; deliberately no polymorphic FK']
+  operator_id bigint [note: 'triggering user; nullable for migration or future system events']
+  reason varchar(256) [not null, note: 'normalized admin reason or server-defined stable event reason']
+  idempotency_key varchar(256) [not null, note: 'internal namespaced business identity; never exposed by API']
+  created_at datetime
+  updated_at datetime [note: 'BaseModel technical field; ledger has no business update path']
+
+  indexes {
+    (idempotency_key) [unique, name: 'uidx_inventory_idempotency_key']
+    (product_id, created_at, id) [name: 'idx_inventory_product_created_id']
+    (kit_color_id, created_at, id) [name: 'idx_inventory_color_created_id']
+    (source_type, source_id, created_at, id) [name: 'idx_inventory_source_created_id']
+    (transaction_type, created_at, id) [name: 'idx_inventory_type_created_id']
+    (created_at, id) [name: 'idx_inventory_created_id']
+  }
+}
+
+Ref: inventory_transactions.product_id > products.id [delete: restrict]
+Ref: inventory_transactions.kit_color_id > product_kit_colors.id [delete: restrict]
+Ref: inventory_transactions.operator_id > users.id [delete: restrict]
+
+// ── QR Table Session (M9 repository implementation; environments migrate separately) ──
+
+Table store_tables [note: 'M9 implemented; controlled environment seed must create exactly T01..T30, migration does not mint production tokens'] {
+  id bigint [pk, increment]
+  table_no varchar(10) [not null, note: 'stable T01..T30 in M9 v1']
+  display_name varchar(50) [not null]
+  qr_token varchar(32) [not null, note: 'cryptographically random alphanumeric ASCII locator; raw WeChat scene; MySQL binary collation; public, not an auth secret']
+  is_enabled boolean [not null, default: true, note: 'blocks new sessions only; does not close an existing session']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (table_no) [unique, name: 'uidx_store_table_no']
+    (qr_token) [unique, name: 'uidx_store_table_qr_token']
+  }
+}
+
+Table table_sessions [note: 'M9 implemented; one row per claim attempt that succeeds; order_id intentionally not unique because a timed-out Pending order may be rebound'] {
+  id bigint [pk, increment]
+  session_no varchar(28) [not null, note: 'TS + 26-char uppercase Crockford Base32 ULID; MySQL binary collation']
+  table_id bigint [not null]
+  user_id bigint [not null]
+  order_id bigint [not null]
+  payment_id bigint [note: 'nullable until activation; one successful Payment can activate at most one session']
+  status varchar(32) [not null, default: 'awaiting_payment', note: 'awaiting_payment | active | closed']
+  claim_idempotency_key varchar(256) [not null, note: 'internal namespaced identity; MySQL binary collation; never exposed']
+  claim_request_fingerprint char(64) [not null, note: 'SHA-256 of canonical actor/table-token/order request']
+  release_idempotency_key varchar(256) [note: 'nullable administrator-release identity; MySQL binary collation; never exposed']
+  claimed_at datetime [not null, note: 'UTC']
+  payment_deadline_at datetime [not null, note: 'claimed_at + 15 minutes']
+  started_at datetime [note: 'activation only; exactly payments.succeeded_at']
+  table_release_at datetime [note: 'activation only; max timer grace_ends_at']
+  closed_at datetime [note: 'business deadline for automatic closure, not delayed cleanup time']
+  close_reason varchar(32) [note: 'payment_timeout | time_expired | order_cancelled | order_completed | refunded | admin_released']
+  closed_by_user_id bigint [note: 'nullable; null for automatic timeout/expiry']
+  admin_close_reason varchar(200) [note: 'admin_released only']
+  created_at datetime
+  updated_at datetime
+
+  indexes {
+    (session_no) [unique, name: 'uidx_table_session_no']
+    (claim_idempotency_key) [unique, name: 'uidx_table_session_claim_idempotency']
+    (release_idempotency_key) [unique, name: 'uidx_table_session_release_idempotency']
+    (payment_id) [unique, name: 'uidx_table_session_payment']
+    (table_id, claimed_at, id) [name: 'idx_table_session_table_claimed_id']
+    (user_id, status, claimed_at, id) [name: 'idx_table_session_user_status_claimed_id']
+    (order_id, status, claimed_at, id) [name: 'idx_table_session_order_status_claimed_id']
+    (status, payment_deadline_at, id) [name: 'idx_table_session_status_payment_deadline_id']
+    (status, table_release_at, id) [name: 'idx_table_session_status_release_id']
+  }
+}
+
+Table table_session_timers [note: 'M9 implemented; one timer per distinct Experience duration snapshot; Kit and quantity do not affect timing'] {
+  id bigint [pk, increment]
+  session_id bigint [not null]
+  duration_minutes int [not null, note: 'positive OrderItem Experience duration snapshot']
+  buffer_minutes smallint [not null, default: 10, note: 'M9 immutable grace snapshot']
+  started_at datetime [not null, note: 'equals session started_at and Payment succeeded_at']
+  service_ends_at datetime [not null]
+  grace_ends_at datetime [not null]
+  created_at datetime
+  updated_at datetime [note: 'technical BaseModel field; no business update path']
+
+  indexes {
+    (session_id, duration_minutes) [unique, name: 'uidx_table_session_timer_duration']
+  }
+}
+
+Table table_occupancies [note: 'M9 implemented; current occupancy materialization, deleted on every session closure; copied IDs provide database uniqueness fallbacks'] {
+  id bigint [pk, increment]
+  table_id bigint [not null]
+  session_id bigint [not null]
+  user_id bigint [not null]
+  order_id bigint [not null]
+  created_at datetime
+  updated_at datetime [note: 'activation does not update this timestamp']
+
+  indexes {
+    (table_id) [unique, name: 'uidx_table_occupancy_table']
+    (session_id) [unique, name: 'uidx_table_occupancy_session']
+    (user_id) [unique, name: 'uidx_table_occupancy_user']
+    (order_id) [unique, name: 'uidx_table_occupancy_order']
+  }
+}
+
+// All Table Session FKs preserve history/current invariants through RESTRICT.
+Ref: table_sessions.table_id > store_tables.id [delete: restrict]
+Ref: table_sessions.user_id > users.id [delete: restrict]
+Ref: table_sessions.order_id > orders.id [delete: restrict]
+Ref: table_sessions.payment_id > payments.id [delete: restrict]
+Ref: table_sessions.closed_by_user_id > users.id [delete: restrict]
+Ref: table_session_timers.session_id > table_sessions.id [delete: restrict]
+Ref: table_occupancies.table_id > store_tables.id [delete: restrict]
+Ref: table_occupancies.session_id > table_sessions.id [delete: restrict]
+Ref: table_occupancies.user_id > users.id [delete: restrict]
+Ref: table_occupancies.order_id > orders.id [delete: restrict]

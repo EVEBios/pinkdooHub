@@ -1,0 +1,319 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
+.admin-wallet-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__header {
+    @include admin.page-header;
+  }
+
+  &__eyebrow,
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__eyebrow {
+    @include admin.header-eyebrow;
+
+    font-size: var(--pd-font-caption);
+    font-weight: 750;
+    letter-spacing: 1.2px;
+  }
+
+  &__title {
+    @include admin.header-title;
+
+    margin-top: 24px;
+  }
+
+  &__subtitle {
+    @include admin.header-subtitle;
+  }
+}
+
+.admin-wallet-balance {
+  @include admin.authority-panel;
+
+  padding: 26px;
+  border-radius: var(--pd-radius-large);
+
+  &__label,
+  &__amount,
+  &__limit {
+    display: block;
+  }
+
+  &__label,
+  &__limit {
+    font-size: var(--pd-font-label);
+  }
+
+  &__amount {
+    margin-top: 8px;
+    font-family: var(--pd-font-display);
+    font-size: 42px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__limit {
+    margin-top: 12px;
+    opacity: 0.82;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.admin-wallet-commerce,
+.admin-wallet-adjustment,
+.admin-wallet-ledger {
+  @include pd.section-panel(24px, var(--pd-radius-large));
+
+  margin-top: 18px;
+}
+
+.admin-wallet-commerce {
+  @include admin.section-accent;
+
+  &__title,
+  &__description,
+  &__warning {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__description,
+  &__warning {
+    margin-top: 9px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.6;
+  }
+
+  &__warning {
+    color: var(--pd-color-danger);
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+}
+
+.admin-wallet-adjustment {
+  &__title,
+  &__description,
+  &__label,
+  &__projection,
+  &__error,
+  &__success {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__description {
+    margin-top: 9px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.6;
+  }
+
+  &__direction {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    margin-top: 20px;
+  }
+
+  &__choice {
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__choice--active {
+    color: #fff;
+    background: var(--pd-gradient-primary);
+    border-color: transparent;
+  }
+
+  &__label {
+    @include pd.field-label;
+  }
+
+  &__input {
+    @include pd.field;
+
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__reason {
+    @include pd.textarea-field;
+  }
+
+  &__projection {
+    margin-top: 14px;
+    color: var(--pd-color-success);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__error--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &__success {
+    @include pd.feedback-success;
+  }
+
+  &__submit {
+    @include pd.primary-button;
+
+    width: 100%;
+    margin-top: 20px;
+  }
+}
+
+.admin-wallet-ledger {
+  &__title,
+  &__summary,
+  &__state,
+  &__end {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+  }
+
+  &__summary,
+  &__state,
+  &__end {
+    margin-top: 16px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__more {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 16px;
+  }
+
+  &__end {
+    text-align: center;
+  }
+}
+
+.admin-wallet-transaction {
+  padding: 17px 0;
+  border-bottom: 1px solid var(--pd-color-line);
+
+  &:last-of-type {
+    border-bottom: 0;
+  }
+
+  &__heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+  }
+
+  &__amount {
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__amount--income {
+    color: var(--pd-color-success);
+  }
+
+  &__reason,
+  &__meta {
+    display: block;
+    margin-top: 7px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+
+  &__meta {
+    color: var(--pd-color-ink-faint);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+}
+
+.admin-wallet-state {
+  @include pd.page-shell;
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    margin-top: 22px;
+  }
+}
+
+@media (width >= 768px) {
+  .admin-wallet-page {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    column-gap: 18px;
+
+    &__header {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .admin-wallet-balance {
+    align-self: start;
+  }
+
+  .admin-wallet-adjustment {
+    grid-column: 2;
+    grid-row: 2 / span 3;
+    margin-top: 0;
+  }
+
+  .admin-wallet-commerce {
+    grid-column: 1;
+  }
+
+  .admin-wallet-ledger {
+    grid-column: 1 / -1;
+  }
+}
+
+/* stylelint-enable at-rule-no-unknown */

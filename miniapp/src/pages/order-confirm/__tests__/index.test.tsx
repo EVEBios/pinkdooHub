@@ -1,0 +1,378 @@
+import ReactTestUtil from '@tarojs/test-utils-react'
+import Taro from '@tarojs/taro'
+
+import { BusinessError, TimeoutError } from '@/api'
+import type { OrderDetail } from '@/api/endpoints/orders'
+import type { AuthContextValue } from '@/auth'
+import type {
+  CartContextValue,
+  OrderSubmissionState,
+  UseOrderSubmissionResult,
+} from '@/features/order'
+
+import OrderConfirmPage from '../index'
+
+let mockAuth: AuthContextValue
+let mockCart: CartContextValue
+let mockSubmission: UseOrderSubmissionResult
+const mockSubmit = jest.fn(async () => undefined)
+const mockReset = jest.fn()
+const mockUseCart = jest.fn()
+const mockUseOrderSubmission = jest.fn()
+
+jest.mock('@/auth', () => ({
+  ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
+  ORDER_CONFIRM_PATH: '/pages/order-confirm/index',
+  ORDER_LIST_PATH: '/pages/orders/index',
+  buildLoginUrl: () => '/pages/login/index?redirect=%2Fpages%2Forder-confirm%2Findex',
+  isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
+  useAuth: () => mockAuth,
+}))
+
+jest.mock('@/features/order', () => ({
+  cartItemKey: (item: { productId: number; experienceOptionId: number | null; kitColorId: number | null }) => (
+    `${item.productId}:${item.experienceOptionId ?? item.kitColorId ?? 'fixed'}`
+  ),
+  ORDER_REMARK_LIMIT: 500,
+  useCart: () => {
+    mockUseCart()
+    return mockCart
+  },
+  useOrderSubmission: () => {
+    mockUseOrderSubmission()
+    return mockSubmission
+  },
+}))
+
+jest.mock('@/utils/format', () => ({
+  ...jest.requireActual('@/utils/format'),
+  formatPrice: (value: string) => value,
+}))
+
+const cartItems: CartContextValue['items'] = [
+  {
+    productId: 1,
+    experienceOptionId: 11,
+    kitColorId: null,
+    productType: 'experience',
+    productName: '周末拼豆体验',
+    configurationLabel: '1小时 · 2人 · 工作日',
+    unitPrice: '99.00',
+    imageUrl: null,
+    quantity: 1,
+  },
+  {
+    productId: 2,
+    experienceOptionId: null,
+    kitColorId: null,
+    productType: 'kit',
+    kitKind: 'fixed',
+    productName: '基础拼豆套装',
+    configurationLabel: null,
+    unitPrice: '199.00',
+    imageUrl: null,
+    quantity: 2,
+  },
+]
+
+const createdOrder: OrderDetail = {
+  id: 101,
+  order_no: 'OD01K2M7Y0J7A3N5Q8T4V6W9X2BC',
+  total_amount: '497.00',
+  status: { value: 'pending', label: '待支付' },
+  remark: '服务端备注快照',
+  items: [
+    {
+      id: 1001,
+      product_id: 1,
+      experience_option_id: 11,
+      kit_color_id: null,
+      kit_color_slot_no: null,
+      kit_color_code: null,
+      kit_color_name: null,
+      sale_unit_grams: null,
+      total_weight_grams: null,
+      product_name: '服务端体验名称快照',
+      option_duration_minutes: 60,
+      option_participants: 1,
+      option_day_type: { value: 'weekday', label: '工作日' },
+      product_price: '99.00',
+      quantity: 1,
+      subtotal: '99.00',
+    },
+    {
+      id: 1002,
+      product_id: 2,
+      experience_option_id: null,
+      kit_color_id: null,
+      kit_color_slot_no: null,
+      kit_color_code: null,
+      kit_color_name: null,
+      sale_unit_grams: null,
+      total_weight_grams: null,
+      product_name: '服务端套装名称快照',
+      option_duration_minutes: null,
+      option_participants: null,
+      option_day_type: null,
+      product_price: '199.00',
+      quantity: 2,
+      subtotal: '398.00',
+    },
+  ],
+  created_at: '2026-08-13T10:30:00Z',
+  updated_at: '2026-08-13T10:30:00Z',
+}
+
+function submissionState(state: OrderSubmissionState): UseOrderSubmissionResult {
+  return { state, submit: mockSubmit, reset: mockReset }
+}
+
+describe('OrderConfirmPage', () => {
+  let testUtils: ReactTestUtil
+
+  beforeEach(() => {
+    testUtils = new ReactTestUtil()
+    mockAuth = {
+      status: 'authenticated',
+      user: {
+        id: 7,
+        username: 'alice',
+        nickname: 'Alice',
+        phone: '13800138000',
+        avatar: null,
+        role: 'user',
+        status: 'normal',
+        last_login_at: null,
+        created_at: '2026-08-13T10:30:00Z',
+        updated_at: '2026-08-13T10:30:00Z',
+      },
+      register: jest.fn(),
+      updateProfile: jest.fn(),
+      login: jest.fn(async () => undefined),
+      loginWithWechat: jest.fn(async () => undefined),
+      logout: jest.fn(async () => undefined),
+      retryInitialization: jest.fn(),
+    }
+    mockCart = {
+      status: 'ready',
+      items: cartItems,
+      addItem: jest.fn(async () => undefined),
+      addItems: jest.fn(async () => undefined),
+      updateQuantity: jest.fn(async () => undefined),
+      removeItem: jest.fn(async () => undefined),
+      clear: jest.fn(async () => undefined),
+      reconcileSubmittedItems: jest.fn(async () => ({
+        status: 'completed' as const,
+        preservedItemKeys: [],
+      })),
+      retryInitialization: jest.fn(),
+    }
+    mockSubmission = submissionState({ status: 'idle' })
+  })
+
+  afterEach(() => {
+    testUtils.unmout()
+    jest.clearAllMocks()
+  })
+
+  it.each([
+    ['initializing', '正在准备订单…'],
+    ['error', '购物清单暂不可用'],
+  ] as const)('渲染购物清单 %s 状态', async (status, text) => {
+    mockCart = {
+      ...mockCart,
+      status,
+      initializationError: status === 'error' ? new Error('storage unavailable') : undefined,
+    }
+
+    await testUtils.mount(OrderConfirmPage)
+
+    expect(testUtils.queries.querySelector('.order-confirm-page')?.textContent).toContain(text)
+  })
+
+  it.each(['admin', 'super_admin'] as const)('%s 深链不挂载购物车或下单 Hook', async (role) => {
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, role },
+    }
+    await testUtils.mount(OrderConfirmPage)
+
+    expect(requireElement(testUtils, '.admin-workbench-redirect').textContent).toContain('正在进入店铺工作台')
+    expect(mockUseCart).not.toHaveBeenCalled()
+    expect(mockUseOrderSubmission).not.toHaveBeenCalled()
+    await flush(testUtils)
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/admin/pages/workbench/index' })
+  })
+
+  it.each([
+    ['missing', '账户信息不完整'],
+    ['unknown', '账户角色暂不支持'],
+  ] as const)('认证资料为 %s 时 fail closed', async (userCase, expectedText) => {
+    mockAuth = {
+      ...mockAuth,
+      user: userCase === 'missing'
+        ? undefined
+        : { ...mockAuth.user!, role: 'operator' as never },
+    }
+    await testUtils.mount(OrderConfirmPage)
+
+    expect(requireElement(testUtils, '.order-confirm-state__title').textContent).toContain(expectedText)
+    expect(mockUseCart).not.toHaveBeenCalled()
+    expect(mockUseOrderSubmission).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+  })
+
+  it('空购物清单不允许进入提交表单', async () => {
+    mockCart = { ...mockCart, items: [] }
+
+    await testUtils.mount(OrderConfirmPage)
+
+    expect(testUtils.queries.querySelector('.order-confirm-page')?.textContent)
+      .toContain('没有可以确认的商品')
+    expect(testUtils.queries.querySelector('.order-confirm-page__submit')).toBeNull()
+    testUtils.fireEvent.click(requireElement(testUtils, '.order-confirm-state__action'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
+  })
+
+  it('游客进入安全登录地址，说明登录后返回且保留购物清单', async () => {
+    mockAuth = { ...mockAuth, status: 'guest', user: undefined }
+
+    await testUtils.mount(OrderConfirmPage)
+
+    const loginButton = testUtils.queries.querySelector('.order-confirm-state__login')
+    if (!loginButton) {
+      throw new Error('没有渲染登录按钮')
+    }
+    expect(testUtils.queries.querySelector('.order-confirm-page')?.textContent).toContain('购物清单不会被清空')
+    testUtils.fireEvent.click(loginButton)
+    expect(Taro.navigateTo).toHaveBeenCalledWith({
+      url: '/pages/login/index?redirect=%2Fpages%2Forder-confirm%2Findex',
+    })
+  })
+
+  it('展示 Experience/Kit 预览并把受控 remark 与 Cart 快照交给提交用例', async () => {
+    await testUtils.mount(OrderConfirmPage)
+
+    const rows = testUtils.queries.querySelectorAll('.order-confirm-item')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('1小时 · 2人 · 工作日')
+    expect(rows[1].textContent).not.toContain('工作日')
+    expect(testUtils.queries.querySelector('.order-confirm-page__notice')?.textContent)
+      .toContain('后端重新校验')
+
+    const remark = testUtils.queries.querySelector('.order-confirm-remark__input')
+    const submit = testUtils.queries.querySelector('.order-confirm-page__submit')
+    if (!remark || !submit) {
+      throw new Error('确认页表单未完整渲染')
+    }
+    const fireCustomEvent = testUtils.fireEvent as unknown as (
+      element: Element,
+      event: Event,
+    ) => void
+    fireCustomEvent(remark, new CustomEvent('input', {
+      bubbles: true,
+      detail: { value: '周五晚上到店' },
+    }))
+    testUtils.fireEvent.click(submit)
+
+    expect(mockSubmit).toHaveBeenCalledWith(cartItems, '周五晚上到店')
+  })
+
+  it('提交期间禁用按钮并显示明确进行中状态', async () => {
+    mockSubmission = submissionState({
+      status: 'submitting',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 1, experience_option_id: 11, quantity: 1 }] },
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+
+    const button = testUtils.queries.querySelector('.order-confirm-page__submit')
+    expect(button?.textContent).toContain('正在创建订单')
+    expect(button?.getAttribute('disabled')).not.toBeNull()
+  })
+
+  it('区分明确库存失败与结果未知，不把 unknown 描述为创建失败', async () => {
+    const stockError = new BusinessError(
+      { operation: 'orders.create', statusCode: 409 },
+      40931,
+      'Insufficient stock',
+      { product_id: 2, requested_quantity: 2 },
+    )
+    mockSubmission = submissionState({
+      status: 'failed',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 2, quantity: 2 }] },
+      error: stockError,
+    })
+    await testUtils.mount(OrderConfirmPage)
+    expect(testUtils.queries.querySelector('.order-confirm-feedback')?.textContent).toContain('库存不足')
+    testUtils.unmout()
+
+    testUtils = new ReactTestUtil()
+    mockSubmission = submissionState({
+      status: 'unknown',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 2, quantity: 2 }] },
+      error: new TimeoutError({ operation: 'orders.create' }, new Error('timeout')),
+    })
+    await testUtils.mount(OrderConfirmPage)
+    const message = testUtils.queries.querySelector('.order-confirm-feedback')?.textContent
+    expect(message).toContain('结果可能未知')
+    expect(message).toContain('不要立即重复创建')
+    expect(message).not.toContain('创建订单失败')
+    expect(testUtils.queries.querySelector('.order-confirm-page__submit')?.getAttribute('disabled'))
+      .not.toBeNull()
+    const checkOrders = testUtils.queries.querySelector('.order-confirm-feedback__action')
+    if (!checkOrders) throw new Error('unknown 未提供我的订单核对入口')
+    testUtils.fireEvent.click(checkOrders)
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+  })
+
+  it('成功后只展示服务端快照，并提示本地对账异常但不降级订单结果', async () => {
+    mockCart = { ...mockCart, items: [] }
+    mockSubmission = submissionState({
+      status: 'succeeded',
+      submittedItems: cartItems,
+      request: {
+        items: [
+          { product_id: 1, experience_option_id: 11, quantity: 1 },
+          { product_id: 2, quantity: 2 },
+        ],
+      },
+      order: createdOrder,
+      cartReconciliation: { status: 'conflict', preservedItemKeys: ['2:kit'] },
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+
+    const result = testUtils.queries.querySelector('.order-result-page')
+    expect(result?.textContent).toContain('订单创建成功')
+    expect(result?.textContent).toContain(createdOrder.order_no)
+    expect(result?.textContent).toContain('¥497.00')
+    expect(result?.textContent).toContain('服务端体验名称快照')
+    expect(result?.textContent).toContain('60 分钟 · 1 人 · 工作日')
+    expect(result?.textContent).not.toContain('周末拼豆体验')
+    expect(result?.textContent).toContain('订单已经创建')
+    expect(result?.textContent).toContain('不要重复创建')
+    expect(result?.textContent).toContain('查看我的订单')
+    const actions = requireElement(testUtils, '.order-result-actions').children
+    testUtils.fireEvent.click(actions[0])
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    testUtils.fireEvent.click(actions[1])
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
+  })
+})
+
+function requireElement(testUtils: ReactTestUtil, selector: string): Element {
+  const element = testUtils.queries.querySelector(selector)
+  if (!element) throw new Error(`${selector} not found`)
+  return element
+}
+
+async function flush(testUtils: ReactTestUtil): Promise<void> {
+  await testUtils.act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}

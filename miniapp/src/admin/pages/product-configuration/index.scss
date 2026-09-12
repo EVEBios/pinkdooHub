@@ -1,0 +1,311 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/product-form';
+@use '../../styles/surface' as admin;
+
+.admin-product-configuration-page {
+  @include pd.page-shell(24px);
+  @include pd.content-width;
+
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 20px;
+  }
+}
+
+.admin-product-configuration-summary,
+.admin-product-option-editor,
+.admin-product-option-list,
+.admin-product-kit-price,
+.admin-product-kit-colors {
+  @include pd.section-panel;
+
+  margin-top: 20px;
+}
+
+.admin-product-configuration-summary {
+  @include admin.summary-panel;
+
+  margin-top: 0;
+
+  text {
+    display: block;
+  }
+
+  &__title {
+    max-width: 18ch;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-heading);
+    font-weight: 750;
+    letter-spacing: -0.7px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+
+  &__meta,
+  &__history {
+    @include pd.meta-text;
+
+    margin-top: 10px;
+    color: rgb(255 244 248 / 88%);
+  }
+
+  &__boundary {
+    @include pd.feedback-warning;
+  }
+}
+
+.admin-product-option-editor,
+.admin-product-option-list,
+.admin-product-kit-price,
+.admin-product-kit-colors {
+  &__title {
+    display: block;
+    margin-bottom: 4px;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
+  }
+}
+
+.admin-product-option-editor {
+  &__day-types {
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 2px;
+  }
+
+  &__day-types button {
+    @include pd.chip;
+
+    flex: 1 0 auto;
+  }
+
+  &__day-types .is-selected {
+    @include pd.chip-active;
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 22px;
+  }
+
+  &__actions button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    padding-right: 12px;
+    padding-left: 12px;
+    white-space: nowrap;
+  }
+
+  &__actions &__submit {
+    @include pd.primary-button;
+  }
+}
+
+.admin-product-option-card {
+  margin-top: 14px;
+  padding: 18px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.65;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: var(--pd-radius-small);
+
+  text {
+    display: block;
+  }
+
+  &__identity {
+    color: var(--pd-color-ink);
+    font-weight: 750;
+  }
+
+  &__price {
+    margin-top: 4px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  &__actions button {
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__actions &__delete {
+    @include pd.danger-button;
+  }
+}
+
+.admin-product-kit-price {
+  > button {
+    width: 100%;
+  }
+}
+
+.admin-product-kit-colors {
+  &__title,
+  &__hint,
+  &__empty {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
+  }
+
+  &__hint {
+    margin-top: 8px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.55;
+  }
+
+  &__search {
+    width: 100%;
+    min-height: var(--pd-control-height);
+    margin-top: 16px;
+    padding: 0 15px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+    background: var(--pd-color-surface);
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-small);
+    box-sizing: border-box;
+  }
+
+  &__list {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  &__empty {
+    padding: 28px 8px 10px;
+    color: var(--pd-color-ink-faint);
+    text-align: center;
+  }
+}
+
+.admin-product-kit-color {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-small);
+
+  &__identity,
+  &__name,
+  &__stock {
+    display: block;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  &__identity {
+    font-size: var(--pd-font-label);
+    font-weight: 750;
+  }
+
+  &__name,
+  &__stock {
+    margin-top: 4px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__toggle {
+    display: flex;
+    width: 128px;
+    height: var(--pd-control-height);
+    min-width: 128px;
+    min-height: var(--pd-control-height);
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0 16px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    background: var(--pd-color-primary-soft);
+    border: 1px solid var(--pd-color-line-strong);
+    border-radius: var(--pd-radius-small);
+    box-sizing: border-box;
+
+    &--enabled {
+      color: var(--pd-color-danger);
+      background: var(--pd-color-surface);
+      border-color: var(--pd-color-line);
+    }
+  }
+}
+
+/* stylelint-disable-next-line selector-class-pattern -- 单一主操作占满动作区。 */
+.admin-product-option-editor__actions button:only-child {
+  grid-column: 1 / -1;
+}
+
+.admin-product-configuration-feedback {
+  @include pd.feedback-error;
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-product-option-editor,
+  .admin-product-option-list,
+  .admin-product-kit-price,
+  .admin-product-kit-colors {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-product-option-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+
+    &__title,
+    > text {
+      grid-column: 1 / -1;
+    }
+
+    .admin-product-option-card {
+      margin-top: 0;
+    }
+  }
+
+  .admin-product-kit-colors {
+    &__list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}

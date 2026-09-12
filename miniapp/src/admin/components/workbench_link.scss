@@ -1,0 +1,21 @@
+/* stylelint-disable at-rule-no-unknown -- 组件复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+
+.admin-workbench-link {
+  @include pd.secondary-button(999px);
+
+  position: absolute;
+  top: 28px;
+  right: 24px;
+  z-index: 1;
+  width: fit-content;
+  min-width: 164px;
+  min-height: 64px;
+  margin: 0;
+  padding: 0 18px;
+  color: var(--pd-color-primary-strong);
+  font-size: var(--pd-font-caption);
+  background: rgb(255 253 253 / 94%);
+  border-color: rgb(255 255 255 / 42%);
+  box-shadow: 0 8px 20px rgb(62 11 32 / 14%);
+}

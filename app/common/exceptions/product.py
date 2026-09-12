@@ -128,6 +128,51 @@ class ProductImageNotFound(NotFoundException):
         super().__init__(code=40403, message="Product image not found")
 
 
+class BeadColorNotFound(NotFoundException):
+    """指定全局拼豆颜色槽不存在。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40405, message="Bead color not found")
+
+
+class ProductKitColorNotFound(NotFoundException):
+    """指定商品颜色关联不存在或不再可见。"""
+
+    def __init__(self) -> None:
+        super().__init__(code=40406, message="Product kit color not found")
+
+
+class BeadColorCodeAlreadyExists(ConflictException):
+    """非空全局颜色业务编码必须唯一。"""
+
+    def __init__(self, *, color_code: str) -> None:
+        super().__init__(
+            code=40913,
+            message="Bead color code already exists",
+            data={"color_code": color_code},
+        )
+
+
+class BeadColorNotConfigured(ConflictException):
+    """颜色缺少完整元数据，不能激活或用于商品销售。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40914,
+            message="Bead color is not configured",
+        )
+
+
+class BeadColorInUseByOnlineProduct(ConflictException):
+    """Online 商品正在使用颜色时禁止修改全局定义。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=40915,
+            message="Bead color is used by an online product",
+        )
+
+
 class OptionImageCannotBeCover(BusinessException):
     """ExperienceOption 专属图片不能设为 Product 封面。"""
 

@@ -1,0 +1,250 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
+.admin-product-images-page {
+  @include pd.page-shell(24px);
+  @include pd.content-width;
+
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 20px;
+  }
+}
+
+.admin-product-images-summary,
+.admin-product-images-section {
+  @include pd.section-panel;
+
+  margin-top: 20px;
+}
+
+.admin-product-images-summary {
+  @include admin.summary-panel;
+
+  margin-top: 0;
+
+  text {
+    display: block;
+  }
+
+  &__title {
+    max-width: 18ch;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-heading);
+    font-weight: 750;
+    letter-spacing: -0.7px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+
+  &__meta,
+  &__notice {
+    @include pd.meta-text;
+
+    margin-top: 10px;
+    color: rgb(255 244 248 / 88%);
+  }
+
+  &__notice {
+    max-width: 38em;
+  }
+
+  &__boundary {
+    @include pd.feedback-warning;
+  }
+}
+
+.admin-product-images-feedback {
+  @include pd.feedback-error;
+}
+
+.admin-product-images-empty {
+  @include pd.feedback-warning;
+}
+
+.admin-product-images-section {
+  &__title,
+  &__hint {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
+  }
+
+  &__hint {
+    max-width: 38em;
+    margin-top: 9px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.55;
+  }
+
+  &__upload-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  &__upload-actions button,
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  &__upload-actions &__upload-cover {
+    @include pd.primary-button;
+  }
+
+  > button {
+    margin-top: 18px;
+  }
+}
+
+.admin-product-images-option {
+  > button {
+    @include pd.primary-button;
+  }
+}
+
+.admin-product-image-card {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+  padding: 18px;
+  background: var(--pd-color-surface-muted);
+  border: 1px solid transparent;
+  border-radius: var(--pd-radius-medium);
+
+  > image {
+    width: 210px;
+    height: 210px;
+    background: var(--pd-color-canvas-deep);
+    border-radius: var(--pd-radius-small);
+  }
+
+  &__identity,
+  &__label,
+  &__validation {
+    display: block;
+  }
+
+  &__identity {
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
+  }
+
+  &__label {
+    margin-top: 12px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+  }
+
+  &__sort {
+    @include pd.field;
+
+    margin-top: 8px;
+  }
+
+  &__validation {
+    margin-top: 8px;
+    color: var(--pd-color-danger);
+    font-size: var(--pd-font-caption);
+    line-height: 1.45;
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    margin-top: 13px;
+  }
+
+  &__actions button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    min-width: 0;
+    padding-right: 10px;
+    padding-left: 10px;
+    font-size: var(--pd-font-button-compact);
+    white-space: nowrap;
+  }
+
+  &__actions &__delete {
+    @include pd.danger-button;
+
+    min-width: 0;
+    font-size: var(--pd-font-button-compact);
+  }
+}
+
+.admin-product-images-state {
+  @include pd.page-shell;
+  @include pd.state-shell;
+
+  min-height: 100vh;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  button {
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-product-images-section {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-product-images-section {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+
+    &__title,
+    &__hint,
+    &__upload-actions,
+    > .admin-product-images-empty,
+    > button {
+      grid-column: 1 / -1;
+    }
+
+    .admin-product-image-card {
+      grid-template-columns: 170px minmax(0, 1fr);
+
+      > image {
+        width: 170px;
+        height: 170px;
+      }
+    }
+  }
+}

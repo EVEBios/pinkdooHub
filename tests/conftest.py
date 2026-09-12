@@ -39,6 +39,7 @@ async def setup_db() -> None:
     }
     await Tortoise.init(config=config)
     await Tortoise.generate_schemas()
+    await _test_redis.flushall()
     yield
     await Tortoise.close_connections()
     try:

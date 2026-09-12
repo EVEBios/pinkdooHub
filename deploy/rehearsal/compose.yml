@@ -1,0 +1,307 @@
+name: ${PHASE93_COMPOSE_PROJECT}
+
+services:
+  mysql-source:
+    image: mysql:8.0.46
+    environment:
+      MYSQL_DATABASE: pinkdoohub_phase93_source
+      MYSQL_USER: pinkdoo
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_app_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    ports:
+      - "127.0.0.1:${PHASE93_SOURCE_MYSQL_PORT}:3306"
+    secrets:
+      - mysql_app_password
+      - mysql_root_password
+    volumes:
+      - mysql_source_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$$(cat /run/secrets/mysql_root_password)"
+          mysqladmin ping --host=127.0.0.1 --user=root --silent
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks:
+      - rehearsal
+
+  mysql-restore:
+    image: mysql:8.0.46
+    environment:
+      MYSQL_DATABASE: pinkdoohub_phase93_restore
+      MYSQL_USER: pinkdoo
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_app_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    ports:
+      - "127.0.0.1:${PHASE93_RESTORE_MYSQL_PORT}:3306"
+    secrets:
+      - mysql_app_password
+      - mysql_root_password
+    volumes:
+      - mysql_restore_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$$(cat /run/secrets/mysql_root_password)"
+          mysqladmin ping --host=127.0.0.1 --user=root --silent
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks:
+      - rehearsal
+
+  redis:
+    image: redis:8.0.1-alpine
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        printf 'requirepass %s\nappendonly yes\n' "$$(cat /run/secrets/redis_password)"
+        > /tmp/phase93-redis.conf;
+        exec redis-server /tmp/phase93-redis.conf
+    ports:
+      - "127.0.0.1:${PHASE93_REDIS_PORT}:6379"
+    secrets:
+      - redis_password
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          REDISCLI_AUTH="$$(cat /run/secrets/redis_password)"
+          redis-cli ping | grep -q PONG
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - rehearsal
+
+  image-init:
+    image: ${PHASE93_APP_IMAGE}
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["chown -R 10001:10001 /data/images && chmod 0755 /data/images"]
+    volumes:
+      - product_images:/data/images
+
+  image-restore:
+    image: ${PHASE93_APP_IMAGE}
+    profiles: ["operations"]
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["test -d /restore"]
+    volumes:
+      - product_images_restore:/restore
+
+  migrate:
+    image: ${PHASE93_APP_IMAGE}
+    profiles: ["operations"]
+    environment: &app_environment
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_ENGINE: mysql
+      DB_HOST: mysql-source
+      DB_PORT: "3306"
+      DB_NAME: pinkdoohub_phase93_source
+      DB_USER: pinkdoo
+      JWT_ALGORITHM: HS256
+      PRODUCT_IMAGE_UPLOAD_DIR: /data/images
+      PRODUCT_IMAGE_BASE_URL: https://${PHASE93_HTTPS_HOST}:${PHASE93_HTTPS_PORT}/uploads/products
+    secrets: &app_secrets
+      - mysql_app_password
+      - redis_password
+      - jwt_secret
+    command: ["aerich", "--app", "models", "upgrade"]
+    depends_on:
+      mysql-source:
+        condition: service_healthy
+    networks:
+      - rehearsal
+
+  bootstrap:
+    image: ${PHASE93_APP_IMAGE}
+    profiles: ["operations"]
+    environment:
+      <<: *app_environment
+    secrets:
+      - mysql_app_password
+      - redis_password
+      - jwt_secret
+      - bootstrap_password
+    command:
+      - python
+      - -m
+      - app.tasks.super_admin_bootstrap
+      - --username
+      - phase93_owner
+      - --nickname
+      - Phase 93 Owner
+      - --phone
+      - "13800009301"
+      - --apply
+    depends_on:
+      mysql-source:
+        condition: service_healthy
+    networks:
+      - rehearsal
+
+  runtime-seed:
+    image: ${PHASE93_APP_IMAGE}
+    profiles: ["operations"]
+    environment:
+      <<: *app_environment
+      PHASE93_RUNTIME_SEED_ENABLED: "1"
+    secrets:
+      - mysql_app_password
+      - redis_password
+      - jwt_secret
+      - bootstrap_password
+    command: ["python", "-m", "app.tasks.phase93_runtime_seed"]
+    depends_on:
+      mysql-source:
+        condition: service_healthy
+    networks:
+      - rehearsal
+
+  migration-scenario:
+    image: ${PHASE93_APP_IMAGE}
+    profiles: ["operations"]
+    working_dir: /scenario
+    environment:
+      <<: *app_environment
+      APP_ENV: testing
+      DB_NAME: ${PHASE93_SCENARIO_DATABASE:-pinkdoohub_phase93_m0}
+      DB_USER: root
+      PYTHONPATH: /app
+    secrets:
+      - source: mysql_root_password
+        target: mysql_app_password
+      - redis_password
+      - jwt_secret
+    volumes:
+      - ${PHASE93_SCENARIO_DIR:-/tmp}:/scenario:ro
+    command: ["aerich", "--app", "models", "upgrade"]
+    depends_on:
+      mysql-source:
+        condition: service_healthy
+    networks:
+      - rehearsal
+
+  app:
+    image: ${PHASE93_APP_IMAGE}
+    environment:
+      <<: *app_environment
+    secrets: *app_secrets
+    volumes:
+      - product_images:/data/images
+    depends_on:
+      mysql-source:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      image-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - rehearsal
+
+  restore-app:
+    image: ${PHASE93_APP_IMAGE}
+    profiles: ["operations"]
+    environment:
+      <<: *app_environment
+      DB_HOST: mysql-restore
+      DB_NAME: pinkdoohub_phase93_restore
+    secrets:
+      - mysql_app_password
+      - redis_password
+      - jwt_secret
+      - bootstrap_rotated_password
+    volumes:
+      - product_images_restore:/data/images:ro
+    depends_on:
+      mysql-restore:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - rehearsal
+
+  https:
+    image: nginx:1.27.5-alpine
+    environment:
+      PHASE93_HTTPS_HOST: ${PHASE93_HTTPS_HOST}
+    ports:
+      - "127.0.0.1:${PHASE93_HTTPS_PORT}:8443"
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${PHASE93_CERT_DIR}:/etc/nginx/certs:ro
+      - product_images:/data/uploads/products:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget --no-check-certificate --quiet --spider
+          https://127.0.0.1:8443/api/v1/health/live
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - rehearsal
+      - edge
+
+secrets:
+  mysql_app_password:
+    file: ${PHASE93_SECRET_DIR}/mysql_app_password
+  mysql_root_password:
+    file: ${PHASE93_SECRET_DIR}/mysql_root_password
+  redis_password:
+    file: ${PHASE93_SECRET_DIR}/redis_password
+  jwt_secret:
+    file: ${PHASE93_SECRET_DIR}/jwt_secret
+  bootstrap_password:
+    file: ${PHASE93_SECRET_DIR}/bootstrap_password
+  bootstrap_rotated_password:
+    file: ${PHASE93_SECRET_DIR}/bootstrap_rotated_password
+
+volumes:
+  mysql_source_data:
+  mysql_restore_data:
+  redis_data:
+  product_images:
+  product_images_restore:
+
+networks:
+  rehearsal:
+    internal: true
+  edge:
