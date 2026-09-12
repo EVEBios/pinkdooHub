@@ -1,8 +1,8 @@
 # pinkdooHub 发布文档
 
-> **Current Phase:** M9 仓库实现已完成；持久 Gate A 的 live config、数据库与五服务已经由旧候选 A 提升到 M9，但 `current` 仍指向最后已确认的 M7 lineage S。A 的首次 M9 acceptance 在 `order_created` 后因桌台 bootstrap identity 读取路径未继承容器 Entrypoint Secret 而失败；自动补偿已取消订单、下架 fixture、撤销会话，且没有 Payment、TableSession 或 Timer，失败 `.pending` 原样保留。当前只允许在全新候选 B 自身取得 9/9 后走“只读核验并退休 A 失败证据 → M9→M9 零迁移 adoption → B 验收/韧性/数据后恢复 → `current` 从 S 切到 B”的受控前滚，禁止手工删除 pending、注入 Secret 或回退 M9 数据库 — Gate A/Gate B 均保持 No-Go
+> **Current Phase:** M9 仓库实现已完成；持久 Gate A live config、数据库与五服务为旧候选 A/M9，`current` 仍是 M7 lineage S，B 留有 `prepared` retirement pending。候选 C 虽由 Run 34616037853 取得 9/9，真实 isolated stage 却在任何 C pending/Image/Release 写入前失败并已清理。当前只允许全新候选 D 自身取得 9/9 后走 A→B→D 八阶段 takeover、A→D 的 M9→M9 零迁移 adoption、D 验收/韧性/数据后恢复与 finalization；禁止复用 C、删 pending、注入 Secret 或回退 M9 数据库 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
-> **Last Updated:** 2026-09-11
+> **Last Updated:** 2026-09-12
 > **Release Scope:** 微信小程序内部测试版（Gate A）
 
 本目录保存可以直接用于后续 CI、演练和发布决策的操作文档。长期路线与公开发布门槛仍以 [Phase 9 微信小程序发布规划](../08_frontend/phase9_wechat_release_plan.md) 为总纲；本目录负责记录当前版本的决定、证据、责任和可执行清单。
@@ -23,33 +23,43 @@ Entrypoint 注入数据库 Secret 的路径，因而报出安全的通用错误�
 Payment、Settlement、Refund、TableSession、Timer 或 Occupancy。A 的 schema v3 失败
 `.pending` 仍是这组事实的权威、不可覆盖证据；不得删除、改写或换目录绕过。
 
-仓库候选实现的唯一恢复主链如下，尚未在现场执行：
+B `ad2ac8c...` 已 stage，但 retirement 只到 `prepared`。候选 C head
+`e909c42cebaf59931536ddc2c82a43f19a29925c` / merge target
+`c709d6252a07d65eb1457b23e7036ecb736f18b8` 已由 Run 34616037853 完成 9/9；其真实 schema v3
+stage 在 pre-install predecessor validation 误调用只适用于已安装 Release 的
+`_runtime_modules()`，因而在任何 C pending/Image/Release 写入前安全失败。清理后 S/A/B、
+三份受保护 digest 与五服务不变，C 无现场残留且不得复用。
 
-1. B 必须先以自己的精确 checkout、artifact 和全新 9/9 required Jobs 留证；`stage`
-   显式绑定 superseded A 和 A 失败 pending 的 SHA-256，不覆盖 A 的 Release/Record。
-2. 从 B Release 调用 `retire-failed-acceptance`，接受计划中的短暂停写。命令先建立
+仓库候选 D 的唯一恢复主链如下，尚未在现场执行：
+
+1. D 必须先以自己的精确 checkout、artifact 和全新 9/9 required Jobs 留证；schema v3
+   `stage` 显式绑定 A failure 与 B stage/prepared digest。Stage 仅在完整 provenance 后
+   第二次扫描 blocker，再 stable no-follow exact-bytes 加载归档内标准库限定 validator；禁止
+   `PYTHONPATH`、`current`、A/B Release 或现场工作树 fallback，pending/Image build 前 fail closed。
+2. 从 D Release 调用 `retire-failed-acceptance`，接受计划中的短暂停写。命令先建立
    `prepared` journal，停止 App/Nginx/`table-sweeper`；在 MySQL/Redis 健康且三个写入方持续
-   停止的窗口中，于数据库 snapshot、wallet/table reconcile 和 B 镜像只读 verifier 前后
+   停止的窗口中，于数据库 snapshot、wallet/table reconcile 和 D 镜像只读 verifier 前后
    重复断言 A/S lineage 与停写状态。verifier 按 A pending 冻结的 Product/Option/Order/Item
    身份核验取消、精确 `OFFLINE` 且未删除、唯一库存链 `0→10→9→10`、无 Payment/
    Settlement/Refund/订单 WalletTransaction 和无桌台会话历史。
    随后把原始失败 journal 以 `root:root 0600` 不可覆盖归档，发布只含摘要的 retirement
    Record，按稳定 inode 精确移除原 canonical pending，最后无条件恢复并复验 A/M9 五服务。
-   完整阶段固定为 `prepared` → `write-free-verified` → `acceptance-archived` →
-   `record-published` → `canonical-removed` → `runtime-restored`；恢复/清理错误优先于原
+   完整阶段固定为 `prepared` → `write-free-verified` → `superseded-retirement-archived` →
+   `acceptance-archived` → `record-published` → `superseded-retirement-removed` →
+   `canonical-removed` → `runtime-restored`；恢复/清理错误优先于原
    work/control error，SIGHUP/SIGTERM/SIGINT 只在恢复完成后传播，SIGKILL/断电后不得猜测成功。
 3. 对仍运行 A/M9 的现场创建一组全新 Backup 并完成同 ID 独立 Restore；不得复用 M7 或
    A 升级前备份。新证据必须同时匹配 `m7-preserved-business-v1`、
    `m8-swatch-content-v1`、`m9-table-business-v1` 与完整图片 manifest。
-4. 以 `source-version=9` 激活 B 配置，明确绑定 immediate predecessor A、lineage source S、
-   retirement digest 和新 Backup。activation 只把镜像从 A 切到 B，保持
+4. 以 `source-version=9` 激活 D 配置，明确绑定 immediate predecessor A、lineage source S、
+   retirement digest 和新 Backup。activation 只把镜像从 A 切到 D，保持
    `TABLE_SESSION_CLAIMS_ENABLED=true`，`current` 仍指向 S。
 5. 执行并重放 M9→M9 adoption。它必须证明 source/target 都是精确 M0–M9、数据库/图片/
    M7 保留、M8 色块与 M9 桌台内容摘要完全不变，并记录 `database_changes_applied=false`、
    `migrations_applied=[]`；不得运行迁移、30 桌 bootstrap 或其他数据修复。
-6. `app-up` 后对 B 重新执行完整 acceptance，再执行显式绑定该 acceptance 的 resilience；
-   随后创建 B 的 post-acceptance M9 Backup/Restore，最后以 predecessor=A、lineage=S 和
-   retirement digest 执行 `finalize`，仅在全部证据一致时把 `current` 从 S 原子切到 B。
+6. `app-up` 后对 D 重新执行完整 acceptance，再执行显式绑定该 acceptance 的 resilience；
+   随后创建 D 的 post-acceptance M9 Backup/Restore，最后以 predecessor=A、lineage=S 和
+   retirement digest 执行 `finalize`，仅在全部证据一致时把 `current` 从 S 原子切到 D。
 
 Retirement 生成的 acceptance archive 是步骤 4 的 `activate-config`、任何迁移前
 `rollback-config` 和步骤 6 的 `finalize` 的持续 lineage 依赖，不是完成后可移动的历史附件。
@@ -57,13 +67,14 @@ Retirement 生成的 acceptance archive 是步骤 4 的 `activate-config`、任�
 digest 及 attempt/source/image 绑定；只保留 retirement Record 而移动、删除或替换 archive
 会 fail closed。当前工具新建的 M8/M9 Backup/Restore 必须携带完整 swatch profile；只有早于
 该 profile 且 Backup/Restore/match 三项 swatch 字段全部缺失的历史 pair 可兼容读取和异机
-export/verify，任何部分出现或不匹配都拒绝，而且这种历史 pair 不得进入本次 A→B 证据链。
+export/verify，任何部分出现或不匹配都拒绝，而且这种历史 pair 不得进入本次 A→D 证据链。
 
 任一步身份、digest、文件类型/权限、现场内容或恢复状态不一致都必须 fail closed。当前恢复
-实现仍须通过本地完整验证并由 B 的全新 SHA 取得 9/9；在这些条件满足前不得触碰现场，
-也不得把 A 的失败 Run、旧候选的 9/9 或人工 SQL/Shell 核验拼接成 B 的成功证据。
+实现已在本地通过 candidate `207 passed`、Release `1013 passed`、后端
+`3135 passed, 39 skipped`；D 仍须由全新 SHA 取得 9/9，在此之前不得触碰现场，也不得把
+A 的失败 Run、C 的 9/9 或人工 SQL/Shell 核验拼接成 D 的成功证据。
 adoption 若已耐久写出完整 `succeeded/completed` evidence、却在 canonical success 发布前
-崩溃，只允许以原 A/S/B、Backup、manifest、retirement 和全部 apply 确认值重验停写现场
+崩溃，只允许以原 A/S/D、Backup、manifest、retirement 和全部 apply 确认值重验停写现场
 后 no-clobber 补发 success；不得重跑写入或删除 evidence。`app-up` 还要求同一候选的
 initial-migration 与 existing-database upgrade Record 恰好存在一份；双 Record、零 Record
 或不安全路径都在服务启停前按歧义拒绝。
@@ -237,7 +248,7 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 | M8 发布加固候选远端 CI 报告 | [reports/m8_hardening_remote_ci_2026-09-09.md](reports/m8_hardening_remote_ci_2026-09-09.md) | Head `fa6fce05...` / merge-ref `b2f02ebc...` / Run 34281512196 / 历史 8/8 / 7 artifacts；其后的隔离完整 updater 由 Run 34288613644 关闭；该报告形成时持久 M8 尚未执行 |
 | Gate A M7→M8 完整 updater 远端 CI 演练报告 | [reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md](reports/gatea_m7_m8_updater_remote_ci_2026-09-09.md) | Head `62b1b15f...` / checkout `a9ff3d24...` / Run 34288613644 attempt 2 / 9/9；可销毁 updater 14/14；该报告形成时持久 Gate A 为 M7 |
 | Phase 9.5 公开安全基线 | [phase95_public_security_baseline.md](phase95_public_security_baseline.md) | 仓库实现完成；真实微信/Secret/监控/对象存储/隐私平台证据待办 |
-| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | M2→M7 历史执行已通过；live 已是 A/M9 但 acceptance 失败；当前只允许 B 的失败证据退休与零迁移前滚 |
+| Release Drill Runbook | [release_drill_runbook.md](release_drill_runbook.md) | M2→M7 历史执行已通过；live 是 A/M9、B 停在 prepared、C stage 零写入失败；当前只允许 D takeover 与零迁移前滚 |
 | 容量与性能压测 Runbook | [capacity_load_test_runbook.md](capacity_load_test_runbook.md) | 长期复用的隔离、资源限额、流量、指标、门槛、证据与清理规范；不单独构成环境授权 |
 | M8 本地 2 核/4GiB/5Mbps 完整探索矩阵 | [reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md](reports/m8_local_2c4g_5mbps_load_test_2026-09-09.md) | MySQL 8 + A/B/C/D 共 12/12 Profile；11 项通过，10 VU 未压缩色板 JSON 因丢包/P95 超线而使整轮 FAIL |
 | 本地 2 核/4GiB/5Mbps 探索报告 | [reports/local_2c4g_5mbps_load_test_2026-09-08.md](reports/local_2c4g_5mbps_load_test_2026-09-08.md) | 5/10 人只读与带宽饱和单轮证据；SQLite/占位图片/本机 ARM64，不是发布门槛 |
@@ -250,21 +261,21 @@ MARD 提交不属于该 Run，仍须由新 CI 验证。
 | 9.4 备案前收口报告 | [reports/phase94_pre_icp_completion_2026-09-02.md](reports/phase94_pre_icp_completion_2026-09-02.md) | 加密异机副本、持久故障/重启、日志、预 RC 与开发者工具 PASS；域名/真机待完成 |
 | Gate A 内部测试运维规则 | [gatea_test_operations.md](gatea_test_operations.md) | 测试人员、反馈、14 日窗口、停用、数据清理与事故职责已冻结 |
 | Functional/Smoke/E2E Matrix | [wechat_acceptance_matrix.md](wechat_acceptance_matrix.md) | 已扩展到 Wallet、颜色 Kit、Reservation、M7 与最新界面；当前 RC 真机结果待填 |
-| Risk Register | [risk_register.md](risk_register.md) | 已登记 A/M9 acceptance 失败、B 零迁移接管、Runtime/Restore、容量和 RC 重验风险 |
-| Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | A/M9 未完成 acceptance/finalize；B CI、受控接管、RC/真机仍未关闭，未授权发布 |
+| Risk Register | [risk_register.md](risk_register.md) | 已登记 A/M9 acceptance 失败、候选接管、Runtime/Restore、容量和 RC 重验风险 |
+| Go/No-Go Checklist | [go_no_go_checklist.md](go_no_go_checklist.md) | A/M9 未完成 acceptance/finalize；D CI、受控接管、RC/真机仍未关闭，未授权发布 |
 
 ## 2. 当前结论
 
 - 本版唯一发布平台是微信小程序 `weapp`。
 - 当前目标是受控内部测试版，不是公开发布。
 - Phase 9.1 已完成仓库级证据采集、交付物建档、责任人映射和项目负责人 Review，状态为 `Complete`。
-- Phase 9.2 **历史基线**的 CI 与可重复构建已完成：Draft PR #2 的 Run 33355935212 在真实干净 checkout 上 8/8 Job 通过并保存 7 组 artifact。该结果不覆盖当时后续形成的 M7 候选，更不覆盖当前 B/M9 前滚，也不授权微信后台变更、持久迁移、上传、提审或发布。
+- Phase 9.2 **历史基线**的 CI 与可重复构建已完成：Draft PR #2 的 Run 33355935212 在真实干净 checkout 上 8/8 Job 通过并保存 7 组 artifact。该结果不覆盖当时后续形成的 M7 候选，更不覆盖当前 D/M9 前滚，也不授权微信后台变更、持久迁移、上传、提审或发布。
 - Phase 9.3 **历史 M2 演练**已完成：候选 SHA `136a8bd...` 的 GitHub Actions Run 33408135841 为 8/8 success；Run ID `20260831t221625` 在可销毁双 MySQL/Redis/Nginx/App/图片卷环境完成当时的 DR-01～DR-07 与 DR-09 服务端部分，53 项发布工具契约通过，全部任务资源已清理。详见[演练报告](reports/phase93_rehearsal_2026-08-31.md)。M7 的后续持久演练已由 2026-09-08 报告关闭；M8 的完整 M7→M8、HEX/gzip/PNG、数据后恢复和候选 Runtime 已由 Run 34288613644 在可销毁环境关闭仓库演练缺口。live 后续已由 A 进入 M9，但 acceptance/finalize 未通过；当前仍未授权上传、分发、提审或发布。
 - Phase 9.4 **历史 M2 持久主机** loopback 首次部署已通过：Runtime `51ad315...` 的 Run 33568184860 与 Operations `17114d7...` 的 Run 33568983950 均为 8/8 success；真实腾讯云主机完成空库 Aerich 0→1→2、10 表核验、持久 MySQL/Redis/图片卷、非 root App、只读根文件系统、Healthy Nginx 和 liveness/readiness。MySQL/Redis/App 不发布宿主端口，唯一边界是 `127.0.0.1:18080`，公网 18080 不可达。完整脱敏证据见 [9.4 Loopback 报告](reports/phase94_gatea_loopback_2026-09-02.md)。该条中“待只读确认/待升级”的当时状态已由 2026-09-08 M2→M7 当前报告关闭；DNS/证书、微信合法域名、真实 RC 和 iOS/Android 真机仍未执行，Gate A 保持 No-Go。
 - Phase 9.4 **历史 M2 空数据**持久备份/隔离恢复已通过：Operations `d1f3379...` 的 Run 33570862787 为 8/8 success；Backup `20260901t232740z` 在停写窗口生成 `0600` MySQL/图片 Artifact，独立无端口 Restore project 完成数据库摘要、图片 manifest、空 Redis 和 Restore App readiness 验证，并删除全部临时容器/网络/卷。该记录由后续非空恢复证据补充，详见[备份恢复报告](reports/phase94_gatea_backup_restore_2026-09-02.md)。
 - Phase 9.4 **历史 M2 持久 Bootstrap** 已真实通过：Runtime `51ad315...`、Operations `0ebe25a...` 和 Run 33574718103 绑定；唯一 SUPER_ADMIN 首次创建、严格重放、唯一 Audit、初始/最终登录、密码轮换、旧密码拒绝、两个 Refresh 会话撤销和临时 Secret/容器/投放文件清理均为 PASS。成功 Record 为 `root:root 0644` 且不含 PII、密码、Token 或 hash；完整脱敏证据见 [9.4 Bootstrap 报告](reports/phase94_gatea_bootstrap_2026-09-02.md)。
 - Phase 9.4 **历史 M2 代表性数据与二次隔离恢复**已真实通过：Operations `3511491...` 的 Run 33576453364 为 8/8 success；工具经 loopback 正式 API 创建最终禁用的合成 USER、两个 Online Product、三张图片、两种终态订单和完整库存流水，管理员/合成用户 Refresh 均撤销。非空 Backup `20260902t014211z` 在独立无端口 project 中完成数据库、三图片、空 Redis 和 Restore App 验证，临时 Docker 资源归零且来源服务 Healthy。完整脱敏证据见[代表性数据二次恢复报告](reports/phase94_gatea_representative_restore_2026-09-02.md)。当时要求为 M4–M7 新建证据；该要求现已由 `20260908t021224z` 的当前数据后 Backup/Restore 关闭。
-- Phase 9.4 **历史 M2 备案前运维和自动化范围**已真实通过：Backup `20260902t014211z` 已形成经解密复核的 AES-256-GCM/RSA-OAEP-SHA256 异机副本；MySQL/Redis 故障和 App 重启证明 readiness 摘流量、liveness、数据/三图片保持、四容器日志轮转及 24 小时脱敏聚合查询。实现 `b69ee74...` Run 33584388085 和恢复修复 `c4d27a8...` Run 33584789525 均为 8/8 success；首次演练工具假失败、修复和重跑均留有证据。Node 24.13.0/npm 11.6.2 的备案前微信预 RC 为 97 文件/603,624 bytes/0 source map，manifest `aeb81ef...` 明确不可发布。开发者工具 Stable 2.02.2608060 已加载/编译并修正本机 `urlCheck` 覆盖，域名校验按预期拒绝保留 Origin。完整证据见[备案前收口报告](reports/phase94_pre_icp_completion_2026-09-02.md)。当时 M7 检查点以及当前 B/M9 前滚所需的备案/DNS/HTTPS、微信合法域名、真实 RC、iOS/Android 真机和上传授权均未执行，Gate A 保持 No-Go。
+- Phase 9.4 **历史 M2 备案前运维和自动化范围**已真实通过：Backup `20260902t014211z` 已形成经解密复核的 AES-256-GCM/RSA-OAEP-SHA256 异机副本；MySQL/Redis 故障和 App 重启证明 readiness 摘流量、liveness、数据/三图片保持、四容器日志轮转及 24 小时脱敏聚合查询。实现 `b69ee74...` Run 33584388085 和恢复修复 `c4d27a8...` Run 33584789525 均为 8/8 success；首次演练工具假失败、修复和重跑均留有证据。Node 24.13.0/npm 11.6.2 的备案前微信预 RC 为 97 文件/603,624 bytes/0 source map，manifest `aeb81ef...` 明确不可发布。开发者工具 Stable 2.02.2608060 已加载/编译并修正本机 `urlCheck` 覆盖，域名校验按预期拒绝保留 Origin。完整证据见[备案前收口报告](reports/phase94_pre_icp_completion_2026-09-02.md)。当时 M7 检查点以及当前 D/M9 前滚所需的备案/DNS/HTTPS、微信合法域名、真实 RC、iOS/Android 真机和上传授权均未执行，Gate A 保持 No-Go。
 - Phase 9.5 不依赖备案的仓库实现已完成：微信身份/绑定、Refresh 轮换、认证限流、注销匿名化、HMAC 标识最小化、安全事件、Secret 注入边界、存储端口和迁移均有自动化；真实微信 AppID、集中 Secret Manager、告警送达、对象存储和隐私平台材料仍未执行，Gate B 保持 No-Go。详见 [9.5 基线](phase95_public_security_baseline.md)。
 
 ## 3. 状态词

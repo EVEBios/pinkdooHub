@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import textwrap
 from types import SimpleNamespace
 import zipfile
 
@@ -1624,6 +1625,11 @@ def test_stage_writes_schema3_prepared_retirement_takeover_record(
     )
     monkeypatch.setattr(
         candidate,
+        "_verified_stage_operations",
+        lambda **kwargs: nullcontext(SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        candidate,
         "_verify_github_provenance",
         lambda **kwargs: _github_stage_evidence(artifact),
     )
@@ -1720,7 +1726,7 @@ def test_stage_writes_schema3_prepared_retirement_takeover_record(
     assert result["superseded_retirement_pending_sha256"] == (
         superseded_pending_sha256
     )
-    assert len(scanner_calls) == 2
+    assert len(scanner_calls) == 4
     for scanner_call in scanner_calls:
         assert scanner_call["allowed_release_pendings"] == (
             candidate._stage_pending_path(record_dir, TARGET_SHA),
@@ -1729,6 +1735,641 @@ def test_stage_writes_schema3_prepared_retirement_takeover_record(
             ),
         )
     assert len(takeover_calls) == 2
+
+
+def _isolated_takeover_operations_source() -> bytes:
+    return textwrap.dedent(
+        f"""\
+        import json
+        import os
+        from pathlib import Path
+
+        with Path(os.environ["GATEA_ISOLATED_EVENTS"]).open(
+            "a", encoding="utf-8"
+        ) as stream:
+            stream.write("archive-operations\\n")
+
+        REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+        APPROVED_TARGET_M9_CHAIN = {tuple(M9_CHAIN)!r}
+
+        def _require_upgrade_record(*, record_dir, candidate_sha, image_id):
+            del image_id
+            return json.loads(
+                (Path(record_dir) / (
+                    f"{{candidate_sha}}.existing-database-upgrade.json"
+                )).read_text(encoding="utf-8")
+            )
+
+        def _require_m9_upgrade_replay_record(
+            *, record_dir, candidate_sha, image_id, upgrade_record
+        ):
+            del image_id, upgrade_record
+            return json.loads(
+                (Path(record_dir) / (
+                    f"{{candidate_sha}}.upgrade-plan-replay.json"
+                )).read_text(encoding="utf-8")
+            )
+        """
+    ).encode("utf-8")
+
+
+def _isolated_takeover_sitecustomize_source() -> str:
+    return textwrap.dedent(
+        """\
+        import atexit
+        import contextlib
+        import importlib.util
+        import json
+        import os
+        from pathlib import Path
+        import sys
+        from types import SimpleNamespace
+
+        repository_root = Path(os.environ["GATEA_ISOLATED_REPOSITORY_ROOT"]).resolve()
+        launcher = Path(os.environ["GATEA_ISOLATED_LAUNCHER"]).resolve()
+        audit_path = Path(os.environ["GATEA_ISOLATED_AUDIT"])
+        event_path = Path(os.environ["GATEA_ISOLATED_EVENTS"])
+
+        retained_paths = []
+        for raw_path in sys.path:
+            if not raw_path:
+                retained_paths.append(raw_path)
+                continue
+            resolved = Path(raw_path).resolve()
+            if resolved == repository_root or repository_root in resolved.parents:
+                continue
+            retained_paths.append(raw_path)
+        sys.path[:] = retained_paths
+        try:
+            ambient_spec = importlib.util.find_spec(
+                "scripts.release.gatea_operations"
+            )
+        except (ImportError, ModuleNotFoundError):
+            ambient_spec = None
+        audit = {
+            "ambient_operations_available": ambient_spec is not None,
+            "cwd": str(Path.cwd().resolve()),
+            "initial_release_modules": sorted(
+                name for name in sys.modules if name.startswith("scripts.release")
+            ),
+            "sys_path": [
+                str(Path(path).resolve()) if path else ""
+                for path in sys.path
+            ],
+        }
+
+        def write_audit():
+            audit["final_release_modules"] = sorted(
+                name for name in sys.modules if name.startswith("scripts.release")
+            )
+            audit_path.write_text(
+                json.dumps(audit, sort_keys=True) + "\\n",
+                encoding="utf-8",
+            )
+
+        atexit.register(write_audit)
+
+        def record(event):
+            with event_path.open("a", encoding="utf-8") as stream:
+                stream.write(f"{event}\\n")
+
+        def patch_candidate(frame, event, argument):
+            del argument
+            if (
+                event != "call"
+                or frame.f_code.co_name != "main"
+                or Path(frame.f_code.co_filename).resolve() != launcher
+            ):
+                return patch_candidate
+            namespace = frame.f_globals
+            namespace["ROOT_UID"] = os.getuid()
+            namespace["ROOT_GID"] = os.getgid()
+            namespace["_require_root"] = lambda: None
+            namespace["_require_root_directory"] = lambda *args: None
+            namespace["_require_root_file"] = lambda *args: None
+            namespace["_exclusive_lock"] = lambda path: contextlib.nullcontext()
+            namespace["_fsync_directory"] = lambda path: None
+
+            def write_bytes_exclusive(path, content, mode):
+                descriptor = os.open(
+                    path,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    mode,
+                )
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(content)
+
+            namespace["_write_bytes_exclusive"] = write_bytes_exclusive
+            stages = json.loads(os.environ["GATEA_ISOLATED_STAGES"])
+            namespace["_load_stage"] = lambda **kwargs: dict(
+                stages[kwargs["target_sha"]]
+            )
+            namespace["_validate_activation_journal"] = lambda *args, **kwargs: None
+
+            real_scanner = namespace["_reject_unresolved_transition_journals"]
+            scanner_calls = 0
+
+            def scan_transitions(**kwargs):
+                nonlocal scanner_calls
+                result = real_scanner(**kwargs)
+                scanner_calls += 1
+                record(
+                    "first-scan" if scanner_calls == 1 else "second-scan"
+                )
+                return result
+
+            namespace["_reject_unresolved_transition_journals"] = scan_transitions
+            real_takeover = namespace["_validate_prepared_retirement_takeover"]
+
+            def validate_takeover(**kwargs):
+                result = real_takeover(**kwargs)
+                record("takeover")
+                return result
+
+            namespace["_validate_prepared_retirement_takeover"] = validate_takeover
+
+            provenance = json.loads(os.environ["GATEA_ISOLATED_PROVENANCE"])
+            drift_after_provenance = (
+                os.environ.get("GATEA_ISOLATED_DRIFT") == "after-provenance"
+            )
+
+            def verify_github_provenance(**kwargs):
+                record("provenance")
+                if drift_after_provenance:
+                    operations = (
+                        Path(kwargs["source_root"])
+                        / "scripts/release/gatea_operations.py"
+                    )
+                    operations.write_bytes(
+                        operations.read_bytes() + b"\\n# post-provenance drift\\n"
+                    )
+                return dict(provenance)
+
+            namespace["_verify_github_provenance"] = verify_github_provenance
+            namespace["_image_exists"] = lambda image: False
+            namespace["_inspect_image"] = lambda *args, **kwargs: {
+                "architecture": "amd64",
+                "image_id": os.environ["GATEA_ISOLATED_IMAGE_ID"],
+                "operating_system": "linux",
+            }
+
+            def run(command, **kwargs):
+                del kwargs
+                if tuple(command[:2]) == ("docker", "build"):
+                    record("docker-build")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            namespace["_run"] = run
+            sys.settrace(None)
+            return None
+
+        sys.settrace(patch_candidate)
+        """
+    )
+
+
+def _write_canonical_json(path: Path, payload: object, *, mode: int) -> None:
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    path.chmod(mode)
+
+
+def _isolated_takeover_stage_case(tmp_path: Path) -> SimpleNamespace:
+    repository_root = Path(__file__).resolve().parents[2]
+    isolated_root = tmp_path / "isolated"
+    launcher_dir = isolated_root / "launcher"
+    working_dir = isolated_root / "work"
+    hook_dir = isolated_root / "hook"
+    release_root = isolated_root / "releases"
+    staging_root = isolated_root / "staging"
+    release_record_dir = isolated_root / "release-records"
+    acceptance_record_dir = isolated_root / "acceptance-records"
+    acceptance_failure_archive_dir = isolated_root / "acceptance-failures"
+    retirement_failure_archive_dir = isolated_root / "retirement-failures"
+    for directory, mode in (
+        (launcher_dir, 0o700),
+        (working_dir, 0o700),
+        (hook_dir, 0o700),
+        (release_root, 0o755),
+        (staging_root, 0o700),
+        (release_record_dir, 0o755),
+        (acceptance_record_dir, 0o755),
+    ):
+        directory.mkdir(parents=True, mode=mode)
+        directory.chmod(mode)
+
+    launcher = launcher_dir / "gatea_candidate.py"
+    launcher.write_bytes(Path(candidate.__file__).read_bytes())
+    launcher.chmod(0o700)
+    members = _source_members(launcher.read_bytes())
+    members["scripts/release/gatea_operations.py"] = (
+        _isolated_takeover_operations_source()
+    )
+    members["scripts/release/gatea_backup.py"] = b"# isolated backup module\n"
+    members["scripts/release/gatea_upgrade.py"] = b"# isolated upgrade module\n"
+    source_archive = isolated_root / "source.tar"
+    _write_source_tar(source_archive, members=members)
+    source_archive.chmod(0o600)
+    ci_artifact = isolated_root / "artifact.zip"
+    _write_ci_zip(ci_artifact)
+    ci_artifact.chmod(0o600)
+
+    source_candidate_sha = "a" * 40
+    superseded_retirement_candidate_sha = "d" * 40
+    source_image_id = "sha256:" + "a" * 64
+    lineage_source_image_id = "sha256:" + "7" * 64
+    failed_acceptance = _preclaim_failure_payload(source_candidate_sha)
+    acceptance_path = candidate._acceptance_pending_path(
+        acceptance_record_dir, source_candidate_sha
+    )
+    _write_canonical_json(acceptance_path, failed_acceptance, mode=0o600)
+    failed_acceptance_sha256 = candidate._sha256(acceptance_path)
+
+    source_stage_path = candidate._stage_record_path(
+        release_record_dir, source_candidate_sha
+    )
+    source_stage_path.write_text("source-stage\n", encoding="utf-8")
+    source_stage_path.chmod(0o644)
+    source_activation_path = candidate._activation_record_path(
+        release_record_dir, source_candidate_sha
+    )
+    source_activation = {
+        "backup_id": BACKUP_ID,
+        "history_path": str(isolated_root / "history.env"),
+        "manifest_sha256": MANIFEST_SHA,
+    }
+    _write_canonical_json(source_activation_path, source_activation, mode=0o644)
+    source_evidence_path = release_record_dir / (
+        f"{source_candidate_sha}.existing-database-upgrade.evidence.json"
+    )
+    _write_canonical_json(source_evidence_path, {}, mode=0o644)
+    source_upgrade_path = release_record_dir / (
+        f"{source_candidate_sha}.existing-database-upgrade.json"
+    )
+    source_upgrade = {
+        "schema_version": 1,
+        "record_type": "existing-database-upgrade",
+        "source_version": 7,
+        "source_candidate_sha": SOURCE_SHA,
+        "source_image_id": lineage_source_image_id,
+        "candidate_sha": source_candidate_sha,
+        "image_id": source_image_id,
+        "backup_id": BACKUP_ID,
+        "manifest_sha256": MANIFEST_SHA,
+        "target_aerich_versions": M9_CHAIN,
+        "evidence_sha256": candidate._sha256(source_evidence_path),
+    }
+    _write_canonical_json(source_upgrade_path, source_upgrade, mode=0o644)
+    source_replay_path = candidate._upgrade_replay_record_path(
+        release_record_dir, source_candidate_sha
+    )
+    source_replay = {
+        "source_candidate_sha": SOURCE_SHA,
+        "source_version": 7,
+        "upgrade_record_sha256": candidate._sha256(source_upgrade_path),
+        "evidence_sha256": candidate._sha256(source_evidence_path),
+    }
+    _write_canonical_json(source_replay_path, source_replay, mode=0o644)
+    predecessor = {
+        "source_candidate_sha": source_candidate_sha,
+        "source_image_id": source_image_id,
+        "lineage_source_candidate_sha": SOURCE_SHA,
+        "lineage_source_image_id": lineage_source_image_id,
+        "predecessor_stage_record_sha256": candidate._sha256(source_stage_path),
+        "predecessor_activation_record_sha256": candidate._sha256(
+            source_activation_path
+        ),
+        "predecessor_upgrade_record_sha256": candidate._sha256(
+            source_upgrade_path
+        ),
+        "predecessor_upgrade_evidence_sha256": candidate._sha256(
+            source_evidence_path
+        ),
+        "predecessor_upgrade_plan_replay_record_sha256": candidate._sha256(
+            source_replay_path
+        ),
+    }
+
+    superseded_stage_path = candidate._stage_record_path(
+        release_record_dir, superseded_retirement_candidate_sha
+    )
+    superseded_stage_path.write_text("superseded-stage\n", encoding="utf-8")
+    superseded_stage_path.chmod(0o644)
+    superseded_stage_sha256 = candidate._sha256(superseded_stage_path)
+    superseded_image_id = "sha256:" + "d" * 64
+    superseded_stage = {
+        "schema_version": 2,
+        "record_type": "gatea-candidate-stage",
+        "passed": True,
+        "candidate_sha": superseded_retirement_candidate_sha,
+        "image_id": superseded_image_id,
+        "transition_kind": "m9-candidate-adoption",
+        "superseded_candidate_sha": source_candidate_sha,
+        "failed_acceptance_sha256": failed_acceptance_sha256,
+        "secret_values_recorded": False,
+    }
+    acceptance_archive_path = candidate._retirement_archive_path(
+        acceptance_failure_archive_dir,
+        source_candidate_sha,
+        failed_acceptance_sha256,
+    )
+    superseded_pending_path = candidate._retirement_pending_path(
+        release_record_dir, superseded_retirement_candidate_sha
+    )
+    superseded_pending = {
+        "schema_version": 1,
+        "record_type": "gatea-m9-failed-acceptance-retirement-pending",
+        "candidate_sha": superseded_retirement_candidate_sha,
+        "image_id": superseded_image_id,
+        **predecessor,
+        "stage_record_sha256": superseded_stage_sha256,
+        "acceptance_pending_sha256": failed_acceptance_sha256,
+        "acceptance_attempt_id_sha256": failed_acceptance[
+            "attempt_id_sha256"
+        ],
+        "acceptance_archive_path": str(acceptance_archive_path),
+        "acceptance_archive_sha256": failed_acceptance_sha256,
+        "live_verification": None,
+        "started_at": "2026-09-11T01:00:00+00:00",
+        "phase": "prepared",
+        "secret_values_recorded": False,
+    }
+    _write_canonical_json(superseded_pending_path, superseded_pending, mode=0o600)
+    superseded_pending_sha256 = candidate._sha256(superseded_pending_path)
+
+    events = isolated_root / "events.txt"
+    audit = isolated_root / "audit.json"
+    sitecustomize = hook_dir / "sitecustomize.py"
+    sitecustomize.write_text(
+        _isolated_takeover_sitecustomize_source(), encoding="utf-8"
+    )
+    provenance = _github_stage_evidence(ci_artifact)
+    provenance["github_blob_count"] = len(members)
+    environment = os.environ.copy()
+    environment.pop("GITHUB_TOKEN", None)
+    environment["PYTHONNOUSERSITE"] = "1"
+    environment["PYTHONPATH"] = str(hook_dir)
+    environment.update(
+        {
+            "GATEA_ISOLATED_REPOSITORY_ROOT": str(repository_root),
+            "GATEA_ISOLATED_LAUNCHER": str(launcher),
+            "GATEA_ISOLATED_AUDIT": str(audit),
+            "GATEA_ISOLATED_EVENTS": str(events),
+            "GATEA_ISOLATED_IMAGE_ID": IMAGE_ID,
+            "GATEA_ISOLATED_PROVENANCE": json.dumps(provenance),
+            "GATEA_ISOLATED_STAGES": json.dumps(
+                {
+                    source_candidate_sha: {"image_id": source_image_id},
+                    superseded_retirement_candidate_sha: superseded_stage,
+                }
+            ),
+        }
+    )
+    python3 = Path(sys.executable).with_name("python3")
+    assert python3.is_file()
+    command = (
+        str(python3),
+        "-B",
+        str(launcher),
+        "stage",
+        "--source-archive",
+        str(source_archive),
+        "--confirm-source-archive-sha256",
+        candidate._sha256(source_archive),
+        "--ci-artifact",
+        str(ci_artifact),
+        "--confirm-ci-artifact-sha256",
+        candidate._sha256(ci_artifact),
+        "--launcher",
+        str(launcher),
+        "--confirm-launcher-sha256",
+        candidate._sha256(launcher),
+        "--target-sha",
+        TARGET_SHA,
+        "--source-head-sha",
+        HEAD_SHA,
+        "--ci-run-id",
+        RUN_ID,
+        "--ci-run-attempt",
+        str(ATTEMPT),
+        "--ci-artifact-name",
+        ARTIFACT_NAME,
+        "--confirm-required-jobs",
+        "9",
+        "--confirm-target-sha",
+        TARGET_SHA,
+        "--release-root",
+        str(release_root),
+        "--staging-root",
+        str(staging_root),
+        "--release-record-dir",
+        str(release_record_dir),
+        "--superseded-candidate-sha",
+        source_candidate_sha,
+        "--confirm-failed-acceptance-sha256",
+        failed_acceptance_sha256,
+        "--superseded-retirement-candidate-sha",
+        superseded_retirement_candidate_sha,
+        "--confirm-superseded-retirement-stage-record-sha256",
+        superseded_stage_sha256,
+        "--confirm-superseded-retirement-pending-sha256",
+        superseded_pending_sha256,
+        "--acceptance-record-dir",
+        str(acceptance_record_dir),
+        "--acceptance-failure-archive-dir",
+        str(acceptance_failure_archive_dir),
+        "--retirement-failure-archive-dir",
+        str(retirement_failure_archive_dir),
+        "--apply",
+    )
+    return SimpleNamespace(
+        audit=audit,
+        command=command,
+        environment=environment,
+        events=events,
+        launcher=launcher,
+        release_record_dir=release_record_dir,
+        release_root=release_root,
+        source_archive=source_archive,
+        staging_root=staging_root,
+        target_stage_path=candidate._stage_record_path(
+            release_record_dir, TARGET_SHA
+        ),
+        target_pending_path=candidate._stage_pending_path(
+            release_record_dir, TARGET_SHA
+        ),
+        working_dir=working_dir,
+    )
+
+
+def test_takeover_stage_cli_loads_only_verified_archive_operations(
+    tmp_path: Path,
+) -> None:
+    case = _isolated_takeover_stage_case(tmp_path)
+
+    result = subprocess.run(
+        case.command,
+        cwd=case.working_dir,
+        env=case.environment,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 3
+    assert payload["candidate_sha"] == TARGET_SHA
+    assert case.target_stage_path.is_file()
+    assert not case.target_pending_path.exists()
+    assert case.events.read_text(encoding="utf-8").splitlines() == [
+        "first-scan",
+        "provenance",
+        "second-scan",
+        "archive-operations",
+        "takeover",
+        "docker-build",
+    ]
+    audit = json.loads(case.audit.read_text(encoding="utf-8"))
+    assert audit["ambient_operations_available"] is False
+    assert audit["cwd"] == str(case.working_dir.resolve())
+    assert audit["initial_release_modules"] == []
+    assert audit["final_release_modules"] == []
+    assert all(
+        not Path(path).is_relative_to(Path(__file__).resolve().parents[2])
+        for path in audit["sys_path"]
+        if path
+    )
+
+
+def test_takeover_stage_cli_rejects_archive_module_drift_before_execution(
+    tmp_path: Path,
+) -> None:
+    case = _isolated_takeover_stage_case(tmp_path)
+    case.environment["GATEA_ISOLATED_DRIFT"] = "after-provenance"
+
+    result = subprocess.run(
+        case.command,
+        cwd=case.working_dir,
+        env=case.environment,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "source" in result.stderr.lower()
+    assert "changed" in result.stderr.lower()
+    assert case.events.read_text(encoding="utf-8").splitlines() == [
+        "first-scan",
+        "provenance",
+        "second-scan",
+    ]
+    assert not case.target_pending_path.exists()
+    assert not case.target_stage_path.exists()
+    assert not (case.release_root / TARGET_SHA).exists()
+    assert not any(case.staging_root.iterdir())
+
+
+def test_verified_stage_operations_executes_real_dataclass_module_in_isolation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    operations_path = source_root / "scripts/release/gatea_operations.py"
+    operations_path.parent.mkdir(parents=True)
+    operations_path.write_bytes(Path(gatea_operations.__file__).read_bytes())
+    operations_path.chmod(0o644)
+    source_root.chmod(0o755)
+    monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
+    monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
+    monkeypatch.setattr(candidate, "_require_root_directory", lambda *args: None)
+    monkeypatch.setattr(candidate, "_require_root_file", lambda *args: None)
+    private_name = f"_pinkdoohub_gatea_stage_operations_{TARGET_SHA}"
+    canonical_module = sys.modules["scripts.release.gatea_operations"]
+    original_sys_path = tuple(sys.path)
+
+    assert private_name not in sys.modules
+    assert canonical_module is gatea_operations
+    assert not any(source_root.rglob("__pycache__"))
+
+    with candidate._verified_stage_operations(
+        source_root=source_root,
+        target_sha=TARGET_SHA,
+        expected_sha256=candidate._sha256(operations_path),
+    ) as facade:
+        private_module = sys.modules[private_name]
+        assert facade.APPROVED_TARGET_M9_CHAIN == tuple(M9_CHAIN)
+        assert callable(facade._require_upgrade_record)
+        assert callable(facade._require_m9_upgrade_replay_record)
+        assert private_module.__file__ == str(operations_path)
+        assert private_module.REPOSITORY_ROOT == source_root.resolve()
+        assert sys.modules["scripts.release.gatea_operations"] is canonical_module
+        assert tuple(sys.path) == original_sys_path
+        assert not any(source_root.rglob("__pycache__"))
+
+    assert private_name not in sys.modules
+    assert sys.modules["scripts.release.gatea_operations"] is canonical_module
+    assert tuple(sys.path) == original_sys_path
+    assert not any(source_root.rglob("__pycache__"))
+
+    for interruption in (
+        candidate.GateACandidateOperationInterrupted("SIGTERM test"),
+        KeyboardInterrupt("SIGINT test"),
+    ):
+        with pytest.raises(type(interruption)):
+            with candidate._verified_stage_operations(
+                source_root=source_root,
+                target_sha=TARGET_SHA,
+                expected_sha256=candidate._sha256(operations_path),
+            ):
+                assert private_name in sys.modules
+                raise interruption
+        assert private_name not in sys.modules
+        assert sys.modules["scripts.release.gatea_operations"] is canonical_module
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        pytest.param(b"def invalid(:\n", id="syntax-error"),
+        pytest.param(b"raise SystemExit(17)\n", id="system-exit"),
+    ),
+)
+def test_verified_stage_operations_cleans_private_module_after_load_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    source: bytes,
+) -> None:
+    source_root = tmp_path / "source"
+    operations_path = source_root / "scripts/release/gatea_operations.py"
+    operations_path.parent.mkdir(parents=True)
+    operations_path.write_bytes(source)
+    operations_path.chmod(0o644)
+    source_root.chmod(0o755)
+    monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
+    monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
+    monkeypatch.setattr(candidate, "_require_root_directory", lambda *args: None)
+    monkeypatch.setattr(candidate, "_require_root_file", lambda *args: None)
+    private_name = f"_pinkdoohub_gatea_stage_operations_{TARGET_SHA}"
+    canonical_module = sys.modules["scripts.release.gatea_operations"]
+
+    with pytest.raises(
+        candidate.GateACandidateError,
+        match="operations source could not be loaded",
+    ):
+        with candidate._verified_stage_operations(
+            source_root=source_root,
+            target_sha=TARGET_SHA,
+            expected_sha256=candidate._sha256(operations_path),
+        ):
+            pytest.fail("invalid operations source unexpectedly loaded")
+
+    assert private_name not in sys.modules
+    assert sys.modules["scripts.release.gatea_operations"] is canonical_module
+    assert not any(source_root.rglob("__pycache__"))
 
 
 def test_installed_release_commands_do_not_change_the_stage_manifest(

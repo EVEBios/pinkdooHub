@@ -7,9 +7,10 @@ non-Secret configuration activation, guarded pre-migration rollback, and the
 runtime changes remain owned by ``gatea_upgrade`` and the other reviewed Gate A
 tools.
 
-``stage`` is self-contained so an exact copy from the candidate archive can be
-used as the temporary, checksum-confirmed launcher.  The other commands must be
-run as a module from the installed versioned release directory.
+``stage`` starts from one self-contained, checksum-confirmed launcher.  Only
+after the source archive and GitHub provenance are verified may that launcher
+execute the archive's exact standard-library-only record validator.  The other
+commands must be run as a module from the installed versioned release directory.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from types import ModuleType
 from typing import Any, Callable, Iterator, Mapping, Sequence, TypeVar
 import urllib.error
 import urllib.parse
@@ -94,6 +96,7 @@ MAX_GITHUB_RESPONSE_BYTES = 8 * 1024 * 1024
 CANDIDATE_CLEANUP_ATTEMPTS = 2
 ROOT_UID = 0
 ROOT_GID = 0
+STAGE_OPERATIONS_PATH = PurePosixPath("scripts/release/gatea_operations.py")
 
 GITHUB_API_ORIGIN = "https://api.github.com"
 GITHUB_API_VERSION = "2022-11-28"
@@ -1623,9 +1626,14 @@ def _extract_source_archive(
     missing = sorted(REQUIRED_SOURCE_FILES - seen)
     if missing:
         raise GateACandidateError("Candidate source archive is incomplete")
+    operations_path = destination.joinpath(*STAGE_OPERATIONS_PATH.parts)
     return {
         "file_count": file_count,
         "total_bytes": total_bytes,
+        # This private stage-only binding is intentionally not published in the
+        # candidate Record.  It anchors the bytes executed after GitHub
+        # provenance to the exact file produced by this archive extraction.
+        "gatea_operations_sha256": _sha256(operations_path),
         **_source_manifest(destination),
     }
 
@@ -2144,6 +2152,103 @@ def _read_stable_protected_bytes(
             os.close(descriptor)
 
 
+class _StageOperationsFacade:
+    """The narrow read-only validation surface needed before stage install."""
+
+    __slots__ = (
+        "APPROVED_TARGET_M9_CHAIN",
+        "_require_m9_upgrade_replay_record",
+        "_require_upgrade_record",
+    )
+
+    def __init__(self, module: ModuleType) -> None:
+        self.APPROVED_TARGET_M9_CHAIN = module.APPROVED_TARGET_M9_CHAIN
+        self._require_upgrade_record = module._require_upgrade_record
+        self._require_m9_upgrade_replay_record = (
+            module._require_m9_upgrade_replay_record
+        )
+
+
+@contextmanager
+def _verified_stage_operations(
+    *,
+    source_root: Path,
+    target_sha: str,
+    expected_sha256: str,
+) -> Iterator[_StageOperationsFacade]:
+    """Load only the provenance-verified operations validator from archive bytes."""
+
+    target_sha = _validate_sha(target_sha, "target SHA")
+    expected_sha256 = _validate_sha256(
+        expected_sha256, "Gate A operations source digest"
+    )
+    _require_root_directory(
+        source_root, 0o755, "Gate A extracted candidate source"
+    )
+    operations_path = source_root.joinpath(*STAGE_OPERATIONS_PATH.parts)
+    raw_source, _ = _read_stable_protected_bytes(
+        operations_path,
+        mode=0o644,
+        max_bytes=MAX_ARCHIVE_MEMBER_BYTES,
+        description="Gate A verified candidate operations source",
+    )
+    if _sha256_bytes(raw_source) != expected_sha256:
+        raise GateACandidateError(
+            "Gate A verified candidate operations source changed"
+        )
+
+    module_name = f"_pinkdoohub_gatea_stage_operations_{target_sha}"
+    if module_name in sys.modules:
+        raise GateACandidateError(
+            "Gate A verified candidate operations module is already loaded"
+        )
+    module = ModuleType(module_name)
+    module.__file__ = str(operations_path)
+    module.__package__ = ""
+    try:
+        sys.modules[module_name] = module
+        try:
+            code = compile(
+                raw_source,
+                str(operations_path),
+                "exec",
+                dont_inherit=True,
+            )
+            exec(code, module.__dict__)
+        except (GateACandidateError, KeyboardInterrupt):
+            raise
+        except BaseException as error:
+            raise GateACandidateError(
+                "Gate A verified candidate operations source could not be loaded"
+            ) from error
+
+        approved_chain = getattr(module, "APPROVED_TARGET_M9_CHAIN", None)
+        require_upgrade_record = getattr(module, "_require_upgrade_record", None)
+        require_replay_record = getattr(
+            module, "_require_m9_upgrade_replay_record", None
+        )
+        if (
+            sys.modules.get(module_name) is not module
+            or getattr(module, "__file__", None) != str(operations_path)
+            or getattr(module, "REPOSITORY_ROOT", None) != source_root.resolve()
+            or type(approved_chain) is not tuple
+            or not approved_chain
+            or not all(isinstance(value, str) and value for value in approved_chain)
+            or not callable(require_upgrade_record)
+            or not callable(require_replay_record)
+        ):
+            raise GateACandidateError(
+                "Gate A verified candidate operations interface is invalid"
+            )
+        yield _StageOperationsFacade(module)
+    finally:
+        # The private name did not exist on entry.  Remove it on every success,
+        # validation error, signal, or module-level exception without touching
+        # canonical ``scripts.release`` imports.
+        if sys.modules.get(module_name) is module:
+            del sys.modules[module_name]
+
+
 def _validate_preclaim_failed_acceptance(
     *,
     path: Path,
@@ -2630,29 +2735,9 @@ def stage_candidate(
                 release_record_dir, target_sha
             ),
         )
-    if takeover:
-        if allowed_acceptance is None:
-            raise GateACandidateError(
-                "Gate A prepared retirement takeover acceptance is unavailable"
-            )
-        _validate_prepared_retirement_takeover(
-            release_root=release_root,
-            release_record_dir=release_record_dir,
-            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
-            retirement_failure_archive_dir=retirement_failure_archive_dir,
-            source_candidate_sha=str(superseded_candidate_sha),
-            failed_acceptance=allowed_acceptance,
-            failed_acceptance_sha256=str(failed_acceptance_sha256),
-            superseded_retirement_candidate_sha=str(
-                superseded_retirement_candidate_sha
-            ),
-            expected_stage_record_sha256=str(
-                superseded_retirement_stage_record_sha256
-            ),
-            expected_pending_sha256=str(
-                superseded_retirement_pending_sha256
-            ),
-            require_unarchived=True,
+    if takeover and allowed_acceptance is None:
+        raise GateACandidateError(
+            "Gate A prepared retirement takeover acceptance is unavailable"
         )
     _require_root_file(source_archive, 0o600, "Gate A source archive")
     _require_root_file(ci_artifact, 0o600, "Gate A CI artifact")
@@ -2700,6 +2785,71 @@ def stage_candidate(
                 run_attempt=ci_run_attempt,
                 artifact_name=ci_artifact_name,
             )
+            source_manifest = {
+                key: source_evidence[key]
+                for key in (
+                    "source_file_count",
+                    "source_total_bytes",
+                    "source_manifest_sha256",
+                )
+            }
+            if takeover:
+                # GitHub provenance may take long enough for an out-of-band
+                # operator to change a blocker.  Re-scan under the operation
+                # lock and use only this second acceptance observation.
+                allowed_acceptance = _reject_unresolved_transition_journals(
+                    **scanner_arguments,
+                    allowed_release_pendings=(
+                        _stage_pending_path(release_record_dir, target_sha),
+                        _retirement_pending_path(
+                            release_record_dir,
+                            str(superseded_retirement_candidate_sha),
+                        ),
+                    ),
+                )
+                if allowed_acceptance is None:
+                    raise GateACandidateError(
+                        "Gate A prepared retirement takeover acceptance is unavailable"
+                    )
+                if _source_manifest(temporary_dir) != source_manifest:
+                    raise GateACandidateError(
+                        "Gate A candidate source changed after provenance"
+                    )
+                with _verified_stage_operations(
+                    source_root=temporary_dir,
+                    target_sha=target_sha,
+                    expected_sha256=str(
+                        source_evidence["gatea_operations_sha256"]
+                    ),
+                ) as stage_gatea:
+                    _validate_prepared_retirement_takeover(
+                        release_root=release_root,
+                        release_record_dir=release_record_dir,
+                        acceptance_failure_archive_dir=(
+                            acceptance_failure_archive_dir
+                        ),
+                        retirement_failure_archive_dir=(
+                            retirement_failure_archive_dir
+                        ),
+                        source_candidate_sha=str(superseded_candidate_sha),
+                        failed_acceptance=allowed_acceptance,
+                        failed_acceptance_sha256=str(failed_acceptance_sha256),
+                        superseded_retirement_candidate_sha=str(
+                            superseded_retirement_candidate_sha
+                        ),
+                        expected_stage_record_sha256=str(
+                            superseded_retirement_stage_record_sha256
+                        ),
+                        expected_pending_sha256=str(
+                            superseded_retirement_pending_sha256
+                        ),
+                        require_unarchived=True,
+                        gatea_module=stage_gatea,
+                    )
+                if _source_manifest(temporary_dir) != source_manifest:
+                    raise GateACandidateError(
+                        "Gate A candidate source changed during takeover validation"
+                    )
             expected_pending = {
                 "candidate_sha": target_sha,
                 "source_head_sha": source_head_sha,
@@ -4496,10 +4646,13 @@ def _load_adoption_predecessor_binding(
     release_record_dir: Path,
     source_candidate_sha: str,
     lineage_source_candidate_sha: str,
+    gatea_module: Any | None = None,
 ) -> dict[str, Any]:
     """Validate the complete schema-v1 M7-to-M9 predecessor lineage."""
 
-    gatea, _, upgrade = _runtime_modules()
+    gatea = gatea_module
+    if gatea is None:
+        gatea, _, _ = _runtime_modules()
     source_stage_path = _stage_record_path(
         release_record_dir, source_candidate_sha
     )
@@ -5151,8 +5304,9 @@ def _validate_prepared_retirement_takeover(
     expected_stage_record_sha256: str,
     expected_pending_sha256: str,
     require_unarchived: bool = False,
+    gatea_module: Any | None = None,
 ) -> dict[str, Any]:
-    """Validate the exact schema-v1 B journal C is allowed to take over."""
+    """Validate the exact prepared journal a later candidate may take over."""
 
     lineage_source_candidate_sha = _validate_sha(
         str(failed_acceptance.get("source_candidate_sha", "")),
@@ -5192,6 +5346,7 @@ def _validate_prepared_retirement_takeover(
         release_record_dir=release_record_dir,
         source_candidate_sha=source_candidate_sha,
         lineage_source_candidate_sha=lineage_source_candidate_sha,
+        gatea_module=gatea_module,
     )
     acceptance_archive_path = _retirement_archive_path(
         acceptance_failure_archive_dir,

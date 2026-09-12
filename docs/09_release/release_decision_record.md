@@ -165,12 +165,21 @@ Run 最终为 9/9 Success。这是依赖安装失败，不是 OpenAPI Schema 漂
 补偿已取消订单、恢复 Kit 库存、下线 fixture、撤销会话，且没有资金或桌台会话数据；
 canonical schema v3 failure pending 必须保留，A 不得原地重跑。
 
-当前只授权候选 B 在自身同一 SHA 的全新 9/9 required Jobs 后，按受控链执行：stage 绑定
-A/S/pending digest，退休失败验收并保存原始 archive，新建 A/M9 Backup/Restore，执行
-M9→M9 零迁移 adoption/replay，随后重新完成 B acceptance、resilience、数据后
-Backup/Restore 与 finalize。禁止手工删除 pending、临时注入 Secret、数据库降级或重跑
-M7→M9；任一步失败都保持 **No-Go** 并停止。该恢复授权不扩展到真实微信支付、正式微信
-小程序码、微信后台上传/分发、提审或公开发布。
+B `ad2ac8c...` 已 stage，但 retirement 只到 `prepared`。随后候选 C head
+`e909c42cebaf59931536ddc2c82a43f19a29925c` / merge target
+`c709d6252a07d65eb1457b23e7036ecb736f18b8` 已由 Run 34616037853 完成 9/9；真实 Gate A
+schema v3 stage 却在任何 C pending/Image/Release 写入前安全失败，因为隔离 launcher 的
+pre-install predecessor validation 误调用只适用于已安装 Release 的 `_runtime_modules()`。
+清理后 A/B/S、三份受保护 digest 与五服务均不变，C 无现场残留且不得复用。
+
+当前只授权全新候选 D 在自身同一 SHA 的全新 9/9 required Jobs 后，按受控链执行：schema v3
+stage 绑定 A failure 与 B stage/prepared digest，八阶段退休并归档两份失败证据，新建 A/M9
+Backup/Restore，执行 A→D 的 M9→M9 零迁移 adoption/replay，随后重新完成 D acceptance、
+resilience、数据后 Backup/Restore 与 finalize。D stage 必须在完整 provenance 后完成第二次
+blocker scan，再 stable no-follow exact-bytes 加载归档内标准库限定 validator；不得使用
+`PYTHONPATH`、`current`、A/B Release 或现场工作树 fallback。禁止手工
+删除 pending、临时注入 Secret、数据库降级或重跑 M7→M9；任一步失败都保持 **No-Go** 并
+停止。该恢复授权不扩展到真实微信支付、正式微信小程序码、微信后台上传/分发、提审或公开发布。
 
 ## 1. 决策
 

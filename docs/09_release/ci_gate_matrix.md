@@ -1,8 +1,8 @@
 # Phase 9.2 CI Gate Matrix
 
-> **Status:** Phase 9.2 historical baseline complete；live Gate A is predecessor A/M9 while `current` remains finalized lineage S/M7；A acceptance failed after order creation and the recovery candidate B still awaits its own fresh complete 9/9 required-Job run
-> **Last Updated:** 2026-09-11
-> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / historical M8 success [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2 / latest persistent M9 diagnostic [Run 34523689519](https://github.com/EVEBios/pinkdooHub/actions/runs/34523689519)）
+> **Status:** Phase 9.2 historical baseline complete；live Gate A is predecessor A/M9 while `current` remains finalized lineage S/M7；B remains at prepared, C passed 9/9 but failed isolated pre-install stage without persistent writes, and only a fresh D 9/9 may continue
+> **Last Updated:** 2026-09-12
+> **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / historical M8 success [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2 / latest M9 CI diagnostic [Run 34616037853](https://github.com/EVEBios/pinkdooHub/actions/runs/34616037853)）
 
 本文件是 9.2 的实施契约。可以使用 GitHub Actions 或未来批准的等价 CI，但 Job 语义、隔离边界和阻断规则不能因供应商变化而弱化。
 
@@ -191,8 +191,14 @@ bootstrap 精确 30 张桌台，启动 App/Nginx/常驻 table sweeper，完成 M
    stage 与新 M7 Backup/Restore `20260911t013550z` 也通过，但旧 Runbook 从已安装 Release
    执行宿主 `python3 -m scripts.release.gatea_*` 时生成三个 `__pycache__/*.pyc`，使 stage
    冻结的 968 文件 manifest 变成 971 文件，故 `activate-config` 在零写入 plan 阶段正确
-   阻断。该 target 只保留为诊断证据，不能手工删除 cache 后续跑；当前修复统一显式
-   `python3 -B` 并加入真实 staged release + fresh subprocess 回归，仍须新 SHA 的 9/9。
+   阻断。该 target 只保留为诊断证据，不能手工删除 cache 后续跑；已安装 Release CLI
+   统一显式使用 `python3 -B -m`，单文件 stage launcher 使用 `python3 -I -B`。
+6. 候选 C head `e909c42cebaf59931536ddc2c82a43f19a29925c` / merge target
+   `c709d6252a07d65eb1457b23e7036ecb736f18b8` 已由
+   [Run 34616037853](https://github.com/EVEBios/pinkdooHub/actions/runs/34616037853)
+   完成 9/9；真实 schema v3 stage 却在任何 C pending/Image/Release 写入前失败。隔离 launcher
+   在 pre-install predecessor validation 误调用 `_runtime_modules()`，错误要求已安装 Release。
+   清理后 S/A/B、三份 digest 与五服务不变，C 无现场残留，不能将 9/9 直接记为 stage PASS。
 
 当前仓库修复候选把 M9 最终 full snapshot 与 Runtime verifier 统一到同一组 11 项
 count-only invariant；artifact 扫描显式拒绝 `qr_token`、未脱敏桌台码 payload/URL；
@@ -203,18 +209,20 @@ M9 Backup/Restore 新增精确、只输出摘要的 `m9-table-business-v1` 内�
 evidence 并由成功 Record 绑定；停写 plan replay 只重跑只读 reconcile 与 SQL invariant，
 不重跑可能写库的 sweep。旧 M7 镜像缺少 `--no-access-log` 的兼容只能由精确 M7
 Backup 内部恢复分支在停写前/恢复时双重验链后启用；默认、M8 和 M9 仍严格。本地
-验证口径为后端完整 `3067 passed, 39 skipped` 与 Release 完整 `945 passed`；其中新增覆盖
-A→B 失败验收退休、M9→M9 零迁移接管、M8 色块内容摘要、跨候选恢复 allowance、订单钱包
-流水/完整库存审计链与恢复错误优先级；隔离 MySQL 探针也已覆盖前序 M9 迁移与运行时门槛。
-这些都不是 B 的远端 required Job 证据。旧候选 A
+候选 D 的本地验证口径为 candidate 专项 `207 passed`、Release 完整 `1013 passed`、后端
+完整 `3135 passed, 39 skipped`。D 在完整 provenance 后执行第二次 blocker scan，再以
+stable no-follow exact-bytes 加载归档内标准库限定 operations validator；不允许 `PYTHONPATH`、
+`current`、A/B Release 或现场工作树 fallback，pending/Image build 前保持 fail closed。
+这些都不是 D 的远端 required Job 证据。旧候选 A
 `d6c09482ee0f5583d79bd847e995746c9c6ee1a3` 已把 live 配置、数据库和五项常驻服务带到
 M9，但 acceptance 在 `order_created` 后因桌台身份读取绕过 Entrypoint Secret 加载而安全
 失败；补偿已取消订单、恢复库存、下线 fixture、撤销会话，且未产生资金或桌台会话数据。
 `current` 仍指向 finalized lineage S `73dca350505d43775fb1ff1158ccf6aabc221998`，canonical
-schema v3 failure pending 必须保留到 B 的受控退休动作。只有同一 B SHA 从干净 checkout
-完成全新 9/9，才允许依次执行 stage、失败验收退休、新 A/M9 Backup/Restore、M9→M9
-零迁移 adoption/replay、B acceptance/resilience、数据后 Backup/Restore 与 finalize；禁止
-手工删除 pending、临时注入 Secret、数据库降级或重跑 M7→M9。
+schema v3 failure pending 与 B prepared pending 必须保留到 D 的受控退休动作。只有同一 D
+SHA 从干净 checkout 完成全新 9/9，才允许依次执行 schema v3 stage、八阶段失败验收
+takeover、新 A/M9 Backup/Restore、A→D 的 M9→M9 零迁移 adoption/replay、D acceptance/
+resilience、数据后 Backup/Restore 与 finalize；禁止复用 C Run、手工删除 pending、临时注入
+Secret、数据库降级或重跑 M7→M9。
 
 ## 1. 全局规则
 
@@ -658,17 +666,19 @@ M8 基线与当时候选结果：
   Backup/Restore、Runtime 和二次 cleanup 证据均完整；
 - [x] attempt 1 的 `openapi-contract` 仅在安装依赖时遇到 pip truststore TLS 瞬态
   错误，contract 命令未运行；failed-job rerun 在 51 秒内通过并形成最终 attempt 2；
-- [ ] 当前 M9 SHA 必须重新完成全部 9 个 required Jobs；兼容名
+- [x] C head `e909c42...` / merge target `c709d625...` 已由 Run 34616037853 完成 9/9，但真实
+  isolated stage 在零写入前失败，不能继续作为持久 target；
+- [ ] D 当前 SHA 必须重新完成全部 9 个 required Jobs；兼容名
   `gatea-m7-m8-updater` 必须真实完成 M7→M8→M9、11 项桌台 invariant、M9 Runtime、
   `m9-table-business-v1` Backup/Restore、artifact 扫描和精确 cleanup；
 - [ ] Run 34455514865、34466953348、34477579769 均为失败诊断证据，不得与其他 Run
   的成功 Job 拼接；当前修复只有在新的同 SHA 9/9 后才能记为 PASS；
-- [ ] 持久 Gate A 仍需当次授权、新 Backup/独立 Restore、停写窗口、目标 Image、
-  M7→M8→M9 迁移与 Runtime 验收后才能应用 M8/M9；
-- [ ] 新 9/9 artifact 尚须由持久 candidate `stage` 绑定 source archive/Run/attempt，再按
+- [ ] 持久 Gate A 已是 A/M9；仍需 D 当次新 Backup/独立 Restore、停写窗口、目标 Image、
+  八阶段 takeover、M9→M9 零迁移 adoption 与 Runtime 验收，禁止重跑 M7→M8→M9；
+- [ ] D 的新 9/9 artifact 尚须由持久 candidate `stage` 绑定 source archive/Run/attempt，再按
   `activate-config` → upgrade/replay → `app-up` → admin-assisted acceptance → 显式绑定该
   acceptance Record/digest 的 resilience → M9 数据后 Backup/Restore → `finalize` 的顺序
   执行；任一全局 pending/sidecar、严格状态机恢复、no-overwrite、acceptance direct binding
   或 Restore digest 绑定失败都保持 No-Go，不能切换 `current`；
-- [ ] Gate A M7→M8→M9、真实 Origin/TLS/RC、iOS/Android 真机、微信上传灰度发布继续由
+- [ ] Gate A A→D 接管与 M9→M9 adoption、真实 Origin/TLS/RC、iOS/Android 真机、微信上传灰度发布继续由
   后续 Gate 单独授权，CI 不自动执行。

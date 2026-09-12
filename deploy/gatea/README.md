@@ -1,6 +1,6 @@
 # Gate A 持久部署
 
-> **Status:** live Gate A 是旧候选 A/M9，`current` 仍指向 M7 lineage S；候选 B 只留下 `prepared` retirement pending，当前只允许全新候选 C 在自身 9/9 后执行受控 A→B→C takeover 与 M9→M9 零迁移前滚，DNS/HTTPS 和真机仍待完成
+> **Status:** live Gate A 是旧候选 A/M9，`current` 仍指向 M7 lineage S；候选 B 留下 `prepared` retirement pending，候选 C 的 pre-install isolated stage 在零现场写入前失败并已清理，当前只允许全新候选 D 在自身 9/9 后执行受控 A→B→D takeover 与 M9→M9 零迁移前滚，DNS/HTTPS 和真机仍待完成
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 
 本目录把 Phase 9.3 已验证的一次性演练拓扑收敛为单服务器长期 Gate A
@@ -15,10 +15,13 @@ admin-assisted acceptance 未通过，`current` 也尚未离开上述 M7 lineage
 updater 已由 head
 `62b1b15f2f4bf4e80bf8433a25878d158a49ca9b`、Run 34288613644 验证；当前实现把同一
 保护链扩展到 M9、30 桌 bootstrap/replay、桌台一致性核验和常驻 sweeper。旧恢复候选 B
-`ad2ac8c1eb6633daebf3d66d9b3669e441c3c6dd` 只留下 `prepared` retirement pending；全新
-候选 C 必须先取得自身干净 SHA 的 CI 9/9，才允许执行本文的 takeover retirement 与
-M9→M9 adoption。不得把 live 数据库当成 M7、重跑迁移、删除 pending，或用 A/B/旧 Run 的
-通过项拼接 C 的证据。
+`ad2ac8c1eb6633daebf3d66d9b3669e441c3c6dd` 只留下 `prepared` retirement pending。候选 C
+head `e909c42cebaf59931536ddc2c82a43f19a29925c` / merge target
+`c709d6252a07d65eb1457b23e7036ecb736f18b8` 已由 Run 34616037853 取得 9/9，但真实 stage
+在任何 C pending/Image/Release 写入前因隔离 launcher 误调用已安装 Release 模块而安全失败，
+清理后 A/B/S 与三份受保护 digest 均不变，C 无现场残留。全新候选 D 必须先取得自身干净
+SHA 的 CI 9/9，才允许执行本文的 takeover retirement 与 M9→M9 adoption。不得把 live 数据库
+当成 M7、重跑迁移、删除 pending，或用 A/B/C/旧 Run 的通过项拼接 D 的证据。
 
 ## 文件
 
@@ -311,7 +314,7 @@ CI artifact 必须是 `root:root 0600` 普通文件，临时 launcher 必须是 
    出现时，才按 activation Record 哈希恢复旧配置。任何目标升级证据一旦出现，此命令
    永久拒绝；它不是 M9→M7 downgrade 或数据恢复命令。
 4. `retire-failed-acceptance` 的普通路径只接受由 target stage 绑定的 A 失败 pending；当前
-   A→B→C takeover 还必须由 C schema v3 stage 精确绑定 B stage Record 与 prepared pending。
+   A→B→D takeover 还必须由 D schema v3 stage 精确绑定 B stage Record 与 prepared pending。
    它先建立 planned downtime，停止 App/Nginx/`table-sweeper`，在 MySQL/Redis 健康且三个
    写入方持续停止的窗口中用目标镜像只读核验 A pending 冻结的业务身份与 live M9 清理结果；
    takeover 先归档 B journal、再归档 A pending，发布脱敏 retirement Record 后依次精确移除
@@ -340,12 +343,13 @@ Record 都先向同目录随机临时文件完整写入并 file `fsync`，再用
 辨认上一个 checkpoint，要么明确阻断，不会把截断 JSON、同名旧证据或仅有 target symlink
 误判为完成。
 
-`stage` 必须使用从同一 source archive 取出的、已单独校验 SHA-256 的 launcher；下例中的
+`stage` 必须使用从同一 source archive 取出的、已单独校验 SHA-256 的 launcher，并用
+`-I` 忽略 `PYTHON*` 环境配置并隔离现场模块搜索路径；下例中的
 `<source-head-sha>` 是 artifact 报告的 PR head，`<target-sha>` 是 archive 与 CI 证明的精确
 checkout，两者不得凭人工推断互换：
 
 ```bash
-sudo python3 -B <checksum-confirmed-launcher>/gatea_candidate.py stage \
+sudo python3 -I -B <checksum-confirmed-launcher>/gatea_candidate.py stage \
   --source-archive <root-owned-source-archive.tar> \
   --confirm-source-archive-sha256 <source-archive-sha256> \
   --ci-artifact <root-owned-updater-artifact.zip> \
@@ -362,7 +366,7 @@ sudo python3 -B <checksum-confirmed-launcher>/gatea_candidate.py stage \
   --apply
 ```
 
-#### 当前 A/M9 acceptance 失败与 B/prepared 阻塞的受控 C 前滚
+#### 当前 A/M9 acceptance 失败与 B/prepared 阻塞的受控 D 前滚
 
 A acceptance 到达 `order_created` 后，在读取 T01 bootstrap identity 时失败。旧实现使用
 `docker compose exec`，新进程没有经过 App Entrypoint 将文件型数据库 Secret 导出为运行
@@ -383,29 +387,39 @@ failure pending SHA-256 是
 `89fce946b872a425e43c6db128e7734f74196fddbbc1b061b7537384cdd147a2`。三份文件都必须从
 受保护现场重新计算并人工复核，本文值不能替代当次读取。
 
-全新候选 C 必须先以自己的精确 SHA 完成全新远端 required Jobs 9/9；不得复用 B、A 或
-任何旧 Run 的 CI。随后使用下列 schema v3 stage 绑定安装，不要把未来 C SHA、Run ID 或
-attempt 预填到文档：
+候选 C 已以 head `e909c42cebaf59931536ddc2c82a43f19a29925c` / merge target
+`c709d6252a07d65eb1457b23e7036ecb736f18b8` 在 Run 34616037853 完成 9/9，但其真实
+schema v3 stage 在 pre-install takeover predecessor validation 中误调用 `_runtime_modules()`，
+隔离 launcher 因此提示 `activation must run from an installed candidate release`。该失败发生在
+任何 C pending、Image build 或 Release 安装之前；清理后 S/A/B 身份、三份受保护 digest
+和五服务均不变，C 无现场残留且不得重用。
+
+全新候选 D 必须先以自己的精确 SHA 完成全新远端 required Jobs 9/9；不得复用 C、B、A 或
+任何旧 Run 的 CI。D stage 只在 source archive、launcher、CI artifact 和完整 GitHub
+provenance 验证后先第二次扫描 blocker，再以 stable no-follow exact-bytes 加载归档内标准库
+限定的 operations validator 并执行 predecessor validation；不允许 `PYTHONPATH`、
+`current`、A/B Release 或现场工作树 fallback，验证未通过前不得写 pending 或 build Image。
+随后使用下列 schema v3 stage 绑定安装，不要把未来 D SHA、Run ID 或 attempt 预填到文档：
 
 ```bash
 sudo install -d -o root -g root -m 0700 \
   /srv/pinkdoohub/gatea/records/m9-acceptance-failures \
   /srv/pinkdoohub/gatea/records/m9-retirement-failures
 
-sudo python3 -B <checksum-confirmed-launcher>/gatea_candidate.py stage \
-  --source-archive <C-source-archive.tar> \
-  --confirm-source-archive-sha256 <C-source-archive-sha256> \
-  --ci-artifact <C-updater-artifact.zip> \
-  --confirm-ci-artifact-sha256 <C-updater-artifact-sha256> \
+sudo python3 -I -B <checksum-confirmed-launcher>/gatea_candidate.py stage \
+  --source-archive <D-source-archive.tar> \
+  --confirm-source-archive-sha256 <D-source-archive-sha256> \
+  --ci-artifact <D-updater-artifact.zip> \
+  --confirm-ci-artifact-sha256 <D-updater-artifact-sha256> \
   --launcher <checksum-confirmed-launcher>/gatea_candidate.py \
   --confirm-launcher-sha256 <launcher-sha256> \
-  --target-sha <C> \
-  --source-head-sha <C-source-head-sha> \
-  --ci-run-id <C-run-id> \
-  --ci-run-attempt <C-run-attempt> \
-  --ci-artifact-name gatea-m7-m9-updater-<C>-<C-run-id>-<C-run-attempt> \
+  --target-sha <D> \
+  --source-head-sha <D-source-head-sha> \
+  --ci-run-id <D-run-id> \
+  --ci-run-attempt <D-run-attempt> \
+  --ci-artifact-name gatea-m7-m9-updater-<D>-<D-run-id>-<D-run-attempt> \
   --confirm-required-jobs 9 \
-  --confirm-target-sha <C> \
+  --confirm-target-sha <D> \
   --superseded-candidate-sha <A> \
   --confirm-failed-acceptance-sha256 <A-failed-pending-sha256> \
   --superseded-retirement-candidate-sha <B> \
@@ -421,20 +435,20 @@ sudo python3 -B <checksum-confirmed-launcher>/gatea_candidate.py stage \
 ```
 
 Stage schema v3 必须同时记录 `transition_kind=m9-candidate-adoption`、A failure digest、B
-candidate、B stage Record digest 与 B prepared pending digest；否则下一步拒绝。在 C
+candidate、B stage Record digest 与 B prepared pending digest；否则下一步拒绝。在 D
 Release 中执行 takeover retirement：
 
 ```bash
-cd /srv/pinkdoohub/gatea/releases/<C>
+cd /srv/pinkdoohub/gatea/releases/<D>
 
 sudo python3 -B -m scripts.release.gatea_candidate retire-failed-acceptance \
   --source-candidate-sha <A> \
   --lineage-source-candidate-sha <S> \
-  --target-sha <C> \
+  --target-sha <D> \
   --failed-acceptance-sha256 <A-failed-pending-sha256> \
   --confirm-source-sha <A> \
   --confirm-lineage-source-sha <S> \
-  --confirm-target-sha <C> \
+  --confirm-target-sha <D> \
   --confirm-failed-acceptance-sha256 <A-failed-pending-sha256> \
   --superseded-retirement-candidate-sha <B> \
   --superseded-retirement-stage-record-sha256 <B-stage-record-sha256> \
@@ -483,7 +497,7 @@ journal 和尚未安全处置的上游证据。
 `rollback-config`、M9→M9 adoption 与 `finalize` 都会从上述两个 guarded `0700` 目录重开
 它们，要求精确 canonical archive 路径、`root:root 0600`、`nlink=1`、稳定内容与原 digest，
 并重新绑定 B stage/prepared journal、A acceptance attempt、source A/Image 和 lineage S。
-移动、删除、替换或换目录而只保留 C retirement Record 都会 fail closed；使用非默认归档
+移动、删除、替换或换目录而只保留 D retirement Record 都会 fail closed；使用非默认归档
 目录时，所有后续命令必须继续显式传入相同的两个受保护目录。
 
 退休完成后，对 A/M9 创建新的 Backup 并完成同 ID Restore。取得
@@ -494,7 +508,7 @@ sudo python3 -B -m scripts.release.gatea_candidate activate-config \
   --source-version 9 \
   --source-candidate-sha <A> \
   --lineage-source-candidate-sha <S> \
-  --target-sha <C> \
+  --target-sha <D> \
   --backup-id <A-M9-backup-id> \
   --acceptance-retirement-record-sha256 <retirement-record-sha256> \
   --acceptance-failure-archive-dir \
@@ -506,12 +520,12 @@ sudo python3 -B -m scripts.release.gatea_candidate activate-config \
   --source-version 9 \
   --source-candidate-sha <A> \
   --lineage-source-candidate-sha <S> \
-  --target-sha <C> \
+  --target-sha <D> \
   --backup-id <A-M9-backup-id> \
   --acceptance-retirement-record-sha256 <retirement-record-sha256> \
   --confirm-source-sha <A> \
   --confirm-lineage-source-sha <S> \
-  --confirm-target-sha <C> \
+  --confirm-target-sha <D> \
   --confirm-backup-id <A-M9-backup-id> \
   --confirm-manifest-sha256 <plan-manifest-sha256> \
   --confirm-acceptance-retirement-record-sha256 <retirement-record-sha256> \
@@ -522,18 +536,18 @@ sudo python3 -B -m scripts.release.gatea_candidate activate-config \
   --apply
 ```
 
-Activation 只把 active image 从 A 换为 C，保持 claims true，`current` 继续指向 S。随后用
-相同绑定执行 M9→M9 adoption 前，如果决定终止且 C 的 upgrade/evidence/replay 尚未出现，
+Activation 只把 active image 从 A 换为 D，保持 claims true，`current` 继续指向 S。随后用
+相同绑定执行 M9→M9 adoption 前，如果决定终止且 D 的 upgrade/evidence/replay 尚未出现，
 唯一配置撤销形状如下；它只把 active image 恢复为 A，数据库保持 M9、claims 保持 true、
 `current` 仍是 S，不会撤销 retirement，也不是 M9→M7 downgrade：
 
 ```bash
 sudo python3 -B -m scripts.release.gatea_candidate rollback-config \
   --source-sha <A> \
-  --target-sha <C> \
+  --target-sha <D> \
   --confirm-source-sha <A> \
-  --confirm-target-sha <C> \
-  --confirm-activation-record-sha256 <C-activation-record-sha256> \
+  --confirm-target-sha <D> \
+  --confirm-activation-record-sha256 <D-activation-record-sha256> \
   --lineage-source-candidate-sha <S> \
   --acceptance-retirement-record-sha256 <retirement-record-sha256> \
   --confirm-lineage-source-sha <S> \
@@ -545,7 +559,7 @@ sudo python3 -B -m scripts.release.gatea_candidate rollback-config \
   --apply
 ```
 
-C 的任一 adoption upgrade Record/evidence/replay 一旦出现，rollback 必须永久拒绝，后续只按
+D 的任一 adoption upgrade Record/evidence/replay 一旦出现，rollback 必须永久拒绝，后续只按
 自己的 durable journal 恢复或停止审计。成功路径继续用
 相同绑定执行 M9→M9 adoption plan/apply；apply 后再以第一条 plan 形状重放，生成不可覆盖
 sidecar：
@@ -572,7 +586,7 @@ sudo python3 -B -m scripts.release.gatea_upgrade \
   --backup-id <A-M9-backup-id> \
   --confirm-source-sha <A> \
   --confirm-lineage-source-sha <S> \
-  --confirm-target-sha <C> \
+  --confirm-target-sha <D> \
   --confirm-backup-id <A-M9-backup-id> \
   --confirm-manifest-sha256 <plan-manifest-sha256> \
   --confirm-acceptance-retirement-record-sha256 <retirement-record-sha256> \
@@ -583,14 +597,14 @@ sudo python3 -B -m scripts.release.gatea_upgrade \
   --apply
 ```
 
-Schema v2 adoption Record/evidence/replay 必须同时绑定 A、S、C、retirement、A 的既有
+Schema v2 adoption Record/evidence/replay 必须同时绑定 A、S、D、retirement、A 的既有
 M7→M9 stage/activation/upgrade/replay 和新 Backup/Restore，并证明 source/target 都是
 M0–M9、图片以及 M7 保留、M8 色块、M9 桌台三份内容摘要完全一致、
 `database_changes_applied=false`、
 `migrations_applied=[]`。该路径不得调用 M8/M9 migration、MARD、Wallet backfill、30 桌
 bootstrap 或任何补数据操作。
 
-完成 C `app-up`、完整 acceptance、绑定 acceptance 的 resilience，以及 C 的
+完成 D `app-up`、完整 acceptance、绑定 acceptance 的 resilience，以及 D 的
 post-acceptance M9 Backup/Restore 后，`finalize` 仍使用下文全部普通参数，但
 `--source-sha`/`--confirm-source-sha` 必须是 S，并额外传入：
 
@@ -605,7 +619,7 @@ post-acceptance M9 Backup/Restore 后，`finalize` 仍使用下文全部普通�
     /srv/pinkdoohub/gatea/records/m9-retirement-failures
 ```
 
-只有这一步把 `current` 从 S 原子切到 C。本文加入该路径不代表现场已执行；C 的 CI、
+只有这一步把 `current` 从 S 原子切到 D。本文加入该路径不代表现场已执行；D 的 CI、
 retirement、Backup/Restore、adoption、acceptance、resilience 或 finalize 任一步失败都必须
 立即停止并保持 No-Go。
 
@@ -752,7 +766,7 @@ SHA-256 全部一致，才构成升级提交点。若 success 已经可见，随
 
 schema v2 M9→M9 adoption 还覆盖一个更窄的 SIGKILL/断电窗口：若 canonical success 尚未
 发布，但 evidence 已经完整、耐久地处于 `succeeded/completed`，只能用与原 apply 完全相同
-的 A/S/C、Backup、manifest、retirement 及全部确认值再次执行 `--apply`。恢复路径会重新
+的 A/S/D、Backup、manifest、retirement 及全部确认值再次执行 `--apply`。恢复路径会重新
 验证 MySQL/Redis 健康、App/Nginx/`table-sweeper` 停止、Backup/Restore 与 lineage 绑定，
 并重算 live 数据库、图片、M7/M8/M9 内容摘要和 table reconcile；全部仍与 evidence 一致
 时才 no-clobber 补发唯一 success，不重跑迁移或任何业务写入。plan 模式、`failed`/未完成
@@ -954,7 +968,7 @@ M7/M8/M9 的 `m7-preserved-business-v1` 由一次 20 表 `mysqldump --single-tra
 当前工具新建的 M8/M9 Backup 还必须携带独立的 `m8-swatch-content-v1`：按主键顺序对
 `bead_colors.id`、`slot_no`、`swatch_hex` 的精确值取 SHA-256，避免旧 M7 投影刻意排除
 `swatch_hex` 后仍漏过 HEX 内容漂移。早于该 profile 的历史 Backup 可以由兼容 Restore
-读取，但不能作为本次 A→C source、post-acceptance、resilience 或 `finalize` 的新证据。
+读取，但不能作为本次 A→D source、post-acceptance、resilience 或 `finalize` 的新证据。
 
 ```bash
 backup_id=20260902t120000z
@@ -1007,7 +1021,7 @@ verify 都会按精确 Aerich 链重新执行内容证据契约：M7/M8/M9 必�
 `m9-table-business-v1` 和 `m9_table_content_matches=true`。早于 swatch profile、且 Backup
 snapshot、Restore snapshot 与 Restore match 三个 swatch 字段**全部缺失**的历史 M8/M9 pair
 仍可兼容 export/verify；只要任一字段出现，其余字段就必须完整且精确匹配，部分出现、结构
-无效、摘要不等或 match=false 均 fail closed。这种 all-absent 历史 pair 不能作为本次 A→C
+无效、摘要不等或 match=false 均 fail closed。这种 all-absent 历史 pair 不能作为本次 A→D
 source、post-acceptance、resilience 或 `finalize` 证据。未知迁移链或版本证据混装同样拒绝；
 加密/文件哈希本身不代替这项语义校验。
 
@@ -1179,32 +1193,32 @@ finalize 直接绑定的 post-acceptance Backup）和在线数据重比。checkp
 
 ## 后续执行顺序
 
-1. 取得全新 C 同一 target checkout 的 9/9 required Jobs、source archive 与 updater artifact，
+1. 取得全新 D 同一 target checkout 的 9/9 required Jobs、source archive 与 updater artifact，
    用校验过的临时 launcher 执行 schema v3 candidate `stage`，精确绑定 A failure digest 与
-   B stage/prepared pending digests；不得从现场工作树直接 build，也不得复用 A/B/旧 Run。
+   B stage/prepared pending digests；不得从现场工作树直接 build，也不得复用 A/B/C/旧 Run。
 2. Root 复核配置/Secret/持久运维目录、唯一全局操作锁、live candidate=A、DB=M0–M9、
    五服务健康、claims=true、`current`=S 和 canonical pending digest。任何一项不等于冻结
    现场就停止，不运行只适用于空端口首次部署的 `preflight`。
-3. 从 C Release 执行 `retire-failed-acceptance` takeover，接受计划中的短暂停写：命令停止
+3. 从 D Release 执行 `retire-failed-acceptance` takeover，接受计划中的短暂停写：命令停止
    App/Nginx/`table-sweeper`，在 MySQL/Redis 健康且写入方持续停止的窗口中重复断言 lineage，
-   再运行 C verifier 与 wallet/table reconcile。只有八阶段 journal、B/A 两份原始 `0600`
+   再运行 D verifier 与 wallet/table reconcile。只有八阶段 journal、B/A 两份原始 `0600`
    归档、脱敏 retirement Record、B/A canonical pending 依次精确移除和 A/M9 五服务强制恢复
    全部通过后才算完成；不得人工帮助它收口。两份归档必须原位保留，供
    activation/rollback/adoption/finalize 持续重验。
 4. 对 A/M9 创建新的 MySQL/图片 Backup 并完成同 ID 独立 Restore，要求 M7/M8/M9 内容摘要及
    图片 manifest 全部一致。随后执行带 A、S 和 retirement digest 的
-   `activate-config --source-version 9` plan/apply；配置只从 A 切到 C，claims 保持 true，
+   `activate-config --source-version 9` plan/apply；配置只从 A 切到 D，claims 保持 true，
    `current` 仍是 S。
 5. 只执行 `gatea_upgrade --source-version 9` adoption apply/replay，要求
    `database_changes_applied=false`、`migrations_applied=[]` 及 source/target M9 内容零漂移；
    紧邻运行会重读 live M9、Image 和 reconcile 的 `app-up`。禁止 M8/M9 migration、MARD、
    Wallet、bootstrap 或其他修复写入。
-6. 先运行 C M9 acceptance 只读 plan，再以安全 TTY 执行一次 admin-assisted 闭环；随后执行
+6. 先运行 D M9 acceptance 只读 plan，再以安全 TTY 执行一次 admin-assisted 闭环；随后执行
    target resilience，并显式传入 acceptance Record 路径与人工确认 SHA-256。任一不能按
    严格状态机恢复的 pending、清理不完整、钱包/桌台 reconcile、acceptance 直连绑定或
    日志脱敏失败都停止。
-7. 在 acceptance 与 resilience 之后创建 C 的新 M9 数据后 Backup/Restore，核对三个 digest
-   绑定，再以 source=S、predecessor=A、target=C、retirement digest 运行 candidate
+7. 在 acceptance 与 resilience 之后创建 D 的新 M9 数据后 Backup/Restore，核对三个 digest
+   绑定，再以 source=S、predecessor=A、target=D、retirement digest 运行 candidate
    `finalize`，只在全部证据一致时原子切换 `current`；之后才生成并解密复核加密异机副本。
 8. 验证 liveness/readiness、`table-sweeper`、唯一 loopback publisher、HEX API/小程序直绘，
    以及 gzip 只压文本且不重复编码。既有 Bootstrap 与 M7 综合数据不重复创建。
