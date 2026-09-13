@@ -53,7 +53,18 @@
   &__input {
     @include pd.field;
 
+    /* 原生输入框使用块布局，避免内部提示层作为 flex 子项收缩。 */
+    display: block;
+    height: var(--pd-control-height);
     margin-top: 12px;
+    line-height: var(--pd-control-height);
+
+    .weui-input {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      height: 100%;
+    }
   }
 
   &__dates {
