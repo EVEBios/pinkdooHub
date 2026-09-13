@@ -20,11 +20,13 @@ export const WALLET_RECHARGE_PATH = '/pages/wallet-recharge/index'
 export const WALLET_TRANSACTION_LIST_PATH = '/pages/wallet-transactions/index'
 
 export type ReservationCreateRedirect = `${typeof RESERVATION_CREATE_PATH}?product_id=${number}&option_id=${number}`
+export type OrderConfirmRedirect = `${typeof ORDER_CONFIRM_PATH}?table_intent=${string}`
 export type TableEntryRedirect = `${typeof TABLE_ENTRY_PATH}?token=${string}`
 
 export type LoginRedirect =
   | typeof ADMIN_WORKBENCH_PATH
   | typeof ORDER_CONFIRM_PATH
+  | OrderConfirmRedirect
   | typeof ORDER_LIST_PATH
   | typeof RESERVATION_LIST_PATH
   | ReservationCreateRedirect
@@ -93,11 +95,9 @@ export function parseLoginRedirect(value: unknown): LoginRedirect | undefined {
   if (ALLOWED_REDIRECTS.has(decoded as LoginRedirect)) {
     return decoded as LoginRedirect
   }
-  return isReservationCreateRedirect(decoded)
-    ? decoded as ReservationCreateRedirect
-    : isTableEntryRedirect(decoded)
-      ? decoded as TableEntryRedirect
-      : undefined
+  if (isOrderConfirmRedirect(decoded)) return decoded as OrderConfirmRedirect
+  if (isReservationCreateRedirect(decoded)) return decoded as ReservationCreateRedirect
+  return isTableEntryRedirect(decoded) ? decoded as TableEntryRedirect : undefined
 }
 
 /**
@@ -126,6 +126,12 @@ function isReservationCreateRedirect(value: string): boolean {
   return match.slice(1).every((part) => Number.isSafeInteger(Number(part)))
 }
 
+function isOrderConfirmRedirect(value: string): boolean {
+  return /^\/pages\/order-confirm\/index\?table_intent=miniapp-table-checkout-[a-z0-9]+-[a-z0-9]+-[a-z0-9]{20}$/.test(value)
+}
+
 function isTableEntryRedirect(value: string): boolean {
-  return /^\/pages\/table-entry\/index\?token=[A-Za-z0-9]{32}$/.test(value)
+  const match = /^\/pages\/table-entry\/index\?token=[A-Za-z0-9]{32}(?:&order_id=([1-9]\d*)(?:&table_intent=(miniapp-table-checkout-[a-z0-9]+-[a-z0-9]+-[a-z0-9]{20}))?)?$/.exec(value)
+  if (!match) return false
+  return match[1] === undefined || Number.isSafeInteger(Number(match[1]))
 }

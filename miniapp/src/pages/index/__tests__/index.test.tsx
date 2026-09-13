@@ -62,6 +62,7 @@ describe('ProductListPage', () => {
 
   afterEach(() => {
     testUtils.unmout()
+    jest.restoreAllMocks()
     jest.clearAllMocks()
   })
 
@@ -157,6 +158,27 @@ describe('ProductListPage', () => {
     expect(page?.textContent).not.toContain('我的订单')
     expect(page?.textContent).not.toContain('店铺管理')
     expect(mockUseRootTabSelection).toHaveBeenCalledWith(0)
+  })
+
+  it('从页头快捷入口扫描有效桌台码并进入开台页', async () => {
+    const token = 'Aa0123456789BbCcDdEeFfGgHhIiJjKk'
+    jest.spyOn(Taro, 'scanCode').mockResolvedValueOnce({
+      result: `PINKDOOHUB_TABLE:v1:${token}`,
+    } as Awaited<ReturnType<typeof Taro.scanCode>>)
+    await testUtils.mount(ProductListPage)
+
+    const action = requireElement(
+      testUtils,
+      '.product-page__topbar .product-page__scan-table',
+    )
+    expect(action.textContent).toBe('扫码开台')
+    testUtils.fireEvent.click(action)
+    await testUtils.act(async () => { await Promise.resolve() })
+
+    expect(Taro.scanCode).toHaveBeenCalledWith({ scanType: ['qrCode'] })
+    expect(Taro.navigateTo).toHaveBeenCalledWith({
+      url: `/pages/table-entry/index?token=${token}`,
+    })
   })
 
   it.each(['admin', 'super_admin'] as const)('%s 不挂载商城请求并自动进入店铺工作台', async (role) => {

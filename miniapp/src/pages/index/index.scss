@@ -29,6 +29,13 @@
     margin: 0 auto;
   }
 
+  &__topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
   &__brand {
     display: block;
     color: #fff;
@@ -38,7 +45,7 @@
   }
 
   &__intro {
-    margin-top: 44px;
+    margin-top: 40px;
   }
 
   &__title,
@@ -70,15 +77,26 @@
   }
 
   &__scan-table {
-    width: 220px;
+    display: flex;
+    width: auto;
+    min-width: var(--pd-control-min-inline);
+    height: var(--pd-control-height);
     min-height: var(--pd-control-height);
-    margin: 22px 0 0;
-    color: var(--pd-color-primary-strong);
-    font-size: var(--pd-font-button);
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0 24px;
+    color: #fff;
+    font-size: var(--pd-font-button-compact);
     font-weight: 700;
-    background: rgb(255 255 255 / 92%);
-    border: 0;
+    line-height: 1;
+    white-space: nowrap;
+    background: rgb(255 255 255 / 13%);
+    border: 1px solid rgb(255 255 255 / 30%);
     border-radius: 999px;
+    box-shadow: 0 8px 20px rgb(72 13 39 / 14%);
+    box-sizing: border-box;
   }
 
   &__pagination-error {

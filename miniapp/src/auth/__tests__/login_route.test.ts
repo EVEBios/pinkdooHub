@@ -96,6 +96,44 @@ describe('登录安全返回路由', () => {
     }
   })
 
+  it('仅允许严格的桌台与新订单聚焦回跳', () => {
+    const token = 'Aa0123456789BbCcDdEeFfGgHhIiJjKk'
+    const intentId = 'miniapp-table-checkout-m1234567-1-abcdefghijklmnopqrst'
+    const target = `/pages/table-entry/index?token=${token}&order_id=101` as const
+    const handoffTarget = `${target}&table_intent=${intentId}` as const
+
+    expect(parseLoginRedirect(encodeURIComponent(target))).toBe(target)
+    expect(parseLoginRedirect(target)).toBe(target)
+    expect(parseLoginRedirect(encodeURIComponent(handoffTarget))).toBe(handoffTarget)
+
+    for (const unsafe of [
+      `/pages/table-entry/index?order_id=101&token=${token}`,
+      `/pages/table-entry/index?token=${token}&order_id=0`,
+      `/pages/table-entry/index?token=${token}&order_id=01`,
+      `/pages/table-entry/index?token=${token}&order_id=9007199254740992`,
+      `/pages/table-entry/index?token=${token}&table_intent=${intentId}`,
+      `/pages/table-entry/index?token=${token}&order_id=101&table_intent=invalid`,
+      `/pages/table-entry/index?token=${token}&order_id=101&next=https://evil.example.com`,
+    ]) {
+      expect(parseLoginRedirect(unsafe)).toBeUndefined()
+    }
+  })
+
+  it('仅允许规范的桌台意图订单确认回跳', () => {
+    const intentId = 'miniapp-table-checkout-m1234567-1-abcdefghijklmnopqrst'
+    const target = `/pages/order-confirm/index?table_intent=${intentId}` as const
+    expect(parseLoginRedirect(target)).toBe(target)
+    expect(parseLoginRedirect(encodeURIComponent(target))).toBe(target)
+
+    for (const unsafe of [
+      '/pages/order-confirm/index?table_intent=invalid',
+      `${target}&next=https://evil.example.com`,
+      `/pages/order-confirm/index?next=x&table_intent=${intentId}`,
+    ]) {
+      expect(parseLoginRedirect(unsafe)).toBeUndefined()
+    }
+  })
+
   it.each([
     'https://evil.example.com',
     '//evil.example.com',

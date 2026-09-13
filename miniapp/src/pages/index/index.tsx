@@ -62,13 +62,15 @@ export function CustomerProductList() {
     <View className='product-page'>
       <View className='product-page__header'>
         <View className='product-page__header-inner'>
-          <Text className='product-page__brand'>pinkdooHub</Text>
-          <View className='product-page__intro'>
-            <Text className='product-page__title'>发现下一幅拼豆作品</Text>
-            <Text className='product-page__subtitle'>选一场体验，或带一套材料回家。</Text>
+          <View className='product-page__topbar'>
+            <Text className='product-page__brand'>pinkdooHub</Text>
             <Button className='product-page__scan-table' onClick={() => void scanTableCode()}>
               扫码开台
             </Button>
+          </View>
+          <View className='product-page__intro'>
+            <Text className='product-page__title'>发现下一幅拼豆作品</Text>
+            <Text className='product-page__subtitle'>选一场体验，或带一套材料回家。</Text>
           </View>
         </View>
       </View>

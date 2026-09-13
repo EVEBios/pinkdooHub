@@ -9,22 +9,41 @@ import type {
   OrderSubmissionState,
   UseOrderSubmissionResult,
 } from '@/features/order'
+import type { PendingTableEntryIntent } from '@/features/table_session'
 
 import OrderConfirmPage from '../index'
 
 let mockAuth: AuthContextValue
 let mockCart: CartContextValue
 let mockSubmission: UseOrderSubmissionResult
+let mockTableIntentId: string | undefined
 const mockSubmit = jest.fn(async () => undefined)
 const mockReset = jest.fn()
 const mockUseCart = jest.fn()
 const mockUseOrderSubmission = jest.fn()
+const mockLoadPendingTableEntry = jest.fn<
+Promise<PendingTableEntryIntent | undefined>,
+[string, number]
+>()
+const mockClearPendingTableEntry = jest.fn<Promise<boolean>, [PendingTableEntryIntent]>()
+
+jest.mock('@tarojs/taro', () => {
+  const actual = jest.requireActual('@tarojs/taro')
+  return {
+    __esModule: true,
+    ...actual,
+    default: actual.default,
+    useRouter: () => ({ params: { table_intent: mockTableIntentId } }),
+  }
+})
 
 jest.mock('@/auth', () => ({
   ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
   ORDER_CONFIRM_PATH: '/pages/order-confirm/index',
   ORDER_LIST_PATH: '/pages/orders/index',
-  buildLoginUrl: () => '/pages/login/index?redirect=%2Fpages%2Forder-confirm%2Findex',
+  buildLoginUrl: (redirect?: string) => redirect
+    ? `/pages/login/index?redirect=${encodeURIComponent(redirect)}`
+    : '/pages/login/index',
   isAdminRole: (role?: string) => role === 'admin' || role === 'super_admin',
   useAuth: () => mockAuth,
 }))
@@ -42,6 +61,24 @@ jest.mock('@/features/order', () => ({
     mockUseOrderSubmission()
     return mockSubmission
   },
+}))
+
+jest.mock('@/features/table_session', () => ({
+  buildTableEntryUrl: (token: string, orderId?: number, intentId?: string) => (
+    `/pages/table-entry/index?token=${token}` +
+    (orderId === undefined ? '' : `&order_id=${orderId}`) +
+    (intentId === undefined ? '' : `&table_intent=${intentId}`)
+  ),
+  buildTableOrderConfirmUrl: (intentId: string) => (
+    `/pages/order-confirm/index?table_intent=${intentId}`
+  ),
+  clearPendingTableEntry: (intent: PendingTableEntryIntent) => (
+    mockClearPendingTableEntry(intent)
+  ),
+  loadPendingTableEntry: (intentId: string, userId: number) => (
+    mockLoadPendingTableEntry(intentId, userId)
+  ),
+  parseTableOrderConfirmRoute: () => mockTableIntentId,
 }))
 
 jest.mock('@/utils/format', () => ({
@@ -74,6 +111,14 @@ const cartItems: CartContextValue['items'] = [
     quantity: 2,
   },
 ]
+
+const tableToken = 'Aa0123456789BbCcDdEeFfGgHhIiJjKk'
+const tableIntentId = 'miniapp-table-checkout-m1234567-1-abcdefghijklmnopqrst'
+const pendingTableIntent: PendingTableEntryIntent = {
+  intentId: tableIntentId,
+  token: tableToken,
+  userId: 7,
+}
 
 const createdOrder: OrderDetail = {
   id: 101,
@@ -132,6 +177,7 @@ describe('OrderConfirmPage', () => {
 
   beforeEach(() => {
     testUtils = new ReactTestUtil()
+    mockTableIntentId = undefined
     mockAuth = {
       status: 'authenticated',
       user: {
@@ -168,6 +214,8 @@ describe('OrderConfirmPage', () => {
       retryInitialization: jest.fn(),
     }
     mockSubmission = submissionState({ status: 'idle' })
+    mockLoadPendingTableEntry.mockResolvedValue(undefined)
+    mockClearPendingTableEntry.mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -247,6 +295,19 @@ describe('OrderConfirmPage', () => {
     testUtils.fireEvent.click(loginButton)
     expect(Taro.navigateTo).toHaveBeenCalledWith({
       url: '/pages/login/index?redirect=%2Fpages%2Forder-confirm%2Findex',
+    })
+  })
+
+  it('桌台确认页登录回跳保留本次结算意图', async () => {
+    mockTableIntentId = tableIntentId
+    mockAuth = { ...mockAuth, status: 'guest', user: undefined }
+    await testUtils.mount(OrderConfirmPage)
+
+    testUtils.fireEvent.click(requireElement(testUtils, '.order-confirm-state__login'))
+
+    const target = `/pages/order-confirm/index?table_intent=${tableIntentId}`
+    expect(Taro.navigateTo).toHaveBeenCalledWith({
+      url: `/pages/login/index?redirect=${encodeURIComponent(target)}`,
     })
   })
 
@@ -358,9 +419,157 @@ describe('OrderConfirmPage', () => {
     expect(result?.textContent).toContain('查看我的订单')
     const actions = requireElement(testUtils, '.order-result-actions').children
     testUtils.fireEvent.click(actions[0])
+    await flush(testUtils)
     expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
     testUtils.fireEvent.click(actions[1])
+    await flush(testUtils)
     expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
+  })
+
+  it('含 Experience 的新订单会带精确 ID 自动回到扫码桌台', async () => {
+    let resolveNavigation!: () => void
+    mockTableIntentId = tableIntentId
+    mockLoadPendingTableEntry.mockResolvedValue(pendingTableIntent)
+    ;(Taro.reLaunch as jest.Mock).mockReturnValueOnce(new Promise<void>((resolve) => {
+      resolveNavigation = resolve
+    }))
+    mockSubmission = submissionState({
+      status: 'succeeded',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 1, experience_option_id: 11, quantity: 1 }] },
+      order: createdOrder,
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+
+    expect(Taro.reLaunch).toHaveBeenCalledWith({
+      url: `/pages/table-entry/index?token=${tableToken}&order_id=${createdOrder.id}` +
+        `&table_intent=${tableIntentId}`,
+    })
+    expect(mockLoadPendingTableEntry).toHaveBeenCalledWith(tableIntentId, 7)
+    expect(requireElement(testUtils, '.order-result-actions__primary').textContent)
+      .toContain('正在返回扫码桌台')
+    const actions = requireElement(testUtils, '.order-result-actions').children
+    expect(actions[1].getAttribute('disabled')).not.toBeNull()
+    expect(actions[2].getAttribute('disabled')).not.toBeNull()
+
+    await testUtils.act(async () => resolveNavigation())
+    await flush(testUtils)
+  })
+
+  it('自动回桌导航失败时保留意图，并可以明确重试', async () => {
+    mockTableIntentId = tableIntentId
+    mockLoadPendingTableEntry.mockResolvedValue(pendingTableIntent)
+    ;(Taro.reLaunch as jest.Mock)
+      .mockRejectedValueOnce(new Error('navigation failed'))
+      .mockResolvedValueOnce(undefined)
+    mockSubmission = submissionState({
+      status: 'succeeded',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 1, experience_option_id: 11, quantity: 1 }] },
+      order: createdOrder,
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+
+    expect(requireElement(testUtils, '.order-result-warning').textContent)
+      .toContain('桌台信息已保留')
+    const retry = requireElement(testUtils, '.order-result-actions__primary')
+    expect(retry.textContent).toContain('重新返回桌台')
+
+    testUtils.fireEvent.click(retry)
+    await flush(testUtils)
+
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(2)
+    expect(Taro.reLaunch).toHaveBeenLastCalledWith({
+      url: `/pages/table-entry/index?token=${tableToken}&order_id=${createdOrder.id}` +
+        `&table_intent=${tableIntentId}`,
+    })
+    expect(mockLoadPendingTableEntry).toHaveBeenCalledTimes(2)
+  })
+
+  it('自动回桌重试前重新核对意图，已被新扫码替换时不跳回旧桌', async () => {
+    mockTableIntentId = tableIntentId
+    mockLoadPendingTableEntry
+      .mockResolvedValueOnce(pendingTableIntent)
+      .mockResolvedValueOnce(undefined)
+    ;(Taro.reLaunch as jest.Mock).mockRejectedValueOnce(new Error('navigation failed'))
+    mockSubmission = submissionState({
+      status: 'succeeded',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 1, experience_option_id: 11, quantity: 1 }] },
+      order: createdOrder,
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+    testUtils.fireEvent.click(requireElement(testUtils, '.order-result-actions__primary'))
+    await flush(testUtils)
+
+    expect(mockLoadPendingTableEntry).toHaveBeenCalledTimes(2)
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(1)
+    expect(mockClearPendingTableEntry).not.toHaveBeenCalled()
+  })
+
+  it('纯 Kit 新订单不自动回桌并收口本次无法开台的意图', async () => {
+    mockTableIntentId = tableIntentId
+    mockLoadPendingTableEntry.mockResolvedValue(pendingTableIntent)
+    mockSubmission = submissionState({
+      status: 'succeeded',
+      submittedItems: cartItems.slice(1),
+      request: { items: [{ product_id: 2, quantity: 2 }] },
+      order: { ...createdOrder, items: createdOrder.items.slice(1) },
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+
+    expect(mockLoadPendingTableEntry).toHaveBeenCalledWith(tableIntentId, 7)
+    expect(mockClearPendingTableEntry).toHaveBeenCalledWith(pendingTableIntent)
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+    expect(testUtils.queries.querySelector('.order-result-actions')?.textContent)
+      .toContain('查看我的订单')
+  })
+
+  it('普通商城 Experience 订单不读取或消费设备上陈旧桌台意图', async () => {
+    mockLoadPendingTableEntry.mockResolvedValue(pendingTableIntent)
+    mockSubmission = submissionState({
+      status: 'succeeded',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 1, experience_option_id: 11, quantity: 1 }] },
+      order: createdOrder,
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+
+    expect(mockLoadPendingTableEntry).not.toHaveBeenCalled()
+    expect(mockClearPendingTableEntry).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+  })
+
+  it('其他用户不能消费原用户的桌台意图', async () => {
+    mockTableIntentId = tableIntentId
+    mockAuth = {
+      ...mockAuth,
+      user: { ...mockAuth.user!, id: 8 },
+    }
+    mockLoadPendingTableEntry.mockResolvedValue(undefined)
+    mockSubmission = submissionState({
+      status: 'succeeded',
+      submittedItems: cartItems,
+      request: { items: [{ product_id: 1, experience_option_id: 11, quantity: 1 }] },
+      order: createdOrder,
+    })
+
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+
+    expect(mockLoadPendingTableEntry).toHaveBeenCalledWith(tableIntentId, 8)
+    expect(Taro.reLaunch).not.toHaveBeenCalled()
+    expect(mockClearPendingTableEntry).not.toHaveBeenCalled()
   })
 })
 
@@ -372,6 +581,8 @@ function requireElement(testUtils: ReactTestUtil, selector: string): Element {
 
 async function flush(testUtils: ReactTestUtil): Promise<void> {
   await testUtils.act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
   })

@@ -36,14 +36,17 @@ const secondPage: ProductListPage = {
   pages: 2,
 }
 
-function ProductListHarness({ source }: { source: ProductListSource }) {
+function ProductListHarness({ initialProductType, source }: {
+  source: ProductListSource
+  initialProductType?: 'all' | 'experience' | 'kit'
+}) {
   const {
     loadNextPage,
     retry,
     setKeyword,
     setProductType,
     state,
-  } = useProductList(source)
+  } = useProductList(source, initialProductType)
   return (
     <div>
       <span className='status'>{state.status}</span>
@@ -91,6 +94,23 @@ describe('useProductList', () => {
     expect(source.listProducts).toHaveBeenNthCalledWith(2, { page: 2, page_size: 10 })
     expect(testUtils.queries.querySelector('.ids')?.textContent).toBe('1,2')
     expect(testUtils.queries.querySelector('.page')?.textContent).toBe('2')
+  })
+
+  it('允许桌台点单以体验项目作为初始分类且不会先请求全部商品', async () => {
+    const source: ProductListSource = {
+      listProducts: jest.fn().mockResolvedValue(firstPage),
+    }
+    await testUtils.mount(ProductListHarness, {
+      props: { source, initialProductType: 'experience' },
+    })
+    await flush(testUtils)
+
+    expect(source.listProducts).toHaveBeenCalledTimes(1)
+    expect(source.listProducts).toHaveBeenCalledWith({
+      page: 1,
+      page_size: 10,
+      product_type: 'experience',
+    })
   })
 
   it('重试后忽略更早请求的迟到响应', async () => {

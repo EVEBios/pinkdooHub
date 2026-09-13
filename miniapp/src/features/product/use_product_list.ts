@@ -44,9 +44,12 @@ const initialState: ProductListState = {
   loadingMore: false,
 }
 
-export function useProductList(source: ProductListSource = getDefaultProductApi()): ProductListFeature {
+export function useProductList(
+  source: ProductListSource = getDefaultProductApi(),
+  initialProductType: ProductTypeFilter = 'all',
+): ProductListFeature {
   const [state, setState] = useState<ProductListState>(initialState)
-  const [productType, setProductType] = useState<ProductTypeFilter>('all')
+  const [productType, setProductType] = useState<ProductTypeFilter>(initialProductType)
   const [keyword, setKeyword] = useState('')
   const [debouncedKeyword, setDebouncedKeyword] = useState('')
   const requestSequenceRef = useRef(0)

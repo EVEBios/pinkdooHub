@@ -25,6 +25,7 @@ export {
   resolveAuthenticatedLanding,
 } from './login_route'
 export type { LoginRedirect } from './login_route'
+export type { OrderConfirmRedirect } from './login_route'
 export type { ReservationCreateRedirect } from './login_route'
 export type { TableEntryRedirect } from './login_route'
 export type { AuthRuntime } from './runtime'

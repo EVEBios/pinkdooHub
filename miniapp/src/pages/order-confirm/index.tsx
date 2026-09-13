@@ -1,6 +1,6 @@
 import { Button, Text, Textarea, View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
-import { useEffect, useState } from 'react'
+import Taro, { useRouter } from '@tarojs/taro'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { BusinessError, SessionExpiredError } from '@/api'
 import type { OrderDetail } from '@/api/endpoints/orders'
@@ -21,8 +21,11 @@ import {
 } from '@/features/order'
 import {
   buildTableEntryUrl,
+  buildTableOrderConfirmUrl,
   clearPendingTableEntry,
   loadPendingTableEntry,
+  parseTableOrderConfirmRoute,
+  type PendingTableEntryIntent,
 } from '@/features/table_session'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatColorLabel, formatPrice } from '@/utils/format'
@@ -31,6 +34,7 @@ import './index.scss'
 
 export default function OrderConfirmPage() {
   const auth = useAuth()
+  const tableIntentId = parseTableOrderConfirmRoute(useRouter().params)
 
   if (auth.status === 'initializing') {
     return <ConfirmState title='正在确认登录状态…' description='创建订单必须关联当前登录用户' />
@@ -62,17 +66,26 @@ export default function OrderConfirmPage() {
     }
   }
 
-  return <CustomerOrderConfirmPage auth={auth} />
+  return <CustomerOrderConfirmPage auth={auth} tableIntentId={tableIntentId} />
 }
 
-function CustomerOrderConfirmPage({ auth }: { readonly auth: AuthContextValue }) {
+function CustomerOrderConfirmPage({ auth, tableIntentId }: {
+  readonly auth: AuthContextValue
+  readonly tableIntentId?: string
+}) {
   const cart = useCart()
   const submission = useOrderSubmission()
   const [remark, setRemark] = useState('')
 
   // 服务端成功是最高优先级事实；Cart 对账可能已先发布空列表，不能遮住创建结果。
   if (submission.state.status === 'succeeded') {
-    return <OrderResult state={submission.state} />
+    return (
+      <OrderResult
+        state={submission.state}
+        tableIntentId={tableIntentId}
+        userId={auth.user?.id}
+      />
+    )
   }
 
   if (cart.status === 'initializing') {
@@ -102,7 +115,11 @@ function CustomerOrderConfirmPage({ auth }: { readonly auth: AuthContextValue })
       <ConfirmState title='登录后才能创建订单' description='登录完成后会回到当前订单确认页，购物清单不会被清空'>
         <Button
           className='order-confirm-state__action order-confirm-state__login'
-          onClick={() => void Taro.navigateTo({ url: buildLoginUrl(ORDER_CONFIRM_PATH) })}
+          onClick={() => void Taro.navigateTo({
+            url: buildLoginUrl(
+              tableIntentId ? buildTableOrderConfirmUrl(tableIntentId) : ORDER_CONFIRM_PATH,
+            ),
+          })}
         >
           去登录
         </Button>
@@ -173,12 +190,24 @@ function CustomerOrderConfirmPage({ auth }: { readonly auth: AuthContextValue })
 
 function OrderResult({
   state,
+  tableIntentId,
+  userId,
 }: {
   state: Extract<OrderSubmissionState, { status: 'succeeded' }>
+  readonly tableIntentId?: string
+  readonly userId?: number
 }) {
   const { order } = state
-  const pendingTableToken = usePendingTableToken()
-  const hasExperience = order.items.some((item) => item.experience_option_id !== null)
+  const hasExperience = order.items.some(
+    (item) => item.experience_option_id !== null && item.experience_option_id !== undefined,
+  )
+  const tableReturn = usePendingTableReturn(
+    order.id,
+    hasExperience,
+    tableIntentId,
+    userId,
+  )
+  const tableReturnBusy = tableReturn.status === 'checking' || tableReturn.status === 'returning'
   return (
     <View className='order-result-page'>
       <View className='order-result-hero'>
@@ -219,17 +248,41 @@ function OrderResult({
         </View>
       )}
 
+      {tableReturn.status === 'failed' && (
+        <View className='order-result-warning' ariaRole='alert'>
+          <Text>订单已创建，但暂时无法返回扫码桌台。桌台信息已保留，请重试。</Text>
+        </View>
+      )}
+
       <View className='order-result-actions'>
-        {pendingTableToken && hasExperience && (
+        {tableReturn.status === 'checking' && (
           <Button
             className='order-result-actions__primary'
-            onClick={() => void returnToTable(pendingTableToken)}
-          >返回桌台并开台</Button>
+            disabled
+            loading
+          >正在确认扫码桌台…</Button>
         )}
-        <Button onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}>查看我的订单</Button>
+        {tableReturn.status === 'returning' && (
+          <Button
+            className='order-result-actions__primary'
+            disabled
+            loading
+          >正在返回扫码桌台…</Button>
+        )}
+        {tableReturn.status === 'failed' && (
+          <Button
+            className='order-result-actions__primary'
+            onClick={() => void tableReturn.retry()}
+          >重新返回桌台</Button>
+        )}
+        <Button
+          disabled={tableReturnBusy}
+          onClick={() => void leaveTableOrderResult(tableReturn.discard, ORDER_LIST_PATH)}
+        >查看我的订单</Button>
         <Button
           className='order-result-actions__primary'
-          onClick={() => void Taro.switchTab({ url: '/pages/index/index' })}
+          disabled={tableReturnBusy}
+          onClick={() => void leaveTableOrderResult(tableReturn.discard, '/pages/index/index')}
         >
           继续选购
         </Button>
@@ -238,21 +291,105 @@ function OrderResult({
   )
 }
 
-function usePendingTableToken(): string | undefined {
-  const [token, setToken] = useState<string>()
+type PendingTableReturnState =
+  | { readonly status: 'checking' | 'idle' | 'returning' }
+  | { readonly status: 'failed' }
+
+function usePendingTableReturn(
+  orderId: number,
+  hasExperience: boolean,
+  intentId?: string,
+  userId?: number,
+) {
+  const canLoadIntent = intentId !== undefined && userId !== undefined
+  const [state, setState] = useState<PendingTableReturnState>(
+    canLoadIntent && hasExperience ? { status: 'checking' } : { status: 'idle' },
+  )
+  const mountedRef = useRef(true)
+  const navigatingRef = useRef(false)
+  const autoStartedOrderRef = useRef<number>()
+
   useEffect(() => {
-    let active = true
-    void loadPendingTableEntry()
-      .then((value) => { if (active) setToken(value) })
-      .catch(() => undefined)
-    return () => { active = false }
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
   }, [])
-  return token
+
+  const openTable = useCallback(async (intent: PendingTableEntryIntent): Promise<void> => {
+    if (navigatingRef.current) return
+    navigatingRef.current = true
+    if (mountedRef.current) setState({ status: 'returning' })
+    try {
+      // order_id 只是让开台页在服务端 eligible 列表中聚焦新订单，不参与领取校验。
+      await Taro.reLaunch({
+        url: buildTableEntryUrl(intent.token, orderId, intent.intentId),
+      })
+    } catch {
+      if (mountedRef.current) setState({ status: 'failed' })
+      return
+    } finally {
+      navigatingRef.current = false
+    }
+    // 导航成功仍保留意图；由桌台 claim 成功或用户明确退出流程后精确消费。
+  }, [orderId])
+
+  useEffect(() => {
+    if (!intentId || userId === undefined) {
+      setState({ status: 'idle' })
+      return
+    }
+    if (!hasExperience) {
+      setState({ status: 'idle' })
+      void loadPendingTableEntry(intentId, userId)
+        .then((intent) => intent && clearPendingTableEntry(intent))
+        .catch(() => undefined)
+      return
+    }
+    let active = true
+    void loadPendingTableEntry(intentId, userId)
+      .then((intent) => {
+        if (!active) return
+        if (!intent) {
+          setState({ status: 'idle' })
+          return
+        }
+        if (autoStartedOrderRef.current === orderId) return
+        autoStartedOrderRef.current = orderId
+        void openTable(intent)
+      })
+      .catch(() => {
+        if (active) setState({ status: 'failed' })
+      })
+    return () => { active = false }
+  }, [hasExperience, intentId, openTable, orderId, userId])
+
+  const retry = useCallback(async (): Promise<void> => {
+    if (state.status !== 'failed' || !intentId || userId === undefined) return
+    setState({ status: 'checking' })
+    try {
+      const intent = await loadPendingTableEntry(intentId, userId)
+      if (intent) await openTable(intent)
+      else if (mountedRef.current) setState({ status: 'idle' })
+    } catch {
+      if (mountedRef.current) setState({ status: 'failed' })
+    }
+  }, [intentId, openTable, state.status, userId])
+
+  const discard = useCallback(async (): Promise<void> => {
+    if (intentId && userId !== undefined) {
+      const intent = await loadPendingTableEntry(intentId, userId).catch(() => undefined)
+      if (intent) await clearPendingTableEntry(intent).catch(() => undefined)
+    }
+  }, [intentId, userId])
+
+  return { ...state, discard, retry } as const
 }
 
-async function returnToTable(token: string): Promise<void> {
-  await Taro.navigateTo({ url: buildTableEntryUrl(token) })
-  await clearPendingTableEntry().catch(() => undefined)
+async function leaveTableOrderResult(
+  discard: () => Promise<void>,
+  url: string,
+): Promise<void> {
+  await discard()
+  await Taro.switchTab({ url })
 }
 
 function formatOrderOption(item: OrderDetail['items'][number]): string {

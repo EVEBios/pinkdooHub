@@ -8,11 +8,16 @@ export {
   loadPendingTableEntry,
   savePendingTableEntry,
 } from './pending_table_entry'
+export type { PendingTableEntryIntent } from './pending_table_entry'
 export {
   ADMIN_TABLES_PATH,
   TABLE_ENTRY_PATH,
   buildAdminTableSessionUrl,
   buildTableEntryUrl,
+  buildTableOrderConfirmUrl,
+  parseTableCheckoutIntentId,
+  parseTableEntryOrderId,
   parseTableEntryRoute,
+  parseTableOrderConfirmRoute,
   parseTableToken,
 } from './table_session_route'
