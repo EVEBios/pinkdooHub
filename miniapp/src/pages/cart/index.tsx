@@ -10,6 +10,7 @@ import {
   useCart,
 } from '@/features/order'
 import { BeadColorSwatch } from '@/components/bead_color_swatch'
+import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
@@ -23,6 +24,7 @@ type CartDisplayEntry =
 
 export default function CartPage() {
   const auth = useAuth()
+  useRootTabSelection(ROOT_TAB_INDEX.cart)
 
   if (auth.status === 'initializing') {
     return <CartState title='正在确认账户身份…' description='确认后将恢复当前设备的购物车' />

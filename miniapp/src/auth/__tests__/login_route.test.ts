@@ -146,3 +146,9 @@ describe('登录安全返回路由', () => {
     expect(parseLoginRedirect(value)).toBeUndefined()
   })
 })
+
+it('订单筛选登录回跳只接受精确的合法状态', () => {
+  expect(parseLoginRedirect(encodeURIComponent('/pages/orders/index?status=paid'))).toBe('/pages/orders/index?status=paid')
+  expect(parseLoginRedirect('/pages/orders/index?status=shipped')).toBeUndefined()
+  expect(parseLoginRedirect('/pages/orders/index?status=paid&redirect=evil')).toBeUndefined()
+})

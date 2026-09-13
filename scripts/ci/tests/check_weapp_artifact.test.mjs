@@ -12,10 +12,10 @@ const EXPECTED_ORIGIN = 'https://api.ci.pinkdoohub.test'
 const ROOT_TABS = [
   { pagePath: 'pages/index/index', text: '商城' },
   { pagePath: 'pages/reservations/index', text: '预约' },
-  { pagePath: 'pages/orders/index', text: '订单' },
+  { pagePath: 'pages/cart/index', text: '购物车' },
   { pagePath: 'pages/member/index', text: '会员中心' }
 ]
-const TAB_BAR_ICON_PATHS = ['mall', 'reservations', 'orders', 'member'].flatMap((name) => [
+const TAB_BAR_ICON_PATHS = ['mall', 'reservations', 'cart', 'member'].flatMap((name) => [
   `assets/tab-bar/${name}-outline.png`,
   `assets/tab-bar/${name}-solid-berry.png`,
   `assets/tab-bar/${name}-solid-white.png`

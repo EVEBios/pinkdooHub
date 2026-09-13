@@ -389,7 +389,11 @@ async function leaveTableOrderResult(
   url: string,
 ): Promise<void> {
   await discard()
-  await Taro.switchTab({ url })
+  if (url === ORDER_LIST_PATH) {
+    await Taro.navigateTo({ url })
+  } else {
+    await Taro.switchTab({ url })
+  }
 }
 
 function formatOrderOption(item: OrderDetail['items'][number]): string {
@@ -414,7 +418,7 @@ function SubmissionFeedback({ state }: { state: OrderSubmissionState }) {
         <Text>请求结果可能未知。购物清单已保留，请不要立即重复创建；后续可前往“我的订单”确认。</Text>
         <Button
           className='order-confirm-feedback__action'
-          onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}
+          onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}
         >
           查看我的订单
         </Button>

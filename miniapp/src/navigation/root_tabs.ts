@@ -3,7 +3,7 @@ import Taro, { useDidShow } from '@tarojs/taro'
 export const ROOT_TAB_INDEX = {
   mall: 0,
   reservations: 1,
-  orders: 2,
+  cart: 2,
   member: 3,
 } as const
 
@@ -30,10 +30,10 @@ export const ROOT_TABS = [
     url: '/pages/reservations/index',
   },
   {
-    index: ROOT_TAB_INDEX.orders,
-    text: '订单',
-    pagePath: 'pages/orders/index',
-    url: '/pages/orders/index',
+    index: ROOT_TAB_INDEX.cart,
+    text: '购物车',
+    pagePath: 'pages/cart/index',
+    url: '/pages/cart/index',
   },
   {
     index: ROOT_TAB_INDEX.member,

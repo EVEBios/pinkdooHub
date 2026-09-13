@@ -377,7 +377,7 @@ export function ColorSelectableKitDetail({ detail }: { detail: KitProductDetail 
       <View className='product-detail__cart-actions'>
         <Button
           className='product-detail__cart-link'
-          onClick={() => void Taro.navigateTo({ url: '/pages/cart/index' })}
+          onClick={() => void Taro.switchTab({ url: '/pages/cart/index' })}
         >查看购物车</Button>
         <Button
           className='product-detail__add-cart'
@@ -441,7 +441,7 @@ function CartActions({
     <View className='product-detail__cart-actions'>
       <Button
         className='product-detail__cart-link'
-        onClick={() => void Taro.navigateTo({ url: '/pages/cart/index' })}
+        onClick={() => void Taro.switchTab({ url: '/pages/cart/index' })}
       >
         查看购物车
       </Button>

@@ -13,6 +13,7 @@ import {
   WALLET_RECHARGE_PATH,
   WALLET_TRANSACTION_LIST_PATH,
 } from '@/auth'
+import { buildOrderListUrl } from '@/features/order/order_route'
 import { useMemberWallet } from '@/features/wallet'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
@@ -75,11 +76,12 @@ function CustomerMemberPage({ auth }: { readonly auth: AuthContextValue }) {
 export function AuthenticatedMember({ onLogout }: { readonly onLogout: () => Promise<void> }) {
   const { retry, state } = useMemberWallet()
   if (state.status === 'loading') {
-    return <MemberState title='正在读取会员账户…' description='余额以服务端账本为准' />
+    return <MemberState title='正在读取会员账户…' description='余额以服务端账本为准'><MemberOrders /></MemberState>
   }
   if (state.status === 'error') {
     return (
       <MemberState title='会员账户加载失败' description={state.errorMessage}>
+        <MemberOrders />
         <Button className='member-state__action' onClick={retry}>重新加载</Button>
         <LogoutAction onLogout={onLogout} />
       </MemberState>
@@ -87,16 +89,23 @@ export function AuthenticatedMember({ onLogout }: { readonly onLogout: () => Pro
   }
 
   const { user, wallet } = state.member
+  const formattedBalance = formatPrice(wallet.balance)
   const walletActive = wallet.status === 'active' && user.status === 'normal'
   return (
     <View className='member-page'>
       <View className='member-page__header'>
-        <Text className='member-page__eyebrow'>会员账户 · #{user.id}</Text>
-        <Text className='member-page__title'>{user.nickname}</Text>
-        <Text className='member-page__identity'>@{user.username} · {walletActive ? '会员账户正常' : '会员账户不可消费'}</Text>
+        <Text className='member-page__eyebrow'>pinkdooHub</Text>
+        <Text className='member-page__title'>会员中心</Text>
+        <View className='member-page__identity-row'>
+          <MemberAvatar avatar={user.avatar} nickname={user.nickname} />
+          <View className='member-page__identity-copy'>
+            <Text className='member-page__nickname'>{user.nickname}</Text>
+            <Text className='member-page__identity'>@{user.username}</Text>
+          </View>
+          <Text className='member-page__motto'>做一颗更美的拼豆</Text>
+        </View>
+        <MemberOrders />
       </View>
-
-      <MemberProfile user={user} />
 
       {state.refreshErrorMessage && (
         <View className='member-refresh'>
@@ -106,54 +115,79 @@ export function AuthenticatedMember({ onLogout }: { readonly onLogout: () => Pro
       )}
 
       <View className='member-balance'>
-        <View className='member-balance__ribbon'>
-          <Text className='member-balance__label'>可用余额</Text>
-          <Text className='member-balance__amount'>¥{formatPrice(wallet.balance)}</Text>
+        <View className='member-balance__summary'>
+          <View className='member-balance__copy'>
+            <Button className='member-actions__primary' onClick={() => void Taro.navigateTo({ url: WALLET_TRANSACTION_LIST_PATH })}>
+              <Text className='member-balance__label'>可用余额</Text>
+              <View className='member-actions__link'><Text>资金明细</Text><MemberChevron /></View>
+            </Button>
+            {wallet.capabilities.topup_enabled && walletActive ? (
+              <Button className='member-actions__secondary' onClick={() => void Taro.navigateTo({ url: WALLET_RECHARGE_PATH })}>余额充值</Button>
+            ) : (
+              <Text className='member-balance__availability'>充值暂未开通</Text>
+            )}
+          </View>
+          <View className='member-balance__value'>
+            <Image className='member-balance__wallet' src='/assets/tab-bar/wallet-rose.png' mode='aspectFit' />
+            <Text className={`member-balance__amount${formattedBalance.length > 7 ? ' member-balance__amount--long' : ''}`}>¥{formattedBalance}</Text>
+          </View>
         </View>
-        <View className='member-balance__rule'>
-          <Text>余额上限</Text>
-          <Text>¥{formatPrice(wallet.balance_limit)}</Text>
-        </View>
-        <Text className='member-balance__note'>余额仅可购买 pinkdooHub 自有商品与服务，不可提现、转账或与其他方式混合支付。</Text>
+        {!walletActive && <Text className='member-balance__note'>会员账户不可消费</Text>}
       </View>
 
-      <View className='member-actions'>
-        <Button
-          className='member-actions__primary'
-          onClick={() => void Taro.navigateTo({ url: WALLET_TRANSACTION_LIST_PATH })}
-        >查看资金明细</Button>
-        <Button
-          className='member-actions__secondary'
-          onClick={() => void Taro.navigateTo({ url: WALLET_RECHARGE_PATH })}
-        >{wallet.capabilities.topup_enabled && walletActive ? '余额充值' : '充值暂未开通'}</Button>
-      </View>
-
-      <View className='member-notice'>
-        <Text className='member-notice__title'>充值能力准备中</Text>
-        <Text className='member-notice__body'>单笔充值范围为 ¥1.00–¥1000.00，充值后余额不得超过 ¥1000.00。当前微信支付商户能力尚未就绪，页面不会生成虚假支付结果。</Text>
-      </View>
+      <MemberProfile user={user} />
 
       <LogoutAction onLogout={onLogout} />
+      <Text className='member-balance__terms'>余额上限 ¥{formatPrice(wallet.balance_limit)}；余额仅可购买 pinkdooHub 自有商品与服务，不可提现、转账或与其他方式混合支付。</Text>
+    </View>
+  )
+}
+
+function MemberChevron({ light = false }: { readonly light?: boolean }) {
+  return <Image className='member-chevron' src={`/assets/tab-bar/chevron-right-${light ? 'white' : 'berry'}.png`} mode='scaleToFill' />
+}
+
+function MemberOrders() {
+  const shortcuts = [
+    { status: 'pending', label: '待支付', icon: 'document-currency-yen' },
+    { status: 'paid', label: '已支付', icon: 'document-check' },
+    { status: 'completed', label: '已完成', icon: 'shopping-bag' },
+  ] as const
+  return (
+    <View className='member-orders'>
+      <View className='member-orders__heading'>
+        <Text className='member-orders__title'>我的订单</Text>
+        <Button className='member-orders__all' onClick={() => void Taro.navigateTo({ url: buildOrderListUrl() })}>
+          <Text>查看全部</Text><MemberChevron light />
+        </Button>
+      </View>
+      <View className='member-orders__shortcuts'>
+        {shortcuts.map(({ status, label, icon }) => (
+          <Button key={status} className='member-orders__shortcut' onClick={() => void Taro.navigateTo({ url: buildOrderListUrl(status) })}>
+            <View className='member-orders__icon-seat'>
+              <Image className='member-orders__icon' src={`/assets/tab-bar/${icon}-white.png`} mode='scaleToFill' />
+            </View>
+            <Text>{label}</Text>
+          </Button>
+        ))}
+      </View>
     </View>
   )
 }
 
 function MemberProfile({ user }: { readonly user: MemberWallet['user'] }) {
+  const joinedDate = /^(\d{4})-(\d{2})-(\d{2})T/.exec(user.created_at)
   return (
     <View className='member-profile'>
-      <View className='member-profile__heading'>
-        <MemberAvatar avatar={user.avatar} nickname={user.nickname} />
-        <View>
-          <Text className='member-profile__title'>个人资料</Text>
-          <Text className='member-profile__hint'>会员信息来自当前登录账户</Text>
-        </View>
-      </View>
+      <Text className='member-profile__title'>个人资料</Text>
       <View className='member-profile__facts'>
-        <Text>昵称</Text><Text>{user.nickname}</Text>
-        <Text>账号</Text><Text>@{user.username}</Text>
-        <Text>手机号</Text><Text>{user.phone ?? '未绑定手机号'}</Text>
-        <Text>会员状态</Text><Text>{user.status === 'normal' ? '正常' : '不可用'}</Text>
-        <Text>加入时间</Text><Text>{user.created_at}</Text>
+        <View className='member-profile__row'><Text className='member-profile__label'>昵称</Text><Text className='member-profile__value'>{user.nickname}</Text></View>
+        <View className='member-profile__row'><Text className='member-profile__label'>账号</Text><Text className='member-profile__value'>@{user.username}</Text></View>
+      </View>
+      <View className='member-profile__facts member-profile__facts--account'>
+        <View className='member-profile__row'><Text className='member-profile__label'>手机号</Text><Text className='member-profile__value'>{user.phone ?? '未绑定'}</Text></View>
+        <View className='member-profile__row'><Text className='member-profile__label'>会员状态</Text><Text className='member-profile__value'>{user.status === 'normal' ? '正常' : '不可用'}</Text></View>
+        <View className='member-profile__row'><Text className='member-profile__label'>加入时间</Text><Text className='member-profile__value'>{joinedDate ? joinedDate.slice(1).join('.') : user.created_at}</Text></View>
       </View>
     </View>
   )
@@ -202,7 +236,7 @@ function LogoutAction({ onLogout }: { readonly onLogout: () => Promise<void> }) 
     <View className='member-logout'>
       <Button
         className='member-logout__button'
-        disabled={isLoggingOut}
+        disabled={isLoggingOut || undefined}
         onClick={() => void handleLogout()}
       >{isLoggingOut ? '正在退出…' : '退出当前账号'}</Button>
     </View>

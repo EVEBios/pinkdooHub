@@ -387,7 +387,7 @@ describe('OrderConfirmPage', () => {
     const checkOrders = testUtils.queries.querySelector('.order-confirm-feedback__action')
     if (!checkOrders) throw new Error('unknown 未提供我的订单核对入口')
     testUtils.fireEvent.click(checkOrders)
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
   })
 
   it('成功后只展示服务端快照，并提示本地对账异常但不降级订单结果', async () => {
@@ -420,7 +420,7 @@ describe('OrderConfirmPage', () => {
     const actions = requireElement(testUtils, '.order-result-actions').children
     testUtils.fireEvent.click(actions[0])
     await flush(testUtils)
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
     testUtils.fireEvent.click(actions[1])
     await flush(testUtils)
     expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })

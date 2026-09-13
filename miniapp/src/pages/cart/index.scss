@@ -6,6 +6,8 @@
   @include pd.page-shell;
   @include pd.content-width;
 
+  padding-bottom: var(--pd-root-tab-page-clearance);
+
   &--state {
     @include pd.state-shell;
 
@@ -45,7 +47,7 @@
   &__next-step {
     position: sticky;
     z-index: 3;
-    bottom: 12px;
+    bottom: var(--pd-root-tab-page-clearance);
     padding: 18px;
     color: var(--pd-color-ink-soft);
     font-size: var(--pd-font-caption);

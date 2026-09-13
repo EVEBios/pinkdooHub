@@ -21,7 +21,7 @@ interface CustomTabBarState {
 const CUSTOM_TAB_ICONS = [
   ['/assets/tab-bar/mall-outline.png', '/assets/tab-bar/mall-solid-white.png'],
   ['/assets/tab-bar/reservations-outline.png', '/assets/tab-bar/reservations-solid-white.png'],
-  ['/assets/tab-bar/orders-outline.png', '/assets/tab-bar/orders-solid-white.png'],
+  ['/assets/tab-bar/cart-outline.png', '/assets/tab-bar/cart-solid-white.png'],
   ['/assets/tab-bar/member-outline.png', '/assets/tab-bar/member-solid-white.png'],
 ] as const
 

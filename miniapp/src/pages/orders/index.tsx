@@ -6,7 +6,6 @@ import {
   buildLoginUrl,
   type AuthContextValue,
   isAdminRole,
-  ORDER_LIST_PATH,
   useAuth,
 } from '@/auth'
 import {
@@ -14,7 +13,7 @@ import {
   type OrderStatusFilter,
   useOrderList,
 } from '@/features/order'
-import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
+import { buildOrderListUrl, parseOrderStatusFilter } from '@/features/order/order_route'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
@@ -55,7 +54,7 @@ export default function OrdersPage() {
 }
 
 function CustomerOrdersPage({ auth }: { readonly auth: AuthContextValue }) {
-  useRootTabSelection(ROOT_TAB_INDEX.orders)
+  const initialStatus = parseOrderStatusFilter(Taro.getCurrentInstance().router?.params.status)
   if (auth.status === 'initializing') {
     return <OrdersState standalone title='正在确认登录状态…' description='我的订单只对当前登录用户可见' />
   }
@@ -71,21 +70,22 @@ function CustomerOrdersPage({ auth }: { readonly auth: AuthContextValue }) {
       <OrdersState standalone title='登录后查看我的订单' description='只会显示当前账号创建的订单'>
         <Button
           className='orders-state__action'
-          onClick={() => void Taro.navigateTo({ url: buildLoginUrl(ORDER_LIST_PATH) })}
+          onClick={() => void Taro.navigateTo({ url: buildLoginUrl(buildOrderListUrl(initialStatus)) })}
         >
           去登录
         </Button>
       </OrdersState>
     )
   }
-  return <AuthenticatedOrders />
+  return <AuthenticatedOrders initialStatus={initialStatus} />
 }
 
-export function AuthenticatedOrders() {
-  const { loadNextPage, retry, setStatusFilter, state, statusFilter } = useOrderList()
+export function AuthenticatedOrders({ initialStatus = 'all' }: { readonly initialStatus?: OrderStatusFilter }) {
+  const { loadNextPage, retry, setStatusFilter, state, statusFilter } = useOrderList(undefined, initialStatus)
   return (
     <View className='orders-page'>
       <View className='orders-page__header'>
+        <Button className='orders-page__back' onClick={() => void Taro.switchTab({ url: '/pages/member/index' })}>会员中心</Button>
         <Text className='orders-page__title'>我的订单</Text>
         <Text className='orders-page__subtitle'>状态、金额和数量均来自服务端</Text>
       </View>

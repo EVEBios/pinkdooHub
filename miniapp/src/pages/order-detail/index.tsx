@@ -119,7 +119,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
         >{reconcilingPayment ? '重新核对订单与资金' : '重新加载'}</Button>
         <Button
           className='order-detail-state__back'
-          onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}
+          onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}
         >返回我的订单</Button>
       </DetailState>
     )
@@ -226,7 +226,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
       )}
       <Button
         className='order-detail-page__back'
-        onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}
+        onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}
       >
         返回我的订单
       </Button>

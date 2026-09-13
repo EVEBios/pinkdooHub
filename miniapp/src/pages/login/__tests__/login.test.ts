@@ -133,17 +133,17 @@ describe('登录页注册入口', () => {
     expect(Taro.redirectTo).toHaveBeenCalledTimes(2)
   })
 
-  it('登录完成后以 switchTab 打开顾客根页白名单目标', async () => {
+  it('登录完成后以 reLaunch 打开订单二级页白名单目标', async () => {
     mockAuth = { ...mockAuth, status: 'authenticated', user: createUser('user') }
     await testUtils.mount(LoginPage)
     await flush(testUtils)
 
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
-    expect(Taro.reLaunch).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.switchTab).not.toHaveBeenCalled()
 
     input(testUtils, requireElement(testUtils, '.login-form__input'), 'rerender only')
     await flush(testUtils)
-    expect(Taro.switchTab).toHaveBeenCalledTimes(1)
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(1)
   })
 
   it('顾客二级白名单目标仍以 reLaunch 清理认证页面栈', async () => {
@@ -166,7 +166,7 @@ describe('登录页注册入口', () => {
   })
 
   it('落点导航失败后只通过明确动作重试导航，不重新登录', async () => {
-    ;(Taro.switchTab as jest.Mock)
+    ;(Taro.reLaunch as jest.Mock)
       .mockRejectedValueOnce(new Error('navigation failed'))
       .mockResolvedValueOnce(undefined)
     mockAuth = { ...mockAuth, status: 'authenticated', user: createUser('user') }
@@ -176,12 +176,12 @@ describe('登录页注册入口', () => {
     const navigationError = requireElement(testUtils, '.login-navigation__error')
     expect(navigationError.textContent).toContain('页面暂时无法打开')
     expect(navigationError.getAttribute('aria-role')).toBe('alert')
-    expect(Taro.switchTab).toHaveBeenCalledTimes(1)
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(1)
 
     testUtils.fireEvent.click(requireElement(testUtils, '.login-navigation__retry'))
     await flush(testUtils)
 
-    expect(Taro.switchTab).toHaveBeenCalledTimes(2)
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(2)
     expect(mockAuth.login).not.toHaveBeenCalled()
     expect(mockAuth.loginWithWechat).not.toHaveBeenCalled()
   })

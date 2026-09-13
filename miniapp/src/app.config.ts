@@ -78,10 +78,10 @@ export default defineAppConfig({
         selectedIconPath: 'assets/tab-bar/reservations-solid-berry.png'
       },
       {
-        pagePath: 'pages/orders/index',
-        text: '订单',
-        iconPath: 'assets/tab-bar/orders-outline.png',
-        selectedIconPath: 'assets/tab-bar/orders-solid-berry.png'
+        pagePath: 'pages/cart/index',
+        text: '购物车',
+        iconPath: 'assets/tab-bar/cart-outline.png',
+        selectedIconPath: 'assets/tab-bar/cart-solid-berry.png'
       },
       {
         pagePath: 'pages/member/index',

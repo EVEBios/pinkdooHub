@@ -23,3 +23,15 @@ describe('Order detail route', () => {
     expect(() => buildOrderDetailUrl(0)).toThrow('Order ID 必须是正安全整数')
   })
 })
+
+describe('订单状态入口', () => {
+  const { buildOrderListUrl, parseOrderStatusFilter } = jest.requireActual('../order_route')
+  it.each(['pending', 'paid', 'completed', 'cancelled'])('保留合法状态 %s', (status) => {
+    expect(parseOrderStatusFilter(status)).toBe(status)
+    expect(buildOrderListUrl(status)).toBe(`/pages/orders/index?status=${status}`)
+  })
+  it.each([undefined, '', 'all', 'shipped', 'pending&admin=true', ['paid']])('未知状态回落全部：%s', (status) => {
+    expect(parseOrderStatusFilter(status)).toBe('all')
+    expect(buildOrderListUrl()).toBe('/pages/orders/index')
+  })
+})

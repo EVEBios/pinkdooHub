@@ -26,7 +26,7 @@ describe('CustomTabBar', () => {
 
     const items = testUtils.queries.querySelectorAll('.root-tab-bar__item')
     expect(items).toHaveLength(4)
-    expect(Array.from(items, (item) => item.textContent)).toEqual(['商城', '预约', '订单', '会员中心'])
+    expect(Array.from(items, (item) => item.textContent)).toEqual(['商城', '预约', '购物车', '会员中心'])
     expect(items[0].classList.contains('root-tab-bar__item--selected')).toBe(true)
     expect(items[0].querySelector('.root-tab-bar__icon-seat--selected')).not.toBeNull()
     expect(items[0].querySelector('.root-tab-bar__icon--selected')).not.toBeNull()
@@ -113,7 +113,7 @@ describe('CustomTabBar', () => {
     await flush(testUtils)
 
     expect(switchTab).toHaveBeenNthCalledWith(1, { url: '/pages/reservations/index' })
-    expect(switchTab).toHaveBeenNthCalledWith(2, { url: '/pages/orders/index' })
+    expect(switchTab).toHaveBeenNthCalledWith(2, { url: '/pages/cart/index' })
     expectSelectedItem(items, 0)
   })
 
@@ -130,7 +130,7 @@ describe('CustomTabBar', () => {
     testUtils.fireEvent.click(items[2])
     await testUtils.act(async () => {
       getCurrentPages.mockReturnValue([
-        { route: 'pages/orders/index' },
+        { route: 'pages/cart/index' },
       ] as ReturnType<typeof Taro.getCurrentPages>)
       secondNavigation.resolve({ errMsg: 'switchTab:ok' })
       firstNavigation.reject(new Error('stale navigation failed'))

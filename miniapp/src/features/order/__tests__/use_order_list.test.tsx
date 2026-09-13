@@ -2,7 +2,7 @@ import ReactTestUtil from '@tarojs/test-utils-react'
 
 import type { OrderListPage } from '@/api/endpoints/orders'
 
-import { type OrderListSource, useOrderList } from '../use_order_list'
+import { type OrderListSource, type OrderStatusFilter, useOrderList } from '../use_order_list'
 
 let mockRefreshAfterReturn: (() => void) | undefined
 
@@ -39,8 +39,8 @@ const secondPage: OrderListPage = {
   pages: 2,
 }
 
-function Harness({ source }: { readonly source: OrderListSource }) {
-  const { loadNextPage, retry, setStatusFilter, state } = useOrderList(source)
+function Harness({ source, initialStatus }: { readonly source: OrderListSource; readonly initialStatus?: OrderStatusFilter }) {
+  const { loadNextPage, retry, setStatusFilter, state } = useOrderList(source, initialStatus)
   return (
     <div>
       <span className='status'>{state.status}</span>
@@ -62,6 +62,14 @@ describe('useOrderList', () => {
   })
 
   afterEach(() => testUtils.unmout())
+
+  it('状态深链首个请求直接带筛选，不额外加载全部订单', async () => {
+    const source: OrderListSource = { listOrders: jest.fn().mockResolvedValue(firstPage) }
+    await testUtils.mount(Harness, { props: { source, initialStatus: 'paid' } })
+    await flush(testUtils)
+    expect(source.listOrders).toHaveBeenCalledTimes(1)
+    expect(source.listOrders).toHaveBeenCalledWith({ page: 1, page_size: 20, status: 'paid' })
+  })
 
   it('加载第一页并按服务端分页追加下一页', async () => {
     const source: OrderListSource = {

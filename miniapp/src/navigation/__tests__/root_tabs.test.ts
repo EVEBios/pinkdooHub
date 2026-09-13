@@ -20,12 +20,13 @@ describe('root tabs', () => {
     expect(ROOT_TABS).toEqual([
       { index: 0, text: '商城', pagePath: 'pages/index/index', url: '/pages/index/index' },
       { index: 1, text: '预约', pagePath: 'pages/reservations/index', url: '/pages/reservations/index' },
-      { index: 2, text: '订单', pagePath: 'pages/orders/index', url: '/pages/orders/index' },
+      { index: 2, text: '购物车', pagePath: 'pages/cart/index', url: '/pages/cart/index' },
       { index: 3, text: '会员中心', pagePath: 'pages/member/index', url: '/pages/member/index' },
     ])
     expect(ROOT_TABS.map((tab) => tab.url)).not.toContain(ADMIN_WORKBENCH_PATH)
     expect(ROOT_TABS.every((tab) => isRootTabUrl(tab.url))).toBe(true)
     expect(isRootTabUrl('/pages/order-confirm/index')).toBe(false)
+    expect(isRootTabUrl('/pages/orders/index')).toBe(false)
     expect(isRootTabUrl(ADMIN_WORKBENCH_PATH)).toBe(false)
   })
 
@@ -47,7 +48,7 @@ describe('root tabs', () => {
     )
     const getTabBar = jest.spyOn(Taro, 'getTabBar')
 
-    expect(() => syncRootTabSelection(ROOT_TAB_INDEX.orders)).not.toThrow()
+    expect(() => syncRootTabSelection(ROOT_TAB_INDEX.cart)).not.toThrow()
     expect(getTabBar).not.toHaveBeenCalled()
   })
 })

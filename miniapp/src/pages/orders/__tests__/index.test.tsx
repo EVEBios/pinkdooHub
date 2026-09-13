@@ -84,7 +84,7 @@ describe('OrdersPage', () => {
     expect(Taro.navigateTo).toHaveBeenCalledWith({
       url: '/pages/login/index?redirect=%2Fpages%2Forders%2Findex',
     })
-    expect(mockUseRootTabSelection).toHaveBeenCalledWith(2)
+    expect(mockUseRootTabSelection).not.toHaveBeenCalled()
   })
 
   it('ADMIN+ 不挂载顾客订单 hook，并自动进入店铺工作台', async () => {

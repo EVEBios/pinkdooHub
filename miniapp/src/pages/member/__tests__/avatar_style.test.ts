@@ -28,6 +28,5 @@ describe('会员头像占位字母布局', () => {
     expect(initial).toContain('justify-content: center')
     expect(initial).toContain('line-height: 1')
     expect(initial).toContain('text-align: center')
-    expect(initial).toContain('transform: translateY(-1px)')
   })
 })

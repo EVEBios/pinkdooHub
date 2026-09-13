@@ -242,3 +242,22 @@ final result: passed
 - Review：无认证、数据、事务、API或依赖变动；新增正常／加载／错误态入口跳转测试，更新空态测试。全量103套件775测试、类型检查、定向ESLint/Stylelint与H5构建通过；已有React act弃用和H5包体积警告仍存在。
 - 验收范围：完成本轮入口视觉与H5交互验收，未做微信真机复验。没有发布或持久数据库迁移。
 - final result: passed
+
+
+## 2026-09-13 · 购物车根导航与会员订单专区（最新增量验收）
+
+final result: passed
+
+基于用户选定的第三份会员中心方案完成现有 Taro 页面调整。视觉、交互、测试、构建证据和适用边界见 [本次验收报告](docs/08_frontend/qa/cart-member-navigation-review.md)。此前各模块验收记录保留；本节不替代发布 Gate。
+
+## 2026-09-13 · 会员中心 Option 4 最终精修（最新增量验收）
+
+final result: passed
+
+源图 `exec-14adb75b-7ed3-4915-8637-04c5082b06ff.png`；实际截图 `design-qa-assets/member-refinement-390.png`；归一化为 390 × 844、同状态并排比较 `design-qa-assets/member-refinement-comparison.png`，局部对照 `design-qa-assets/member-refinement-focus.png`。完整比较历史、五项视觉复核、边界状态、交互与测试见 [本轮报告](docs/08_frontend/qa/member-refinement-review.md)。此前记录保留，不外推任何发布 Gate。
+
+## 2026-09-13 · 会员余额卡排版与比例修正（最新增量验收）
+
+final result: passed
+
+用户实际截图暴露上一轮余额卡的未开通按钮留白与非等比图片问题。本轮已修正，使用本次实际浏览器截图完成同屏前后对照、已选目标对照及320px金额上限检查。源图、实现尺寸、局部／整页证据、交互、检查结果见 [余额卡修正报告](docs/08_frontend/qa/balance-layout-fix.md)。本节替代前一轮余额区域的最终视觉结论，其他区域不扩大修改。

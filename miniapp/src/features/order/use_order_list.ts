@@ -45,9 +45,12 @@ const initialState: OrderListState = {
   loadingMore: false,
 }
 
-export function useOrderList(source: OrderListSource = getDefaultOrderApi()): OrderListFeature {
+export function useOrderList(
+  source: OrderListSource = getDefaultOrderApi(),
+  initialStatus: OrderStatusFilter = 'all',
+): OrderListFeature {
   const [state, setState] = useState<OrderListState>(initialState)
-  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>(initialStatus)
   const requestSequenceRef = useRef(0)
   const loadingMoreRef = useRef(false)
   const refreshingRef = useRef(false)

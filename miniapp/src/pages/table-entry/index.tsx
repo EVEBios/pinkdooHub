@@ -119,7 +119,7 @@ function TableEntryContent({ auth, focusedIntentId, focusedOrderId, token }: {
       await clearPendingTableEntry({ intentId: focusedIntentId, token, userId })
         .catch(() => undefined)
     }
-    await Taro.switchTab({ url: ORDER_LIST_PATH })
+    await Taro.navigateTo({ url: ORDER_LIST_PATH })
   }
 
   async function startAnotherTableOrder(): Promise<void> {
@@ -370,7 +370,7 @@ function SessionPanel({ clock, onPay, onRefresh, paying, session }: {
       <View className='table-section table-session'>
         <Text className='table-session__status'>本次体验已结束</Text>
         <Text className='table-section__hint'>{session.close_reason?.label ?? '桌台已释放'} · 订单仍按原状态继续处理</Text>
-        <Button className='table-action' onClick={() => void Taro.switchTab({ url: ORDER_LIST_PATH })}>返回订单</Button>
+        <Button className='table-action' onClick={() => void Taro.navigateTo({ url: ORDER_LIST_PATH })}>返回订单</Button>
       </View>
     )
   }

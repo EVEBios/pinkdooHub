@@ -12,6 +12,11 @@ const mockRemoveItem = jest.fn(async () => undefined)
 let mockCart: CartContextValue
 let mockAuth: AuthContextValue
 const mockUseCart = jest.fn()
+const mockUseRootTabSelection = jest.fn()
+jest.mock('@/navigation/root_tabs', () => ({
+  ROOT_TAB_INDEX: { cart: 2 },
+  useRootTabSelection: (index: number) => mockUseRootTabSelection(index),
+}))
 
 jest.mock('@/auth', () => ({
   ADMIN_WORKBENCH_PATH: '/admin/pages/workbench/index',
@@ -58,6 +63,11 @@ describe('CartPage', () => {
   afterEach(() => {
     testUtils.unmout()
     jest.clearAllMocks()
+  })
+
+  it('购物车同步第三个根导航入口', async () => {
+    await testUtils.mount(CartPage)
+    expect(mockUseRootTabSelection).toHaveBeenCalledWith(2)
   })
 
   it.each([

@@ -53,6 +53,13 @@ describe('自选颜色 Kit 商品详情', () => {
     jest.clearAllMocks()
   })
 
+  it('查看购物车切换到根 Tab，不压入普通页面栈', async () => {
+    await testUtils.mount(ColorSelectableKitDetail, { props: { detail: colorKit(2) } })
+    testUtils.fireEvent.click(required(testUtils, '.product-detail__cart-link'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/cart/index' })
+    expect(Taro.navigateTo).not.toHaveBeenCalled()
+  })
+
   it('按颜色选择 10g 份数，并一次性原子加入购物车', async () => {
     await testUtils.mount(ColorSelectableKitDetail, { props: { detail: colorKit(2) } })
 

@@ -43,12 +43,12 @@ Reservation N1/M7 后端契约与仓库实现已完成，M5/M7 已通过一次�
 |------|-------|-----------|--------|
 | 商城 | 挂载公开 Product 列表 | 同 Guest | 业务 Hook 前 `reLaunch` 工作台，零 Product 请求 |
 | 预约 | 登录引导，不请求用户预约 | 挂载 owner-only 预约列表 | 业务 Hook 前 `reLaunch` 工作台，零顾客预约请求 |
-| 订单 | 登录引导，不请求用户订单 | 挂载 owner-only 订单列表 | 业务 Hook 前 `reLaunch` 工作台，零顾客订单请求 |
+| 购物车 | 恢复设备本地清单，结算时引导登录 | 恢复同一设备本地清单 | 业务 Hook 前 `reLaunch` 工作台，不挂载顾客 Cart |
 | 会员中心 | 登录入口，不请求资料/钱包 | 挂载当前资料与自己的钱包摘要 | 钱包 Hook 前 `reLaunch` 工作台，零普通客户钱包请求 |
 
-- 四项路径固定为 `/pages/index/index`、`/pages/reservations/index`、`/pages/orders/index`、`/pages/member/index`；根页间只用 `switchTab`，路径不携带 query。
+- 四项路径固定为 `/pages/index/index`、`/pages/reservations/index`、`/pages/cart/index`、`/pages/member/index`；根页间只用 `switchTab`，路径不携带 query。
 - 微信、抖音和 H5 默认从无底栏、无业务请求的 `/pages/entry/index` 等待 `/users/me` 确认角色：Guest/普通 USER 进入商城，ADMIN+ 进入 `/admin/pages/workbench/index`。支付宝因平台要求首个 Tab 同时是首页而保留商城在 `pages[0]`，由商城同一 ADMIN+ 守卫完成分流。
-- 商品详情、购物车、下单确认、订单/预约详情、钱包等顾客二级页和全部 ADMIN+ 页面继续使用普通页面栈且无底栏；顾客二级页同样在 Product/Cart/Order/Reservation/Wallet 业务 Hook 前拦截 ADMIN+，动态 ID/Option 参数继续经过现有路由 Guard。
+- 商品详情、订单列表、下单确认、订单/预约详情、钱包等顾客二级页和全部 ADMIN+ 页面继续使用普通页面栈且无底栏；顾客二级页同样在 Product/Cart/Order/Reservation/Wallet 业务 Hook 前拦截 ADMIN+，动态 ID/Option 参数继续经过现有路由 Guard。
 - 店铺工作台只展示预约审核、订单处理、商品管理、库存流水、营业日历、用户与权限六个已有页面入口，不调用任何新增 API或并发拼接列表摘要；六个管理顶层页提供稳定“店铺工作台”返回入口。
 - 登录后只有与实际角色相容的固定白名单 redirect 会保留；无目标或不相容目标分别回商城/工作台，动态详情、外部 URL 和任意内部地址继续拒绝。导航失败必须提供显式重试，不能要求重新发起登录请求。
 - 订单和预约再次显示时保留当前筛选并刷新第一页，会员中心重读当前资料与普通 USER 钱包；首次挂载与首次显示不得双请求。商城保留搜索/类型/分页上下文。
@@ -511,3 +511,13 @@ confirm/reject/cancel 与店休 DELETE 均使用 empty-body 请求，连 `{}` �
 5. 更新本文件的公共集成规则或 Gap Matrix；
 6. 运行后端完整回归与当前发布平台构建；Phase 9 本版为微信 `weapp`，其他平台只在对应 Phase 重新冻结后成为门槛；
 7. Git diff 确认无手改生成文件和意外输出。
+
+
+### 2026-09-13 购物车根导航与会员订单入口
+
+- 第三个根 Tab 为购物车 `/pages/cart/index`，Guest/USER 仍使用设备本地清单；商品详情进入购物车使用 `switchTab`，结算区预留底栏和安全区空间。
+- 订单列表 `/pages/orders/index` 为无底栏的二级页；会员中心“查看全部”使用普通页面栈进入，待支付／已支付／已完成入口分别传 `status=pending|paid|completed`。订单页保留全部／待支付／已支付／已取消／已完成筛选。
+- `status` 只接受现有订单状态；非法或缺省值回落全部。合法状态的首次请求直接携带筛选，不先请求全部；登录白名单保留精确状态参数，拒绝未知状态与额外 query。
+- 下单结果、结果未知提示、订单详情和扫码开台返回订单改为普通页面导航；登录／注册完成使用既有 `reLaunch` 进入二级落点。订单页提供回会员中心的 `switchTab` 入口，支持登录清栈后的返回。
+- 会员中心依次显示身份、订单专区、钱包、个人资料和退出；资料详情始终完整展开。头像与余额取真实数据，无头像使用既有昵称首字占位。钱包读取失败不阻断订单专区。充值入口继续由服务端能力决定可用状态，无新增支付能力。
+- 不改变后端 API、持久化格式、权限、依赖与发布平台。

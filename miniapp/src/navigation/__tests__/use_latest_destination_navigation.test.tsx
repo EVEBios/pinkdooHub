@@ -49,9 +49,9 @@ describe('latest destination navigation', () => {
   })
 
   it('根 Tab 使用 switchTab，二级与管理页面使用 reLaunch', () => {
-    expect(resolvePathNavigationTarget('/pages/orders/index')).toEqual({
+    expect(resolvePathNavigationTarget('/pages/cart/index')).toEqual({
       method: 'switchTab',
-      url: '/pages/orders/index',
+      url: '/pages/cart/index',
     })
     expect(resolvePathNavigationTarget('/pages/order-confirm/index')).toEqual({
       method: 'reLaunch',
@@ -70,7 +70,7 @@ describe('latest destination navigation', () => {
     }))
     const customerTarget: DestinationNavigationTarget = {
       method: 'switchTab',
-      url: '/pages/orders/index',
+      url: '/pages/cart/index',
     }
     const adminTarget: DestinationNavigationTarget = {
       method: 'reLaunch',
@@ -97,7 +97,7 @@ describe('latest destination navigation', () => {
     }
     const customerTarget: DestinationNavigationTarget = {
       method: 'switchTab',
-      url: '/pages/orders/index',
+      url: '/pages/cart/index',
     }
     await testUtils.act(async () => {
       await controls?.openDestination(adminTarget)

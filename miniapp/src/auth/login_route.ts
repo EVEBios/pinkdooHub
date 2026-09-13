@@ -20,6 +20,7 @@ export const WALLET_RECHARGE_PATH = '/pages/wallet-recharge/index'
 export const WALLET_TRANSACTION_LIST_PATH = '/pages/wallet-transactions/index'
 
 export type ReservationCreateRedirect = typeof RESERVATION_CREATE_PATH | `${typeof RESERVATION_CREATE_PATH}?product_id=${number}&option_id=${number}`
+export type OrderListRedirect = `${typeof ORDER_LIST_PATH}?status=${'pending' | 'paid' | 'completed' | 'cancelled'}`
 export type OrderConfirmRedirect = `${typeof ORDER_CONFIRM_PATH}?table_intent=${string}`
 export type TableEntryRedirect = `${typeof TABLE_ENTRY_PATH}?token=${string}`
 
@@ -28,6 +29,7 @@ export type LoginRedirect =
   | typeof ORDER_CONFIRM_PATH
   | OrderConfirmRedirect
   | typeof ORDER_LIST_PATH
+  | OrderListRedirect
   | typeof RESERVATION_LIST_PATH
   | ReservationCreateRedirect
   | TableEntryRedirect
@@ -96,6 +98,7 @@ export function parseLoginRedirect(value: unknown): LoginRedirect | undefined {
   if (ALLOWED_REDIRECTS.has(decoded as LoginRedirect)) {
     return decoded as LoginRedirect
   }
+  if (/^\/pages\/orders\/index\?status=(pending|paid|completed|cancelled)$/.test(decoded)) return decoded as OrderListRedirect
   if (isOrderConfirmRedirect(decoded)) return decoded as OrderConfirmRedirect
   if (isReservationCreateRedirect(decoded)) return decoded as ReservationCreateRedirect
   return isTableEntryRedirect(decoded) ? decoded as TableEntryRedirect : undefined

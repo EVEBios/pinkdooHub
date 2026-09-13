@@ -32,7 +32,7 @@ jest.mock('@/features/wallet', () => ({
 }))
 
 jest.mock('@/navigation/root_tabs', () => ({
-  ROOT_TAB_INDEX: { mall: 0, reservations: 1, orders: 2, member: 3 },
+  ROOT_TAB_INDEX: { mall: 0, reservations: 1, cart: 2, member: 3 },
   useRootTabSelection: (index: number) => mockUseRootTabSelection(index),
 }))
 
@@ -120,6 +120,7 @@ describe('MemberPage', () => {
   it('普通会员展示资料、权威余额、充值状态与退出入口', async () => {
     await testUtils.mount(MemberPage)
 
+    expect(testUtils.queries.querySelector('.member-profile__expand')).toBeNull()
     const page = requireElement(testUtils, '.member-page')
     expect(page.textContent).toContain('拼豆会员')
     expect(page.textContent).toContain('¥280.00')
@@ -127,8 +128,8 @@ describe('MemberPage', () => {
     expect(page.textContent).toContain('pinkdooHub 自有商品与服务')
     expect(page.textContent).toContain('充值暂未开通')
     expect(page.textContent).toContain('个人资料')
-    expect(page.textContent).toContain('未绑定手机号')
-    expect(page.textContent).toContain('2026-09-01T08:00:00Z')
+    expect(page.textContent).toContain('未绑定')
+    expect(page.textContent).toContain('2026.09.01')
     expect(page.textContent).toContain('退出当前账号')
     expect(requireElement(testUtils, '.member-profile__avatar').getAttribute('src'))
       .toBe('https://api.example.com/uploads/avatars/member.webp')
@@ -136,11 +137,73 @@ describe('MemberPage', () => {
 
     testUtils.fireEvent.click(requireElement(testUtils, '.member-actions__primary'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/wallet-transactions/index' })
-    testUtils.fireEvent.click(requireElement(testUtils, '.member-actions__secondary'))
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/wallet-recharge/index' })
+    expect(testUtils.queries.querySelector('.member-actions__secondary')).toBeNull()
+    expect(requireElement(testUtils, '.member-balance__availability').textContent).toBe('充值暂未开通')
     testUtils.fireEvent.click(requireElement(testUtils, '.member-logout__button'))
     await flush(testUtils)
     expect(mockAuth.logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('服务端开通充值且账户可用时才显示可操作的充值入口', async () => {
+    const state = createWalletState()
+    state.member.wallet.capabilities.topup_enabled = true
+    mockUseMemberWallet.mockReturnValue({ state, retry: mockRetry })
+    await testUtils.mount(MemberPage)
+
+    expect(testUtils.queries.querySelector('.member-balance__availability')).toBeNull()
+    testUtils.fireEvent.click(requireElement(testUtils, '.member-actions__secondary'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/wallet-recharge/index' })
+  })
+
+  it('充值能力已开通但账户不可用时仍显示状态说明', async () => {
+    const state = createWalletState({ status: 'disabled' })
+    state.member.wallet.capabilities.topup_enabled = true
+    mockUseMemberWallet.mockReturnValue({ state, retry: mockRetry })
+    await testUtils.mount(MemberPage)
+
+    expect(testUtils.queries.querySelector('.member-actions__secondary')).toBeNull()
+    expect(requireElement(testUtils, '.member-balance__availability').textContent).toBe('充值暂未开通')
+  })
+
+  it('资料默认完整展开，并保留长昵称、手机号和账户不可用说明', async () => {
+    const state = createWalletState({ nickname: '这是一个需要完整展示的长会员昵称', phone: '13800000000', status: 'disabled' })
+    mockUseMemberWallet.mockReturnValue({ state, retry: mockRetry })
+    await testUtils.mount(MemberPage)
+
+    const profile = requireElement(testUtils, '.member-profile')
+    expect(profile.textContent).toContain('这是一个需要完整展示的长会员昵称')
+    expect(profile.textContent).toContain('13800000000')
+    expect(profile.textContent).toContain('不可用')
+    expect(requireElement(testUtils, '.member-balance__note').textContent).toBe('会员账户不可消费')
+    expect(testUtils.queries.querySelector('.member-profile__expand')).toBeNull()
+  })
+
+  it('退出请求期间展示禁用状态，完成后恢复正常按钮状态', async () => {
+    let finishLogout!: () => void
+    ;(mockAuth.logout as jest.Mock).mockReturnValue(new Promise<void>((resolve) => { finishLogout = resolve }))
+    await testUtils.mount(MemberPage)
+    const button = requireElement(testUtils, '.member-logout__button')
+    expect(button.getAttribute('disabled')).toBeNull()
+    testUtils.fireEvent.click(button)
+    await flush(testUtils)
+    expect(button.textContent).toBe('正在退出…')
+    expect(button.getAttribute('disabled')).toBe('true')
+    finishLogout()
+    await flush(testUtils)
+    expect(button.textContent).toBe('退出当前账号')
+    expect(button.getAttribute('disabled')).toBeNull()
+  })
+
+  it('订单专区的全部和状态入口进入对应二级订单列表', async () => {
+    await testUtils.mount(MemberPage)
+    testUtils.fireEvent.click(requireElement(testUtils, '.member-orders__all'))
+    expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/orders/index' })
+    const shortcuts = testUtils.queries.querySelectorAll('.member-orders__shortcut')
+    for (const [index, status] of ['pending', 'paid', 'completed'].entries()) {
+      testUtils.fireEvent.click(shortcuts[index])
+      expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: `/pages/orders/index?status=${status}` })
+    }
+    expect(Taro.switchTab).not.toHaveBeenCalled()
   })
 
   it('钱包读取失败时提供原位重试', async () => {
@@ -154,6 +217,8 @@ describe('MemberPage', () => {
       .toContain('钱包服务暂不可用')
     testUtils.fireEvent.click(requireElement(testUtils, '.member-state__action'))
     expect(mockRetry).toHaveBeenCalledTimes(1)
+    testUtils.fireEvent.click(requireElement(testUtils, '.member-orders__all'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
     expect(requireElement(testUtils, '.member-logout__button').textContent).toContain('退出当前账号')
   })
 

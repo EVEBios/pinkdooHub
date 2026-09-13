@@ -360,7 +360,7 @@ describe('扫码开台页面视觉状态', () => {
     await flush(testUtils)
 
     expect(mockClearPendingTableEntry).toHaveBeenCalledWith(pendingIntent)
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
   })
 
   it('历史聚焦订单已支付且桌台到时结束时，展示重新选商品而非新订单失败', async () => {

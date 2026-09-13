@@ -339,7 +339,7 @@ describe('AuthenticatedOrderDetail', () => {
     expect(testUtils.queries.querySelector('.order-payment')).toBeNull()
     expect(testUtils.queries.querySelector('.order-detail-page__cancel')).toBeNull()
     testUtils.fireEvent.click(requireElement(testUtils, '.order-detail-page__back'))
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
   })
 
   it('详情读取失败时也通过根 Tab 返回订单列表', async () => {
@@ -347,7 +347,7 @@ describe('AuthenticatedOrderDetail', () => {
     await testUtils.mount(AuthenticatedOrderDetail, { props: { orderId: 101 } })
 
     testUtils.fireEvent.click(requireElement(testUtils, '.order-detail-state__back'))
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/orders/index' })
   })
 
   it('取消成功和详情刷新失败同时可见', async () => {

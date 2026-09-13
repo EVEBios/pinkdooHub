@@ -5,17 +5,24 @@
 .orders-page {
   @include pd.page-shell;
 
-  padding-bottom: var(--pd-root-tab-page-clearance);
-
   &--state {
     @include pd.state-shell;
 
     min-height: 100vh;
-    padding-bottom: var(--pd-root-tab-page-clearance);
   }
 
   &__header {
     @include customer.page-header(center 52%);
+  }
+
+  &__back {
+    @include pd.quiet-button;
+
+    width: fit-content;
+    margin-bottom: 18px;
+    color: #fff;
+    background: transparent;
+    border-color: rgb(255 255 255 / 45%);
   }
 
   &__title {
@@ -142,6 +149,16 @@
 }
 
 .orders-state {
+  &__back {
+    @include pd.quiet-button;
+
+    width: fit-content;
+    margin-bottom: 18px;
+    color: #fff;
+    background: transparent;
+    border-color: rgb(255 255 255 / 45%);
+  }
+
   &__title {
     @include pd.state-title;
   }

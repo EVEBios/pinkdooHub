@@ -151,17 +151,17 @@ describe('注册页面', () => {
     expect(Taro.redirectTo).toHaveBeenCalledTimes(2)
   })
 
-  it('注册流程外的既有普通用户会话以 switchTab 打开根页目标', async () => {
+  it('注册流程外的既有普通用户会话以 reLaunch 打开订单二级页目标', async () => {
     mockAuth = { ...mockAuth, status: 'authenticated', user }
     await testUtils.mount(RegisterPage)
     await flush(testUtils)
 
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/orders/index' })
-    expect(Taro.reLaunch).not.toHaveBeenCalled()
+    expect(Taro.reLaunch).toHaveBeenCalledWith({ url: '/pages/orders/index' })
+    expect(Taro.switchTab).not.toHaveBeenCalled()
 
     input(testUtils, requireElement(testUtils, '.registration-form__input'), 'rerender only')
     await flush(testUtils)
-    expect(Taro.switchTab).toHaveBeenCalledTimes(1)
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(1)
   })
 
   it('管理员既有会话打开注册页时回到店铺工作台', async () => {
@@ -177,7 +177,7 @@ describe('注册页面', () => {
   })
 
   it('既有会话落点导航失败后只重试导航，不重复注册', async () => {
-    ;(Taro.switchTab as jest.Mock)
+    ;(Taro.reLaunch as jest.Mock)
       .mockRejectedValueOnce(new Error('navigation failed'))
       .mockResolvedValueOnce(undefined)
     mockAuth = { ...mockAuth, status: 'authenticated', user }
@@ -187,12 +187,12 @@ describe('注册页面', () => {
     const navigationError = requireElement(testUtils, '.registration-navigation__error')
     expect(navigationError.textContent).toContain('页面暂时无法打开')
     expect(navigationError.getAttribute('aria-role')).toBe('alert')
-    expect(Taro.switchTab).toHaveBeenCalledTimes(1)
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(1)
 
     testUtils.fireEvent.click(requireElement(testUtils, '.registration-navigation__retry'))
     await flush(testUtils)
 
-    expect(Taro.switchTab).toHaveBeenCalledTimes(2)
+    expect(Taro.reLaunch).toHaveBeenCalledTimes(2)
     expect(mockAuth.register).not.toHaveBeenCalled()
   })
 
