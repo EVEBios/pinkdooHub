@@ -45,9 +45,7 @@
 }
 
 @mixin filter-panel {
-  @include section-accent;
-
-  box-shadow: 0 12px 30px rgb(83 31 49 / 8%);
+  @include ribbon.panel-accent(#c97991, 4px);
 }
 
 @mixin authority-panel {

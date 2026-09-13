@@ -130,6 +130,8 @@
 }
 
 .admin-product-detail-section-title {
+  @include pd.section-heading-accent;
+
   display: block;
   margin-bottom: 17px;
   font-family: var(--pd-font-display);
@@ -292,4 +294,8 @@
       margin-top: 0;
     }
   }
+}
+
+.admin-product-detail-meta {
+  @include pd.soft-panel-accent;
 }

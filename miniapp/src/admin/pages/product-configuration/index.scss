@@ -64,8 +64,10 @@
 .admin-product-kit-price,
 .admin-product-kit-colors {
   &__title {
+    @include pd.section-heading-accent;
+
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: 14px;
     font-family: var(--pd-font-display);
     font-size: var(--pd-font-title);
     font-weight: 750;

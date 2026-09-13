@@ -118,6 +118,9 @@
     justify-content: space-between;
     gap: 14px;
     margin-top: 14px;
+    padding: 12px 14px;
+    background: #fcf1f5;
+    border-radius: 12px;
     color: var(--pd-color-primary-strong);
     font-size: var(--pd-font-body-size);
     font-variant-numeric: tabular-nums;
@@ -127,6 +130,7 @@
 .order-detail-meta {
   @include pd.section-panel(20px, 18px);
   @include pd.meta-text;
+  @include pd.soft-panel-accent;
 
   text {
     display: block;
@@ -199,6 +203,10 @@
 
   margin-top: 18px;
 
+  &__heading {
+    @include pd.section-heading-accent;
+  }
+
   &__heading,
   &__method {
     display: flex;
@@ -254,6 +262,7 @@
   }
 
   &__method-name {
+    color: var(--pd-color-ink);
     font-size: var(--pd-font-body-size);
     font-weight: 700;
   }

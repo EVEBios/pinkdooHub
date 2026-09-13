@@ -1,0 +1,182 @@
+[
+  {
+    "name": "admin-reservation-detail",
+    "role": "admin",
+    "path": "admin/pages/reservation-detail/index?id=31"
+  },
+  {
+    "name": "admin-orders",
+    "role": "admin",
+    "path": "admin/pages/orders/index"
+  },
+  {
+    "name": "admin-products",
+    "role": "admin",
+    "path": "admin/pages/products/index"
+  },
+  {
+    "name": "admin-product-detail",
+    "role": "admin",
+    "path": "admin/pages/product-detail/index?id=1&type=experience"
+  },
+  {
+    "name": "admin-product-configuration",
+    "role": "admin",
+    "path": "admin/pages/product-configuration/index?id=1&type=experience"
+  },
+  {
+    "name": "admin-product-images",
+    "role": "admin",
+    "path": "admin/pages/product-images/index?id=1&type=experience"
+  },
+  {
+    "name": "admin-tables",
+    "role": "admin",
+    "path": "admin/pages/tables/index"
+  },
+  {
+    "name": "admin-table-session-detail",
+    "role": "admin",
+    "path": "admin/pages/table-session-detail/index?session_no=TS11111111111111111111111111"
+  },
+  {
+    "name": "admin-workbench",
+    "role": "admin",
+    "path": "admin/pages/workbench/index"
+  },
+  {
+    "name": "admin-product-create",
+    "role": "admin",
+    "path": "admin/pages/product-create/index?type=experience"
+  },
+  {
+    "name": "admin-product-edit",
+    "role": "admin",
+    "path": "admin/pages/product-edit/index?id=1&type=experience"
+  },
+  {
+    "name": "admin-product-audit",
+    "role": "admin",
+    "path": "admin/pages/product-audit/index?id=1&type=experience"
+  },
+  {
+    "name": "admin-product-inventory",
+    "role": "admin",
+    "path": "admin/pages/product-inventory/index?id=2"
+  },
+  {
+    "name": "admin-reservations",
+    "role": "admin",
+    "path": "admin/pages/reservations/index"
+  },
+  {
+    "name": "admin-store-closures",
+    "role": "admin",
+    "path": "admin/pages/store-closures/index"
+  },
+  {
+    "name": "admin-users",
+    "role": "admin",
+    "path": "admin/pages/users/index"
+  },
+  {
+    "name": "admin-user-wallet",
+    "role": "admin",
+    "path": "admin/pages/user-wallet/index?id=7"
+  },
+  {
+    "name": "admin-wallet-order",
+    "role": "admin",
+    "path": "admin/pages/wallet-order/index?id=7"
+  },
+  {
+    "name": "admin-inventory-transactions",
+    "role": "admin",
+    "path": "admin/pages/inventory-transactions/index"
+  },
+  {
+    "name": "admin-order-detail",
+    "role": "admin",
+    "path": "admin/pages/order-detail/index?id=101"
+  },
+  {
+    "name": "customer-entry",
+    "role": "user",
+    "path": "pages/entry/index"
+  },
+  {
+    "name": "customer-index",
+    "role": "user",
+    "path": "pages/index/index"
+  },
+  {
+    "name": "customer-login",
+    "role": "guest",
+    "path": "pages/login/index"
+  },
+  {
+    "name": "customer-register",
+    "role": "guest",
+    "path": "pages/register/index"
+  },
+  {
+    "name": "customer-product-detail",
+    "role": "user",
+    "path": "pages/product-detail/index?id=1&type=experience"
+  },
+  {
+    "name": "customer-cart",
+    "role": "user",
+    "path": "pages/cart/index"
+  },
+  {
+    "name": "customer-order-confirm",
+    "role": "user",
+    "path": "pages/order-confirm/index"
+  },
+  {
+    "name": "customer-orders",
+    "role": "user",
+    "path": "pages/orders/index"
+  },
+  {
+    "name": "customer-order-detail",
+    "role": "user",
+    "path": "pages/order-detail/index?id=101"
+  },
+  {
+    "name": "customer-reservation-create",
+    "role": "user",
+    "path": "pages/reservation-create/index?product_id=7&option_id=12"
+  },
+  {
+    "name": "customer-reservations",
+    "role": "user",
+    "path": "pages/reservations/index"
+  },
+  {
+    "name": "customer-reservation-detail",
+    "role": "user",
+    "path": "pages/reservation-detail/index?id=31"
+  },
+  {
+    "name": "customer-member",
+    "role": "user",
+    "path": "pages/member/index"
+  },
+  {
+    "name": "customer-wallet-recharge",
+    "role": "user",
+    "path": "pages/wallet-recharge/index"
+  },
+  {
+    "name": "customer-wallet-transactions",
+    "role": "user",
+    "path": "pages/wallet-transactions/index"
+  },
+  {
+    "name": "customer-table-entry",
+    "role": "user",
+    "path": "pages/table-entry/index?token=Aa0123456789BbCcDdEeFfGgHhIiJjKk"
+  }
+]

@@ -1,5 +1,9 @@
-/* stylelint-disable selector-class-pattern -- Taro 页面沿用项目 BEM 命名。 */
+/* stylelint-disable selector-class-pattern, at-rule-no-unknown -- Taro 页面沿用项目 BEM 与 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
 .admin-session-page {
+  @include pd.content-width;
+
   min-height: 100vh;
   padding: 24px;
   color: var(--pd-color-ink);
@@ -19,8 +23,13 @@
   max-width: 760px;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
   margin: 0 auto 18px;
   padding: 22px;
+  font-size: var(--pd-font-body-size);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
   background: var(--pd-color-surface);
   border: 1px solid var(--pd-color-line);
   border-radius: var(--pd-radius-large);
@@ -28,12 +37,34 @@
 }
 
 .admin-session-card__title {
+  @include pd.section-heading-accent;
+
+  margin: -2px -2px 12px;
   font-size: var(--pd-font-title);
   font-weight: 750;
 }
 
 .admin-session-card button {
+  @include pd.danger-button;
+
+  width: 100%;
   margin-top: 10px;
+}
+
+.admin-session-card input {
+  @include pd.field;
+
+  width: 100%;
+}
+
+.admin-session-card:first-child {
+  @include pd.soft-panel-accent;
+}
+
+.admin-session-card > text:first-child:not(.admin-session-card__title) {
+  @include pd.section-heading-accent;
+
+  font-weight: 700;
 }
 
 .admin-session-error {

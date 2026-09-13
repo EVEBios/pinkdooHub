@@ -261,3 +261,17 @@ final result: passed
 final result: passed
 
 用户实际截图暴露上一轮余额卡的未开通按钮留白与非等比图片问题。本轮已修正，使用本次实际浏览器截图完成同屏前后对照、已选目标对照及320px金额上限检查。源图、实现尺寸、局部／整页证据、交互、检查结果见 [余额卡修正报告](docs/08_frontend/qa/balance-layout-fix.md)。本节替代前一轮余额区域的最终视觉结论，其他区域不扩大修改。
+
+## 2026-09-13 · 管理订单详情轻量点缀（最新增量验收）
+
+final result: passed
+
+以本轮实际页面截图为基线完成轻量样式精修：源 `design-qa-assets/admin-order-accent-before.png`，实现 `design-qa-assets/admin-order-accent-after.png`；390×844同状态整页与底部并排对照已打开复核，320／768及待支付空态无新增布局问题。范围、五项视觉表面、测试与资源边界见 [本次报告](docs/08_frontend/qa/admin-order-accent-review.md)。其他业务与既有记录保留。
+# 2026-09-13 · 全页面轻量点缀增量验收
+
+- source：已确认的管理订单详情点缀风格、当前全部 36 个注册页面。
+- result：17 页按需改善，19 页保留；管理筛选窄顶线、浅粉标题带、次级信息底色及桌台响应式卡片。14 个 SCSS 文件，无业务逻辑变化。
+- evidence：[逐页记录](docs/08_frontend/qa/all-pages-accent-review.md)、[效果总览](design-qa-assets/all-pages-accent/selected-results.png)、[管理预约前后](design-qa-assets/all-pages-accent/admin-reservation-detail-comparison.png)、[顾客订单前后](design-qa-assets/all-pages-accent/customer-order-detail-comparison.png)、[桌台前后](design-qa-assets/all-pages-accent/admin-tables-comparison.png)。同一输入图内并排比较后，新增点缀符合目标；17 页补查 320／390／768，未见新增横向溢出。
+- visual final result: passed（仅本轮样式范围，不代表全量业务／发布通过）。
+- validation：Stylelint、TypeScript、ESLint、H5／微信 CI 构建与产物检查通过。Jest 102／103 套件、793／794 项通过；会员头像旧 translateY(-1px) 断言失败，未改动该页面或测试。
+- limitations：隔离只读 fixture；商品图为既有纹理占位，核对容器布局；不验证真实资金写入、持久环境、微信真机及全状态无障碍。

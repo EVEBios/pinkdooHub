@@ -74,6 +74,8 @@
   }
 
   &__title {
+    @include pd.section-heading-accent;
+
     font-family: var(--pd-font-display);
     font-size: var(--pd-font-title);
     font-weight: 750;

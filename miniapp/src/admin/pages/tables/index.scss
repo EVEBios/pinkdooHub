@@ -1,5 +1,10 @@
-/* stylelint-disable selector-class-pattern -- Taro 页面沿用项目 BEM 命名。 */
+/* stylelint-disable selector-class-pattern, at-rule-no-unknown -- Taro 页面沿用项目 BEM 与 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
 .admin-tables-page {
+  @include pd.content-width;
+
   min-height: 100vh;
   padding: 24px;
   color: var(--pd-color-ink);
@@ -14,14 +19,30 @@
 }
 
 .admin-tables-header {
+  @include admin.identity-panel;
+
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
   padding: 24px;
   color: #fff;
   font-weight: 700;
-  background: var(--pd-gradient-primary);
   border-radius: var(--pd-radius-large);
+
+  > text:first-child {
+    flex: 1;
+    font-size: var(--pd-font-title);
+    line-height: 1.4;
+  }
+
+  > text:last-child {
+    max-width: 45%;
+    color: rgb(255 244 248 / 86%);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+    text-align: right;
+  }
 }
 
 .admin-tables-alert {
@@ -40,7 +61,11 @@
 }
 
 .admin-table {
+  min-width: 0;
   padding: 18px;
+  font-size: var(--pd-font-body-size);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
   background: var(--pd-color-surface);
   border: 1px solid var(--pd-color-line);
   border-radius: var(--pd-radius-medium);
@@ -61,13 +86,40 @@
 
 .admin-table__heading {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin: -18px -18px 14px;
+  padding: 15px 18px;
   font-weight: 750;
+  background: #faedf2;
+  border-bottom: 1px solid #edd5df;
+  border-radius: var(--pd-radius-medium) var(--pd-radius-medium) 0 0;
+
+  > text:last-child {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
 }
 
 .admin-table button {
+  @include pd.secondary-button;
+
+  width: 100%;
+  min-width: 0;
   margin-top: 12px;
+  padding: 10px;
+  font-size: var(--pd-font-button-compact);
+}
+
+.admin-table--active .admin-table__heading {
+  background: var(--pd-color-success-soft);
+  border-bottom-color: var(--pd-color-success);
+}
+
+.admin-table--awaiting_payment .admin-table__heading {
+  background: var(--pd-color-warning-soft);
+  border-bottom-color: var(--pd-color-warning);
 }
 
 @media (width <= 700px) {

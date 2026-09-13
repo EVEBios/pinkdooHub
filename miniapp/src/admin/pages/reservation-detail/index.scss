@@ -94,10 +94,17 @@
   &__title {
     display: block;
     margin-bottom: 10px;
+
+    @include pd.section-heading-accent;
+
     font-size: var(--pd-font-title);
     font-weight: 700;
     line-height: 1.35;
   }
+}
+
+.admin-reservation-customer {
+  @include pd.soft-panel-accent;
 }
 
 .admin-reservation-fact {

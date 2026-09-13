@@ -53,6 +53,7 @@
 .product-audit-card {
   @include pd.record-card;
 
+  box-shadow: inset 4px 0 0 #d5a5b6, var(--pd-shadow-small);
   margin-bottom: 14px;
 
   &__heading {

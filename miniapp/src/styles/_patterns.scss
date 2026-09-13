@@ -62,6 +62,21 @@
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
+/* 按需用于次级信息区，避免把状态反馈或所有白卡统一染色。 */
+@mixin soft-panel-accent {
+  background: #fcf3f6;
+  border-color: #edd5df;
+  box-shadow: inset 4px 0 0 #d5a5b6, var(--pd-shadow-small);
+}
+
+@mixin section-heading-accent {
+  padding: 13px 16px;
+  color: var(--pd-color-ink);
+  background: #faedf2;
+  border-left: 4px solid #c97991;
+  border-radius: 10px;
+}
+
 @mixin tappable-card {
   &:active {
     border-color: var(--pd-color-line-strong);

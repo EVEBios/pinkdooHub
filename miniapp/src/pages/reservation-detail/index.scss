@@ -125,6 +125,9 @@
   &__title {
     display: block;
     margin-bottom: 10px;
+
+    @include pd.section-heading-accent;
+
     font-size: var(--pd-font-title);
     font-weight: 700;
     line-height: 1.35;
