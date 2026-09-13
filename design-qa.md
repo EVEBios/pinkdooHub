@@ -275,3 +275,8 @@ final result: passed
 - visual final result: passed（仅本轮样式范围，不代表全量业务／发布通过）。
 - validation：Stylelint、TypeScript、ESLint、H5／微信 CI 构建与产物检查通过。Jest 102／103 套件、793／794 项通过；会员头像旧 translateY(-1px) 断言失败，未改动该页面或测试。
 - limitations：隔离只读 fixture；商品图为既有纹理占位，核对容器布局；不验证真实资金写入、持久环境、微信真机及全状态无障碍。
+## 2026-09-14 · 空购物车居中修正
+
+- 仅调整 `.cart-page--state`：小程序为浮动底栏留出空间，H5 使用其原生 Tab 高度，不重复扣减。
+- 320 × 844：内容组中心 (160, 397)，底栏上方可见区域中心 (160, 397)；390 × 844：两者约为 (195, 397)，误差小于 0.01 CSS px。
+- 实际浏览器截图：[320](design-qa-assets/cart-empty-centered-320.png)、[390](design-qa-assets/cart-empty-centered-390.png)。购物车 13 项测试和定向 Stylelint 通过；这是 H5 视觉验证，不替代微信真机复核。

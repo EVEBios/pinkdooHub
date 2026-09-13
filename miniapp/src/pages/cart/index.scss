@@ -12,6 +12,9 @@
     @include pd.state-shell;
 
     min-height: 100vh;
+
+    /* 空态 mixin 会重置 padding；重新避让浮动底栏后居中整个内容组。 */
+    padding-bottom: calc(34px + var(--pd-root-tab-page-clearance));
   }
 
   &__header {
@@ -64,6 +67,13 @@
     width: 100%;
     margin-top: 15px;
   }
+}
+
+/* H5 的 Tab 已占据布局高度；框架根类仅在 H5 存在。 */
+/* stylelint-disable-next-line selector-class-pattern */
+.taro_page .cart-page--state {
+  min-height: calc(100vh - var(--taro-tabbar-height, 50PX) - env(safe-area-inset-bottom));
+  padding-bottom: 34px;
 }
 
 .cart-state {
