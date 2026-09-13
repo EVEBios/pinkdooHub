@@ -22,6 +22,7 @@ from app.common.constants.reservation import (
     RESERVATION_CANCELLATION_REASON_LABELS,
     RESERVATION_CLOSE_TIME_VALUE,
     RESERVATION_CUSTOMER_MESSAGES,
+    RESERVATION_UNSELECTED_CONFIRMED_MESSAGE,
     RESERVATION_LOCAL_TIME_PATTERN,
     RESERVATION_MINIMUM_LEAD_HOURS,
     RESERVATION_OPEN_TIME_VALUE,
@@ -126,28 +127,41 @@ class ReservationCancellationReasonOut(_ReservationOut):
         return self
 
 
-class _ReservationBaseOut(_ReservationOut):
-    id: int = Field(strict=True, gt=0)
-    product_id: int = Field(strict=True, gt=0)
-    experience_option_id: int = Field(strict=True, gt=0)
-    product_name: str = Field(
+class _ReservationSelectionOut(_ReservationOut):
+    product_id: int | None = Field(strict=True, gt=0)
+    experience_option_id: int | None = Field(strict=True, gt=0)
+    product_name: str | None = Field(
         strict=True,
         min_length=1,
         max_length=PRODUCT_NAME_MAX_LENGTH,
     )
-    duration_minutes: int = Field(strict=True, ge=MIN_DURATION_MINUTES)
-    participants: int = Field(strict=True, ge=MIN_PARTICIPANTS)
-    day_type: ReservationDayTypeOut
-    price: ProductPriceOut
+    duration_minutes: int | None = Field(strict=True, ge=MIN_DURATION_MINUTES)
+    participants: int | None = Field(strict=True, ge=MIN_PARTICIPANTS)
+    day_type: ReservationDayTypeOut | None
+    price: ProductPriceOut | None
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> "_ReservationSelectionOut":
+        values = (
+            self.product_id, self.experience_option_id, self.product_name,
+            self.duration_minutes, self.participants, self.day_type, self.price,
+        )
+        if any(value is None for value in values) and not all(value is None for value in values):
+            raise ValueError("Reservation selection must be entirely absent or complete")
+        return self
+
+
+class _ReservationBaseOut(_ReservationSelectionOut):
+    id: int = Field(strict=True, gt=0)
     status: ReservationStatusOut
     rejection_reason: ReservationRejectionReasonOut | None = None
     cancellation_reason: ReservationCancellationReasonOut | None = None
     customer_message: str = Field(strict=True, min_length=1)
     reservation_date: date
     start_time: ReservationLocalTimeOut
-    end_time: str = Field(strict=True, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    end_time: str | None = Field(strict=True, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     scheduled_start_at: ReservationUtcDatetimeOut
-    scheduled_end_at: ReservationUtcDatetimeOut
+    scheduled_end_at: ReservationUtcDatetimeOut | None
     cancellation_deadline_at: ReservationUtcDatetimeOut
     confirmed_at: ReservationUtcDatetimeOut | None = None
     rejected_at: ReservationUtcDatetimeOut | None = None
@@ -157,8 +171,14 @@ class _ReservationBaseOut(_ReservationOut):
 
     @model_validator(mode="after")
     def validate_state_and_times(self) -> "_ReservationBaseOut":
-        if self.scheduled_end_at <= self.scheduled_start_at:
-            raise ValueError("Reservation end must be later than start")
+        if self.experience_option_id is None:
+            if self.scheduled_end_at is not None or self.end_time is not None:
+                raise ValueError("Unselected reservation must not have an end time")
+        elif (
+            self.scheduled_end_at is None or self.end_time is None
+            or self.scheduled_end_at - self.scheduled_start_at != timedelta(minutes=self.duration_minutes)
+        ):
+            raise ValueError("Reservation end must match the selected duration")
         if self.cancellation_deadline_at != self.scheduled_start_at - timedelta(
             hours=RESERVATION_MINIMUM_LEAD_HOURS
         ):
@@ -187,7 +207,10 @@ class _ReservationBaseOut(_ReservationOut):
                 or self.cancelled_at is not None
             ):
                 raise ValueError("Confirmed reservation state fields are inconsistent")
-            expected_message = RESERVATION_CUSTOMER_MESSAGES[status]
+            expected_message = (
+                RESERVATION_UNSELECTED_CONFIRMED_MESSAGE
+                if self.experience_option_id is None else RESERVATION_CUSTOMER_MESSAGES[status]
+            )
         elif status is ReservationStatus.REJECTED:
             if (
                 self.rejection_reason is None
@@ -252,20 +275,9 @@ class ReservationBookingDateOut(_ReservationOut):
     start_times: list[ReservationLocalTimeOut] = Field(min_length=1)
 
 
-class ReservationBookingOptionsOut(_ReservationOut):
-    """服务端生成的当前 Option 可预约日期/时间选择集。"""
+class ReservationBookingOptionsOut(_ReservationSelectionOut):
+    """服务端到店日历；选定套餐时包含完整规格摘要。"""
 
-    experience_option_id: int = Field(strict=True, gt=0)
-    product_id: int = Field(strict=True, gt=0)
-    product_name: str = Field(
-        strict=True,
-        min_length=1,
-        max_length=PRODUCT_NAME_MAX_LENGTH,
-    )
-    duration_minutes: int = Field(strict=True, ge=MIN_DURATION_MINUTES)
-    participants: int = Field(strict=True, ge=MIN_PARTICIPANTS)
-    day_type: ReservationDayTypeOut
-    price: ProductPriceOut
     timezone: str = Field(strict=True, pattern=rf"^{RESERVATION_TIMEZONE}$")
     server_now: ReservationUtcDatetimeOut
     booking_window_end_date: date

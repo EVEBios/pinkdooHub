@@ -653,22 +653,50 @@
             "type": "string"
           },
           "day_type": {
-            "$ref": "#/components/schemas/ReservationDayTypeOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationDayTypeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "duration_minutes": {
-            "minimum": 1.0,
-            "title": "Duration Minutes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
           },
           "end_time": {
-            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
-            "title": "End Time",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
           },
           "experience_option_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Experience Option Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Option Id"
           },
           "id": {
             "exclusiveMinimum": 0.0,
@@ -676,29 +704,57 @@
             "type": "integer"
           },
           "participants": {
-            "minimum": 1.0,
-            "title": "Participants",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participants"
           },
           "price": {
-            "description": "固定两位小数的金额字符串，0 < price <= 99999",
-            "examples": [
-              "599.00"
+            "anyOf": [
+              {
+                "description": "固定两位小数的金额字符串，0 < price <= 99999",
+                "examples": [
+                  "599.00"
+                ],
+                "pattern": "^\\d+\\.\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "pattern": "^\\d+\\.\\d{2}$",
-            "title": "Price",
-            "type": "string"
+            "title": "Price"
           },
           "product_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Product Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
           },
           "product_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Product Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
           },
           "rejected_at": {
             "anyOf": [
@@ -728,9 +784,16 @@
             "type": "string"
           },
           "scheduled_end_at": {
-            "format": "date-time",
-            "title": "Scheduled End At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled End At"
           },
           "scheduled_start_at": {
             "format": "date-time",
@@ -775,7 +838,6 @@
           }
         },
         "required": [
-          "id",
           "product_id",
           "experience_option_id",
           "product_name",
@@ -783,6 +845,7 @@
           "participants",
           "day_type",
           "price",
+          "id",
           "status",
           "customer_message",
           "reservation_date",
@@ -852,22 +915,50 @@
             "type": "string"
           },
           "day_type": {
-            "$ref": "#/components/schemas/ReservationDayTypeOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationDayTypeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "duration_minutes": {
-            "minimum": 1.0,
-            "title": "Duration Minutes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
           },
           "end_time": {
-            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
-            "title": "End Time",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
           },
           "experience_option_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Experience Option Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Option Id"
           },
           "id": {
             "exclusiveMinimum": 0.0,
@@ -875,29 +966,57 @@
             "type": "integer"
           },
           "participants": {
-            "minimum": 1.0,
-            "title": "Participants",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participants"
           },
           "price": {
-            "description": "固定两位小数的金额字符串，0 < price <= 99999",
-            "examples": [
-              "599.00"
+            "anyOf": [
+              {
+                "description": "固定两位小数的金额字符串，0 < price <= 99999",
+                "examples": [
+                  "599.00"
+                ],
+                "pattern": "^\\d+\\.\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "pattern": "^\\d+\\.\\d{2}$",
-            "title": "Price",
-            "type": "string"
+            "title": "Price"
           },
           "product_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Product Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
           },
           "product_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Product Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
           },
           "rejected_at": {
             "anyOf": [
@@ -927,9 +1046,16 @@
             "type": "string"
           },
           "scheduled_end_at": {
-            "format": "date-time",
-            "title": "Scheduled End At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled End At"
           },
           "scheduled_start_at": {
             "format": "date-time",
@@ -973,7 +1099,6 @@
           }
         },
         "required": [
-          "id",
           "product_id",
           "experience_option_id",
           "product_name",
@@ -981,6 +1106,7 @@
           "participants",
           "day_type",
           "price",
+          "id",
           "status",
           "customer_message",
           "reservation_date",
@@ -5203,7 +5329,7 @@
         "type": "object"
       },
       "ReservationBookingOptionsOut": {
-        "description": "服务端生成的当前 Option 可预约日期/时间选择集。",
+        "description": "服务端到店日历；选定套餐时包含完整规格摘要。",
         "properties": {
           "booking_window_days": {
             "default": 30,
@@ -5230,17 +5356,38 @@
             "type": "array"
           },
           "day_type": {
-            "$ref": "#/components/schemas/ReservationDayTypeOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationDayTypeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "duration_minutes": {
-            "minimum": 1.0,
-            "title": "Duration Minutes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
           },
           "experience_option_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Experience Option Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Option Id"
           },
           "minimum_lead_hours": {
             "default": 3,
@@ -5255,29 +5402,57 @@
             "type": "string"
           },
           "participants": {
-            "minimum": 1.0,
-            "title": "Participants",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participants"
           },
           "price": {
-            "description": "固定两位小数的金额字符串，0 < price <= 99999",
-            "examples": [
-              "599.00"
+            "anyOf": [
+              {
+                "description": "固定两位小数的金额字符串，0 < price <= 99999",
+                "examples": [
+                  "599.00"
+                ],
+                "pattern": "^\\d+\\.\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "pattern": "^\\d+\\.\\d{2}$",
-            "title": "Price",
-            "type": "string"
+            "title": "Price"
           },
           "product_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Product Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
           },
           "product_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Product Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
           },
           "server_now": {
             "format": "date-time",
@@ -5301,8 +5476,8 @@
           }
         },
         "required": [
-          "experience_option_id",
           "product_id",
+          "experience_option_id",
           "product_name",
           "duration_minutes",
           "participants",
@@ -5346,12 +5521,19 @@
       },
       "ReservationCreate": {
         "additionalProperties": false,
-        "description": "创建独立体验预约；其余快照均由服务端生成。",
+        "description": "创建到店预约，可选完整套餐；快照均由服务端生成。",
         "properties": {
           "experience_option_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Experience Option Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Option Id"
           },
           "reservation_date": {
             "format": "date",
@@ -5365,7 +5547,6 @@
           }
         },
         "required": [
-          "experience_option_id",
           "reservation_date",
           "start_time"
         ],
@@ -5443,22 +5624,50 @@
             "type": "string"
           },
           "day_type": {
-            "$ref": "#/components/schemas/ReservationDayTypeOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservationDayTypeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "duration_minutes": {
-            "minimum": 1.0,
-            "title": "Duration Minutes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
           },
           "end_time": {
-            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
-            "title": "End Time",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
           },
           "experience_option_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Experience Option Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Option Id"
           },
           "id": {
             "exclusiveMinimum": 0.0,
@@ -5466,29 +5675,57 @@
             "type": "integer"
           },
           "participants": {
-            "minimum": 1.0,
-            "title": "Participants",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participants"
           },
           "price": {
-            "description": "固定两位小数的金额字符串，0 < price <= 99999",
-            "examples": [
-              "599.00"
+            "anyOf": [
+              {
+                "description": "固定两位小数的金额字符串，0 < price <= 99999",
+                "examples": [
+                  "599.00"
+                ],
+                "pattern": "^\\d+\\.\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "pattern": "^\\d+\\.\\d{2}$",
-            "title": "Price",
-            "type": "string"
+            "title": "Price"
           },
           "product_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Product Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
           },
           "product_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Product Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
           },
           "rejected_at": {
             "anyOf": [
@@ -5518,9 +5755,16 @@
             "type": "string"
           },
           "scheduled_end_at": {
-            "format": "date-time",
-            "title": "Scheduled End At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled End At"
           },
           "scheduled_start_at": {
             "format": "date-time",
@@ -5542,7 +5786,6 @@
           }
         },
         "required": [
-          "id",
           "product_id",
           "experience_option_id",
           "product_name",
@@ -5550,6 +5793,7 @@
           "participants",
           "day_type",
           "price",
+          "id",
           "status",
           "customer_message",
           "reservation_date",
@@ -17341,17 +17585,24 @@
     },
     "/api/v1/reservations/booking-options": {
       "get": {
-        "description": "返回服务端计算的当前 Option 可预约日期和半小时时段。",
+        "description": "返回到店日历；选定套餐时按完整规格进一步过滤。",
         "operationId": "get_reservation_booking_options_api_v1_reservations_booking_options_get",
         "parameters": [
           {
             "in": "query",
             "name": "experience_option_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "gt": 0,
-              "title": "Experience Option Id",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "gt": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Experience Option Id"
             }
           }
         ],

@@ -1,10 +1,10 @@
 # 预约模块（Reservation Module）
 
-> **Contract Version:** v1.0（N1）
+> **Contract Version:** v1.1（N1，可选套餐）
 >
 > **Status:** N1/M7 repository and MySQL gates complete；M5/M7 present in current Gate A M7；other environments and real-client acceptance pending
 >
-> **Last Updated:** 2026-09-09
+> **Last Updated:** 2026-09-13
 
 ---
 
@@ -14,8 +14,11 @@ Reservation 为顾客提供独立于 Order、Payment 和 Wallet 的拼豆体验�
 
 本文件是 N1 预约业务行为的权威来源；HTTP 契约见 [Reservation API](../03_api/reservation_api.md)，数据结构见 [Database Design](../02_database/database_design.md)。微信订阅消息、Outbox、Worker、重试与主动通知不属于 N1，见独立的 [N2 微信店休通知规划](reservation_wechat_notification_plan.md)。
 
+本轮新增可选套餐预约，目标结构为 M10；新增迁移未应用到任何持久环境，历史发布记录不作为本轮证据。
+
 N1 的核心取舍：
 
+- 新建预约只要求选择日期和开始时间；商品与完整体验规格（时长、人数、日期类型）作为一组选填，不支持只选商品或只填时长。登录与有效账号手机号要求仍保留。
 - 预约不要求先下单，也不创建订单、支付或钱包流水；顾客到店后付款或仅登记。
 - 每次创建先进入 `pending`，由 ADMIN+ 人工判断并确认或拒绝。
 - 首版不维护座位容量，不承诺自动防超额；`booking-options` 只表达时间、营业日和 Option 合法性，不表达空位。
@@ -52,7 +55,8 @@ N1 的核心取舍：
 | 开始时间粒度 | 每 30 分钟一个候选开始时段 |
 | 最短提前量 | 开始时间必须大于等于服务端当前时间加 3 小时 |
 | 最远可预约日期 | 上海当地今天起第 30 个自然日，包含第 0 日和第 30 日 |
-| 完整体验 | `scheduled_end_at` 必须不晚于当地当天 `20:00`，不能跨日 |
+| 已选套餐 | `scheduled_end_at` 必须不晚于当地当天 `20:00`，不能跨日 |
+| 未选套餐 | 只校验 `11:00 <= start_time < 20:00`，最晚 `19:30`；结束时间为 null，不承诺体验时长 |
 | 每周店休 | 默认周一；ADMIN+ 可更换为任一星期 |
 
 边界采用精确比较：创建时 `scheduled_start_at == now + 3h` 合法；早于该时刻非法。用户取消时 `now == scheduled_start_at - 3h` 仍合法，只有 `now` 严格晚于截止时间才返回 `40952`。
@@ -64,11 +68,11 @@ N1 的核心取舍：
 - 当前配置的每周固定店休日不进入任何可预约日期；首次部署默认周一。
 - 更换固定店休日立即生效：预约窗口内命中新星期、尚未开始的 `pending/confirmed` 预约在同一事务中以 `store_closed` 取消；旧星期恢复可预约，已有单日店休保持不变，历史取消预约不恢复。
 - N1 不接入法定节假日、调休或第三方日历。因此周一至周五即使是法定节假日仍按 `weekday`，周末调班仍按 `holiday`。
-- 创建时所选 Option 的 `day_type` 必须与预约日期分类一致，否则返回 `42253`，`data.reason=option_day_type_mismatch`。
+- 选择套餐时，创建所选 Option 的 `day_type` 必须与预约日期分类一致，否则返回 `42253`，`data.reason=option_day_type_mismatch`。
 
 ## 4. ExperienceOption 可预约性与不可变快照
 
-查询 `booking-options` 和创建预约均要求：
+选择套餐时，查询 `booking-options` 和创建预约均要求：
 
 1. Option 存在且未逻辑删除；
 2. 关联 Product 存在、未逻辑删除；
@@ -78,7 +82,9 @@ N1 的核心取舍：
 
 创建事务在锁内重新读取 Product 与 Option 并复验，不能信任此前页面或 `booking-options` 的结果。Option 不存在/已删除使用 `42252`；关联 Product 不可预约使用 `42251`。
 
-成功创建时保存完整 Option 展示和计价快照：
+未选择套餐时不查询 Product/Option；商品关联、名称、时长、人数、规格日期类型、价格与结束时间必须全为 null，不使用虚拟商品、默认套餐或零价格填充。
+
+选择套餐并成功创建时保存完整 Option 展示和计价快照：
 
 - `product_name`
 - `option_duration_minutes`
@@ -86,19 +92,19 @@ N1 的核心取舍：
 - `option_day_type`
 - `option_price`
 
-历史列表、详情和到店价格均读取 Reservation 快照。Product/Option 后续改名、改价、下架或逻辑删除不覆盖既有预约。N1 不把手机号写入快照：管理端始终读取 User 当前手机号，避免历史个人信息在预约表内额外复制。
+已选套餐的历史列表、详情和到店价格均读取 Reservation 快照。Product/Option 后续改名、改价、下架或逻辑删除不覆盖既有预约。N1 不把手机号写入快照：管理端始终读取 User 当前手机号，避免历史个人信息在预约表内额外复制。
 
 ## 5. `booking-options` 服务端日历
 
-顾客按一个 `experience_option_id` 一次查询完整创建选项。响应包含：
+顾客可不传 `experience_option_id` 查询到店日历，也可传一个有效 ID 查询完整套餐日历。响应包含：
 
-- 当前 Option/Product 摘要与价格；
+- 当前 Option/Product 摘要与价格；未选择套餐时这些字段全为 null；
 - `timezone=Asia/Shanghai`、UTC `server_now`；
 - `booking_window_end_date`；
 - 冻结规则 `minimum_lead_hours=3`、`slot_interval_minutes=30`、`booking_window_days=30`、`opens_at=11:00`、`closes_at=20:00`；
 - `dates[]`：未来第 0–30 日中至少存在一个合法开始时段的日期、日期类型和 `start_times[]`。
 
-服务端会排除：周一、自定义店休日、Option 日期类型不匹配的日期、已经错过最短提前量的开始时段，以及会使体验结束晚于 `20:00` 的时段。`dates` 可以为空，这是“该 Option 在当前窗口无合法时段”，不是系统错误。
+服务端会排除：当前配置的固定店休日、自定义店休日、已经错过最短提前量的开始时段。已选套餐还排除日期类型不匹配或无法在 `20:00` 前结束的时段；未选套餐排除 `20:00` 及更晚开始时间。`dates` 可以为空，这是“该 Option 在当前窗口无合法时段”，不是系统错误。
 
 该接口不读取座位容量，也不保证返回的时段最终可确认。创建时必须再次校验全部规则，以覆盖页面停留、管理员临时店休和 Product/Option 变化。
 
@@ -136,11 +142,13 @@ N1 不设 `completed`、`expired`、`no_show` 或付款状态。预约开始后�
 | `cancelled/customer_request` | 本次预约已取消。您可以选择其他日期或时段重新预约。 |
 | `cancelled/store_closed` | 门店当天休息，本次预约已由门店取消。给您带来不便，敬请谅解；您可以选择其他日期重新预约，如需帮助请联系门店。 |
 
+无套餐的 `confirmed` 文案为“预约已确认，请按预约时间到店。体验项目到店后选择，费用以选定项目为准。”，不承诺预约锁价。
+
 前端应直接展示 `customer_message`，并按 `status.value` / 原因 `value` 决定交互；不得只用本地文案推断状态。未知 Enum 必须保留可诊断性并安全降级。
 
 ## 7. 创建预约
 
-请求只包含：
+请求只包含日期、开始时间和可选的 `experience_option_id`（缺省或 null 表示到店选择）：
 
 ```json
 {
@@ -157,9 +165,9 @@ N1 不设 `completed`、`expired`、`no_show` 或付款状态。预约开始后�
 ```text
 锁 User 并复验 role/status/phone
 → 按日期确保并锁定 StoreBusinessDay
-→ 锁 Product 与 ExperienceOption
+→ 选择套餐时锁 Product 与 ExperienceOption
 → 复验当前可预约性、店休和完整时间窗口
-→ 写 pending Reservation 与完整快照
+→ 写 pending Reservation；套餐快照完整或全空
 → 写 CREATE_RESERVATION Audit
 → 同事务连接重载响应
 ```
@@ -234,14 +242,12 @@ N1 主动通知未实现。顾客可在“我的预约/详情”看到 `cancelle
 
 ## 12. 账号注销联动
 
-普通用户存在满足以下条件的预约时，账号注销沿用 User 模块 `1015` 阻断：
+普通用户存在 `pending/confirmed` 预约，且满足下列任一条件时，账号注销沿用 User 模块 `1015` 阻断：
 
-```text
-status IN (pending, confirmed)
-AND scheduled_end_at > now_utc
-```
+- 已选套餐：`scheduled_end_at > now`，避免体验开始后但未结束时匿名化联系方式；
+- 未选套餐：预约日在未来，或为上海当地今天且尚未到 `20:00`。不向 `scheduled_end_at` 填入假定时长。
 
-该查询必须在注销事务内、锁定 User 后使用同一数据库连接完成。以 `scheduled_end_at` 而不是开始时间判断，避免体验已经开始但尚未结束时匿名化当前联系方式。`rejected/cancelled` 或结束时间已过的预约不阻断，但 Reservation、快照、外键和审计仍作为最小必要历史保留。
+该查询在注销事务内、锁定 User 后使用同一连接完成。`rejected/cancelled`、已结束的套餐预约或已过当日打烊时刻的无套餐预约不阻断；历史、快照、外键和审计继续保留。
 
 ## 13. 并发、事务与审计
 
@@ -299,3 +305,13 @@ Pydantic 请求形状错误继续使用通用 HTTP 422 / code `422`，不能与�
 - 到店、爽约、完成、评价或核销状态；
 - 顾客自由填写拒绝/取消原因或管理员自由文本拒绝原因。
 - M9 二维码开台、订单付款计时和固定桌台 Occupancy；Reservation 不自动选桌、占桌、创建订单或触发计时，完整契约见 [二维码开台需求](table_session_module.md)。
+
+
+## 17. 可选套餐创建页与兼容发布
+
+- “我的预约”页头和空态均提供“新建预约”；无参数创建路由可以登录后回跳，带套餐时参数必须完整。
+- 日期与开始时间优先展示；套餐选择默认收起，复用扫码开台的商品图片、名称、价格层级，但只选择一套体验规格，不使用购物车。
+- 商品加载失败不影响无套餐预约。选取／清除套餐保留到店时间；当前时间不符合新套餐时提示调整，禁止静默改期或提交冲突数据。
+- 无套餐列表／详情展示“到店预约”“体验项目到店选择 · 时长待定”“费用待确认”；管理端同样兼容。
+- v1.1 响应新增 nullable 字段，旧客户端严格解析器不兼容。必须先交付能读两种记录的顾客端、管理端，再开放无套餐写入；当前仓库无独立开关，不能以仅部署后端代替协调发布。
+- MySQL M10 只放宽八个套餐字段，历史记录不回填、不覆盖。存在无套餐记录时降级拒绝执行；持久 SQLite 需要单独审核的保数据升级脚本，不能靠启动建表升级已有列。本轮不执行持久迁移或发布。

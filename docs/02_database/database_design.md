@@ -475,24 +475,24 @@ M7 建表并写入默认周一单例；更换固定店休与命中预约的 `sto
 
 命名唯一索引 `uidx_store_business_day_date(business_date)` 既兜底日期唯一性，也支持创建营业日并发竞态的精确识别。创建预约、设置店休和恢复营业必须在同一事务中锁定该行。恢复营业只把 `is_closed` 改为 false，不删除行，也不恢复任何历史预约。
 
-### 3.17 reservations（独立体验预约，M5；当前 Gate A M7 已应用）
+### 3.17 reservations（独立体验预约，M10 可选套餐目标；尚未持久迁移）
 
-Reservation 与 Order/Payment 相互独立，保存一个顾客选择的 ExperienceOption、UTC 排期、完整创建快照和人工确认状态。手机号不写入本表；管理列表/详情读取 User 当前手机号并分别输出掩码/完整值。
+Reservation 与 Order/Payment 相互独立，保存到店时间、可选完整 ExperienceOption 快照和人工确认状态。手机号不写入本表；管理列表/详情读取 User 当前手机号并分别输出掩码/完整值。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | Reservation ID |
 | user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | Owner；历史用户行不得物理删除 |
 | business_day_id | BIGINT | FK → store_business_days.id, NOT NULL, ON DELETE RESTRICT | 上海当地预约日期的共同锁点 |
-| product_id | BIGINT | FK → products.id, NOT NULL, ON DELETE RESTRICT | 创建时 Experience Product |
-| experience_option_id | BIGINT | FK → experience_options.id, NOT NULL, ON DELETE RESTRICT | 创建时具体 Option |
+| product_id | BIGINT | FK → products.id, nullable, ON DELETE RESTRICT | 创建时 Experience Product |
+| experience_option_id | BIGINT | FK → experience_options.id, nullable, ON DELETE RESTRICT | 创建时具体 Option |
 | scheduled_start_at | DATETIME(6) | NOT NULL | 权威 UTC 开始时间 |
-| scheduled_end_at | DATETIME(6) | NOT NULL | 权威 UTC 结束时间；必须晚于开始且完整落在当地 11:00–20:00 |
-| product_name | VARCHAR(100) | NOT NULL | 创建时 Product 名称快照 |
-| option_duration_minutes | INT | NOT NULL | 创建时 Option 时长快照 |
-| option_participants | INT | NOT NULL | 创建时 Option 人数快照 |
-| option_day_type | VARCHAR(20) | NOT NULL | 创建时 `weekday` / `holiday` 快照 |
-| option_price | DECIMAL(10,2) | NOT NULL | 创建时价格快照 |
+| scheduled_end_at | DATETIME(6) | nullable | 已选套餐的 UTC 结束时间，完整落在当地营业时间；未选套餐为 null |
+| product_name | VARCHAR(100) | nullable | 创建时 Product 名称快照 |
+| option_duration_minutes | INT | nullable | 创建时 Option 时长快照 |
+| option_participants | INT | nullable | 创建时 Option 人数快照 |
+| option_day_type | VARCHAR(20) | nullable | 创建时 `weekday` / `holiday` 快照 |
+| option_price | DECIMAL(10,2) | nullable | 创建时价格快照 |
 | status | VARCHAR(32) | NOT NULL, DEFAULT `pending` | `pending` / `confirmed` / `rejected` / `cancelled` |
 | rejection_reason | VARCHAR(32) | nullable | 仅 rejected 为 `no_capacity` |
 | cancellation_reason | VARCHAR(32) | nullable | 仅 cancelled 为 `customer_request` / `store_closed` |
@@ -514,6 +514,8 @@ N1 刻意不建立 `(user_id, experience_option_id, scheduled_start_at)` 或任�
 - `store_business_days.is_closed` 与新建 Reservation 的并发互斥。
 
 M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2026-09-06 在一次性 MySQL 8.0.46 专用 Schema 真实完成 0→5、并发关店/创建、事务回滚、1205/1213 重试与六个索引查询计划验证；Reservation 专项 `7 passed`，与 Inventory 联合门槛 `16 passed`。该次验证实例已销毁且本身未触碰持久库；M5/M7 后续已随当前 Gate A 的 M2→M7 受控升级应用，本地持久 SQLite、共享、预发布和生产数据库仍未因此自动迁移。
+
+套餐的八个 nullable 字段必须全空或完整，由 Service/响应 Schema 维持不变量；已选套餐时结束时间与时长严格一致。M10 只放宽这些列，不改外键、索引或旧快照。无套餐活跃检查使用营业日与打烊截止，不能让 SQL 的 NULL 比较漏掉预约。
 
 ### 3.18 store_tables（固定桌台，M9 已实现）
 
@@ -935,7 +937,7 @@ CREATE INDEX idx_audit_operator_created ON audit_logs (operator_id, created_at);
 |---|------|------|
 | 1 | `WHERE user_id=? ORDER BY scheduled_start_at DESC, id DESC` | `(user_id, scheduled_start_at, id)` |
 | 2 | 用户按状态筛选并按开始时间稳定分页 | `(user_id, status, scheduled_start_at, id)` |
-| 3 | 注销阻断：`WHERE user_id=? AND status IN (...) AND scheduled_end_at>?` | `(user_id, status, scheduled_end_at, id)` |
+| 3 | 注销阻断：活跃状态且结束时间未过，或结束时间为空且营业日仍有效 | `(user_id, status, scheduled_end_at, id)` |
 | 4 | 店休批量取消：按营业日、活跃状态、开始时间筛选并锁定 | `(business_day_id, status, scheduled_start_at, id)` |
 | 5 | 管理端按状态分页和开始时间排序 | `(status, scheduled_start_at, id)` |
 

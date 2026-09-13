@@ -2,11 +2,13 @@
 
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.transactions import in_transaction
 
+from app.common.constants.reservation import RESERVATION_CLOSE_TIME, RESERVATION_TIMEZONE
 from app.common.enums.user import UserRole, UserStatus
 from app.common.exceptions.user import (
     AccountDeletionBlocked,
@@ -106,9 +108,15 @@ class AccountLifecycleService:
                 )
                 raise AccountDeletionBlocked()
 
+            local_now = operation_now.astimezone(ZoneInfo(RESERVATION_TIMEZONE))
+            # 未选套餐没有结束时刻；其预约日在打烊后才退出活跃检查。
+            unselected_active_from_date = local_now.date() + timedelta(
+                days=int(local_now.time() >= RESERVATION_CLOSE_TIME)
+            )
             if await self.reservation_repository.has_active_reservations_for_user(
                 locked_user.id,
                 now_utc=operation_now,
+                unselected_active_from_date=unselected_active_from_date,
                 using_db=connection,
             ):
                 emit_security_event(

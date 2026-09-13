@@ -77,14 +77,18 @@ const adminPending: AdminReservationDetail = {
   user_phone: '13800000000',
 }
 
-function CreateHarness({ source }: { readonly source: ReservationCreateSource }) {
-  const hook = useReservationCreate(7, 11, source)
+function CreateHarness({ source, unselected = false }: { readonly source: ReservationCreateSource; readonly unselected?: boolean }) {
+  const hook = useReservationCreate(unselected ? undefined : 7, unselected ? undefined : 11, source)
   return (
     <div>
       <span className='data'>{hook.data.status}</span>
       <span className='date'>{hook.reservationDate}</span>
       <span className='time'>{hook.startTime}</span>
       <span className='submission'>{hook.submission.status}</span>
+      <span className='valid'>{String(hook.scheduleIsValid)}</span>
+      <button className='package' onClick={() => hook.selectPackage({ productId: 7, experienceOptionId: 11 })}>package</button>
+      <button className='clear' onClick={() => hook.selectPackage()}>clear</button>
+      <button className='retry' onClick={hook.retry}>retry</button>
       <button className='later' onClick={() => hook.selectStartTime('15:00')}>later</button>
       <button className='submit' onClick={() => void hook.submit()}>submit</button>
     </div>
@@ -194,6 +198,12 @@ describe('预约 hooks', () => {
     pending.resolve(pendingReservation)
     await flush(testUtils)
     expect(text(testUtils, '.submission')).toBe('succeeded')
+    testUtils.fireEvent.click(required(testUtils, '.later'))
+    testUtils.fireEvent.click(required(testUtils, '.retry'))
+    await flush(testUtils)
+    testUtils.fireEvent.click(required(testUtils, '.submit'))
+    expect(text(testUtils, '.submission')).toBe('succeeded')
+    expect(source.createReservation).toHaveBeenCalledTimes(1)
   })
 
   it('创建超时进入 unknown 且不自动或手动重复发起', async () => {
@@ -210,9 +220,52 @@ describe('预约 hooks', () => {
     testUtils.fireEvent.click(required(testUtils, '.later'))
     testUtils.fireEvent.click(required(testUtils, '.submit'))
     await flush(testUtils)
+    testUtils.fireEvent.click(required(testUtils, '.retry'))
+    await flush(testUtils)
+    testUtils.fireEvent.click(required(testUtils, '.clear'))
+    testUtils.fireEvent.click(required(testUtils, '.submit'))
     expect(text(testUtils, '.submission')).toBe('unknown')
     expect(text(testUtils, '.time')).toBe('14:30')
     expect(source.createReservation).toHaveBeenCalledTimes(1)
+  })
+
+  it('无套餐创建后禁止重复提交', async () => {
+    const selection = { product_id: null, experience_option_id: null, product_name: null,
+      duration_minutes: null, participants: null, day_type: null, price: null }
+    const source: ReservationCreateSource = {
+      getBookingOptions: jest.fn(async () => ({ ...bookingOptions, ...selection })),
+      createReservation: jest.fn(async () => ({ ...pendingReservation, ...selection, end_time: null, scheduled_end_at: null })),
+    }
+    await testUtils.mount(CreateHarness, { props: { source, unselected: true } })
+    await flush(testUtils)
+    testUtils.fireEvent.click(required(testUtils, '.submit'))
+    await flush(testUtils)
+    expect(source.createReservation).toHaveBeenCalledWith({ reservation_date: '2026-09-12', start_time: '14:30' })
+    testUtils.fireEvent.click(required(testUtils, '.submit'))
+    expect(source.createReservation).toHaveBeenCalledTimes(1)
+  })
+
+  it('选套餐保留原时间，冲突阻止提交；清除套餐后恢复', async () => {
+    const selection = { product_id: null, experience_option_id: null, product_name: null,
+      duration_minutes: null, participants: null, day_type: null, price: null }
+    const source: ReservationCreateSource = {
+      getBookingOptions: jest.fn(async (id) => id == null
+        ? { ...bookingOptions, ...selection }
+        : { ...bookingOptions, dates: [{ ...bookingOptions.dates[0], start_times: ['15:00'] }] }),
+      createReservation: jest.fn(async () => pendingReservation),
+    }
+    await testUtils.mount(CreateHarness, { props: { source, unselected: true } })
+    await flush(testUtils)
+    testUtils.fireEvent.click(required(testUtils, '.package'))
+    await flush(testUtils)
+    expect(text(testUtils, '.time')).toBe('14:30')
+    expect(text(testUtils, '.valid')).toBe('false')
+    testUtils.fireEvent.click(required(testUtils, '.submit'))
+    expect(source.createReservation).not.toHaveBeenCalled()
+    testUtils.fireEvent.click(required(testUtils, '.clear'))
+    await flush(testUtils)
+    expect(text(testUtils, '.time')).toBe('14:30')
+    expect(text(testUtils, '.valid')).toBe('true')
   })
 
   it('顾客取消成功后刷新；40952 明确冲突后也重拉权威详情', async () => {

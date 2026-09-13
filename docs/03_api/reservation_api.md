@@ -1,8 +1,8 @@
-# Reservation API v1.0（N1）
+# Reservation API v1.1（N1，可选套餐）
 
 > **Status:** N1/M7 implemented and verified；M5/M7 present in current Gate A M7；other environments and real-client acceptance pending
 >
-> **Last Updated:** 2026-09-09
+> **Last Updated:** 2026-09-13
 >
 > **Base URL:** `/api/v1`
 
@@ -52,7 +52,7 @@ Authorization: Bearer <access_token>
 
 | Method | Path | 用途 | 成功 HTTP |
 |--------|------|------|-----------|
-| GET | `/reservations/booking-options` | 获取一个 Option 未来第 0–30 日的合法日期与时段 | 200 |
+| GET | `/reservations/booking-options` | 获取到店日历；可选 Option 进一步限制时段 | 200 |
 | POST | `/reservations` | 创建 `pending` 独立预约 | 201 |
 | GET | `/reservations` | 分页查看自己的预约历史 | 200 |
 | GET | `/reservations/{reservation_id}` | 查看自己的预约详情 | 200 |
@@ -141,23 +141,29 @@ Authorization: Bearer <access_token>
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | positive integer | Reservation ID |
-| `product_id` | positive integer | 创建时关联 Product ID |
-| `experience_option_id` | positive integer | 创建时关联 Option ID |
-| `product_name` | string | 创建时名称快照 |
-| `duration_minutes` | positive integer | 创建时 Option 时长快照 |
-| `participants` | positive integer | 创建时人数快照 |
-| `day_type` | Enum object | 创建时 Option 日期类型快照 |
-| `price` | fixed two-decimal string | 创建时 Option 价格快照；不得转 float 作为权威金额 |
+| `product_id` | positive integer / null | 创建时关联 Product ID |
+| `experience_option_id` | positive integer / null | 创建时关联 Option ID |
+| `product_name` | string / null | 创建时名称快照 |
+| `duration_minutes` | positive integer / null | 创建时 Option 时长快照 |
+| `participants` | positive integer / null | 创建时人数快照 |
+| `day_type` | Enum object / null | 创建时 Option 日期类型快照 |
+| `price` | fixed two-decimal string / null | 创建时 Option 价格快照；不得转 float 作为权威金额 |
 | `status` | Enum object | 当前预约状态 |
 | `rejection_reason` | Enum object / null | 仅 rejected 时为 `no_capacity` |
 | `cancellation_reason` | Enum object / null | 仅 cancelled 时为两种取消原因之一 |
 | `customer_message` | string | 与状态/原因一致的服务端顾客文案 |
 | `reservation_date` | date | 上海当地预约日期 |
-| `start_time` / `end_time` | string | 上海当地时间；开始始终 `HH:00` / `HH:30`，结束可为任意分钟 |
-| `scheduled_start_at` / `scheduled_end_at` | UTC datetime | 权威 UTC 时间范围 |
+| `start_time` | string | 上海当地开始时间，始终 `HH:00` / `HH:30` |
+| `end_time` | string / null | 已选套餐为上海当地结束时间，未选为 null |
+| `scheduled_start_at` | UTC datetime | 权威 UTC 开始时间 |
+| `scheduled_end_at` | UTC datetime / null | 已选套餐的权威结束时间，未选为 null |
 | `cancellation_deadline_at` | UTC datetime | 精确等于开始时间减 3 小时 |
 | 状态时间 | UTC datetime / null | `confirmed_at`、`rejected_at`、`cancelled_at` |
 | `created_at` / `updated_at` | UTC datetime | 技术时间 |
+
+v1.1 的套餐字段 `product_id/experience_option_id/product_name/duration_minutes/participants/day_type/price` 支持 null，且必须全部为 null 或全部有效。无套餐时 `end_time/scheduled_end_at` 也必须为 null；已选套餐时 UTC 起止差必须等于规格时长。`id`、日期、开始时间、状态和取消截止仍必有值。上表示例为已选套餐形式。
+
+无套餐确认文案为“预约已确认，请按预约时间到店。体验项目到店后选择，费用以选定项目为准。”。响应解析必须根据是否选定套餐校验，不把 null 转为 0 或虚构结束时间。
 
 `ReservationOut` 不包含用户资料、手机号、订单、支付或管理员信息。
 
@@ -185,11 +191,13 @@ Authorization: Bearer <access_token>
 GET /api/v1/reservations/booking-options?experience_option_id=42
 ```
 
+不带 query 的 `GET /api/v1/reservations/booking-options` 返回通用日历；顶层七个套餐摘要字段全为 null，`dates[].day_type` 仍为该日期的有效类型。带 Option 时保持原有摘要。
+
 Query：
 
 | 参数 | 必填 | 规则 |
 |------|------|------|
-| `experience_option_id` | 是 | 正整数；字符串 query 必须是 ASCII 十进制正整数 |
+| `experience_option_id` | 否 | 正整数；字符串 query 必须是 ASCII 十进制正整数 |
 
 成功 `data`：
 
@@ -220,7 +228,7 @@ Query：
 }
 ```
 
-`dates` 一次覆盖上海当地今天到第 30 日；只保留至少一个合法时段的日期，允许返回空数组。响应以 `weekly_closed_weekday: {value,label}` 返回当前固定店休日。该接口排除当前固定店休日、单日店休、不匹配 Option `day_type`、不满 3 小时和无法在 20:00 前完成的时段，但不检查空位。
+`dates` 一次覆盖上海当地今天到第 30 日；只保留至少一个合法时段的日期，允许返回空数组。响应以 `weekly_closed_weekday: {value,label}` 返回当前固定店休日。该接口排除当前固定店休日、单日店休及不满 3 小时的开始时间。选择 Option 时进一步校验日期类型和 20:00 前完整结束；未选择时只要求开始时间早于 20:00，最晚 19:30，不检查空位。
 
 业务错误：`42251` / `42252`。页面停留后创建仍会重新校验，不能把此响应当作预留座位。
 
@@ -231,7 +239,13 @@ POST /api/v1/reservations
 Content-Type: application/json
 ```
 
-严格请求体：
+无套餐的最小请求：
+
+```json
+{"reservation_date": "2026-09-15", "start_time": "14:30"}
+```
+
+已选套餐请求体：
 
 ```json
 {
@@ -243,7 +257,7 @@ Content-Type: application/json
 
 | 字段 | 规则 |
 |------|------|
-| `experience_option_id` | JSON integer，严格正整数；不接受字符串和 boolean |
+| `experience_option_id` | 可省略或为 null；提供时为严格正整数，不接受字符串和 boolean |
 | `reservation_date` | 上海当地有效日历日，严格 `YYYY-MM-DD` |
 | `start_time` | 严格 24 小时制 `HH:00` 或 `HH:30` |
 
@@ -553,3 +567,8 @@ Reservation 的 mutation 除店休 PUT replay 外都不提供幂等重放成功�
 仓库已完成 M5 离线迁移与 N1 后端实现。2026-09-06 的一次性 MySQL 8.0.46 验证真实执行 Aerich 0→5，并通过 Reservation `7` 项并发、回滚、1205/1213 与 EXPLAIN 专项；与 Inventory 联合门槛共 `16 passed`。该次隔离结果在当时不代表任何持久环境已应用 M5；2026-09-08 的后续受控执行已将 M5/M7 应用到当前持久 Gate A M7。共享、预发布和生产数据库不因此自动迁移，运行时是否可用仍必须同时以各目标环境迁移版本、OpenAPI、客户端验收和发布记录为准；开发 SQLite 的 `generate_schemas` 不能作为持久迁移证据。
 
 M9 二维码开台与 Reservation API 保持独立：预约端点不新增 table/order/payment 字段，不自动预占桌台或触发计时。用户到店后的扫码、选单和付款计时使用独立 [二维码开台 API](table_session_api.md)；该能力已完成仓库实现，但不改变 Reservation N1/N2 的发布状态。
+
+
+## 10. v1.1 兼容与迁移
+
+请求兼容旧的完整 Option 提交；响应对原来必有值的套餐字段放宽为 nullable，因此旧客户端不能读取新型记录。按 [业务规则 §17](../01_requirements/reservation_module.md#17-可选套餐创建页与兼容发布) 协调顾客端、管理端和后端发布。新增 M10 仅在仓库生成，未对持久环境执行；不得把旧 Gate A 验收证据外推到本轮。

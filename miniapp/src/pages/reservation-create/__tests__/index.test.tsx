@@ -91,6 +91,10 @@ describe('AuthenticatedReservationCreate', () => {
     mockSubmit.mockClear()
     mockReservationCreateState = {
       data: { status: 'ready', options },
+      scheduleIsValid: true,
+      experienceOptionId: 11,
+      productId: 7,
+      selectPackage: jest.fn(),
       reservationDate: '2026-09-12',
       startTime: '14:30',
       submission: { status: 'idle' },
@@ -129,7 +133,7 @@ describe('AuthenticatedReservationCreate', () => {
     testUtils.fireEvent.click(required(testUtils, '.reservation-create-contact__save'))
     await flush(testUtils)
     expect(updateProfile).toHaveBeenCalledWith({ phone: '13800000000' })
-    expect((required(testUtils, '.reservation-create-page__submit') as HTMLButtonElement).disabled).toBe(false)
+    expect((required(testUtils, '.reservation-create-page__submit') as HTMLButtonElement).disabled).toBeFalsy()
 
     testUtils.fireEvent.click(required(testUtils, '.reservation-create-page__submit'))
     await flush(testUtils)
@@ -162,7 +166,7 @@ describe('AuthenticatedReservationCreate', () => {
     expect(Taro.reLaunch).not.toHaveBeenCalled()
   })
 
-  it('已保存手机号可直接提交，页面明确不创建订单且不主动通知', async () => {
+  it('已保存手机号可直接提交，页面说明无需预付与确认结果入口', async () => {
     await testUtils.mount(AuthenticatedReservationCreate, {
       props: {
         experienceOptionId: 11,
@@ -172,9 +176,9 @@ describe('AuthenticatedReservationCreate', () => {
       },
     })
     const page = required(testUtils, '.reservation-create-page')
-    expect(page.textContent).toContain('提交预约不会创建订单或扣款')
-    expect(page.textContent).toContain('首版不会发送微信主动通知')
-    expect((required(testUtils, '.reservation-create-page__submit') as HTMLButtonElement).disabled).toBe(false)
+    expect(page.textContent).toContain('预约无需预付')
+    expect(page.textContent).toContain('请在“我的预约”查看门店确认结果')
+    expect((required(testUtils, '.reservation-create-page__submit') as HTMLButtonElement).disabled).toBeFalsy()
   })
 
   it('同步连点保存手机号只复用一次进行中 PATCH', async () => {
@@ -202,7 +206,7 @@ describe('AuthenticatedReservationCreate', () => {
       updated_at: '2026-09-06T02:00:00Z',
     })
     await flush(testUtils)
-    expect((required(testUtils, '.reservation-create-page__submit') as HTMLButtonElement).disabled).toBe(false)
+    expect((required(testUtils, '.reservation-create-page__submit') as HTMLButtonElement).disabled).toBeFalsy()
   })
 
   it('资料响应未保存本次手机号时保持预约提交锁定', async () => {

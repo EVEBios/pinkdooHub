@@ -53,7 +53,7 @@ async def get_reservation_booking_options(
     current_customer: CurrentCustomer,
     service: ReservationServiceDependency,
 ) -> dict:
-    """返回服务端计算的当前 Option 可预约日期和半小时时段。"""
+    """返回到店日历；选定套餐时按完整规格进一步过滤。"""
 
     options = await service.get_booking_options(
         experience_option_id=query.experience_option_id,

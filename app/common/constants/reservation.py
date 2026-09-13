@@ -76,6 +76,10 @@ RESERVATION_CUSTOMER_MESSAGES = {
     ),
 }
 
+RESERVATION_UNSELECTED_CONFIRMED_MESSAGE = (
+    "预约已确认，请按预约时间到店。体验项目到店后选择，费用以选定项目为准。"
+)
+
 # 顺序审计契约
 RESERVATION_AUDIT_TARGET_TYPE = "reservation"
 STORE_BUSINESS_DAY_AUDIT_TARGET_TYPE = "store_business_day"

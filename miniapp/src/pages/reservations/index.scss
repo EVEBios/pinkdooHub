@@ -25,6 +25,59 @@
   &__subtitle {
     @include customer.subtitle;
   }
+
+  &__entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 12px 4px 8px;
+  }
+
+  &__entry-copy {
+    min-width: 0;
+  }
+
+  &__entry-title,
+  &__entry-description {
+    display: block;
+    line-height: 1.5;
+  }
+
+  &__entry-title {
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__entry-description {
+    margin-top: 4px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+  }
+
+  &__create {
+    @include pd.primary-button(999px);
+
+    flex: 0 0 auto;
+    gap: 12px;
+    width: auto;
+    margin: 0;
+    padding: 0 30px;
+    background: var(--pd-color-primary);
+    box-shadow: none;
+
+    &:focus-visible {
+      outline: 3px solid var(--pd-color-primary-strong);
+      outline-offset: 4px;
+    }
+  }
+
+  &__create-icon {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+  }
+
 }
 
 .reservations-filters {

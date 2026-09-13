@@ -1,9 +1,10 @@
-import { Button, Text, View } from '@tarojs/components'
+import { Button, Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 
 import type { Reservation } from '@/api/endpoints/reservations'
 import { buildLoginUrl, type AuthContextValue, isAdminRole, useAuth } from '@/auth'
 import {
+  buildReservationCreateUrl,
   buildReservationDetailUrl,
   formatReservationDate,
   reservationStatusClass,
@@ -82,7 +83,17 @@ export function AuthenticatedReservations() {
     <View className='reservations-page'>
       <View className='reservations-page__header'>
         <Text className='reservations-page__title'>我的预约</Text>
-        <Text className='reservations-page__subtitle'>门店确认、拒绝或店休取消后，最新结果会显示在这里</Text>
+        <Text className='reservations-page__subtitle'>门店确认结果会显示在这里</Text>
+      </View>
+      <View className='reservations-page__entry'>
+        <View className='reservations-page__entry-copy'>
+          <Text className='reservations-page__entry-title'>到店时间先约好</Text>
+          <Text className='reservations-page__entry-description'>体验项目可以到店选</Text>
+        </View>
+        <Button className='reservations-page__create' onClick={() => void Taro.navigateTo({ url: buildReservationCreateUrl() })}>
+          <Image className='reservations-page__create-icon' src='/assets/tab-bar/plus-outline-white.png' mode='scaleToFill' />
+          <Text>新建预约</Text>
+        </Button>
       </View>
       <View className='reservations-filters'>
         {STATUS_FILTERS.map((filter) => (
@@ -95,11 +106,7 @@ export function AuthenticatedReservations() {
       </View>
       {state.status === 'loading' && <ReservationsState title='正在加载预约…' description='正在读取服务端最新状态' />}
       {state.status === 'empty' && (
-        <ReservationsState title='当前筛选下没有预约' description='从拼豆体验详情选择配置后即可登记到店时间'>
-          <Button className='reservations-state__action' onClick={() => void Taro.switchTab({ url: '/pages/index/index' })}>
-            浏览拼豆体验
-          </Button>
-        </ReservationsState>
+        <ReservationsState title={statusFilter === 'all' ? '还没有预约' : '当前筛选下没有预约'} description='先选一个到店时间，体验项目可以到店再选' />
       )}
       {state.status === 'error' && (
         <ReservationsState title='预约加载失败' description={state.errorMessage ?? '请稍后重试'}>
@@ -135,16 +142,16 @@ function ReservationCard({ reservation }: { readonly reservation: Reservation })
       onClick={() => void Taro.navigateTo({ url: buildReservationDetailUrl(reservation.id) })}
     >
       <View className='reservation-card__heading'>
-        <Text className='reservation-card__name'>{reservation.product_name}</Text>
+        <Text className='reservation-card__name'>{reservation.product_name ?? '到店预约'}</Text>
         <Text className={`reservation-card__status reservation-card__status--${statusClass}`}>
           {reservation.status.label}
         </Text>
       </View>
       <Text className='reservation-card__date'>{formatReservationDate(reservation.reservation_date)}</Text>
-      <Text className='reservation-card__time'>{reservation.start_time}–{reservation.end_time}</Text>
+      <Text className='reservation-card__time'>{reservation.start_time}{reservation.end_time ? `–${reservation.end_time}` : ' 到店'}</Text>
       <View className='reservation-card__summary'>
-        <Text>{reservation.duration_minutes} 分钟 · {reservation.participants} 人</Text>
-        <Text className='reservation-card__price'>¥{formatPrice(reservation.price)}</Text>
+        <Text>{reservation.experience_option_id === null ? '体验项目到店选择 · 时长待定' : `${reservation.duration_minutes} 分钟 · ${reservation.participants} 人`}</Text>
+        <Text className='reservation-card__price'>{reservation.price === null ? '费用待确认' : `¥${formatPrice(reservation.price)}`}</Text>
       </View>
       <Text className='reservation-card__message'>{reservation.customer_message}</Text>
     </View>

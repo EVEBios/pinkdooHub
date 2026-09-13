@@ -192,7 +192,7 @@ function AdminReservationCard({ reservation }: { readonly reservation: AdminRese
       onClick={() => void Taro.navigateTo({ url: buildAdminReservationDetailUrl(reservation.id) })}
     >
       <View className='admin-reservation-card__heading'>
-        <Text className='admin-reservation-card__name'>{reservation.product_name}</Text>
+        <Text className='admin-reservation-card__name'>{reservation.product_name ?? '到店预约'}</Text>
         <Text className={`admin-reservation-card__status admin-reservation-card__status--${reservationStatusClass(reservation)}`}>
           {reservation.status.label}
         </Text>
@@ -201,10 +201,10 @@ function AdminReservationCard({ reservation }: { readonly reservation: AdminRese
         {reservation.user_nickname} · {reservation.user_phone_masked ?? '未登记手机号'} · 用户 #{reservation.user_id}
       </Text>
       <Text className='admin-reservation-card__date'>{formatReservationDate(reservation.reservation_date)}</Text>
-      <Text className='admin-reservation-card__time'>{reservation.start_time}–{reservation.end_time}</Text>
+      <Text className='admin-reservation-card__time'>{reservation.start_time}{reservation.end_time ? `–${reservation.end_time}` : ' 到店'}</Text>
       <View className='admin-reservation-card__summary'>
-        <Text>{reservation.participants} 人 · {reservation.duration_minutes} 分钟</Text>
-        <Text className='admin-reservation-card__price'>¥{formatPrice(reservation.price)}</Text>
+        <Text>{reservation.experience_option_id === null ? '体验项目到店选择 · 时长待定' : `${reservation.participants} 人 · ${reservation.duration_minutes} 分钟`}</Text>
+        <Text className='admin-reservation-card__price'>{reservation.price === null ? '费用待确认' : `¥${formatPrice(reservation.price)}`}</Text>
       </View>
     </View>
   )

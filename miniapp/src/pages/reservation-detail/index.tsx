@@ -113,9 +113,9 @@ export function AuthenticatedReservationDetail({ reservationId }: { readonly res
             {item.status.label}
           </Text>
         </View>
-        <Text className='reservation-detail-heading__name'>{item.product_name}</Text>
+        <Text className='reservation-detail-heading__name'>{item.product_name ?? '到店预约'}</Text>
         <Text className='reservation-detail-heading__time'>{formatReservationDate(item.reservation_date)}</Text>
-        <Text className='reservation-detail-heading__clock'>{item.start_time}–{item.end_time}</Text>
+        <Text className='reservation-detail-heading__clock'>{item.start_time}{item.end_time ? `–${item.end_time}` : ' 到店'}</Text>
       </View>
 
       <View className={`reservation-detail-message reservation-detail-message--${reservationStatusClass(item)}`}>
@@ -162,8 +162,8 @@ function ReservationFacts({ reservation }: { readonly reservation: Reservation }
   return (
     <View className='reservation-detail-facts'>
       <Text className='reservation-detail-facts__title'>预约快照</Text>
-      <Fact label='体验配置' value={`${reservation.duration_minutes} 分钟 · ${reservation.participants} 人 · ${reservation.day_type.label}`} />
-      <Fact label='预约价格' value={`¥${formatPrice(reservation.price)} · 到店支付`} />
+      <Fact label='体验配置' value={reservation.experience_option_id === null ? '到店选择 · 时长待定' : `${reservation.duration_minutes} 分钟 · ${reservation.participants} 人 · ${reservation.day_type?.label}`} />
+      <Fact label='预约价格' value={reservation.price === null ? '到店选定项目后确认费用' : `¥${formatPrice(reservation.price)} · 到店支付`} />
       <Fact label='预约编号' value={`#${reservation.id}`} />
       <Fact label='提交时间' value={`${formatShanghaiUtc(reservation.created_at)}（北京时间）`} />
       {reservation.rejection_reason && <Fact label='未能确认原因' value={reservation.rejection_reason.label} />}

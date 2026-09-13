@@ -61,9 +61,9 @@ class _ReservationRequest(BaseModel):
 
 
 class ReservationCreate(_ReservationRequest):
-    """创建独立体验预约；其余快照均由服务端生成。"""
+    """创建到店预约，可选完整套餐；快照均由服务端生成。"""
 
-    experience_option_id: PositiveReservationResourceId
+    experience_option_id: PositiveReservationResourceId | None = None
     reservation_date: ReservationBusinessDate
     start_time: ReservationLocalTime
 
@@ -75,9 +75,9 @@ class WeeklyClosureUpdateRequest(_ReservationRequest):
 
 
 class ReservationBookingOptionsQuery(_ReservationRequest):
-    """查询一个 ExperienceOption 当前可选的本地日期和时段。"""
+    """查询到店时间；选定套餐时按完整规格进一步过滤。"""
 
-    experience_option_id: PositiveReservationQueryId
+    experience_option_id: PositiveReservationQueryId | None = None
 
 
 class ReservationListQuery(PageParams):

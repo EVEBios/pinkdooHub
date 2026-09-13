@@ -1578,7 +1578,7 @@ export interface paths {
         };
         /**
          * Get Reservation Booking Options
-         * @description 返回服务端计算的当前 Option 可预约日期和半小时时段。
+         * @description 返回到店日历；选定套餐时按完整规格进一步过滤。
          */
         readonly get: operations["get_reservation_booking_options_api_v1_reservations_booking_options_get"];
         readonly put?: never;
@@ -2033,27 +2033,23 @@ export interface components {
             readonly created_at: string;
             /** Customer Message */
             readonly customer_message: string;
-            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"] | null;
             /** Duration Minutes */
-            readonly duration_minutes: number;
+            readonly duration_minutes: number | null;
             /** End Time */
-            readonly end_time: string;
+            readonly end_time: string | null;
             /** Experience Option Id */
-            readonly experience_option_id: number;
+            readonly experience_option_id: number | null;
             /** Id */
             readonly id: number;
             /** Participants */
-            readonly participants: number;
-            /**
-             * Price
-             * @description 固定两位小数的金额字符串，0 < price <= 99999
-             * @example 599.00
-             */
-            readonly price: string;
+            readonly participants: number | null;
+            /** Price */
+            readonly price: string | null;
             /** Product Id */
-            readonly product_id: number;
+            readonly product_id: number | null;
             /** Product Name */
-            readonly product_name: string;
+            readonly product_name: string | null;
             /** Rejected At */
             readonly rejected_at?: string | null;
             readonly rejection_reason?: components["schemas"]["ReservationRejectionReasonOut"] | null;
@@ -2062,11 +2058,8 @@ export interface components {
              * Format: date
              */
             readonly reservation_date: string;
-            /**
-             * Scheduled End At
-             * Format: date-time
-             */
-            readonly scheduled_end_at: string;
+            /** Scheduled End At */
+            readonly scheduled_end_at: string | null;
             /**
              * Scheduled Start At
              * Format: date-time
@@ -2109,27 +2102,23 @@ export interface components {
             readonly created_at: string;
             /** Customer Message */
             readonly customer_message: string;
-            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"] | null;
             /** Duration Minutes */
-            readonly duration_minutes: number;
+            readonly duration_minutes: number | null;
             /** End Time */
-            readonly end_time: string;
+            readonly end_time: string | null;
             /** Experience Option Id */
-            readonly experience_option_id: number;
+            readonly experience_option_id: number | null;
             /** Id */
             readonly id: number;
             /** Participants */
-            readonly participants: number;
-            /**
-             * Price
-             * @description 固定两位小数的金额字符串，0 < price <= 99999
-             * @example 599.00
-             */
-            readonly price: string;
+            readonly participants: number | null;
+            /** Price */
+            readonly price: string | null;
             /** Product Id */
-            readonly product_id: number;
+            readonly product_id: number | null;
             /** Product Name */
-            readonly product_name: string;
+            readonly product_name: string | null;
             /** Rejected At */
             readonly rejected_at?: string | null;
             readonly rejection_reason?: components["schemas"]["ReservationRejectionReasonOut"] | null;
@@ -2138,11 +2127,8 @@ export interface components {
              * Format: date
              */
             readonly reservation_date: string;
-            /**
-             * Scheduled End At
-             * Format: date-time
-             */
-            readonly scheduled_end_at: string;
+            /** Scheduled End At */
+            readonly scheduled_end_at: string | null;
             /**
              * Scheduled Start At
              * Format: date-time
@@ -3712,7 +3698,7 @@ export interface components {
         };
         /**
          * ReservationBookingOptionsOut
-         * @description 服务端生成的当前 Option 可预约日期/时间选择集。
+         * @description 服务端到店日历；选定套餐时包含完整规格摘要。
          */
         readonly ReservationBookingOptionsOut: {
             /**
@@ -3732,11 +3718,11 @@ export interface components {
             readonly closes_at: string;
             /** Dates */
             readonly dates: readonly components["schemas"]["ReservationBookingDateOut"][];
-            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"] | null;
             /** Duration Minutes */
-            readonly duration_minutes: number;
+            readonly duration_minutes: number | null;
             /** Experience Option Id */
-            readonly experience_option_id: number;
+            readonly experience_option_id: number | null;
             /**
              * Minimum Lead Hours
              * @default 3
@@ -3748,17 +3734,13 @@ export interface components {
              */
             readonly opens_at: string;
             /** Participants */
-            readonly participants: number;
-            /**
-             * Price
-             * @description 固定两位小数的金额字符串，0 < price <= 99999
-             * @example 599.00
-             */
-            readonly price: string;
+            readonly participants: number | null;
+            /** Price */
+            readonly price: string | null;
             /** Product Id */
-            readonly product_id: number;
+            readonly product_id: number | null;
             /** Product Name */
-            readonly product_name: string;
+            readonly product_name: string | null;
             /**
              * Server Now
              * Format: date-time
@@ -3787,11 +3769,11 @@ export interface components {
         };
         /**
          * ReservationCreate
-         * @description 创建独立体验预约；其余快照均由服务端生成。
+         * @description 创建到店预约，可选完整套餐；快照均由服务端生成。
          */
         readonly ReservationCreate: {
             /** Experience Option Id */
-            readonly experience_option_id: number;
+            readonly experience_option_id?: number | null;
             /**
              * Reservation Date
              * Format: date
@@ -3828,27 +3810,23 @@ export interface components {
             readonly created_at: string;
             /** Customer Message */
             readonly customer_message: string;
-            readonly day_type: components["schemas"]["ReservationDayTypeOut"];
+            readonly day_type: components["schemas"]["ReservationDayTypeOut"] | null;
             /** Duration Minutes */
-            readonly duration_minutes: number;
+            readonly duration_minutes: number | null;
             /** End Time */
-            readonly end_time: string;
+            readonly end_time: string | null;
             /** Experience Option Id */
-            readonly experience_option_id: number;
+            readonly experience_option_id: number | null;
             /** Id */
             readonly id: number;
             /** Participants */
-            readonly participants: number;
-            /**
-             * Price
-             * @description 固定两位小数的金额字符串，0 < price <= 99999
-             * @example 599.00
-             */
-            readonly price: string;
+            readonly participants: number | null;
+            /** Price */
+            readonly price: string | null;
             /** Product Id */
-            readonly product_id: number;
+            readonly product_id: number | null;
             /** Product Name */
-            readonly product_name: string;
+            readonly product_name: string | null;
             /** Rejected At */
             readonly rejected_at?: string | null;
             readonly rejection_reason?: components["schemas"]["ReservationRejectionReasonOut"] | null;
@@ -3857,11 +3835,8 @@ export interface components {
              * Format: date
              */
             readonly reservation_date: string;
-            /**
-             * Scheduled End At
-             * Format: date-time
-             */
-            readonly scheduled_end_at: string;
+            /** Scheduled End At */
+            readonly scheduled_end_at: string | null;
             /**
              * Scheduled Start At
              * Format: date-time
@@ -11606,8 +11581,8 @@ export interface operations {
     };
     readonly get_reservation_booking_options_api_v1_reservations_booking_options_get: {
         readonly parameters: {
-            readonly query: {
-                readonly experience_option_id: number;
+            readonly query?: {
+                readonly experience_option_id?: number | null;
             };
             readonly header?: never;
             readonly path?: never;

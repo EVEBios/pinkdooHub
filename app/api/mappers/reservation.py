@@ -9,6 +9,7 @@ from app.common.constants.reservation import (
     RESERVATION_CANCELLATION_REASON_LABELS,
     RESERVATION_CLOSE_TIME_VALUE,
     RESERVATION_CUSTOMER_MESSAGES,
+    RESERVATION_UNSELECTED_CONFIRMED_MESSAGE,
     RESERVATION_MINIMUM_LEAD_HOURS,
     RESERVATION_OPEN_TIME_VALUE,
     RESERVATION_REJECTION_REASON_LABELS,
@@ -110,12 +111,14 @@ def _customer_message(reservation: Reservation) -> str:
         return RESERVATION_CUSTOMER_MESSAGES[
             ReservationCancellationReason(reservation.cancellation_reason)
         ]
+    if status is ReservationStatus.CONFIRMED and reservation.experience_option_id is None:
+        return RESERVATION_UNSELECTED_CONFIRMED_MESSAGE
     return RESERVATION_CUSTOMER_MESSAGES[status]
 
 
 def _reservation_payload(reservation: Reservation) -> dict[str, object]:
     local_start = reservation.scheduled_start_at.astimezone(STORE_TIMEZONE)
-    local_end = reservation.scheduled_end_at.astimezone(STORE_TIMEZONE)
+    local_end = reservation.scheduled_end_at.astimezone(STORE_TIMEZONE) if reservation.scheduled_end_at else None
     return {
         "id": reservation.id,
         "product_id": reservation.product_id,
@@ -123,7 +126,7 @@ def _reservation_payload(reservation: Reservation) -> dict[str, object]:
         "product_name": reservation.product_name,
         "duration_minutes": reservation.option_duration_minutes,
         "participants": reservation.option_participants,
-        "day_type": map_reservation_day_type(reservation.option_day_type),
+        "day_type": map_reservation_day_type(reservation.option_day_type) if reservation.option_day_type is not None else None,
         "price": reservation.option_price,
         "status": map_reservation_status(reservation.status),
         "rejection_reason": map_rejection_reason(reservation.rejection_reason),
@@ -133,7 +136,7 @@ def _reservation_payload(reservation: Reservation) -> dict[str, object]:
         "customer_message": _customer_message(reservation),
         "reservation_date": local_start.date(),
         "start_time": local_start.strftime("%H:%M"),
-        "end_time": local_end.strftime("%H:%M"),
+        "end_time": local_end.strftime("%H:%M") if local_end else None,
         "scheduled_start_at": reservation.scheduled_start_at,
         "scheduled_end_at": reservation.scheduled_end_at,
         "cancellation_deadline_at": reservation.scheduled_start_at
@@ -220,7 +223,7 @@ def map_booking_options(
             "product_name": options.product_name,
             "duration_minutes": options.duration_minutes,
             "participants": options.participants,
-            "day_type": map_reservation_day_type(options.day_type),
+            "day_type": map_reservation_day_type(options.day_type) if options.day_type is not None else None,
             "price": options.price,
             "timezone": RESERVATION_TIMEZONE,
             "server_now": options.server_now,

@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from tortoise.backends.base.client import BaseDBAsyncClient
 from tortoise.queryset import QuerySet
+from tortoise.expressions import Q
 
 from app.common.enums.product import DayType
 from app.common.enums.reservation import (
@@ -126,15 +127,15 @@ class ReservationRepository:
         *,
         user_id: int,
         business_day_id: int,
-        product_id: int,
-        experience_option_id: int,
+        product_id: int | None,
+        experience_option_id: int | None,
         scheduled_start_at: datetime,
-        scheduled_end_at: datetime,
-        product_name: str,
-        option_duration_minutes: int,
-        option_participants: int,
-        option_day_type: DayType,
-        option_price: Decimal,
+        scheduled_end_at: datetime | None,
+        product_name: str | None,
+        option_duration_minutes: int | None,
+        option_participants: int | None,
+        option_day_type: DayType | None,
+        option_price: Decimal | None,
         using_db: BaseDBAsyncClient,
     ) -> Reservation:
         return await Reservation.create(
@@ -357,15 +358,19 @@ class ReservationRepository:
         user_id: int,
         *,
         now_utc: datetime,
+        unselected_active_from_date: date,
         using_db: BaseDBAsyncClient | None = None,
     ) -> bool:
         query = Reservation.filter(
+            Q(scheduled_end_at__gt=now_utc) | Q(
+                scheduled_end_at__isnull=True,
+                business_day__business_date__gte=unselected_active_from_date,
+            ),
             user_id=user_id,
             status__in=[
                 ReservationStatus.PENDING.value,
                 ReservationStatus.CONFIRMED.value,
             ],
-            scheduled_end_at__gt=now_utc,
         )
         if using_db is not None:
             query = query.using_db(using_db)

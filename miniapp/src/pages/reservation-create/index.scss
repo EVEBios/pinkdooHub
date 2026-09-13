@@ -245,3 +245,250 @@
     grid-column: 1 / -1;
   }
 }
+
+.reservation-create-package-section {
+  margin-top: 26px;
+  padding: 24px 3px;
+  border-top: 1px solid var(--pd-color-line);
+  border-bottom: 1px solid var(--pd-color-line);
+
+  &__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  &__title {
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__optional,
+  &__hint {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    font-weight: 400;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 10px;
+    line-height: 1.6;
+  }
+
+  &__toggle,
+  &__clear {
+    @include pd.secondary-button;
+
+    flex: 0 0 auto;
+    width: auto;
+    margin: 0;
+  }
+
+  &__clear {
+    margin-top: 16px;
+  }
+
+  .reservation-create-summary {
+    margin-top: 20px;
+    padding-bottom: 0;
+    border: 0;
+  }
+}
+
+.reservation-packages {
+  margin-top: 22px;
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    background: var(--pd-color-line);
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-small);
+
+    &--single {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__more {
+    @include pd.secondary-button;
+
+    margin-top: 18px;
+  }
+}
+
+.reservation-package {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: var(--pd-color-ink);
+  text-align: left;
+  background: var(--pd-color-surface);
+  border: 0;
+  border-radius: 0;
+
+  &::after {
+    border: 0;
+  }
+
+  &--selected {
+    background: var(--pd-color-primary-soft);
+  }
+
+  &__image {
+    display: block;
+    width: 100%;
+    height: 210px;
+  }
+
+  &__body {
+    padding: 20px 16px;
+  }
+
+  &__name,
+  &__hint {
+    display: block;
+    line-height: 1.5;
+    font-size: var(--pd-font-body-size);
+  }
+
+  &__name {
+    font-weight: 700;
+  }
+
+  &__hint {
+    margin-top: 6px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 22px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__price {
+    font-size: var(--pd-font-input);
+    font-weight: 700;
+  }
+}
+
+.reservation-package-options {
+  margin-top: 24px;
+
+  &__title,
+  &__hint,
+  &__day {
+    display: block;
+    line-height: 1.6;
+  }
+
+  &__title {
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__hint,
+  &__day {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__item {
+    @include pd.secondary-button;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    min-height: 96px;
+    height: auto;
+    margin-top: 12px;
+    padding: 16px 20px;
+    text-align: left;
+
+    &--selected {
+      background: var(--pd-color-primary-soft);
+      border-color: var(--pd-color-primary);
+    }
+  }
+}
+
+.reservation-create-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 24px;
+  padding: 20px 0 calc(16px + env(safe-area-inset-bottom));
+  background: var(--pd-color-canvas);
+  border-top: 1px solid var(--pd-color-line);
+  grid-column: 1 / -1;
+
+  &__summary {
+    min-width: 0;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+
+  &__time {
+    display: block;
+    margin-top: 4px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .reservation-create-page {
+    &__submit {
+      flex: 0 0 auto;
+      width: auto;
+      min-width: 220px;
+      margin: 0;
+    }
+  }
+}
+
+@media (width >= 768px) {
+  .reservation-create-schedule {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .reservation-create-contact {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  .reservation-create-package-section {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .reservation-create-feedback {
+    grid-column: 1 / -1;
+  }
+}

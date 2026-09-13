@@ -88,31 +88,38 @@ class Reservation(BaseModel):
         "models.Product",
         related_name="reservations",
         on_delete=fields.RESTRICT,
+        null=True,
     )
     experience_option = fields.ForeignKeyField(
         "models.ExperienceOption",
         related_name="reservations",
         on_delete=fields.RESTRICT,
+        null=True,
     )
     scheduled_start_at = fields.DatetimeField()
-    scheduled_end_at = fields.DatetimeField()
+    scheduled_end_at = fields.DatetimeField(null=True)
     product_name = fields.CharField(
         max_length=PRODUCT_NAME_MAX_LENGTH,
         validators=[MinLengthValidator(PRODUCT_NAME_MIN_LENGTH)],
+        null=True,
     )
     option_duration_minutes = fields.IntField(
         validators=[MinValueValidator(MIN_DURATION_MINUTES)],
+        null=True,
     )
     option_participants = fields.IntField(
         validators=[MinValueValidator(MIN_PARTICIPANTS)],
+        null=True,
     )
     option_day_type = fields.CharEnumField(
         DayType,
         max_length=PRODUCT_ENUM_MAX_LENGTH,
+        null=True,
     )
     option_price = StrictDecimalField(
         max_digits=10,
         decimal_places=PRODUCT_PRICE_DECIMAL_PLACES,
+        null=True,
         validators=[
             MinValueValidator(PRODUCT_PRICE_MIN),
             MaxValueValidator(PRODUCT_PRICE_MAX),

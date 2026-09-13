@@ -430,11 +430,15 @@ confirm/reject/cancel 与店休 DELETE 均使用 empty-body 请求，连 `{}` �
 
 ### 10.4 Reservation
 
+- 创建路由允许无参数（含登录回跳）；携带套餐时 Product/Option 参数必须成对有效。我的预约页头和空态均有新建入口。
+- 商品与时长、人数作为完整套餐组选填。无套餐时七个摘要字段与结束时间为空；有套餐时保持完整快照。顾客端、管理端、Runtime Guard 必须同步支持，不能把 null 价格显示为免费。
+- 选择／清除套餐保留日期和开始时间。变更造成冲突时阻止提交并引导重选，不静默修改；可选商品请求失败不阻断通用日历。
+
 - 预约独立于 Cart/Order/Payment；创建页面不要求下单，不从 Cart 推导请求，也不声称已经付款；
-- 只对用户当前选中的真实 ExperienceOption 调用 `GET /reservations/booking-options`。返回的 `dates[]` 一次覆盖未来第 0–30 日且只含合法时段；为空是正常 Empty，不是 Error；
+- 无套餐时不传 Option 调用 `GET /reservations/booking-options`；已选时传真实 Option。返回的 `dates[]` 一次覆盖未来第 0–30 日且只含合法时段；为空是正常 Empty，不是 Error；
 - `booking-options` 不表达空位或占座。页面可写“提交后由门店确认”，不能写“已预留座位”；
 - 同一用户/Option/时段允许存在多条独立预约；页面只合并同一次点击的进行中请求，不把它实现为业务去重。N1 不自动防超额，门店逐条人工确认或拒绝；
-- 创建只发送 Option ID、上海当地日期和半小时开始值，不发送 Product、价格、时长、人数、手机号、状态或原因；
+- 创建只发送可选 Option ID、上海当地日期和半小时开始值，不发送 Product、价格、时长、人数、手机号、状态或原因；
 - 创建前可以检查 Profile phone 并引导补充，但 `42254` 仍是并发变化后的最终裁决；手机号不得进入预约本地快照；
 - 列表/详情只渲染后端 Reservation 快照、状态/原因和 `customer_message`。`rejected/no_capacity` 与 `cancelled/store_closed` 必须显示不同语义；
 - 用户 cancel 在本地当前状态为 pending/confirmed 时始终显示截止时间和取消按钮；客户端不依据设备时钟提前隐藏或发明 `can_cancel`。服务端以 40951/40952 作最终裁决，冲突后重新读取详情。改期 UI 必须明确执行“取消旧预约后新建”，不能 PATCH 原行；

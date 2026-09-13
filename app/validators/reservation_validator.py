@@ -56,14 +56,14 @@ class ReservationValidator:
         *,
         business_date: date,
         start_time: time,
-        duration_minutes: int,
-        option_day_type: DayType,
+        duration_minutes: int | None,
+        option_day_type: DayType | None,
         now_utc: datetime,
         is_store_closed: bool,
         weekly_closed_weekday: ReservationWeekday = (
             DEFAULT_RESERVATION_WEEKLY_CLOSED_WEEKDAY
         ),
-    ) -> tuple[datetime, datetime]:
+    ) -> tuple[datetime, datetime | None]:
         """校验完整预约窗口并返回 UTC 起止时间。"""
 
         local_now = now_utc.astimezone(STORE_TIMEZONE)
@@ -92,7 +92,12 @@ class ReservationValidator:
             start_time,
             tzinfo=STORE_TIMEZONE,
         )
-        local_end = local_start + timedelta(minutes=duration_minutes)
+        if (duration_minutes is None) != (option_day_type is None):
+            raise ValueError("Reservation selection must include duration and day type together")
+        local_end = (
+            local_start + timedelta(minutes=duration_minutes)
+            if duration_minutes is not None else None
+        )
         local_open = datetime.combine(
             business_date,
             RESERVATION_OPEN_TIME,
@@ -105,15 +110,17 @@ class ReservationValidator:
         )
         if (
             local_start < local_open
-            or local_end > local_close
-            or local_end.date() != business_date
+            or local_start >= local_close
+            or (local_end is not None and (
+                local_end > local_close or local_end.date() != business_date
+            ))
         ):
             self._raise(
                 ReservationScheduleUnavailableReason.OUTSIDE_BUSINESS_HOURS
             )
 
         expected_day_type = self.day_type_for_date(business_date)
-        if option_day_type != expected_day_type:
+        if option_day_type is not None and option_day_type != expected_day_type:
             self._raise(
                 ReservationScheduleUnavailableReason.OPTION_DAY_TYPE_MISMATCH
             )
@@ -129,14 +136,14 @@ class ReservationValidator:
         if is_store_closed:
             self._raise(ReservationScheduleUnavailableReason.STORE_CLOSED)
 
-        return scheduled_start_at, local_end.astimezone(timezone.utc)
+        return scheduled_start_at, local_end.astimezone(timezone.utc) if local_end else None
 
     def list_available_start_times(
         self,
         *,
         business_date: date,
-        duration_minutes: int,
-        option_day_type: DayType,
+        duration_minutes: int | None,
+        option_day_type: DayType | None,
         now_utc: datetime,
         is_store_closed: bool,
         weekly_closed_weekday: ReservationWeekday = (
@@ -156,7 +163,7 @@ class ReservationValidator:
             RESERVATION_CLOSE_TIME,
             tzinfo=STORE_TIMEZONE,
         )
-        while local_start + timedelta(minutes=duration_minutes) <= local_close:
+        while local_start < local_close:
             try:
                 self.validate_schedule(
                     business_date=business_date,

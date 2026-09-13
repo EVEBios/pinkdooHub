@@ -142,11 +142,12 @@ Phase 8.8–8.9 自动化固定以下高风险边界：Product Audit 动态路�
 - 201/200 成功分支；
 - key 不进入日志/error。
 
-### 4.5 Reservation N1 契约与验收矩阵
+### 4.5 Reservation N1/v1.1 契约与验收矩阵
 
-- `booking-options` 请求只发送正整数 Option ID；Guard 校验固定时区、UTC `server_now`、0–30 日上界、规则常量、按日递增、day_type 和不重复半小时时段；空 dates 合法；
+- `booking-options` 请求省略 Option ID 或发送正整数；Guard 校验固定时区、UTC `server_now`、0–30 日上界、规则常量、按日递增、day_type 和不重复半小时时段；空 dates 合法；
 - 创建只投影 `experience_option_id/reservation_date/start_time`，拒绝客户端 Product/price/phone/status；至少覆盖 42251–42254、同步防双击、unknown 不重发和“我的预约”核对入口；
 - 覆盖“同一点击合并 Promise”和“用户明确再次提交同一 Option/时段会得到不同 Reservation ID”两类相反边界，证明客户端防抖不被误写成业务去重或容量限制；
+- 补充无参数路由／登录回跳、无套餐提交、选取与清除套餐、时间冲突、商品加载失败不阻断预约、全空／完整快照、两类确认文案、旧记录混合分页、成功或 unknown 后不重复提交。
 - Reservation Guard 校验四状态、状态/原因/三个时间/customer_message 组合、UTC 起止、上海本地日期/时间、取消截止精确等式和两位小数快照；
 - 用户列表的 status/Page/迟到响应隔离、owner-only 40451、cancel empty body、pending/confirmed 始终展示截止时间与取消按钮、40951/40952 与 unknown 后 GET 收敛；
 - ADMIN Query 白名单、列表掩码手机号、详情当前完整手机号/null、敏感字段不进入日志/Storage；confirm/reject empty body、固定 no_capacity、40951/40953 和并发后重取；

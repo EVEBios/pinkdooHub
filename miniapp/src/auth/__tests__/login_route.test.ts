@@ -77,7 +77,8 @@ describe('登录安全返回路由', () => {
     expect(resolveAuthenticatedLanding('unknown', ADMIN_WORKBENCH_PATH)).toBeUndefined()
   })
 
-  it('仅允许规范且完整的预约创建动态回跳', () => {
+  it('允许无套餐创建回跳，带套餐时必须完整且规范', () => {
+    expect(parseLoginRedirect('/pages/reservation-create/index')).toBe('/pages/reservation-create/index')
     const target = '/pages/reservation-create/index?product_id=7&option_id=11' as const
     expect(buildLoginUrl(target)).toBe(
       '/pages/login/index?redirect=%2Fpages%2Freservation-create%2Findex%3Fproduct_id%3D7%26option_id%3D11',
@@ -86,7 +87,6 @@ describe('登录安全返回路由', () => {
     expect(parseLoginRedirect(target)).toBe(target)
 
     for (const unsafe of [
-      '/pages/reservation-create/index',
       '/pages/reservation-create/index?option_id=11&product_id=7',
       '/pages/reservation-create/index?product_id=0&option_id=11',
       '/pages/reservation-create/index?product_id=7&option_id=11&next=https://evil.example.com',

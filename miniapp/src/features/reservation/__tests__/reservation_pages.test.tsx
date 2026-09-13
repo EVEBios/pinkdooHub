@@ -59,8 +59,8 @@ jest.mock('@/features/reservation', () => ({
     status: 'pending', businessDate: '', userId: '', productId: '',
   },
   buildAdminReservationDetailUrl: (id: number) => `/admin/pages/reservation-detail/index?id=${id}`,
-  buildReservationCreateUrl: (productId: number, optionId: number) =>
-    `/pages/reservation-create/index?product_id=${productId}&option_id=${optionId}`,
+  buildReservationCreateUrl: (productId?: number, optionId?: number) =>
+    productId === undefined ? '/pages/reservation-create/index' : `/pages/reservation-create/index?product_id=${productId}&option_id=${optionId}`,
   buildReservationDetailUrl: (id: number) => `/pages/reservation-detail/index?id=${id}`,
   canRequestReservationCancellation: (reservation: Reservation) =>
     reservation.status.value === 'pending' || reservation.status.value === 'confirmed',
@@ -190,21 +190,64 @@ describe('Reservation N1 页面集成', () => {
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/reservation-detail/index?id=31' })
   })
 
+  it.each(['customer-list', 'customer-detail', 'admin-list', 'admin-detail'])(
+    '%s 显示无套餐预约，不将空价格和时长伪装为零', async (surface) => {
+      const selection = { product_id: null, experience_option_id: null, product_name: null,
+        duration_minutes: null, participants: null, day_type: null, price: null,
+        end_time: null, scheduled_end_at: null }
+      let selector: string
+      if (surface === 'customer-list') {
+        mockReservationListState.state = { status: 'content', items: [{ ...pendingReservation, ...selection }], total: 1, page: 1, pages: 1 }
+        await testUtils.mount(AuthenticatedReservations)
+        selector = '.reservation-card'
+      } else if (surface === 'customer-detail') {
+        mockReservationDetailState.detail = { status: 'content', reservation: { ...pendingReservation, ...selection } }
+        await testUtils.mount(AuthenticatedReservationDetail, { props: { reservationId: 31 } })
+        selector = '.reservation-detail-page'
+      } else if (surface === 'admin-list') {
+        mockAdminListState.state = { status: 'content', items: [{ ...adminListItem, ...selection }], total: 1, page: 1, pages: 1 }
+        await testUtils.mount(AuthenticatedAdminReservations)
+        selector = '.admin-reservation-card'
+      } else {
+        mockAdminDetailState.detail = { status: 'content', reservation: { ...adminDetail, ...selection } }
+        await testUtils.mount(AuthenticatedAdminReservationDetail, { props: { reservationId: 31 } })
+        selector = '.admin-reservation-detail-page'
+      }
+      const content = required(testUtils, selector).textContent
+      expect(content).toContain('到店预约')
+      expect(content).toContain('待定')
+      expect(content).not.toContain('¥0.00')
+      expect(content).not.toContain('null')
+    },
+  )
+
   it('预约根页同步自定义 TabBar 的选中序号', async () => {
     await testUtils.mount(ReservationsPage)
     expect(mockUseRootTabSelection).toHaveBeenCalledWith(1)
   })
 
-  it('预约空态返回商城、详情返回列表均使用根 Tab 切换', async () => {
+  it.each(['content', 'loading', 'error'])('预约 %s 状态均可从独立入口新建预约', async (status) => {
+    mockReservationListState = {
+      ...mockReservationListState,
+      state: { status, items: [pendingReservation], total: 1, page: 1, pages: 1, loadingMore: false },
+    }
+    await testUtils.mount(AuthenticatedReservations)
+    expect(required(testUtils, '.reservations-page__entry').textContent).toContain('到店时间先约好')
+    testUtils.fireEvent.click(required(testUtils, '.reservations-page__create'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/reservation-create/index' })
+  })
+
+  it('预约空态进入新建预约、详情返回列表使用根 Tab 切换', async () => {
     mockReservationListState = {
       ...mockReservationListState,
       state: { status: 'empty', items: [], total: 0, page: 1, pages: 0, loadingMore: false },
     }
     await testUtils.mount(AuthenticatedReservations)
-    expect(testUtils.queries.querySelector('.reservations-inline-state')).not.toBeNull()
+    expect(required(testUtils, '.reservations-inline-state').textContent).toContain('还没有预约')
     expect(testUtils.queries.querySelector('.reservations-page--state')).toBeNull()
-    testUtils.fireEvent.click(required(testUtils, '.reservations-state__action'))
-    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/index/index' })
+    expect(testUtils.queries.querySelector('.reservations-inline-state .reservations-state__action')).toBeNull()
+    testUtils.fireEvent.click(required(testUtils, '.reservations-page__create'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/reservation-create/index' })
     testUtils.unmout()
 
     testUtils = new ReactTestUtil()

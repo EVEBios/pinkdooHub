@@ -15,6 +15,8 @@ import {
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
+import { ReservationPackageSelector } from './package_selector'
+
 import './index.scss'
 
 const PHONE_PATTERN = /^1[3-9]\d{9}$/
@@ -47,7 +49,7 @@ export default function ReservationCreatePage() {
 function CustomerReservationCreatePage({ auth }: { readonly auth: AuthContextValue }) {
   const route = parseReservationCreateRoute(useRouter().params)
   if (!route) {
-    return <ReservationCreateState title='预约地址无效' description='请从拼豆体验详情重新选择配置' />
+    return <ReservationCreateState title='预约地址无效' description='请从我的预约重新进入' />
   }
   if (auth.status === 'initializing') {
     return <ReservationCreateState title='正在确认登录状态…' description='预约只会登记在当前账号下' />
@@ -62,7 +64,7 @@ function CustomerReservationCreatePage({ auth }: { readonly auth: AuthContextVal
   if (auth.status === 'guest') {
     const redirect = buildReservationCreateUrl(route.productId, route.experienceOptionId)
     return (
-      <ReservationCreateState title='登录后提交预约' description='登录后会回到当前体验配置，已选商品不会改变'>
+      <ReservationCreateState title='登录后提交预约' description='登录后会回到新建预约，选择你的到店时间'>
         <Button
           className='reservation-create-state__action'
           onClick={() => void Taro.navigateTo({ url: buildLoginUrl(redirect) })}
@@ -94,12 +96,13 @@ export function AuthenticatedReservationCreate({
   productId,
   updateProfile,
 }: {
-  readonly experienceOptionId: number
+  readonly experienceOptionId?: number
   readonly initialPhone: string
-  readonly productId: number
+  readonly productId?: number
   readonly updateProfile: (data: ProfileUpdateRequest) => Promise<UserProfile>
 }) {
   const reservation = useReservationCreate(productId, experienceOptionId)
+  const [packagesExpanded, setPackagesExpanded] = useState(false)
   const [phone, setPhone] = useState(initialPhone)
   const [savedPhone, setSavedPhone] = useState(initialPhone)
   const [phoneState, setPhoneState] = useState<
@@ -158,6 +161,9 @@ export function AuthenticatedReservationCreate({
     return (
       <ReservationCreateState title='预约时间加载失败' description={reservation.data.errorMessage}>
         <Button className='reservation-create-state__action' onClick={reservation.retry}>重新加载</Button>
+        {reservation.experienceOptionId !== undefined && (
+          <Button className='reservation-create-state__action' onClick={() => reservation.selectPackage()}>到店后再选套餐</Button>
+        )}
       </ReservationCreateState>
     )
   }
@@ -167,12 +173,12 @@ export function AuthenticatedReservationCreate({
     return (
       <ReservationCreateState
         title='当前没有可预约时段'
-        description={`未来 ${options.booking_window_days} 天内暂无符合当前配置的营业时段`}
+        description={`未来 ${options.booking_window_days} 天内暂无${options.experience_option_id === null ? '' : '符合当前套餐的'}可预约时段`}
       >
         <Button
           className='reservation-create-state__action reservation-create-state__action--secondary'
-          onClick={() => void Taro.navigateBack()}
-        >重新选择体验配置</Button>
+          onClick={() => options.experience_option_id === null ? void Taro.switchTab({ url: RESERVATION_LIST_PATH }) : reservation.selectPackage()}
+        >{options.experience_option_id === null ? '返回我的预约' : '到店后再选套餐'}</Button>
       </ReservationCreateState>
     )
   }
@@ -181,31 +187,20 @@ export function AuthenticatedReservationCreate({
   const dateIndex = Math.max(0, options.dates.findIndex((item) => item.date === reservation.reservationDate))
   const timeIndex = Math.max(0, selectedDate?.start_times.findIndex((item) => item === reservation.startTime) ?? 0)
   const blocked = reservation.submission.status === 'submitting' ||
-    reservation.submission.status === 'unknown' || phoneState.status === 'saving'
+    reservation.submission.status === 'unknown' || reservation.submission.status === 'succeeded' || phoneState.status === 'saving'
 
   return (
     <View className='reservation-create-page'>
       <View className='reservation-create-page__header'>
-        <Text className='reservation-create-page__title'>预约拼豆体验</Text>
-        <Text className='reservation-create-page__subtitle'>先登记时间，门店确认后到店付款</Text>
-      </View>
-
-      <View className='reservation-create-summary'>
-        <View className='reservation-create-summary__heading'>
-          <Text className='reservation-create-summary__name'>{options.product_name}</Text>
-          <Text className='reservation-create-summary__price'>¥{formatPrice(options.price)}</Text>
-        </View>
-        <Text className='reservation-create-summary__meta'>
-          {options.duration_minutes} 分钟 · {options.participants} 人 · {options.day_type.label}
-        </Text>
-        <Text className='reservation-create-summary__note'>费用采用当前预约价格快照；提交预约不会创建订单或扣款。</Text>
+        <Text className='reservation-create-page__title'>新建预约</Text>
+        <Text className='reservation-create-page__subtitle'>先约好到店时间，体验项目也可以到店再选</Text>
       </View>
 
       <View className='reservation-create-schedule'>
         <Text className='reservation-create-schedule__title'>选择到店时间</Text>
-        <Text className='reservation-create-schedule__hint'>仅显示至少三小时后、可完整结束于营业时间内的时段</Text>
+        <Text className='reservation-create-schedule__hint'>{options.experience_option_id === null ? '提前三小时预约，选择方便你的到店时间' : '按当前套餐展示可在打烊前结束的时段'}</Text>
         <Picker
-          disabled={blocked}
+          disabled={blocked || undefined}
           mode='selector'
           range={options.dates.map((item) => formatReservationDate(item.date))}
           value={dateIndex}
@@ -221,7 +216,7 @@ export function AuthenticatedReservationCreate({
           </View>
         </Picker>
         <Picker
-          disabled={blocked}
+          disabled={blocked || undefined}
           mode='selector'
           range={[...(selectedDate?.start_times ?? [])]}
           value={timeIndex}
@@ -232,7 +227,7 @@ export function AuthenticatedReservationCreate({
         >
           <View className='reservation-create-field'>
             <Text className='reservation-create-field__label'>开始时间</Text>
-            <Text className='reservation-create-field__value'>{reservation.startTime}</Text>
+            <Text className='reservation-create-field__value'>{reservation.startTime || '请选择开始时间'}</Text>
             <Text className='reservation-create-field__affordance'>更换</Text>
           </View>
         </Picker>
@@ -241,12 +236,51 @@ export function AuthenticatedReservationCreate({
         </Text>
       </View>
 
+      {!reservation.scheduleIsValid && (
+        <View className='reservation-create-feedback'>
+          <Text>{options.experience_option_id === null ? '请选择当前可预约的日期和开始时间。' : '当前时间不适用于所选套餐，请重新选择时间，或到店后再选套餐。'}</Text>
+        </View>
+      )}
+      <View className='reservation-create-package-section'>
+        <View className='reservation-create-package-section__heading'>
+          <View>
+            <Text className='reservation-create-package-section__title'>体验项目 <Text className='reservation-create-package-section__optional'>选填</Text></Text>
+            {options.experience_option_id === null && <Text className='reservation-create-package-section__hint'>到店后选择 · 现在只约时间也可以</Text>}
+          </View>
+          <Button className='reservation-create-package-section__toggle' disabled={blocked || undefined} onClick={() => setPackagesExpanded((value) => !value)}>
+            {packagesExpanded ? '收起' : options.experience_option_id === null ? '选择套餐' : '更换'}
+          </Button>
+        </View>
+        {options.experience_option_id !== null && (
+          <View className='reservation-create-summary'>
+            <View className='reservation-create-summary__heading'>
+              <Text className='reservation-create-summary__name'>{options.product_name}</Text>
+              <Text className='reservation-create-summary__price'>¥{formatPrice(options.price ?? '0.00')}</Text>
+            </View>
+            <Text className='reservation-create-summary__meta'>
+              {options.duration_minutes} 分钟 · {options.participants} 人 · {options.day_type?.label}
+            </Text>
+            <Text className='reservation-create-summary__note'>预约无需预付，费用以预约时价格为准，到店支付。</Text>
+          </View>
+        )}
+        {options.experience_option_id !== null && (
+          <Button className='reservation-create-package-section__clear' disabled={blocked || undefined} onClick={() => reservation.selectPackage()}>到店后再选</Button>
+        )}
+        {packagesExpanded && (
+          <ReservationPackageSelector
+            disabled={blocked}
+            dayType={selectedDate?.day_type.value}
+            selectedOptionId={reservation.experienceOptionId}
+            onSelect={(selection) => { reservation.selectPackage(selection); setPackagesExpanded(false) }}
+          />
+        )}
+      </View>
       <View className='reservation-create-contact'>
         <Text className='reservation-create-contact__title'>联系电话</Text>
-        <Text className='reservation-create-contact__hint'>门店处理预约需要手机号；保存后才可提交。</Text>
+        <Text className='reservation-create-contact__hint'>{phoneIsSaved ? '已沿用账号联系电话，门店可用于核对预约' : '补充联系电话，方便门店核对预约'}</Text>
         <Input
           className='reservation-create-contact__input'
-          disabled={blocked}
+          disabled={blocked || undefined}
           maxlength={11}
           placeholder='请输入 11 位手机号'
           type='number'
@@ -256,12 +290,12 @@ export function AuthenticatedReservationCreate({
             setPhoneState({ status: 'idle' })
           }}
         />
-        <Button
+        {!phoneIsSaved && <Button
           className='reservation-create-contact__save'
-          disabled={phoneState.status === 'saving' || phoneIsSaved}
+          disabled={blocked || phoneIsSaved || undefined}
           loading={phoneState.status === 'saving'}
           onClick={() => void savePhone()}
-        >{phoneIsSaved ? '手机号已保存' : phoneState.status === 'saving' ? '正在保存…' : '保存手机号'}</Button>
+        >{phoneIsSaved ? '手机号已保存' : phoneState.status === 'saving' ? '正在保存…' : '保存手机号'}</Button>}
         {phoneState.message && (
           <Text className={`reservation-create-feedback reservation-create-feedback--${phoneState.status}`}>
             {phoneState.message}
@@ -273,7 +307,7 @@ export function AuthenticatedReservationCreate({
         <Text className='reservation-create-rules__title'>提交前请确认</Text>
         <Text>提交后先进入“待门店确认”；店员会根据现场座位确认或因无空位拒绝。</Text>
         <Text>开始前三小时可取消；改期需先取消旧预约，再重新预约，历史记录仍会保留。</Text>
-        <Text>首版不会发送微信主动通知，请在“我的预约”查看最新状态。</Text>
+        <Text>请在“我的预约”查看门店确认结果。</Text>
       </View>
 
       {(reservation.submission.status === 'failed' || reservation.submission.status === 'unknown') && (
@@ -284,12 +318,18 @@ export function AuthenticatedReservationCreate({
           )}
         </View>
       )}
-      <Button
-        className='reservation-create-page__submit'
-        disabled={blocked || !phoneIsSaved}
-        loading={reservation.submission.status === 'submitting'}
-        onClick={() => void submitReservation()}
-      >{reservation.submission.status === 'submitting' ? '正在提交…' : '提交预约申请'}</Button>
+      <View className='reservation-create-footer'>
+        <View className='reservation-create-footer__summary'>
+          <Text>{reservation.reservationDate ? formatReservationDate(reservation.reservationDate) : '请选择预约日期'}</Text>
+          <Text className='reservation-create-footer__time'>{reservation.startTime || '请选择开始时间'} 到店</Text>
+        </View>
+        <Button
+          className='reservation-create-page__submit'
+          disabled={blocked || !phoneIsSaved || !reservation.scheduleIsValid || undefined}
+          loading={reservation.submission.status === 'submitting'}
+          onClick={() => void submitReservation()}
+        >{reservation.submission.status === 'submitting' ? '正在提交…' : '提交预约'}</Button>
+      </View>
     </View>
   )
 }

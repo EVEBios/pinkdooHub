@@ -77,15 +77,15 @@ class ReservationBookingDate:
 
 @dataclass(frozen=True, slots=True)
 class ReservationBookingOptions:
-    """创建页所需的当前 Option 与服务端日历。"""
+    """创建页所需的可选完整套餐与服务端日历。"""
 
-    experience_option_id: int
-    product_id: int
-    product_name: str
-    duration_minutes: int
-    participants: int
-    day_type: DayType
-    price: Decimal
+    experience_option_id: int | None
+    product_id: int | None
+    product_name: str | None
+    duration_minutes: int | None
+    participants: int | None
+    day_type: DayType | None
+    price: Decimal | None
     server_now: datetime
     booking_window_end_date: date
     dates: tuple[ReservationBookingDate, ...]
@@ -136,20 +136,22 @@ class ReservationService:
     async def get_booking_options(
         self,
         *,
-        experience_option_id: int,
+        experience_option_id: int | None = None,
     ) -> ReservationBookingOptions:
         """生成当前时刻可选的本地营业日期与半小时时段。"""
 
         now_utc = self._now()
-        option = await self.product_repository.get_option_detail(
-            experience_option_id,
-            include_deleted=True,
-        )
-        self._validate_option_available(
-            option,
-            experience_option_id=experience_option_id,
-        )
-        assert option is not None
+        option = None
+        if experience_option_id is not None:
+            option = await self.product_repository.get_option_detail(
+                experience_option_id,
+                include_deleted=True,
+            )
+            self._validate_option_available(
+                option,
+                experience_option_id=experience_option_id,
+            )
+            assert option is not None
         local_today = now_utc.astimezone(STORE_TIMEZONE).date()
         settings = await self.reservation_repository.get_settings()
         weekly_closed_weekday = ReservationWeekday(settings.weekly_closed_weekday)
@@ -163,8 +165,8 @@ class ReservationService:
             business_date = local_today + timedelta(days=offset)
             start_times = self.validator.list_available_start_times(
                 business_date=business_date,
-                duration_minutes=option.duration,
-                option_day_type=DayType(option.day_type),
+                duration_minutes=option.duration if option else None,
+                option_day_type=DayType(option.day_type) if option else None,
                 now_utc=now_utc,
                 is_store_closed=business_date in closed_dates,
                 weekly_closed_weekday=weekly_closed_weekday,
@@ -178,13 +180,13 @@ class ReservationService:
                     )
                 )
         return ReservationBookingOptions(
-            experience_option_id=option.id,
-            product_id=option.product_id,
-            product_name=option.product.name,
-            duration_minutes=option.duration,
-            participants=option.participants,
-            day_type=DayType(option.day_type),
-            price=option.price,
+            experience_option_id=option.id if option else None,
+            product_id=option.product_id if option else None,
+            product_name=option.product.name if option else None,
+            duration_minutes=option.duration if option else None,
+            participants=option.participants if option else None,
+            day_type=DayType(option.day_type) if option else None,
+            price=option.price if option else None,
             server_now=now_utc,
             booking_window_end_date=last_date,
             weekly_closed_weekday=weekly_closed_weekday,
@@ -195,23 +197,25 @@ class ReservationService:
         self,
         *,
         user_id: int,
-        experience_option_id: int,
+        experience_option_id: int | None = None,
         reservation_date: date,
         start_time: str,
         ip_address: str,
     ) -> Reservation:
-        """创建待门店确认预约并保存当前完整 Option 快照。"""
+        """创建待门店确认预约；选定套餐时保存当前完整快照。"""
 
         now_utc = self._now()
         parsed_start_time = time.fromisoformat(start_time)
-        candidate = await self.product_repository.get_option_by_id(
-            experience_option_id,
-            include_deleted=True,
-        )
-        if candidate is None:
-            raise ReservationOptionUnavailable(
-                experience_option_id=experience_option_id
+        candidate = None
+        if experience_option_id is not None:
+            candidate = await self.product_repository.get_option_by_id(
+                experience_option_id,
+                include_deleted=True,
             )
+            if candidate is None:
+                raise ReservationOptionUnavailable(
+                    experience_option_id=experience_option_id
+                )
 
         async def operation() -> Reservation:
             async with in_transaction() as connection:
@@ -238,26 +242,29 @@ class ReservationService:
                         using_db=connection,
                     )
                 )
-                product = await self.product_repository.get_product_for_update(
-                    candidate.product_id,
-                    using_db=connection,
-                )
-                option = await self.product_repository.get_option_for_update(
-                    experience_option_id,
-                    using_db=connection,
-                )
-                self._validate_locked_option_available(
-                    option,
-                    product=product,
-                    experience_option_id=experience_option_id,
-                )
-                assert option is not None and product is not None
+                product = None
+                option = None
+                if candidate is not None:
+                    product = await self.product_repository.get_product_for_update(
+                        candidate.product_id,
+                        using_db=connection,
+                    )
+                    option = await self.product_repository.get_option_for_update(
+                        candidate.id,
+                        using_db=connection,
+                    )
+                    self._validate_locked_option_available(
+                        option,
+                        product=product,
+                        experience_option_id=candidate.id,
+                    )
+                    assert option is not None and product is not None
                 scheduled_start_at, scheduled_end_at = (
                     self.validator.validate_schedule(
                         business_date=reservation_date,
                         start_time=parsed_start_time,
-                        duration_minutes=option.duration,
-                        option_day_type=DayType(option.day_type),
+                        duration_minutes=option.duration if option else None,
+                        option_day_type=DayType(option.day_type) if option else None,
                         now_utc=now_utc,
                         is_store_closed=business_day.is_closed,
                         weekly_closed_weekday=ReservationWeekday(
@@ -269,15 +276,15 @@ class ReservationService:
                     await self.reservation_repository.create_reservation(
                         user_id=locked_user.id,
                         business_day_id=business_day.id,
-                        product_id=product.id,
-                        experience_option_id=option.id,
+                        product_id=product.id if product else None,
+                        experience_option_id=option.id if option else None,
                         scheduled_start_at=scheduled_start_at,
                         scheduled_end_at=scheduled_end_at,
-                        product_name=product.name,
-                        option_duration_minutes=option.duration,
-                        option_participants=option.participants,
-                        option_day_type=DayType(option.day_type),
-                        option_price=option.price,
+                        product_name=product.name if product else None,
+                        option_duration_minutes=option.duration if option else None,
+                        option_participants=option.participants if option else None,
+                        option_day_type=DayType(option.day_type) if option else None,
+                        option_price=option.price if option else None,
                         using_db=connection,
                     )
                 )

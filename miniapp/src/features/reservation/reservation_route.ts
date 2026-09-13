@@ -14,8 +14,8 @@ export {
 }
 
 export interface ReservationCreateRoute {
-  readonly productId: number
-  readonly experienceOptionId: number
+  readonly productId?: number
+  readonly experienceOptionId?: number
 }
 
 export interface ReservationDetailRoute {
@@ -23,9 +23,11 @@ export interface ReservationDetailRoute {
 }
 
 export function buildReservationCreateUrl(
-  productId: number,
-  experienceOptionId: number,
+  productId?: number | null,
+  experienceOptionId?: number | null,
 ): ReservationCreateRedirect {
+  if (productId == null && experienceOptionId == null) return RESERVATION_CREATE_PATH
+  if (productId == null || experienceOptionId == null) throw new Error('预约套餐参数必须完整')
   assertId(productId, 'Product ID')
   assertId(experienceOptionId, 'Experience Option ID')
   return `${RESERVATION_CREATE_PATH}?product_id=${productId}&option_id=${experienceOptionId}`
@@ -34,6 +36,7 @@ export function buildReservationCreateUrl(
 export function parseReservationCreateRoute(
   params: Readonly<Record<string, string | undefined>>,
 ): ReservationCreateRoute | undefined {
+  if (params.product_id === undefined && params.option_id === undefined) return {}
   const productId = parseId(params.product_id)
   const experienceOptionId = parseId(params.option_id)
   return productId && experienceOptionId ? { productId, experienceOptionId } : undefined

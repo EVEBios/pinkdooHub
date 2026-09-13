@@ -251,19 +251,19 @@ Table store_business_days {
   }
 }
 
-Table reservations [note: 'N1 has no slot-capacity or user/option/start uniqueness; duplicate same-slot reservations are allowed and reviewed manually'] {
+Table reservations [note: 'M10 nullable package fields are all absent or complete; migration pending. N1 has no slot-capacity or user/option/start uniqueness; duplicate same-slot reservations are allowed and reviewed manually'] {
   id bigint [pk, increment]
   user_id bigint [not null, note: 'owner; current phone is intentionally not snapshotted']
   business_day_id bigint [not null, note: 'shared create/closure row-lock boundary']
-  product_id bigint [not null]
-  experience_option_id bigint [not null]
+  product_id bigint [note: 'nullable when no package is selected']
+  experience_option_id bigint [note: 'nullable when no package is selected']
   scheduled_start_at datetime [not null, note: 'UTC authoritative start; request uses Asia/Shanghai local date/time']
-  scheduled_end_at datetime [not null, note: 'UTC authoritative end; full experience must fit local 11:00..20:00']
-  product_name varchar(100) [not null, note: 'immutable creation snapshot']
-  option_duration_minutes int [not null, note: 'immutable creation snapshot']
-  option_participants int [not null, note: 'immutable creation snapshot']
-  option_day_type varchar(20) [not null, note: 'snapshot: weekday | holiday']
-  option_price decimal(10,2) [not null, note: 'immutable creation snapshot used for arrival price']
+  scheduled_end_at datetime [note: 'UTC authoritative end; full experience must fit local 11:00..20:00']
+  product_name varchar(100) [note: 'immutable creation snapshot']
+  option_duration_minutes int [note: 'immutable creation snapshot']
+  option_participants int [note: 'immutable creation snapshot']
+  option_day_type varchar(20) [note: 'snapshot: weekday | holiday']
+  option_price decimal(10,2) [note: 'immutable creation snapshot used for arrival price']
   status varchar(32) [not null, default: 'pending', note: 'pending | confirmed | rejected | cancelled']
   rejection_reason varchar(32) [note: 'rejected only: no_capacity']
   cancellation_reason varchar(32) [note: 'cancelled only: customer_request | store_closed']

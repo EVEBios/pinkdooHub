@@ -391,3 +391,49 @@ describe('ReservationApi admin endpoints', () => {
     })).rejects.toBeInstanceOf(ContractError)
   })
 })
+
+
+describe('无套餐预约契约', () => {
+  const selection = { product_id: null, experience_option_id: null, product_name: null,
+    duration_minutes: null, participants: null, day_type: null, price: null }
+  const unselected = { ...pendingReservation, ...selection, end_time: null, scheduled_end_at: null }
+
+  it('无规格日历与创建请求不携带套餐字段，完整读取空快照', async () => {
+    const calendar = new FakeTransport({ ...bookingOptions, ...selection })
+    await expect(createApi(calendar).getBookingOptions()).resolves.toMatchObject(selection)
+    expect(calendar.requests[0].url).toBe('https://api.example.com/api/v1/reservations/booking-options')
+    const transport = new FakeTransport(unselected, 201)
+    const request = { reservation_date: unselected.reservation_date, start_time: unselected.start_time }
+    await expect(createApi(transport).createReservation(request)).resolves.toEqual(unselected)
+    expect(transport.requests[0].body).toEqual(request)
+  })
+
+  it.each([
+    { product_id: 7 }, { price: '0.00' }, { scheduled_end_at: pendingReservation.scheduled_end_at },
+    { end_time: '16:00' }, { duration_minutes: 60 },
+  ])('拒绝混合空值或伪造结束时间：%p', async (changes) => {
+    await expect(createApi(new FakeTransport({ ...unselected, ...changes })).getReservation(31))
+      .rejects.toBeInstanceOf(ContractError)
+  })
+
+  it('无套餐确认使用到店选定文案，不能承诺预约锁价', async () => {
+    const confirmed = { ...unselected, status: { value: 'confirmed', label: '已确认' },
+      confirmed_at: '2026-09-06T02:00:00Z',
+      customer_message: '预约已确认，请按预约时间到店。体验项目到店后选择，费用以选定项目为准。' }
+    await expect(createApi(new FakeTransport(confirmed)).getReservation(31)).resolves.toEqual(confirmed)
+    await expect(createApi(new FakeTransport({ ...confirmed,
+      customer_message: '预约已确认，请按预约时间到店。费用以预约时价格为准，到店支付。',
+    })).getReservation(31)).rejects.toBeInstanceOf(ContractError)
+  })
+
+  it('日历采用配置的店休日，周一可营业且无套餐最晚19:30', async () => {
+    const monday = { ...bookingOptions, ...selection,
+      weekly_closed_weekday: { value: 'wednesday', label: '周三' },
+      dates: [{ date: '2026-09-07', day_type: { value: 'weekday', label: '工作日' }, start_times: ['19:30'] }],
+    }
+    await expect(createApi(new FakeTransport(monday)).getBookingOptions()).resolves.toMatchObject(selection)
+    await expect(createApi(new FakeTransport({ ...monday,
+      dates: [{ ...monday.dates[0], start_times: ['20:00'] }],
+    })).getBookingOptions()).rejects.toBeInstanceOf(ContractError)
+  })
+})

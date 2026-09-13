@@ -8,6 +8,10 @@ import {
 
 describe('预约页面路由', () => {
   it('构造并解析顾客预约创建地址', () => {
+    expect(buildReservationCreateUrl()).toBe('/pages/reservation-create/index')
+    expect(parseReservationCreateRoute({})).toEqual({})
+    expect(() => buildReservationCreateUrl(7)).toThrow()
+    expect(() => buildReservationCreateUrl(null, 11)).toThrow()
     expect(buildReservationCreateUrl(7, 11)).toBe(
       '/pages/reservation-create/index?product_id=7&option_id=11',
     )

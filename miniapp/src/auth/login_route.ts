@@ -19,7 +19,7 @@ export const MEMBER_PATH = '/pages/member/index'
 export const WALLET_RECHARGE_PATH = '/pages/wallet-recharge/index'
 export const WALLET_TRANSACTION_LIST_PATH = '/pages/wallet-transactions/index'
 
-export type ReservationCreateRedirect = `${typeof RESERVATION_CREATE_PATH}?product_id=${number}&option_id=${number}`
+export type ReservationCreateRedirect = typeof RESERVATION_CREATE_PATH | `${typeof RESERVATION_CREATE_PATH}?product_id=${number}&option_id=${number}`
 export type OrderConfirmRedirect = `${typeof ORDER_CONFIRM_PATH}?table_intent=${string}`
 export type TableEntryRedirect = `${typeof TABLE_ENTRY_PATH}?token=${string}`
 
@@ -47,6 +47,7 @@ const ALLOWED_REDIRECTS = new Set<LoginRedirect>([
   ORDER_CONFIRM_PATH,
   ORDER_LIST_PATH,
   RESERVATION_LIST_PATH,
+  RESERVATION_CREATE_PATH,
   ADMIN_ORDER_LIST_PATH,
   ADMIN_RESERVATION_LIST_PATH,
   ADMIN_STORE_CLOSURE_LIST_PATH,

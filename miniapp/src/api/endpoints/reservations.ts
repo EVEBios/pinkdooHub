@@ -44,17 +44,17 @@ type ReservationApiClient = Pick<ApiClient, 'request' | 'requestWithMeta'>
 export class ReservationApi {
   constructor(private readonly client: ReservationApiClient) {}
 
-  async getBookingOptions(experienceOptionId: number): Promise<ReservationBookingOptions> {
-    assertPositiveId(experienceOptionId, 'Experience Option ID')
+  async getBookingOptions(experienceOptionId?: number | null): Promise<ReservationBookingOptions> {
+    if (experienceOptionId != null) assertPositiveId(experienceOptionId, 'Experience Option ID')
     const operation = 'reservations.bookingOptions'
     const data = await this.client.request<unknown>({
       operation,
       path: '/api/v1/reservations/booking-options',
       auth: 'required',
-      query: { experience_option_id: experienceOptionId },
+      query: experienceOptionId == null ? {} : { experience_option_id: experienceOptionId },
     })
     const parsed = parseReservationBookingOptions(data)
-    if (!parsed || parsed.experience_option_id !== experienceOptionId) {
+    if (!parsed || parsed.experience_option_id !== (experienceOptionId ?? null)) {
       throw new ContractError({ operation })
     }
     return parsed
@@ -71,7 +71,7 @@ export class ReservationApi {
     })
     const parsed = parseReservation(data)
     if (!parsed || parsed.status.value !== 'pending' ||
-      parsed.experience_option_id !== request.experience_option_id ||
+      parsed.experience_option_id !== (request.experience_option_id ?? null) ||
       parsed.reservation_date !== request.reservation_date || parsed.start_time !== request.start_time) {
       throw new ContractError({ operation })
     }
@@ -296,7 +296,7 @@ export class ReservationApi {
 
 function projectCreateRequest(request: ReservationCreateRequest): ReservationCreateRequest {
   return {
-    experience_option_id: request.experience_option_id,
+    ...(request.experience_option_id == null ? {} : { experience_option_id: request.experience_option_id }),
     reservation_date: request.reservation_date,
     start_time: request.start_time,
   }
@@ -335,20 +335,31 @@ function projectStoreClosureListRequest(
   }
 }
 
+type ReservationSelection = Pick<Reservation,
+  'product_id' | 'experience_option_id' | 'product_name' | 'duration_minutes' | 'participants' | 'day_type' | 'price'>
+
+function parseReservationSelection(value: Record<string, unknown>): ReservationSelection | undefined {
+  const { product_id, experience_option_id, product_name, duration_minutes, participants, day_type, price } = value
+  if ([product_id, experience_option_id, product_name, duration_minutes, participants, day_type, price]
+    .every((item) => item === null)) {
+    return { product_id: null, experience_option_id: null, product_name: null, duration_minutes: null,
+      participants: null, day_type: null, price: null }
+  }
+  const dayType = parseDayType(day_type)
+  if (!isPositiveInteger(product_id) || !isPositiveInteger(experience_option_id) ||
+    !isBoundedText(product_name, 100) || !isPositiveInteger(duration_minutes) ||
+    !isPositiveInteger(participants) || !isMoney(price) || !dayType) return undefined
+  return { product_id, experience_option_id, product_name, duration_minutes, participants, day_type: dayType, price }
+}
+
 export function parseReservation(value: unknown): Reservation | undefined {
   if (!isRecord(value) || !(
     isPositiveInteger(value.id) &&
-    isPositiveInteger(value.product_id) &&
-    isPositiveInteger(value.experience_option_id) &&
-    isBoundedText(value.product_name, 100) &&
-    isPositiveInteger(value.duration_minutes) &&
-    isPositiveInteger(value.participants) &&
-    isMoney(value.price) &&
     isDate(value.reservation_date) &&
     isStartTime(value.start_time) &&
-    isClockTime(value.end_time) &&
+    (value.end_time === null || isClockTime(value.end_time)) &&
     isUtcDatetime(value.scheduled_start_at) &&
-    isUtcDatetime(value.scheduled_end_at) &&
+    isNullableUtcDatetime(value.scheduled_end_at) &&
     isUtcDatetime(value.cancellation_deadline_at) &&
     isNullableUtcDatetime(value.confirmed_at) &&
     isNullableUtcDatetime(value.rejected_at) &&
@@ -357,13 +368,14 @@ export function parseReservation(value: unknown): Reservation | undefined {
     isUtcDatetime(value.updated_at)
   )) return undefined
 
-  const dayType = parseDayType(value.day_type)
+  const selection = parseReservationSelection(value)
   const status = parseStatus(value.status)
   const rejectionReason = parseRejectionReason(value.rejection_reason)
   const cancellationReason = parseCancellationReason(value.cancellation_reason)
-  if (!dayType || !status || rejectionReason === undefined || cancellationReason === undefined) return undefined
+  if (!selection || !status || rejectionReason === undefined || cancellationReason === undefined) return undefined
 
   const stateFieldsValid = validateStateFields({
+    hasSelection: selection.experience_option_id !== null,
     status: status.value,
     rejectionReason,
     cancellationReason,
@@ -373,24 +385,21 @@ export function parseReservation(value: unknown): Reservation | undefined {
     cancelledAt: value.cancelled_at,
   })
   const startMs = Date.parse(value.scheduled_start_at)
-  const endMs = Date.parse(value.scheduled_end_at)
+  const endMs = value.scheduled_end_at === null ? null : Date.parse(value.scheduled_end_at)
   const deadlineMs = Date.parse(value.cancellation_deadline_at)
   const localStart = shanghaiDateAndTime(startMs)
-  const localEnd = shanghaiDateAndTime(endMs)
-  if (!stateFieldsValid || endMs - startMs !== value.duration_minutes * 60_000 ||
-    startMs - deadlineMs !== 3 * 60 * 60_000 ||
-    localStart.date !== value.reservation_date || localStart.time !== value.start_time ||
-    localEnd.date !== value.reservation_date || localEnd.time !== value.end_time) return undefined
+  const localEnd = endMs === null ? null : shanghaiDateAndTime(endMs)
+  const validEnd = selection.experience_option_id === null
+    ? endMs === null && value.end_time === null
+    : endMs !== null && selection.duration_minutes !== null &&
+      endMs - startMs === selection.duration_minutes * 60_000 &&
+      localEnd?.date === value.reservation_date && localEnd.time === value.end_time
+  if (!stateFieldsValid || !validEnd || startMs - deadlineMs !== 3 * 60 * 60_000 ||
+    localStart.date !== value.reservation_date || localStart.time !== value.start_time) return undefined
 
   return {
     id: value.id,
-    product_id: value.product_id,
-    experience_option_id: value.experience_option_id,
-    product_name: value.product_name,
-    duration_minutes: value.duration_minutes,
-    participants: value.participants,
-    day_type: dayType,
-    price: value.price,
+    ...selection,
     status,
     rejection_reason: rejectionReason,
     cancellation_reason: cancellationReason,
@@ -411,12 +420,6 @@ export function parseReservation(value: unknown): Reservation | undefined {
 
 export function parseReservationBookingOptions(value: unknown): ReservationBookingOptions | undefined {
   if (!isRecord(value) || !(
-    isPositiveInteger(value.experience_option_id) &&
-    isPositiveInteger(value.product_id) &&
-    isBoundedText(value.product_name, 100) &&
-    isPositiveInteger(value.duration_minutes) &&
-    isPositiveInteger(value.participants) &&
-    isMoney(value.price) &&
     value.timezone === 'Asia/Shanghai' &&
     isUtcDatetime(value.server_now) &&
     isDate(value.booking_window_end_date) &&
@@ -427,30 +430,24 @@ export function parseReservationBookingOptions(value: unknown): ReservationBooki
     value.closes_at === '20:00' &&
     Array.isArray(value.dates)
   )) return undefined
-  const dayType = parseDayType(value.day_type)
+  const selection = parseReservationSelection(value)
   const weeklyClosedWeekday = parseWeekday(value.weekly_closed_weekday)
   const dates = value.dates.map(parseBookingDate)
-  if (!dayType || !weeklyClosedWeekday || dates.some((item) => item === undefined)) return undefined
+  if (!selection || !weeklyClosedWeekday || dates.some((item) => item === undefined)) return undefined
   const parsedDates = dates as ReservationBookingDate[]
   const bookingWindowEndDate = value.booking_window_end_date as string
-  const durationMinutes = value.duration_minutes as number
+  const durationMinutes = selection.duration_minutes
   const serverNowMs = Date.parse(value.server_now)
   const serverBusinessDate = shanghaiDateAndTime(serverNowMs).date
   if (bookingWindowEndDate !== addDays(serverBusinessDate, 30) ||
     new Set(parsedDates.map((item) => item.date)).size !== parsedDates.length ||
     parsedDates.some((item, index) =>
       (index > 0 && item.date <= parsedDates[index - 1].date) ||
-      !isLegalBookingDate(item, dayType.value, durationMinutes, serverNowMs, bookingWindowEndDate))) {
+      !isLegalBookingDate(item, selection.day_type?.value ?? null, durationMinutes, serverNowMs, bookingWindowEndDate, weeklyClosedWeekday.value))) {
     return undefined
   }
   return {
-    experience_option_id: value.experience_option_id,
-    product_id: value.product_id,
-    product_name: value.product_name,
-    duration_minutes: durationMinutes,
-    participants: value.participants,
-    day_type: dayType,
-    price: value.price,
+    ...selection,
     timezone: 'Asia/Shanghai',
     server_now: value.server_now,
     booking_window_end_date: bookingWindowEndDate,
@@ -634,6 +631,7 @@ function parseLabeled<Value extends string>(
 }
 
 function validateStateFields(input: {
+  hasSelection: boolean
   status: ReservationStatus
   rejectionReason: LabeledValue<ReservationRejectionReason> | null
   cancellationReason: LabeledValue<ReservationCancellationReason> | null
@@ -657,7 +655,8 @@ function validateStateFields(input: {
   if (input.status === 'confirmed') {
     return input.rejectionReason === null && input.cancellationReason === null &&
       input.confirmedAt !== null && input.rejectedAt === null && input.cancelledAt === null &&
-      input.customerMessage === messages.confirmed
+      input.customerMessage === (input.hasSelection ? messages.confirmed :
+        '预约已确认，请按预约时间到店。体验项目到店后选择，费用以选定项目为准。')
   }
   if (input.status === 'rejected') {
     return input.rejectionReason?.value === 'no_capacity' && input.cancellationReason === null &&
@@ -733,25 +732,25 @@ function addDays(date: string, days: number): string {
 
 function isLegalBookingDate(
   item: ReservationBookingDate,
-  optionDayType: ReservationDayType,
-  durationMinutes: number,
+  optionDayType: ReservationDayType | null,
+  durationMinutes: number | null,
   serverNowMs: number,
   bookingWindowEndDate: string,
+  weeklyClosedWeekday: ReservationWeekday,
 ): boolean {
   if (item.date < shanghaiDateAndTime(serverNowMs).date || item.date > bookingWindowEndDate ||
-    item.day_type.value !== optionDayType) return false
+    (optionDayType !== null && item.day_type.value !== optionDayType)) return false
   const weekday = new Date(`${item.date}T00:00:00Z`).getUTCDay()
-  const expectedDayType = weekday >= 2 && weekday <= 5
-    ? 'weekday'
-    : weekday === 0 || weekday === 6
-      ? 'holiday'
-      : undefined
-  if (expectedDayType !== optionDayType) return false
+  const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  if (weekdays[weekday] === weeklyClosedWeekday) return false
+  const expectedDayType = weekday === 0 || weekday === 6 ? 'holiday' : 'weekday'
+  if (expectedDayType !== item.day_type.value) return false
   return item.start_times.every((time) => {
     const [hour, minute] = time.split(':').map(Number)
     const startMinute = hour * 60 + minute
     const startMs = Date.parse(`${item.date}T${time}:00+08:00`)
-    return startMinute >= 11 * 60 && startMinute + durationMinutes <= 20 * 60 &&
+    return startMinute >= 11 * 60 && startMinute < 20 * 60 &&
+      (durationMinutes === null || startMinute + durationMinutes <= 20 * 60) &&
       startMs >= serverNowMs + 3 * 60 * 60_000
   })
 }

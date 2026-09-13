@@ -92,9 +92,9 @@ export function AuthenticatedAdminReservationDetail({ reservationId }: { readonl
             {item.status.label}
           </Text>
         </View>
-        <Text className='admin-reservation-detail-heading__name'>{item.product_name}</Text>
+        <Text className='admin-reservation-detail-heading__name'>{item.product_name ?? '到店预约'}</Text>
         <Text className='admin-reservation-detail-heading__date'>{formatReservationDate(item.reservation_date)}</Text>
-        <Text className='admin-reservation-detail-heading__time'>{item.start_time}–{item.end_time}</Text>
+        <Text className='admin-reservation-detail-heading__time'>{item.start_time}{item.end_time ? `–${item.end_time}` : ' 到店'}</Text>
       </View>
 
       <View className='admin-reservation-customer'>
@@ -106,8 +106,8 @@ export function AuthenticatedAdminReservationDetail({ reservationId }: { readonl
 
       <View className='admin-reservation-facts'>
         <Text className='admin-reservation-facts__title'>预约快照</Text>
-        <AdminFact label='体验配置' value={`${item.duration_minutes} 分钟 · ${item.participants} 人 · ${item.day_type.label}`} />
-        <AdminFact label='预约价格' value={`¥${formatPrice(item.price)} · 到店支付`} />
+        <AdminFact label='体验配置' value={item.experience_option_id === null ? '到店选择 · 时长待定' : `${item.duration_minutes} 分钟 · ${item.participants} 人 · ${item.day_type?.label}`} />
+        <AdminFact label='预约价格' value={item.price === null ? '到店选定项目后确认费用' : `¥${formatPrice(item.price)} · 到店支付`} />
         <AdminFact label='预约编号' value={`#${item.id}`} />
         <AdminFact label='取消截止' value={`${formatShanghaiUtc(item.cancellation_deadline_at)}（北京时间）`} />
         <AdminFact label='提交时间' value={`${formatShanghaiUtc(item.created_at)}（北京时间）`} />

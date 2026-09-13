@@ -831,3 +831,16 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 1 条 pending 及 1 条创建审计，当前全表为 reservations 8、audit logs 584；其他上述关键
 表计数不变。专用 verifier、SQLite 完整性/外键与钱包对账均通过。该滚动刷新仍只是本地
 演示数据操作，不写 Aerich，不是 MySQL 或发布迁移证据。
+
+
+## 17. M10 可选预约套餐（仓库增量，未执行持久迁移）
+
+`10_20260913115858_optional_reservation_package.py` 由 Aerich MySQL 8 离线生成，人工 Review 后将 `RUN_IN_TRANSACTION` 设为 false，并增加降级前的空快照阻断。它只放宽 Reservation 的 Product/Option FK、商品名、时长、人数、日期类型、价格、结束时间八列；保留外键、索引及历史记录。
+
+现有 M9 文件没有 MODELS_STATE，直接离线 migrate 会失败。本轮在任务临时目录复制当前模型与迁移链，用 HEAD 的原 Reservation 模型重建 M9 基线快照，仅给临时 M9 副本补充快照，再应用当前模型运行 `aerich --app models migrate --offline`。只有新 M10 文件回到仓库，原迁移 0–9 未改写，未使用 fix-migrations、fake 或连接持久库。M10 包含后续生成所需的完整 MODELS_STATE。
+
+执行前仍需单独授权、备份、隔离 MySQL 实迁移和并发验收。已有 SQLite 的非空字段不会由 generate_schemas 自动更新；需要另行审核保数据升级方案。本轮没有执行该升级。放宽后的字段会被旧客户端拒绝解析，须先协调部署可读两种预约的客户端，再开放无套餐写入；存在任何空套餐记录时禁止恢复 NOT NULL，降级检查不替代维护窗口的写入隔离。
+
+### 17.1 本地旧 SQLite 的实际升级记录（2026-09-13）
+
+首次无套餐提交在旧本地库上因 `reservations.scheduled_end_at` 的 NOT NULL 约束失败。用户明确授权后，本机 `db.sqlite3` 已完成保留数据的 SQLite 表重建：8 个套餐字段可空，原 8 条预约、全部 26 张业务表的数据、5 个预约索引、外键和自增序号均保留；备份和恢复后验证见 [本地修复记录](../08_frontend/qa/reservation-optional-package-review.md)。仅此本地目标已更新，不代表 MySQL/Aerich M10 或任何发布环境已迁移；启动自动建表仍不能升级其他旧 SQLite 库。
