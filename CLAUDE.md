@@ -53,7 +53,7 @@
 17. 用 `logging.getLogger(__name__)`，**禁止** `print()`
 18. 编写模块代码前，**必须先读**对应的 `docs/03_api/<module>_api.md`
 19. 修改代码后，检查是否需要同步更新文档（见下方联动表）
-20. 每次 commit 前，**必须**对照 `docs/06_ai/AI_CONTEXT.md` §6-7 执行文档影响检查并更新
+20. 每次 commit 前，**必须**对照 `AGENTS.md` 的“开发与交付流程”执行文档影响检查并更新
 21. 完成独立功能模块后，**必须**更新 `docs/05_development/changelog.md`
 
 ## 文档更新联动
