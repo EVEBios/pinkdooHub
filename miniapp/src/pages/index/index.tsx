@@ -12,6 +12,8 @@ import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
 import { resolveAssetUrl } from '@/utils/asset_url'
 import { formatPrice } from '@/utils/format'
 
+import { CustomerAttention } from '@/features/attention'
+
 import './index.scss'
 
 export default function ProductListPage() {
@@ -76,6 +78,7 @@ export function CustomerProductList() {
       </View>
 
       <View className='product-page__content'>
+        <CustomerAttention />
         <ProductFilters
           keyword={keyword}
           productType={productType}

@@ -16,6 +16,8 @@ import {
   type AdminReservationStatusFilter,
   parseAdminReservationFilters,
   reservationStatusClass,
+  reservationStatusLabel,
+  useReservationNow,
   useAdminReservationList,
 } from '@/features/reservation'
 import { formatPrice } from '@/utils/format'
@@ -25,8 +27,9 @@ import './index.scss'
 const STATUS_FILTERS: ReadonlyArray<{ value: AdminReservationStatusFilter; label: string }> = [
   { value: 'all', label: '全部' },
   { value: 'pending', label: '待确认' },
+  { value: 'overdue', label: '已过期' },
   { value: 'confirmed', label: '已确认' },
-  { value: 'rejected', label: '未能确认' },
+  { value: 'rejected', label: '已拒绝' },
   { value: 'cancelled', label: '已取消' },
 ]
 
@@ -62,6 +65,7 @@ export default function AdminReservationsPage() {
 
 export function AuthenticatedAdminReservations() {
   const reservations = useAdminReservationList()
+  const now = useReservationNow()
   const [draft, setDraft] = useState<AdminReservationFilterDraft>(EMPTY_ADMIN_RESERVATION_FILTER_DRAFT)
   const [filterError, setFilterError] = useState('')
   const [submittedSignature, setSubmittedSignature] = useState(EMPTY_SIGNATURE)
@@ -99,7 +103,7 @@ export function AuthenticatedAdminReservations() {
     <View className='admin-reservations-page'>
       <View className='admin-reservations-page__header'>
         <Text className='admin-reservations-page__title'>管理预约</Text>
-        <Text className='admin-reservations-page__subtitle'>首版由店员人工判断座位；待确认预约可确认或因无空位拒绝</Text>
+        <Text className='admin-reservations-page__subtitle'>及时确认到店安排；已过期预约请联系顾客跟进</Text>
         <AdminWorkbenchLink />
       </View>
       <View className='admin-reservations-page__related'>
@@ -170,7 +174,7 @@ export function AuthenticatedAdminReservations() {
             <Text>已加载 {reservations.state.items.length} 条</Text>
             <Text>共 {reservations.state.total} 条</Text>
           </View>
-          {reservations.state.items.map((item) => <AdminReservationCard key={item.id} reservation={item} />)}
+          {reservations.state.items.map((item) => <AdminReservationCard key={item.id} reservation={item} now={now} />)}
           {reservations.state.errorMessage && <Text className='admin-reservations-content__error'>{reservations.state.errorMessage}</Text>}
           {reservations.state.page < reservations.state.pages ? (
             <Button
@@ -185,7 +189,7 @@ export function AuthenticatedAdminReservations() {
   )
 }
 
-function AdminReservationCard({ reservation }: { readonly reservation: AdminReservationListItem }) {
+function AdminReservationCard({ reservation, now }: { readonly reservation: AdminReservationListItem; readonly now: number }) {
   return (
     <View
       className='admin-reservation-card'
@@ -193,8 +197,8 @@ function AdminReservationCard({ reservation }: { readonly reservation: AdminRese
     >
       <View className='admin-reservation-card__heading'>
         <Text className='admin-reservation-card__name'>{reservation.product_name ?? '到店预约'}</Text>
-        <Text className={`admin-reservation-card__status admin-reservation-card__status--${reservationStatusClass(reservation)}`}>
-          {reservation.status.label}
+        <Text className={`admin-reservation-card__status admin-reservation-card__status--${reservationStatusClass(reservation, now)}`}>
+          {reservationStatusLabel(reservation, now)}
         </Text>
       </View>
       <Text className='admin-reservation-card__customer'>

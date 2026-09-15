@@ -1,3 +1,5 @@
+import { AdminOrderTable } from '@/features/table_session/admin_order_table'
+import { getDefaultTableSessionApi } from '@/features/table_session/runtime'
 import { Button, Text, Textarea, View } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useRef, useState } from 'react'
@@ -118,17 +120,26 @@ function AdminOrderDetailContent({ advanceStatus, order, transition }: {
     if (!action || transitionLocked || !acquireIntent('transition')) return
     const markingPaid = action === 'mark_paid'
     try {
+      const session = markingPaid ? await getDefaultTableSessionApi().getAdminOrderSession(order.id) : null
+      if (session && (session.status.value !== 'awaiting_payment' ||
+        Date.parse(session.server_now) > Date.parse(session.payment_deadline_at!))) {
+        await Taro.showModal({ title: '请先重新选桌', content: `本次 ${session.table.table_no} 占台已结束，请顾客重新绑定桌台后再确认收款。`, showCancel: false, confirmText: '知道了' })
+        return
+      }
       const confirmation = await Taro.showModal({
         title: markingPaid ? '确认标记为已支付？' : '确认完成订单？',
         content: markingPaid
-          ? '只能将待支付订单变更为已支付；此操作不改变库存。'
+          ? session ? `确认整单已收到付款，${session.table.table_no} 将开始计时。` : '确认这笔普通订单已全额收到付款；本次收款不启动桌台。'
           : '只能将已支付订单变更为已完成；此操作不改变库存。',
-        confirmText: markingPaid ? '标记已支付' : '确认完成',
+        confirmText: markingPaid ? '确认收款' : '确认完成',
         confirmColor: '#65487d',
       })
       if (confirmation.confirm) {
-        await advanceStatus()
+        if (session) await advanceStatus(session.session_no)
+        else await advanceStatus()
       }
+    } catch {
+      await Taro.showToast({ title: '桌台核对失败，请重试', icon: 'none' })
     } finally {
       releaseIntent('transition')
     }
@@ -136,6 +147,7 @@ function AdminOrderDetailContent({ advanceStatus, order, transition }: {
 
   return (
     <View className='admin-order-detail-page'>
+      <AdminOrderTable orderId={order.id} revision={order.updated_at} />
       <AdminOrderHeading order={order} />
       <View className='admin-order-detail-user'>
         <Text>下单用户：#{order.user_id} · {order.user_nickname}</Text>

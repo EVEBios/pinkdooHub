@@ -8,6 +8,8 @@ export type EligibleOrderPage = components['schemas']['Page_EligibleOrderListIte
 export type TableSession = components['schemas']['TableSessionOut']
 export type AdminTable = components['schemas']['AdminTableOut']
 export type AdminTableList = components['schemas']['AdminTableListOut']
+export type DirectTableDurations = components['schemas']['DirectTableDurationListOut']
+export type DirectTableDuration = components['schemas']['DirectTableDurationOut']
 export type AdminTableSession = components['schemas']['AdminTableSessionOut']
 export type AdminTableSessionPage = components['schemas']['Page_AdminTableSessionListItemOut_']
 
@@ -33,6 +35,25 @@ export class TableSessionApi {
       'none',
       parsePublicTableCode,
     )
+  }
+
+  async resolveTableNumber(tableNo: string): Promise<PublicTableCode> {
+    if (!isTableNo(tableNo)) throw new Error('请输入 1–30 号桌')
+    return this.requestParsed('tables.number.resolve', `/api/v1/tables/by-number/${tableNo}`,
+      'required', parsePublicTableCode)
+  }
+
+  async createSessionByNumber(tableNo: string, orderId: number, idempotencyKey: string): Promise<TableSession> {
+    if (!isTableNo(tableNo)) throw new Error('桌台号无效')
+    assertPositiveId(orderId)
+    assertIntent(idempotencyKey)
+    const operation = 'tables.session.create'
+    const value = await this.client.request<unknown>({ operation, path: '/api/v1/table-sessions',
+      method: 'POST', auth: 'required', headers: { 'Idempotency-Key': idempotencyKey },
+      body: { table_no: tableNo, order_id: orderId } })
+    const session = requireParsed(operation, value, parseTableSession)
+    if (session.order_id !== orderId || session.table.table_no !== tableNo) throw new ContractError({ operation })
+    return session
   }
 
   async listEligibleOrders(page = 1): Promise<EligibleOrderPage> {
@@ -81,6 +102,15 @@ export class TableSessionApi {
     return requireParsed(operation, value, parseTableSession)
   }
 
+  async getHistorySession(sessionNo: string): Promise<TableSession> {
+    const operation = 'tables.history'
+    if (!SESSION_PATTERN.test(sessionNo)) throw new Error('桌台记录无效')
+    const value = await this.client.request<unknown>({ operation, path: `/api/v1/table-sessions/history/${sessionNo}`, method: 'GET', auth: 'required' })
+    const session = requireParsed(operation, value, parseTableSession)
+    if (session.session_no !== sessionNo) throw new ContractError({ operation })
+    return session
+  }
+
   async getOrderSession(orderId: number): Promise<TableSession | null> {
     assertPositiveId(orderId)
     const operation = 'tables.session.order'
@@ -105,6 +135,47 @@ export class TableSessionApi {
     )
   }
 
+  async listDirectDurations(): Promise<DirectTableDurations> {
+    return this.requestParsed('tables.admin.durations', '/api/v1/admin/table-duration-options', 'required', (value) => {
+      if (!isRecord(value) || value.buffer_minutes !== 10 || !Array.isArray(value.items)) return undefined
+      const items: DirectTableDuration[] = []
+      for (const item of value.items) {
+        if (!isRecord(item) || !isPositiveId(item.option_id) || !isPositiveId(item.duration_minutes) ||
+          items.some((existing) => existing.duration_minutes >= Number(item.duration_minutes))) return undefined
+        items.push({ option_id: item.option_id, duration_minutes: item.duration_minutes })
+      }
+      return { items, buffer_minutes: 10 }
+    })
+  }
+
+  async createDirectSession(tableId: number, option: DirectTableDuration, note: string, key: string): Promise<AdminTableSession> {
+    assertPositiveId(tableId)
+    assertPositiveId(option.option_id)
+    assertPositiveId(option.duration_minutes)
+    assertIntent(key)
+    if (note.trim().length > 200) throw new Error('备注最多 200 个字符')
+    const operation = 'tables.admin.direct.create'
+    const value = await this.client.request<unknown>({
+      operation, path: `/api/v1/admin/tables/${tableId}/direct-sessions`, method: 'POST', auth: 'required',
+      headers: { 'Idempotency-Key': key },
+      body: { option_id: option.option_id, duration_minutes: option.duration_minutes, note: note.trim() || null },
+    })
+    const session = requireParsed(operation, value, parseAdminTableSession)
+    if (session.table.id !== tableId || session.source !== 'direct' || session.direct_duration_minutes !== option.duration_minutes) {
+      throw new ContractError({ operation })
+    }
+    return session
+  }
+
+  async confirmAdminPayment(orderId: number, sessionNo: string): Promise<void> {
+    assertPositiveId(orderId)
+    assertSessionNo(sessionNo)
+    await this.client.request<unknown>({
+      operation: 'tables.admin.payment.confirm', path: `/api/v1/admin/orders/${orderId}/paid`,
+      method: 'PATCH', auth: 'required', headers: { 'Table-Session-No': sessionNo },
+    })
+  }
+
   async updateAdminTable(
     tableId: number,
     isEnabled: boolean,
@@ -123,26 +194,38 @@ export class TableSessionApi {
     return requireParsed(operation, value, parseTableSummary)
   }
 
-  async listAdminSessions(page = 1): Promise<AdminTableSessionPage> {
+  async listAdminSessions(page = 1, orderId?: number): Promise<AdminTableSessionPage> {
+    if (orderId !== undefined) assertPositiveId(orderId)
     const operation = 'tables.admin.sessions'
     const value = await this.client.request<unknown>({
       operation,
       path: '/api/v1/admin/table-sessions',
       method: 'GET',
       auth: 'required',
-      query: { page, page_size: 100 },
+      query: { page, page_size: 100, ...(orderId === undefined ? {} : { order_id: orderId }) },
     })
     return requireParsed(operation, value, parseAdminSessionPage)
   }
 
+  async getAdminOrderSession(orderId: number): Promise<AdminTableSession | null> {
+    const page = await this.listAdminSessions(1, orderId)
+    const latest = page.items[0]
+    if (!latest) return null
+    const result = await this.getAdminSession(latest.session_no)
+    if (result.order_id !== orderId) throw new ContractError({ operation: 'tables.admin.order.session' })
+    return result
+  }
+
   async getAdminSession(sessionNo: string): Promise<AdminTableSession> {
     assertSessionNo(sessionNo)
-    return this.requestParsed(
+    const session = await this.requestParsed(
       'tables.admin.session.detail',
       `/api/v1/admin/table-sessions/${sessionNo}`,
       'required',
       parseAdminTableSession,
     )
+    if (session.session_no !== sessionNo) throw new ContractError({ operation: 'tables.admin.session.detail' })
+    return session
   }
 
   async releaseAdminSession(
@@ -193,10 +276,17 @@ export function parsePublicTableCode(value: unknown): PublicTableCode | undefine
 }
 
 export function parseTableSession(value: unknown): TableSession | undefined {
+  if (!isRecord(value) || !isPositiveId(value.order_id) || typeof value.order_no !== 'string' ||
+    !ORDER_PATTERN.test(value.order_no) || !isUtcDate(value.payment_deadline_at)) return undefined
+  const base = parseSessionBase(value)
+  if (!base || base.timers.some((timer) => timer.experience_items.length === 0)) return undefined
+  return { ...base, order_id: value.order_id, order_no: value.order_no, payment_deadline_at: value.payment_deadline_at }
+}
+
+function parseSessionBase(value: unknown): Omit<TableSession, 'order_id' | 'order_no' | 'payment_deadline_at'> | undefined {
   if (!isRecord(value) || typeof value.session_no !== 'string' || !SESSION_PATTERN.test(value.session_no) ||
-    !isPositiveId(value.order_id) || typeof value.order_no !== 'string' ||
     !isRecord(value.status) || !isSessionStatus(value.status.value) || typeof value.status.label !== 'string' ||
-    !isUtcDate(value.claimed_at) || !isUtcDate(value.payment_deadline_at) || !isUtcDate(value.server_now) ||
+    !isUtcDate(value.claimed_at) || !isUtcDate(value.server_now) ||
     !isNullableUtcDate(value.started_at) || !isNullableUtcDate(value.table_release_at) ||
     !isNullableUtcDate(value.closed_at) || !Array.isArray(value.timers)) return undefined
   const table = parseTableSummary(value.table)
@@ -209,11 +299,8 @@ export function parseTableSession(value: unknown): TableSession | undefined {
   return {
     session_no: value.session_no,
     table,
-    order_id: value.order_id,
-    order_no: value.order_no,
     status: { value: value.status.value, label: value.status.label },
     claimed_at: value.claimed_at,
-    payment_deadline_at: value.payment_deadline_at,
     started_at: value.started_at ?? null,
     table_release_at: value.table_release_at ?? null,
     closed_at: value.closed_at ?? null,
@@ -310,17 +397,37 @@ function parseAdminTable(value: unknown): AdminTable | undefined {
     !isNullableMatchingString(value.current_session_no, SESSION_PATTERN) ||
     !isNullableMatchingString(value.current_order_no, ORDER_PATTERN) ||
     !isNullablePositiveId(value.current_user_id) || !isNullableUtcDate(value.claimed_at) ||
-    !isNullableUtcDate(value.payment_deadline_at) || !isNullableUtcDate(value.table_release_at)) return undefined
+    !isNullableUtcDate(value.payment_deadline_at) || !isNullableUtcDate(value.table_release_at) ||
+    !isNullableUtcDate(value.service_ends_at) || (value.timer_count !== undefined && !isNonNegativeInteger(value.timer_count)) ||
+    (value.current_source != null && value.current_source !== 'order' && value.current_source !== 'direct')) return undefined
   const currentStatus = value.current_status === null || value.current_status === undefined
     ? null
     : parseSessionStatusEnum(value.current_status)
   if (value.current_status !== null && value.current_status !== undefined && !currentStatus) return undefined
+  // 新客户端必须拿到全部计时组，不能将旧接口的最长一组误作全部。
+  if (!Array.isArray(value.timers) || value.timers.length !== value.timer_count) return undefined
+  const timers = value.timers.map((timer) => {
+    if (!isRecord(timer) || !isPositiveId(timer.id) || !isPositiveId(timer.duration_minutes) ||
+      !isUtcDate(timer.service_ends_at) || !isUtcDate(timer.grace_ends_at) ||
+      Date.parse(timer.grace_ends_at) - Date.parse(timer.service_ends_at) !== 600_000) return undefined
+    return { id: timer.id, duration_minutes: timer.duration_minutes, service_ends_at: timer.service_ends_at, grace_ends_at: timer.grace_ends_at }
+  })
+  if (timers.some((timer) => !timer) || new Set(timers.map((timer) => timer?.id)).size !== timers.length ||
+    new Set(timers.map((timer) => timer?.duration_minutes)).size !== timers.length) return undefined
+  if (currentStatus?.value === 'active') {
+    if (!timers.length || Date.parse(value.service_ends_at as string) !== Math.max(...timers.map((timer) => Date.parse(timer!.service_ends_at))) ||
+      Date.parse(value.table_release_at as string) !== Math.max(...timers.map((timer) => Date.parse(timer!.grace_ends_at)))) return undefined
+  } else if (timers.length) return undefined
   return {
     ...table,
+    timers: timers as AdminTable['timers'],
     state: value.state as AdminTable['state'],
     current_session_no: value.current_session_no ?? null,
     current_status: currentStatus,
     current_order_no: value.current_order_no ?? null,
+    current_source: value.current_source ?? null,
+    service_ends_at: value.service_ends_at ?? null,
+    timer_count: value.timer_count ?? 0,
     current_user_id: value.current_user_id ?? null,
     claimed_at: value.claimed_at ?? null,
     payment_deadline_at: value.payment_deadline_at ?? null,
@@ -332,11 +439,10 @@ function parseAdminSessionPage(value: unknown): AdminTableSessionPage | undefine
   if (!isPage(value)) return undefined
   const items = value.items.map((item) => {
     if (!isRecord(item) || typeof item.session_no !== 'string' || !SESSION_PATTERN.test(item.session_no) ||
-      !isPositiveId(item.order_id) || typeof item.order_no !== 'string' || !ORDER_PATTERN.test(item.order_no) ||
-      !isPositiveId(item.user_id) || typeof item.user_nickname !== 'string' || item.user_nickname.length === 0 ||
+      !validAdminIdentity(item) ||
       !isNonNegativeInteger(item.timer_count) || !isNullablePositiveId(item.minimum_duration_minutes) ||
       !isNullablePositiveId(item.maximum_duration_minutes) || !isUtcDate(item.claimed_at) ||
-      !isUtcDate(item.payment_deadline_at) || !isNullableUtcDate(item.started_at) ||
+      !isNullableUtcDate(item.payment_deadline_at) || !isNullableUtcDate(item.started_at) ||
       !isNullableUtcDate(item.table_release_at) || !isNullableUtcDate(item.closed_at)) return undefined
     const table = parseTableSummary(item.table)
     const status = parseSessionStatusEnum(item.status)
@@ -346,19 +452,20 @@ function parseAdminSessionPage(value: unknown): AdminTableSessionPage | undefine
     if (!table || !status || (item.close_reason !== null && item.close_reason !== undefined && !closeReason) ||
       !isAdminSessionListShapeConsistent(item, status.value, closeReason?.value ?? null)) return undefined
     return {
+      source: (item.source === 'direct' ? 'direct' : 'order') as 'direct' | 'order',
       session_no: item.session_no,
       table,
-      order_id: item.order_id,
-      order_no: item.order_no,
-      user_id: item.user_id,
-      user_nickname: item.user_nickname,
+      order_id: item.order_id as number | null,
+      order_no: item.order_no as string | null,
+      user_id: item.user_id as number | null,
+      user_nickname: item.user_nickname as string | null,
       status,
       close_reason: closeReason,
       timer_count: item.timer_count,
       minimum_duration_minutes: item.minimum_duration_minutes ?? null,
       maximum_duration_minutes: item.maximum_duration_minutes ?? null,
       claimed_at: item.claimed_at,
-      payment_deadline_at: item.payment_deadline_at,
+      payment_deadline_at: item.payment_deadline_at as string | null,
       started_at: item.started_at ?? null,
       table_release_at: item.table_release_at ?? null,
       closed_at: item.closed_at ?? null,
@@ -373,16 +480,46 @@ function parseAdminSessionPage(value: unknown): AdminTableSessionPage | undefine
   }
 }
 
-function parseAdminTableSession(value: unknown): AdminTableSession | undefined {
-  const session = parseTableSession(value)
-  if (!session || !isRecord(value) || !isPositiveId(value.user_id) ||
-    typeof value.user_nickname !== 'string' || !isNullablePositiveId(value.payment_id) ||
-    !isNullablePositiveId(value.closed_by_user_id) || !isNullableString(value.admin_close_reason)) return undefined
+function validAdminIdentity(value: Record<string, unknown>): boolean {
+  if (value.source === 'direct') {
+    return value.order_id === null && value.order_no === null && value.user_id === null &&
+      value.user_nickname === null && value.payment_deadline_at === null &&
+      isRecord(value.status) && value.status.value !== 'awaiting_payment'
+  }
+  return (value.source === undefined || value.source === 'order') && isPositiveId(value.order_id) &&
+    typeof value.order_no === 'string' && ORDER_PATTERN.test(value.order_no) && isPositiveId(value.user_id) &&
+    typeof value.user_nickname === 'string' && value.user_nickname.length > 0 && isUtcDate(value.payment_deadline_at)
+}
+
+export function parseAdminTableSession(value: unknown): AdminTableSession | undefined {
+  const session = parseSessionBase(value)
+  if (!session || !isRecord(value) || !validAdminIdentity(value) || !isNullablePositiveId(value.payment_id) ||
+    !isNullablePositiveId(value.closed_by_user_id) || !isNullableString(value.admin_close_reason) ||
+    !isNullablePositiveId(value.opened_by_user_id) || !isNullablePositiveId(value.source_option_id) ||
+    !isNullablePositiveId(value.direct_duration_minutes) || !isNullableString(value.opening_note) ||
+    (value.order_experience_durations !== undefined && (!Array.isArray(value.order_experience_durations) || !value.order_experience_durations.every(isPositiveId))) ||
+    (value.order_total_amount != null && (typeof value.order_total_amount !== 'string' || !/^\d+\.\d{2}$/.test(value.order_total_amount)))) return undefined
+  const direct = value.source === 'direct'
+  if (direct && (value.payment_id !== null || value.order_total_amount !== null ||
+    !isPositiveId(value.opened_by_user_id) || !isPositiveId(value.source_option_id) || !isPositiveId(value.direct_duration_minutes) ||
+    session.status.value === 'awaiting_payment' || session.timers.length !== 1 || session.started_at !== session.claimed_at ||
+    session.timers[0].duration_minutes !== value.direct_duration_minutes || session.timers[0].experience_items.length !== 0)) return undefined
+  if (!direct && session.timers.some((timer) => timer.experience_items.length === 0)) return undefined
   return {
     ...session,
-    user_id: value.user_id,
-    user_nickname: value.user_nickname,
+    source: direct ? 'direct' : 'order',
+    order_id: value.order_id as number | null,
+    order_no: value.order_no as string | null,
+    payment_deadline_at: value.payment_deadline_at as string | null,
+    order_total_amount: value.order_total_amount as string | null | undefined ?? null,
+    order_experience_durations: value.order_experience_durations as number[] | undefined ?? [],
+    user_id: value.user_id as number | null,
+    user_nickname: value.user_nickname as string | null,
     payment_id: value.payment_id ?? null,
+    opened_by_user_id: value.opened_by_user_id ?? null,
+    source_option_id: value.source_option_id ?? null,
+    direct_duration_minutes: value.direct_duration_minutes ?? null,
+    opening_note: value.opening_note ?? null,
     closed_by_user_id: value.closed_by_user_id ?? null,
     admin_close_reason: value.admin_close_reason ?? null,
   }

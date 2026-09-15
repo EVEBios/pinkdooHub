@@ -15,9 +15,12 @@ import {
   timerPhaseLabel,
   useTableEntry,
 } from '@/features/table_session'
+import { shoppingTableStore } from '@/features/table_session/shopping_table'
 import { getDefaultTableSessionApi } from '@/features/table_session/runtime'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
+
+import { CommerceReceipt } from '@/features/attention'
 
 import './index.scss'
 import { TableOrderCatalog } from './table_order_catalog'
@@ -105,8 +108,18 @@ function TableEntryContent({ auth, focusedIntentId, focusedOrderId, token }: {
     : focusRequested && !focusedOrderFinished ? 2 : 1
   const userId = auth.user!.id
 
-  async function claimFocusedOrder(orderId: number): Promise<boolean> {
+  async function claimShoppingOrder(orderId: number): Promise<boolean> {
+    const saved = await shoppingTableStore.load(userId).catch(() => undefined)
     const claimed = await entry.claim(orderId)
+    if (claimed && saved?.selection?.tableNo === code.table_no) {
+      await shoppingTableStore.consumeSelection(userId, saved.selection.selectionId)
+        .catch(() => Taro.showToast({ title: '开台成功，选桌记录清理失败', icon: 'none' }))
+    }
+    return claimed
+  }
+
+  async function claimFocusedOrder(orderId: number): Promise<boolean> {
+    const claimed = await claimShoppingOrder(orderId)
     if (claimed && focusedIntentId) {
       await clearPendingTableEntry({ intentId: focusedIntentId, token, userId })
         .catch(() => undefined)
@@ -141,6 +154,7 @@ function TableEntryContent({ auth, focusedIntentId, focusedOrderId, token }: {
       />
       <TableJourney currentStep={currentStep} />
       <View className='table-content'>
+        {entry.state.session && <CommerceReceipt scope='tables' target={entry.state.session.session_no} revision={`${entry.state.session.status.value}:${entry.state.session.close_reason?.value ?? ''}`} />}
         {entry.state.errorMessage && (
           <View className='table-alert' ariaRole='alert'><Text>{entry.state.errorMessage}</Text></View>
         )}
@@ -167,11 +181,12 @@ function TableEntryContent({ auth, focusedIntentId, focusedOrderId, token }: {
               )
             : (
               <TableOrderCatalog
+                tableNo={code.table_no}
                 claiming={entry.state.mutation === 'claiming'}
                 orders={entry.state.orders}
                 token={token}
                 userId={userId}
-                onSelectOrder={(order) => void confirmClaim(order, entry.claim)}
+                onSelectOrder={(order) => void confirmClaim(order, claimShoppingOrder)}
               />
             )}
       </View>
@@ -357,7 +372,7 @@ function SessionPanel({ clock, onPay, onRefresh, paying, session }: {
           <Text className='table-session__order-label'>当前订单</Text>
           <Text className='table-session__meta'>{session.order_no}</Text>
         </View>
-        <Text className='table-section__hint'>完成会员余额付款后将立即开始计时；也可以让店员人工确认。倒计时结束后会自动核对桌台状态。</Text>
+        <Text className='table-section__hint'>使用会员余额付款后立即计时。若已在线下付钱，请让店员确认收款；确认后本页会自动显示计时，请勿重复付款。</Text>
         <Button className='table-action' disabled={paying || seconds === 0} loading={paying} onClick={() => void onPay()}>
           {paying ? '正在确认支付结果…' : '使用会员余额付款'}
         </Button>

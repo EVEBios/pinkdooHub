@@ -25,7 +25,11 @@ export default defineAppConfig({
     'pages/member/index',
     'pages/wallet-recharge/index',
     'pages/wallet-transactions/index',
-    'pages/table-entry/index'
+    'pages/wallet-result/index',
+    'pages/table-entry/index',
+    'pages/attention/index',
+    'pages/commerce-attention/index',
+    'pages/table-history/index'
   ],
   subPackages: [{
     root: 'admin',
@@ -43,6 +47,7 @@ export default defineAppConfig({
       'pages/order-detail/index',
       'pages/reservations/index',
       'pages/reservation-detail/index',
+      'pages/reservation-followups/index',
       'pages/store-closures/index',
       'pages/users/index',
       'pages/user-wallet/index',

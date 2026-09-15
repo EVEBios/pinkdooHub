@@ -133,6 +133,12 @@
 }
 
 .workbench-action {
+  &__title-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
   display: flex;
   width: 100%;
   min-height: 118px;

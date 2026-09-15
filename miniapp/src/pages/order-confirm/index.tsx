@@ -30,6 +30,12 @@ import {
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatColorLabel, formatPrice } from '@/utils/format'
 
+import { getTableErrorMessage } from '@/features/table_session/errors'
+import { TableSelector } from '@/features/table_session/table_selector'
+import { shoppingTableStore } from '@/features/table_session/shopping_table'
+import { useShoppingTable } from '@/features/table_session/use_shopping_table'
+import { buildOrderDetailUrl } from '@/features/order/order_route'
+
 import './index.scss'
 
 export default function OrderConfirmPage() {
@@ -66,7 +72,7 @@ export default function OrderConfirmPage() {
     }
   }
 
-  return <CustomerOrderConfirmPage auth={auth} tableIntentId={tableIntentId} />
+  return <CustomerOrderConfirmPage key={auth.user?.id ?? 'guest'} auth={auth} tableIntentId={tableIntentId} />
 }
 
 function CustomerOrderConfirmPage({ auth, tableIntentId }: {
@@ -76,9 +82,11 @@ function CustomerOrderConfirmPage({ auth, tableIntentId }: {
   const cart = useCart()
   const submission = useOrderSubmission()
   const [remark, setRemark] = useState('')
+  const table = useShoppingTable(auth.status === 'authenticated' ? auth.user?.id : undefined)
 
   // 服务端成功是最高优先级事实；Cart 对账可能已先发布空列表，不能遮住创建结果。
   if (submission.state.status === 'succeeded') {
+    if (submission.state.request.table_no) return <TableCheckoutResult order={submission.state.order} tableNo={submission.state.request.table_no} warning={submission.state.cartReconciliationError?.message} />
     return (
       <OrderResult
         state={submission.state}
@@ -97,6 +105,17 @@ function CustomerOrderConfirmPage({ auth, tableIntentId }: {
         <Button className='order-confirm-state__action' onClick={cart.retryInitialization}>重新加载</Button>
       </ConfirmState>
     )
+  }
+  if (table.attempt && submission.state.status !== 'submitting' && auth.user) {
+    const attempt = table.attempt
+    return <ConfirmState title='核对上次开台订单' description={`本次桌台 ${attempt.request.table_no}。将核对原订单，不会重复创建订单或占台。`}>
+      <Text>原购物清单：{attempt.items.map((item) => `${item.productName} × ${item.quantity}`).join('；')}</Text>
+      <Button className='order-confirm-state__action' onClick={() => void submission.submit(
+        attempt.items, attempt.request.remark, { userId: auth.user!.id, tableNo: attempt.request.table_no! },
+      )}
+      >核对并继续付款</Button>
+      <SubmissionFeedback state={submission.state} />
+    </ConfirmState>
   }
   if (cart.items.length === 0) {
     return (
@@ -127,8 +146,10 @@ function CustomerOrderConfirmPage({ auth, tableIntentId }: {
     )
   }
 
+  const hasExperience = cart.items.some((item) => item.productType === 'experience')
   const submitDisabled = submission.state.status === 'submitting' ||
-    submission.state.status === 'unknown'
+    submission.state.status === 'unknown' || table.loading || !!table.error || table.expired ||
+    (!!table.selection && !hasExperience)
 
   return (
     <View className='order-confirm-page'>
@@ -137,8 +158,16 @@ function CustomerOrderConfirmPage({ auth, tableIntentId }: {
         <Text className='order-confirm-page__subtitle'>{cart.items.length} 项商品，提交前请核对配置、数量与备注。</Text>
       </View>
       <View className='order-confirm-page__notice'>
-        <Text>这里展示的是本地预览。商品、配置、库存和金额会在创建订单时由后端重新校验并生成快照。</Text>
+        <Text>请核对本次购物清单；实际金额和库存将在提交时确认。</Text>
       </View>
+      {(hasExperience || table.selection) && <TableSelector
+        value={table.selection?.tableNo} disabled={submission.state.status === 'submitting' || table.loading}
+        onChange={(tableNo) => shoppingTableStore.select(auth.user!.id, tableNo)}
+      />}
+      {table.loading && <Text>正在读取本次桌台…</Text>}
+      {table.expired && <Text className='order-confirm-feedback--error'>本次选桌已失效，请重新选择桌台或取消开台。</Text>}
+      {table.selection && !hasExperience && <Text className='order-confirm-feedback--error'>开台至少需要一个体验项目，请补选体验或取消本次开台。</Text>}
+      {table.error && <View className='order-confirm-feedback--error'><Text>{table.error}</Text><Button onClick={() => void table.refresh()}>重新读取桌台</Button></View>}
 
       <View className='order-confirm-list'>
         {cart.items.map((item) => (
@@ -176,16 +205,34 @@ function CustomerOrderConfirmPage({ auth, tableIntentId }: {
         className='order-confirm-page__submit'
         disabled={submitDisabled}
         loading={submission.state.status === 'submitting'}
-        onClick={() => void submission.submit(cart.items, remark)}
+        onClick={() => {
+          if (!submitDisabled) void submission.submit(cart.items, remark, table.selection
+            ? { userId: auth.user!.id, tableNo: table.selection.tableNo } : undefined)
+        }}
       >
         {submission.state.status === 'submitting'
           ? '正在创建订单…'
           : submission.state.status === 'unknown'
             ? '请先核对订单结果'
-            : '确认创建订单'}
+            : table.selection ? '确认订单并开台' : '确认创建订单'}
       </Button>
     </View>
   )
+}
+
+function TableCheckoutResult({ order, tableNo, warning }: { readonly order: OrderDetail; readonly tableNo: string; readonly warning?: string }) {
+  const [navigationFailed, setNavigationFailed] = useState(false)
+  useEffect(() => {
+    if (warning) return
+    void Taro.redirectTo({ url: buildOrderDetailUrl(order.id) }).catch(() => setNavigationFailed(true))
+  }, [order.id, warning])
+  return <ConfirmState title='订单已创建并关联桌台' description={`本次桌台 ${tableNo}，请在付款时限内完成付款；付款成功开始计时。`}>
+    <Text>{order.order_no}</Text>
+    {warning && <Text className='order-result-warning'>{warning}</Text>}
+    <Button className='order-confirm-state__action' onClick={() => void Taro.redirectTo({ url: buildOrderDetailUrl(order.id) })}>
+      {navigationFailed ? '重新进入订单付款' : '进入订单付款'}
+    </Button>
+  </ConfirmState>
 }
 
 function OrderResult({
@@ -448,6 +495,7 @@ function ConfirmState({
 
 export function getOrderCreateErrorMessage(error: Error): string {
   if (error instanceof BusinessError) {
+    if ([40461, 40961, 40962, 40963, 40964, 40965, 40966, 42261].includes(error.code)) return getTableErrorMessage(error)
     if (error.code === 40931) {
       return '商品库存不足，请返回购物清单调整数量'
     }

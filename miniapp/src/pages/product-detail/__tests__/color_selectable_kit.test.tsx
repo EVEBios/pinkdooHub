@@ -11,7 +11,7 @@ let mockCart: CartContextValue
 
 jest.mock('@/auth', () => ({
   buildLoginUrl: (path: string) => path,
-  useAuth: jest.fn(),
+  useAuth: jest.fn(() => ({ status: 'guest' })),
 }))
 
 jest.mock('@/features/order', () => {
@@ -186,3 +186,5 @@ async function flush(testUtils: ReactTestUtil): Promise<void> {
     await Promise.resolve()
   })
 }
+
+jest.mock('@tarojs/taro', () => ({ ...jest.requireActual('@tarojs/taro'), useDidShow: jest.fn(), useDidHide: jest.fn() }))

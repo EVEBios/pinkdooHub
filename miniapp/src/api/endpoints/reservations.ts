@@ -313,6 +313,7 @@ function projectListRequest(request: ReservationListRequest): Record<string, str
 function projectAdminListRequest(request: AdminReservationListRequest): Record<string, string | number> {
   return {
     ...projectListRequest(request),
+    ...(request.review_timing == null ? {} : { review_timing: request.review_timing }),
     ...(request.business_date === undefined || request.business_date === null
       ? {}
       : { business_date: request.business_date }),
@@ -591,7 +592,7 @@ function matchesPageRequest(
 
 function parseStatus(value: unknown): LabeledValue<ReservationStatus> | undefined {
   const labels: Record<ReservationStatus, string> = {
-    pending: '待门店确认', confirmed: '已确认', rejected: '未能确认', cancelled: '已取消',
+    pending: '待门店确认', confirmed: '已确认', rejected: '已拒绝', cancelled: '已取消',
   }
   return parseLabeled(value, labels)
 }
@@ -643,7 +644,7 @@ function validateStateFields(input: {
   const messages = {
     pending: '预约已提交，正在等待门店确认。',
     confirmed: '预约已确认，请按预约时间到店。费用以预约时价格为准，到店支付。',
-    rejected: '很抱歉，您选择的时段当前已无空位，本次预约未能确认。您可以选择其他日期或时段重新预约。',
+    rejected: '很抱歉，您选择的时段当前已无空位，本次预约已被门店拒绝。您可以选择其他日期或时段重新预约。',
     customer_request: '本次预约已取消。您可以选择其他日期或时段重新预约。',
     store_closed: '门店当天休息，本次预约已由门店取消。给您带来不便，敬请谅解；您可以选择其他日期重新预约，如需帮助请联系门店。',
   } as const

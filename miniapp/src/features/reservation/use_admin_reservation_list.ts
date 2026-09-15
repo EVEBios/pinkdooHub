@@ -10,7 +10,7 @@ import { getReservationErrorMessage } from './mutation'
 import { getDefaultReservationApi } from './runtime'
 
 const PAGE_SIZE = 20
-export type AdminReservationStatusFilter = 'all' | ReservationStatus
+export type AdminReservationStatusFilter = 'all' | 'overdue' | ReservationStatus
 
 export interface AdminReservationFilterDraft {
   readonly status: AdminReservationStatusFilter
@@ -132,7 +132,8 @@ function buildRequest(filters: AdminReservationFilters, page: number): AdminRese
   return {
     page,
     page_size: PAGE_SIZE,
-    ...(filters.status === 'all' ? {} : { status: filters.status }),
+    ...(filters.status === 'all' ? {} : { status: filters.status === 'overdue' ? 'pending' : filters.status }),
+    ...(filters.status === 'pending' ? { review_timing: 'actionable' as const } : filters.status === 'overdue' ? { review_timing: 'overdue' as const } : {}),
     ...(filters.businessDate ? { business_date: filters.businessDate } : {}),
     ...(filters.userId ? { user_id: filters.userId } : {}),
     ...(filters.productId ? { product_id: filters.productId } : {}),

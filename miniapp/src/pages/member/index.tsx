@@ -20,6 +20,8 @@ import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
 import { resolveAssetUrl } from '@/utils/asset_url'
 import { formatPrice } from '@/utils/format'
 
+import { CustomerAttention } from '@/features/attention'
+
 import './index.scss'
 
 export default function MemberPage() {
@@ -154,6 +156,8 @@ function MemberOrders() {
     { status: 'completed', label: '已完成', icon: 'shopping-bag' },
   ] as const
   return (
+    <View className='member-activity'>
+      <CustomerAttention commerceOnly appearance='member' />
     <View className='member-orders'>
       <View className='member-orders__heading'>
         <Text className='member-orders__title'>我的订单</Text>
@@ -171,6 +175,7 @@ function MemberOrders() {
           </Button>
         ))}
       </View>
+    </View>
     </View>
   )
 }

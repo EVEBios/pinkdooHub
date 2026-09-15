@@ -1,8 +1,10 @@
 import { Component } from 'react'
-import { Image, View } from '@tarojs/components'
+import { Image, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 
 import { ROOT_TABS, type RootTabIndex } from '@/navigation/root_tabs'
+
+import { attentionStore } from '@/features/attention/runtime'
 
 import './index.scss'
 
@@ -16,6 +18,8 @@ interface CustomTabItem {
 
 interface CustomTabBarState {
   selected: RootTabIndex | null
+  reservationUnread: number
+  memberAttention: number
 }
 
 const CUSTOM_TAB_ICONS = [
@@ -38,7 +42,19 @@ const CUSTOM_TAB_ITEMS: readonly CustomTabItem[] = ROOT_TABS.map((tab, index) =>
 export default class CustomTabBar extends Component<Record<never, never>, CustomTabBarState> {
   public state: CustomTabBarState = {
     selected: resolveCurrentTabIndex(),
+    memberAttention: customerMemberAttention(),
+    reservationUnread: attentionStore.state.identity?.endsWith(':user') ? attentionStore.state.summary?.reservation_unread ?? 0 : 0,
   }
+
+  public componentDidMount(): void {
+    this.unsubscribe = attentionStore.subscribe(() => {
+      this.setState({ memberAttention: customerMemberAttention(), reservationUnread: attentionStore.state.identity?.endsWith(':user') ? attentionStore.state.summary?.reservation_unread ?? 0 : 0 })
+    })
+  }
+
+  public componentWillUnmount(): void { this.unsubscribe?.() }
+
+  private unsubscribe?: () => void
 
   public setSelected(selected: RootTabIndex): void {
     this.setState((current) => current.selected === selected ? null : { selected })
@@ -61,12 +77,13 @@ export default class CustomTabBar extends Component<Record<never, never>, Custom
           <View className='root-tab-bar__surface'>
             {CUSTOM_TAB_ITEMS.map((item) => {
               const selected = item.index === this.state.selected
+              const count = item.index === 1 ? this.state.reservationUnread : item.index === 3 ? this.state.memberAttention : 0
               return (
                 <View
                   key={item.url}
                   className={`root-tab-bar__item${selected ? ' root-tab-bar__item--selected' : ''}`}
                   ariaRole='tab'
-                  ariaLabel={selected ? `${item.text}，当前页面` : item.text}
+                  ariaLabel={`${item.text}${selected ? '，当前页面' : ''}${count ? `，${count} 件提醒` : ''}`}
                   onClick={() => this.switchTab(item)}
                 >
                   <View
@@ -77,6 +94,7 @@ export default class CustomTabBar extends Component<Record<never, never>, Custom
                       mode='aspectFit'
                       src={selected ? item.selectedIcon : item.icon}
                     />
+                    {count > 0 && <Text className='root-tab-bar__badge'>{count > 99 ? '99+' : count}</Text>}
                   </View>
                   <View
                     className={`root-tab-bar__label${selected ? ' root-tab-bar__label--selected' : ''}`}
@@ -102,4 +120,8 @@ function isCurrentTab(url: string): boolean {
 function resolveCurrentTabIndex(): RootTabIndex | null {
   const current = ROOT_TABS.find((tab) => isCurrentTab(tab.url))
   return current?.index ?? null
+}
+
+function customerMemberAttention(): number {
+  return attentionStore.state.identity?.endsWith(':user') ? (attentionStore.state.summary?.order_total ?? 0) + (attentionStore.state.summary?.table_total ?? 0) + (attentionStore.state.summary?.wallet_unread ?? 0) : 0
 }

@@ -83,11 +83,11 @@
 .reservations-filters {
   @include customer.ledger-panel;
 
-  display: flex;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
   margin: 22px 0;
   padding: 10px;
-  overflow-x: auto;
   background: var(--pd-color-surface);
   border: 1px solid var(--pd-color-line);
   border-radius: 18px;
@@ -95,6 +95,10 @@
 
   &__item {
     @include pd.chip;
+
+    width: 100%;
+    min-width: 0;
+    padding-inline: 12px;
 
     &--active {
       @include pd.chip-active;
@@ -263,3 +267,10 @@
     margin-bottom: 0;
   }
 }
+
+/* stylelint-disable selector-class-pattern -- 与既有预约 BEM 状态类保持一致。 */
+.reservation-card__status--overdue {
+  color: var(--pd-color-ink-soft);
+  background: var(--pd-color-surface-muted);
+}
+/* stylelint-enable selector-class-pattern */

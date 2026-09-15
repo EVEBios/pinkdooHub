@@ -9,6 +9,7 @@ import MemberPage from '../index'
 const mockRetry = jest.fn()
 const mockUseMemberWallet = jest.fn()
 const mockUseRootTabSelection = jest.fn()
+const mockUseAttentionSummary = jest.fn()
 const mockShowToast = jest.spyOn(Taro, 'showToast').mockResolvedValue({ errMsg: 'showToast:ok' })
 let mockAuth: AuthContextValue
 
@@ -31,6 +32,11 @@ jest.mock('@/features/wallet', () => ({
   useMemberWallet: () => mockUseMemberWallet(),
 }))
 
+jest.mock('@/features/attention/hooks', () => ({
+  ...jest.requireActual('@/features/attention/hooks'),
+  useAttentionSummary: () => mockUseAttentionSummary(),
+}))
+
 jest.mock('@/navigation/root_tabs', () => ({
   ROOT_TAB_INDEX: { mall: 0, reservations: 1, cart: 2, member: 3 },
   useRootTabSelection: (index: number) => mockUseRootTabSelection(index),
@@ -47,6 +53,7 @@ describe('MemberPage', () => {
   beforeEach(() => {
     testUtils = new ReactTestUtil()
     mockAuth = createAuth('user')
+    mockUseAttentionSummary.mockReturnValue({ identity: '7:user', summary: { order_total: 0, table_total: 0 }, refresh: jest.fn() })
     mockUseMemberWallet.mockReturnValue({
       state: createWalletState(),
       retry: mockRetry,
@@ -206,6 +213,57 @@ describe('MemberPage', () => {
     expect(Taro.switchTab).not.toHaveBeenCalled()
   })
 
+  it('会员提醒整行及图标进入对应结果，保留真实数量与 99+ 展示', async () => {
+    mockUseAttentionSummary.mockReturnValue({ identity: '7:user', summary: { order_total: 120, table_total: 1 }, refresh: jest.fn() })
+    await testUtils.mount(MemberPage)
+    const entries = testUtils.queries.querySelectorAll('.customer-attention--member .attention-entry')
+    expect(entries).toHaveLength(2)
+    expect(entries[0].querySelector('.attention-badge')?.textContent).toBe('99+')
+    expect(entries[1].querySelector('.attention-badge')?.textContent).toBe('1')
+    expect(entries[1].querySelector('.attention-entry__title')?.textContent).toBe('我的桌台')
+    expect(entries[1].querySelector('.attention-entry__hint')?.textContent).toBe('查看待付款与桌台动态')
+    testUtils.fireEvent.click(entries[1].querySelector('.attention-entry__icon')!)
+    expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/commerce-attention/index?scope=tables' })
+    testUtils.fireEvent.click(entries[0])
+    expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/commerce-attention/index?scope=orders' })
+  })
+
+  it('付款后无提醒仍保留桌台入口，钱包失败时也可进入', async () => {
+    await testUtils.mount(MemberPage)
+    expect(testUtils.queries.querySelectorAll('.attention-entry')).toHaveLength(1)
+    expect(requireElement(testUtils, '.attention-entry').textContent).toContain('查看进行中与历史桌台')
+    expect(testUtils.queries.querySelector('.attention-badge')).toBeNull()
+    testUtils.fireEvent.click(requireElement(testUtils, '.attention-entry'))
+    expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/commerce-attention/index?scope=tables' })
+    mockUseAttentionSummary.mockReturnValue({ identity: '7:user', summary: { order_total: 0, table_total: 1 }, refresh: jest.fn() })
+    mockUseMemberWallet.mockReturnValue({ state: { status: 'error', errorMessage: '暂时不可用' }, retry: mockRetry })
+    testUtils.unmout()
+    testUtils = new ReactTestUtil()
+    await testUtils.mount(MemberPage)
+    testUtils.fireEvent.click(requireElement(testUtils, '.attention-entry'))
+    expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/commerce-attention/index?scope=tables' })
+  })
+
+  it('会员余额变动沿用入口样式，按独立调整计数并进入余额结果列表', async () => {
+    mockUseAttentionSummary.mockReturnValue({ identity: '7:user', summary: { order_total: 0, table_total: 0, wallet_unread: 2 }, refresh: jest.fn() })
+    await testUtils.mount(MemberPage)
+    const entries = testUtils.queries.querySelectorAll('.customer-attention--member .attention-entry')
+    expect(entries).toHaveLength(2)
+    expect(entries[1].textContent).toContain('余额变动')
+    expect(entries[1].querySelector('.attention-badge')?.textContent).toBe('2')
+    testUtils.fireEvent.click(entries[1])
+    expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/commerce-attention/index?scope=wallet' })
+  })
+
+
+  it.each([undefined, '提醒暂不可用'])('汇总未返回或失败时桌台入口仍可用：%s', async (error) => {
+    mockUseAttentionSummary.mockReturnValue({ identity: '7:user', error, refresh: jest.fn() })
+    await testUtils.mount(MemberPage)
+    expect(testUtils.queries.querySelector('.attention-badge')).toBeNull()
+    testUtils.fireEvent.click(requireElement(testUtils, '.attention-entry'))
+    expect(Taro.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/commerce-attention/index?scope=tables' })
+  })
+
   it('钱包读取失败时提供原位重试', async () => {
     mockUseMemberWallet.mockReturnValue({
       state: { status: 'error', errorMessage: '钱包服务暂不可用' },
@@ -351,3 +409,5 @@ async function flush(testUtils: ReactTestUtil): Promise<void> {
     await Promise.resolve()
   })
 }
+
+jest.mock('@tarojs/taro', () => ({ ...jest.requireActual('@tarojs/taro'), useDidHide: jest.fn(), useDidShow: jest.fn() }))

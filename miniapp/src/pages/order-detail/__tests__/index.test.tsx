@@ -407,3 +407,7 @@ function authenticatedUser(): AuthContextValue {
     retryInitialization: jest.fn(),
   }
 }
+
+jest.mock('@tarojs/taro', () => ({ ...jest.requireActual('@tarojs/taro'), useDidHide: jest.fn(), useDidShow: jest.fn() }))
+
+jest.mock('@/features/table_session/runtime', () => ({ getDefaultTableSessionApi: () => ({ getOrderSession: jest.fn(async () => null) }) }))

@@ -252,3 +252,11 @@ function requireElement(testUtils: ReactTestUtil, selector: string): Element {
   if (!element) throw new Error(`${selector} not found`)
   return element
 }
+
+jest.mock('@/features/attention', () => ({
+  ATTENTION_PAGE: '/pages/attention/index',
+  CustomerAttention: () => null,
+  ReservationAttentionReceipt: () => null,
+  AttentionBadge: () => null,
+  useAttentionSummary: () => ({ summary: undefined, refresh: jest.fn() }),
+}))

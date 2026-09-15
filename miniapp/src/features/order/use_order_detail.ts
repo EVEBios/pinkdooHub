@@ -1,3 +1,4 @@
+import { attentionStore } from '@/features/attention/runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { BusinessError, SessionExpiredError } from '@/api'
@@ -9,7 +10,7 @@ import { isOrderCommandUnknownError } from './submission'
 export type OrderDetailState =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly errorMessage: string }
-  | { readonly status: 'content'; readonly order: OrderDetail }
+  | { readonly status: 'content'; readonly order: OrderDetail; readonly refreshErrorMessage?: string }
 
 export type OrderCancellationState =
   | { readonly status: 'idle' }
@@ -31,6 +32,7 @@ export interface OrderDetailFeature {
   readonly detail: OrderDetailState
   readonly cancellation: OrderCancellationState
   retry(): void
+  refresh(): void
   cancel(): Promise<void>
 }
 
@@ -43,19 +45,28 @@ export function useOrderDetail(
   const requestSequenceRef = useRef(0)
   const activeCancellationRef = useRef<Promise<void>>()
 
-  const load = useCallback(() => {
+  const load = useCallback((background = false) => {
     const sequence = ++requestSequenceRef.current
-    setDetail({ status: 'loading' })
+    // 结果提醒会触发刷新；保留内容和提醒组件，避免卸载后重复发现同一结果。
+    setDetail((current) => background && current.status === 'content' && current.order.id === orderId
+      ? { status: 'content', order: current.order }
+      : { status: 'loading' })
     void source.getOrderDetail(orderId).then((order) => {
       if (sequence === requestSequenceRef.current) {
         setDetail({ status: 'content', order })
       }
     }).catch((cause: unknown) => {
       if (sequence === requestSequenceRef.current) {
-        setDetail({ status: 'error', errorMessage: getDetailErrorMessage(cause) })
+        const errorMessage = getDetailErrorMessage(cause)
+        setDetail((current) => background && current.status === 'content' && current.order.id === orderId
+          ? { ...current, refreshErrorMessage: errorMessage }
+          : { status: 'error', errorMessage })
       }
     })
   }, [orderId, source])
+
+  const retry = useCallback(() => load(), [load])
+  const refresh = useCallback(() => load(true), [load])
 
   useEffect(() => {
     load()
@@ -76,6 +87,7 @@ export function useOrderDetail(
       setCancellation({ status: 'submitting' })
       try {
         const result = await source.cancelOrder(orderId)
+        attentionStore.invalidate(false)
         setDetail({
           status: 'content',
           order: { ...currentOrder, status: result.status, updated_at: result.updated_at },
@@ -115,7 +127,7 @@ export function useOrderDetail(
     return operation
   }, [detail, orderId, source])
 
-  return { detail, cancellation, retry: load, cancel }
+  return { detail, cancellation, retry, refresh, cancel }
 }
 
 function getDetailErrorMessage(cause: unknown): string {

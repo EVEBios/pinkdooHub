@@ -373,7 +373,7 @@ function LoadedAssistedOrderItemForm({ detail, locked, mutation, onCommitted, on
     const confirmation = await Taro.showModal({
       title: '确认创建并扣款？',
       content: `客户：${target.user.nickname}（ID ${target.user.id}）\n商品：${detail.name}${configuration}\n权威预览单价：¥${formatPrice(unitPrice)}${priceUnit}\n${quantityLabel}\n预计扣款：¥${(totalCents / 100).toFixed(2)}\n提交时服务端会再次校验价格、余额与库存。`,
-      confirmText: '创建并扣款',
+      confirmText: '确认扣款',
       confirmColor: '#a92e51',
     })
     if (!confirmation.confirm) return

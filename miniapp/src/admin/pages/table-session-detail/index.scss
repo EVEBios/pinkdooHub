@@ -70,3 +70,24 @@
 .admin-session-error {
   color: var(--pd-color-danger);
 }
+
+.admin-session-card button.admin-session-card__pay {
+  @include pd.primary-button;
+
+  margin-top: 10px;
+}
+
+.admin-session-card__countdown {
+  font-size: var(--pd-font-title);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-session-card--warning {
+  border-color: var(--pd-color-warning);
+}
+
+.admin-session-card__warning {
+  color: var(--pd-color-warning);
+  font-weight: 700;
+}

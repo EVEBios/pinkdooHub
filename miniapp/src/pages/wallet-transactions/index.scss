@@ -32,6 +32,14 @@
   &__subtitle {
     @include customer.subtitle;
   }
+
+  &__results {
+    @include patterns.secondary-button;
+
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto 24px;
+  }
 }
 
 .wallet-ledger {

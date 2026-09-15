@@ -16,7 +16,22 @@ export function formatShanghaiUtc(value: string): string {
   return `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月${date.getUTCDate()}日 ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
 }
 
-export function reservationStatusClass(reservation: Reservation): string {
+export function isReservationOverdue(reservation: Reservation, now = Date.now()): boolean {
+  return reservation.status.value === 'pending' && Date.parse(reservation.scheduled_start_at) <= now
+}
+
+export function reservationStatusLabel(reservation: Reservation, now = Date.now()): string {
+  return isReservationOverdue(reservation, now) ? '已过期未处理' : reservation.status.label
+}
+
+export function reservationMessage(reservation: Reservation, now = Date.now()): string {
+  return isReservationOverdue(reservation, now)
+    ? '预约时间已过，门店未能及时确认。请联系门店确认安排。'
+    : reservation.customer_message
+}
+
+export function reservationStatusClass(reservation: Reservation, now = Date.now()): string {
+  if (isReservationOverdue(reservation, now)) return 'overdue'
   if (reservation.status.value === 'cancelled' &&
     reservation.cancellation_reason?.value === 'store_closed') return 'store-closed'
   return reservation.status.value

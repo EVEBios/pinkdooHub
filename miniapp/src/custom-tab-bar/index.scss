@@ -49,6 +49,7 @@
 }
 
 .root-tab-bar__icon-seat {
+  position: relative;
   position: absolute;
   top: 14px;
   left: 50%;
@@ -129,3 +130,20 @@
   }
 }
 /* stylelint-enable selector-class-pattern */
+
+
+/* stylelint-disable selector-class-pattern -- 沿用已有导航 BEM 命名。 */
+.root-tab-bar__badge {
+  position: absolute;
+  top: -6px;
+  right: -14px;
+  min-width: 30px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #a92f38;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}

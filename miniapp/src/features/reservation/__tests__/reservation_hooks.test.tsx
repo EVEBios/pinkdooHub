@@ -592,7 +592,7 @@ describe('预约 hooks', () => {
     expect(text(testUtils, '.ids')).toBe('303')
   })
 
-  it('管理预约默认只查 pending，组合筛选从第一页重新请求', async () => {
+  it('管理预约默认只查未过期 pending，组合筛选从第一页重新请求', async () => {
     const page = {
       items: [{ ...adminPending, user_phone_masked: '138****0000' }],
       total: 1,
@@ -606,7 +606,7 @@ describe('预约 hooks', () => {
     await testUtils.mount(AdminListHarness, { props: { source } })
     await flush(testUtils)
     expect(source.listAdminReservations).toHaveBeenNthCalledWith(1, {
-      page: 1, page_size: 20, status: 'pending',
+      page: 1, page_size: 20, status: 'pending', review_timing: 'actionable',
     })
     testUtils.fireEvent.click(required(testUtils, '.apply'))
     await flush(testUtils)

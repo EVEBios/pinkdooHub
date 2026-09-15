@@ -1,3 +1,4 @@
+import { attentionStore } from '@/features/attention/runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { BusinessError } from '@/api'
@@ -60,6 +61,7 @@ export function useReservationDetail(
       setCancellation({ status: 'submitting' })
       try {
         const reservation = await source.cancelReservation(reservationId)
+        attentionStore.invalidate(false)
         setDetail({ status: 'content', reservation })
         try {
           const refreshed = await source.getReservation(reservationId)

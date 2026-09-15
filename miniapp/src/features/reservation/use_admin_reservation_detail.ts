@@ -1,3 +1,4 @@
+import { attentionStore } from '@/features/attention/runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { BusinessError } from '@/api'
@@ -63,6 +64,7 @@ export function useAdminReservationDetail(
         const result = action === 'confirm'
           ? await source.confirmReservation(reservationId)
           : await source.rejectReservation(reservationId)
+        attentionStore.invalidate(true)
         setDetail({ status: 'content', reservation: { ...current, ...result } })
         try {
           const refreshed = await source.getAdminReservation(reservationId)

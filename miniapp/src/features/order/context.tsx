@@ -34,23 +34,26 @@ export interface CartContextValue {
 
 interface CartProviderProps extends PropsWithChildren {
   runtime?: CartRuntime
+  enabled?: boolean
 }
 
 const CartContext = createContext<CartContextValue | undefined>(undefined)
 
 const INITIAL_SNAPSHOT: CartSnapshot = { status: 'initializing', items: [] }
 
-export function CartProvider({ children, runtime: runtimeProp }: CartProviderProps) {
+export function CartProvider({ children, runtime: runtimeProp, enabled = true }: CartProviderProps) {
   const runtimeRef = useRef<CartRuntime>()
   runtimeRef.current ??= runtimeProp ?? getDefaultCartRuntime()
   const runtime = runtimeRef.current
   const [snapshot, setSnapshot] = useState<CartSnapshot>(INITIAL_SNAPSHOT)
 
-  useEffect(() => runtime.store.subscribe(setSnapshot), [runtime])
+  useEffect(() => {
+    if (enabled) return runtime.store.subscribe(setSnapshot)
+  }, [enabled, runtime])
 
   useEffect(() => {
-    void runtime.store.restore().catch(() => undefined)
-  }, [runtime])
+    if (enabled) void runtime.store.restore().catch(() => undefined)
+  }, [enabled, runtime])
 
   const retryInitialization = useCallback(() => {
     void runtime.store.restore().catch(() => undefined)
@@ -69,7 +72,7 @@ export function CartProvider({ children, runtime: runtimeProp }: CartProviderPro
     retryInitialization,
   }), [retryInitialization, runtime, snapshot])
 
-  return <CartContext.Provider value={value}>{children}</CartContext.Provider>
+  return <CartContext.Provider value={enabled ? value : undefined}>{children}</CartContext.Provider>
 }
 
 export function useCart(): CartContextValue {

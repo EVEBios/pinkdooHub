@@ -5,10 +5,14 @@ import { type AuthContextValue, SessionPersistenceClearError } from '@/auth'
 
 import AdminWorkbenchPage from '../index'
 
+const mockTablesApi = { listAdminTables: jest.fn() }
+jest.mock('@/features/table_session', () => ({ getDefaultTableSessionApi: () => mockTablesApi }))
 let mockAuth: AuthContextValue
 
 jest.mock('@tarojs/taro', () => ({
   __esModule: true,
+  useDidHide: jest.fn(),
+  useDidShow: jest.fn(),
   default: {
     navigateTo: jest.fn(() => Promise.resolve()),
     reLaunch: jest.fn(() => Promise.resolve()),
@@ -45,6 +49,7 @@ describe('店铺工作台', () => {
   beforeEach(() => {
     testUtils = new ReactTestUtil()
     mockAuth = createAuth('admin')
+    mockTablesApi.listAdminTables.mockResolvedValue({ items: [], server_now: new Date().toISOString() })
   })
 
   afterEach(() => {
@@ -52,12 +57,29 @@ describe('店铺工作台', () => {
     jest.clearAllMocks()
   })
 
+  it('桌台入口合并待收款与逐组到时提醒，进入完整桌台工作台', async () => {
+    const now = Date.now()
+    const timer = { id: 1, duration_minutes: 60, service_ends_at: new Date(now + 300_000).toISOString(), grace_ends_at: new Date(now + 900_000).toISOString() }
+    mockTablesApi.listAdminTables.mockResolvedValue({ server_now: new Date(now).toISOString(), items: [
+      { id: 1, current_status: { value: 'active' }, timers: [timer], table_release_at: timer.grace_ends_at },
+      { id: 2, current_status: { value: 'awaiting_payment' }, timers: [], payment_deadline_at: new Date(now + 500_000).toISOString() },
+    ] })
+    await testUtils.mount(AdminWorkbenchPage)
+    await testUtils.act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    const entry = Array.from(testUtils.queries.querySelectorAll('.workbench-action')).find((item) => item.textContent?.includes('桌台工作台'))!
+    expect(entry.textContent).toContain('待收款 1 · 到时提醒 1')
+    expect(entry.getAttribute('aria-label')).toContain('2 件待处理')
+    testUtils.fireEvent.click(entry)
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/admin/pages/tables/index' })
+  })
+
   it.each([
     ['admin', '管理员'],
     ['super_admin', '超级管理员'],
-  ] as const)('%s 展示紧凑身份与三组七项入口', async (role, roleLabel) => {
+  ] as const)('%s 展示紧凑身份与三组九项入口', async (role, roleLabel) => {
     mockAuth = createAuth(role)
     await testUtils.mount(AdminWorkbenchPage)
+    await testUtils.act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 
     const page = required(testUtils, '.workbench-page')
     expect(page.textContent).toContain('店铺工作台')
@@ -69,7 +91,7 @@ describe('店铺工作台', () => {
     const groups = Array.from(testUtils.queries.querySelectorAll('.workbench-group'))
     expect(groups).toHaveLength(3)
     expect(groups.map((group) => group.querySelector('.workbench-group__title')?.textContent))
-      .toEqual(['今日处理', '商品与库存', '门店与权限'])
+      .toEqual(['待处理', '商品与库存', '门店与权限'])
     expect(groups.map((group) => group.className)).toEqual([
       'workbench-group workbench-group--ink',
       'workbench-group workbench-group--berry',
@@ -77,23 +99,25 @@ describe('店铺工作台', () => {
     ])
 
     const actions = Array.from(testUtils.queries.querySelectorAll('.workbench-action'))
-    expect(actions).toHaveLength(7)
+    expect(actions).toHaveLength(8)
     expect(actions.map((action) => [
       action.querySelector('.workbench-action__label')?.textContent,
       action.querySelector('.workbench-action__meta')?.textContent,
     ])).toEqual([
       ['预约审核', '确认、拒绝与联系顾客'],
       ['订单处理', '支付确认与履约'],
+      ['预约跟进', '店休待联系 0 · 过期待跟进 0'],
       ['商品管理', '商品、价格与配置'],
       ['库存流水', '变动记录与来源'],
       ['营业日历', '固定店休与单日店休'],
-      ['桌台工作台', '30 桌状态与应急释放'],
+      ['桌台工作台', '待收款 0 · 到时提醒 0'],
       ['用户与权限', '账号状态与资金入口'],
     ])
 
     const urls = [
       '/admin/pages/reservations/index',
       '/admin/pages/orders/index',
+      '/admin/pages/reservation-followups/index',
       '/admin/pages/products/index',
       '/admin/pages/inventory-transactions/index',
       '/admin/pages/store-closures/index',
@@ -313,3 +337,13 @@ async function flush(testUtils: ReactTestUtil): Promise<void> {
     await Promise.resolve()
   })
 }
+
+jest.mock('@/features/attention', () => ({
+  ATTENTION_PAGE: '/pages/attention/index',
+  CustomerAttention: () => null,
+  ReservationAttentionReceipt: () => null,
+  AttentionBadge: () => null,
+  useAttentionSummary: () => ({ summary: undefined, refresh: jest.fn() }),
+}))
+
+jest.mock('@/admin/features/reservation-followup/runtime', () => ({ FOLLOWUP_PATH: '/admin/pages/reservation-followups/index', getFollowupApi: () => ({ counts: jest.fn(async () => ({ server_now: '2026-09-15T00:00:00Z', contact_pending: 0, overdue_pending: 0 })) }) }))

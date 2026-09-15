@@ -8,6 +8,9 @@ import {
   buildReservationDetailUrl,
   formatReservationDate,
   reservationStatusClass,
+  reservationStatusLabel,
+  reservationMessage,
+  useReservationNow,
   RESERVATION_LIST_PATH,
   type ReservationListStatusFilter,
   useReservationList,
@@ -16,13 +19,15 @@ import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
+import { CustomerAttention } from '@/features/attention'
+
 import './index.scss'
 
 const STATUS_FILTERS: ReadonlyArray<{ value: ReservationListStatusFilter; label: string }> = [
   { value: 'all', label: '全部' },
   { value: 'pending', label: '待确认' },
   { value: 'confirmed', label: '已确认' },
-  { value: 'rejected', label: '未能确认' },
+  { value: 'rejected', label: '已拒绝' },
   { value: 'cancelled', label: '已取消' },
 ]
 
@@ -78,6 +83,7 @@ function CustomerReservationsPage({ auth }: { readonly auth: AuthContextValue })
 }
 
 export function AuthenticatedReservations() {
+  const now = useReservationNow()
   const { loadNextPage, retry, setStatusFilter, state, statusFilter } = useReservationList()
   return (
     <View className='reservations-page'>
@@ -85,6 +91,7 @@ export function AuthenticatedReservations() {
         <Text className='reservations-page__title'>我的预约</Text>
         <Text className='reservations-page__subtitle'>门店确认结果会显示在这里</Text>
       </View>
+      <CustomerAttention reservationsOnly />
       <View className='reservations-page__entry'>
         <View className='reservations-page__entry-copy'>
           <Text className='reservations-page__entry-title'>到店时间先约好</Text>
@@ -119,7 +126,7 @@ export function AuthenticatedReservations() {
             <Text>已加载 {state.items.length} 条</Text>
             <Text>共 {state.total} 条</Text>
           </View>
-          {state.items.map((item) => <ReservationCard key={item.id} reservation={item} />)}
+          {state.items.map((item) => <ReservationCard key={item.id} reservation={item} now={now} />)}
           {state.errorMessage && <Text className='reservations-content__error'>{state.errorMessage}</Text>}
           {state.page < state.pages ? (
             <Button
@@ -134,8 +141,8 @@ export function AuthenticatedReservations() {
   )
 }
 
-function ReservationCard({ reservation }: { readonly reservation: Reservation }) {
-  const statusClass = reservationStatusClass(reservation)
+function ReservationCard({ reservation, now }: { readonly reservation: Reservation; readonly now: number }) {
+  const statusClass = reservationStatusClass(reservation, now)
   return (
     <View
       className='reservation-card'
@@ -144,7 +151,7 @@ function ReservationCard({ reservation }: { readonly reservation: Reservation })
       <View className='reservation-card__heading'>
         <Text className='reservation-card__name'>{reservation.product_name ?? '到店预约'}</Text>
         <Text className={`reservation-card__status reservation-card__status--${statusClass}`}>
-          {reservation.status.label}
+          {reservationStatusLabel(reservation, now)}
         </Text>
       </View>
       <Text className='reservation-card__date'>{formatReservationDate(reservation.reservation_date)}</Text>
@@ -153,7 +160,7 @@ function ReservationCard({ reservation }: { readonly reservation: Reservation })
         <Text>{reservation.experience_option_id === null ? '体验项目到店选择 · 时长待定' : `${reservation.duration_minutes} 分钟 · ${reservation.participants} 人`}</Text>
         <Text className='reservation-card__price'>{reservation.price === null ? '费用待确认' : `¥${formatPrice(reservation.price)}`}</Text>
       </View>
-      <Text className='reservation-card__message'>{reservation.customer_message}</Text>
+      <Text className='reservation-card__message'>{reservationMessage(reservation, now)}</Text>
     </View>
   )
 }

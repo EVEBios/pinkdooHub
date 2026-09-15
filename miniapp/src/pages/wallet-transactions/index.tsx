@@ -6,6 +6,7 @@ import { buildLoginUrl, isAdminRole, useAuth, WALLET_TRANSACTION_LIST_PATH } fro
 import { getWalletTransactionLabel, useWalletTransactions } from '@/features/wallet'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
+import { buildCommerceAttentionUrl } from '@/features/attention/commerce'
 
 import './index.scss'
 
@@ -60,6 +61,7 @@ export function AuthenticatedWalletTransactions() {
         <Text className='wallet-ledger-page__title'>每一笔余额变化，都有来路</Text>
         <Text className='wallet-ledger-page__subtitle'>按服务端提交顺序分页展示，余额以每笔交易后的余额为准。</Text>
       </View>
+      <Button className='wallet-ledger-page__results' onClick={() => void Taro.navigateTo({ url: buildCommerceAttentionUrl('wallet') })}>查看门店余额调整结果</Button>
       {state.status === 'loading' && <LedgerState title='正在加载资金明细…' description='正在读取服务端第一页' />}
       {state.status === 'empty' && <LedgerState title='还没有资金记录' description='充值、支付、退款或人工纠错后会显示在这里' />}
       {state.status === 'error' && (

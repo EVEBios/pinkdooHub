@@ -1,3 +1,4 @@
+import { FollowupEntry } from '@/admin/features/reservation-followup/entry'
 import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useRef, useState } from 'react'
@@ -18,11 +19,15 @@ import {
   useAuth,
 } from '@/auth'
 
+import { AttentionBadge, ATTENTION_PAGE, buildCommerceAttentionUrl, useAttentionSummary } from '@/features/attention'
+
+import { useAdminTableOverview } from '@/features/table_session/use_admin_table_overview'
+
 import './index.scss'
 
 const WORKBENCH_GROUPS = [
   {
-    title: '今日处理',
+    title: '待处理',
     description: '先完成需要及时回应的门店事务',
     tone: 'ink',
     actions: [
@@ -86,13 +91,18 @@ export default function AdminWorkbenchPage() {
       </WorkbenchState>
     )
   }
-  return <AuthenticatedWorkbench onLogout={auth.logout} user={auth.user} />
+  return <AuthenticatedWorkbench key={`${auth.user.id}:${auth.user.role}`} onLogout={auth.logout} user={auth.user} />
 }
 
 function AuthenticatedWorkbench({ onLogout, user }: {
   readonly onLogout: () => Promise<void>
   readonly user: NonNullable<ReturnType<typeof useAuth>['user']>
 }) {
+  const attention = useAttentionSummary()
+  const tables = useAdminTableOverview()
+  const reservationCount = attention.summary?.reservation_total ?? 0
+  const actionCount = (url: string) => url === ADMIN_RESERVATION_LIST_PATH ? reservationCount : url === ADMIN_ORDER_LIST_PATH ? attention.summary?.order_total ?? 0 : url === ADMIN_TABLES_PATH ? tables.counts.total : undefined
+  const actionMeta = (url: string, fallback: string) => url === ADMIN_TABLES_PATH ? tables.data ? `待收款 ${tables.counts.payment} · 到时提醒 ${tables.counts.time}` : fallback : !attention.summary ? fallback : url === ADMIN_RESERVATION_LIST_PATH ? `待审核 ${attention.summary.reservation_actionable} · 取消变更 ${attention.summary.reservation_unread}` : url === ADMIN_ORDER_LIST_PATH ? `待付款 ${attention.summary.order_pending} · 待履约 ${attention.summary.order_fulfillment}` : url === ADMIN_TABLES_PATH ? `待付款 ${attention.summary.table_pending} · 核实到账后确认` : fallback
   const logoutInFlightRef = useRef(false)
   const loginNavigationRef = useRef(false)
   const actionNavigationRef = useRef('')
@@ -112,7 +122,7 @@ function AuthenticatedWorkbench({ onLogout, user }: {
     setActiveActionUrl(action.url)
     setActionNavigationFailure(undefined)
     try {
-      await Taro.navigateTo({ url: action.url })
+      await Taro.navigateTo({ url: action.url === ADMIN_RESERVATION_LIST_PATH && attention.summary ? ATTENTION_PAGE : action.url === ADMIN_ORDER_LIST_PATH && attention.summary ? buildCommerceAttentionUrl('orders') : action.url })
     } catch {
       setActionNavigationFailure(action)
     } finally {
@@ -180,6 +190,8 @@ function AuthenticatedWorkbench({ onLogout, user }: {
         <Text className='workbench-page__subtitle'>处理今日事务，维护商品与门店。</Text>
       </View>
 
+      {attention.error && <View className='attention-feedback'><Text>{attention.error}</Text><Button onClick={attention.refresh}>刷新提醒</Button></View>}
+      {tables.error && <View className='attention-feedback'><Text>{tables.error}</Text><Button onClick={tables.refresh}>刷新桌台</Button></View>}
       <View className='workbench-groups'>
         {WORKBENCH_GROUPS.map((group) => (
           <View
@@ -194,18 +206,19 @@ function AuthenticatedWorkbench({ onLogout, user }: {
               {group.actions.map((action) => (
                 <Button
                   key={action.url}
-                  ariaLabel={`${action.label}，${action.meta}${activeActionUrl === action.url ? '，正在打开' : ''}`}
+                  ariaLabel={`${action.label}，${actionCount(action.url) !== undefined && (action.url === ADMIN_TABLES_PATH ? tables.data : attention.summary) ? `${actionCount(action.url)} 件待处理，` : ''}${action.meta}${activeActionUrl === action.url ? '，正在打开' : ''}`}
                   className={`workbench-action${activeActionUrl === action.url ? ' workbench-action--pending' : ''}`}
                   hoverClass='workbench-action--pressed'
                   onClick={() => void openAction(action)}
                 >
                   <View className='workbench-action__copy'>
-                    <Text className='workbench-action__label'>{action.label}</Text>
-                    <Text className='workbench-action__meta'>{action.meta}</Text>
+                    <View className='workbench-action__title-row'><Text className='workbench-action__label'>{action.label}</Text>{actionCount(action.url) !== undefined && <AttentionBadge count={actionCount(action.url)!} />}</View>
+                    <Text className='workbench-action__meta'>{actionMeta(action.url, action.meta)}</Text>
                   </View>
                   <Text className='workbench-action__enter'>进入</Text>
                 </Button>
               ))}
+              {group.title === WORKBENCH_GROUPS[0].title && <FollowupEntry disabled={!!activeActionUrl || loggingOut} open={openAction} />}
             </View>
           </View>
         ))}

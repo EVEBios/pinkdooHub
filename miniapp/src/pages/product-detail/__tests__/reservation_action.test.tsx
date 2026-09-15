@@ -140,3 +140,5 @@ async function flush(testUtils: ReactTestUtil): Promise<void> {
     await Promise.resolve()
   })
 }
+
+jest.mock('@tarojs/taro', () => ({ ...jest.requireActual('@tarojs/taro'), useDidShow: jest.fn(), useDidHide: jest.fn() }))

@@ -169,7 +169,7 @@ describe('ReservationApi customer endpoints', () => {
   it('拒绝状态与原因、时间或顾客文案不一致的响应', async () => {
     await expect(createApi(new FakeTransport({
       ...pendingReservation,
-      status: { value: 'rejected', label: '未能确认' },
+      status: { value: 'rejected', label: '已拒绝' },
       rejection_reason: null,
       customer_message: '随意文案',
     })).getReservation(31)).rejects.toBeInstanceOf(ContractError)
@@ -254,12 +254,14 @@ describe('ReservationApi admin endpoints', () => {
       business_date: '2026-09-06',
       user_id: 9,
       product_id: 7,
+      review_timing: 'overdue',
       ignored: 'hidden',
     } as never)
     expect(result.items[0].user_phone_masked).toBe('138****8000')
     expect(result.items[0]).not.toHaveProperty('user_phone')
     expect(transport.requests[0].url).toContain('status=pending')
     expect(transport.requests[0].url).toContain('business_date=2026-09-06')
+    expect(transport.requests[0].url).toContain('review_timing=overdue')
     expect(transport.requests[0].url).not.toContain('ignored')
 
     await expect(createApi(new FakeTransport(page)).listAdminReservations({ user_id: 10 }))
@@ -275,9 +277,9 @@ describe('ReservationApi admin endpoints', () => {
     }
     const rejected: Reservation = {
       ...pendingReservation,
-      status: { value: 'rejected', label: '未能确认' },
+      status: { value: 'rejected', label: '已拒绝' },
       rejection_reason: { value: 'no_capacity', label: '当前时段无空位' },
-      customer_message: '很抱歉，您选择的时段当前已无空位，本次预约未能确认。您可以选择其他日期或时段重新预约。',
+      customer_message: '很抱歉，您选择的时段当前已无空位，本次预约已被门店拒绝。您可以选择其他日期或时段重新预约。',
       rejected_at: '2026-09-06T02:00:00Z',
     }
     const confirmTransport = new FakeTransport(confirmed)

@@ -1,3 +1,5 @@
+import { attentionStore } from '@/features/attention/runtime'
+import { syncNativeReservationBadge } from '@/features/attention/tab_badge'
 import Taro, { useDidShow } from '@tarojs/taro'
 
 export const ROOT_TAB_INDEX = {
@@ -67,6 +69,8 @@ export function syncRootTabSelection(index: RootTabIndex): void {
 
 export function useRootTabSelection(index: RootTabIndex): void {
   useDidShow(() => {
+    syncNativeReservationBadge()
+    if (attentionStore.state.identity?.endsWith(':user')) void attentionStore.refresh(false)
     if (process.env.TARO_ENV !== 'weapp') return
     syncRootTabSelection(index)
   })

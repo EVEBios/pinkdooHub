@@ -1,3 +1,4 @@
+import { FollowupPanel } from '@/admin/features/reservation-followup/panel'
 import { Button, Text, View } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 
@@ -8,10 +9,16 @@ import {
   formatShanghaiUtc,
   parseReservationDetailRoute,
   reservationStatusClass,
+  reservationStatusLabel,
+  reservationMessage,
+  isReservationOverdue,
+  useReservationNow,
   type AdminReservationAction,
   useAdminReservationDetail,
 } from '@/features/reservation'
 import { formatPrice } from '@/utils/format'
+
+import { ReservationAttentionReceipt } from '@/features/attention'
 
 import './index.scss'
 
@@ -44,10 +51,11 @@ export default function AdminReservationDetailPage() {
   if (!isAdminRole(auth.user?.role)) {
     return <AdminReservationDetailState title='无管理权限' description='当前账号不会请求任何管理预约 API' />
   }
-  return <AuthenticatedAdminReservationDetail reservationId={route.reservationId} />
+  return <AuthenticatedAdminReservationDetail key={`${auth.user?.id}:${route.reservationId}`} reservationId={route.reservationId} />
 }
 
 export function AuthenticatedAdminReservationDetail({ reservationId }: { readonly reservationId: number }) {
+  const now = useReservationNow()
   const detail = useAdminReservationDetail(reservationId)
   if (detail.detail.status === 'loading') {
     return <AdminReservationDetailState title='正在加载预约…' description='正在读取顾客联系方式与预约状态' />
@@ -68,7 +76,7 @@ export function AuthenticatedAdminReservationDetail({ reservationId }: { readonl
   const mutationLocked = detail.mutation.status === 'submitting' || detail.mutation.status === 'unknown'
 
   async function confirmAction(action: AdminReservationAction): Promise<void> {
-    if (item.status.value !== 'pending' || mutationLocked) return
+    if (item.status.value !== 'pending' || isReservationOverdue(item, now) || mutationLocked) return
     const rejecting = action === 'reject'
     const confirmation = await Taro.showModal({
       title: rejecting ? '因无空位拒绝预约？' : '确认接受预约？',
@@ -88,8 +96,8 @@ export function AuthenticatedAdminReservationDetail({ reservationId }: { readonl
       <View className='admin-reservation-detail-heading'>
         <View className='admin-reservation-detail-heading__topline'>
           <Text className='admin-reservation-detail-heading__title'>管理预约详情</Text>
-          <Text className={`admin-reservation-detail-heading__status admin-reservation-detail-heading__status--${reservationStatusClass(item)}`}>
-            {item.status.label}
+          <Text className={`admin-reservation-detail-heading__status admin-reservation-detail-heading__status--${reservationStatusClass(item, now)}`}>
+            {reservationStatusLabel(item, now)}
           </Text>
         </View>
         <Text className='admin-reservation-detail-heading__name'>{item.product_name ?? '到店预约'}</Text>
@@ -97,12 +105,16 @@ export function AuthenticatedAdminReservationDetail({ reservationId }: { readonl
         <Text className='admin-reservation-detail-heading__time'>{item.start_time}{item.end_time ? `–${item.end_time}` : ' 到店'}</Text>
       </View>
 
+      <ReservationAttentionReceipt admin reservation={item} refreshDetail={detail.retry} />
+
       <View className='admin-reservation-customer'>
         <Text className='admin-reservation-customer__title'>顾客联系方式</Text>
         <AdminFact label='顾客' value={item.user_nickname} />
         <AdminFact label='手机号' value={item.user_phone ?? '未登记'} />
         <AdminFact label='用户 ID' value={`#${item.user_id}`} />
       </View>
+
+      {(item.cancellation_reason?.value === 'store_closed' || isReservationOverdue(item, now)) && <FollowupPanel key={`${item.id}:${item.cancellation_reason?.value}`} reservationId={item.id} kind={item.cancellation_reason?.value === 'store_closed' ? 'contact' : 'overdue'} phone={item.user_phone} />}
 
       <View className='admin-reservation-facts'>
         <Text className='admin-reservation-facts__title'>预约快照</Text>
@@ -115,12 +127,12 @@ export function AuthenticatedAdminReservationDetail({ reservationId }: { readonl
         {item.cancellation_reason && <AdminFact label='取消原因' value={item.cancellation_reason.label} />}
       </View>
 
-      <View className={`admin-reservation-message admin-reservation-message--${reservationStatusClass(item)}`}>
+      <View className={`admin-reservation-message admin-reservation-message--${reservationStatusClass(item, now)}`}>
         <Text className='admin-reservation-message__label'>顾客侧当前文案</Text>
-        <Text>{item.customer_message}</Text>
+        <Text>{reservationMessage(item, now)}</Text>
       </View>
 
-      {item.status.value === 'pending' && (
+      {item.status.value === 'pending' && !isReservationOverdue(item, now) && (
         <View className='admin-reservation-decision'>
           <Text className='admin-reservation-decision__title'>处理待确认预约</Text>
           <Text className='admin-reservation-decision__hint'>首版不自动防超额，请根据现场座位人工判断。预约开始后服务端会拒绝操作。</Text>

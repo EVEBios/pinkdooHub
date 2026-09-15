@@ -32,6 +32,7 @@ jest.mock('@tarojs/taro', () => {
   return {
     __esModule: true,
     ...actual,
+    useDidShow: jest.fn(),
     default: actual.default,
     useRouter: () => ({ params: { table_intent: mockTableIntentId } }),
   }
@@ -176,6 +177,8 @@ describe('OrderConfirmPage', () => {
   let testUtils: ReactTestUtil
 
   beforeEach(() => {
+    jest.spyOn(Taro, 'getStorage').mockRejectedValue({ errMsg: 'getStorage:fail data not found' })
+    jest.spyOn(Taro, 'setStorage').mockResolvedValue({ errMsg: 'setStorage:ok' })
     testUtils = new ReactTestUtil()
     mockTableIntentId = undefined
     mockAuth = {
@@ -319,7 +322,7 @@ describe('OrderConfirmPage', () => {
     expect(rows[0].textContent).toContain('1小时 · 2人 · 工作日')
     expect(rows[1].textContent).not.toContain('工作日')
     expect(testUtils.queries.querySelector('.order-confirm-page__notice')?.textContent)
-      .toContain('后端重新校验')
+      .toContain('实际金额和库存将在提交时确认')
 
     const remark = testUtils.queries.querySelector('.order-confirm-remark__input')
     const submit = testUtils.queries.querySelector('.order-confirm-page__submit')
@@ -336,7 +339,7 @@ describe('OrderConfirmPage', () => {
     }))
     testUtils.fireEvent.click(submit)
 
-    expect(mockSubmit).toHaveBeenCalledWith(cartItems, '周五晚上到店')
+    expect(mockSubmit).toHaveBeenCalledWith(cartItems, '周五晚上到店', undefined)
   })
 
   it('提交期间禁用按钮并显示明确进行中状态', async () => {
@@ -548,6 +551,44 @@ describe('OrderConfirmPage', () => {
     expect(mockLoadPendingTableEntry).not.toHaveBeenCalled()
     expect(mockClearPendingTableEntry).not.toHaveBeenCalled()
     expect(Taro.reLaunch).not.toHaveBeenCalled()
+  })
+
+  it('从普通购物车入口也读取扫码选桌并提交开台参数', async () => {
+    jest.spyOn(Taro, 'getStorage').mockResolvedValue({ errMsg: 'getStorage:ok', data: {
+      selection: { tableNo: 'T08', selectionId: 'selection-one', savedAt: Date.now() },
+    } })
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+    expect(requireElement(testUtils, '.table-selector__title').textContent).toContain('T08')
+    const submit = requireElement(testUtils, '.order-confirm-page__submit')
+    expect(submit.textContent).toBe('确认订单并开台')
+    testUtils.fireEvent.click(submit)
+    expect(mockSubmit).toHaveBeenCalledWith(cartItems, '', { userId: 7, tableNo: 'T08' })
+  })
+
+  it('过期选桌不能静默变成普通下单', async () => {
+    jest.spyOn(Taro, 'getStorage').mockResolvedValue({ errMsg: 'getStorage:ok', data: {
+      selection: { tableNo: 'T08', selectionId: 'selection-one', savedAt: Date.now() - 3 * 60 * 60 * 1000 },
+    } })
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+    expect(requireElement(testUtils, '.order-confirm-page').textContent).toContain('选桌已失效')
+    testUtils.fireEvent.click(requireElement(testUtils, '.order-confirm-page__submit'))
+    expect(mockSubmit).not.toHaveBeenCalled()
+  })
+
+  it('购物车已空也能找回未确认的原开台提交', async () => {
+    const originalRequest = { items: [{ product_id: 1, experience_option_id: 11, quantity: 1 }],
+      table_no: 'T08', table_checkout_key: 'original-key', remark: '原备注' }
+    jest.spyOn(Taro, 'getStorage').mockResolvedValue({ errMsg: 'getStorage:ok', data: {
+      attempt: { request: originalRequest, items: cartItems, selectionId: 'selection-one' },
+    } })
+    mockCart = { ...mockCart, items: [] }
+    await testUtils.mount(OrderConfirmPage)
+    await flush(testUtils)
+    expect(requireElement(testUtils, '.order-confirm-state__title').textContent).toContain('核对上次开台订单')
+    testUtils.fireEvent.click(requireElement(testUtils, '.order-confirm-state__action'))
+    expect(mockSubmit).toHaveBeenCalledWith(cartItems, '原备注', { userId: 7, tableNo: 'T08' })
   })
 
   it('其他用户不能消费原用户的桌台意图', async () => {

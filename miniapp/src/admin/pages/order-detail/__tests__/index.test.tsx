@@ -162,15 +162,27 @@ describe('AuthenticatedAdminOrderDetail', () => {
     jest.clearAllMocks()
   })
 
-  it('Pending 只显示标记已支付，确认框明示不改库存', async () => {
+  it('Pending 显示确认收款并核对本次是否启动桌台', async () => {
     await testUtils.mount(AuthenticatedAdminOrderDetail, { props: { orderId: 101 } })
     const page = requireElement(testUtils, '.admin-order-detail-page')
     expect(page.textContent).toContain('用户：#7 · 开发用户')
     expect(page.textContent).toContain('标记为已支付')
     testUtils.fireEvent.click(requireElement(testUtils, '.admin-order-detail-page__transition'))
     await flush(testUtils)
-    expect(Taro.showModal).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('不改变库存') }))
+    expect(Taro.showModal).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('不启动桌台'),
+      confirmText: '确认收款',
+    }))
+    expect(Array.from(showModalSpy.mock.calls[0][0]!.confirmText!).length).toBeLessThanOrEqual(4)
     expect(mockAdvanceStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('取消收款弹窗时不更新订单状态', async () => {
+    showModalSpy.mockResolvedValueOnce({ confirm: false, cancel: true, errMsg: 'showModal:ok' })
+    await testUtils.mount(AuthenticatedAdminOrderDetail, { props: { orderId: 101 } })
+    testUtils.fireEvent.click(requireElement(testUtils, '.admin-order-detail-page__transition'))
+    await flush(testUtils)
+    expect(mockAdvanceStatus).not.toHaveBeenCalled()
   })
 
   it('Paid 只显示完成订单', async () => {
@@ -352,3 +364,5 @@ function input(testUtils: ReactTestUtil, element: Element, value: string): void 
   const fireCustomEvent = testUtils.fireEvent as unknown as (target: Element, event: Event) => void
   fireCustomEvent(element, new CustomEvent('input', { bubbles: true, detail: { value } }))
 }
+
+jest.mock('@/features/table_session/runtime', () => ({ getDefaultTableSessionApi: () => ({ getAdminOrderSession: jest.fn(async () => null) }) }))

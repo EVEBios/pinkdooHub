@@ -1,4 +1,5 @@
 import {
+  BusinessError,
   ContractError,
   HttpError,
   NetworkError,
@@ -6,6 +7,8 @@ import {
   TimeoutError,
 } from '@/api'
 import type { OrderCreateRequest, OrderDetail } from '@/api/endpoints/orders'
+import { shoppingTableStore, type ShoppingTableStore } from '@/features/table_session/shopping_table'
+
 
 import {
   buildOrderItems,
@@ -15,6 +18,9 @@ import {
   type CartItem,
   type CartReconciliationResult,
 } from './cart'
+
+
+export interface OrderTableSelection { readonly userId: number; readonly tableNo: string }
 
 export const ORDER_REMARK_LIMIT = 500
 
@@ -44,6 +50,7 @@ export type OrderSubmissionState =
   | ({ readonly status: 'unknown'; readonly error: OrderSubmissionUnknownError } & SubmissionSnapshot)
 
 export type OrderSubmissionUnknownError =
+  | BusinessError
   | NetworkError
   | TimeoutError
   | RequestCancelledError
@@ -67,6 +74,7 @@ export class OrderSubmissionStore {
   constructor(
     private readonly orderCreator: OrderCreator,
     private readonly cartReconciler?: CartSubmissionReconciler,
+    private readonly tableStore: ShoppingTableStore = shoppingTableStore,
   ) {}
 
   getState(): OrderSubmissionState {
@@ -78,13 +86,13 @@ export class OrderSubmissionStore {
     return () => this.listeners.delete(listener)
   }
 
-  submit(items: readonly CartItem[], remark?: string | null): Promise<void> {
+  submit(items: readonly CartItem[], remark?: string | null, table?: OrderTableSelection): Promise<void> {
     if (this.activeSubmission) {
       return this.activeSubmission
     }
 
     const snapshot = buildSubmissionSnapshot(items, remark)
-    const submission = this.performSubmission(snapshot)
+    const submission = table ? this.performTableSubmission(snapshot, table) : this.performSubmission(snapshot)
     this.activeSubmission = submission
     void submission.finally(() => {
       if (this.activeSubmission === submission) {
@@ -101,19 +109,37 @@ export class OrderSubmissionStore {
     this.setState({ status: 'idle' })
   }
 
-  private async performSubmission(snapshot: SubmissionSnapshot): Promise<void> {
+  private async performTableSubmission(snapshot: SubmissionSnapshot, table: OrderTableSelection): Promise<void> {
+    this.setState({ status: 'submitting', ...snapshot })
+    try {
+      const previous = await this.tableStore.load(table.userId)
+      const attempt = await this.tableStore.prepare(table.userId,
+        { ...snapshot.request, table_no: table.tableNo }, snapshot.submittedItems)
+      await this.performSubmission({ request: attempt.request, submittedItems: attempt.items }, table.userId, !!previous.attempt)
+    } catch (cause) {
+      this.setState({ status: 'failed', ...snapshot, error: toError(cause) })
+    }
+  }
+
+  private async performSubmission(snapshot: SubmissionSnapshot, tableUserId?: number, restored = false): Promise<void> {
     this.setState({ status: 'submitting', ...snapshot })
     try {
       const order = await this.orderCreator.createOrder(snapshot.request)
       let cartReconciliation: CartReconciliationResult | undefined
       let cartReconciliationError: Error | undefined
       try {
-        cartReconciliation = await this.cartReconciler?.reconcileSubmittedItems(
-          snapshot.submittedItems,
-        )
+        if (restored) {
+          cartReconciliationError = new Error('已恢复原订单。购物车保留现有商品，请核对并移除已购买的项目。')
+        } else {
+          cartReconciliation = await this.cartReconciler?.reconcileSubmittedItems(snapshot.submittedItems)
+        }
       } catch (cause) {
         // Order 已由服务端创建成功；本地清理失败只能作为成功结果的附加警告。
         cartReconciliationError = toError(cause)
+      }
+      if (tableUserId && snapshot.request.table_checkout_key) {
+        try { await this.tableStore.finish(tableUserId, snapshot.request.table_checkout_key, true) }
+        catch (cause) { cartReconciliationError = toError(cause) }
       }
       this.setState({
         status: 'succeeded',
@@ -124,6 +150,10 @@ export class OrderSubmissionStore {
       })
     } catch (cause) {
       const error = toError(cause)
+      if (tableUserId && snapshot.request.table_checkout_key && !isOrderCommandUnknownError(error)) {
+        try { await this.tableStore.finish(tableUserId, snapshot.request.table_checkout_key, false) }
+        catch { error.message += "；本地记录暂未清理，下次将继续核对同一笔订单" }
+      }
       this.setState(isOrderCommandUnknownError(error)
         ? { status: 'unknown', ...snapshot, error }
         : { status: 'failed', ...snapshot, error })
@@ -209,7 +239,8 @@ export function isOrderCommandUnknownError(error: Error): error is OrderSubmissi
     error instanceof TimeoutError ||
     error instanceof RequestCancelledError ||
     error instanceof ContractError ||
-    (error instanceof HttpError && (error.statusCode ?? 0) >= 500)
+    (error instanceof HttpError && (error.statusCode ?? 0) >= 500) ||
+    (error instanceof BusinessError && (error.statusCode ?? 0) >= 500 && error.statusCode !== 503)
 }
 
 function toError(cause: unknown): Error {

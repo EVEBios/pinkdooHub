@@ -3,6 +3,12 @@ import type { TableSession } from '@/api/endpoints/table_sessions'
 const BOUNDARY_REFRESH_SAFETY_MS = 100
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 
+export function tableCountdown(endsAt: string, now: number): string {
+  const seconds = Math.max(0, Math.ceil((Date.parse(endsAt) - now) / 1_000))
+  return [Math.floor(seconds / 3_600), Math.floor(seconds / 60) % 60, seconds % 60]
+    .map((value) => String(value).padStart(2, '0')).join(':')
+}
+
 export function nextSessionBoundaryDelay(session: TableSession): number | undefined {
   const serverNow = Date.parse(session.server_now)
   if (!Number.isFinite(serverNow) || session.status.value === 'closed') return undefined

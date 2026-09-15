@@ -1,3 +1,4 @@
+import { attentionStore } from '@/features/attention/runtime'
 import { useCallback, useRef, useState } from 'react'
 
 import type { WalletPaymentResult } from '@/api/endpoints/wallet'
@@ -13,7 +14,7 @@ export type OrderPaymentState =
   | { readonly status: 'failed' | 'unknown'; readonly errorMessage: string }
 
 export interface OrderPaymentSource {
-  payOrderWithWallet(orderId: number, idempotencyKey: string): Promise<WalletPaymentResult>
+  payOrderWithWallet(orderId: number, idempotencyKey: string, tableSessionNo?: string): Promise<WalletPaymentResult>
 }
 
 export function useOrderPayment(
@@ -25,14 +26,17 @@ export function useOrderPayment(
   const activeRef = useRef<Promise<boolean>>()
   const keyRef = useRef<string>()
 
-  const payWithWallet = useCallback((): Promise<boolean> => {
+  const payWithWallet = useCallback((tableSessionNo?: string): Promise<boolean> => {
     if (activeRef.current) return activeRef.current
     keyRef.current ??= createKey('payment')
     const key = keyRef.current
     const active = (async () => {
       setState({ status: 'submitting' })
       try {
-        const result = await source.payOrderWithWallet(orderId, key)
+        const result = tableSessionNo
+          ? await source.payOrderWithWallet(orderId, key, tableSessionNo)
+          : await source.payOrderWithWallet(orderId, key)
+        attentionStore.invalidate(false)
         keyRef.current = undefined
         setState({ status: 'succeeded', result })
         return true

@@ -12,18 +12,18 @@
     min-height: 100vh;
   }
 
-  &__cancel,
-  &__back {
-    width: 100%;
-    margin-top: 18px;
-  }
-
   &__cancel {
     @include pd.danger-button(14px);
   }
 
   &__back {
     @include pd.primary-button(14px);
+  }
+
+  &__cancel,
+  &__back {
+    width: 100%;
+    margin-top: 18px;
   }
 }
 

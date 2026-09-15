@@ -257,3 +257,11 @@
     grid-column: 1 / -1;
   }
 }
+
+/* stylelint-disable selector-class-pattern -- 与既有预约 BEM 状态类保持一致。 */
+.admin-reservation-detail-heading__status--overdue,
+.admin-reservation-message--overdue {
+  color: var(--pd-color-ink-soft);
+  background: var(--pd-color-surface-muted);
+}
+/* stylelint-enable selector-class-pattern */

@@ -149,6 +149,23 @@ function createOrderApi(transport: HttpTransport, authSession: AuthSession = cre
 }
 
 describe('OrderApi.createOrder', () => {
+  it('管理员收款携带确认过的精确桌台会话', async () => {
+    const transport = new FakeTransport(paidStatus)
+    const api = createOrderApi(transport)
+    const sessionNo = `TS${'1'.repeat(26)}`
+    await api.markOrderPaid(101, sessionNo)
+    expect(transport.requests[0].headers).toMatchObject({ 'Table-Session-No': sessionNo })
+  })
+
+  it('开台结算不会被请求白名单丢掉桌台号或原幂等键', async () => {
+    const transport = new FakeTransport(orderDetail)
+    const api = createOrderApi(transport)
+    const request = { items: [{ product_id: 1, experience_option_id: 10, quantity: 1 }],
+      table_no: 'T08', table_checkout_key: 'original-checkout-key' }
+    await api.createOrder(request)
+    expect(transport.requests[0].body).toEqual(request)
+  })
+
   it('使用 Bearer POST Experience/Kit 最小白名单请求并省略 Kit option', async () => {
     const transport = new FakeTransport(orderDetail)
     const api = createOrderApi(transport)

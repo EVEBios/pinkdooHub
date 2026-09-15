@@ -4,13 +4,14 @@ import type { CartItem } from './cart'
 import { getDefaultCartRuntime, getDefaultOrderCreator } from './runtime'
 import {
   type OrderCreator,
+  type OrderTableSelection,
   type OrderSubmissionState,
   OrderSubmissionStore,
 } from './submission'
 
 export interface UseOrderSubmissionResult {
   readonly state: OrderSubmissionState
-  submit(items: readonly CartItem[], remark?: string | null): Promise<void>
+  submit(items: readonly CartItem[], remark?: string | null, table?: OrderTableSelection): Promise<void>
   reset(): void
 }
 
@@ -25,8 +26,8 @@ export function useOrderSubmission(orderCreator?: OrderCreator): UseOrderSubmiss
 
   useEffect(() => store.subscribe(setState), [store])
 
-  const submit = useCallback((items: readonly CartItem[], remark?: string | null) => (
-    store.submit(items, remark)
+  const submit = useCallback((items: readonly CartItem[], remark?: string | null, table?: OrderTableSelection) => (
+    store.submit(items, remark, table)
   ), [store])
   const reset = useCallback(() => store.reset(), [store])
 

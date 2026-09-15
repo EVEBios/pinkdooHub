@@ -1,3 +1,4 @@
+import { attentionStore } from '@/features/attention/runtime'
 import { useDidShow } from '@tarojs/taro'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -144,6 +145,7 @@ export function useTableEntry(
         )
         if (result.order_id !== session.order_id) throw new Error('支付结果与当前订单不一致')
         paymentKeyRef.current = undefined
+        attentionStore.invalidate(false)
         await refresh(true)
         return true
       } catch (cause) {

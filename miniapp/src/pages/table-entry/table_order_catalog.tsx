@@ -10,16 +10,14 @@ import {
   type ProductTypeFilter,
   useProductList,
 } from '@/features/product/use_product_list'
-import {
-  buildTableOrderConfirmUrl,
-  clearPendingTableEntry,
-  savePendingTableEntry,
-} from '@/features/table_session'
+import { rememberScannedTable } from '@/features/table_session/table_selector'
+import { shoppingTableStore } from '@/features/table_session/shopping_table'
 import { moneyToCents } from '@/features/wallet'
 import { resolveAssetUrl } from '@/utils/asset_url'
 import { formatPrice } from '@/utils/format'
 
 interface TableOrderCatalogProps {
+  readonly tableNo: string
   readonly claiming: boolean
   readonly orders: readonly EligibleOrder[]
   readonly token: string
@@ -28,6 +26,7 @@ interface TableOrderCatalogProps {
 }
 
 export function TableOrderCatalog({
+  tableNo,
   claiming,
   onSelectOrder,
   orders,
@@ -40,6 +39,28 @@ export function TableOrderCatalog({
   const hasExperience = cart.items.some((item) => item.productType === 'experience')
   const itemCount = cart.items.length
   const totalCents = calculateCartTotal(cart.items)
+
+  const [selectionReady, setSelectionReady] = useState(false)
+  const [selectionError, setSelectionError] = useState<string>()
+  const [selectionRevision, setSelectionRevision] = useState(0)
+  useEffect(() => {
+    let active = true
+    setSelectionReady(false)
+    void rememberScannedTable(userId, tableNo).then((selected) => {
+      if (active) {
+        setSelectionReady(selected)
+        setSelectionError(selected ? undefined : '已保留原桌台，可前往购物车继续结算')
+      }
+    }).catch((cause) => { if (active) setSelectionError(cause instanceof Error ? cause.message : '保存桌台失败，请重试') })
+    return () => { active = false }
+  }, [userId, tableNo, selectionRevision])
+  if (!selectionReady) return <View>
+    <Text>{selectionError ?? '正在记录本次桌台…'}</Text>
+    {selectionError && <>
+      <Button className='table-action' onClick={() => setSelectionRevision((value) => value + 1)}>重新选择本桌</Button>
+      <Button className='table-action--secondary' onClick={() => void Taro.switchTab({ url: '/pages/cart/index' })}>查看购物车</Button>
+    </>}
+  </View>
 
   return (
     <>
@@ -321,7 +342,7 @@ async function openProduct(product: ProductListItem): Promise<void> {
 }
 
 async function continueToOrder(
-  token: string,
+  _token: string,
   userId: number,
   hasExperience: boolean,
 ): Promise<void> {
@@ -329,13 +350,12 @@ async function continueToOrder(
     await Taro.showToast({ title: '开台订单至少需要一个体验项目', icon: 'none' })
     return
   }
-  let intent: Awaited<ReturnType<typeof savePendingTableEntry>> | undefined
   try {
-    intent = await savePendingTableEntry(token, userId)
-    await Taro.navigateTo({ url: buildTableOrderConfirmUrl(intent.intentId) })
+    const saved = await shoppingTableStore.load(userId)
+    if (!saved.selection) throw new Error('请重新选择桌台')
+    await Taro.navigateTo({ url: '/pages/order-confirm/index' })
   } catch {
-    if (intent) await clearPendingTableEntry(intent).catch(() => undefined)
-    await Taro.showToast({ title: '无法保存桌台，请重新扫码', icon: 'none' })
+    await Taro.showToast({ title: '无法读取桌台，请重试', icon: 'none' })
   }
 }
 

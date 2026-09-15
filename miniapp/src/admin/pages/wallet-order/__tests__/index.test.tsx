@@ -268,7 +268,9 @@ describe('AdminWalletOrderPage', () => {
 
     expect(Taro.showModal).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.stringMatching(/已选：A01 · 白色 20g、A02 · 米白 10g[\s\S]*¥2\.50 \/ 10g[\s\S]*合计：2 种颜色 · 30g[\s\S]*预计扣款：¥7\.50/),
+      confirmText: '确认扣款',
     }))
+    expect(Array.from(jest.mocked(Taro.showModal).mock.calls[0][0]!.confirmText!).length).toBeLessThanOrEqual(4)
     expect(mockCreateOrder).toHaveBeenCalledWith({
       items: [
         { product_id: 8, kit_color_id: 81, quantity: 2 },

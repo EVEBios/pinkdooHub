@@ -14,6 +14,8 @@ import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
+import { ShoppingTableBanner } from '@/features/table_session/table_selector'
+
 import './index.scss'
 
 type CartMutationRunner = (item: CartItem, mutation: () => Promise<void>) => Promise<void>
@@ -134,8 +136,9 @@ function CustomerCartPage() {
             />
           ))}
       </View>
+      <ShoppingTableBanner />
       <View className='cart-page__next-step'>
-        <Text>本地价格仅供预览；订单确认页不会把名称、配置或价格发送给后端。</Text>
+        <Text>请在确认订单页核对商品、数量和本次桌台。</Text>
         <Button
           className='cart-page__checkout'
           onClick={() => void Taro.navigateTo({ url: '/pages/order-confirm/index' })}

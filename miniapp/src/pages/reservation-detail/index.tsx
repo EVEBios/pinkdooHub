@@ -10,11 +10,17 @@ import {
   formatShanghaiUtc,
   parseReservationDetailRoute,
   reservationStatusClass,
+  reservationStatusLabel,
+  reservationMessage,
+  isReservationOverdue,
+  useReservationNow,
   RESERVATION_LIST_PATH,
   useReservationDetail,
 } from '@/features/reservation'
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
+
+import { ReservationAttentionReceipt } from '@/features/attention'
 
 import './index.scss'
 
@@ -72,6 +78,7 @@ function CustomerReservationDetailPage({ auth }: { readonly auth: AuthContextVal
 }
 
 export function AuthenticatedReservationDetail({ reservationId }: { readonly reservationId: number }) {
+  const now = useReservationNow()
   const { cancel, cancellation, detail, retry } = useReservationDetail(reservationId)
 
   if (detail.status === 'loading') {
@@ -90,7 +97,7 @@ export function AuthenticatedReservationDetail({ reservationId }: { readonly res
   }
 
   const item = detail.reservation
-  const cancellable = canRequestReservationCancellation(item)
+  const cancellable = canRequestReservationCancellation(item) && !isReservationOverdue(item, now)
   const mutationUnknown = cancellation.status === 'unknown'
 
   async function confirmCancellation(): Promise<void> {
@@ -109,8 +116,8 @@ export function AuthenticatedReservationDetail({ reservationId }: { readonly res
       <View className='reservation-detail-heading'>
         <View className='reservation-detail-heading__topline'>
           <Text className='reservation-detail-heading__title'>预约详情</Text>
-          <Text className={`reservation-detail-heading__status reservation-detail-heading__status--${reservationStatusClass(item)}`}>
-            {item.status.label}
+          <Text className={`reservation-detail-heading__status reservation-detail-heading__status--${reservationStatusClass(item, now)}`}>
+            {reservationStatusLabel(item, now)}
           </Text>
         </View>
         <Text className='reservation-detail-heading__name'>{item.product_name ?? '到店预约'}</Text>
@@ -118,9 +125,11 @@ export function AuthenticatedReservationDetail({ reservationId }: { readonly res
         <Text className='reservation-detail-heading__clock'>{item.start_time}{item.end_time ? `–${item.end_time}` : ' 到店'}</Text>
       </View>
 
-      <View className={`reservation-detail-message reservation-detail-message--${reservationStatusClass(item)}`}>
-        <Text>{item.customer_message}</Text>
+      <View className={`reservation-detail-message reservation-detail-message--${reservationStatusClass(item, now)}`}>
+        <Text>{reservationMessage(item, now)}</Text>
       </View>
+
+      <ReservationAttentionReceipt reservation={item} refreshDetail={retry} />
 
       <ReservationFacts reservation={item} />
 
@@ -166,7 +175,7 @@ function ReservationFacts({ reservation }: { readonly reservation: Reservation }
       <Fact label='预约价格' value={reservation.price === null ? '到店选定项目后确认费用' : `¥${formatPrice(reservation.price)} · 到店支付`} />
       <Fact label='预约编号' value={`#${reservation.id}`} />
       <Fact label='提交时间' value={`${formatShanghaiUtc(reservation.created_at)}（北京时间）`} />
-      {reservation.rejection_reason && <Fact label='未能确认原因' value={reservation.rejection_reason.label} />}
+      {reservation.rejection_reason && <Fact label='拒绝原因' value={reservation.rejection_reason.label} />}
       {reservation.cancellation_reason && <Fact label='取消原因' value={reservation.cancellation_reason.label} />}
     </View>
   )

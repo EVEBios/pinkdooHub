@@ -22,6 +22,7 @@ import ReservationDetailPage, { AuthenticatedReservationDetail } from '@/pages/r
 import ReservationsPage, { AuthenticatedReservations } from '@/pages/reservations'
 
 let mockAuth: AuthContextValue
+let mockPresentationNow = Date.parse('2026-09-06T02:00:00Z')
 let mockReservationListState: Record<string, unknown>
 let mockReservationDetailState: Record<string, unknown>
 let mockAdminListState: Record<string, unknown>
@@ -41,7 +42,7 @@ const mockUseRootTabSelection = jest.fn()
 
 jest.mock('@tarojs/taro', () => {
   const actual = jest.requireActual('@tarojs/taro')
-  return { ...actual, useRouter: () => ({ params: { id: '31' } }) }
+  return { ...actual, useDidHide: jest.fn(), useDidShow: jest.fn(), useRouter: () => ({ params: { id: '31' } }) }
 })
 
 jest.mock('@/auth', () => ({
@@ -52,6 +53,8 @@ jest.mock('@/auth', () => ({
 }))
 
 jest.mock('@/features/reservation', () => ({
+  ...jest.requireActual('../presentation'),
+  useReservationNow: () => mockPresentationNow,
   ADMIN_RESERVATION_LIST_PATH: '/admin/pages/reservations/index',
   ADMIN_STORE_CLOSURE_LIST_PATH: '/admin/pages/store-closures/index',
   RESERVATION_LIST_PATH: '/pages/reservations/index',
@@ -70,7 +73,6 @@ jest.mock('@/features/reservation', () => ({
     status: draft.status,
   } }),
   parseReservationDetailRoute: () => ({ reservationId: 31 }),
-  reservationStatusClass: (reservation: Reservation) => reservation.status.value,
   useAdminReservationDetail: () => mockUseAdminReservationDetail(),
   useAdminReservationList: () => mockUseAdminReservationList(),
   useReservationDetail: () => mockUseReservationDetail(),
@@ -142,6 +144,7 @@ describe('Reservation N1 页面集成', () => {
   const showModalSpy = jest.spyOn(Taro, 'showModal')
 
   beforeEach(() => {
+    mockPresentationNow = Date.parse('2026-09-06T02:00:00Z')
     testUtils = new ReactTestUtil()
     mockAuth = authenticated('user')
     mockReservationListState = {
@@ -294,6 +297,20 @@ describe('Reservation N1 页面集成', () => {
     const confirmedButton = required(testUtils, '.reservation-detail-cancellation__action') as HTMLButtonElement
     expect(confirmedButton.disabled).toBe(true)
     expect(confirmedButton.textContent).toContain('先核对')
+  })
+
+  it('到开始时间的预约显示已过期，管理详情不再给出审核按钮', async () => {
+    mockPresentationNow = Date.parse(pendingReservation.scheduled_start_at)
+    await testUtils.mount(AuthenticatedAdminReservations)
+    expect(required(testUtils, '.admin-reservation-card__status').textContent).toBe('已过期未处理')
+    testUtils.unmout()
+    testUtils = new ReactTestUtil()
+    await testUtils.mount(AuthenticatedAdminReservationDetail, { props: { reservationId: 31 } })
+    expect(required(testUtils, '.admin-reservation-detail-heading__status').textContent).toBe('已过期未处理')
+    expect(required(testUtils, '.admin-reservation-message').textContent).toContain('预约时间已过')
+    expect(testUtils.queries.querySelector('.admin-reservation-decision__actions')).toBeNull()
+    expect(mockConfirm).not.toHaveBeenCalled()
+    expect(mockReject).not.toHaveBeenCalled()
   })
 
   it('顾客不能挂载管理 hooks', async () => {
@@ -476,3 +493,11 @@ async function flush(testUtils: ReactTestUtil): Promise<void> {
     await Promise.resolve()
   })
 }
+
+jest.mock('@/features/attention', () => ({
+  ATTENTION_PAGE: '/pages/attention/index',
+  CustomerAttention: () => null,
+  ReservationAttentionReceipt: () => null,
+  AttentionBadge: () => null,
+  useAttentionSummary: () => ({ summary: undefined, refresh: jest.fn() }),
+}))

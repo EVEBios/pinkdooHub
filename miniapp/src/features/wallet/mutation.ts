@@ -8,6 +8,8 @@ import {
   TimeoutError,
 } from '@/api'
 
+import { getTableErrorMessage } from '@/features/table_session/errors'
+
 export function isWalletMutationUnknown(error: Error): boolean {
   return error instanceof NetworkError || error instanceof TimeoutError ||
     error instanceof RequestCancelledError || error instanceof ContractError ||
@@ -19,6 +21,7 @@ export function isWalletMutationUnknown(error: Error): boolean {
 export function getWalletErrorMessage(error: Error, fallback: string): string {
   if (error instanceof SessionExpiredError) return '登录状态已失效，请重新登录'
   if (error instanceof BusinessError) {
+    if ([40461, 40462, 40463, 40961, 40962, 40963, 40964, 40965, 40966, 42261].includes(error.code)) return getTableErrorMessage(error)
     if (error.code === 40441) return '钱包不存在或不可见'
     if (error.code === 40941) return '调整后余额必须保持在 0.00–1000.00 元'
     if (error.code === 40942) return '钱包余额不足，请选择微信支付或先调整订单'

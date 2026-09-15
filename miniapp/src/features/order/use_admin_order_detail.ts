@@ -1,3 +1,5 @@
+import { getTableErrorMessage } from '@/features/table_session/errors'
+import { attentionStore } from '@/features/attention/runtime'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { BusinessError, SessionExpiredError } from '@/api'
@@ -27,7 +29,7 @@ export type AdminOrderTransitionState =
 
 export interface AdminOrderDetailSource {
   getAdminOrderDetail(orderId: number): Promise<AdminOrderDetail>
-  markOrderPaid(orderId: number): Promise<OrderStatusResult>
+  markOrderPaid(orderId: number, tableSessionNo?: string): Promise<OrderStatusResult>
   completeOrder(orderId: number): Promise<OrderStatusResult>
 }
 
@@ -35,7 +37,7 @@ export interface AdminOrderDetailFeature {
   readonly detail: AdminOrderDetailState
   readonly transition: AdminOrderTransitionState
   retry(): void
-  advanceStatus(): Promise<void>
+  advanceStatus(tableSessionNo?: string): Promise<void>
 }
 
 export function useAdminOrderDetail(
@@ -68,7 +70,7 @@ export function useAdminOrderDetail(
     }
   }, [load])
 
-  const advanceStatus = useCallback((): Promise<void> => {
+  const advanceStatus = useCallback((tableSessionNo?: string): Promise<void> => {
     if (activeTransitionRef.current) {
       return activeTransitionRef.current
     }
@@ -84,8 +86,9 @@ export function useAdminOrderDetail(
       setTransition({ status: 'submitting', action })
       try {
         const result = action === 'mark_paid'
-          ? await source.markOrderPaid(orderId)
+          ? tableSessionNo ? await source.markOrderPaid(orderId, tableSessionNo) : await source.markOrderPaid(orderId)
           : await source.completeOrder(orderId)
+        attentionStore.invalidate(true)
         setDetail({
           status: 'content',
           order: { ...currentOrder, status: result.status, updated_at: result.updated_at },
@@ -157,6 +160,7 @@ function getDetailErrorMessage(cause: unknown): string {
 
 function getTransitionErrorMessage(error: Error): string {
   if (error instanceof BusinessError) {
+    if ([40962, 40966].includes(error.code)) return getTableErrorMessage(error)
     if (error.code === 40921) {
       return '订单状态已变化，详情已按服务端结果重新加载'
     }

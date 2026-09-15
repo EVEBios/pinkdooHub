@@ -7,6 +7,8 @@ import type { AuthContextValue } from '@/auth'
 import type { CartContextValue } from '@/features/order'
 import type { PendingTableEntryIntent, TableEntryState } from '@/features/table_session'
 
+import { shoppingTableStore } from '@/features/table_session/shopping_table'
+
 import TableEntryPage from '../index'
 
 const token = 'Aa0123456789BbCcDdEeFfGgHhIiJjKk'
@@ -47,6 +49,8 @@ const product: ProductListItem = {
 jest.mock('@tarojs/taro', () => ({
   __esModule: true,
   default: {
+    getStorage: jest.fn(),
+    setStorage: jest.fn(),
     navigateTo: jest.fn(() => Promise.resolve()),
     redirectTo: jest.fn(() => Promise.resolve()),
     showModal: jest.fn(() => Promise.resolve({ confirm: true, cancel: false })),
@@ -54,6 +58,8 @@ jest.mock('@tarojs/taro', () => ({
     switchTab: jest.fn(() => Promise.resolve()),
   },
   useRouter: () => ({ params: { token } }),
+  useDidHide: jest.fn(),
+  useDidShow: jest.fn(),
 }))
 
 jest.mock('@/auth', () => ({
@@ -152,6 +158,15 @@ describe('扫码开台页面视觉状态', () => {
   let testUtils: ReactTestUtil
 
   beforeEach(() => {
+    const storage = new Map<string, unknown>()
+    jest.spyOn(Taro, 'getStorage').mockImplementation(async ({ key }) => {
+      if (!storage.has(key)) throw { errMsg: 'getStorage:fail data not found' }
+      return { data: storage.get(key), errMsg: 'getStorage:ok' }
+    })
+    jest.spyOn(Taro, 'setStorage').mockImplementation(async ({ key, data }) => {
+      storage.set(key, data)
+      return { errMsg: 'setStorage:ok' }
+    })
     testUtils = new ReactTestUtil()
     mockIntentId = undefined
     mockOrderId = undefined
@@ -179,6 +194,7 @@ describe('扫码开台页面视觉状态', () => {
 
   it('使用方案 3 的桌台商品目录并在页头展示可开台胶囊', async () => {
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-hero__title').textContent).toBe('T01号桌')
     expect(required(testUtils, '.table-status--success').textContent).toBe('可开台')
@@ -204,6 +220,7 @@ describe('扫码开台页面视觉状态', () => {
     mockIntentId = tableIntentId
     mockOrderId = order.id
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     const home = required(testUtils, '.table-hero__home')
     expect(home.getAttribute('aria-label')).toBe('返回商城首页')
@@ -220,6 +237,7 @@ describe('扫码开台页面视觉状态', () => {
   it.each(['loading', 'error'] as const)('%s 状态也保留返回商城入口', async (status) => {
     mockEntryState = { ...mockEntryState, status }
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     const home = required(testUtils, '.table-hero__home')
     testUtils.fireEvent.click(home)
@@ -229,20 +247,22 @@ describe('扫码开台页面视觉状态', () => {
   it('无既有订单时仍直接展示可选商品而不是要求先去商城建单', async () => {
     mockEntryState = { ...mockEntryState, orders: [] }
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-catalog__title').textContent).toBe('为本桌选择项目')
     expect(testUtils.queries.querySelector('.table-empty')).toBeNull()
     expect(required(testUtils, '.table-cart-bar__action').textContent).toBe('先选择体验')
   })
 
-  it('从商品卡进入配置时不武装可被普通商城订单消费的桌台意图', async () => {
+  it('扫码后进入商品详情前已保存本次购物桌台', async () => {
     mockEntryState = { ...mockEntryState, orders: [] }
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     testUtils.fireEvent.click(required(testUtils, '.table-product'))
     await flush(testUtils)
 
-    expect(mockSavePendingTableEntry).not.toHaveBeenCalled()
+    expect((await shoppingTableStore.load(7)).selection?.tableNo).toBe('T01')
     expect(Taro.navigateTo).toHaveBeenCalledWith({
       url: '/pages/product-detail/index?id=13&type=experience',
     })
@@ -262,6 +282,7 @@ describe('扫码开台页面视觉状态', () => {
       quantity: 1,
     }])
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-cart-bar__total').textContent).toBe('合计 ¥59.00')
     const action = required(testUtils, '.table-cart-bar__action')
@@ -269,13 +290,13 @@ describe('扫码开台页面视觉状态', () => {
     testUtils.fireEvent.click(action)
     await flush(testUtils)
 
-    expect(mockSavePendingTableEntry).toHaveBeenCalledWith(token, 7)
+    expect((await shoppingTableStore.load(7)).selection?.tableNo).toBe('T01')
     expect(Taro.navigateTo).toHaveBeenCalledWith({
-      url: `/pages/order-confirm/index?table_intent=${tableIntentId}`,
+      url: '/pages/order-confirm/index',
     })
   })
 
-  it('桌台确认页导航失败时精确清理未交付的意图', async () => {
+  it('确认页导航失败仍保留本次桌台以便从购物车恢复', async () => {
     mockEntryState = { ...mockEntryState, orders: [] }
     mockCart = createCart([{
       productId: 13,
@@ -290,13 +311,14 @@ describe('扫码开台页面视觉状态', () => {
     }])
     ;(Taro.navigateTo as jest.Mock).mockRejectedValueOnce(new Error('navigation failed'))
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     testUtils.fireEvent.click(required(testUtils, '.table-cart-bar__action'))
     await flush(testUtils)
 
-    expect(mockClearPendingTableEntry).toHaveBeenCalledWith(pendingIntent)
+    expect((await shoppingTableStore.load(7)).selection?.tableNo).toBe('T01')
     expect(Taro.showToast).toHaveBeenCalledWith({
-      title: '无法保存桌台，请重新扫码',
+      title: '无法读取桌台，请重试',
       icon: 'none',
     })
   })
@@ -305,6 +327,7 @@ describe('扫码开台页面视觉状态', () => {
     mockIntentId = tableIntentId
     mockOrderId = order.id
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-ready__title').textContent).toBe('确认绑定本桌')
     expect(required(testUtils, '.table-order__number').textContent).toBe(order.order_no)
@@ -320,6 +343,7 @@ describe('扫码开台页面视觉状态', () => {
     mockOrderId = order.id
     mockClaim.mockResolvedValueOnce(false)
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     testUtils.fireEvent.click(required(testUtils, '.table-ready > .table-action'))
     await flush(testUtils)
@@ -333,6 +357,7 @@ describe('扫码开台页面视觉状态', () => {
     mockOrderId = order.id
     mockAuth = createAuth('guest')
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     testUtils.fireEvent.click(required(testUtils, '.table-state .table-action'))
 
@@ -348,6 +373,7 @@ describe('扫码开台页面视觉状态', () => {
     mockOrderId = order.id
     mockEntryState = { ...mockEntryState, orders: [] }
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
     await flush(testUtils)
 
     expect(testUtils.queries.querySelector('.table-catalog')).toBeNull()
@@ -371,6 +397,7 @@ describe('扫码开台页面视觉状态', () => {
     mockGetOrderSession.mockResolvedValue(createSession('closed'))
     await testUtils.mount(TableEntryPage)
     await flush(testUtils)
+    await flush(testUtils)
 
     expect(mockGetOrderDetail).toHaveBeenCalledWith(order.id)
     expect(mockGetOrderSession).toHaveBeenCalledWith(order.id)
@@ -391,6 +418,7 @@ describe('扫码开台页面视觉状态', () => {
     mockGetOrderDetail.mockResolvedValue({ status: { value: 'cancelled' } })
     await testUtils.mount(TableEntryPage)
     await flush(testUtils)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-ready__eyebrow').textContent).toBe('订单已取消')
     expect(required(testUtils, '.table-ready__title').textContent).toBe('这笔订单不能再次开台')
@@ -403,6 +431,7 @@ describe('扫码开台页面视觉状态', () => {
     mockGetOrderDetail.mockRejectedValue(new Error('network unavailable'))
     await testUtils.mount(TableEntryPage)
     await flush(testUtils)
+    await flush(testUtils)
 
     expect(testUtils.queries.querySelector('.table-catalog')).toBeNull()
     expect(required(testUtils, '.table-ready').textContent).toContain('避免重复下单')
@@ -411,6 +440,7 @@ describe('扫码开台页面视觉状态', () => {
 
   it('直接选择既有订单 claim 成功不清理无关桌台意图', async () => {
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     testUtils.fireEvent.click(required(testUtils, '.table-existing-orders__toggle'))
     testUtils.fireEvent.click(required(testUtils, '.table-existing-order'))
@@ -424,9 +454,11 @@ describe('扫码开台页面视觉状态', () => {
     mockIntentId = tableIntentId
     mockOrderId = order.id
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     const focusedActions = testUtils.queries.querySelectorAll('.table-ready > .table-action')
     testUtils.fireEvent.click(focusedActions[1])
+    await flush(testUtils)
     testUtils.fireEvent.click(required(testUtils, '.table-existing-orders__toggle'))
     testUtils.fireEvent.click(required(testUtils, '.table-existing-order'))
     await flush(testUtils)
@@ -445,6 +477,7 @@ describe('扫码开台页面视觉状态', () => {
       errorMessage: '网络连接失败',
     }
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-status--danger').textContent).toBe('读取失败')
     expect(required(testUtils, '.table-state').textContent).toContain('网络连接失败')
@@ -462,6 +495,7 @@ describe('扫码开台页面视觉状态', () => {
       errorMessage: 'Table code not found',
     }
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-state__description').textContent)
       .toBe('没有找到对应桌台，请确认二维码来自门店并保持完整。')
@@ -474,6 +508,7 @@ describe('扫码开台页面视觉状态', () => {
   ] as const)('会话 %s 状态沿用统一页头与操作层级', async (status, label, action) => {
     mockEntryState = { ...mockEntryState, session: createSession(status), orders: [] }
     await testUtils.mount(TableEntryPage)
+    await flush(testUtils)
 
     expect(required(testUtils, '.table-status').textContent).toBe(label)
     expect(required(testUtils, '.table-session').textContent).toContain(action)

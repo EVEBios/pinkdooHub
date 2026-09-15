@@ -26,6 +26,8 @@ import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { resolveAssetUrl } from '@/utils/asset_url'
 import { formatColorLabel, formatPrice } from '@/utils/format'
 
+import { ShoppingTableBanner } from '@/features/table_session/table_selector'
+
 import './index.scss'
 
 export default function ProductDetailPage() {
@@ -110,6 +112,7 @@ function ExperienceDetail({ detail }: { detail: ExperienceProductDetail }) {
   return (
     <View className='product-detail'>
       <ProductHeading detail={detail} />
+      <ShoppingTableBanner />
       <View className='product-detail__section'>
         <Text className='product-detail__section-title'>选择有效配置</Text>
         <Text className='product-detail__section-hint'>每一项都是服务端实际可用的完整组合</Text>
@@ -208,6 +211,7 @@ function KitDetail({ detail }: { detail: KitProductDetail }) {
   return (
     <View className='product-detail'>
       <ProductHeading detail={detail} />
+      <ShoppingTableBanner />
       <View className='product-detail__section product-detail__kit-summary'>
         <Text className='product-detail__selected-price'>¥{formatPrice(detail.price)}</Text>
         <Text className={detail.available ? 'product-detail__available' : 'product-detail__sold-out'}>
@@ -280,6 +284,7 @@ export function ColorSelectableKitDetail({ detail }: { detail: KitProductDetail 
   return (
     <View className='product-detail'>
       <ProductHeading detail={detail} />
+      <ShoppingTableBanner />
       <View className='product-detail__section color-kit-summary'>
         <Text className='product-detail__selected-price'>¥{formatPrice(detail.price)} / 10g</Text>
         <Text className={detail.available ? 'product-detail__available' : 'product-detail__sold-out'}>

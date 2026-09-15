@@ -138,8 +138,8 @@ export class OrderApi {
     return parsed
   }
 
-  async markOrderPaid(orderId: number): Promise<OrderStatusResult> {
-    return this.transitionAdminOrder(orderId, 'paid')
+  async markOrderPaid(orderId: number, tableSessionNo?: string): Promise<OrderStatusResult> {
+    return this.transitionAdminOrder(orderId, 'paid', tableSessionNo)
   }
 
   async completeOrder(orderId: number): Promise<OrderStatusResult> {
@@ -149,8 +149,10 @@ export class OrderApi {
   private async transitionAdminOrder(
     orderId: number,
     targetStatus: 'paid' | 'completed',
+    tableSessionNo?: string,
   ): Promise<OrderStatusResult> {
     assertOrderId(orderId)
+    if (tableSessionNo !== undefined && !/^TS[0-9A-HJKMNP-TV-Z]{26}$/.test(tableSessionNo)) throw new Error('桌台会话无效')
     const action = targetStatus === 'paid' ? 'markPaid' : 'complete'
     const pathAction = targetStatus === 'paid' ? 'paid' : 'complete'
     const operation = `orders.admin.${action}`
@@ -159,6 +161,7 @@ export class OrderApi {
       path: `/api/v1/admin/orders/${orderId}/${pathAction}`,
       method: 'PATCH',
       auth: 'required',
+      ...(tableSessionNo ? { headers: { 'Table-Session-No': tableSessionNo } } : {}),
     })
     const parsed = parseOrderStatusResult(result)
     if (!parsed || parsed.status.value !== targetStatus) {
@@ -212,9 +215,11 @@ function projectOrderCreateRequest(request: OrderCreateRequest): OrderCreateRequ
     }
   })
 
-  return request.remark === undefined
-    ? { items }
-    : { items, remark: request.remark }
+  return {
+    items,
+    ...(request.remark === undefined ? {} : { remark: request.remark }),
+    ...(request.table_no == null ? {} : { table_no: request.table_no, table_checkout_key: request.table_checkout_key }),
+  }
 }
 
 export function parseOrderDetail(value: unknown): OrderDetail | undefined {

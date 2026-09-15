@@ -860,6 +860,8 @@
 
 .table-action--secondary {
   @include pd.secondary-button(14px);
+
+  margin-top: 18px;
 }
 
 .table-action--secondary[disabled='false'] {

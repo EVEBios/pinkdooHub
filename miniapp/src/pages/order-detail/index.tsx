@@ -22,6 +22,10 @@ import {
 import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
 import { formatPrice } from '@/utils/format'
 
+import { CommerceReceipt } from '@/features/attention'
+
+import { OrderTablePanel, useOrderTable } from '@/features/table_session/order_table'
+
 import './index.scss'
 
 export default function OrderDetailPage() {
@@ -76,11 +80,12 @@ function CustomerOrderDetailPage({ auth }: { readonly auth: AuthContextValue }) 
       </DetailState>
     )
   }
-  return <AuthenticatedOrderDetail orderId={route.orderId} />
+  return <AuthenticatedOrderDetail key={`${auth.user?.id}:${route.orderId}`} orderId={route.orderId} />
 }
 
 export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number }) {
-  const { cancel, cancellation, detail, retry } = useOrderDetail(orderId)
+  const { cancel, cancellation, detail, retry, refresh } = useOrderDetail(orderId)
+  const table = useOrderTable(orderId)
   const financial = useOrderFinancial(orderId)
   const payment = useOrderPayment(orderId)
   const resetPayment = payment.reset
@@ -102,6 +107,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
   }, [paymentReconciliationConverged, resetPayment])
 
   function reconcilePayment(): void {
+    void table.refresh()
     setReconcilingPayment(true)
     financial.retry()
     retry()
@@ -133,7 +139,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
     payment.state.status === 'submitting' || payment.state.status === 'unknown' ||
     payment.state.status === 'succeeded'
   const canCancel = financialConfirmsPending && !paymentBlocksCancellation &&
-    activeMutation === undefined &&
+    activeMutation === undefined && !table.claiming &&
     (cancellation.status === 'idle' || cancellation.status === 'failed')
 
   function acquireMutation(intent: 'cancel' | 'payment'): boolean {
@@ -169,6 +175,18 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
   return (
     <View className='order-detail-page'>
       <OrderHeading order={detail.order} />
+      <OrderTablePanel table={table} pending={detail.order.status.value === 'pending'}
+        hasExperience={detail.order.items.some((item) => item.experience_option_id != null)}
+        disabled={paymentBlocksCancellation || activeMutation !== undefined}
+      />
+      <CommerceReceipt scope='orders' target={orderId} revision={detail.order.updated_at}
+        linkedSessionNo={!table.loading && !table.error ? table.session?.session_no : undefined}
+        onResult={() => { refresh(); financial.retry(); void table.refresh() }}
+      />
+      {detail.refreshErrorMessage && <View className='order-payment__feedback order-payment__feedback--error'>
+        <Text>订单更新失败：{detail.refreshErrorMessage}。当前显示上次读取的内容。</Text>
+        <Button className='order-payment__retry' onClick={() => { refresh(); financial.retry() }}>重新核对订单与资金</Button>
+      </View>}
       <View className='order-detail-list'>
         {detail.order.items.map((item) => (
           <View className='order-detail-item' key={item.id}>
@@ -195,9 +213,10 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
         <OrderPaymentPanel
           acquireMutation={acquireMutation}
           financial={financial}
-          mutationLocked={activeMutation !== undefined}
+          mutationLocked={activeMutation !== undefined || table.blocked}
           order={detail.order}
           payment={payment}
+          tableSessionNo={table.session?.session_no}
           reconciling={reconcilingPayment}
           releaseMutation={releaseMutation}
           rechecking={paymentRecheckInFlight}
@@ -235,6 +254,7 @@ export function AuthenticatedOrderDetail({ orderId }: { readonly orderId: number
 }
 
 function OrderPaymentPanel({
+  tableSessionNo,
   acquireMutation,
   financial,
   mutationLocked,
@@ -247,6 +267,7 @@ function OrderPaymentPanel({
   releaseMutation,
 }: {
   readonly order: OrderDetail
+  readonly tableSessionNo?: string
   readonly financial: ReturnType<typeof useOrderFinancial>
   readonly payment: ReturnType<typeof useOrderPayment>
   readonly reconciling: boolean
@@ -277,12 +298,12 @@ function OrderPaymentPanel({
     try {
       const confirmation = await Taro.showModal({
         title: '确认使用余额支付？',
-        content: `将从会员余额扣除 ¥${formatPrice(order.total_amount)}。支付与订单状态会在同一服务端事务中提交。`,
+        content: `将从会员余额扣除 ¥${formatPrice(order.total_amount)}。如订单已关联有效桌台，支付成功后开始计时。`,
         confirmText: '确认支付',
         confirmColor: '#a92e51',
       })
       if (!confirmation.confirm) return
-      if (await payment.payWithWallet()) {
+      if (await payment.payWithWallet(tableSessionNo)) {
         member.retry()
         onPaid()
       }
