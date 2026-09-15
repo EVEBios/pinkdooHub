@@ -4,6 +4,12 @@
 
 ---
 
+## M9 恢复候选 E：精确模式与流水线前置检查（2026-09-15）
+
+- 安全解压同时冻结 operations 内容 SHA-256 与 `0644`/`0755` 精确模式；加载前继续执行原有所有权、文件类型、单链接、稳定身份和 digest 校验。修复 D 的合法 Git 执行位被误拒绝的问题，不修改现场权限或 Record schema。
+- 测试归档保留真实 Git 模式，补双向 mode drift、异常清理与真实 archive/Linux root 检查；隔离测试使用 `-I -B`，移除 PYTHONPATH 测试注入。
+- 新增只读源码契约预检，在 updater 安装依赖前拒绝超出 M9 发布器能力的迁移树。详细状态见 [M9 恢复记录](../09_release/reports/gatea_m9_recovery_preflight_2026-09-15.md)；尚无 E 的 CI/stage/finalize 成功证据。
+
 ## M9 二维码开台与多时长计时（仓库实现候选，2026-09-10）
 
 - 新增固定桌台、桌台会话、时长计时器和当前占用四个 Model/Repository/Schema/Mapper/Service/Validator，提供 M9 MySQL 迁移及 `T01`–`T30` 受控引导。环境专属 Token 为 32 位大小写敏感字母数字；普通占位二维码使用 `PINKDOOHUB_TABLE:v1:<token>`，清单只留 SHA-256 摘要，正式微信小程序码替换另行立项。

@@ -186,6 +186,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check candidate source contract before installing dependencies
+        run: python3 -B scripts/ci/check_gatea_source_contract.py
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -198,6 +201,11 @@ jobs:
           python -m pip install --upgrade "pip==${PIP_VERSION}"
           python -m pip install --requirement requirements.txt
           python -m pip check
+
+      - name: Check real Git archive loader under Linux root
+        run: |
+          sudo "$(command -v python)" -B -m pytest -p no:cacheprovider -q \
+            tests/release/test_gatea_candidate.py::test_real_git_archive_freezes_executable_operations_and_loads
 
       - name: Rehearse the complete Gate A M7 to M9 updater
         run: |

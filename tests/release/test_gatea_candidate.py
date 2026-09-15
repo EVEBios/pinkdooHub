@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from contextlib import nullcontext
+from functools import lru_cache
 import hashlib
 from io import BytesIO
 import json
@@ -72,12 +73,27 @@ def _source_members(candidate_script: bytes = b"candidate launcher\n") -> dict[s
     }
 
 
+@lru_cache(maxsize=1)
+def _git_file_modes() -> dict[str, int]:
+    """Preserve executable bits from Git instead of guessing from extensions."""
+    result = subprocess.run(
+        ("git", "ls-tree", "-r", "HEAD"),
+        cwd=Path(__file__).resolve().parents[2],
+        check=True, capture_output=True, text=True,
+    )
+    return {
+        line.split("\t", 1)[1]: (0o755 if line.startswith("100755 ") else 0o644)
+        for line in result.stdout.splitlines()
+    }
+
+
 def _write_source_tar(
     path: Path,
     *,
     commit: str = TARGET_SHA,
     members: dict[str, bytes] | None = None,
     special: tuple[str, bytes, int] | None = None,
+    modes: dict[str, int] | None = None,
 ) -> None:
     with tarfile.open(
         path,
@@ -88,7 +104,7 @@ def _write_source_tar(
         for name, content in (members or _source_members()).items():
             info = tarfile.TarInfo(name)
             info.size = len(content)
-            info.mode = 0o755 if name.endswith(".sh") else 0o644
+            info.mode = (modes or {}).get(name, _git_file_modes().get(name, 0o644))
             archive.addfile(info, BytesIO(content))
         if special is not None:
             name, content, member_type = special
@@ -106,7 +122,7 @@ def _write_source_directory(
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
-        path.chmod(0o755 if name.endswith(".sh") else 0o644)
+        path.chmod(_git_file_modes().get(name, 0o644))
     root.chmod(0o755)
 
 
@@ -1895,6 +1911,13 @@ def _isolated_takeover_sitecustomize_source() -> str:
 
             def verify_github_provenance(**kwargs):
                 record("provenance")
+                drift_mode = os.environ.get("GATEA_ISOLATED_DRIFT_MODE")
+                if drift_mode is not None:
+                    operations = (
+                        Path(kwargs["source_root"])
+                        / "scripts/release/gatea_operations.py"
+                    )
+                    operations.chmod(int(drift_mode, 8))
                 if drift_after_provenance:
                     operations = (
                         Path(kwargs["source_root"])
@@ -1936,7 +1959,9 @@ def _write_canonical_json(path: Path, payload: object, *, mode: int) -> None:
     path.chmod(mode)
 
 
-def _isolated_takeover_stage_case(tmp_path: Path) -> SimpleNamespace:
+def _isolated_takeover_stage_case(
+    tmp_path: Path, *, operations_mode: int | None = None
+) -> SimpleNamespace:
     repository_root = Path(__file__).resolve().parents[2]
     isolated_root = tmp_path / "isolated"
     launcher_dir = isolated_root / "launcher"
@@ -1970,7 +1995,12 @@ def _isolated_takeover_stage_case(tmp_path: Path) -> SimpleNamespace:
     members["scripts/release/gatea_backup.py"] = b"# isolated backup module\n"
     members["scripts/release/gatea_upgrade.py"] = b"# isolated upgrade module\n"
     source_archive = isolated_root / "source.tar"
-    _write_source_tar(source_archive, members=members)
+    _write_source_tar(
+        source_archive, members=members,
+        modes={} if operations_mode is None else {
+            "scripts/release/gatea_operations.py": operations_mode
+        },
+    )
     source_archive.chmod(0o600)
     ci_artifact = isolated_root / "artifact.zip"
     _write_ci_zip(ci_artifact)
@@ -2110,7 +2140,7 @@ def _isolated_takeover_stage_case(tmp_path: Path) -> SimpleNamespace:
     environment = os.environ.copy()
     environment.pop("GITHUB_TOKEN", None)
     environment["PYTHONNOUSERSITE"] = "1"
-    environment["PYTHONPATH"] = str(hook_dir)
+    environment.pop("PYTHONPATH", None)
     environment.update(
         {
             "GATEA_ISOLATED_REPOSITORY_ROOT": str(repository_root),
@@ -2131,8 +2161,12 @@ def _isolated_takeover_stage_case(tmp_path: Path) -> SimpleNamespace:
     assert python3.is_file()
     command = (
         str(python3),
+        "-I",
         "-B",
-        str(launcher),
+        "-c",
+        # Explicit test instrumentation survives -I without ambient import paths.
+        f"import runpy; runpy.run_path({str(sitecustomize)!r}); "
+        f"runpy.run_path({str(launcher)!r}, run_name='__main__')",
         "stage",
         "--source-archive",
         str(source_archive),
@@ -2204,10 +2238,11 @@ def _isolated_takeover_stage_case(tmp_path: Path) -> SimpleNamespace:
     )
 
 
+@pytest.mark.parametrize("operations_mode", (0o644, 0o755))
 def test_takeover_stage_cli_loads_only_verified_archive_operations(
-    tmp_path: Path,
+    tmp_path: Path, operations_mode: int,
 ) -> None:
-    case = _isolated_takeover_stage_case(tmp_path)
+    case = _isolated_takeover_stage_case(tmp_path, operations_mode=operations_mode)
 
     result = subprocess.run(
         case.command,
@@ -2273,15 +2308,17 @@ def test_takeover_stage_cli_rejects_archive_module_drift_before_execution(
     assert not any(case.staging_root.iterdir())
 
 
+@pytest.mark.parametrize("operations_mode", (0o644, 0o755))
 def test_verified_stage_operations_executes_real_dataclass_module_in_isolation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    operations_mode: int,
 ) -> None:
     source_root = tmp_path / "source"
     operations_path = source_root / "scripts/release/gatea_operations.py"
     operations_path.parent.mkdir(parents=True)
     operations_path.write_bytes(Path(gatea_operations.__file__).read_bytes())
-    operations_path.chmod(0o644)
+    operations_path.chmod(operations_mode)
     source_root.chmod(0o755)
     monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
     monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
@@ -2299,6 +2336,7 @@ def test_verified_stage_operations_executes_real_dataclass_module_in_isolation(
         source_root=source_root,
         target_sha=TARGET_SHA,
         expected_sha256=candidate._sha256(operations_path),
+        expected_mode=operations_mode,
     ) as facade:
         private_module = sys.modules[private_name]
         assert facade.APPROVED_TARGET_M9_CHAIN == tuple(M9_CHAIN)
@@ -2316,6 +2354,8 @@ def test_verified_stage_operations_executes_real_dataclass_module_in_isolation(
     assert not any(source_root.rglob("__pycache__"))
 
     for interruption in (
+        RuntimeError("context failure"),
+        SystemExit(17),
         candidate.GateACandidateOperationInterrupted("SIGTERM test"),
         KeyboardInterrupt("SIGINT test"),
     ):
@@ -2324,11 +2364,14 @@ def test_verified_stage_operations_executes_real_dataclass_module_in_isolation(
                 source_root=source_root,
                 target_sha=TARGET_SHA,
                 expected_sha256=candidate._sha256(operations_path),
+                expected_mode=operations_mode,
             ):
                 assert private_name in sys.modules
                 raise interruption
         assert private_name not in sys.modules
         assert sys.modules["scripts.release.gatea_operations"] is canonical_module
+        assert tuple(sys.path) == original_sys_path
+        assert not any(source_root.rglob("__pycache__"))
 
 
 @pytest.mark.parametrize(
@@ -2336,18 +2379,26 @@ def test_verified_stage_operations_executes_real_dataclass_module_in_isolation(
     (
         pytest.param(b"def invalid(:\n", id="syntax-error"),
         pytest.param(b"raise SystemExit(17)\n", id="system-exit"),
+        pytest.param(b"raise KeyboardInterrupt()\n", id="keyboard-interrupt"),
+        pytest.param(
+            b"from scripts.release.gatea_candidate import GateACandidateOperationInterrupted\n"
+            b"raise GateACandidateOperationInterrupted('test')\n",
+            id="operation-interrupted",
+        ),
     ),
 )
+@pytest.mark.parametrize("operations_mode", (0o644, 0o755))
 def test_verified_stage_operations_cleans_private_module_after_load_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     source: bytes,
+    operations_mode: int,
 ) -> None:
     source_root = tmp_path / "source"
     operations_path = source_root / "scripts/release/gatea_operations.py"
     operations_path.parent.mkdir(parents=True)
     operations_path.write_bytes(source)
-    operations_path.chmod(0o644)
+    operations_path.chmod(operations_mode)
     source_root.chmod(0o755)
     monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
     monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
@@ -2356,19 +2407,21 @@ def test_verified_stage_operations_cleans_private_module_after_load_failure(
     private_name = f"_pinkdoohub_gatea_stage_operations_{TARGET_SHA}"
     canonical_module = sys.modules["scripts.release.gatea_operations"]
 
+    original_sys_path = tuple(sys.path)
     with pytest.raises(
-        candidate.GateACandidateError,
-        match="operations source could not be loaded",
+        KeyboardInterrupt if b"KeyboardInterrupt" in source else candidate.GateACandidateError,
     ):
         with candidate._verified_stage_operations(
             source_root=source_root,
             target_sha=TARGET_SHA,
             expected_sha256=candidate._sha256(operations_path),
+            expected_mode=operations_mode,
         ):
             pytest.fail("invalid operations source unexpectedly loaded")
 
     assert private_name not in sys.modules
     assert sys.modules["scripts.release.gatea_operations"] is canonical_module
+    assert tuple(sys.path) == original_sys_path
     assert not any(source_root.rglob("__pycache__"))
 
 
@@ -7405,3 +7458,127 @@ def test_retire_failed_acceptance_rejects_impossible_or_competing_states(
     case.pending.chmod(0o600)
     with pytest.raises(candidate.GateACandidateError, match="incomplete"):
         candidate.retire_failed_acceptance(**case.arguments)
+
+
+@pytest.mark.parametrize("before,after", ((0o755, 0o644), (0o644, 0o755)))
+def test_takeover_stage_rejects_mode_drift_before_execution(
+    tmp_path: Path, before: int, after: int,
+) -> None:
+    case = _isolated_takeover_stage_case(tmp_path, operations_mode=before)
+    case.environment["GATEA_ISOLATED_DRIFT_MODE"] = f"{after:o}"
+    result = subprocess.run(
+        case.command, cwd=case.working_dir, env=case.environment,
+        check=False, text=True, capture_output=True,
+    )
+    assert result.returncode == 1
+    assert "source changed after provenance" in result.stderr
+    assert case.events.read_text().splitlines() == [
+        "first-scan", "provenance", "second-scan",
+    ]
+    assert not case.target_pending_path.exists()
+    assert not case.target_stage_path.exists()
+    assert not (case.release_root / TARGET_SHA).exists()
+    assert not any(case.staging_root.iterdir())
+
+
+def test_real_git_archive_freezes_executable_operations_and_loads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    # CI runs this one test as root against the runner-owned checkout.
+    # Trust only this explicit path, never a global wildcard safe.directory.
+    git = ("git", "-c", f"safe.directory={repository}")
+    head = subprocess.check_output(
+        (*git, "rev-parse", "HEAD"), cwd=repository, text=True,
+    ).strip()
+    archive = tmp_path / "source.tar"
+    with archive.open("wb") as output:
+        subprocess.run(
+            (*git, "archive", "--format=tar", head, "--",
+             *sorted(candidate.REQUIRED_SOURCE_FILES)),
+            cwd=repository, stdout=output, check=True,
+        )
+    with tarfile.open(archive) as stream:
+        member = stream.getmember("scripts/release/gatea_operations.py")
+        assert member.mode & 0o111
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    evidence = candidate._extract_source_archive(archive, source_root, target_sha=head)
+    assert evidence["gatea_operations_mode"] == 0o755
+    if os.getuid() != 0 or os.getgid() != 0:
+        _mock_host_guards(monkeypatch)
+        monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
+        monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
+    with candidate._verified_stage_operations(
+        source_root=source_root, target_sha=head,
+        expected_sha256=evidence["gatea_operations_sha256"],
+        expected_mode=evidence["gatea_operations_mode"],
+    ) as facade:
+        assert facade.APPROVED_TARGET_M9_CHAIN == tuple(M9_CHAIN)
+    assert not any(source_root.rglob("__pycache__"))
+
+
+@pytest.mark.parametrize("drift", (
+    "mode-644", "mode-755", "mode-777", "mode-600", "symlink", "fifo",
+    "hardlink", "content",
+))
+def test_operations_rechecks_frozen_metadata_before_compiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drift: str,
+) -> None:
+    source = tmp_path / "source"
+    path = source / "scripts/release/gatea_operations.py"
+    path.parent.mkdir(parents=True)
+    source.chmod(0o755)
+    path.write_bytes(Path(gatea_operations.__file__).read_bytes())
+    expected_mode = 0o644 if drift == "mode-755" else 0o755
+    path.chmod(expected_mode)
+    digest = candidate._sha256(path)
+    if drift.startswith("mode-"):
+        path.chmod(int(drift.removeprefix("mode-"), 8))
+    elif drift in {"symlink", "fifo"}:
+        path.unlink()
+        if drift == "symlink":
+            path.symlink_to(Path(gatea_operations.__file__))
+        else:
+            os.mkfifo(path, 0o644)
+    elif drift == "hardlink":
+        os.link(path, path.with_suffix(".alias"))
+    else:
+        path.write_bytes(path.read_bytes() + b"\n# changed\n")
+    monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
+    monkeypatch.setattr(candidate, "ROOT_GID", os.getgid())
+    monkeypatch.setattr(candidate, "_require_root_directory", lambda *args: None)
+    # Retain file type/mode guards on this non-root host; FIFO must fail before open.
+    def require_file(file: Path, mode: int, description: str) -> None:
+        metadata = file.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != mode:
+            raise candidate.GateACandidateError(f"{description} has unsafe permissions")
+    monkeypatch.setattr(candidate, "_require_root_file", require_file)
+    def fail_compile(*args: object, **kwargs: object) -> None:
+        pytest.fail("drifted source was compiled")
+    monkeypatch.setattr(candidate, "compile", fail_compile, raising=False)
+    canonical = sys.modules["scripts.release.gatea_operations"]
+    original_path = tuple(sys.path)
+    with pytest.raises(candidate.GateACandidateError):
+        with candidate._verified_stage_operations(
+            source_root=source, target_sha=TARGET_SHA,
+            expected_sha256=digest, expected_mode=expected_mode,
+        ):
+            pytest.fail("drifted source was executed")
+    assert f"_pinkdoohub_gatea_stage_operations_{TARGET_SHA}" not in sys.modules
+    assert sys.modules["scripts.release.gatea_operations"] is canonical
+    assert tuple(sys.path) == original_path
+    assert not any(source.rglob("__pycache__"))
+
+
+@pytest.mark.parametrize("mode", (0o777, 0o600, True, "755", None))
+def test_operations_rejects_unapproved_frozen_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: object,
+) -> None:
+    monkeypatch.setattr(candidate, "_require_root_directory", lambda *args: None)
+    with pytest.raises(candidate.GateACandidateError, match="source mode is invalid"):
+        with candidate._verified_stage_operations(
+            source_root=tmp_path, target_sha=TARGET_SHA,
+            expected_sha256="a" * 64, expected_mode=mode,
+        ):
+            pytest.fail("unapproved mode was accepted")

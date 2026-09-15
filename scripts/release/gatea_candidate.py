@@ -1631,9 +1631,10 @@ def _extract_source_archive(
         "file_count": file_count,
         "total_bytes": total_bytes,
         # This private stage-only binding is intentionally not published in the
-        # candidate Record.  It anchors the bytes executed after GitHub
-        # provenance to the exact file produced by this archive extraction.
+        # candidate Record.  It anchors the bytes and normalized mode to the exact
+        # file produced by extraction and later verified by GitHub provenance.
         "gatea_operations_sha256": _sha256(operations_path),
+        "gatea_operations_mode": stat.S_IMODE(operations_path.lstat().st_mode),
         **_source_manifest(destination),
     }
 
@@ -2175,6 +2176,7 @@ def _verified_stage_operations(
     source_root: Path,
     target_sha: str,
     expected_sha256: str,
+    expected_mode: int,
 ) -> Iterator[_StageOperationsFacade]:
     """Load only the provenance-verified operations validator from archive bytes."""
 
@@ -2185,10 +2187,12 @@ def _verified_stage_operations(
     _require_root_directory(
         source_root, 0o755, "Gate A extracted candidate source"
     )
+    if type(expected_mode) is not int or expected_mode not in {0o644, 0o755}:
+        raise GateACandidateError("Gate A operations source mode is invalid")
     operations_path = source_root.joinpath(*STAGE_OPERATIONS_PATH.parts)
     raw_source, _ = _read_stable_protected_bytes(
         operations_path,
-        mode=0o644,
+        mode=expected_mode,
         max_bytes=MAX_ARCHIVE_MEMBER_BYTES,
         description="Gate A verified candidate operations source",
     )
@@ -2821,6 +2825,7 @@ def stage_candidate(
                     expected_sha256=str(
                         source_evidence["gatea_operations_sha256"]
                     ),
+                    expected_mode=source_evidence["gatea_operations_mode"],
                 ) as stage_gatea:
                     _validate_prepared_retirement_takeover(
                         release_root=release_root,
