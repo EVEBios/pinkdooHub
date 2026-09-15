@@ -1,5 +1,7 @@
 """User Repository —— 封装 User 表的数据访问。"""
 
+from tortoise.backends.base.client import BaseDBAsyncClient
+
 from app.models.user import User
 
 
@@ -10,17 +12,116 @@ class UserRepository:
     业务规则（如"用户名不能重复"）在 Service 层处理。
     """
 
-    async def get_by_id(self, user_id: int) -> User | None:
+    async def get_by_id(
+        self,
+        user_id: int,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> User | None:
         """根据主键查询用户。"""
-        return await User.filter(id=user_id).first()
+        query = User.filter(id=user_id)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
 
-    async def get_by_username(self, username: str) -> User | None:
+    async def get_latest_user_id(
+        self,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> int:
+        """读取当前最大 User ID，供受控游标任务冻结扫描范围。"""
+
+        query = User.all().order_by("-id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        user = await query.first()
+        return 0 if user is None else user.id
+
+    async def get_for_update(
+        self,
+        user_id: int,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> User | None:
+        """在调用方事务内锁定用户行。"""
+
+        return await (
+            User.filter(id=user_id)
+            .using_db(using_db)
+            .select_for_update()
+            .first()
+        )
+
+    async def list_by_ids(
+        self,
+        user_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[User]:
+        """按主键批量读取用户，并保持稳定 ID 顺序。"""
+
+        if not user_ids:
+            return []
+        query = User.filter(id__in=user_ids).order_by("id")
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return list(await query)
+
+    async def list_by_ids_for_update(
+        self,
+        user_ids: set[int],
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[User]:
+        """按主键升序锁定一组用户，供跨域批处理遵守全局锁序。"""
+
+        if not user_ids:
+            return []
+        return list(
+            await User.filter(id__in=user_ids)
+            .using_db(using_db)
+            .order_by("id")
+            .select_for_update()
+        )
+
+    async def get_by_username(
+        self,
+        username: str,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> User | None:
         """根据用户名查询用户。"""
-        return await User.filter(username=username).first()
+        query = User.filter(username=username)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
 
-    async def get_by_phone(self, phone: str) -> User | None:
+    async def get_by_phone(
+        self,
+        phone: str,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> User | None:
         """根据手机号查询用户。"""
-        return await User.filter(phone=phone).first()
+        query = User.filter(phone=phone)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
+
+    async def list_by_role_for_update(
+        self,
+        role: int,
+        *,
+        using_db: BaseDBAsyncClient,
+    ) -> list[User]:
+        """在调用方事务中锁定并返回指定角色的全部用户。"""
+
+        return await (
+            User.filter(role=role)
+            .using_db(using_db)
+            .select_for_update()
+            .order_by("id")
+        )
 
     async def get_by_phone_exclude_id(self, phone: str, user_id: int) -> User | None:
         """根据手机号查询用户，排除指定 ID。
@@ -47,14 +148,36 @@ class UserRepository:
             qs = qs.filter(role=role)
 
         total = await qs.count()
-        items = await qs.offset(offset).limit(limit)
+        items = await (
+            qs.order_by("-created_at", "-id")
+            .offset(offset)
+            .limit(limit)
+        )
         return items, total
 
-    async def create(self, **kwargs) -> User:
+    async def create(
+        self,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+        **kwargs,
+    ) -> User:
         """创建用户，返回包含 id 的完整 User 对象。"""
-        return await User.create(**kwargs)
+        return await User.create(using_db=using_db, **kwargs)
 
-    async def update(self, user: User, **kwargs) -> User:
-        """部分更新用户字段，自动保存。"""
-        await user.update_from_dict(kwargs).save()
+    async def update(
+        self,
+        user: User,
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+        **kwargs,
+    ) -> User:
+        """只持久化显式传入的字段，避免旧对象覆盖并发状态变化。"""
+
+        update_fields = list(kwargs)
+        if "updated_at" not in update_fields:
+            update_fields.append("updated_at")
+        await user.update_from_dict(kwargs).save(
+            using_db=using_db,
+            update_fields=update_fields,
+        )
         return user

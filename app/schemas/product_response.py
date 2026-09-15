@@ -14,17 +14,30 @@ from pydantic import (
     model_validator,
 )
 
+from app.common.bead_color import is_bead_color_configured
+from app.common.constants.inventory import INVENTORY_STOCK_MAX
 from app.common.constants.product import (
+    BEAD_COLOR_CODE_MAX_LENGTH,
+    BEAD_COLOR_NAME_MAX_LENGTH,
+    BEAD_COLOR_SLOT_COUNT,
+    BEAD_COLOR_SLOT_MIN,
+    BEAD_COLOR_SWATCH_HEX_LENGTH,
+    BEAD_COLOR_SWATCH_HEX_PATTERN,
+    COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+    MAX_BEAD_COLOR_SORT,
+    MIN_BEAD_COLOR_SORT,
     MIN_DURATION_MINUTES,
     MIN_IMAGE_SORT,
     MIN_PARTICIPANTS,
     MIN_STOCK,
     PRODUCT_DESCRIPTION_MAX_LENGTH,
+    PRODUCT_IMAGE_URL_MAX_LENGTH,
+    PRODUCT_KIT_COLOR_STOCK_UNITS_MAX,
     PRODUCT_PRICE_DECIMAL_PLACES,
     PRODUCT_PRICE_MAX,
     PRODUCT_PRICE_MIN_EXCLUSIVE,
 )
-from app.common.enums.product import DayType, ProductStatus, ProductType
+from app.common.enums.product import DayType, KitKind, ProductStatus, ProductType
 from app.schemas.product import ProductDescription, ProductName
 
 ValueT = TypeVar("ValueT")
@@ -97,6 +110,43 @@ DeletedFlagOut = Annotated[
     Literal[True],
     BeforeValidator(_require_true_boolean),
 ]
+BeadColorSlotOut = Annotated[
+    int,
+    Field(strict=True, ge=BEAD_COLOR_SLOT_MIN, le=BEAD_COLOR_SLOT_COUNT),
+]
+BeadColorSortOut = Annotated[
+    int,
+    Field(
+        strict=True,
+        ge=MIN_BEAD_COLOR_SORT,
+        le=MAX_BEAD_COLOR_SORT,
+    ),
+]
+BeadColorSwatchHexOut = Annotated[
+    str,
+    Field(
+        strict=True,
+        min_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        max_length=BEAD_COLOR_SWATCH_HEX_LENGTH,
+        pattern=BEAD_COLOR_SWATCH_HEX_PATTERN,
+    ),
+]
+SaleUnitGramsOut = Annotated[
+    int,
+    Field(
+        strict=True,
+        ge=COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+        le=COLOR_SELECTABLE_SALE_UNIT_GRAMS,
+    ),
+]
+ColorStockUnitsOut = Annotated[
+    int,
+    Field(
+        strict=True,
+        ge=MIN_STOCK,
+        le=PRODUCT_KIT_COLOR_STOCK_UNITS_MAX,
+    ),
+]
 
 
 class _ProductOut(BaseModel):
@@ -114,6 +164,114 @@ class LabeledValue(_ProductOut, Generic[ValueT]):
 
     value: ValueT
     label: str = Field(strict=True, min_length=1)
+
+
+class BeadColorOut(_ProductOut):
+    """管理端全局颜色槽响应。"""
+
+    id: int = Field(strict=True, gt=0)
+    slot_no: BeadColorSlotOut
+    color_code: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_CODE_MAX_LENGTH,
+    )
+    name: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_NAME_MAX_LENGTH,
+    )
+    swatch_hex: BeadColorSwatchHexOut | None
+    swatch_image_url: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=PRODUCT_IMAGE_URL_MAX_LENGTH,
+    )
+    sort: BeadColorSortOut
+    is_active: bool = Field(strict=True)
+    is_configured: bool = Field(strict=True)
+
+    @model_validator(mode="after")
+    def validate_configured_flag(self) -> "BeadColorOut":
+        """is_configured 由颜色身份与规范 HEX 数字色块共同派生。"""
+
+        configured = is_bead_color_configured(
+            color_code=self.color_code,
+            name=self.name,
+            swatch_hex=self.swatch_hex,
+        )
+        if self.is_configured != configured:
+            raise ValueError("is_configured does not match color metadata")
+        if self.is_active and not configured:
+            raise ValueError("Active bead color must be configured")
+        return self
+
+
+class KitColorOptionOut(_ProductOut):
+    """用户端可选颜色；不泄露商品级精确库存。"""
+
+    id: int = Field(strict=True, gt=0)
+    bead_color_id: int = Field(strict=True, gt=0)
+    slot_no: BeadColorSlotOut
+    color_code: str = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_CODE_MAX_LENGTH,
+    )
+    name: str = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_NAME_MAX_LENGTH,
+    )
+    swatch_hex: BeadColorSwatchHexOut
+    swatch_image_url: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=PRODUCT_IMAGE_URL_MAX_LENGTH,
+    )
+    available: bool = Field(strict=True)
+
+
+class AdminProductKitColorOut(_ProductOut):
+    """管理端商品颜色关联，包含配置与当前余额。"""
+
+    id: int = Field(strict=True, gt=0)
+    bead_color_id: int = Field(strict=True, gt=0)
+    slot_no: BeadColorSlotOut
+    color_code: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_CODE_MAX_LENGTH,
+    )
+    name: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=BEAD_COLOR_NAME_MAX_LENGTH,
+    )
+    swatch_hex: BeadColorSwatchHexOut | None
+    swatch_image_url: str | None = Field(
+        strict=True,
+        min_length=1,
+        max_length=PRODUCT_IMAGE_URL_MAX_LENGTH,
+    )
+    sort: BeadColorSortOut
+    is_active: bool = Field(strict=True)
+    is_configured: bool = Field(strict=True)
+    is_enabled: bool = Field(strict=True)
+    stock_units: ColorStockUnitsOut
+
+    @model_validator(mode="after")
+    def validate_color_flags(self) -> "AdminProductKitColorOut":
+        """只校验配置派生值，保留管理端诊断非销售就绪状态。"""
+
+        configured = is_bead_color_configured(
+            color_code=self.color_code,
+            name=self.name,
+            swatch_hex=self.swatch_hex,
+        )
+        if self.is_configured != configured:
+            raise ValueError("is_configured does not match color metadata")
+        return self
 
 
 class _ImageOutBase(_ProductOut):
@@ -184,6 +342,8 @@ class KitProductCreateOut(_ProductCreateOut):
     """创建套装商品草稿响应。"""
 
     product_type: LabeledValue[Literal[ProductType.KIT]]
+    kit_kind: LabeledValue[KitKind]
+    sale_unit_grams: SaleUnitGramsOut | None
 
 
 class ProductBasicInfoOut(_ProductOut):
@@ -223,18 +383,13 @@ class KitPriceOut(_ProductOut):
     price: ProductPriceOut
 
 
-class KitStockOut(_ProductOut):
-    """修改套装商品当前库存响应。"""
-
-    id: int = Field(strict=True, gt=0)
-    stock: int = Field(strict=True, ge=MIN_STOCK)
-
-
 class ProductListItemOut(_ProductIdentityOut):
     """用户端商品列表项——仅用于完整且已上架的商品。"""
 
     cover_image: str = Field(strict=True, min_length=1)
     display_price: ProductPriceOut
+    kit_kind: LabeledValue[KitKind] | None
+    sale_unit_grams: SaleUnitGramsOut | None
 
 
 class AdminProductListItemOut(_ProductIdentityOut):
@@ -245,6 +400,8 @@ class AdminProductListItemOut(_ProductIdentityOut):
     display_price: ProductPriceOut | None = None
     updated_at: datetime = Field(strict=True)
     is_deleted: bool = Field(strict=True)
+    kit_kind: LabeledValue[KitKind] | None
+    sale_unit_grams: SaleUnitGramsOut | None
 
 
 class _OnlineExperienceOptionOut(ExperienceOptionBaseOut):
@@ -280,16 +437,39 @@ class KitProductDetailOut(_UserProductDetailOut):
     """用户端套装商品详情。"""
 
     product_type: LabeledValue[Literal[ProductType.KIT]]
+    kit_kind: LabeledValue[KitKind]
+    sale_unit_grams: SaleUnitGramsOut | None
     price: ProductPriceOut
-    stock: int = Field(strict=True, ge=MIN_STOCK)
+    stock: int | None = Field(
+        strict=True,
+        ge=MIN_STOCK,
+        le=INVENTORY_STOCK_MAX,
+    )
     available: bool = Field(strict=True)
+    colors: list[KitColorOptionOut]
 
     @model_validator(mode="after")
     def validate_availability(self) -> "KitProductDetailOut":
-        """available 必须与当前库存是否大于零保持一致。"""
+        """按 KitKind 交叉校验销售单位、库存形状和可售状态。"""
 
-        if self.available != (self.stock > MIN_STOCK):
-            raise ValueError("Available must equal whether stock is greater than zero")
+        if self.kit_kind.value is KitKind.FIXED:
+            if self.sale_unit_grams is not None or self.stock is None or self.colors:
+                raise ValueError("Fixed kit response has invalid color fields")
+            if self.available != (self.stock > MIN_STOCK):
+                raise ValueError(
+                    "Available must equal whether fixed stock is greater than zero"
+                )
+        else:
+            if (
+                self.sale_unit_grams != COLOR_SELECTABLE_SALE_UNIT_GRAMS
+                or self.stock is not None
+                or not self.colors
+            ):
+                raise ValueError("Color-selectable kit response has invalid fields")
+            if self.available != any(color.available for color in self.colors):
+                raise ValueError(
+                    "Available must equal whether any selectable color is available"
+                )
         return self
 
 
@@ -316,5 +496,26 @@ class AdminKitProductDetailOut(_AdminProductDetailOut):
     """管理端套装商品详情。"""
 
     product_type: LabeledValue[Literal[ProductType.KIT]]
+    kit_kind: LabeledValue[KitKind]
+    sale_unit_grams: SaleUnitGramsOut | None
     price: ProductPriceOut
-    stock: int = Field(strict=True, ge=MIN_STOCK)
+    stock: int | None = Field(
+        strict=True,
+        ge=MIN_STOCK,
+        le=INVENTORY_STOCK_MAX,
+    )
+    colors: list[AdminProductKitColorOut]
+
+    @model_validator(mode="after")
+    def validate_kit_shape(self) -> "AdminKitProductDetailOut":
+        """管理端详情也必须明确区分两类库存权威字段。"""
+
+        if self.kit_kind.value is KitKind.FIXED:
+            if self.sale_unit_grams is not None or self.stock is None or self.colors:
+                raise ValueError("Fixed kit response has invalid color fields")
+        elif (
+            self.sale_unit_grams != COLOR_SELECTABLE_SALE_UNIT_GRAMS
+            or self.stock is not None
+        ):
+            raise ValueError("Color-selectable kit response has invalid fields")
+        return self

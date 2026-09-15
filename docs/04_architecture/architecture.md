@@ -12,12 +12,13 @@
 | ORM | Tortoise ORM | 1.1.7 |
 | 数据校验 | Pydantic | 2.13 |
 | 数据库 | MySQL（生产）/ SQLite（开发） | - |
-| MySQL 异步驱动 | asyncmy | 0.2.11 |
+| MySQL 异步驱动 | asyncmy | 0.2.14 |
 | 缓存 | Redis | - |
 | 迁移工具 | Aerich | 0.9.3 |
 | ASGI 服务器 | Uvicorn | 0.51 |
 | 配置管理 | pydantic-settings | 2.14 |
 | 密码加密 | passlib[bcrypt] | 1.7.4 |
+| JWT | python-jose + cryptography | 3.5.0 + 50.0.1 |
 | 时区数据 | tzdata | —（Windows 必需） |
 | multipart 解析 | python-multipart | 0.0.32 |
 
@@ -54,7 +55,7 @@
 
 | 理由 | 说明 |
 |------|------|
-| 事务支持 | 订单创建（扣库存 + 生成订单）需要 ACID |
+| 事务支持 | Order、Inventory、Wallet/Payment 与 Reservation 状态变迁、店休批量取消和 AuditLog 需要 ACID |
 | 生态 | 托管服务成熟，运维成本低 |
 | 开发便利 | 开发环境用 SQLite（免安装），生产切 MySQL 零代码改动 |
 
@@ -73,20 +74,33 @@ pinkdooHub/
 │   │   ├── __init__.py
 │   │   ├── mappers/            # ORM 聚合 → 显式字典 → Out Schema
 │   │   │   ├── __init__.py
-│   │   │   └── product.py      # Product 列表、详情与 mutation 响应映射
+│   │   │   ├── audit.py        # AuditLog 分页响应映射
+│   │   │   ├── product.py      # Product 列表、详情与 mutation 响应映射
+│   │   │   ├── order.py        # Order 用户/管理列表、详情与状态响应映射
+│   │   │   ├── inventory.py    # Inventory 流水、分页与调整响应映射
+│   │   │   ├── reservation.py  # Reservation/店休日历、用户/管理响应映射
+│   │   │   ├── wallet.py       # Wallet 摘要、流水与调账响应映射
+│   │   │   └── payment.py      # Payment/Refund/代客钱包订单响应映射
 │   │   ├── forms/              # multipart/form-data Pydantic 请求模型
 │   │   │   └── product.py      # Product/Option 图片上传表单
 │   │   ├── v1/                 # v1 版本路由
 │   │   │   ├── __init__.py
-│   │   │   ├── auth.py         #   POST /auth/register  /auth/login  /auth/refresh
+│   │   │   ├── auth.py         #   密码/微信登录、refresh、绑定/解绑
 │   │   │   ├── users.py        #   GET/PUT /users/me  /users/me/password  /users/me/avatar
 │   │   │   ├── admin_users.py  #   GET /admin/users  /admin/users/{id}  disable/enable
 │   │   │   ├── products.py     #   GET /products  /products/{id}
-│   │   │   ├── admin_products.py#  POST /admin/products/experience|kit, PATCH/DELETE /admin/products/{id}, PATCH online/offline/price/stock
+│   │   │   ├── admin_products.py#  Product、Kit 价格、全局/商品颜色配置；库存写入在 Inventory
+│   │   │   ├── admin_inventory.py# fixed/商品颜色库存调整及流水查询
 │   │   │   ├── orders.py       #   POST /orders  GET /orders  /orders/{id}  cancel
-│   │   │   └── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  complete
+│   │   │   ├── admin_orders.py #   GET /admin/orders  /admin/orders/{id}  paid/complete/audit-logs
+│   │   │   ├── reservations.py #   顾客预约选项、创建、查询与取消
+│   │   │   ├── admin_reservations.py # ADMIN+ 审核、审计与自定义店休
+│   │   │   ├── wallet.py       #   会员钱包、流水与关闭的充值边界
+│   │   │   ├── payments.py     #   余额/微信支付边界与订单资金事实
+│   │   │   ├── admin_wallet.py #   客户钱包、调账与代客钱包订单
+│   │   │   └── admin_refunds.py#   管理资金事实与全额退款
 │   │   ├── admin.py           #  GET /admin/users  /admin/config (RBAC 演示)
-│   │   ├── deps.py             # 公共依赖与 Product 组合根
+│   │   ├── deps.py             # 公共依赖与 Product/Order/Inventory/Reservation/Wallet/Payment/Refund 组合根
 │   │   ├── uploads.py          # 文件存储 → Service → 失败补偿
 │   │   └── static.py           # 本地上传目录的延迟静态挂载
 │   │
@@ -99,64 +113,116 @@ pinkdooHub/
 │   │   ├── product.py          #   Product
 │   │   ├── experience_option.py#   ExperienceOption
 │   │   ├── product_kit.py      #   ProductKit
+│   │   ├── bead_color.py       #   BeadColor：全局固定 221 槽与数字色值（M6/M8）
+│   │   ├── product_kit_color.py#   商品颜色启用状态与 10g 单位库存（M6）
 │   │   ├── product_image.py    #   ProductImage
 │   │   ├── audit_log.py        #   AuditLog
-│   │   └── order.py            #   Order, OrderItem
+│   │   ├── order.py            #   Order, OrderItem
+│   │   ├── inventory_transaction.py # InventoryTransaction（Phase 4.3.3）
+│   │   ├── reservation.py      #   StoreBusinessDay, Reservation（N1）
+│   │   ├── wallet.py           #   WalletAccount, WalletTransaction
+│   │   └── payment.py          #   RechargeOrder, Payment, Settlement, Refund
 │   │
 │   ├── schemas/                # Pydantic Schema —— 请求/响应数据结构
 │   │   ├── __init__.py
 │   │   ├── user.py             #   UserCreate, UserOut, UserUpdate, UserListItem, ...
 │   │   ├── product.py          #   Product 请求体与列表查询参数
 │   │   ├── product_response.py #   Product 原子、列表、详情与写操作 Out Schema
-│   │   └── order.py            #   OrderCreate, OrderOut, OrderItemOut, ...
+│   │   ├── order.py            #   Order 请求体与列表查询参数（Phase 4.2）
+│   │   ├── order_response.py   #   Order 用户端/管理端响应白名单（Phase 4.2）
+│   │   ├── inventory.py        #   Inventory 调整与查询契约（Phase 4.3.2）
+│   │   ├── inventory_response.py # Inventory 响应白名单（Phase 4.3.2）
+│   │   ├── reservation.py      #   Reservation 创建、列表与店休 Query
+│   │   ├── reservation_response.py # Reservation 用户/管理/日历响应白名单
+│   │   ├── wallet.py           #   金额、查询与幂等请求契约
+│   │   └── wallet_response.py  #   Wallet/Payment/Refund 响应白名单
 │   │
 │   ├── services/               # 业务逻辑层 —— 跨模型、带事务的业务编排
 │   │   ├── __init__.py
 │   │   ├── auth_service.py     #   注册、登录、Token 签发/刷新
+│   │   ├── external_auth_service.py # 微信登录与绑定事务编排
+│   │   ├── account_lifecycle_service.py # 注销、匿名化与会话撤销
 │   │   ├── user_service.py     #   个人资料、密码、头像
 │   │   ├── product_service.py  #   商品 CRUD、上下架、Option 管理
-│   │   └── order_service.py    #   下单（扣库存+生成订单）、取消（恢复库存）
+│   │   ├── order_service.py    #   自助/代客订单、库存扣减、查询与状态机
+│   │   ├── inventory_service.py#   流水查询、管理员调整、幂等与事务重试
+│   │   ├── reservation_service.py # 独立预约、状态机、店休批量取消与事务重试
+│   │   ├── wallet_service.py   #   会员/流水、ADMIN+ 调账与退款预留校验
+│   │   ├── payment_service.py  #   余额支付、微信关闭边界与资金查询
+│   │   └── refund_service.py   #   全额退款、钱包返还与 PAID Kit 恢复
 │   │
 │   ├── validators/             # 业务校验层 —— 状态变迁前的完整性校验
 │   │   ├── __init__.py
-│   │   └── product_validator.py #  ProductValidator.validate_before_online()
+│   │   ├── product_validator.py #  ProductValidator.validate_before_online()
+│   │   └── reservation_validator.py # 上海营业日、排期与时段纯校验
 │   │
 │   ├── storage/                # 外部对象存储适配边界
 │   │   ├── __init__.py
 │   │   └── image.py        #   Product 图片校验、本地原子存储与补偿删除
+│   ├── integrations/           # 外部平台协议适配器
+│   │   ├── wechat.py           #   服务端 code2Session，最小身份输出
+│   │   └── payment.py          #   Payment Provider 接口；当前仅 disabled 实现
 │   │
 │   ├── tasks/                  # 外部调度器可重复执行的运维任务入口
-│   │   └── product_image_cleanup.py # ProductImage 延迟文件清理命令
+│   │   ├── manifests/mard_221.json # MARD 221 来源、HEX/RGB 与确定性色板文件名
+│   │   ├── mard_catalog.py     # 清单验证、稳定命名与确定性 PNG 共享契约
+│   │   ├── gatea_migrate_step.py # Gate A M3–M8 单步 Aerich 原语
+│   │   ├── gatea_wallet_prepare.py # Gate A M4 历史资金准备与对账
+│   │   ├── gatea_mard_publish.py # Gate A M8 后发布 MARD HEX 与兼容图片
+│   │   ├── product_image_cleanup.py # ProductImage 延迟文件清理命令
+│   │   ├── super_admin_bootstrap.py # 受控首个 SUPER_ADMIN 初始化
+│   │   ├── phase93_legacy_seed.py   # 仅限冻结旧迁移 Schema 的合成 fixture
+│   │   ├── phase93_runtime_seed.py  # 仅限隔离 Source 的角色 Smoke fixture
+│   │   ├── phase93_restore_smoke.py # Restore App readiness/login 验证
+│   │   ├── wallet_account_backfill.py # 历史 NORMAL/DISABLED USER 钱包预览/显式补齐
+│   │   ├── legacy_manual_settlement_backfill.py # 历史人工结算预览/显式补齐
+│   │   └── wallet_reconcile.py # 只读余额/流水一致性核验
 │   │
 │   ├── repositories/           # 数据访问层 —— 封装数据库查询
 │   │   ├── __init__.py
 │   │   ├── user_repo.py        #   User 查询/创建/更新
 │   │   ├── product_repo.py     #   Product + 扩展表查询/创建/更新
-│   │   └── order_repo.py       #   Order + OrderItem 查询/创建/更新
+│   │   ├── order_repo.py       #   Order + OrderItem 查询/创建/更新
+│   │   ├── inventory_repo.py   #   Inventory 锁、余额、流水与分页（Phase 4.3.5）
+│   │   ├── reservation_repo.py #   营业日锁点、预约状态/分页与批量取消
+│   │   ├── wallet_repo.py      #   Wallet 锁、余额、不可变流水与分页
+│   │   └── payment_repo.py     #   Payment/Settlement/Refund 与退款敞口查询
 │   │
 │   ├── common/                  # 公共模块 —— 跨领域共享的类型与常量
 │   │   ├── __init__.py
+│   │   ├── bead_color.py       #   颜色 HEX 规范化与完整性纯函数
 │   │   ├── response.py         #   统一响应信封（success / error 工厂函数）
 │   │   ├── pagination.py       #   分页请求/响应 Pydantic Model
 │   │   ├── types.py            #   通用类型别名（TypeAlias）
 │   │   ├── enums/              #   Enum 定义（按模块拆分）
 │   │   │   ├── __init__.py
 │   │   │   ├── user.py         #     UserRole, UserStatus
-│   │   │   ├── product.py      #     ProductType, ProductStatus, DayType
-│   │   │   └── order.py        #     OrderStatus (Phase 4.2)
-│   │   └── constants/          #   全局常量 —— 消除 Magic Number
+│   │   │   ├── product.py      #     ProductType, ProductStatus, KitKind, DayType
+│   │   │   ├── order.py        #     OrderStatus (Phase 4.2)
+│   │   │   ├── inventory.py    #     Inventory transaction/source types
+│   │   │   ├── reservation.py  #     Reservation 状态、原因与日历机器原因
+│   │   │   └── wallet.py       #     Wallet/Payment/Recharge/Refund states and types
+│   │   ├── constants/          #   全局常量 —— 消除 Magic Number
 │   │       ├── __init__.py
+│   │       ├── http.py        #     API 文本响应压缩阈值与级别
 │   │       ├── pagination.py  #     MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE
 │   │       ├── upload.py      #     UPLOAD_MAX_SIZE, ALLOWED_IMAGE_TYPES
 │   │       ├── validation.py  #     USERNAME_MIN_LEN, PASSWORD_MAX_LEN, ...
 │   │       ├── product.py     #     Product 字段长度、金额、库存与图片排序边界
+│   │       ├── order.py       #     Order Item/备注/编号/状态展示边界（Phase 4.2）
+│   │       ├── inventory.py   #     Inventory 余额、原因、幂等与重试边界
+│   │       ├── reservation.py #     营业时间、预约窗口、状态文案与重试边界
+│   │       ├── wallet.py      #     Wallet 金额、编号、原因、幂等与退款窗口边界
 │   │       └── defaults.py    #     DEFAULT_AVATAR
+│   │   ├── order_number.py    #   标准库 OD + Crockford Base32 ULID 生成器
+│   │   └── financial_number.py#   RC/PY/RF + Crockford Base32 ULID 生成器
 │   │
 │   ├── core/                   # 核心基础设施 —— 与领域和 HTTP 无关的底层能力
 │   │   ├── __init__.py
 │   │   ├── config.py           #   配置类（从 .env 读取）
 │   │   ├── security.py         #   JWT 签发/验证、密码哈希
 │   │   ├── redis.py            #   Redis 连接与工具函数
+│   │   ├── health.py           #   DB/Redis 并行 Readiness 检查
 │   │   └── exceptions.py       #   业务异常类定义（BusinessException）
 │   │
 │   ├── middleware/              # 中间件 —— HTTP 生命周期切面
@@ -165,6 +231,7 @@ pinkdooHub/
 │   │   ├── auth.py             #   JWT 认证中间件（提取 Token → 注入 current_user）
 │   │   ├── logging.py          #   请求日志（记录 method、path、耗时、状态码）
 │   │   ├── cors.py             #   CORS 跨域配置
+│   │   ├── compression.py      #   API 文本响应 gzip；上传图片命名空间旁路
 │   │   └── exception.py        #   全局异常捕获 → 统一错误响应
 │   │
 │   ├── db/                     # 数据库
@@ -184,13 +251,23 @@ pinkdooHub/
 │
 ├── tests/                      # 测试目录
 │   ├── conftest.py             #   pytest fixtures（测试 DB、测试 Client）
-│   ├── test_auth.py
-│   ├── test_users.py
-│   ├── test_products.py
-│   └── test_orders.py
+│   ├── support/                #   跨文件复用的测试数据工厂
+│   ├── common/                 #   配置、版本、请求工具、基础迁移
+│   ├── users/                  #   认证、用户与 RBAC
+│   ├── audit/                  #   共享审计链路
+│   ├── product/                #   按 api/schema/model/repository/service 等层分组
+│   ├── order/                  #   按 api/schema/model/repository/service 等层分组
+│   ├── inventory/              #   Inventory 契约、事务、API 与 MySQL 门槛
+│   ├── reservation/            #   Reservation 契约、事务、API 与 MySQL 门槛
+│   └── wallet/                 #   Wallet/Payment/Refund 契约、闭环与 MySQL smoke
 │
 ├── migrations/                 # Aerich 数据库迁移文件
 │   └── models/
+│
+├── deploy/runtime/             # Phase 9.3/9.4 共用的非 root FastAPI Runtime
+├── deploy/rehearsal/           # Phase 9.3 可销毁生产相似 Compose/Nginx
+├── deploy/gatea/               # Phase 9.4 持久 Gate A Compose、Nginx 与配置模板
+├── scripts/release/            # 演练预检、DR/Gate A 非空升级编排、HTTPS Smoke、摘要与清理
 │
 ├── requirements.txt            # Python 依赖
 ├── pyproject.toml              # 项目元数据 + 工具配置
@@ -199,7 +276,11 @@ pinkdooHub/
 └── README.md
 ```
 
-> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 当前已实现 Product Enum、常量、请求/响应 Schema，Product、ExperienceOption、ProductKit、ProductImage 的全部 Model，`ProductRepository`、Product Validator、Service、API Mapper、20 个 JSON 路由、两个 multipart 图片上传路由、Product 图片本地存储适配器与可重试延迟清理任务。
+> **目录状态说明：** 上图同时包含已实现结构和后续 Phase 的目标结构，不能仅凭目录图判断功能已经存在。Phase 4.1 Product 与 Phase 4.2/4.3 Order/Inventory 的既有能力保持 Implemented。M6 自选颜色 Kit 以及 M8 `swatch_hex` 运行时、客户端和候选迁移均已完成仓库实现；一次性 MySQL M8 门槛与当前本地持久 SQLite 的专用 M8 升级均已完成。持久 Gate A 当前为 M7且已包含 M6，只有 M8 仍待受控应用；共享、预发布和生产 MySQL 不因这些证据自动迁移。
+
+Reservation N1 已冻结并完成仓库实现：独立预约的 Enum/常量/异常、严格 Schema、`StoreBusinessDay`/`Reservation` Model、Repository、纯时间 Validator、事务 Service、零 SQL Mapper、5 个顾客端与 8 个 ADMIN+ 端点，以及 M5 离线迁移均已落地。2026-09-06 已在一次性 MySQL 8.0.46 完成 Aerich 0→5，Reservation 专项 `7 passed`、与 Inventory 联合门槛 `16 passed`，覆盖核心并发、事务重试与索引计划；该次验证容器已销毁且本身未写持久库。M5/M7 后续已随当前 Gate A 的 M2→M7 受控升级应用；共享、预发布和生产数据库及真实客户端验收仍须分别完成。N2 微信主动店休通知仍为 Deferred，当前架构没有 Reservation 通知 Outbox 或 Worker。
+
+Phase 9.5 已增加外部身份和账号生命周期边界，但公开平台仍未启用：`ExternalAuthService` 只消费 `ExternalIdentityProvider` 返回的最小凭据，并通过 User/ExternalIdentity Repository 与共享审计完成事务；微信适配器是基础设施层，不进入 Service/Repository。原始 OpenID/UnionID 进入数据库前使用独立 Pepper HMAC，`session_key` 不越过适配器。`AccountLifecycleService` 锁定 User 后重检二次凭据、活跃订单、未来 `pending/confirmed` 且尚未结束的预约、处理中资金、可退款钱包结算敞口和余额；余额即使为零，只要 PAID 或完成未满 30 天的 COMPLETED 钱包结算尚未成功退款，仍拒绝注销。通过后删除绑定、关闭钱包并匿名化 User；Order 与 Reservation 创建都锁同一 User 行，封闭注销竞态。
 
 Product Schema 按变化原因拆分：`product.py` 只负责不可信外部输入（请求体与查询参数，未知 JSON 字段拒绝），`product_response.py` 只负责可信内部数据到公开 API 的白名单输出。两者都只能依赖标准库、Pydantic 和 `app/common/`；响应模块可复用请求模块中的纯字段类型，但不得依赖 Model、Repository 或 Service。
 
@@ -304,29 +385,22 @@ async def login(data: LoginRequest, user_repo: UserRepository = Depends()):
 **职责**：编排业务逻辑、管理事务边界、协调多个 Repository
 
 ```python
-# app/services/order_service.py
-from app.repositories.order_repo import OrderRepository
-from app.repositories.product_repo import ProductRepository
-from app.core.exceptions import BusinessException
-
+# Phase 4.3.7 Order 创建调用形状（已实现）
 class OrderService:
-    def __init__(self, order_repo: OrderRepository = Depends(),
-                       product_repo: ProductRepository = Depends()):
-        self.order_repo = order_repo
-        self.product_repo = product_repo
-
-    async def create_order(self, user_id: int, data: OrderCreate) -> Order:
-        # 1. 校验商品存在且上架
-        for item in data.items:
-            product = await self.product_repo.get_online(item.product_id)
-            if not product:
-                raise BusinessException(code=3003, ...)
-        # 2. 在事务中：扣库存 → 生成订单 → 写入明细
-        async with in_transaction():
-            for item in data.items:
-                await self.product_repo.deduct_stock(item.product_id, item.quantity)
-            order = await self.order_repo.create(user_id, data)
-        return order
+    async def create_order(
+        self,
+        *,
+        user_id: int,
+        items: list[OrderItemInput],
+        remark: str | None,
+        ip_address: str,
+    ) -> Order:
+        # 1. ProductRepository 批量加载 Product/Option/Kit 候选快照
+        # 2. 按 Product 类型验证 Option 形状，用 Decimal 构造价格快照
+        # 3. 单事务：Order → 稳定集合锁/锁后重检 → 批量余额/流水
+        # 4. bulk OrderItem → CREATE_ORDER Audit → 响应重载
+        # owner cancel 使用 Order 锁 + 稳定 Kit 集合锁原子恢复库存
+        ...
 ```
 
 **约束**：
@@ -404,7 +478,7 @@ async def online_product(
 
 Product 上架的状态更新与 `ONLINE_PRODUCT` 审计必须共享同一个 `BaseDBAsyncClient` 事务连接。为此，`AuditLogService.log()` 与 `AuditLogRepository.create()` 提供向后兼容的可选 `using_db` 参数：普通调用不传时保持既有顺序审计；需要原子性的 Product Service 显式透传当前连接。Product Service 通过构造函数注入 ProductRepository 与共享 AuditLogService，不直接实例化 Repository，不直接操作 ORM Model，也不把权限检查或 Out Schema 序列化放入 Service。
 
-以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。API Mapper、20 个 JSON 路由、文件存储适配器和两个 multipart 上传路由均已完成。
+以上 Product 上架 Service 编排与共享审计事务透传已实现。架构测试固定 Service 不依赖 FastAPI、API Schema 或 Redis，也不直接调用 Model 持久化方法；真实集成测试固定审计失败时 Product 状态回滚。Phase 4.3.10 移除旧 stock JSON 路由后，Product API Mapper、19 个 JSON 路由、文件存储适配器和两个 multipart 上传路由保持完成状态。
 
 Product 下架 Service 也已实现，复用同一 Repository/审计事务边界，但只读取 Product 主表且不调用 Validator：不存在、逻辑删除和非 Online 状态在事务前失败；成功时 `status=offline` 与 `OFFLINE_PRODUCT` 审计原子提交。
 
@@ -414,7 +488,81 @@ Product API Mapper 已实现上述列表、详情、mutation 与分页映射。�
 
 Product 普通 JSON 路由拆分为 `app/api/v1/products.py`（公开列表和 Experience/Kit 详情）与 `app/api/v1/admin_products.py`（ADMIN+ 查询及 mutation）。`app/api/deps.py:get_product_service()` 是 API 组合根，负责组装 ProductRepository、共享 AuditLogService 和 ProductService；路由不直接导入 Product Model/Repository，只执行 Request/Query Schema 校验、权限依赖、Service 调用、Mapper 序列化和 `success()`。Product/Kit 创建固定 HTTP 201；ExperienceOption 新建为 201、恢复历史 Option 为 200。该 JSON 路由阶段当时未注册的两个 multipart 图片创建端点和 Product 操作历史端点均已由后续阶段接入。
 
+M6/M8 沿用同一分层而不新增跨层捷径。`BeadColor` 是全局 221 槽身份、权威数字 `swatch_hex` 与可选真实色样 URL；`ProductKitColor` 是某个 color_selectable Product 的销售开关和库存余额，两者通过 ProductRepository 访问。创建 color_selectable Kit 的事务一次完成 Product、`stock=NULL / sale_unit_grams=10` 的 ProductKit、必要时幂等补齐全局槽、221 条商品关联与 Audit。全局颜色维护及商品颜色开关由 ProductService 负责，颜色库存变化仍只经 InventoryService/InventoryRepository；任何层都不得把 BeadColor 当全局库存。
+
+公开/管理详情由 Product Repository 预加载 Kit、商品颜色与全局颜色后交给同步 Mapper。公开 Mapper 过滤为 `is_enabled && bead_color.is_active && code/name/swatch_hex 完整`，仅输出每色 `available`；管理 Mapper 输出全部 221 槽及 `stock_units`。Mapper 不做查询。小程序优先用 `swatch_hex` 和 `backgroundColor` 直接绘制数字色块；`swatch_image_url` 不复用 ProductImage，只作为未来实拍/校色色样以及迁移期既有 PNG 的可选回退。MARD 221 CSS 色卡由 `scripts/local/fetch_mard_bead_colors.py` 冻结为版本化 manifest，M8 再由本地升级器或 Gate A 发布流程回填 HEX。既有确定性 256×256 sRGB PNG 在客户端迁移期保留，不批量转 WebP、不在本阶段删除；商品照片和未来真实色样照片继续采用 WebP。HTTP 单图链不承担批量导入，生产对象存储仍是 Gate B 边界。
+
 Product 操作历史保持共享审计边界：`AuditLogRepository.list_logs()` 只按 `target_type/target_id` 执行倒序稳定分页，`AuditLogService.list_logs()` 提供 Product/Order/Inventory 均可复用的查询用例；`ProductService.list_product_audit_logs()` 仅负责用 `include_deleted=true` 确认 Product 记录仍存在，再委托共享服务。API 使用共享 `app/schemas/audit.py:AuditLogOut` 与 Audit Mapper 构造字段白名单和 `Page[T]`，不把审计字段复制到 Product Schema，也不把 Audit Log 嵌入 Product Detail。
+
+Order v1.0 架构边界、实现与最终 Review 均已完成。Order Model 只声明表结构；`OrderRepository` 负责纯数据访问和 SQL 可见性限定。查询用例包括用户列表/详情、管理列表/详情及管理端审计历史：用户详情把 `user_id` 直接传入 Repository 查询，因此不存在与他人订单都只得到 `None` 并抛同一 `OrderNotFound`；API status 字符串通过 `ORDER_STATUS_BY_VALUE` 显式翻译为数据库 `OrderStatus`；订单审计先确认 Order 存在再委托共享 `AuditLogService`。
+
+M6 将 Order 输入扩展为 nullable `kit_color_id`，但不改变分层：Schema 负责颜色行≤20、非颜色行≤10、总行≤30、每色数量≤99及三元组判重；Service 批量加载并验证 Experience/fixed/color 三态、商品颜色归属/启用和全局配置，以每色一条 OrderItem 保存 code/name/slot/10g 销售单位快照。`total_weight_grams` 由 Mapper 派生，不持久化。订单创建、取消与 PAID 退款在同一外层事务协调 InventoryRepository，颜色余额锁按稳定的 Product/颜色顺序获取。
+
+创建用例接收不含客户端快照的 `OrderItemInput`，分别用集合查询批量加载 Product、非空 ExperienceOption ID 与 ProductKit，再按请求 Item 顺序执行 Product 可售性、类型/Option 形状、Option 归属及 Kit 扩展判断。Service 以数据库 Product 名称、Option/Kit `Decimal` 价格构造不可变候选快照及总额；事务内 Order、Kit 余额与流水、批量 Items、紧凑非敏感 `CREATE_ORDER` 审计和详情重载共享连接。任一步异常整体回滚。订单号 UNIQUE 冲突发生在任何库存锁/写之前；退出失败事务并确认编号已持久化后才用新编号重试，最多 3 次。其他 `IntegrityError` 不重试；MySQL 1205/1213 对完整写事务使用同一候选快照和编号最多尝试 3 次。
+
+状态变迁只通过 `cancel_order()`、`mark_order_paid()` 和 `complete_order()` 三个公开用例暴露，不提供接受任意目标状态的公共方法。每次用例开启事务后调用 `get_order_for_update()`：用户取消在 SQL 锁查询中附带 `user_id`，不存在与他人订单均映射为 `OrderNotFound`；管理用例按 ID 锁定。Service 只对锁后最新状态执行 `pending → cancelled`、`pending → paid` 或 `paid → completed`，冲突时抛出包含稳定 operation/current/required 的 `OrderStatusConflict`，不写任何库存、状态或审计。取消成功前会恢复 Kit；Wallet/Payment M4 接入后，人工 Paid 先只读定位 owner，再按 `User → Order` 锁序复验，仅 NORMAL USER 订单可同事务创建 manual Payment/Settlement，staff/disabled/deleted owner 零写入拒绝；complete 会拒绝已有 pending/succeeded Refund，但不受人工 Paid 的目标限制变化影响。支付和完成本身仍不修改库存。所有成功路径的紧凑审计和轻量响应重载共享事务连接，任一步失败整体回滚。
+
+Phase 4.2 的历史边界曾禁止 OrderService/OrderRepository 读取或修改 `ProductKit.stock`。Phase 4.3.7–4.3.8 已按冻结契约完成创建扣减和取消恢复：OrderRepository 只提供最小 Item 快照，不感知余额计算；OrderService 通过明确注入的 InventoryRepository 协调行锁、余额和流水，不采用半套语义。
+
+Phase 4.3.1 已完成上述契约冻结。事务所有权固定为：Order 创建/取消 Service 拥有包含 Inventory 写入在内的外层事务，并直接协调 `InventoryRepository`，不得调用 `InventoryService`；管理员调整由 `InventoryService` 拥有事务。所有 Kit 按 Product ID 升序锁定，余额、不可变流水、Order/Items 与 Audit 使用同一事务连接。Inventory Repository 只提供锁定、查询和持久化原语，不判断可售状态、库存充足性或抛业务异常。管理员调整、创建扣减和取消恢复现均已实现。
+
+Phase 4.3.3 已建立持久化形状：`InventoryTransaction` 关联业务 `Product.id` 与可空触发用户，通用 `source_id` 不伪造多态 FK；幂等键由命名 UNIQUE 索引兜底，Product/source/type/全局流水查询各有稳定分页索引。Model 只表达字段、关系、单字段校验和索引，不实现余额计算或业务状态判断。Phase 4.3.4 已离线生成 MySQL 8+ 增量迁移并补齐正库存期初流水；完整链与回填曾在一次性 MySQL 8.0.46 实例验证后销毁，该次验证本身未写持久库。Inventory M2 后续已进入当前 Gate A M7，其他持久环境仍须分别迁移和验收。
+
+M6 的 InventoryTransaction 增加 nullable `kit_color_id`：fixed 流水保持 NULL 并继续锁 `product_kits.stock`；颜色流水必须指向 ProductKitColor 并锁 `stock_units`。两套管理端点显式区分余额权威，路径/KitKind 不匹配抛 `InventoryKitKindMismatch(40031)`。自动幂等键在颜色路径加入 `:color:{kit_color_id}`，全局流水可按 kit_color_id 过滤；响应通过预加载的 BeadColor 输出槽号、code/name 和 10g 单位，不在 Mapper 补查。
+
+Phase 4.3.5 已实现 `InventoryRepository`。多 Kit 通过单条按 `product_id` 排序的 `SELECT ... FOR UPDATE` 获取锁，避免循环查询；多条自动流水通过 `bulk_create` 写入。Repository 接收并传播外层事务连接，只持久化 Service 已计算的最终余额和流水数据，不开启事务、不重试、不判断库存是否充足或 Product 状态。分页固定两条基础查询（count + page），仅当结果含 Order source 时增加一次批量 Order 编号查询，并预加载 operator，确保后续 Mapper 零 SQL。
+
+Phase 4.3.6 已实现 `InventoryService.adjust_stock()`。Service 通过构造函数注入 `InventoryRepository`、`ProductRepository` 与共享 `AuditLogService`，不调用 `ProductService`、不依赖 FastAPI/Schema/Redis，也不直接执行 ORM 持久化。用例在自有事务内锁定单个 Kit，锁后完成 Product/余额/幂等校验，并将余额、不可变流水、Product 目标 Audit 与详情重载绑定到同一连接。数据库唯一键处理并发幂等竞态；仅 MySQL 1205/1213 以全新事务重试整个用例，最多 3 次。不可变 `InventoryAdjustmentResult.is_replay` 只表达领域重放事实；Phase 4.3.10 API 边界据此选择首次 201/重放 200，而未把 HTTP 语义引入 Service。
+
+Phase 4.3.7 已把 `InventoryRepository` 注入 Order 组合根。Order 创建事务外通过 ProductRepository 三次集合读取构造 Product/Option/Kit 候选快照；事务内先创建 Pending Order，再用一次稳定排序锁查询取得全部 fixed Kit，锁后重读 Product 并校验可售性/余额，随后分别批量更新余额和批量写 `order_deduction` 流水，再写 Items、Audit 和响应聚合。纯 Experience 请求不调用 InventoryRepository。OrderService 拥有事务和 MySQL 1205/1213 完整写集重试，但不调用 InventoryService；Repository 仍不包含余额计算或业务异常。该基线的 Order Request/Response Schema 和 Mapper 接受完整 Option 快照或 Option/颜色全空的 fixed Kit 快照；M6 再增加第 491 行所述的完整颜色快照，既有 POST 路由无需另开创建端点。
+
+Phase 4.3.8 在同一 OrderService 中增加取消专用事务，不把库存钩子塞进通用状态更新器。取消先锁 owner 可见 Order 并重检 Pending，再由 OrderRepository 只投影 Item 的 Product/Option ID/数量；Service 跳过 Experience、聚合 Kit 数量，以一次稳定集合锁取得余额，并批量读取 restore 幂等身份。缺失 Kit、Pending 与已存在 restore 身份矛盾、余额越界或任何后置失败都会回滚；成功时批量保存余额/`order_cancellation_restore` 流水，再提交 Cancelled、Audit 与重载。Order 状态机与 Inventory UNIQUE 构成双层幂等保护，MySQL 1205/1213 重试完整取消用例而不是局部 SQL。
+
+Wallet/Payment/Refund v1 沿用相同分层，不把资金字段塞进 User，也不允许业务 Service 相互调用：`WalletService` 负责会员钱包查询、流水、ADMIN+ 调账及退款预留容量校验；`PaymentService` 直接协调 User/Order/Wallet/Payment Repository 完成余额支付与资金事实查询；`RefundService` 直接协调 User/Order/Payment/Wallet/Inventory Repository 完成全额退款；`OrderService` 直接协调相同 Repository 完成 ADMIN+ 代客钱包订单，而不调用 WalletService/PaymentService。共享 `AuditLogService` 仍是唯一明确的 Service-to-Service 例外。API Mapper 显式投影白名单并保持零 SQL。
+
+资金模型采用 `WalletAccount.balance + WalletTransaction`，PaymentSettlement 以 `order_id UNIQUE` 和 `payment_id UNIQUE` 保存成功结算事实，Refund 与 Order/Settlement 一对一。OrderStatus 继续表达履约生命周期，PaymentStatus/RefundStatus 独立；成功退款不把 Paid/Completed 改为 Cancelled。
+
+所有资金写遵循同一锁序的有效子序列；M6 的颜色库存行位于对应 ProductKit 锁序位置，并按 Product ID、ProductKitColor ID 稳定排序：
+
+```text
+User
+  → Order / RechargeOrder
+  → Payment / PaymentSettlement / Refund
+  → WalletAccount
+  → ProductKit / ProductKitColor（按 Product ID、颜色 ID 稳定升序）
+```
+
+ADMIN 调账使用 `User → WalletAccount`；余额支付使用 `User → Order → Payment/Settlement → WalletAccount`；退款使用 `User → Order → Settlement → Payment/Refund → WalletAccount → sorted ProductKit/ProductKitColor`；ADMIN+ 代客钱包订单使用 `User → 新建 Order → WalletAccount → sorted ProductKit/ProductKitColor`，随后创建新的 Payment/Settlement 并直接 Paid。Service 必须在行锁后重新校验角色、用户状态、订单/支付状态、金额、余额和幂等事实。新建普通 USER 原子建钱包，历史 backfill 仅补 NORMAL/DISABLED USER；历史 DELETED USER 可无钱包且不得补建，ADMIN/SUPER_ADMIN 始终不建钱包。ADMIN/SUPER_ADMIN 的钱包账户查询和资金写入只能操作普通客户且不能以自身为目标；管理端订单资金事实只读查询仍沿用任意订单的既有权限。disabled USER 禁止主动充值/消费，但 ADMIN+ 对其执行人工余额纠错和法定义务退款仍允许；deleted USER 禁止资金写入。ADMIN+ 代客钱包订单属于消费，因此必须拒绝 disabled USER。
+
+正向资金写入还必须维护全额退款预留不变量：`WalletAccount.balance + refundable wallet exposure ≤ 1000.00`。PaymentRepository 在同一 User/Wallet 锁和事务连接内汇总未成功退款的 PAID wallet Settlement，以及完成未满 30 天的 COMPLETED wallet Settlement；WalletService 正向调账和未来真实充值成功路径必须据此拒绝侵占预留容量。退款事务将 Refund succeeded 与同额钱包入账一起提交，从敞口查询中原子释放该结算。
+
+客户端 `Idempotency-Key` 经规范化后进入服务端业务命名空间，数据库 UNIQUE 是最终兜底。完全相同意图重放历史结果，不能用当前余额覆盖首次 `after_balance`；同 key 不同目标、金额、原因或操作者返回冲突。唯一冲突处理必须先退出失败事务再读已提交事实。仅 MySQL 1205/1213 可让无外部副作用的完整用例以全新事务最多尝试 3 次。
+
+真实 Provider 调用是事务外基础设施边界。当前 `PAYMENT_PROVIDER=disabled`，充值、微信订单支付和微信退款在任何写入前返回 503；不得为演示创建假 Payment/Refund。正式接入时采用“事务创建意图 → 提交 → 事务外调用 Provider → 可信通知/主动查单在新事务收敛”的结构，客户端收银台回调不能直接驱动 Order Paid。商户号、AppID 关联、HTTPS notify URL、证书和密钥只在正式进件阶段进入受控配置/Secret，不写源代码或普通文档示例。
+
+历史数据处理位于独立运维任务边界，正式顺序固定为 M4 → wallet backfill → legacy manual settlement backfill → reconcile/gates → 启用。`wallet_account_backfill` 默认只读预览，显式 `--apply` 才为缺少钱包的 NORMAL/DISABLED 普通 USER 批量创建 `0.00` WalletAccount；历史 DELETED 和 ADMIN/SUPER_ADMIN 不补钱包，也不创建零元流水。`legacy_manual_settlement_backfill` 同样默认 preview；只对唯一 `MARK_ORDER_PAID` Audit 证明的 PAID/COMPLETED 旧单补齐 manual Payment/Settlement，apply 强制复用预览的 `through_order_id`，任何冲突阻断而不猜测修复。`wallet_reconcile` 最后通过 WalletRepository 复合游标只读扫描，按钱包 ID、流水时间和 ID 稳定核验余额净额、非零变化、单行算术/范围、余额链、末条余额及无流水零余额规则；任一违规以非零状态退出并绝不自动改账。三者都不替代停写、备份、执行后核验或真实 MySQL 门槛。
+
+Reservation 沿用既有分层且不依赖 Order/Payment Service。`ReservationService` 直接协调 `UserRepository`、`ProductRepository`、`ReservationRepository` 与唯一共享例外 `AuditLogService`；`ReservationValidator` 只根据 `Asia/Shanghai`、服务端 UTC 时钟、营业时间、30 日窗口、Option 日期类型和店休布尔值做纯判断，不查询数据库。`ReservationRepository` 负责一日一行营业日锁点、预约锁/CRUD、分页、批量店休取消和注销存在性查询，不抛业务异常。API Mapper 从已加载 Reservation/User 或 Service DTO 显式投影顾客、管理和日历白名单；顾客不含 User，管理员列表仅输出后端掩码手机号，详情才输出当前完整手机号。
+
+N1 不设置时段容量表，也不把 `user + option + scheduled_start_at` 当作幂等或唯一身份；同一时段的重复提交分别持久化，容量由 ADMIN+ 逐条人工判断。创建 POST 没有客户端幂等键，客户端只合并同一次点击的进行中请求，并在结果未知时先查询“我的预约”，不能自动重放或声称已占座。
+
+预约创建与设置店休通过 `store_business_days.business_date UNIQUE` 共享同一日期行锁。创建事务使用 `User → StoreBusinessDay → Product → ExperienceOption` 的固定边界，锁后复验当前用户手机号、Product/Option 可预约性、店休和排期，再写完整 Option 快照、pending 状态与 Audit。首次并发创建营业日的命名唯一冲突只有在退出失败事务并确认权威行存在后才重试。管理员关店先锁营业日，再按 Reservation ID 升序锁定该日 `scheduled_start_at > now` 的 pending/confirmed 预约，批量更新为 `cancelled/store_closed` 并批量写逐预约审计，最后写营业日审计；任何一步失败全部回滚。
+
+单预约 confirm/reject/cancel 都先对 Owner 可见或管理可见行执行 `SELECT ... FOR UPDATE`，锁后重检状态与服务端时间。confirm/reject 只允许尚未开始的 pending；reject 原因由服务端固定为 `no_capacity`。Owner cancel 允许 pending/confirmed 且精确到开始前至少 3 小时。除营业日 PUT 的确定性重放外，这些命令都不是幂等成功接口；网络结果未知时客户端先查询权威状态。只对 MySQL 1205/1213 用全新事务重试完整用例最多 3 次，不局部重放 SQL。
+
+Reservation 与 AccountLifecycle 的依赖方向仍由注销用例拥有：`AccountLifecycleService` 直接调用 `ReservationRepository.has_active_reservations_for_user()`，在已锁 User 的同一事务连接内检查 `status IN (pending, confirmed) AND scheduled_end_at > now`。它不调用 ReservationService，也不让 UserRepository 反向依赖预约业务。Reservation 四个历史外键均 RESTRICT；注销匿名化 User 后，预约快照与审计保留，而手机号因未快照而不再可用。
+
+Phase 4.3.9 已在 `InventoryService` 增加指定 Kit 与全局流水查询。前者校验 Product/Kit 聚合身份，后者只转发筛选条件；两者都复用 Repository 的稳定分页和批量展示字段加载，不拥有只读事务或重复查询规则。`app/api/mappers/inventory.py` 只同步读取预加载 operator 与批量补齐的 Order 编号，通过显式字典构造严格流水、分页和调整 Out Schema；Mapper 不查询数据库、不修改 ORM，也不导入 Repository 或 Service DTO。
+
+Phase 4.3.10 已新增 `get_inventory_service()` 组合根和 `admin_inventory.py`。组合根集中组装 Inventory/Product Repository 与共享 AuditLogService；fixed-Kit 基线的三个 ADMIN+ Router 只适配严格 Body/Header/Query、认证身份和客户端 IP，再调用 Service、Mapper 与 `success()`。调整 Router 根据领域 `is_replay` 选择首次 201 或重放 200；两个查询 Router 输出严格 `Page[InventoryTransactionListItem]`。M6 在同一 Router 增加颜色调整与指定颜色流水两条路径，并为全局查询增加颜色筛选；不改变层间职责。旧 Product stock 路由、Schema、Mapper 和 Service 用例已移除，Kit 创建也不再接收 stock，避免绕过不可变流水。
+
+Phase 4.3.11 没有改变应用分层或业务实现，而是在 `tests/inventory/mysql/` 建立显式启用的真实 MySQL 发布门槛。子目录 fixture 覆盖全局 SQLite fixture，只允许本机回环地址、非 3306 端口和专用 Schema 前缀，并保留 Aerich 版本表、逐测试清空业务表。Tortoise 1.1.7 的全局 Executor cache key 不包含数据库后端，fixture 因而在跨 SQLite/MySQL 初始化前后清空该内部缓存，防止把 SQLite `?` INSERT 占位符复用给 asyncmy。并发测试使用协程屏障把事务同时送到真实锁 SQL；管理员调整/下单竞争通过 `performance_schema.data_lock_waits` 观测阻塞，1205 测试将阻塞者放入独立任务，避免 Tortoise 事务 ContextVar 被竞争协程继承。完整 HTTP 矩阵仍通过公开 ASGI 边界验证，不在 Router 或 Service 中增加测试分支。
+
+订单号组件已在 `app/common/order_number.py` 实现，使用标准库生成 `OD` + 26 位 Crockford Base32 ULID，不新增第三方依赖。它使用 UTC Unix 毫秒和 `secrets.token_bytes()` 密码学安全随机源，不依赖 Redis、数据库序列表或进程全局状态；`orders.order_no` UNIQUE 是最终兜底。创建 Service 已实现最多 3 次的唯一冲突重试：每次冲突事务完整回滚，归因后用新编号开启全新事务；非编号约束错误及第三次编号冲突保留数据库根因。列表排序始终为 `created_at DESC, id DESC`，不依赖订单号。
+
+Order API Mapper 已实现并与 Product Mapper 保持同一边界：从 Repository 已预加载或注解的 Order 聚合生成用户端/管理端独立 Out Schema，金额由严格 Schema 固定序列化为两位小数字符串，OrderStatus 与 DayType 转为 `{value, label}`。列表仅消费数据库聚合的 `item_count` 注解，详情只消费已预加载并验证归属的 Items，状态响应可从无关系的轻量 Order 映射；执行期间零 SQL、零修改。用户端 Mapper 不读取或暴露 user 关系；管理端只增加已预加载的 `user_id` 与 `user_nickname`，不会输出用户名、手机号或凭据。订单审计继续使用共享 Audit Schema/Mapper 独立分页查询，不嵌入详情。
+
+Order HTTP 组合根已在 `app/api/deps.py:get_order_service()` 实现，集中组装 OrderRepository、ProductRepository、InventoryRepository 与共享 `AuditLogService(AuditLogRepository)`。`orders.py` 和 `admin_orders.py` 不导入这些 Repository 或业务 Model，不捕获业务异常；它们只把严格 Request/Query Schema 与认证身份转换为 Service 参数，再通过 Order/Audit Mapper 和 `success()` 输出统一信封。用户 ID 和管理操作者 ID 均来自认证依赖，客户端无法通过 body/query 伪造；写用例统一由 `get_client_ip()` 提供审计 IP。该工具只接受可规范化且不带 scope identifier 的 IPv4/IPv6 字面量，非法或超长 `X-Forwarded-For` 回退到直连地址；部署层仍必须确保只有受信任的反向代理能够覆盖转发头。`HTTPBearer(auto_error=False)` 让缺失凭据进入共享 `AuthenticationException` 中间件并返回统一 401 信封，ADMIN+ 权限不足仍为 403。
 
 Product Router 的运行时输出仍由 Mapper 完成一次严格 Out Schema 校验与序列化，再交给 `success()` 构造统一信封；OpenAPI 则通过 `SuccessResponse[T]` / `ErrorResponse` 和路由 `responses` 精确声明成功与错误结构。这里显式保持 `response_model=None`，避免 FastAPI 对 Mapper 已序列化的两位小数金额字符串进行第二次 Decimal 输入校验。该选择只分离运行时校验与文档声明，不放宽任何输出白名单。
 
@@ -432,13 +580,15 @@ ExperienceOption 修改 Service 接收不依赖 Schema 的显式字段 Mapping�
 
 ExperienceOption 删除 Service 复用按 ID 加载的 Option→Product 关系做前置状态检查，不统计当前有效 Option 数量。事务内只通过 Repository 设置 Option 删除标记并写 `DELETE_OPTION` 快照审计；Product 状态、Option 图片记录和图片外键保持不变。允许删除 Draft/Offline 的最后一项，将零 Option 状态留给未来上架 Validator 判断。
 
-Kit 价格与库存修改 Service 共享 Product 主表前置检查和 ProductKit 扩展加载方法，按不存在、删除、类型、Online、扩展缺失的顺序稳定失败；缺少一对一扩展使用已登记的 `40404 ProductKitNotFound`，不伪造聚合数据。价格和库存分别使用独立公开用例，只将单一字段交给 Repository 更新，并与 `UPDATE_PRICE` / `UPDATE_STOCK` 快照审计共享事务连接。Service 返回 ProductKit 领域对象，API Mapper 负责将 `product_id` 映射为响应资源 ID。该流程不调用 Validator，也不引入 Phase 4.3 的库存流水或并发扣减语义。
+Kit 价格修改 Service 按不存在、删除、类型、Online、扩展缺失的顺序稳定失败；缺少一对一扩展使用已登记的 `40404 ProductKitNotFound`，不伪造聚合数据。价格用例只将 price 交给 Repository 更新，并与 `UPDATE_PRICE` 快照审计共享事务连接；Service 返回 ProductKit，API Mapper 将 `product_id` 映射为响应资源 ID。库存变化不再由 ProductService 处理，统一进入 InventoryService 的锁、幂等、流水和审计事务。
 
 ProductImage Service 的输入边界是已生成的 `image_url` 和领域字段，不导入 FastAPI `UploadFile` 或存储 SDK。公共图创建、Option 图创建、排序/封面修改和逻辑删除均通过 ProductRepository 持久化，并与 Product-targeted 审计共享事务。封面创建/切换先在同一连接上通过 `SELECT ... FOR UPDATE` 锁定 Product 行，串行化同聚合的并发封面写入，再读取旧封面、批量清除有效公共封面、写当前图片并顺序写审计；第二条审计失败也回滚所有状态。已删除图片、所属 Product 或所属 Option 对图片 ID 操作统一隐藏为 40403。
 
 文件上传是 API/基础设施边界。`app/api/forms/product.py` 以 `extra=forbid` 限定两种 multipart 请求形状；`app/storage/image.py` 不依赖 FastAPI、Model、Repository 或 Service，限量读取最大 2 MiB，校验 jpg/png/webp 文件签名与声明 MIME，使用服务端 UUID 和不覆盖的原子发布，返回 URL 及 storage key。`app/api/uploads.py` 在线程池调用同步文件存储，再调用 ProductService；Service 失败时幂等删除已存储文件，补偿异常只记录 storage key，不掩盖原业务异常。`app/api/static.py` 将本地 URL 挂载为开发环境可访问静态文件，首次上传前目录不存在时返回 404。
 
 ProductImage 物理文件清理位于独立运维任务边界，而不是 DELETE HTTP 请求、ProductService 数据库事务或 FastAPI 进程内后台任务。`ProductImageCleanupService` 通过 ProductRepository 按 `is_deleted=true`、显式截止时间与 ID 游标分批读取候选，并以单条批量查询取得仍被有效记录引用的 URL，避免 N+1；`LocalImageStorage.key_from_url()` 只接受当前配置命名空间中的 UUID key。清理前在内存中排除有效共享引用，再在线程中执行幂等删除；外部 URL、异常 URL和有效共享引用不会被删除，单项 I/O 失败记录上下文并继续。`app/tasks/product_image_cleanup.py` 只负责数据库生命周期、批次循环、统计与退出码，默认预览并逐项记录候选，只有 `--apply` 才执行删除；可由 cron、容器定时任务或其他外部调度器重复调用。逻辑删除记录与 AuditLog 不因文件清理而修改，因此不需要新增清理状态表或数据库迁移。
+
+Phase 9.3.2 的首个管理员初始化同样位于独立运维任务边界。`app/tasks/super_admin_bootstrap.py` 只负责 CLI 确认、Secret 输入、注册字段校验和 ORM 生命周期；不提供 HTTP 端点，也不允许普通注册或手工 SQL 提权。`SuperAdminBootstrapService` 拥有用户创建与 Bootstrap Audit 的事务，严格区分首次创建与完全相同的重放；现有普通用户、不同 SUPER_ADMIN、凭据变化、禁用状态或审计不一致都会拒绝且不修改数据。`BootstrapLockRepository` 先做进程内串行化，production MySQL 再使用固定、参数化的 session advisory lock；成功路径先提交用户与审计再释放数据库锁，避免并发命令在提交窗口创建第二个 SUPER_ADMIN。SQLite 锁只服务本地/自动化，production 配置仍强制 MySQL。
 
 **约束：**
 - 同步纯计算，不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务
@@ -522,7 +672,7 @@ class User(Model):
 |------|-------|-------------|
 | 依赖方向 | 不依赖 HTTP（可被 CLI、脚本引用） | 依赖 Starlette 的 Middleware 协议 |
 | 生命周期 | 应用级（启动一次） | 请求级（每个请求触发） |
-| 典型内容 | 配置类、加密工具、Redis 客户端 | RequestID、Auth、CORS、日志、异常捕获 |
+| 典型内容 | 配置类、加密工具、Redis 客户端 | RequestID、Auth、CORS、日志、压缩、异常捕获 |
 | 测试方式 | 纯单元测试 | 需要 `TestClient` 或 ASGI transport |
 
 **各文件职责**
@@ -533,6 +683,7 @@ class User(Model):
 | `auth.py` | 解析 Authorization Header → 验证 JWT → 注入 `request.state.user` | 路由匹配前 |
 | `logging.py` | 记录 `method path status_code duration_ms` | 响应返回时 |
 | `cors.py` | 配置允许的 Origin、Method、Header | 预检请求 (OPTIONS) |
+| `compression.py` | 对客户端声明接受 gzip 的大于等于 1 KiB 文本/API 响应压缩；`/uploads/products/` 图片旁路 | 响应返回时 |
 | `exception.py` | 捕获所有未处理异常 → 封装为 `{code, message}` 统一信封 | 异常发生时 |
 
 **执行顺序**
@@ -550,7 +701,8 @@ Request
   │
   ▼
   ├─[5] exception     → 捕获异常，返回统一错误格式
-  ├─[6] logging       → 计算耗时，写入访问日志
+  ├─[6] compression   → 协商并压缩符合条件的文本响应，图片上传路径旁路
+  ├─[7] logging       → 计算耗时，写入访问日志
   │
   ▼
 Response
@@ -701,9 +853,62 @@ def mask_email(email: str) -> str:
 
 ---
 
+### 3.9 M9 二维码开台边界（仓库已实现）
+
+M9 已按独立 Table Session 领域完成仓库实现。下述文件、类和依赖已经进入运行时；某个持久环境是否可用仍必须以该环境的 M9 迁移、30 桌 bootstrap 和验收记录为准：
+
+```text
+app/api/v1/tables.py                   # 公开解析、用户开台与本人会话
+app/api/v1/admin_tables.py             # 30 桌、历史会话、启停与应急释放
+app/api/mappers/table_session.py       # 用户/管理白名单、Timer phase 与 server_now
+app/schemas/table_session.py           # 严格请求与 Query Schema
+app/schemas/table_session_response.py  # 用户/管理响应白名单与时间不变量
+app/common/enums/table_session.py      # Session 状态、关闭原因、Timer 展示阶段
+app/common/constants/table_session.py  # 15 分钟、10 分钟、Token/原因/限流边界
+app/common/exceptions/table_session.py # 4046x/4096x/4226x/4296x 命名异常
+app/domain/table_session.py            # 无 I/O 的 Timer/关闭 transition plan 纯计算
+app/models/table_session.py            # StoreTable/Session/Timer/Occupancy
+app/repositories/table_session_repo.py # 查询、行锁、CRUD、批量收敛原语
+app/validators/table_session.py        # 纯资格/状态判断；只通过或抛命名异常
+app/services/table_session_service.py  # 创建、查询、惰性收敛、管理员释放事务
+```
+
+跨领域事务仍由当前用例的 Service 持有：
+
+- `TableSessionService` 拥有创建 Session、用户/管理查询收敛、桌台启停和管理员释放。
+- `PaymentService` 拥有钱包支付及 Table 激活事务。
+- `OrderService` 拥有人工结算、Pending 取消、订单完成及对应 Table 激活/关闭事务。
+- `RefundService` 拥有全额退款与 Table 关闭事务。
+
+这些 Service 不互相调用。它们直接注入 `TableSessionRepository` 获取/锁定/持久化 Table 数据，并复用 `app/validators/table_session.py` 中无 I/O 的校验函数：调用方先准备已锁 Session、Order Item 快照、Payment 时间和当前时间；Validator 只判断并返回规范化时长或抛命名业务异常，不查库、不写库、不打开事务。
+
+多个事务所有者都需要的确定性计算放在窄范围 `app/domain/table_session.py`，例如按 Experience 时长去重排序、从单一 `started_at` 生成 TimerSpec、计算最大释放时间，以及根据已到达的绝对时间选择自动关闭事实。该模块只依赖标准库与 `app/common/` 的 Enum/常量，输入/输出都是冻结 dataclass/value object，不读取 ORM、不抛 HTTP 异常、不持有事务。它是为避免 Payment/Order/Refund 三处复制同一计时公式而新增的 M9 纯领域边界，不扩张为通用“domain 工具箱”。Repository 只执行调用方已经验证和计算好的锁、批量 Timer 写入、Session 更新和 Occupancy 删除，不判断业务状态或抛业务异常。
+
+涉及 M9 的写事务使用适用的统一锁序：
+
+```text
+User
+  -> Order
+    -> StoreTable
+      -> TableSession / TableOccupancy
+        -> Settlement / Payment / Refund
+          -> WalletAccount
+            -> ProductKit / ProductKitColor
+```
+
+从 `session_no` 或 `table_id` 进入的用例可以先做无锁 ID 解析，但进入事务后必须回到 Order→StoreTable→Session/Occupancy 顺序重新锁定并重检。仅 MySQL 1205/1213 允许用全新事务重试完整用例；禁止只重放 Timer、资金、库存或 Audit 的局部写入。
+
+Timer phase、实际结束时间与剩余时间属于 API Mapper 的纯派生展示：Mapper 入口捕获一次 UTC `server_now`，同步读取 Repository 已预加载的 Session/Timer/Order Item；父 Session 关闭时按 `min(timer.grace_ends_at, session.closed_at)` 派生 ended，不执行 SQL、不写 ORM。定时清理只是及时性优化；TableSessionService 的查询/创建及 Order/Payment/Refund 写入口都负责惰性收敛，正确性不依赖 Redis 定时器或进程内后台任务。
+
+`AuditLogService` 仍是唯一 Service-to-Service 例外。人工开台、激活、桌台启停和释放可以写真实操作者 Audit；自动 `payment_timeout` / `time_expired` 不伪造 operator，权威记录保存在 Session 的 `closed_at/close_reason`。未来如需通知或外部事件投递，再单独引入 durable outbox，不在 M9 首版借用 Reservation N2。
+
+完整业务、API 与目标表见 [二维码开台需求](../01_requirements/table_session_module.md)、[二维码开台 API](../03_api/table_session_api.md) 和 [数据库设计](../02_database/database_design.md)。
+
+---
+
 ## 4. 请求流程
 
-以"创建订单"为例，展示一次完整调用链：
+以 Phase 4.3.7 已实现的“创建 Experience/Kit/混合订单”为例，展示当前完整调用链：
 
 ```
  POST /api/v1/orders
@@ -731,17 +936,18 @@ def mask_email(email: str) -> str:
                    ▼
 ┌─[4]───────────────────────────────────────────────────┐
 │  Service: order_service.py → create_order()           │
-│  · 遍历 items，调 product_repo 校验商品 + 库存         │
-│  · 商品不存在/下架 → raise BusinessException(3003)     │
-│  · 库存不足 → raise BusinessException(3004)            │
-│  · 开启事务：扣库存 → 写 orders → 写 order_items       │
+│  · 批量加载 Product + ExperienceOption + ProductKit    │
+│  · 验证类型/Option 形状并计算 Decimal 候选快照           │
+│  · 先写 Pending Order，再稳定锁定、重检并扣减全部 Kit    │
+│  · 单事务写余额/流水 + bulk Items + Audit + 响应重载     │
 └──────────────────┬────────────────────────────────────┘
                    ▼
 ┌─[5]───────────────────────────────────────────────────┐
-│  Repository: product_repo.deduct_stock()               │
-│             order_repo.create()                        │
-│  · Tortoise ORM 生成 SQL: UPDATE ... SET stock = ...  │
-│  · Tortoise ORM 生成 SQL: INSERT INTO orders ...      │
+│  Repository: product_repo 批量只读候选与锁后 Product     │
+│              inventory_repo 集合锁/批量余额与流水       │
+│              order_repo 原子创建/批量明细/响应重载      │
+│  AuditLogService.log(..., using_db=connection)         │
+│  · 纯 Experience 请求跳过 inventory_repo               │
 └──────────────────┬────────────────────────────────────┘
                    ▼
 ┌─[6]───────────────────────────────────────────────────┐
@@ -751,7 +957,8 @@ def mask_email(email: str) -> str:
                    ▼
 ┌─[7]───────────────────────────────────────────────────┐
 │  响应：Service 返回 Order 对象                         │
-│  → Pydantic 序列化为 OrderOut schema                   │
+│  → Order Mapper 严格校验用户端 OrderDetailOut          │
+│  → 金额两位小数字符串，用户端不暴露 user 字段           │
 │  → FastAPI 封装为统一信封 { code, message, data }      │
 │  → HTTP 201                                           │
 └───────────────────────────────────────────────────────┘
@@ -786,6 +993,13 @@ JWT_SECRET_KEY=your-secret-key-change-in-production
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE=7200    # 2 小时
 JWT_REFRESH_TOKEN_EXPIRE=604800 # 7 天
+
+# Wallet / Payment（production 默认关闭）
+WALLET_ADMIN_WRITE_ENABLED=false
+WALLET_ORDER_PAYMENT_ENABLED=false
+WALLET_REFUND_ENABLED=false
+WALLET_TOPUP_ENABLED=false
+PAYMENT_PROVIDER=disabled
 ```
 
 ### 5.2 配置类（app/core/config.py）
@@ -800,7 +1014,7 @@ _ENV_FILE = str(Path(__file__).resolve().parent.parent.parent / ".env")
 class Settings(BaseSettings):
     # 应用
     app_name: str = "pinkdooHub"
-    app_version: str = "0.3.0"
+    app_version: str = "0.6.0"
     app_env: str = "development"
     app_debug: bool = True
 
@@ -825,6 +1039,7 @@ class Settings(BaseSettings):
     model_config = {
         "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",
+        "hide_input_in_errors": True,
     }
 
     @model_validator(mode="after")
@@ -833,12 +1048,26 @@ class Settings(BaseSettings):
             raise ValueError(f"APP_ENV must be development/testing/production")
         if self.db_engine not in ("sqlite", "mysql"):
             raise ValueError(f"DB_ENGINE must be sqlite or mysql")
-        if self.app_env == "production" and self.jwt_secret_key == "dev-secret-change-in-production":
-            raise ValueError("JWT_SECRET_KEY must be set in production")
+        if self.app_env == "production":
+            # 实际实现还通过 URL/地址解析 helper 完成以下全部检查。
+            if self.app_debug or self.db_engine != "mysql":
+                raise ValueError("production runtime configuration is unsafe")
+            if self.jwt_algorithm != "HS256" or len(self.jwt_secret_key.strip()) < 32:
+                raise ValueError("production JWT configuration is unsafe")
+            # REDIS_URL: redis/rediss + 有效非本机 host
+            # PRODUCT_IMAGE_BASE_URL: 无凭据的绝对 HTTPS URL
         return self
 
 settings = Settings()
 ```
+
+生产环境会在应用导入/启动阶段 fail-fast：`APP_DEBUG=false`、MySQL、HS256、
+trim 后至少 32 字符且非已知弱值的 JWT Secret、`redis`/`rediss` 非本机
+Redis host，以及无凭据的绝对 HTTPS 图片地址缺一不可。校验错误隐藏原始输入，
+避免把 Secret 或带凭据 URL 回显到启动日志；development/testing 继续保留本地
+SQLite、localhost Redis 和相对图片路径的开发默认值。
+
+Wallet 管理调账/ADMIN+ 代客钱包订单、余额支付和退款在 development/testing 默认可供内部演练，production 必须分别显式开启；代客订单与调账共用管理写开关。充值不使用该便利规则：当前配置只接受 `PAYMENT_PROVIDER=disabled`，并拒绝 `WALLET_TOPUP_ENABLED=true`，因此充值和微信支付/退款稳定 503 且零写入。充值 `1.00..1000.00`、余额 `0.00..1000.00` 及退款预留不变量都是代码领域常量，不通过环境变量调高。
 
 ### 5.3 环境切换
 
@@ -976,11 +1205,11 @@ def create_access_token(user_id: int) -> str:
     )
 
 def create_access_token(user_id: int, jti: str) -> str:
-    # {"sub":"1", "type":"access", "jti":"uuid", "exp":..., "iat":...}
+    # {"sub":"1", "type":"access", "jti":"uuid", "sid":"family", "ver":0, ...}
     ...
 
 def create_refresh_token(user_id: int, jti: str) -> str:
-    # 同一次登录的 access/refresh 共用 jti
+    # 同一轮 access/refresh 共用 jti；refresh 成功后生成新 jti，sid 保持不变
     ...
 
 def decode_token(token: str, expected_type: str) -> dict:
@@ -1023,21 +1252,32 @@ import redis.asyncio as aioredis
 
 redis_client = aioredis.from_url(settings.redis_url)
 
-# Refresh Token 存储：key = rt:{jti}, value = user_id
-async def save_refresh_token(jti: str, user_id: int) -> None:
-    await redis_client.set(f"rt:{jti}", str(user_id), ex=settings.jwt_refresh_token_expire)
+# 每个登录使用独立 session family；Lua 脚本原子轮换并检测重放。
+async def save_refresh_session(jti: str, session_id: str, user_id: int) -> None: ...
+async def rotate_refresh_session(*, old_jti: str, new_jti: str,
+                                 session_id: str, user_id: int) -> RefreshRotationResult: ...
+async def revoke_refresh_family(session_id: str) -> None: ...
+async def revoke_user_refresh_sessions(user_id: int) -> None: ...
 
-async def verify_refresh_token(jti: str) -> int | None:
-    value = await redis_client.get(f"rt:{jti}")
-    return int(value) if value else None
-
-async def delete_refresh_token(jti: str) -> None:
-    await redis_client.delete(f"rt:{jti}")
-
-# 接口限流：key = ip + endpoint
-async def rate_limit(key: str, max_requests: int, window: int) -> bool:
-    current = await redis_client.incr(key)
-    if current == 1:
-        await redis_client.expire(key, window)
-    return current <= max_requests
+# 限流 key 中的 principal 先做 keyed HMAC；Redis 不保存明文 IP/账号/Token。
+async def increment_rate_limit(key: str, window_seconds: int) -> int: ...
 ```
+
+### 6.6 Liveness / Readiness（app/core/health.py）
+
+运行平台通过两个无认证 HTTP 探针区分“进程存活”和“实例可接流量”：
+
+- `/api/v1/health/live` 由 Router 直接构造严格 `LivenessOut`，不访问数据库、Redis 或其他外部服务；既有 `/api/v1/health` 保留为相同的 dependency-free 兼容入口。
+- `/api/v1/health/ready` 调用 `core/health.py`，并行执行 Tortoise 默认连接的最小只读查询与当前 Redis 客户端 `PING`。每项独立限制为 1 秒；两项均成功才返回 HTTP 200，任一失败或超时即通过统一异常中间件返回 HTTP 503。
+- Core 只返回不可变的布尔结果，不依赖 FastAPI 或公开 Schema；Router 负责映射为 `ready/not_ready` 与 `up/down`，并先经 Pydantic Out Schema 校验。
+- 驱动异常可能携带连接目标或凭据，因此 Core 日志只记录依赖类别和异常类型，HTTP 也不输出连接目标或原始异常。
+
+Readiness 只决定是否接收新业务流量，不负责重启进程；Liveness 失败才属于进程级处置。9.3 仍需在生产相似 MySQL/Redis 环境实际证明依赖故障摘流量与恢复行为，本地自动化不能替代演练证据。
+
+### 6.7 Phase 9.5 身份会话与可观测性
+
+- `auth_session.py` 为每次登录创建独立 `sid` 与首个 `jti`。Redis 同时维护 active、used、family 和 user→families 索引；Lua 脚本原子消费旧 refresh、发布新 refresh，并在已消费 Token 重放时撤销 family。
+- Access/Refresh 都携带 `auth_version`；认证依赖和刷新 Service 与 User 当前版本比较。密码修改、微信解绑和注销递增版本并撤销全部已索引 family。
+- `rate_limit.py` 对身份端点使用独立策略和 HMAC 化 principal 键，Redis 不可用时返回 503，超过阈值返回 429。Redis 中不保存明文账号、IP 或 Token。
+- `security_events.py` 只允许固定事件、结果、内部 user ID 和 scope 维度。日志采集基线可对 `auth_rate_limit`、`refresh_reuse`、`wechat_identity_exchange`、`external_identity_*` 与 `account_deletion` 聚合告警；不得把 code、平台标识或 Secret 添加为日志字段。
+- `ImageStorage` Protocol 是上传链路的最小存储端口，`LocalImageStorage` 是 Gate A/开发适配器。Gate B 对象存储适配器必须保持相同内容校验、不可覆盖 key、补偿删除、命名空间解析和延迟清理语义；选择真实 Bucket/CDN、SDK 和凭据前不伪造已完成的生产存储。

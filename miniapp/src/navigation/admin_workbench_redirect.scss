@@ -1,0 +1,28 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../styles/patterns' as pd;
+
+.admin-workbench-redirect {
+  @include pd.page-shell;
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+
+    max-width: 560px;
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}

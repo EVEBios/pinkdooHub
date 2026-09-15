@@ -1,0 +1,297 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
+.workbench-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__header {
+    @include pd.header-band;
+
+    color: #fff;
+    background-color: #8e2448;
+    background-image:
+      url('../../../assets/admin/workbench-header-texture.jpg'),
+      var(--pd-gradient-stock);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    border-bottom-color: transparent;
+    box-shadow: 0 18px 42px rgb(103 24 54 / 18%);
+  }
+
+  &__heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 18px;
+  }
+
+  &__title {
+    @include pd.page-title;
+
+    color: #fff;
+  }
+
+  &__brand {
+    flex: 0 0 auto;
+    color: #fff;
+    font-size: var(--pd-font-label);
+    font-weight: 750;
+    letter-spacing: -0.4px;
+  }
+
+  &__identity,
+  &__subtitle {
+    display: block;
+    max-width: 34em;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  &__identity {
+    margin-top: 22px;
+    color: #fff;
+    font-weight: 650;
+  }
+
+  &__subtitle {
+    margin-top: 8px;
+    color: #fbeef3;
+  }
+}
+
+.workbench-groups {
+  display: grid;
+  gap: 24px;
+}
+
+.workbench-group {
+  @include pd.section-panel(0);
+
+  --workbench-group-accent: var(--pd-color-primary-strong);
+
+  position: relative;
+  overflow: hidden;
+  padding-top: 8px;
+  background: var(--workbench-group-accent);
+
+  &--ink {
+    --workbench-group-accent: #68213f;
+  }
+
+  &--berry {
+    --workbench-group-accent: var(--pd-color-primary);
+  }
+
+  &--rose {
+    --workbench-group-accent: #c97991;
+  }
+
+  &__heading {
+    position: relative;
+    padding: 22px 24px 19px 28px;
+    background: var(--pd-color-surface);
+    border-bottom: 1px solid var(--pd-color-line);
+
+    &::before {
+      position: absolute;
+      top: -8px;
+      bottom: 0;
+      left: 0;
+      width: 14px;
+      background: var(--workbench-group-accent);
+      content: '';
+      pointer-events: none;
+    }
+  }
+
+  &__title,
+  &__description {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  &__description {
+    margin-top: 7px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+
+  &__actions {
+    display: grid;
+  }
+}
+
+.workbench-action {
+  display: flex;
+  width: 100%;
+  min-height: 118px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0;
+  padding: 20px 24px;
+  color: var(--pd-color-ink);
+  text-align: left;
+  background: var(--pd-color-surface);
+  border: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+
+  & + & {
+    border-top: 1px solid var(--pd-color-line);
+  }
+
+  &:active,
+  &--pressed {
+    background: var(--pd-color-surface);
+    opacity: 1;
+    transform: none;
+  }
+
+  &__copy {
+    min-width: 0;
+  }
+
+  &__label,
+  &__meta {
+    display: block;
+  }
+
+  &__label {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-body-size);
+    font-weight: 750;
+    line-height: 1.4;
+  }
+
+  &__meta {
+    margin-top: 6px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+
+  &__enter {
+    display: inline-flex;
+    min-width: 112px;
+    min-height: 54px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0 18px;
+    color: #fff;
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    line-height: 1;
+    background: var(--pd-gradient-primary);
+    border-radius: 999px;
+    box-shadow: 0 7px 17px rgb(143 35 70 / 16%);
+    box-sizing: border-box;
+  }
+
+  /* 导航中的状态不能使用原生 disabled，否则微信会让整个 Button 行变暗。 */
+  &--pending &__enter {
+    color: var(--pd-color-ink-soft);
+    background: var(--pd-color-surface-muted);
+    box-shadow: none;
+    transform: none;
+  }
+
+  &--pressed &__enter,
+  &:active &__enter {
+    background: linear-gradient(135deg, #7e1f42 0%, #92264a 100%);
+    box-shadow: 0 4px 10px rgb(82 20 45 / 16%);
+    transform: scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-action {
+    &--pressed &__enter,
+    &:active &__enter {
+      transform: none;
+    }
+  }
+}
+
+.workbench-logout {
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__button {
+    @include pd.quiet-button;
+
+    width: 100%;
+    margin-top: 30px;
+  }
+}
+
+.workbench-navigation-error {
+  @include pd.section-panel(20px);
+
+  margin-top: 22px;
+
+  &__message {
+    @include pd.feedback-error;
+  }
+
+  &__action {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 16px;
+  }
+}
+
+.workbench-state {
+  @include pd.page-shell;
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+
+    margin-top: 18px;
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}
+
+@media (width >= 768px) {
+  .workbench-group {
+    &__actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .workbench-action {
+    & + & {
+      border-top: 0;
+      border-left: 1px solid var(--pd-color-line);
+    }
+  }
+}

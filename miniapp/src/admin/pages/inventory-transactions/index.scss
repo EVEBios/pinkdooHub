@@ -1,0 +1,32 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/inventory';
+@use '../../styles/surface' as admin;
+
+.inventory-transactions-page {
+  min-height: 100vh;
+  padding: 0 24px calc(52px + env(safe-area-inset-bottom));
+  color: var(--pd-color-ink);
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
+
+  &__header {
+    @include admin.page-header(true, center 35%);
+  }
+
+  &__title,
+  &__subtitle {
+    display: block;
+  }
+
+  &__title {
+    @include admin.header-title;
+  }
+
+  &__subtitle {
+    @include admin.header-subtitle;
+  }
+}
+
+.inventory-filters {
+  @include admin.filter-panel;
+}
