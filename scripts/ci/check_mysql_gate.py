@@ -174,7 +174,19 @@ M9_EXPECTED_UNIQUE_INDEXES = {
     "uidx_table_occupancy_user",
     "uidx_table_occupancy_order",
 }
-M9_EXPECTED_FOREIGN_KEY_COUNT = 10
+TABLE_EXPECTED_FOREIGN_KEYS = {
+    "fk_table_sessions_table", "fk_table_sessions_user", "fk_table_sessions_order",
+    "fk_table_sessions_payment", "fk_table_sessions_closed_by", "fk_table_session_timers_session",
+    "fk_table_occupancies_table", "fk_table_occupancies_session", "fk_table_occupancies_user",
+    "fk_table_occupancies_order", "fk_table_session_opened_by", "fk_table_session_source_option",
+}
+
+
+def _validate_table_foreign_keys(rows: list[tuple[str, str]]) -> None:
+    # M11 为直接开台新增两个外键。验证最终候选的具体约束，避免沿用 M9 的总数。
+    expected = {(name, "RESTRICT") for name in TABLE_EXPECTED_FOREIGN_KEYS}
+    if len(rows) != len(expected) or set(rows) != expected:
+        raise GateError("M15 table RESTRICT foreign keys do not match the contract")
 
 
 class GateError(RuntimeError):
@@ -977,16 +989,14 @@ async def _read_m9_evidence(config: GateConfig) -> dict[str, object]:
                 raise GateError("M9 named unique indexes do not match the contract")
 
             await cursor.execute(
-                "SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS "
+                "SELECT CONSTRAINT_NAME, DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS "
                 "WHERE CONSTRAINT_SCHEMA = %s AND TABLE_NAME IN "
-                "('table_sessions','table_session_timers','table_occupancies') "
-                "AND DELETE_RULE = 'RESTRICT'",
+                "('table_sessions','table_session_timers','table_occupancies')",
                 (config.database,),
             )
-            foreign_key_row = await cursor.fetchone()
-            foreign_key_count = 0 if foreign_key_row is None else int(foreign_key_row[0])
-            if foreign_key_count != M9_EXPECTED_FOREIGN_KEY_COUNT:
-                raise GateError("M9 RESTRICT foreign keys do not match the contract")
+            _validate_table_foreign_keys([
+                (str(name), str(rule)) for name, rule in await cursor.fetchall()
+            ])
 
             await cursor.execute(
                 "SELECT COUNT(*), COUNT(DISTINCT table_no), "
@@ -1018,7 +1028,7 @@ async def _read_m9_evidence(config: GateConfig) -> dict[str, object]:
         "enabled_table_count": 30,
         "unique_qr_token_count": 30,
         "named_unique_index_count": len(M9_EXPECTED_UNIQUE_INDEXES),
-        "restrict_foreign_key_count": M9_EXPECTED_FOREIGN_KEY_COUNT,
+        "restrict_foreign_key_count": len(TABLE_EXPECTED_FOREIGN_KEYS),
         "initial_session_count": 0,
         "initial_timer_count": 0,
         "initial_occupancy_count": 0,

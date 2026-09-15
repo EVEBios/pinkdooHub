@@ -139,7 +139,6 @@ def test_m6_through_m9_snapshots_require_replay_and_schema_evidence() -> None:
     assert '"manifest_projection_matches": True' in checker_source
     assert "M9_EXPECTED_TABLES" in checker_source
     assert "M9_EXPECTED_UNIQUE_INDEXES" in checker_source
-    assert "M9_EXPECTED_FOREIGN_KEY_COUNT" in checker_source
     assert "_read_m9_evidence" in checker_source
     assert '"table_count": 30' in checker_source
     assert '"unique_qr_token_count": 30' in checker_source
@@ -213,3 +212,20 @@ def test_preflight_rejects_invalid_port_without_a_traceback_or_secret(
     assert result.returncode != 0
     assert "Traceback" not in result.stderr
     assert SAFE_ENVIRONMENT["INVENTORY_MYSQL_TEST_PASSWORD"] not in result.stderr
+
+
+def test_table_foreign_keys_require_m11_additions_and_reject_same_count_drift():
+    import pytest
+    from scripts.ci import check_mysql_gate as gate
+
+    rows = [(name, "RESTRICT") for name in sorted(gate.TABLE_EXPECTED_FOREIGN_KEYS)]
+    gate._validate_table_foreign_keys(rows)
+    assert len(rows) == 12
+    for invalid in (
+        [row for row in rows if row[0] not in {"fk_table_session_opened_by", "fk_table_session_source_option"}],
+        [(rows[0][0], "CASCADE"), *rows[1:]],
+        [("unrelated_replacement", "RESTRICT"), *rows[1:]],
+        [rows[0], *rows],
+    ):
+        with pytest.raises(gate.GateError, match="RESTRICT foreign keys"):
+            gate._validate_table_foreign_keys(invalid)
