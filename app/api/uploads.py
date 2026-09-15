@@ -10,7 +10,7 @@ from anyio import CancelScope
 from fastapi import UploadFile
 from starlette.concurrency import run_in_threadpool
 
-from app.storage.image import LocalImageStorage, StoredImage
+from app.storage.image import ImageStorage, StoredImage
 
 ResultT = TypeVar("ResultT")
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 async def store_image_and_call(
     upload: UploadFile,
-    storage: LocalImageStorage,
+    storage: ImageStorage,
     operation: Callable[..., Awaitable[ResultT]],
     *operation_args: object,
     **operation_kwargs: object,
@@ -62,7 +62,7 @@ async def _close_upload_without_masking(upload: UploadFile) -> None:
 
 
 async def _delete_without_masking(
-    storage: LocalImageStorage,
+    storage: ImageStorage,
     storage_key: str,
 ) -> None:
     try:

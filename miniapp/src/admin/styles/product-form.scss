@@ -1,0 +1,91 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+@use './surface' as admin;
+
+.admin-product-form-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__header {
+    @include admin.page-header;
+  }
+
+  &__title {
+    @include admin.header-title;
+  }
+
+  &__subtitle {
+    @include admin.header-subtitle;
+  }
+
+  > button {
+    @include pd.secondary-button(14px);
+
+    width: 100%;
+    margin-top: 14px;
+  }
+}
+
+.admin-product-form {
+  @include pd.section-panel(26px);
+  @include admin.section-accent;
+
+  display: block;
+  margin-top: 22px;
+
+  &__label {
+    @include pd.field-label;
+  }
+
+  &__input {
+    @include pd.field;
+  }
+
+  &__textarea {
+    @include pd.textarea-field;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__notice {
+    @include pd.feedback-warning;
+  }
+
+  &__submit {
+    @include pd.primary-button(14px);
+
+    width: 100%;
+    margin-top: 26px;
+  }
+}
+
+.admin-product-form-state {
+  @include pd.state-shell;
+
+  min-height: 100vh;
+  background: var(--pd-gradient-canvas);
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button(999px);
+
+    margin-top: 26px;
+  }
+}
+
+@media (width >= 768px) {
+  .admin-product-form {
+    max-width: 760px;
+    margin-right: auto;
+    margin-left: auto;
+  }
+}

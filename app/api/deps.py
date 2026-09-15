@@ -8,25 +8,65 @@ Depends 链式组合：
 每一层只做一件事，外层层依赖内层，FastAPI 自动递归解析。
 """
 
-from fastapi import Depends
+from fastapi import Depends, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.common.enums.user import UserRole
+from app.common.enums.user import UserRole, UserStatus
+from app.common.exceptions.user import TokenExpired, UserDeleted, UserDisabled
 from app.core.config import settings
-from app.core.exceptions import PermissionException
+from app.core.exceptions import (
+    AuthenticationException,
+    NotFoundException,
+    PermissionException,
+)
 from app.core.security import decode_token
 from app.models.user import User
 from app.repositories.audit_log_repo import AuditLogRepository
+from app.repositories.inventory_repo import InventoryRepository
+from app.repositories.external_identity_repo import ExternalIdentityRepository
+from app.repositories.order_repo import OrderRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.reservation_repo import ReservationRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.wallet_repo import WalletRepository
+from app.repositories.table_session_repo import TableSessionRepository
 from app.services.audit_log_service import AuditLogService
+from app.services.admin_user_service import AdminUserService
+from app.services.account_lifecycle_service import AccountLifecycleService
+from app.services.inventory_service import InventoryService
+from app.services.external_auth_service import ExternalAuthService
+from app.services.order_service import OrderService
 from app.services.product_service import ProductService
-from app.storage.image import LocalImageStorage
+from app.services.reservation_service import ReservationService
+from app.services.payment_service import PaymentService
+from app.services.refund_service import RefundService
+from app.services.wallet_service import WalletService
+from app.services.table_session_service import TableSessionService
+from app.storage.image import ImageStorage, LocalImageStorage
+from app.integrations.wechat import WeChatMiniProgramProvider
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
-def get_product_image_storage() -> LocalImageStorage:
+async def reject_request_body(request: Request) -> None:
+    """拒绝契约明确不接收 request body 的 mutation 请求。"""
+
+    if await request.body():
+        raise RequestValidationError(
+            [
+                {
+                    "type": "extra_forbidden",
+                    "loc": ("body",),
+                    "msg": "Request body is not allowed",
+                    "input": None,
+                }
+            ]
+        )
+
+
+def get_product_image_storage() -> ImageStorage:
     """组装 Product 本地图片存储适配器。"""
 
     return LocalImageStorage(
@@ -47,17 +87,214 @@ def get_product_service(
     )
 
 
+def get_order_service(
+    order_repository: OrderRepository = Depends(),
+    product_repository: ProductRepository = Depends(),
+    inventory_repository: InventoryRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
+    table_session_repository: TableSessionRepository = Depends(),
+) -> OrderService:
+    """组装 OrderService 及其数据访问与共享审计依赖。"""
+
+    return OrderService(
+        order_repository,
+        product_repository,
+        inventory_repository,
+        AuditLogService(audit_log_repository),
+        user_repository=user_repository,
+        payment_repository=payment_repository,
+        wallet_repository=wallet_repository,
+        table_session_repository=table_session_repository,
+    )
+
+
+def get_wallet_service(
+    wallet_repository: WalletRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> WalletService:
+    """组装 Wallet 查询与管理调账用例。"""
+
+    return WalletService(
+        wallet_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
+        payment_repository,
+    )
+
+
+def get_payment_service(
+    order_repository: OrderRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+    table_session_repository: TableSessionRepository = Depends(),
+) -> PaymentService:
+    """组装订单结算与资金状态查询用例。"""
+
+    return PaymentService(
+        order_repository,
+        payment_repository,
+        wallet_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
+        table_session_repository,
+    )
+
+
+def get_refund_service(
+    order_repository: OrderRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
+    inventory_repository: InventoryRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+    table_session_repository: TableSessionRepository = Depends(),
+) -> RefundService:
+    """组装全额退款及 PAID Kit 库存恢复用例。"""
+
+    return RefundService(
+        order_repository,
+        payment_repository,
+        wallet_repository,
+        inventory_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
+        table_session_repository,
+    )
+
+
+def get_inventory_service(
+    inventory_repository: InventoryRepository = Depends(),
+    product_repository: ProductRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> InventoryService:
+    """组装 InventoryService 及其数据访问与共享审计依赖。"""
+
+    return InventoryService(
+        inventory_repository,
+        product_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
+def get_reservation_service(
+    reservation_repository: ReservationRepository = Depends(),
+    product_repository: ProductRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> ReservationService:
+    """组装独立预约、审核和店休用例。"""
+
+    return ReservationService(
+        reservation_repository,
+        product_repository,
+        user_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
+def get_table_session_service(
+    table_repository: TableSessionRepository = Depends(),
+    order_repository: OrderRepository = Depends(),
+    user_repository: UserRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> TableSessionService:
+    """组装桌台二维码开台、计时查询和管理员释放用例。"""
+
+    return TableSessionService(
+        table_repository,
+        order_repository,
+        user_repository,
+        payment_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
+def get_admin_user_service(
+    user_repository: UserRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> AdminUserService:
+    """组装 AdminUserService 及共享审计依赖。"""
+
+    return AdminUserService(
+        user_repository,
+        AuditLogService(audit_log_repository),
+    )
+
+
+def get_external_auth_service(
+    user_repository: UserRepository = Depends(),
+    identity_repository: ExternalIdentityRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+) -> ExternalAuthService:
+    """组装微信登录/绑定及其持久化、审计边界。"""
+
+    return ExternalAuthService(
+        user_repository,
+        identity_repository,
+        AuditLogService(audit_log_repository),
+        WeChatMiniProgramProvider(),
+    )
+
+
+def get_account_lifecycle_service(
+    user_repository: UserRepository = Depends(),
+    order_repository: OrderRepository = Depends(),
+    payment_repository: PaymentRepository = Depends(),
+    wallet_repository: WalletRepository = Depends(),
+    identity_repository: ExternalIdentityRepository = Depends(),
+    audit_log_repository: AuditLogRepository = Depends(),
+    reservation_repository: ReservationRepository = Depends(),
+) -> AccountLifecycleService:
+    """组装用户注销所需的订单、身份、审计和微信二次验证边界。"""
+
+    return AccountLifecycleService(
+        user_repository,
+        order_repository,
+        identity_repository,
+        AuditLogService(audit_log_repository),
+        WeChatMiniProgramProvider(),
+        wallet_repository=wallet_repository,
+        payment_repository=payment_repository,
+        reservation_repository=reservation_repository,
+    )
+
+
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(),
 ) -> User:
     """从 Authorization Header 解析 JWT，返回当前登录用户。"""
+    if credentials is None:
+        raise AuthenticationException(message="Authentication required")
     payload = decode_token(credentials.credentials, "access")
     user = await user_repo.get_by_id(int(payload["sub"]))
     if not user:
-        from app.core.exceptions import NotFoundException
         raise NotFoundException(message="User not found")
+    if user.status == UserStatus.DELETED:
+        raise UserDeleted()
+    if user.status != UserStatus.NORMAL:
+        raise UserDisabled()
+    if payload["ver"] != user.auth_version:
+        raise TokenExpired()
     return user
+
+
+async def get_current_customer(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """要求明确的普通客户角色，供会员与用户资金端点复用。"""
+
+    if current_user.role != UserRole.USER:
+        raise PermissionException(message="Customer access required")
+    return current_user
 
 
 async def get_current_admin(

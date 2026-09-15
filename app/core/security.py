@@ -26,32 +26,74 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+def dummy_verify_password() -> None:
+    """为不存在/无密码账号执行等成本校验，降低登录枚举时序差异。"""
+
+    pwd_context.dummy_verify()
+
+
 # ═══════════════════════════════════════════════
 # JWT
 # ═══════════════════════════════════════════════
 
 
-def _create_token(user_id: int, token_type: str, jti: str, ttl: int) -> str:
+def _create_token(
+    user_id: int,
+    token_type: str,
+    jti: str,
+    ttl: int,
+    *,
+    session_id: str | None = None,
+    auth_version: int = 0,
+) -> str:
     """签发 JWT Token。"""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "type": token_type,
         "jti": jti,
+        "sid": session_id or jti,
+        "ver": auth_version,
         "exp": now + timedelta(seconds=ttl),
         "iat": now,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(user_id: int, jti: str) -> str:
+def create_access_token(
+    user_id: int,
+    jti: str,
+    *,
+    session_id: str | None = None,
+    auth_version: int = 0,
+) -> str:
     """签发 access token（2 小时）。"""
-    return _create_token(user_id, "access", jti, settings.jwt_access_token_expire)
+    return _create_token(
+        user_id,
+        "access",
+        jti,
+        settings.jwt_access_token_expire,
+        session_id=session_id,
+        auth_version=auth_version,
+    )
 
 
-def create_refresh_token(user_id: int, jti: str) -> str:
+def create_refresh_token(
+    user_id: int,
+    jti: str,
+    *,
+    session_id: str | None = None,
+    auth_version: int = 0,
+) -> str:
     """签发 refresh token（7 天）。"""
-    return _create_token(user_id, "refresh", jti, settings.jwt_refresh_token_expire)
+    return _create_token(
+        user_id,
+        "refresh",
+        jti,
+        settings.jwt_refresh_token_expire,
+        session_id=session_id,
+        auth_version=auth_version,
+    )
 
 
 def decode_token(token: str, expected_type: str) -> dict:
@@ -73,7 +115,18 @@ def decode_token(token: str, expected_type: str) -> dict:
     except JWTError:
         raise TokenExpired()
 
-    if payload.get("type") != expected_type:
+    if (
+        payload.get("type") != expected_type
+        or not isinstance(payload.get("sub"), str)
+        or not isinstance(payload.get("jti"), str)
+    ):
         raise TokenExpired()
+
+    # Phase 9.5 之前的 Token 没有 sid/ver；读取时允许安全的
+    # 单次兼容升级，但新签发 Token 始终显式携带两者。
+    if not isinstance(payload.get("sid"), str):
+        payload["sid"] = payload["jti"]
+    if not isinstance(payload.get("ver"), int):
+        payload["ver"] = 0
 
     return payload

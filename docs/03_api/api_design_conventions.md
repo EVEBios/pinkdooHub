@@ -1,12 +1,12 @@
 # API Design Conventions
 
-> **Document Version:** v2.0
+> **Document Version:** v2.5
 > **Status:** Active
 > **Scope:** 项目级 — Product / Order / User / Inventory 等全部模块必须遵守
 >
 > 本文档定义 pinkdooHub 所有 API 的强制性设计规范。新增或修改接口时，必须对照本文档逐项检查。
 >
-> **业务模块 API 文档：** [User API](user_api.md) · [Product API](product_api.md) · [Order API](order_api.md)
+> **业务模块 API 文档：** [User API](user_api.md) · [Product API](product_api.md) · [Order API](order_api.md) · [Inventory API](inventory_api.md) · [Wallet API](wallet_api.md) · [Reservation API](reservation_api.md)
 >
 > **快速检查清单见 [§18](#18-快速检查清单)。**
 
@@ -119,12 +119,16 @@ JWT Bearer Token
 Authorization: Bearer <access_token>
 ```
 
+认证依赖统一使用 `HTTPBearer(auto_error=False)`，由共享异常中间件输出项目错误信封：缺失 Bearer 凭据返回 HTTP 401 / code `401` / `Authentication required`，不得暴露 FastAPI 默认 `{"detail": ...}`。当前无效或过期 Token 仍沿用 User 模块既有 `TokenExpired` 契约（code `1006`、HTTP 400）；若后续迁移为 401，必须作为公共认证契约变更同步所有 API 文档和测试。
+
 ### 4.2 Token 机制
 
 | 概念 | 说明 |
 |------|------|
 | access_token | 访问令牌，有效期 2 小时 |
 | refresh_token | 刷新令牌，用于获取新的 access_token |
+
+每次登录创建独立 refresh family。刷新必须原子轮换 access/refresh 双 Token；旧 refresh 重放时撤销该 family。密码修改、外部身份解绑、用户禁用/注销通过 `auth_version` 和 Redis family 撤销使旧会话失效。身份限流使用 Redis 原子计数并 fail closed，客户端不得依据 429/1002/1003 等响应枚举有效账号。
 
 ### 4.3 接口角色标注
 
@@ -254,7 +258,13 @@ Authorization: Bearer <access_token>
 
 FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为上述信封。每项只包含 `location`、`message` 和 `type`，不得回显原始输入值，避免密码、Token 或其他敏感内容进入响应与日志。业务聚合状态的 HTTP 422（例如 Product `42201`）继续使用对应命名异常规定的数据结构，不套用 `data.errors`。
 
-### 6.4 字段排除规则
+### 6.4 传输压缩
+
+客户端发送 `Accept-Encoding: gzip` 时，直连 Uvicorn 和受管 Nginx 均对不小于 1024 bytes 的 JSON/文本响应启用 gzip level 6，并返回 `Content-Encoding: gzip` 及 `Vary: Accept-Encoding`。不声明 gzip 或显式请求 `identity` 的客户端仍获得未压缩的相同 JSON 契约；响应体的业务字段、状态码和签名语义不变。
+
+`/uploads/products/` 与 Nginx 的 PNG/JPEG/WebP 等已压缩图片 MIME 明确绕过 gzip，避免无效 CPU 开销和可能的体积增长。Brotli 当前未引入：固定 `nginx:1.27.5-alpine` 不包含 Brotli 模块，只有在真实链路测量证明进一步收益且新模块/镜像通过供应链 Review 后才能增加。
+
+### 6.5 字段排除规则
 
 以下字段**不得**在 API 响应中返回：
 
@@ -278,6 +288,7 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 413 | Payload Too Large | 上传文件超过大小限制 |
 | 422 | Unprocessable Entity | 参数校验失败，或请求语法正确但当前业务聚合不满足处理条件 |
 | 500 | Internal Server Error | 服务器内部错误 |
+| 503 | Service Unavailable | 实例存活，但关键依赖暂不可用，或受控业务能力/支付 Provider 尚未开放 |
 
 > 业务状态以响应体中的 `code` 字段为准，HTTP 状态码用于表达请求层面的结果。
 
@@ -287,10 +298,23 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 |----------|-------------|------|
 | `BusinessException` | 400 | 一般业务规则不满足 |
 | `UnprocessableEntityException` | 422 | 请求语法正确，但当前业务数据或聚合状态不满足处理条件 |
+| `ServiceUnavailableException` | 503 | 关键基础设施不可用，或受控资金能力 fail closed；失败路径不得产生业务写入 |
 
 `UnprocessableEntityException` 是通用异常类型并继承 `BusinessException`；全局异常中间件必须为它注册更具体的 HTTP 422 映射，同时保持普通 `BusinessException` 为 HTTP 400。模块命名异常可以继承该通用类型，例如 Product 的 `ProductNotReadyForOnline`。禁止使用 `if 42200 <= code < 42300` 一类号段判断 HTTP 状态。
 
-> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 22 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。
+> **实现状态：** 上述 HTTP 422 业务异常类型和中间件映射已实现；Product Validator、Service 和 21 个 API 端点也已完成，并由异常契约、业务规则、事务回滚、权限、OpenAPI 与真实 HTTP 集成测试覆盖。Product 原库存直设端点已在 Phase 4.3.10 移除，库存写入统一由 Inventory API 承担。
+
+### 7.1 Liveness 与 Readiness
+
+运行时探针不需要认证，并按职责拆分：
+
+| Method | URI | 外部依赖 | 成功 | 失败语义 |
+|--------|-----|----------|------|----------|
+| GET | `/api/v1/health` | 无 | HTTP 200；保留既有 `app/env/status=ok` 响应 | 仅作兼容入口，不代表依赖可用 |
+| GET | `/api/v1/health/live` | 无 | HTTP 200；`status=alive` | 进程无法响应时由运行平台判定失败 |
+| GET | `/api/v1/health/ready` | MySQL/SQLite 默认连接、Redis | 两项均为 `up` 时 HTTP 200；`status=ready` | 任一失败或超过单项 1 秒时 HTTP 503 / code `503`；`status=not_ready` |
+
+Readiness 并行执行最小只读数据库查询与 Redis `PING`，单项失败不得跳过另一项。HTTP 只公开 `database` / `redis` 的 `up` / `down`，日志只记录依赖类别和异常类型；响应与日志禁止包含 host、port、数据库名、用户名、密码、URL、驱动异常文本或查询参数。Liveness 不得查询数据库或 Redis，避免依赖故障触发错误的进程重启循环。
 
 ---
 
@@ -302,7 +326,11 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 |------|------|
 | 0 | 成功 |
 | 1xxx | 用户模块业务错误 |
-| 3xxx | 订单模块业务错误 |
+| 4041x / 4092x / 4223x | 订单模块 — 资源不存在 / 状态与阶段冲突 / 聚合不可用 |
+| 4093x | 库存模块 — 余额与幂等冲突 |
+| 4044x / 4094x / 4224x | Wallet/Payment/Refund — 资源不存在 / 余额、结算、退款与幂等冲突 / 充值范围 |
+| 4045x / 4095x / 4225x | Reservation — 预约/店休资源不存在 / 状态与时间冲突 / Product、Option、排期、手机号和店休日期不可用 |
+| 4046x / 4096x / 4226x / 4296x | M9 Table Session（计划）— 桌台/会话资源、占用/状态/幂等/付款窗口、订单资格与限流 |
 | 40xxx | 商品模块 — 资源不存在 / 类型错误 |
 | 409xx | 商品模块 — 状态冲突 |
 | 422xx | 商品模块 — 业务校验 |
@@ -317,7 +345,9 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 403 | 无权限 |
 | 404 | 资源不存在 |
 | 422 | 请求参数校验失败 |
+| 42901 | 认证请求超过限流阈值（HTTP 429） |
 | 500 | 服务器内部错误 |
+| 503 | 关键依赖暂不可用，或受控资金/支付能力尚未开放 |
 
 ### 8.3 用户模块错误码（1xxx）
 
@@ -330,6 +360,14 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 1005 | 用户已被禁用 |
 | 1006 | Token 已过期 |
 | 1007 | 手机号已被注册 |
+| 1008 | 当前账号没有密码登录能力 |
+| 1009 | 账号已注销 |
+| 1010 | 密码注册已关闭 |
+| 1011 | 外部身份无效 |
+| 1012 | 外部身份绑定冲突 |
+| 1013 | 外部身份未绑定 |
+| 1014 | 解绑会移除唯一登录方式 |
+| 1015 | 活跃订单、未来活跃预约、处理中资金、可退款钱包结算敞口或非零钱包余额阻止账号注销 |
 
 ### 8.4 商品模块错误码（40xxx / 409xx / 422xx）
 
@@ -343,6 +381,8 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 40402 | Option 不存在 |
 | 40403 | 图片不存在 |
 | 40404 | 套装配置不存在 |
+| 40405 | 全局拼豆颜色不存在 |
+| 40406 | 商品颜色关联不存在或不再可见 |
 
 **类型错误（400xx）—— HTTP 400**
 
@@ -366,6 +406,9 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 | 40905 | online 商品不可修改 |
 | 40911 | Option 配置已存在 |
 | 40912 | Option 已删除 |
+| 40913 | 非空全局颜色业务编码重复 |
+| 40914 | 全局颜色未配置/未激活，不能激活或启用销售 |
+| 40915 | Online 商品正在使用全局颜色，禁止修改 |
 
 **业务校验（422xx）—— HTTP 422**
 
@@ -376,12 +419,92 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 
 > Product 写接口收到的价格、库存、时长、人数、日期类型和请求形状由 Pydantic/FastAPI 静态校验，使用全局 HTTP 422 参数校验响应。上架时对已加载聚合快照执行的价格、库存与关联完整性校验使用 `42201`；其精确 message、issues 清单与顺序见 [Product Business Rules §8.5](../01_requirements/product_business_rules.md#85-online-validation上架校验)。上传文件内容、MIME 和大小校验使用 `42221`。
 
-### 8.5 订单模块错误码（3xxx）
+### 8.5 订单模块错误码（4041x / 4092x / 4223x）
 
-| code | 说明 |
-|------|------|
-| 3001 | 订单不存在 |
-| 3002 | 订单状态不允许此操作 |
+Order 与 Product 一样使用 HTTP 语义化的稳定业务 code；异常必须按语义直接继承 `NotFoundException`、`ConflictException` 或 `UnprocessableEntityException`。HTTP 状态由异常类型映射，不按 code 数字段推断。
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40411 | 404 | `OrderNotFound` | 订单不存在；用户访问他人订单也统一使用该错误，避免资源枚举 |
+| 40921 | 409 | `OrderStatusConflict` | 当前订单状态不允许指定状态变迁 |
+| 42231 | 422 | `OrderProductUnavailable` | Product 不存在、已删除、未上架，或所需 Kit 扩展不可用 |
+| 42232 | 422 | `OrderOptionUnavailable` | Experience Option 缺失/无效/归属错误，或 Kit 错误携带 Option |
+| 42233 | 422 | `OrderKitColorUnavailable` | 商品颜色缺失、未启用、全局未激活/未配置、归属错误，或非颜色商品错误携带颜色；data 返回 product_id/kit_color_id |
+| 42234 | 422 | `OrderAmountExceeded` | 服务端权威累计总额超过 `99999999.99`；data 只返回 maximum，不回显内部中间金额 |
+
+`items` 为空/分类项数超限、重复 `(product_id, experience_option_id, kit_color_id)`、数量范围、备注长度和未知字段属于请求形状校验，使用全局参数错误 code `422`。M6 限制为颜色行最多 20、非颜色行最多 10、总行最多 30，每色数量最多 99；旧 fixed/Experience 客户端仍受原非颜色 10 行边界保护。
+
+> **实现状态：** Order 的 `IntEnum`、API value/label Registry、Schema/应用层及 Phase 4.2 最终 Review 均已完成。Phase 4.3.7–4.3.8 已接入 Kit/混合创建扣减与 Pending 取消恢复；当前会使用 `40931` 库存不足、`40932` 恢复越界和 `40933` restore 幂等矛盾，阶段门禁 `40922` 已移除。
+
+### 8.6 库存模块错误码（40031 / 4093x）
+
+以下命名异常及三个 Inventory 管理路由均已实现；Wallet/Payment/Refund M4 另在 PAID Kit 全额退款中复用 `40932`/`40933`：
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40031 | 400 | `InventoryKitKindMismatch` | message 固定为 `Kit kind does not match this inventory operation`；data 返回 `expected/actual` KitKind value |
+| 40931 | 409 | `InsufficientStock` | 下单库存不足；用户数据不披露精确可用量 |
+| 40932 | 409 | `InventoryBalanceExceeded` | 调整后余额超出 `0..999999`；颜色余额场景的 data 另含 `kit_color_id` |
+| 40933 | 409 | `InventoryTransactionConflict` | 幂等键已绑定到不同请求 |
+
+Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40406`、`40001`、`40903`。fixed 端点和颜色端点必须明确拒绝错误 KitKind；请求体、`Idempotency-Key`、分页和筛选形状错误使用全局 HTTP 422 / code `422`。HTTP 状态仍由异常类型映射，不按数字段判断。
+
+### 8.7 Wallet / Payment / Refund 错误码（4044x / 4094x / 4224x）
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40441 | 404 | `WalletNotFound` | 钱包不存在或不可见；历史 NORMAL/DISABLED USER 尚未 backfill 也使用该错误 |
+| 40442 | 404 | `RechargeOrderNotFound` | 充值单不存在或不可见 |
+| 40443 | 404 | `PaymentNotFound` | 支付或成功结算不存在/不可见 |
+| 40444 | 404 | `RefundNotFound` | 退款不存在 |
+| 40941 | 409 | `WalletBalanceExceeded` | 变化后余额超出 `0.00..1000.00` |
+| 40942 | 409 | `InsufficientWalletBalance` | 钱包余额不足；响应不披露当前余额 |
+| 40943 | 409 | `WalletTransactionConflict` | 幂等键绑定到不同资金意图 |
+| 40944 | 409 | `PaymentStatusConflict` | Payment 状态不允许操作或重放事实不完整 |
+| 40945 | 409 | `PaymentSettlementConflict` | Order/Payment 已有冲突结算 |
+| 40946 | 409 | `RefundStatusConflict` | 订单/Refund 状态不允许退款或已退款 |
+| 40947 | 409 | `WalletRefundCapacityExceeded` | 正向入账会侵占尚可全额退款的钱包支付预留空间 |
+| 40948 | 409 | `RefundWindowExpired` | Completed 订单超过 30 天退款窗口 |
+| 42241 | 422 | `RechargeAmountOutOfRange` | 单笔充值额超出 `1.00..1000.00` |
+
+钱包余额硬上限为 `1000.00`。ADMIN 正向调账还必须满足 `调整后余额 + 尚可退款的钱包支付敞口 ≤ 1000.00`；PAID 钱包订单和完成未满 30 天的钱包订单在 Refund succeeded 前占用敞口。未来真实充值成功也必须复用该预留校验。真实微信 Provider 当前关闭，充值、微信订单支付及微信退款使用 HTTP 503 / code `503`，且必须在任何数据库写入前失败。完整端点与字段见 [Wallet API](wallet_api.md)。
+
+### 8.8 Reservation 错误码（4045x / 4095x / 4225x）
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40451 | 404 | `ReservationNotFound` | 预约不存在；用户访问他人预约也使用该错误 |
+| 40452 | 404 | `StoreClosureNotFound` | 目标日期当前没有可恢复的自定义店休 |
+| 40951 | 409 | `ReservationStatusConflict` | 当前状态不允许 confirm/reject/cancel；data 返回稳定 operation、current_status、allowed_statuses |
+| 40952 | 409 | `ReservationCancellationWindowClosed` | 已晚于开始前 3 小时的顾客取消截止时间 |
+| 40953 | 409 | `ReservationOperationExpired` | 预约已开始，门店不能再确认或拒绝 |
+| 42251 | 422 | `ReservationProductUnavailable` | Product 已删除、非 Experience 或不处于 Online |
+| 42252 | 422 | `ReservationOptionUnavailable` | ExperienceOption 不存在、已删除或归属不可用 |
+| 42253 | 422 | `ReservationScheduleUnavailable` | 日期/时段不可用；data.reason 为稳定机器原因 |
+| 42254 | 422 | `ReservationPhoneRequired` | 当前普通用户没有手机号，不能创建预约 |
+| 42255 | 422 | `StoreClosureDateUnavailable` | 自定义店休日期是过去日期或周一 |
+
+`42253.data.reason` 只允许 `minimum_lead_time`、`outside_booking_window`、`invalid_slot_increment`、`outside_business_hours`、`weekly_closed`、`store_closed`、`option_day_type_mismatch`。`42255.data.reason` 只允许 `past_date`、`weekly_closed`。完整契约见 [Reservation API](reservation_api.md)。请求形状错误继续使用通用 HTTP 422 / code `422`。
+
+### 8.9 二维码开台模块错误码（4046x / 4096x / 4226x / 4296x，M9 已实现）
+
+以下号段已由 M9 命名异常与统一异常中间件实现；某个持久环境只有在 M9 迁移、30 桌 bootstrap、运行时开关和验收同时完成后才可对外返回这些业务码。
+
+| code | HTTP | 命名异常 | 说明 |
+|------|------|----------|------|
+| 40461 | 404 | `TableCodeNotFound` | QR Token 无效；公开响应不泄露内部 Table ID |
+| 40462 | 404 | `TableSessionNotFound` | Session 不存在；用户访问他人 Session 同样隐藏 |
+| 40463 | 404 | `StoreTableNotFound` | 管理员目标桌台不存在 |
+| 40961 | 409 | `TableUnavailable` | 桌台被占用或已停用；不返回占台者 |
+| 40962 | 409 | `TableSessionStatusConflict` | Session 状态不允许当前操作 |
+| 40963 | 409 | `UserTableSessionConflict` | 当前用户已有未关闭 Session |
+| 40964 | 409 | `OrderTableSessionConflict` | 当前订单已有未关闭 Session |
+| 40965 | 409 | `TableIdempotencyConflict` | 桌台幂等键绑定到不同请求 |
+| 40966 | 409 | `TablePaymentWindowExpired` | 指定 Session 的 15 分钟付款窗口已结束 |
+| 42261 | 422 | `TableOrderIneligible` | 订单不满足开台资格；reason 为稳定白名单 |
+| 42961 | 429 | `TableRateLimitExceeded` | 二维码解析或开台请求超过 M9 多维限流阈值 |
+
+`42261.data.reason` 只允许 `no_experience_item`、`invalid_experience_duration_snapshot`、`order_not_pending`、`order_already_settled`。请求体、`Idempotency-Key`、可选 `Table-Session-No` Header、Path 和 Query 形状错误使用全局 HTTP 422 / code `422`。完整契约见 [二维码开台 API](table_session_api.md)。
 
 ---
 
@@ -389,23 +512,26 @@ FastAPI 请求参数错误由全局 `RequestValidationError` handler 转换为�
 
 ### 9.1 时间
 
-所有时间字段使用 ISO 8601 格式，UTC 时区：
+所有 datetime 字段使用 ISO 8601 格式，UTC 时区：
 
 ```
 "2026-07-23T10:30:00Z"
 ```
 
-字段命名：`created_at`、`updated_at`
+字段命名示例：`created_at`、`updated_at`、`scheduled_start_at`、`scheduled_end_at`。
+
+Reservation 是明确例外的“双表示”输入/输出边界：创建请求使用 `Asia/Shanghai` 当地严格日期 `YYYY-MM-DD` 与开始时间 `HH:00` / `HH:30`；服务端转换后以 UTC datetime 保存并输出，同时返回上海当地的 `reservation_date/start_time/end_time` 便于页面显示。所有提前量、周一、营业时间和第 0–30 日窗口判断使用服务端时钟与上海时区，不能使用客户端设备时区作为权威。
 
 ### 9.2 金额
 
-所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。JSON 表示以模块 API 契约为准并在模块内保持一致；Product 模块的请求和响应金额使用普通十进制字符串，以避免浮点精度和尾随零歧义：
+所有金额以“元”为单位，后端必须使用 `Decimal` / `DecimalField(10,2)`，禁止 float。Product、Order 与资金响应使用普通十进制字符串，以避免浮点精度和尾随零歧义：
 
 ```json
-"price": "199.00"
+"price": "199.00",
+"total_amount": "497.00"
 ```
 
-金额字符串不得使用指数形式，不得超过两位小数；服务端不得静默四舍五入。Order 文档仍处于后续 Phase 设计状态，其 number 表示需在实现前单独确认，不得反向改变已冻结的 Product 契约。
+金额字符串不得使用指数形式，服务端不得静默四舍五入。Wallet 调账与充值等资金写请求进一步要求固定两位小数字符串，例如 `"-20.00"`；拒绝 JSON number、正负零、科学计数、NaN、Infinity 和三位以上小数。单笔充值冻结为 `1.00..1000.00`，Wallet 余额冻结为 `0.00..1000.00`；这些是领域常量，不由客户端能力提示或普通环境配置放宽。
 
 ### 9.3 布尔值
 
@@ -557,6 +683,8 @@ Content-Type: multipart/form-data
 | 最大体积 | 2MB |
 | 允许格式 | jpg, png, webp |
 
+上述约束适用于现有 Product/Option 单图上传；每个请求只接受一个文件。M6 的 221 色色板图属于全局 BeadColor，而非 ProductImage，不通过逐个 multipart 请求做首批导入。实物图推荐 192×192 或 256×256、sRGB、WebP；指定 MARD 页面只有 CSS HEX/RGB 色块，项目已通过版本化 manifest 和默认 dry-run、显式本地 apply 的离线工具生成 256×256 sRGB PNG，完成槽号、来源顺序、HEX/RGB、确定性文件名、URL、冲突和 Online 引用校验。`swatch_image_url` 可为空，缺图不阻止颜色配置或商品上架；生产对象存储/CDN 发布仍属于 Gate B，而不是该本地工具的能力。
+
 ### 12.3 响应
 
 上传成功返回文件的访问 URL：
@@ -583,12 +711,15 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `username` (varchar) | `username` | → string |
 | `created_at` (datetime) | `created_at` | → ISO 8601 string |
 | `updated_at` (datetime) | `updated_at` | → ISO 8601 string |
-| `total_amount` (decimal) | `total_amount` | → number/string（以模块契约为准） |
+| `total_amount` (decimal) | `total_amount` | → 两位小数 string |
 | `is_cover` (boolean) | `is_cover` | → boolean |
+| `scheduled_start_at` (datetime) | `scheduled_start_at` | → UTC ISO 8601 string |
+| `option_price` (decimal) | `price` | → Reservation 创建快照的两位小数 string |
+| `payment_deadline_at` / `table_release_at` (datetime) | 同名字段 | → M9 Table Session 的 UTC ISO 8601 string |
 
 > - 所有 ID 类型在 API 中统一为 `int` / `bigint`
 > - 所有时间字段统一为 ISO 8601 字符串
-> - 枚举字段通过 Enum 类在 DB tinyint 和 API string 之间转换
+> - 枚举字段通过 Enum 类在 DB `SMALLINT` 或 `VARCHAR` 与 API value 之间转换；具体表示按模块注册表执行
 
 ---
 
@@ -614,15 +745,38 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | | | `"offline"` | "已下架" |
 | `ProductType` | VARCHAR | `"experience"` | "拼豆体验" |
 | | | `"kit"` | "拼豆套装" |
-| `UserRole` | TINYINT | 1 → `"user"` | "普通用户" |
+| `KitKind` | VARCHAR | `"fixed"` | "固定套装" |
+| | | `"color_selectable"` | "自选颜色" |
+| `UserRole` | SMALLINT | 1 → `"user"` | "普通用户" |
 | | | 2 → `"admin"` | "管理员" |
 | | | 3 → `"super_admin"` | "超级管理员" |
-| `UserStatus` | TINYINT | 1 → `"normal"` | "正常" |
+| `UserStatus` | SMALLINT | 1 → `"normal"` | "正常" |
 | | | 2 → `"disabled"` | "已禁用" |
-| `OrderStatus` | TINYINT | 0 → `"pending"` | "待支付" |
+| | | 3 → `"deleted"` | "已注销" |
+| `OrderStatus` | SMALLINT | 0 → `"pending"` | "待支付" |
 | | | 1 → `"paid"` | "已支付" |
 | | | 2 → `"cancelled"` | "已取消" |
 | | | 3 → `"completed"` | "已完成" |
+| `WalletStatus` | VARCHAR | `"active"` | 活跃钱包 |
+| | | `"closed"` | 已注销关闭 |
+| `WalletTransactionType` | VARCHAR | `"recharge"` / `"order_payment"` / `"admin_adjustment"` / `"refund"` | 充值 / 订单消费 / 管理调账 / 退款 |
+| `WalletTransactionSourceType` | VARCHAR | `"recharge_order"` / `"order"` / `"admin"` / `"refund"` | 流水业务来源 |
+| `PaymentPurpose` | VARCHAR | `"order"` / `"recharge"` | 订单支付 / 钱包充值 |
+| `PaymentMethod` | VARCHAR | `"wallet"` / `"wechat"` / `"manual"` | 钱包 / 微信 / 人工线下 |
+| `PaymentStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` / `"closed"` | 支付状态 |
+| `RechargeOrderStatus` | VARCHAR | `"pending"` / `"paid"` / `"failed"` / `"closed"` | 充值单状态 |
+| `RefundStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` | 退款状态 |
+| `ReservationStatus` | VARCHAR | `"pending"` / `"confirmed"` / `"rejected"` / `"cancelled"` | 待门店确认 / 已确认 / 未能确认 / 已取消 |
+| `ReservationRejectionReason` | VARCHAR | `"no_capacity"` | 当前时段无空位 |
+| `ReservationCancellationReason` | VARCHAR | `"customer_request"` / `"store_closed"` | 顾客取消 / 门店店休 |
+| `ReservationScheduleUnavailableReason` | API-only | `"minimum_lead_time"` / `"outside_booking_window"` / `"invalid_slot_increment"` / `"outside_business_hours"` / `"weekly_closed"` / `"store_closed"` / `"option_day_type_mismatch"` | 排期不可用机器原因，不持久化 |
+| `StoreClosureDateUnavailableReason` | API-only | `"past_date"` / `"weekly_closed"` | 自定义店休日期不可操作机器原因，不持久化 |
+| `TableSessionStatus`（M9） | VARCHAR | `"awaiting_payment"` / `"active"` / `"closed"` | 待支付 / 计时中 / 已关闭 |
+| `TableSessionCloseReason`（M9） | VARCHAR | `"payment_timeout"` / `"time_expired"` / `"order_cancelled"` / `"order_completed"` / `"refunded"` / `"admin_released"` | 待支付超时 / 计时到期 / 订单取消 / 订单完成 / 已退款 / 管理员释放 |
+| `TableTimerPhase`（M9，API-only） | API-only | `"experience"` / `"grace"` / `"ended"` | 体验中 / 缓冲中 / 已结束；由服务端当前时间推导 |
+| `TableOrderIneligibleReason`（M9，API-only） | API-only | `"no_experience_item"` / `"invalid_experience_duration_snapshot"` / `"order_not_pending"` / `"order_already_settled"` | 开台订单不合格机器原因 |
+
+> Order/DayType/KitKind/Reservation 状态与持久化原因等面向页面展示的字段通过 Mapper 输出 `{value, label}`；请求中的 `kit_kind` 使用原始字符串 value，省略时默认 `fixed`。Reservation 的 `42253/42255 data.reason` 是机器原因原始 value。Wallet/Payment/Refund 的机器状态当前直接输出稳定字符串 Enum。退款状态独立于 OrderStatus，成功退款不会把 Order 改成 Cancelled。M9 Table Session/CloseReason/TimerPhase 已通过 Mapper 输出 `{value, label}`，错误 `data.reason` 仍使用原始机器 value。
 
 ### 使用示例
 
@@ -641,7 +795,7 @@ def duration_to_dto(value: int) -> dict:
 添加新的枚举字段时：
 
 - [ ] 在本文档 §14 注册表中新增一行
-- [ ] 数据库使用 `TINYINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
+- [ ] 数据库使用项目 ORM 映射的 `SMALLINT`（数值型）或 `VARCHAR`（字符串型），在 ER 图 note 中标注
 - [ ] Python 定义对应的 `Enum` 类（`app/common/enums/`）
 - [ ] API Mapper 实现 `{value, label}` 转换
 - [ ] 更新 `er_diagram.dbml` 和 `database_design.md`
@@ -761,4 +915,4 @@ def duration_to_dto(value: int) -> dict:
 - [ ] 至少提供成功 + 一种失败响应示例
 - [ ] 需要认证的接口标注 Header
 - [ ] 分页接口统一使用 `page` / `page_size`
-- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User 数值 Enum 使用 TINYINT）
+- [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User / Order 数值 Enum 使用 SMALLINT）

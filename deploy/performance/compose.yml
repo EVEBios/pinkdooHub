@@ -1,0 +1,278 @@
+name: ${PERF_COMPOSE_PROJECT:?Set a unique performance Compose project}
+
+x-app-environment: &app-environment
+  APP_ENV: production
+  APP_DEBUG: "false"
+  DB_ENGINE: mysql
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_NAME: ${PERF_DATABASE_NAME:?Set the isolated database name}
+  DB_USER: ${PERF_DATABASE_USER:?Set the isolated database user}
+  JWT_ALGORITHM: HS256
+  JWT_ACCESS_TOKEN_EXPIRE: "28800"
+  PAYMENT_PROVIDER: disabled
+  PRODUCT_IMAGE_UPLOAD_DIR: /data/images
+  PRODUCT_IMAGE_BASE_URL: https://pinkdoohub-performance.invalid/uploads/products
+  WALLET_ADMIN_WRITE_ENABLED: "true"
+  WALLET_ORDER_PAYMENT_ENABLED: "true"
+  WALLET_REFUND_ENABLED: "true"
+  WALLET_TOPUP_ENABLED: "false"
+
+x-app-service: &app-service
+  image: ${PERF_APP_IMAGE:?Set the immutable performance App image}
+  environment:
+    <<: *app-environment
+  secrets:
+    - mysql_app_password
+    - redis_password
+    - jwt_secret
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  cpuset: ${PERF_CPUSET:-0-1}
+  mem_limit: 1280m
+  memswap_limit: 1280m
+  networks:
+    - backend
+
+services:
+  mysql:
+    image: mysql:8.0.46
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+      - --skip-name-resolve
+      - --performance-schema=ON
+    environment:
+      MYSQL_DATABASE: ${PERF_DATABASE_NAME:?Set the isolated database name}
+      MYSQL_USER: ${PERF_DATABASE_USER:?Set the isolated database user}
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_app_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    secrets:
+      - mysql_app_password
+      - mysql_root_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$$(cat /run/secrets/mysql_root_password)"
+          mysqladmin ping --host=127.0.0.1 --user=root --silent
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+    mem_limit: 2240m
+    memswap_limit: 2240m
+    cpuset: ${PERF_CPUSET:-0-1}
+    networks:
+      - backend
+
+  redis:
+    image: redis:8.0.1-alpine
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        printf '%s\n'
+        "requirepass $$(cat /run/secrets/redis_password)"
+        'appendonly no'
+        'maxmemory 256mb'
+        'maxmemory-policy noeviction'
+        > /tmp/performance-redis.conf;
+        exec redis-server /tmp/performance-redis.conf
+    secrets:
+      - redis_password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          REDISCLI_AUTH="$$(cat /run/secrets/redis_password)"
+          redis-cli ping | grep -q PONG
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpuset: ${PERF_CPUSET:-0-1}
+    networks:
+      - backend
+
+  image-init:
+    image: ${PERF_APP_IMAGE:?Set the immutable performance App image}
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["chown -R 10001:10001 /data/images && chmod 0755 /data/images"]
+    volumes:
+      - product_images:/data/images
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpuset: ${PERF_CPUSET:-0-1}
+    restart: "no"
+
+  migrate:
+    <<: *app-service
+    profiles: ["operations"]
+    command: ["aerich", "--app", "models", "upgrade"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  mard:
+    <<: *app-service
+    profiles: ["operations"]
+    command: ["python", "-m", "app.tasks.gatea_mard_publish"]
+    volumes:
+      - product_images:/data/images
+    depends_on:
+      mysql:
+        condition: service_healthy
+      image-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  seed:
+    <<: *app-service
+    profiles: ["operations"]
+    environment:
+      <<: *app-environment
+      PERFORMANCE_RUN_ID: ${PERF_RUN_ID:?Set the performance run ID}
+      PERFORMANCE_SEED_ENABLED: "1"
+    secrets:
+      - mysql_app_password
+      - redis_password
+      - jwt_secret
+      - persona_password
+    command: ["python", "-m", "scripts.performance.seed", "seed", "--apply"]
+    volumes:
+      - ../../scripts/performance:/app/scripts/performance:ro
+      - product_images:/data/images
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    <<: *app-service
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --no-server-header
+      - --workers
+      - "1"
+    volumes:
+      - product_images:/data/images
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      image-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=2)
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    mem_limit: 1280m
+    memswap_limit: 1280m
+    restart: "no"
+
+  edge:
+    image: nginx:1.27.5-alpine
+    ports:
+      - "127.0.0.1:${PERF_HTTP_PORT:?Set a unique loopback port}:8080"
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - product_images:/data/uploads/products:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --quiet --spider http://127.0.0.1:8080/api/v1/health/live
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpuset: ${PERF_CPUSET:-0-1}
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+      - client
+    restart: "no"
+
+  shaper:
+    image: ${PERF_SHAPER_IMAGE:?Set the immutable shaper image}
+    build:
+      context: .
+      dockerfile: Dockerfile.shaper
+    network_mode: service:edge
+    cap_add:
+      - NET_ADMIN
+    command:
+      - ${PERF_BANDWIDTH:-5mbit}
+      - ${PERF_BURST:-128kbit}
+      - ${PERF_LATENCY:-400ms}
+    depends_on:
+      edge:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test -s /run/performance-client-interface &&
+          tc qdisc show dev "$$(cat /run/performance-client-interface)" | grep -q tbf
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpuset: ${PERF_CPUSET:-0-1}
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+secrets:
+  mysql_app_password:
+    file: ${PERF_SECRET_DIR:?Set the private Secret directory}/mysql_app_password
+  mysql_root_password:
+    file: ${PERF_SECRET_DIR:?Set the private Secret directory}/mysql_root_password
+  redis_password:
+    file: ${PERF_SECRET_DIR:?Set the private Secret directory}/redis_password
+  jwt_secret:
+    file: ${PERF_SECRET_DIR:?Set the private Secret directory}/jwt_secret
+  persona_password:
+    file: ${PERF_SECRET_DIR:?Set the private Secret directory}/persona_password
+
+volumes:
+  mysql_data:
+  product_images:
+
+networks:
+  backend:
+    internal: true
+  client:
