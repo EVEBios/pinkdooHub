@@ -360,6 +360,16 @@ FAILED_ACCEPTANCE_BUSINESS_COUNTS = {
 FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 = (
     "9f262cb7c7a500cfd3b245f045c9ff8a887a640a6576539b421a61add81c1012"
 )
+PAID_ACCEPTANCE_BUSINESS_COUNTS = {
+    **FAILED_ACCEPTANCE_BUSINESS_COUNTS,
+    "payments": 1, "settlements": 1, "wallet_transactions": 1,
+    "table_sessions": 1, "cancellation_restores": 0,
+}
+PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 = hashlib.sha256(
+    json.dumps(PAID_ACCEPTANCE_BUSINESS_COUNTS, ensure_ascii=True,
+               sort_keys=True, separators=(",", ":")).encode()
+).hexdigest()
+
 RETIREMENT_PENDING_PHASES = frozenset(
     {
         "prepared",
@@ -2253,13 +2263,42 @@ def _verified_stage_operations(
             del sys.modules[module_name]
 
 
-def _validate_preclaim_failed_acceptance(
+def _paid_terminal_evidence_valid(payload: Mapping[str, Any]) -> bool:
+    payment = payload.get("payment_evidence")
+    if not isinstance(payment, dict) or set(payment) != {"payment_id", "payment_no_sha256", "succeeded_at"}:
+        return False
+    if (type(payment.get("payment_id")) is not int or payment["payment_id"] <= 0
+            or SHA256_PATTERN.fullmatch(str(payment.get("payment_no_sha256", ""))) is None
+            or not _is_utc_timestamp(payment.get("succeeded_at"))):
+        return False
+    paid_at = _parse_utc_timestamp(payment["succeeded_at"], "paid failure timestamp")
+    if not (_parse_utc_timestamp(payload["started_at"], "failure start") <= paid_at
+            <= _parse_utc_timestamp(payload["updated_at"], "failure update")):
+        return False
+    return (payload.get("table_no") == "T01"
+            and SHA256_PATTERN.fullmatch(str(payload.get("session_no_sha256", ""))) is not None
+            and type(payload.get("payment_deadline_offset_seconds")) is int
+            and payload["payment_deadline_offset_seconds"] == 900
+            and _canonical_json_sha256(payload.get("timer_evidence")) == _canonical_json_sha256({
+                "durations": [60, 120], "buffers": [10, 10], "item_counts": [2, 1],
+                "quantities": [3, 1], "service_offsets": [3600, 7200],
+                "grace_offsets": [4200, 7800], "release_offset": 7800,
+            }))
+
+
+def _validate_preclaim_failed_acceptance(**kwargs: Any) -> tuple[dict[str, Any], bytes, tuple[int, ...]]:
+    """旧 pre-claim 调用保留严格语义，不能凭付款标志获得额外许可。"""
+    return _validate_retireable_failed_acceptance(**kwargs, _allow_paid=False)
+
+
+def _validate_retireable_failed_acceptance(
     *,
     path: Path,
     expected_candidate_sha: str,
     expected_sha256: str,
+    _allow_paid: bool = True,
 ) -> tuple[dict[str, Any], bytes, tuple[int, ...]]:
-    """Accept only the one known pre-claim, fully-cleaned schema-v3 failure."""
+    """验证未付款补偿或已付款并释放的精确终态；不接受中间状态。"""
 
     raw_payload, identity = _read_stable_protected_bytes(
         path,
@@ -2285,6 +2324,7 @@ def _validate_preclaim_failed_acceptance(
             "Gate A pre-claim failed acceptance journal is invalid"
         )
 
+    paid = _allow_paid and payload.get("stage") == "fixtures_offline"
     reconcile = payload.get("pre_reconcile")
     wallet = payload.get("pre_wallet_reconcile")
     cleanup = payload.get("cleanup")
@@ -2336,7 +2376,7 @@ def _validate_preclaim_failed_acceptance(
         or not _is_utc_timestamp(updated_at)
         or _parse_utc_timestamp(updated_at, "acceptance updated-at")
         < _parse_utc_timestamp(started_at, "acceptance started-at")
-        or payload.get("stage") != "order_created"
+        or payload.get("stage") != ("fixtures_offline" if paid else "order_created")
         or not isinstance(reconcile, dict)
         or set(reconcile) != PRECLAIM_ACCEPTANCE_RECONCILE_KEYS
         or any(type(value) is not int or value != 0 for value in reconcile.values())
@@ -2348,12 +2388,12 @@ def _validate_preclaim_failed_acceptance(
         or wallet.get("violations") != 0
         or not isinstance(cleanup, dict)
         or set(cleanup) != PRECLAIM_ACCEPTANCE_CLEANUP_KEYS
-        or any(cleanup.get(key) is not True for key in cleanup)
+        or any(cleanup.get(key) is not (False if paid and key == "order_cancelled" else True) for key in cleanup)
         or payload.get("failure") is not True
-        or payload.get("payment_committed") is not False
-        or payload.get("session_released") is not False
+        or payload.get("payment_committed") is not paid
+        or payload.get("session_released") is not paid
         or any(
-            payload.get(field) is not False
+            payload.get(field) is not paid
             for field in (
                 "claim_replay_verified",
                 "payment_replay_verified",
@@ -2361,7 +2401,7 @@ def _validate_preclaim_failed_acceptance(
                 "release_replay_verified",
             )
         )
-        or any(
+        or (not paid and any(
             payload.get(field) is not None
             for field in (
                 "table_no",
@@ -2370,7 +2410,8 @@ def _validate_preclaim_failed_acceptance(
                 "payment_evidence",
                 "timer_evidence",
             )
-        )
+        ))
+        or (paid and not _paid_terminal_evidence_valid(payload))
         or payload.get("secret_values_recorded") is not False
         or payload.get("source_volume_restored") is not False
         or payload.get("passed") is not False
@@ -2549,7 +2590,7 @@ def _reject_unresolved_transition_journals(
             raise GateACandidateError(
                 "Gate A M9 runtime acceptance sidecar blocks candidate mutation"
             )
-        payload, _, _ = _validate_preclaim_failed_acceptance(
+        payload, _, _ = _validate_retireable_failed_acceptance(
             path=path,
             expected_candidate_sha=str(allowed_acceptance_candidate_sha),
             expected_sha256=str(allowed_acceptance_pending_sha256),
@@ -4652,6 +4693,8 @@ def _load_adoption_predecessor_binding(
     source_candidate_sha: str,
     lineage_source_candidate_sha: str,
     gatea_module: Any | None = None,
+    acceptance_failure_archive_dir: Path = DEFAULT_ACCEPTANCE_FAILURE_ARCHIVE_DIR,
+    retirement_failure_archive_dir: Path = DEFAULT_RETIREMENT_FAILURE_ARCHIVE_DIR,
 ) -> dict[str, Any]:
     """Validate the complete schema-v1 M7-to-M9 predecessor lineage."""
 
@@ -4667,6 +4710,18 @@ def _load_adoption_predecessor_binding(
         target_sha=source_candidate_sha,
     )
     source_image_id = str(source_stage.get("image_id", ""))
+    source_record = gatea._require_upgrade_record(
+        record_dir=release_record_dir, candidate_sha=source_candidate_sha, image_id=source_image_id,
+    )
+    if source_record.get("schema_version") == 2:
+        return _load_paid_recovery_predecessor_binding(
+            release_root=release_root, release_record_dir=release_record_dir,
+            source_candidate_sha=source_candidate_sha,
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            source_stage=source_stage, source_upgrade=source_record, gatea=gatea,
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
+        )
     source_activation_path = _activation_record_path(
         release_record_dir, source_candidate_sha
     )
@@ -4771,6 +4826,66 @@ def _load_adoption_predecessor_binding(
     }
 
 
+def _load_paid_recovery_predecessor_binding(
+    *, release_root: Path, release_record_dir: Path, source_candidate_sha: str,
+    lineage_source_candidate_sha: str, source_stage: Mapping[str, Any],
+    source_upgrade: Mapping[str, Any], gatea: Any,
+    acceptance_failure_archive_dir: Path, retirement_failure_archive_dir: Path,
+) -> dict[str, Any]:
+    """重新打开 E→A→S 证据；此次仅允许首次 adoption 后的已付款恢复。"""
+    parent_sha = _validate_sha(str(source_upgrade.get("source_candidate_sha", "")), "adoption predecessor")
+    parent_upgrade = _load_json(
+        release_record_dir / f"{parent_sha}.existing-database-upgrade.json", "adoption parent upgrade"
+    )
+    if (len({parent_sha, source_candidate_sha, lineage_source_candidate_sha}) != 3
+            or parent_upgrade.get("schema_version") != 1
+            or parent_upgrade.get("source_version") != 7
+            or parent_upgrade.get("source_candidate_sha") != lineage_source_candidate_sha
+            or source_upgrade.get("lineage_source_candidate_sha") != lineage_source_candidate_sha):
+        raise GateACandidateError("Gate A paid recovery ancestry is not the supported M7/M9/adoption chain")
+    binding = _load_adoption_context(
+        release_root=release_root, release_record_dir=release_record_dir,
+        source_candidate_sha=parent_sha, lineage_source_candidate_sha=lineage_source_candidate_sha,
+        target_sha=source_candidate_sha,
+        acceptance_retirement_record_sha256=str(source_upgrade.get("acceptance_retirement_record_sha256", "")),
+        acceptance_record_dir=DEFAULT_ACCEPTANCE_RECORD_DIR,
+        acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        retirement_failure_archive_dir=retirement_failure_archive_dir,
+    )
+    activation_path = _activation_record_path(release_record_dir, source_candidate_sha)
+    activation = _load_json(activation_path, "adoption predecessor activation")
+    _validate_activation_journal(
+        activation, source_sha=parent_sha, target_sha=source_candidate_sha, stage=source_stage,
+        backup_id=str(source_upgrade.get("backup_id", "")),
+        history_path=Path(str(activation.get("history_path", ""))),
+        release_record_dir=release_record_dir, final=True, adoption_binding=binding,
+    )
+    upgrade_path = release_record_dir / f"{source_candidate_sha}.existing-database-upgrade.json"
+    evidence_path = release_record_dir / f"{source_candidate_sha}.existing-database-upgrade.evidence.json"
+    replay_path = _upgrade_replay_record_path(release_record_dir, source_candidate_sha)
+    evidence = _load_json(evidence_path, "adoption predecessor evidence")
+    if (source_upgrade.get("activation_record_sha256") != _sha256(activation_path)
+            or source_upgrade.get("manifest_sha256") != activation.get("manifest_sha256")
+            or source_upgrade.get("evidence_sha256") != _sha256(evidence_path)
+            or evidence.get("status") != "succeeded"
+            or any(source_upgrade.get(key) != value for key, value in binding.items() if key not in {"retirement", "stage", "takeover"})):
+        raise GateACandidateError("Gate A paid recovery predecessor evidence differs from its lineage")
+    gatea._require_m9_upgrade_replay_record(
+        record_dir=release_record_dir, candidate_sha=source_candidate_sha,
+        image_id=str(source_stage["image_id"]), upgrade_record=source_upgrade,
+    )
+    return {
+        "source_candidate_sha": source_candidate_sha, "source_image_id": source_stage["image_id"],
+        "lineage_source_candidate_sha": lineage_source_candidate_sha,
+        "lineage_source_image_id": source_upgrade["lineage_source_image_id"],
+        "predecessor_stage_record_sha256": _sha256(_stage_record_path(release_record_dir, source_candidate_sha)),
+        "predecessor_activation_record_sha256": _sha256(activation_path),
+        "predecessor_upgrade_record_sha256": _sha256(upgrade_path),
+        "predecessor_upgrade_evidence_sha256": _sha256(evidence_path),
+        "predecessor_upgrade_plan_replay_record_sha256": _sha256(replay_path),
+    }
+
+
 def _failed_acceptance_business_verification(
     *,
     gatea: Any,
@@ -4802,6 +4917,7 @@ def _failed_acceptance_business_verification(
         raise GateACandidateError(
             "Gate A failed acceptance business identities are invalid"
         )
+    paid = failed_acceptance.get("payment_committed") is True
     command = (
         "run",
         "--rm",
@@ -4811,7 +4927,8 @@ def _failed_acceptance_business_verification(
         "python3",
         "-B",
         "-m",
-        "app.tasks.gatea_m9_failed_acceptance_verify",
+        ("app.tasks.gatea_m9_paid_acceptance_verify" if paid
+         else "app.tasks.gatea_m9_failed_acceptance_verify"),
     )
     verifier_input = {
         "schema_version": 2,
@@ -4840,6 +4957,9 @@ def _failed_acceptance_business_verification(
         "kit_item_id": order_evidence["kit_order_item_id"],
         "kit_price": fixture["kit_price"],
     }
+    if paid:
+        verifier_input.update(schema_version=3, **failed_acceptance["payment_evidence"],
+                              session_no_sha256=failed_acceptance["session_no_sha256"])
     verifier_input_text = json.dumps(
         verifier_input,
         ensure_ascii=True,
@@ -4922,11 +5042,11 @@ def _failed_acceptance_business_verification(
     if (
         not isinstance(payload, dict)
         or set(payload) != FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS
-        or payload.get("schema_version") != 2
+        or payload.get("schema_version") != (3 if paid else 2)
         or payload.get("passed") is not True
-        or payload.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
+        or payload.get("counts") != (PAID_ACCEPTANCE_BUSINESS_COUNTS if paid else FAILED_ACCEPTANCE_BUSINESS_COUNTS)
         or payload.get("evidence_sha256")
-        != FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+        != (PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 if paid else FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256)
         or payload.get("secret_values_recorded") is not False
     ):
         raise GateACandidateError(
@@ -5153,8 +5273,8 @@ def _retirement_live_verification(
         or not isinstance(table_reconcile, dict)
         or set(table_reconcile) != PRECLAIM_ACCEPTANCE_RECONCILE_KEYS
         or any(
-            type(value) is not int or value != 0
-            for value in table_reconcile.values()
+            type(value) is not int or value != (1 if failed_acceptance.get("payment_committed") is True and key == "scanned" else 0)
+            for key, value in table_reconcile.items()
         )
         or set(wallet_reconcile) != PRECLAIM_ACCEPTANCE_WALLET_KEYS
         or wallet_reconcile.get("scanned", 0) <= 0
@@ -5179,7 +5299,7 @@ def _retirement_live_verification(
 def _validate_retirement_live_verification(
     payload: object,
     *,
-    allowed_business_schema_versions: frozenset[int] = frozenset({1, 2}),
+    allowed_business_schema_versions: frozenset[int] = frozenset({1, 2, 3}),
 ) -> dict[str, Any]:
     gatea, _, _ = _runtime_modules()
     business = (
@@ -5187,6 +5307,7 @@ def _validate_retirement_live_verification(
         if isinstance(payload, dict)
         else None
     )
+    paid = isinstance(business, dict) and business.get("schema_version") == 3
     if (
         not isinstance(payload, dict)
         or set(payload) != RETIREMENT_LIVE_VERIFICATION_KEYS
@@ -5194,9 +5315,9 @@ def _validate_retirement_live_verification(
         or set(business) != FAILED_ACCEPTANCE_BUSINESS_VERIFICATION_KEYS
         or business.get("schema_version") not in allowed_business_schema_versions
         or business.get("passed") is not True
-        or business.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
+        or business.get("counts") != (PAID_ACCEPTANCE_BUSINESS_COUNTS if paid else FAILED_ACCEPTANCE_BUSINESS_COUNTS)
         or business.get("evidence_sha256")
-        != FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+        != (PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 if paid else FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256)
         or business.get("secret_values_recorded") is not False
         or not isinstance(payload.get("database_snapshot"), dict)
         or payload["database_snapshot"].get("aerich_versions")
@@ -5210,8 +5331,8 @@ def _validate_retirement_live_verification(
         or set(payload["table_reconcile"])
         != PRECLAIM_ACCEPTANCE_RECONCILE_KEYS
         or any(
-            type(value) is not int or value != 0
-            for value in payload["table_reconcile"].values()
+            type(value) is not int or value != (1 if paid and key == "scanned" else 0)
+            for key, value in payload["table_reconcile"].items()
         )
         or not isinstance(payload.get("wallet_reconcile"), dict)
         or set(payload["wallet_reconcile"])
@@ -5290,7 +5411,7 @@ def _validate_retirement_journal(
         _validate_retirement_live_verification(
             payload.get("live_verification"),
             allowed_business_schema_versions=(
-                frozenset({2}) if takeover else frozenset({1, 2})
+                frozenset({2}) if takeover else frozenset({1, 2, 3})
             ),
         )
     return dict(payload)
@@ -5352,6 +5473,8 @@ def _validate_prepared_retirement_takeover(
         source_candidate_sha=source_candidate_sha,
         lineage_source_candidate_sha=lineage_source_candidate_sha,
         gatea_module=gatea_module,
+        acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        retirement_failure_archive_dir=retirement_failure_archive_dir,
     )
     acceptance_archive_path = _retirement_archive_path(
         acceptance_failure_archive_dir,
@@ -5677,7 +5800,7 @@ def _validate_adoption_retirement_archive(
         raise GateACandidateError(
             "Gate A failed acceptance archive binding is invalid"
         )
-    archived_acceptance, _, _ = _validate_preclaim_failed_acceptance(
+    archived_acceptance, _, _ = _validate_retireable_failed_acceptance(
         path=expected_archive_path,
         expected_candidate_sha=source_candidate_sha,
         expected_sha256=failed_acceptance_sha256,
@@ -5727,6 +5850,8 @@ def _load_adoption_context(
         release_record_dir=release_record_dir,
         source_candidate_sha=source_candidate_sha,
         lineage_source_candidate_sha=lineage_source_candidate_sha,
+        acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        retirement_failure_archive_dir=retirement_failure_archive_dir,
     )
     takeover = target_stage.get("schema_version") == 3
     if (
@@ -5803,7 +5928,7 @@ def _load_adoption_context(
         raise GateACandidateError(
             "Gate A failed acceptance archive path is invalid"
         )
-    archived_acceptance, _, _ = _validate_preclaim_failed_acceptance(
+    archived_acceptance, _, _ = _validate_retireable_failed_acceptance(
         path=expected_archive_path,
         expected_candidate_sha=source_candidate_sha,
         expected_sha256=str(target_stage["failed_acceptance_sha256"]),
@@ -5885,6 +6010,17 @@ def _load_adoption_context(
         expected_sha256=acceptance_retirement_record_sha256,
         expected_binding=expected_retirement,
     )
+    paid = archived_acceptance.get("payment_committed") is True
+    if (paid != (retirement["live_verification"]["business_verification"]["schema_version"] == 3)
+            or (paid and takeover)):
+        raise GateACandidateError("Gate A paid retirement profile does not match its predecessor")
+    if paid:
+        source_upgrade = _load_json(
+            release_record_dir / f"{source_candidate_sha}.existing-database-upgrade.json",
+            "adoption predecessor deployment",
+        )
+        if source_upgrade.get("schema_version") != 2:
+            raise GateACandidateError("Gate A paid recovery requires an adoption predecessor")
     reloaded_acceptance = _validate_adoption_retirement_archive(
         acceptance_failure_archive_dir=acceptance_failure_archive_dir,
         source_candidate_sha=source_candidate_sha,
@@ -6401,6 +6537,8 @@ def retire_failed_acceptance(
         release_record_dir=release_record_dir,
         source_candidate_sha=source_candidate_sha,
         lineage_source_candidate_sha=lineage_source_candidate_sha,
+        acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+        retirement_failure_archive_dir=retirement_failure_archive_dir,
     )
     if (
         _read_current_target(current_link, release_root)
@@ -6419,7 +6557,7 @@ def retire_failed_acceptance(
     raw_payload: bytes
     acceptance_identity: tuple[int, ...] | None = None
     if acceptance_exists:
-        failed, raw_payload, acceptance_identity = _validate_preclaim_failed_acceptance(
+        failed, raw_payload, acceptance_identity = _validate_retireable_failed_acceptance(
             path=canonical_pending,
             expected_candidate_sha=source_candidate_sha,
             expected_sha256=failed_acceptance_sha256,
@@ -6436,7 +6574,7 @@ def retire_failed_acceptance(
             0o700,
             "Gate A failed acceptance archive directory",
         )
-        failed, raw_payload, _ = _validate_preclaim_failed_acceptance(
+        failed, raw_payload, _ = _validate_retireable_failed_acceptance(
             path=archive_path,
             expected_candidate_sha=source_candidate_sha,
             expected_sha256=failed_acceptance_sha256,
@@ -6458,6 +6596,12 @@ def retire_failed_acceptance(
         raise GateACandidateError(
             "Gate A failed acceptance predecessor binding is invalid"
         )
+    source_stage = _load_stage(
+        release_root=release_root, release_record_dir=release_record_dir,
+        target_sha=source_candidate_sha,
+    )
+    if (failed.get("payment_committed") is True) != (source_stage.get("schema_version") in {2, 3}):
+        raise GateACandidateError("Gate A paid failure must match the supported adoption predecessor")
     final_acceptance = acceptance_record_dir / (
         f"gatea-m9-runtime-acceptance-{source_candidate_sha}.json"
     )
@@ -7062,7 +7206,7 @@ def _validate_acceptance_record(
     except Exception as error:
         raise GateACandidateError("Gate A M9 runtime acceptance record is invalid") from error
     if (
-        payload.get("schema_version") != 1
+        payload.get("schema_version") not in {1, 2}
         or payload.get("record_type") != "gatea-m9-runtime-acceptance"
         or payload.get("source_candidate_sha") != source_sha
         or payload.get("candidate_sha") != target_sha
@@ -8231,7 +8375,15 @@ def finalize_candidate(
         upgrade_replay_record_sha256=_sha256(replay_path),
     )
 
+    from scripts.release import gatea_m9_paid_recovery as paid_recovery
+    paid_recovery.validate_acceptance_binding(
+        acceptance, release_record_dir=release_record_dir, deployment=upgrade_record,
+    )
+
     def require_acceptance_unchanged() -> None:
+        paid_recovery.validate_acceptance_binding(
+            acceptance, release_record_dir=release_record_dir, deployment=upgrade_record,
+        )
         _read_stable_acceptance_record(
             runtime_acceptance_record, runtime_acceptance_sha256
         )

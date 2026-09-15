@@ -408,14 +408,14 @@ def _validate_expectations(
     return frozen_items
 
 
-async def _verify_order(order_id: int) -> dict[str, Any]:
+async def _verify_order(order_id: int, *, expected_status: OrderStatus = OrderStatus.CANCELLED) -> dict[str, Any]:
     rows = await Order.filter(id=order_id).values(
         "id", "user_id", "status", "total_amount", "remark"
     )
     try:
         is_cancelled = (
             len(rows) == 1
-            and int(rows[0]["status"]) == OrderStatus.CANCELLED.value
+            and int(rows[0]["status"]) == expected_status.value
             and rows[0]["total_amount"] == EXPECTED_ORDER_TOTAL
             and rows[0]["remark"] == EXPECTED_ORDER_REMARK
         )
@@ -537,7 +537,7 @@ async def _verify_fixture_images(
         )
 
 
-async def _verify_kit(*, kit_product_id: int, kit_price: Decimal) -> None:
+async def _verify_kit(*, kit_product_id: int, kit_price: Decimal, expected_stock: int = EXPECTED_KIT_STOCK) -> None:
     rows = await ProductKit.filter(product_id=kit_product_id).values(
         "product_id",
         "kit_kind",
@@ -549,7 +549,7 @@ async def _verify_kit(*, kit_product_id: int, kit_price: Decimal) -> None:
             len(rows) == 1
             and KitKind(rows[0]["kit_kind"]) is KitKind.FIXED
             and rows[0]["price"] == kit_price
-            and rows[0]["stock"] == EXPECTED_KIT_STOCK
+            and rows[0]["stock"] == expected_stock
         )
     except (TypeError, ValueError):
         kit_is_valid = False
@@ -733,6 +733,7 @@ async def _verify_inventory(
     order_id: int,
     kit_product_id: int,
     order_user_id: int,
+    paid: bool = False,
 ) -> None:
     rows = await InventoryTransaction.filter(product_id=kit_product_id).values(
         "id",
@@ -749,7 +750,7 @@ async def _verify_inventory(
         "idempotency_key",
         "created_at",
     )
-    if len(rows) != 3:
+    if len(rows) != (2 if paid else 3):
         raise GateAM9FailedAcceptanceVerificationError(
             "INVENTORY_SET",
             "the frozen Kit inventory footprint is not exact"
@@ -769,11 +770,11 @@ async def _verify_inventory(
                 "the frozen Order has duplicate inventory facts"
             )
         by_type[transaction_type] = row
-    if set(by_type) != {
+    if set(by_type) != ({
         InventoryTransactionType.ADMIN_ADJUSTMENT,
         InventoryTransactionType.ORDER_DEDUCTION,
         InventoryTransactionType.ORDER_CANCELLATION_RESTORE,
-    }:
+    } - ({InventoryTransactionType.ORDER_CANCELLATION_RESTORE} if paid else set())):
         raise GateAM9FailedAcceptanceVerificationError(
             "INVENTORY_SET",
             "the frozen Order inventory fact types are invalid"
@@ -781,7 +782,7 @@ async def _verify_inventory(
 
     adjustment = by_type[InventoryTransactionType.ADMIN_ADJUSTMENT]
     deduction = by_type[InventoryTransactionType.ORDER_DEDUCTION]
-    restore = by_type[InventoryTransactionType.ORDER_CANCELLATION_RESTORE]
+    restore = by_type.get(InventoryTransactionType.ORDER_CANCELLATION_RESTORE)
     try:
         common_is_valid = all(
             row["product_id"] == kit_product_id
@@ -790,7 +791,7 @@ async def _verify_inventory(
             is InventorySourceType.ORDER
             and row["source_id"] == order_id
             and row["operator_id"] == order_user_id
-            for row in (deduction, restore)
+            for row in ((deduction,) if paid else (deduction, restore))
         )
         adjustment_common_is_valid = (
             adjustment["product_id"] == kit_product_id
@@ -842,7 +843,7 @@ async def _verify_inventory(
             order_id=order_id,
             product_id=kit_product_id,
         )
-        or restore["change_quantity"] != 1
+        or (not paid and (restore is None or restore["change_quantity"] != 1
         or restore["before_quantity"] != EXPECTED_KIT_STOCK - 1
         or restore["after_quantity"] != EXPECTED_KIT_STOCK
         or restore["reason"] != INVENTORY_ORDER_RESTORE_REASON
@@ -856,7 +857,9 @@ async def _verify_inventory(
         or not int(adjustment["id"]) < int(deduction["id"]) < int(restore["id"])
         or not adjustment["created_at"]
         <= deduction["created_at"]
-        <= restore["created_at"]
+        <= restore["created_at"]))
+        or (paid and (not int(adjustment["id"]) < int(deduction["id"])
+                      or adjustment["created_at"] > deduction["created_at"]))
     ):
         raise GateAM9FailedAcceptanceVerificationError(
             "INVENTORY_ORDER_CHAIN",

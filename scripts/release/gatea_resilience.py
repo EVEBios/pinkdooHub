@@ -727,6 +727,10 @@ def _validate_runtime_acceptance_record(
         raise ResilienceError(
             "Gate A M9 runtime acceptance binding does not match current evidence"
         )
+    from scripts.release import gatea_m9_paid_recovery as paid_recovery
+    paid_recovery.validate_acceptance_binding(
+        payload, release_record_dir=release_record_dir, deployment=deployment_record,
+    )
     attempt_id_sha256 = str(payload.get("attempt_id_sha256", ""))
     completed_at = str(payload.get("completed_at", ""))
     _parse_runtime_acceptance_completed_at(completed_at)
@@ -1311,6 +1315,18 @@ def _compose_logs(
         capture_output=True,
     )
     return (result.stdout or "") + (result.stderr or "")
+
+
+def inspect_log_text(logs: str, exact_values: Sequence[str]) -> dict[str, int]:
+    """返回固定类别计数；不把匹配文本、凭据或动态日志字段带出扫描边界。"""
+    values = {value for value in exact_values if isinstance(value, str) and len(value) >= 6}
+    return {
+        "line_count": len(logs.splitlines()),
+        "exact_secret_matches": sum(logs.count(value) for value in values),
+        "forbidden_pattern_matches": sum(
+            sum(1 for _ in pattern.finditer(logs)) for pattern in FORBIDDEN_LOG_PATTERNS
+        ),
+    }
 
 
 def _scan_logs(

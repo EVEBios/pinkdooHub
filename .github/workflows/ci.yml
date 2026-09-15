@@ -196,6 +196,9 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
+      - name: Check actual Nginx logs before the database drill
+        run: python -B -m scripts.ci.check_gatea_log_runtime
+
       - name: Install locked Python dependencies
         run: |
           python -m pip install --upgrade "pip==${PIP_VERSION}"
@@ -206,6 +209,14 @@ jobs:
         run: |
           sudo "$(command -v python)" -B -m pytest -p no:cacheprovider -q \
             tests/release/test_gatea_candidate.py::test_real_git_archive_freezes_executable_operations_and_loads
+
+      - name: Check real authentication logs and sensitive-value scanner
+        run: |
+          python -B -m pytest -p no:cacheprovider -q \
+            tests/users/test_auth.py::test_auth_logs_keep_event_without_credentials \
+            tests/release/test_gatea_log_safety.py \
+            tests/release/test_gatea_m9_paid_recovery.py \
+            tests/release/test_gatea_m9_failed_acceptance_verify.py
 
       - name: Rehearse the complete Gate A M7 to M9 updater
         run: |

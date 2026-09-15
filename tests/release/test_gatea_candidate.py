@@ -7582,3 +7582,94 @@ def test_operations_rejects_unapproved_frozen_mode(
             expected_sha256="a" * 64, expected_mode=mode,
         ):
             pytest.fail("unapproved mode was accepted")
+
+
+def _paid_failure_payload():
+    payload = _preclaim_failure_payload()
+    payload.update(stage='fixtures_offline', payment_committed=True, session_released=True,
+        claim_replay_verified=True, payment_replay_verified=True, admin_visibility_verified=True,
+        release_replay_verified=True, table_no='T01', session_no_sha256='f' * 64,
+        payment_deadline_offset_seconds=900,
+        payment_evidence={'payment_id':501, 'payment_no_sha256':'e' * 64, 'succeeded_at':payload['updated_at']},
+        timer_evidence={'durations':[60,120], 'buffers':[10,10], 'item_counts':[2,1],
+                        'quantities':[3,1], 'service_offsets':[3600,7200],
+                        'grace_offsets':[4200,7800], 'release_offset':7800})
+    payload['cleanup']['order_cancelled'] = False
+    return payload
+
+
+@pytest.mark.parametrize('field,value', [(None,None), ('stage','paid'), ('session_released',False),
+    ('payment_committed',False), ('payment_evidence',None), ('timer_evidence',None),
+    ('release_replay_verified',False), ('payment_deadline_offset_seconds',0)])
+def test_paid_terminal_allowance_requires_complete_frozen_evidence(monkeypatch,tmp_path,field,value):
+    payload = _paid_failure_payload()
+    if field is not None:
+        payload[field] = value
+    path = tmp_path / 'paid.pending'
+    digest = _write_preclaim_failure(path,payload)
+    monkeypatch.setattr(candidate, '_require_root_file', lambda *args: None)
+    monkeypatch.setattr(candidate,'ROOT_UID',os.getuid())
+    monkeypatch.setattr(candidate,'ROOT_GID',os.getgid())
+    before=path.read_bytes()
+    args=dict(path=path,expected_candidate_sha='a' * 40,expected_sha256=digest)
+    if field is None:
+        assert candidate._validate_retireable_failed_acceptance(**args)[0] == payload
+        with pytest.raises(candidate.GateACandidateError):
+            candidate._validate_preclaim_failed_acceptance(**args)
+    else:
+        with pytest.raises(candidate.GateACandidateError):
+            candidate._validate_retireable_failed_acceptance(**args)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('failure', ['none', 'archive', 'canonical', 'restore'])
+def test_paid_retirement_preserves_terminal_payment_evidence_and_retries(monkeypatch,tmp_path,failure):
+    case = _retirement_case(monkeypatch,tmp_path)
+    payload = _paid_failure_payload()
+    case.canonical.unlink()
+    digest = _write_preclaim_failure(case.canonical,payload)
+    case.arguments.update(failed_acceptance_sha256=digest, confirm_failed_acceptance_sha256=digest)
+    case.target_stage['failed_acceptance_sha256']=digest
+    case.source_stage['schema_version']=3
+    live = _retirement_live_evidence()
+    live['business_verification'].update(schema_version=3,
+        counts=candidate.PAID_ACCEPTANCE_BUSINESS_COUNTS,
+        evidence_sha256=candidate.PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256)
+    live['table_reconcile']['scanned']=1
+    monkeypatch.setattr(candidate,'_retirement_live_verification',lambda **kwargs: copy.deepcopy(live))
+    # Actual durable journal and archive writes; only process/host boundaries are substituted.
+    if failure != 'none':
+        original = candidate._write_bytes_exclusive
+        state={'failed':False}
+        def write(path,content,mode):
+            if failure=='archive' and path.parent==case.archive_dir and not state['failed']:
+                state['failed']=True
+                raise OSError('injected paid archive failure')
+            return original(path,content,mode)
+        monkeypatch.setattr(candidate,'_write_bytes_exclusive',write)
+        if failure=='canonical':
+            remove=candidate._unlink_exact_protected_file
+            def remove_once(*args,**kwargs):
+                if not state['failed']:
+                    state['failed']=True
+                    raise OSError('injected paid canonical failure')
+                return remove(*args,**kwargs)
+            monkeypatch.setattr(candidate,'_unlink_exact_protected_file',remove_once)
+        elif failure=='restore':
+            restore=candidate._restore_retirement_runtime
+            def restore_once(**kwargs):
+                if not state['failed']:
+                    state['failed']=True
+                    raise OSError('injected paid restore failure')
+                return restore(**kwargs)
+            monkeypatch.setattr(candidate,'_restore_retirement_runtime',restore_once)
+        with pytest.raises((OSError,candidate.GateACandidateError)):
+            candidate.retire_failed_acceptance(**case.arguments)
+    result=candidate.retire_failed_acceptance(**case.arguments)
+    archive=Path(result['acceptance_archive_path'])
+    assert json.loads(archive.read_text())==payload
+    assert candidate._sha256(archive)==digest
+    assert result['live_verification']['table_reconcile']['scanned']==1
+    assert not case.canonical.exists()
+    assert not case.pending.exists()
+    assert candidate.retire_failed_acceptance(**case.arguments)==result

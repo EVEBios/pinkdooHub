@@ -115,7 +115,7 @@ class AuthService:
                 ip_address=ip_address,
                 using_db=connection,
             )
-        logger.info("User registered: user_id=%d username=%s", user.id, user.username)
+        logger.info("User registered: user_id=%d", user.id)
         return user
 
     # ── 登录 ────────────────────────────────────
@@ -174,7 +174,7 @@ class AuthService:
 
         user, tokens = await self._issue_confirmed_token_pair(locked_user)
 
-        logger.info("User logged in: user_id=%d username=%s", user.id, user.username)
+        logger.info("User logged in: user_id=%d", user.id)
         return {
             "user": user,
             **tokens,

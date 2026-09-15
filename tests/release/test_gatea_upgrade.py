@@ -4868,9 +4868,11 @@ def test_m9_adoption_lineage_accepts_schema3_takeover_and_reopens_archives(
     )
 
 
+@pytest.mark.parametrize("paid_predecessor", [False, True])
 def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    paid_predecessor: bool,
 ) -> None:
     source_image_id = "sha256:" + "1" * 64
     lineage_image_id = "sha256:" + "6" * 64
@@ -5055,6 +5057,25 @@ def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
         "secret_values_recorded": False,
     }
 
+    if paid_predecessor:
+        from scripts.release import gatea_candidate as candidate
+        records["predecessor stage record"]["schema_version"] = 3
+        predecessor_upgrade.update(schema_version=2, source_version=9,
+            source_candidate_sha="a" * 40, lineage_source_candidate_sha=LINEAGE_SHA,
+            lineage_source_image_id=lineage_image_id,
+            transition_kind=upgrade.M9_ADOPTION_TRANSITION_KIND,
+            source_aerich_versions=list(APPROVED_MIGRATIONS))
+        records["predecessor activation record"].update(schema_version=2,
+            transition_kind=upgrade.M9_ADOPTION_TRANSITION_KIND, source_candidate_sha="a" * 40)
+        retirement["live_verification"]["business_verification"].update(schema_version=3,
+            counts=upgrade.PAID_ACCEPTANCE_BUSINESS_COUNTS,
+            evidence_sha256=upgrade.PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256)
+        retirement["live_verification"]["table_reconcile"]["scanned"] = 1
+        monkeypatch.setattr(candidate, "_load_adoption_predecessor_binding", lambda **kwargs: {
+            **predecessor_digests, "source_image_id":source_image_id, "lineage_source_image_id":lineage_image_id})
+        reopened = []
+        monkeypatch.setattr(candidate, "_load_adoption_context", lambda **kwargs: reopened.append(kwargs) or {})
+
     monkeypatch.setattr(
         upgrade,
         "_load_bound_json_with_sha256",
@@ -5097,3 +5118,8 @@ def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
         "restore_record_sha256": digests["M9 adoption restore record"],
         **predecessor_digests,
     }
+    if paid_predecessor:
+        assert len(reopened) == 1
+        assert reopened[0]["source_candidate_sha"] == SOURCE_SHA
+        assert reopened[0]["target_sha"] == TARGET_SHA
+        assert reopened[0]["lineage_source_candidate_sha"] == LINEAGE_SHA

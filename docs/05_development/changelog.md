@@ -4,6 +4,13 @@
 
 ---
 
+## M9 日志修复与已付款失败恢复（仓库候选，2026-09-15）
+
+- 注册/登录日志移除 username；Nginx 每个 server 显式覆盖默认 access log，消除 main 与 gatea 双写。
+- 正式扫描器增加安全的服务/次数反馈，真实 auth 与官方 Nginx 镜像验证前移到完整演练之前。
+- 增加 E 已付款并释放终态的只读核验和受控退休，绑定 S→A→E lineage；提供有 journal、摘要比较与事务保护的 T01 轮换，并以新 acceptance schema 2 绑定 155→150 钱包及 1→2 会话基线。
+- Resilience/finalize 重开恢复证据。未新增数据库结构或依赖；新候选尚未冻结或部署，详情及隔离验证见 [已付款恢复记录](../09_release/reports/gatea_m9_paid_recovery_2026-09-15.md)。
+
 ## M9 恢复候选 E：精确模式与流水线前置检查（2026-09-15）
 
 - 安全解压同时冻结 operations 内容 SHA-256 与 `0644`/`0755` 精确模式；加载前继续执行原有所有权、文件类型、单链接、稳定身份和 digest 校验。修复 D 的合法 Git 执行位被误拒绝的问题，不修改现场权限或 Record schema。

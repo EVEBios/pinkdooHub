@@ -18,9 +18,9 @@ log_format gatea '$remote_addr [$time_local] '
                  'request_time=$request_time request_id=$request_id '
                  'user_agent="$http_user_agent"';
 
-access_log /var/log/nginx/access.log gatea;
-
 server {
+    # 重定向服务也必须覆盖官方镜像的默认访问日志。
+    access_log /var/log/nginx/access.log gatea;
     listen 8080;
     server_name ${GATEA_API_HOST};
 
@@ -35,6 +35,7 @@ server {
 }
 
 server {
+    access_log /var/log/nginx/access.log gatea;
     listen 8443 ssl;
     server_name ${GATEA_API_HOST};
 
