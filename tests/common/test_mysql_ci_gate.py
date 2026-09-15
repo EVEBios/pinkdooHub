@@ -34,6 +34,12 @@ EXPECTED_MIGRATION_CHAIN = [
     RESERVATION_SETTINGS_MIGRATION,
     BEAD_COLOR_SWATCH_HEX_MIGRATION,
     TABLE_SESSION_MIGRATION,
+    "10_20260913115858_optional_reservation_package.py",
+    "11_20260914120000_direct_table_sessions.py",
+    "12_20260914163509_attention_events.py",
+    "13_20260914183218_commerce_attention.py",
+    "14_20260915000723_reservation_followups.py",
+    "15_20260915044318_store_bead_stock.py",
 ]
 SAFE_ENVIRONMENT = {
     "APP_ENV": "testing",

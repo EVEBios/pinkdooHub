@@ -1,7 +1,7 @@
 """M9 同桌并发开台的真实 MySQL 行锁与唯一占用门槛。"""
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -18,7 +18,7 @@ from app.models.experience_option import ExperienceOption
 from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.payment import Payment, PaymentSettlement
-from app.models.table_session import StoreTable, TableOccupancy, TableSession
+from app.models.table_session import StoreTable, TableOccupancy, TableSession, TableSessionTimer
 from app.models.user import User
 from app.models.wallet import WalletAccount
 from app.repositories.audit_log_repo import AuditLogRepository
@@ -384,3 +384,81 @@ async def test_wallet_payment_and_timeout_race_have_one_mysql_winner() -> None:
         assert await Payment.filter(order_id=order.id).count() == 1
         assert await PaymentSettlement.filter(order_id=order.id).count() == 1
         assert await TableOccupancy.filter(order_id=order.id).count() == 1
+
+
+async def test_direct_and_customer_claim_compete_for_one_mysql_table() -> None:
+    from tests.table_sessions.test_direct_table_session import setup_direct, service
+
+    admin, table, _, option = await setup_direct()
+    customer, order = await _customer_order(91)
+    direct_service = service(datetime.now(timezone.utc))
+    customer_service = _service(92)
+    results = await asyncio.gather(
+        direct_service.create_direct_session(
+            table_id=table.id, option_id=option.id, duration_minutes=60,
+            note=None, operator_id=admin.id, idempotency_key="mysql-direct-race",
+            ip_address="127.0.0.1",
+        ),
+        customer_service.create_session(
+            user=customer, qr_token=table.qr_token, order_id=order.id,
+            idempotency_key="mysql-customer-race", ip_address="127.0.0.1",
+        ),
+        return_exceptions=True,
+    )
+    assert sum(not isinstance(result, BaseException) for result in results) == 1
+    assert sum(isinstance(result, TableUnavailable) for result in results) == 1, results
+    assert await TableOccupancy.all().count() == 1
+    assert await TableSession.all().count() == 1
+
+
+async def test_same_key_direct_mysql_opening_replays_without_extending_time() -> None:
+    from tests.table_sessions.test_direct_table_session import setup_direct, service
+
+    admin, table, _, option = await setup_direct()
+    svc = service(datetime.now(timezone.utc))
+    intent = dict(
+        table_id=table.id, option_id=option.id, duration_minutes=60,
+        note=None, operator_id=admin.id, idempotency_key="mysql-direct-same-key",
+        ip_address="127.0.0.1",
+    )
+    first, second = await asyncio.gather(
+        svc.create_direct_session(**intent), svc.create_direct_session(**intent),
+    )
+    assert first.session.id == second.session.id
+    assert first.session.started_at == second.session.started_at
+    assert first.is_replay != second.is_replay
+    assert await TableSessionTimer.all().count() == 1
+    assert await TableOccupancy.all().count() == 1
+
+
+@pytest.mark.parametrize('same_request', [False, True])
+async def test_atomic_table_checkout_concurrent_requests(same_request):
+    """两用户抢桌只留一笔订单；同一请求并发返回同一订单。"""
+    from app.common.enums.product import ProductStatus
+    from app.repositories.inventory_repo import InventoryRepository
+    from app.repositories.product_repo import ProductRepository
+    from app.services.order_service import OrderItemInput, OrderService
+
+    user, _ = await _customer_order(71)
+    other, _ = await _customer_order(72)
+    product = await Product.create(name='统一开台体验', product_type=ProductType.EXPERIENCE, status=ProductStatus.ONLINE)
+    option = await ExperienceOption.create(product=product, duration=60, participants=1, day_type=DayType.WEEKDAY, price=Decimal('59.00'))
+    table = await StoreTable.create(table_no='T08', display_name='8号桌', qr_token='C' * 32)
+    service = OrderService(OrderRepository(), ProductRepository(), InventoryRepository(),
+        AuditLogService(AuditLogRepository()), user_repository=UserRepository(),
+        table_session_repository=TableSessionRepository())
+    count_before = await Order.all().count()
+    async def checkout(customer, key):
+        return await service.create_order(user_id=customer.id,
+            items=[OrderItemInput(product.id, option.id, 1)], remark=None,
+            ip_address='127.0.0.1', table_no=table.table_no, table_checkout_key=key)
+    results = await asyncio.gather(checkout(user, 'checkout-race'),
+        checkout(user if same_request else other, 'checkout-race' if same_request else 'checkout-other'), return_exceptions=True)
+    successes = [result for result in results if isinstance(result, Order)]
+    if same_request:
+        assert len(successes) == 2 and successes[0].id == successes[1].id
+    else:
+        assert len(successes) == 1
+        assert sum(isinstance(result, TableUnavailable) for result in results) == 1, results
+    assert await Order.all().count() == count_before + 1
+    assert await TableOccupancy.filter(table=table).count() == 1

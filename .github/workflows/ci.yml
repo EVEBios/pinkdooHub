@@ -51,6 +51,7 @@ jobs:
           python -m pytest tests/ \
             --ignore=tests/inventory/mysql \
             --ignore=tests/reservation/mysql \
+            --ignore=tests/store_bead_stock/mysql \
             --ignore=tests/wallet/mysql -q \
             --junitxml=artifacts/backend-sqlite.xml
 
@@ -118,7 +119,7 @@ jobs:
           python scripts/ci/check_mysql_gate.py preflight \
             --report artifacts/mysql-preflight.json
 
-      - name: Exercise reviewed Aerich M6 through M9 migrations over legacy data
+      - name: Exercise reviewed Aerich M6 through M15 migrations over legacy data
         run: |
           set -o pipefail
           aerich --app models upgrade 2>&1 | tee artifacts/mysql-migration.log
@@ -145,7 +146,7 @@ jobs:
         run: |
           python -m pytest \
             tests/inventory/mysql tests/reservation/mysql tests/wallet/mysql \
-            tests/table_sessions/mysql -q \
+            tests/table_sessions/mysql tests/store_bead_stock/mysql -q \
             --junitxml=artifacts/backend-mysql-release.xml
 
       - name: Destroy isolated MySQL schema and service

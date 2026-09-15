@@ -51,6 +51,12 @@ EXPECTED_MIGRATIONS = [
     *EXPECTED_MIGRATIONS_THROUGH_M7,
     M8_MIGRATION,
     M9_MIGRATION,
+    "10_20260913115858_optional_reservation_package.py",
+    "11_20260914120000_direct_table_sessions.py",
+    "12_20260914163509_attention_events.py",
+    "13_20260914183218_commerce_attention.py",
+    "14_20260915000723_reservation_followups.py",
+    "15_20260915044318_store_bead_stock.py",
 ]
 MYSQL_VERSION_PREFIX = "8.0.46"
 CONTAINER_ID_PATTERN = re.compile(r"^[0-9a-f]{12,64}$")
