@@ -502,6 +502,7 @@ Inventory 资源身份继续复用 Product 的 `40401`、`40404`、`40406`、`40
 | 40965 | 409 | `TableIdempotencyConflict` | 桌台幂等键绑定到不同请求 |
 | 40966 | 409 | `TablePaymentWindowExpired` | 指定 Session 的 15 分钟付款窗口已结束 |
 | 42261 | 422 | `TableOrderIneligible` | 订单不满足开台资格；reason 为稳定白名单 |
+| 42262 | 422 | `TableDurationUnavailable` | 管理直接开台所选体验配置不可用或分钟数已变化 |
 | 42961 | 429 | `TableRateLimitExceeded` | 二维码解析或开台请求超过 M9 多维限流阈值 |
 
 `42261.data.reason` 只允许 `no_experience_item`、`invalid_experience_duration_snapshot`、`order_not_pending`、`order_already_settled`。请求体、`Idempotency-Key`、可选 `Table-Session-No` Header、Path 和 Query 形状错误使用全局 HTTP 422 / code `422`。完整契约见 [二维码开台 API](table_session_api.md)。
@@ -766,9 +767,12 @@ API 字段名与数据库字段名保持直接映射。枚举字段的转换规�
 | `PaymentStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` / `"closed"` | 支付状态 |
 | `RechargeOrderStatus` | VARCHAR | `"pending"` / `"paid"` / `"failed"` / `"closed"` | 充值单状态 |
 | `RefundStatus` | VARCHAR | `"pending"` / `"succeeded"` / `"failed"` | 退款状态 |
-| `ReservationStatus` | VARCHAR | `"pending"` / `"confirmed"` / `"rejected"` / `"cancelled"` | 待门店确认 / 已确认 / 未能确认 / 已取消 |
+| `ReservationStatus` | VARCHAR | `"pending"` / `"confirmed"` / `"rejected"` / `"cancelled"` | 待门店确认 / 已确认 / 已拒绝 / 已取消 |
 | `ReservationRejectionReason` | VARCHAR | `"no_capacity"` | 当前时段无空位 |
 | `ReservationCancellationReason` | VARCHAR | `"customer_request"` / `"store_closed"` | 顾客取消 / 门店店休 |
+| `AttentionEventType`（M12） | VARCHAR | `"reservation_confirmed"` / `"reservation_rejected"` / `"reservation_store_closed"` / `"reservation_customer_cancelled"` | 预约确认 / 拒绝 / 店休取消 / 顾客取消已确认预约；event_type 输出字符串，同级 label 为展示文案 |
+| `ReservationReviewTiming` | API-only | `"actionable"` / `"overdue"` | 管理预约 pending 列表的服务端时间筛选，不持久化 |
+| `ReservationAttentionView`（M12） | API-only | `"actionable"` / `"unread"` / `"overdue"` | 提醒列表视图；顾客仅允许 unread，不持久化 |
 | `ReservationScheduleUnavailableReason` | API-only | `"minimum_lead_time"` / `"outside_booking_window"` / `"invalid_slot_increment"` / `"outside_business_hours"` / `"weekly_closed"` / `"store_closed"` / `"option_day_type_mismatch"` | 排期不可用机器原因，不持久化 |
 | `StoreClosureDateUnavailableReason` | API-only | `"past_date"` / `"weekly_closed"` | 自定义店休日期不可操作机器原因，不持久化 |
 | `TableSessionStatus`（M9） | VARCHAR | `"awaiting_payment"` / `"active"` / `"closed"` | 待支付 / 计时中 / 已关闭 |
@@ -916,3 +920,7 @@ def duration_to_dto(value: int) -> dict:
 - [ ] 需要认证的接口标注 Header
 - [ ] 分页接口统一使用 `page` / `page_size`
 - [ ] 枚举字段的 DB 表示与 Enum Registry 一致（Product 字符串 Enum 使用 VARCHAR；User / Order 数值 Enum 使用 SMALLINT）
+
+## 站内提醒增量契约（M12 / P1.1）
+
+新增 `/api/v1/attention` 与 `/api/v1/admin/attention` 两组端点，详见 [提醒 API](attention_api.md)。事件阅读/知悉采用明确事件 ID 批次，统一信封成功 data 为 null。新增 `AttentionNotFound`：HTTP 404、业务码 40471，表示提醒不存在或当前接收方不可访问；混合越权批次整体失败，不泄露具体目标。原预约 HTTP 契约不变。

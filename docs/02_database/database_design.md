@@ -539,23 +539,28 @@ M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2
 
 ### 3.19 table_sessions（开台生命周期，M9 已实现）
 
-每次成功绑定“普通用户 + Pending 订单 + 桌台”创建一行。历史 Session 永久保留；同一订单在先前待支付会话超时后可以创建新行，所以 `order_id` 不得全局 UNIQUE。当前唯一占用由 `table_occupancies` 表达。
+每次成功绑定“普通用户 + Pending 订单 + 桌台”，或管理员直接开台，创建一行。M11 增加 source 区分订单与直接来源。历史 Session 永久保留；同一订单在先前待支付会话超时后可以创建新行，所以 `order_id` 不得全局 UNIQUE。当前唯一占用由 `table_occupancies` 表达。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | Session ID |
 | session_no | VARCHAR(28) ASCII | NOT NULL, UNIQUE, binary collation | `TS` + 26 位 Crockford Base32 ULID |
 | table_id | BIGINT | FK → store_tables.id, NOT NULL, ON DELETE RESTRICT | 绑定桌台 |
-| user_id | BIGINT | FK → users.id, NOT NULL, ON DELETE RESTRICT | NORMAL USER owner |
-| order_id | BIGINT | FK → orders.id, NOT NULL, ON DELETE RESTRICT | 绑定订单；允许多条历史 Session |
+| user_id | BIGINT | FK → users.id, nullable（order 必填）, ON DELETE RESTRICT | NORMAL USER owner |
+| order_id | BIGINT | FK → orders.id, nullable（order 必填）, ON DELETE RESTRICT | 绑定订单；允许多条历史 Session |
 | payment_id | BIGINT | FK → payments.id, nullable, UNIQUE, ON DELETE RESTRICT | 只在激活时写入可信成功 Payment；一个 Payment 最多激活一条 Session |
+| source | VARCHAR(20) | NOT NULL, DEFAULT `order` | order / direct；旧记录默认 order |
+| opened_by_user_id | BIGINT | FK → users.id, nullable, RESTRICT | direct 必填，开台管理员 |
+| source_option_id | BIGINT | FK → experience_options.id, nullable, RESTRICT | direct 必填，时长来源 |
+| direct_duration_minutes | INT | nullable，正整数 | direct 必填，不可变时长快照 |
+| opening_note | VARCHAR(200) | nullable | direct 可选备注 |
 | status | VARCHAR(32) | NOT NULL, DEFAULT `awaiting_payment` | `awaiting_payment` / `active` / `closed` |
 | claim_idempotency_key | VARCHAR(256) ASCII | NOT NULL, UNIQUE, binary collation | 内部命名后的开台幂等身份；不经 API 输出 |
 | claim_request_fingerprint | CHAR(64) ASCII | NOT NULL | 规范化用户、桌台 Token 与订单请求的 SHA-256；用于严格重放比对 |
 | release_idempotency_key | VARCHAR(256) ASCII | nullable, UNIQUE, binary collation | 管理员显式释放的内部幂等身份 |
 | claimed_at | DATETIME(6) | NOT NULL | 成功占台 UTC 时间 |
-| payment_deadline_at | DATETIME(6) | NOT NULL | `claimed_at + 15 分钟` |
-| started_at | DATETIME(6) | nullable | 激活后严格等于关联 `payments.succeeded_at` |
+| payment_deadline_at | DATETIME(6) | nullable | order 为 `claimed_at + 15 分钟`；direct 为 null |
+| started_at | DATETIME(6) | nullable | order 等于 `payments.succeeded_at`；direct 等于 `claimed_at` |
 | table_release_at | DATETIME(6) | nullable | 激活后等于全部 Timer `grace_ends_at` 最大值 |
 | closed_at | DATETIME(6) | nullable | 关闭业务时间；自动关闭保存实际 deadline，而不是延迟清理时间 |
 | close_reason | VARCHAR(32) | nullable | `payment_timeout` / `time_expired` / `order_cancelled` / `order_completed` / `refunded` / `admin_released` |
@@ -577,12 +582,15 @@ M5 仅建表和索引，没有历史数据回填。它已离线生成，并于 2
 
 数据库不独立表达以下跨字段规则，必须由 Service/Validator 在统一事务和锁后重检中维护：
 
-- `awaiting_payment` 没有 Payment、started/release/closed 字段和 Timer；`active` 必须有成功 Payment、started/release 与至少一个 Timer；`closed` 必须有 closed_at/reason。
+- `awaiting_payment` 没有 Payment、started/release/closed 字段和 Timer；order 的 `active` 必须有成功 Payment、started/release 与至少一个 Timer；direct 的 active 无 Payment、无 user/order/deadline，必须有管理员、配置来源、分钟快照和一个 Timer；`closed` 必须有 closed_at/reason。
 - 付款成功时间必须不晚于 `payment_deadline_at`，且 `started_at = payments.succeeded_at`。
 - 自动 `payment_timeout` 的 `closed_at = payment_deadline_at`；自动 `time_expired` 的 `closed_at = table_release_at`。
 - 订单必须属于同一 user、处于 Pending、至少一个 Experience Item 且时长快照完整。
 - 一用户、一订单和一桌任一时刻最多一个未关闭 Session；数据库最后兜底由 Occupancy 的四个唯一列提供。
 - 状态只允许 `awaiting_payment -> active|closed` 与 `active -> closed`，关闭事实不可改写。
+
+
+直接开台沿用唯一桌台占用；可空 user/order 的 UNIQUE 不阻止多个无账号顾客在不同桌台同时体验。直接来源只允许 active→closed（time_expired/admin_released）。
 
 ### 3.20 table_session_timers（时长分组快照，M9 已实现）
 
@@ -612,8 +620,8 @@ Timer 不保存独立 status 或提前停止时间。父 Session 一旦关闭，
 | id | BIGINT | PK, AUTO_INCREMENT | Occupancy ID |
 | table_id | BIGINT | FK → store_tables.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一桌最多一个未关闭 Session |
 | session_id | BIGINT | FK → table_sessions.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一个未关闭 Session 精确一条 Occupancy |
-| user_id | BIGINT | FK → users.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一用户最多一个未关闭 Session |
-| order_id | BIGINT | FK → orders.id, NOT NULL, UNIQUE, ON DELETE RESTRICT | 一订单最多一个未关闭 Session |
+| user_id | BIGINT | FK → users.id, nullable（direct 为 null）, UNIQUE, ON DELETE RESTRICT | 一用户最多一个未关闭 Session |
+| order_id | BIGINT | FK → orders.id, nullable（direct 为 null）, UNIQUE, ON DELETE RESTRICT | 一订单最多一个未关闭 Session |
 | created_at / updated_at | DATETIME(6) | NOT NULL | 技术时间；激活不更新时间 |
 
 命名唯一索引：
@@ -1052,3 +1060,71 @@ M6 自选颜色 Kit 的仓库实现、离线迁移、本地定向/全量验证�
 | v0.3 | AI 推荐记录、AI 生成模板表 |
 | M9 | 30 桌二维码、待支付 Table Session、Experience 时长分组 Timer 与当前 Occupancy（仓库实现完成，持久环境需单独迁移） |
 | v1.0 | 真实微信 Provider 通知/对账扩展、后台操作日志（微信身份表已由 Phase 9.5 实现；Reservation N2 主动店休通知仍为 Deferred） |
+
+## 9. M12/M13 站内预约、订单与桌台结果（2026-09-14）
+
+仓库新增 `attention_events`，持久环境未因此迁移。业务规则见 [提醒需求](../01_requirements/attention_module.md)。P1.1 每个事件只有一个接收目标，将结果与首次阅读记录放在同一表，不预建多渠道投递表。
+
+| 字段 | MySQL 类型 | 空值与含义 |
+|---|---|---|
+| id | BIGINT | 非空自增主键 |
+| created_at / updated_at | DATETIME(6) | 非空；BaseModel 在 ORM 写入，DDL 无默认值 |
+| event_key | VARCHAR(128) | 非空；`reservation:{id}:{event_type}` / `order:{id}:{event_type}` / `session:{id}:{event_type}` / `wallet_transaction:{id}:wallet_adjusted`，按业务转态或不可变流水唯一 |
+| event_type | VARCHAR(40) | 非空；AttentionEventType 字符串 Enum，值以模型与 OpenAPI 为准 |
+| reservation_id | BIGINT | 预约结果非空，M13 起允许 NULL |
+| order_id | BIGINT | M13；订单主事项非空，允许关联 session 作为付款/完成的附属结果 |
+| session_id | BIGINT | M13；独立桌台结束的主事项，或订单结果关联的精确桌台 |
+| result_message | VARCHAR(255) | M13；订单/桌台/调账安全摘要，预约为 NULL；调账完整说明不复制到该字段 |
+| user_id | BIGINT | 顾客接收者；NULL 表示门店共享 |
+| occurred_at | DATETIME(6) | 非空，业务发生 UTC 时间 |
+| read_at | DATETIME(6) | NULL 表示未读，首次成功阅读/知悉时写入 |
+| read_by_id | BIGINT | 初始 NULL，首次阅读/知悉的用户 |
+
+五个外键分别关联 reservations.id、orders.id、table_sessions.id、users.id、users.id，均 ON DELETE RESTRICT，不复制手机号、OpenID 或内部备注。
+
+| 索引 | 字段 | 用途 |
+|---|---|---|
+| uidx_attention_event_key | event_key，UNIQUE | 同一业务结果防重 |
+| idx_attention_recipient_unread | user_id, read_at, reservation_id | 按接收方筛选未读并按预约计数 |
+| idx_attention_reservation_recipient | reservation_id, user_id, id | 对应预约的接收者事件快照 |
+| idx_attention_order_unread | user_id, read_at, order_id | 订单未读去重 |
+| idx_attention_session_unread | user_id, read_at, session_id | 桌台未读去重 |
+
+待审核/过时仍使用 reservations 原状态和开始时间索引，不持久化冗余待办数。业务事务同时写结果；已读事务只锁明确事件。M12 不回填历史结果；有事件时拒绝 downgrade，保留阅读历史。DBML 与迁移同步。
+
+M13 扩展同表，不回填历史结果。预约事件仅 reservation 非空；订单事件 order 非空，可选 session；独立桌台事件 session 非空、order/reservation 为空。关系不变量由唯一业务写入路径维护，不新增 MySQL CHECK。付款/完成引起的桌台变更只存一个订单事件；direct 会话不写顾客事件。M13 存在任何新增结果或新增字段数据时拒绝降级；须保留兼容结构前滚，不删除结果历史。
+
+
+P1.3 复用 M13 物理结构：余额调整事件 user 非空，reservation/order/session 均为空，`event_key=wallet_transaction:{id}:wallet_adjusted` 唯一引用原始不可变流水；该关联不是新 FK，写入与流水同事务，详情读取双重验证事件及钱包归属。result_message 只存变化金额与当时余额的短摘要，完整原因从账本读取。汇总利用既有 user_id/read_at 索引前缀过滤，不新增索引或历史回填；真实 MySQL 查询计划验收独立记录。event_type 是 VARCHAR(40)，新字符串值不改变列类型；迁移链维持 0–13。
+
+## reservation_followups — P2 门店跟进记录
+
+M14 只增建此表，无存量预约/已读数据回填。每次联系或异常跟进追加一条记录，最新 revision 表示本类跟进当前结果；无记录且符合业务条件的预约直接派生待办。业务条件、完成规则与保留边界见 [提醒需求](../01_requirements/attention_module.md)。
+
+| 字段 | 类型 / 约束 | 含义 |
+|---|---|---|
+| id | BIGINT PK、自增 | 记录编号 |
+| created_at / updated_at | DATETIME(6) NOT NULL | 写入时间；业务不修改历史 |
+| reservation_id | BIGINT NOT NULL FK reservations.id RESTRICT | 关联预约及并发锁点 |
+| operator_id | BIGINT NOT NULL FK users.id RESTRICT | 本次处理人 |
+| kind | VARCHAR(16) NOT NULL | 跟进类型 |
+| outcome | VARCHAR(16) NOT NULL | 本次处理结果 |
+| revision | INT NOT NULL | 同预约、同类型递增版本，从 1 开始 |
+| request_key | VARCHAR(36) NOT NULL | 标准化 UUID；同一请求重放键 |
+| note | VARCHAR(500) NOT NULL | 门店内部处理说明 |
+
+索引：`uidx_followup_revision` UNIQUE(reservation_id, kind, revision)；`uidx_followup_request` UNIQUE(reservation_id, kind, request_key)；`idx_followup_completed` (kind, outcome, reservation_id)。无额外任务表，无 FK 级联删除。迁移降级若已有记录则拒绝删除；应用回退保留兼容表和历史。
+
+## P2.4 门店用豆库存（M15，2026-09-15）
+
+独立于商城 Inventory。共用现有 bead_colors 身份；没有 store_bead_stocks 行表示未盘点，而非库存 0。包数为非负整数、应用层上限 999999；首次盘点 0 也建立余额和流水。所有表带 BaseModel 的 BIGINT 自增 id、created_at、updated_at。精确 DDL 见 M15，接口见 [门店库存 API](../03_api/store_bead_stock_api.md)。
+
+| 表 | 业务字段 | 约束/索引 |
+|---|---|---|
+| store_bead_stocks | bead_color_id BIGINT、packs INT、revision INT | 色号一对一唯一；revision 从 1 递增；bead_color_id→bead_colors RESTRICT |
+| store_bead_stock_batches | operator_id BIGINT、request_key VARCHAR(36)、fingerprint VARCHAR(64)、reason VARCHAR(20)、note VARCHAR(500) | operator→users RESTRICT；唯一 (operator_id,request_key)；索引 (created_at,id) |
+| store_bead_stock_entries | batch_id、bead_color_id BIGINT；slot_no SMALLINT；color_code VARCHAR(50) nullable；color_name VARCHAR(100) nullable；before_packs INT nullable；after_packs、revision INT | 两个 FK 均 RESTRICT；唯一 (batch_id,bead_color_id)、(bead_color_id,revision) |
+
+除表中标明 nullable 的字段外业务字段均非空。批次 fingerprint 是规范化变更/原因/备注的 SHA-256，不存认证凭据。before_packs=null 表示未知原数的首次盘点；其余流水保存已知原数、新数和颜色名称快照。颜色行按稳定 ID 顺序加锁；余额、批次、明细和 AuditLog 同事务提交。
+
+M15 只新增三表，不改商城表、不回填虚构包数、不生成库存通知。降级仅允许三表全部为空，并先删明细再删批次/余额；有库存或历史时拒绝有损降级，应保留表并前滚修复。MySQL DDL 隐式提交，不宣称升级原子回滚；持久环境执行前仍需备份、停写、核对前序迁移及单独授权。

@@ -467,17 +467,22 @@ Table store_tables [note: 'M9 implemented; controlled environment seed must crea
 Table table_sessions [note: 'M9 implemented; one row per claim attempt that succeeds; order_id intentionally not unique because a timed-out Pending order may be rebound'] {
   id bigint [pk, increment]
   session_no varchar(28) [not null, note: 'TS + 26-char uppercase Crockford Base32 ULID; MySQL binary collation']
+  source varchar(20) [not null, default: 'order', note: 'order | direct; M11']
+  opened_by_user_id bigint [note: 'required for direct; administrator']
+  source_option_id bigint [note: 'required for direct; selected configuration provenance']
+  direct_duration_minutes int [note: 'immutable selected duration; required for direct']
+  opening_note varchar(200) [note: 'optional normalized direct opening note']
   table_id bigint [not null]
-  user_id bigint [not null]
-  order_id bigint [not null]
+  user_id bigint [note: 'required for order source; null for direct']
+  order_id bigint [note: 'required for order source; null for direct']
   payment_id bigint [note: 'nullable until activation; one successful Payment can activate at most one session']
   status varchar(32) [not null, default: 'awaiting_payment', note: 'awaiting_payment | active | closed']
   claim_idempotency_key varchar(256) [not null, note: 'internal namespaced identity; MySQL binary collation; never exposed']
   claim_request_fingerprint char(64) [not null, note: 'SHA-256 of canonical actor/table-token/order request']
   release_idempotency_key varchar(256) [note: 'nullable administrator-release identity; MySQL binary collation; never exposed']
   claimed_at datetime [not null, note: 'UTC']
-  payment_deadline_at datetime [not null, note: 'claimed_at + 15 minutes']
-  started_at datetime [note: 'activation only; exactly payments.succeeded_at']
+  payment_deadline_at datetime [note: 'order: claimed_at + 15 minutes; direct: null']
+  started_at datetime [note: 'order: payments.succeeded_at; direct: claimed_at']
   table_release_at datetime [note: 'activation only; max timer grace_ends_at']
   closed_at datetime [note: 'business deadline for automatic closure, not delayed cleanup time']
   close_reason varchar(32) [note: 'payment_timeout | time_expired | order_cancelled | order_completed | refunded | admin_released']
@@ -519,8 +524,8 @@ Table table_occupancies [note: 'M9 implemented; current occupancy materializatio
   id bigint [pk, increment]
   table_id bigint [not null]
   session_id bigint [not null]
-  user_id bigint [not null]
-  order_id bigint [not null]
+  user_id bigint [note: 'null for direct; nullable UNIQUE allows independent anonymous groups']
+  order_id bigint [note: 'null for direct']
   created_at datetime
   updated_at datetime [note: 'activation does not update this timestamp']
 
@@ -543,3 +548,102 @@ Ref: table_occupancies.table_id > store_tables.id [delete: restrict]
 Ref: table_occupancies.session_id > table_sessions.id [delete: restrict]
 Ref: table_occupancies.user_id > users.id [delete: restrict]
 Ref: table_occupancies.order_id > orders.id [delete: restrict]
+
+Ref: table_sessions.opened_by_user_id > users.id [delete: restrict]
+Ref: table_sessions.source_option_id > experience_options.id [delete: restrict]
+
+// M12 station attention, not WeChat delivery. Existing environments require migration.
+Table attention_events {
+  id bigint [pk, increment]
+  created_at datetime(6) [not null, note: 'ORM BaseModel timestamp; no SQL default']
+  updated_at datetime(6) [not null, note: 'ORM timestamp, updated on first read']
+  event_key varchar(128) [not null, note: 'reservation/order/session:{id}:{event_type} or wallet_transaction:{id}:wallet_adjusted; unique business fact']
+  event_type varchar(40) [not null, note: 'AttentionEventType string enum']
+  reservation_id bigint [note: 'required only for reservation events']
+  order_id bigint [note: 'order main item; session may be attached']
+  session_id bigint [note: 'exact historical session; main item when order is null']
+  result_message varchar(255) [note: 'immutable safe commerce result summary']
+  user_id bigint [note: 'null means shared ADMIN+ recipient']
+  occurred_at datetime(6) [not null, note: 'UTC business event time']
+  read_at datetime(6) [note: 'null means unread; first read only']
+  read_by_id bigint [note: 'first reader or acknowledging administrator']
+
+  indexes {
+    (event_key) [unique, name: 'uidx_attention_event_key']
+    (user_id, read_at, reservation_id) [name: 'idx_attention_recipient_unread']
+    (reservation_id, user_id, id) [name: 'idx_attention_reservation_recipient']
+    (user_id, read_at, order_id) [name: 'idx_attention_order_unread']
+    (user_id, read_at, session_id) [name: 'idx_attention_session_unread']
+  }
+}
+
+Ref: attention_events.reservation_id > reservations.id [delete: restrict]
+Ref: attention_events.user_id > users.id [delete: restrict]
+Ref: attention_events.read_by_id > users.id [delete: restrict]
+
+Ref: attention_events.order_id > orders.id [delete: restrict]
+Ref: attention_events.session_id > table_sessions.id [delete: restrict]
+
+Table reservation_followups {
+  id bigint [pk, increment, not null]
+  created_at datetime(6) [not null]
+  updated_at datetime(6) [not null]
+  reservation_id bigint [not null, ref: > reservations.id]
+  operator_id bigint [not null, ref: > users.id]
+  kind varchar(16) [not null, note: '门店跟进类型，见提醒需求']
+  outcome varchar(16) [not null, note: '门店跟进结果，见提醒需求']
+  revision int [not null]
+  request_key varchar(36) [not null]
+  note varchar(500) [not null]
+  indexes {
+    (reservation_id, kind, revision) [unique, name: 'uidx_followup_revision']
+    (reservation_id, kind, request_key) [unique, name: 'uidx_followup_request']
+    (kind, outcome, reservation_id) [name: 'idx_followup_completed']
+  }
+  Note: '两个外键均 ON DELETE RESTRICT；记录只追加，已有记录禁止有损降级。'
+}
+
+// P2.4：门店未拆封整包台账；无余额行=未盘点，与商城库存独立。
+Table store_bead_stocks {
+  id bigint [pk, increment]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  bead_color_id bigint [not null, unique]
+  packs int [not null, note: 'integer unopened bags, application range 0..999999']
+  revision int [not null, note: 'starts at 1; absent balance is revision 0']
+}
+Table store_bead_stock_batches {
+  id bigint [pk, increment]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  operator_id bigint [not null]
+  request_key varchar(36) [not null]
+  fingerprint varchar(64) [not null]
+  reason varchar(20) [not null]
+  note varchar(500) [not null]
+  indexes {
+    (operator_id, request_key) [unique, name: 'uidx_store_bead_batch_request']
+    (created_at, id) [name: 'idx_store_bead_batch_time']
+  }
+}
+Table store_bead_stock_entries {
+  id bigint [pk, increment]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  batch_id bigint [not null]
+  bead_color_id bigint [not null]
+  slot_no smallint [not null]
+  color_code varchar(50)
+  color_name varchar(100)
+  before_packs int [note: 'null only on first stocktake']
+  after_packs int [not null]
+  revision int [not null]
+  indexes {
+    (batch_id, bead_color_id) [unique, name: 'uidx_store_bead_entry_batch']
+    (bead_color_id, revision) [unique, name: 'uidx_store_bead_entry_revision']
+  }
+}
+Ref: store_bead_stocks.bead_color_id - bead_colors.id [delete: restrict]
+Ref: store_bead_stock_batches.operator_id > users.id [delete: restrict]
+Ref: store_bead_stock_entries.batch_id > store_bead_stock_batches.id [delete: restrict]
+Ref: store_bead_stock_entries.bead_color_id > bead_colors.id [delete: restrict]

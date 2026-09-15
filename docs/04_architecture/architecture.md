@@ -1281,3 +1281,45 @@ Readiness 只决定是否接收新业务流量，不负责重启进程；Livenes
 - `rate_limit.py` 对身份端点使用独立策略和 HMAC 化 principal 键，Redis 不可用时返回 503，超过阈值返回 429。Redis 中不保存明文账号、IP 或 Token。
 - `security_events.py` 只允许固定事件、结果、内部 user ID 和 scope 维度。日志采集基线可对 `auth_rate_limit`、`refresh_reuse`、`wechat_identity_exchange`、`external_identity_*` 与 `account_deletion` 聚合告警；不得把 code、平台标识或 Secret 添加为日志字段。
 - `ImageStorage` Protocol 是上传链路的最小存储端口，`LocalImageStorage` 是 Gate A/开发适配器。Gate B 对象存储适配器必须保持相同内容校验、不可覆盖 key、补偿删除、命名空间解析和延迟清理语义；选择真实 Bucket/CDN、SDK 和凭据前不伪造已完成的生产存储。
+
+### 管理直接开台的会话来源（M11 决策）
+
+外部平台顾客无需小程序账号，选择将现有 TableSession 扩展为 order/direct 来源，并继续共享 TableOccupancy 与 Timer。独立第二套占桌表会削弱同桌互斥，虚构系统订单或顾客则会污染资金与用户数据，因此均不采用。
+
+order 保留原用户、订单、付款与时长快照要求；direct 明确没有这些关联，持久化管理员、Option 来源、分钟快照及备注。顾客响应模型保持严格，管理响应单独允许 direct 的空订单与空体验条目，并按来源校验。收敛、应急释放、管理列表和只读 reconcile 必须同时支持两类会话。
+
+直接开台由 TableSessionService 协调 ProductRepository、TableSessionRepository 与 AuditLogService；API 不访问 ORM。锁序为 Product→Option→StoreTable→当前 Session，不获取虚构的 User/Order 锁。订单开台、钱包及人工付款保留已有锁序；跨路径共用桌台锁及 Occupancy 的 table/session UNIQUE。direct 的 user/order 为空，其 nullable UNIQUE 允许不同桌台各有一个匿名顾客组。操作指纹包含管理员、桌台、Option、分钟及规范化备注；重放不重置时钟。
+
+由于旧管理客户端与旧后端不支持 direct 的空关联，需要先停写并升级结构和后端，再同步升级前端。存在直接开台历史后，不支持把 schema 降回要求 user/order 非空的旧版本；应保留兼容结构前滚修复。
+
+## M12：预约站内提醒 P1.1（2026-09-14）
+
+新增 Attention API → AttentionService → AttentionRepository → AttentionEvent；预约转态由 ReservationService 在既有事务和锁内通过 AttentionRepository 写事件，不调用另一个业务 Service。汇总和专用分页投影从预约与事件读取，不从各列表第一页拼接、不复制待办状态。
+
+设计选择：整体规划中的业务结果、接收者阅读、微信投递是不同职责；本阶段每个事件只有一个接收目标，结果及首次阅读落在一张 attention_events 表。多接收人表与 outbox 暂不建立。未来订单、资金、微信接入时按实际收件人和投递规则演进，不能把此表 read_at 复用为微信状态。
+
+快照读取沿用预约转态相同的预约锁，在同一事务获取 updated_at 和接收方未读集合；前端与已展示业务版本比对后上报明确事件 IDs。已读事务按 ID 升序锁事件，不反向锁预约，范围校验成功才更新未读行，幂等保留首次阅读人/时间。业务失败不留下成功事件，阅读失败不改变预约。
+
+权限由 API 认证与 Service 的目标接收方共同限定； Repository 只执行已确定范围的查询。旧客户端仍能完成预约操作；结果提醒只在新客户端读取确认，目标数据库须先具备 M12。需求与协议分别见 [提醒需求](../01_requirements/attention_module.md)、[提醒 API](../03_api/attention_api.md)。
+
+### P1.2 订单/桌台提醒依赖
+
+OrderService、PaymentService、TableSessionService 在原业务事务内经 AttentionRepository 追加结果，不互调 AttentionService。app/domain/attention.py 仅把独立关闭原因转换为安全结果输入，不查库。CommerceAttentionRepository 用聚合子查询、分页和批量事件/会话读取支持 AttentionService 投影；首页不拉取全量订单/桌台来计数。结果阅读仅锁事件，不反向锁 User/Order/Table/Session。新增结果仍存同一 attention_events，避免维护另一套阅读状态。
+
+
+### 统一结算的订单与桌台协作（2026-09-14）
+
+带桌台的新订单由 Order Service 直接经 TableSessionRepository 协作，在同一事务中写订单、明细、Session、Occupancy、库存和审计；不调用另一业务 Service。锁顺序为 User → 新 Order → StoreTable（目标桌及用户旧占用桌按 ID 排序）→ 对应 Session → Kit 库存。已有订单的扫码/输入桌号绑定仍由 TableSessionService 处理。新开台订单幂等事实复用 TableSession.claim_idempotency_key（`table_checkout:` 前缀）与 claim_request_fingerprint，不引入 Order.table_no 或第二份持久关联。
+
+
+### P1.3 资金提醒与账本引用
+
+OrderService（代客下单）、WalletService（调整）、RefundService 在各自既有资金事务内调用 AttentionRepository 写结果，不互调业务 Service，也不新增独立资金写入。结果已读仅锁明确事件，不反向锁资金表。
+
+独立调账复用 `event_key=wallet_transaction:{id}:wallet_adjusted`；唯一事件键既防重又引用不可变流水。列表及汇总查询本人事件，不扫描全量钱包，详情才通过 WalletAttentionRepository 以流水主键并带钱包归属查询。完整原因与金额从账本白名单输出；发生时间及短摘要保留在事件中。
+
+取舍：未新增只供单一不可变来源使用的 FK 列或第二套通知表，避免冗余资金快照与额外迁移。该引用由唯一写入路径在账本原事务内建立，非数据库 FK；读取必须再次验证来源格式、流水类型与钱包归属。未来若增加可变来源或多渠道接收关系，再评审显式关联，不把事件键扩成通用业务参数。所有已产生事件与账本保留，回滚代码必须能识别新事件类型。
+
+### P2 预约跟进
+
+`ReservationFollowupService` 通过预约 Repository 锁定既有预约，再由跟进 Repository 当前读并追加带版本的记录。它不调用预约业务 Service、不修改预约或顾客提醒；读队列通过预约条件减去已完成记录派生，无常驻 Worker 或任务回填。只追加历史同时承担本功能的可追溯操作记录，顾客无权读取。共享竞争使用 expected_revision 和稳定 UUID 请求键，历史按明确版本查询，不将全局自增 ID 用作跨预约水位。

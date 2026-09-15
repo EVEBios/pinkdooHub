@@ -12,6 +12,7 @@
 | Order / Inventory | [order_module.md](../01_requirements/order_module.md)、[order_api.md](../03_api/order_api.md)、[inventory_module.md](../01_requirements/inventory_module.md)、[inventory_api.md](../03_api/inventory_api.md) |
 | Wallet / Payment / Refund | [wallet_module.md](../01_requirements/wallet_module.md)、[wallet_api.md](../03_api/wallet_api.md) |
 | Reservation N1 与 N2 规划 | [reservation_module.md](../01_requirements/reservation_module.md)、[reservation_api.md](../03_api/reservation_api.md)、[N2 notification plan](../01_requirements/reservation_wechat_notification_plan.md) |
+| 首页待办、结果已读与跨模块通知规划 | [首页提醒整体规划与执行记录](../01_requirements/home_attention_notification_plan.md)；[已实现预约提醒需求](../01_requirements/attention_module.md)；[提醒 API](../03_api/attention_api.md)；微信店休投递边界仍见原 N2 规划 |
 | M9 桌台 | [table_session_module.md](../01_requirements/table_session_module.md)、[table_session_api.md](../03_api/table_session_api.md) |
 | 通用响应、Enum、错误码 | [api_design_conventions.md](../03_api/api_design_conventions.md) 与 `app/common/` 实际定义；不要从历史速查表推断 |
 | 表结构、迁移 | [database_design.md](../02_database/database_design.md)、[er_diagram.dbml](../02_database/er_diagram.dbml)、[database_migration_workflow.md](../07_process/database_migration_workflow.md) |
@@ -35,3 +36,6 @@
 文档与代码同属一个逻辑改动。变更业务规则、API、数据库结构、Enum/错误码、前端平台行为或开发流程时，按项目 [AGENTS.md 的文档联动规则](../../AGENTS.md#开发与交付流程) 更新对应**权威文档**；独立功能完成时更新 [changelog.md](../05_development/changelog.md)。本页只在索引、事实来源优先级或跨模块边界变化时更新，不再逐次追加测试计数、发布检查点或第二份模块契约。
 
 完成前运行与改动相关的测试和检查、复核差异，并按 [Review Checklist](../07_process/code_review_checklist.md) 检查。仅在用户明确要求时提交、推送、迁移或发布；不要把旧文档的“Code + Test + Documentation + Commit”当成自动提交授权。
+
+
+2026-09-14：站内提醒已扩展至 P1.2 订单/桌台（M13，目标环境未迁移）。计数和阅读以 [提醒需求](../01_requirements/attention_module.md)、[提醒 API](../03_api/attention_api.md) 和 [验收记录](../08_frontend/qa/commerce-attention-review.md) 为准；P1.3 资金结果、P1.4 联合/真机与微信阶段仍待执行。

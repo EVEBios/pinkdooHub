@@ -844,3 +844,94 @@ python scripts/local/repair_sqlite_refunds_schema.py --apply --confirm-local-onl
 ### 17.1 本地旧 SQLite 的实际升级记录（2026-09-13）
 
 首次无套餐提交在旧本地库上因 `reservations.scheduled_end_at` 的 NOT NULL 约束失败。用户明确授权后，本机 `db.sqlite3` 已完成保留数据的 SQLite 表重建：8 个套餐字段可空，原 8 条预约、全部 26 张业务表的数据、5 个预约索引、外键和自增序号均保留；备份和恢复后验证见 [本地修复记录](../08_frontend/qa/reservation-optional-package-review.md)。仅此本地目标已更新，不代表 MySQL/Aerich M10 或任何发布环境已迁移；启动自动建表仍不能升级其他旧 SQLite 库。
+
+## 17. 管理直接开台 M11
+
+M11 `11_20260914120000_direct_table_sessions.py` 接续实际 M10 迁移，增加会话来源与开台溯源字段，并放宽 Session/Occupancy 的 user/order 及 Session payment_deadline_at。旧行默认 order；不创建桌台、不改二维码 Token、不重跑 M9。MySQL DDL 隐式提交，目标环境必须单独停写、备份、验证迁移前置链并应用；部分失败按实际结构前滚，不能手工改 pending。Gate A 既有恢复授权不覆盖 M11。
+
+本机已有 SQLite 表不能依靠启动时 generate_schemas 自动修改，使用独立受控工具：
+
+```sh
+python scripts/local/upgrade_sqlite_direct_tables.py --database db.sqlite3
+```
+
+以上只读预览。获得目标数据库写入授权并停止本机后端/后台写入者后，再执行：
+
+```sh
+python scripts/local/upgrade_sqlite_direct_tables.py --database db.sqlite3 --apply --confirm-local-only --confirm-writers-stopped
+```
+
+工具在写锁内创建 SQLite 在线备份（0600），重建两张表以放宽 NOT NULL，逐列比对原记录并保留索引、自增序列、外键。SQLite 重建所需的 foreign_keys 暂缓仅限本迁移连接；提交前 foreign_key_check/integrity_check 必须通过，提交后恢复并复查。异常回滚事务，备份保留；部分升级结构拒绝执行。不得在运行中的共享或生产服务上使用此本地工具。
+
+迁移后先执行桌台只读 reconcile，再分别验证订单开台/人工收款与无账号直接开台、到期/提前释放。存在 direct 历史时 downgrade 会拒绝；不要为降级删除历史或虚构订单。文档与隔离测试通过不表示任意持久环境已经升级。
+
+2026-09-14，经用户单独授权，已停止本机后端并对项目根目录 `db.sqlite3` 应用上述 SQLite 升级工具，随后恢复本地后端。写前备份为 `backups/local-sqlite-migrations/direct-tables-before-20260914T044357035861Z.sqlite3`（0600）。升级前后比对全部 27 张表的原有字段与记录一致，包括 30 桌二维码映射、13 个用户、9 个订单及已有会话/占用/计时各 1 条；完整性与外键检查通过，桌台只读 reconcile 为 `scanned=1 violations=0`，再次预览返回 `already_current`。恢复后的 readiness 为 HTTP 200，数据库与 Redis 均就绪；管理桌台响应映射读取 30 桌成功，体验时长选项为 60/90/120 分钟，新路由已加载且拒绝未认证请求。现场检查未创建开台或收款记录；业务变更路径以本次隔离测试为证据。本记录仅证明本机 SQLite 结构升级，不改写 Aerich 迁移履历，也不代表 MySQL、Gate A、共享环境或微信发布已通过。
+
+## M12：预约站内结果增量迁移（2026-09-14）
+
+`12_20260914163509_attention_events.py` 接续当前工作区 M11，只创建 attention_events，不改旧预约状态、不回填历史已处理结果，不引入依赖或配置 Secret。未处理且未开始的旧预约由实时查询自动计入待办。MySQL DDL 使用 RUN_IN_TRANSACTION=False，三个外键 RESTRICT；若已有任何事件，downgrade 拒绝删表。
+
+本次在任务专属临时 MySQL 8.0.46 验证完整 0→12 升级及预约提醒/并发用例；这些证据仅限临时库，不能替代 Gate A、共享、预发布或生产验收。CI 通用迁移链断言同步到 M12，不改 Release Gate 的受保护 pending 或历史证据。
+
+目标环境实施时必须另获迁移授权，先核验现场 lineage 与 M11 状态、备份和恢复方案，停止旧写入进程，按现场允许的链升级，再启动兼容服务并验证预约事件与已读。此段不是现在执行环境操作的授权。无 M12 时新代码不能承诺原预约写入继续成功。
+
+回滚优先保留兼容表结构和既有事件；旧代码不会产生新事件，因此不能无缝回滚旧写入进程并声称提醒连续。发生故障应停止相关写入、保留证据，选择已验证兼容版本恢复或前滚修复。禁止为绕过 downgrade 保护删除事件。持久 SQLite 的升级不由 MySQL M12 自动完成，若为目标环境须单独规划、备份与验证。
+
+### M13：订单与桌台提醒（2026-09-14）
+
+`13_20260914183218_commerce_attention.py` 通过 MySQL 8 离线 Aerich 生成，在 M12 后追加 nullable order_id/session_id、VARCHAR(255) 安全结果摘要，将 reservation_id 放宽为 nullable，增加两条 RESTRICT FK 和接收者未读索引。原 0–12 文件保持原样；不插入或重写历史业务数据。MySQL DDL 自动提交，RUN_IN_TRANSACTION=false，不承诺 DDL 原子回滚。
+
+存在非预约事件或新增字段数据时 downgrade 拒绝，保留已产生的结果及阅读历史；无数据时才可恢复 M12 字段。目标环境必须先备份、审计实际基线再经授权升级。SQLite 不能直接执行 MySQL DDL，也不能借应用启动自动升级已存在的表。本轮仅可销毁测试 MySQL 验证，不改变 Gate A 或持久环境。
+
+#### 本地 SQLite M12→M13 工具与未应用演练（2026-09-14）
+
+本地点击订单“标记为已支付”返回 500，日志确认 `attention_events` 缺少 `result_message`；实表同时缺少 `order_id`、`session_id`，且 `reservation_id` 仍为 NOT NULL。两个新命名索引虽然存在，但 SQLite 将其中不存在的双引号列名视为字符串表达式；仅检查索引名称不能认定已升级。订单 1 只读查询仍为待支付且无 Payment，故失败事务未提交收款。
+
+工具 `scripts/local/upgrade_sqlite_commerce_attention.py` 默认只读：
+
+```bash
+python scripts/local/upgrade_sqlite_commerce_attention.py --database db.sqlite3
+```
+
+获得本地持久库升级授权并停止写入后，才可应用：
+
+```bash
+python scripts/local/upgrade_sqlite_commerce_attention.py --database db.sqlite3 --apply --confirm-local-only --confirm-writers-stopped
+```
+
+精确目标为项目根目录 `db.sqlite3` 的提醒事件表。首次应用创建 `backups/local-sqlite-migrations/commerce-attention-before-<UTC>.sqlite3` 一致性备份，权限 0600；在单个写事务中保留原事件、已读信息、自增序号，放宽预约外键并补充三个新字段、两个外键和真实列索引。全过程保持外键检查开启；拒绝未知字段、约束、索引、触发器、反向外键或不完整结构，异常回滚，已经完成时零写入。既有预约事件不回填订单结果，不改 Aerich 历史，不执行任何实际收款。
+
+恢复策略：未提交失败直接回滚；若提交后环境检查失败，保持停写并保留现场，在确认没有新业务写入后使用一致性备份恢复本地库，再核对完整性和外键。已产生新业务数据时不得直接覆盖数据库，应评估前滚修复。备份不应在验收前删除。
+
+该次 SQLite Backup API 可销毁副本演练复现了原收款缺列错误及完整回滚，升级后全部 28 张表原有字段/记录一致，再次应用为零写入；副本中原订单 1 经真实 OrderService 成功收款，恰好生成一条 Payment 和一条订单结果。升级与订单交接定向测试共 20 项通过，临时副本与演练备份已清理。当时尚未应用持久库，后续单独授权后的本机记录见下；该演练不替代 MySQL/Gate A 或微信发布验收。
+
+#### 本机 M13 实际应用记录（2026-09-14 19:32，Asia/Shanghai）
+
+用户报告顾客余额支付也失败，并明确授权“确认所有需要更新的内容后就开始本地数据库迁移”。日志确认 `/api/v1/orders/10/payments/wallet` 同样缺少 `result_message`，结果查询缺少 `session_id`。迁移前全模型结构审计发现，除提醒表 M13 差异外，仅退款表因既有受控修复使用命名唯一索引而与新建库索引名不同；索引字段和唯一性等价，无需变更。未扩展到其他业务结构或环境。
+
+先在可销毁副本用真实 PaymentService 复现余额支付失败，逐项确认钱包余额与流水均回滚；升级后原订单 10 的余额支付和相同幂等键重放成功，只生成一条 Payment 和一条结果事件。实际库没有发起收款或扣款请求。
+
+随后停止并确认原本地后端进程树 `73922 / 73923 / 87696` 全部退出，8000 端口释放，应用已验证工具到项目根目录 `db.sqlite3`。写前一致性备份为 `backups/local-sqlite-migrations/commerce-attention-before-20260914T113201944960Z.sqlite3`，权限 0600。对备份逐表、逐列、逐行比较全部 28 张表原有数据一致，含自增序号；完整性和外键检查通过，重放工具返回零写入。
+
+恢复本地开发后端 `127.0.0.1:8000`，reload 主进程为 `89564`。`/api/v1/health/ready` 返回 200，database/redis 均 up。与当前 ORM 新建结构对比，全部 27 张模型表的字段、空值、默认值、主外键和索引语义匹配；顾客/管理员提醒汇总、订单/桌台分页队列和订单 10 结果快照读取通过，检查时新服务日志无错误。
+
+本机记录保存在被忽略的 `backups/local-sqlite-migrations/commerce-attention-local-20260914.json`，服务日志为 `backend-after-m13-20260914.log`。保留本地后端与写前备份供开发及恢复使用，临时副本和临时结构对照库均已清理；原开发 Redis 未停止。后续若需停止此恢复服务，先核对 PID 89564 仍为本项目 uvicorn reload 主进程，再发送 `kill -TERM 89564` 并复查子进程与端口；PID 已变化时不得复用旧 PID。
+
+此次只更新本机开发 SQLite，不改 Aerich 履历，不代表 MySQL/Gate A/共享/生产迁移或微信发布通过。实际支付仍由用户在小程序中确认。
+
+## M14 预约跟进（2026-09-15）
+
+`14_20260915000723_reservation_followups.py` 由 Aerich 离线生成并限定为新增跟进表；剔除旧 attention 枚举注释变化，不改动其物理字段或已有事件。MySQL DDL 不冒充可事务回滚，`RUN_IN_TRANSACTION=False`。不回填历史预约，不更新业务状态或顾客已读。出现跟进记录后降级拒绝删表，应停用新入口并保留结构/历史。
+
+可丢弃 MySQL 验证与任何持久环境应用分开记录。开发后端热重载可能按既有 development 配置自动补建不存在的表；这没有写入 Aerich lineage，不能当作 M14 已受控迁移的证据。持久环境执行仍须明确目标、备份、结构核对和单独授权。
+
+### P2.4 / M15 门店整包库存
+
+`15_20260915044318_store_bead_stock.py` 基于 M14 模型状态离线生成，仅新增门店余额/批次/逐色流水三表及其约束。不转换商城 10g 库存，不初始化虚构包数。迁移文件存在和临时 SQLite 通过均不代表持久环境已升级。
+
+- MySQL：确认环境、备份与停写方案、M14 前序状态后，按本文件既有流程执行 M15；DDL 隐式提交，发生部分建表失败时先核对结构，不能盲目认定事务已回滚。不得重跑已完成的 M7→M9 或改受保护 pending。
+- SQLite development：现有启动流程的 `generate_schemas` 可以补齐本次新增的完整三表，但这不替代对旧库前序结构的核验，也不写 Aerich 的 MySQL lineage；没有既有字段需要改名或转换。启动旧持久库前按项目流程先备份并获得迁移授权，若发现半张表或错列则停止，不以自动建表当作修复。
+- 验证三表、唯一键、RESTRICT 外键，GET 显示 221 个颜色且 packs=null/revision=0；只有真实首次盘点提交后才创建数量与台账。已有订单、钱包、提醒和商城库存不变。
+- 降级函数在任一新表非空时主动拒绝执行；已有盘点数据应前滚修复。空表降级也需要环境授权，按明细→批次→余额顺序删除。
+
+本次仓库任务未执行持久数据库迁移；自动化和环境限制见[用豆库存验收记录](../08_frontend/qa/store-bead-stock-review.md)。

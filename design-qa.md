@@ -280,3 +280,34 @@ final result: passed
 - 仅调整 `.cart-page--state`：小程序为浮动底栏留出空间，H5 使用其原生 Tab 高度，不重复扣减。
 - 320 × 844：内容组中心 (160, 397)，底栏上方可见区域中心 (160, 397)；390 × 844：两者约为 (195, 397)，误差小于 0.01 CSS px。
 - 实际浏览器截图：[320](design-qa-assets/cart-empty-centered-320.png)、[390](design-qa-assets/cart-empty-centered-390.png)。购物车 13 项测试和定向 Stylelint 通过；这是 H5 视觉验证，不替代微信真机复核。
+
+## 2026-09-14：预约待办精修与过期分类
+
+本次按用户截图修订现有页面，复用 Ribbon Ledger，并将过期记录从管理待确认队列分出。应用内浏览器已核对 320/390/768 视口、空态、过期列表与详情；原页面、新空态及既有管理样式已并排比较。详细证据与验证边界见 [本次设计检查](docs/08_frontend/qa/attention-refinement-review.md)，不将上文历史测试数字作为本次证据。
+
+final result: passed（预约待办精修与过期展示；未发布）
+
+## 2026-09-14 · 订单与桌台交接提醒 P1.2
+
+沿用已确认的莓红页头与信息卡片，订单筛选最多三项完整呈现。核对管理端数字入口、顾客首页与会员中心、精确旧桌台结果及 320/390 宽度，页面证据、业务测试和部署边界见 [P1.2 验收记录](docs/08_frontend/qa/commerce-attention-review.md)。
+
+final result: passed（仓库与隔离环境；未发布，不替代微信真机验收）
+
+## 2026-09-14 · 会员提醒入口 Option 2
+
+final result: passed
+
+本轮仅覆盖用户选定的会员提醒组件。源图为 `exec-ba789c7c-04f4-409e-8183-f8c683f5d1ec.png`，1076 × 1462 px；归一化为 390 × 530。实际截图为 390 × 844、320 × 844 CSS px，有效密度 1。标准状态为林小豆、余额 500.00、桌台提醒 1。
+
+完整视觉目标、实现截图、同屏／局部对照、五项视觉评价、比较历史、回归结果和环境限制见 [会员提醒检查](docs/08_frontend/qa/member-attention-review.md)。首次有效比较无组件 P0/P1/P2；库图标形状及既有订单分隔线作为明确适配保留。
+
+隔离 H5 页面固定了既有路由容器的入场过渡以检查实际组件，未写入生产源码；完整 H5 初始路由问题仍未修复。本结果不代表微信真机或发布放行。
+
+会员入口双椅追补：用户要求保留预览中的左右两把椅子，现已用 `table-two-chairs-white.png` 替换单椅图标。前述库图标形状适配已被本次修订取代；[最新资产尺寸检查](docs/08_frontend/qa/member-attention/two-chairs-asset.png)，业务行为和页面布局不变。
+
+
+## 2026-09-15 用豆库存柔粉分区：局部增量验证
+
+本段不覆盖以上历史范围。视觉目标为用户选定 Option 3 并保留逐项增减与前后数值对照； source visual truth: `docs/08_frontend/qa/store-bead-stock-soft/selected-reference.png`。实际浏览/编辑/确认截图为同目录 `browse-390.png`、`edit-390.png`、`review-390.png`，viewport 390×844及320×844，DPR1。三联参考1453×1082裁剪后等比归一至390宽，完整及局部同图对照、两轮修复历史、五项视觉检查、合成API操作与剩余真机验证范围见[详细记录](docs/08_frontend/qa/store-bead-stock-soft/review.md)。已解决输入居中及确认字号问题，无未处理P0/P1/P2。
+
+final result: passed
