@@ -14,10 +14,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.tasks.gatea_migrate_step import APPROVED_MIGRATIONS
 from scripts.release import gatea_operations as gatea
 from scripts.release import gatea_upgrade as upgrade
 
+
+# 历史升级器固定在 M9；不能把当前应用的 M15 清单当成旧验收夹具。
+APPROVED_MIGRATIONS = gatea.APPROVED_TARGET_M9_CHAIN
 
 SOURCE_SHA = "a" * 40
 TARGET_SHA = "b" * 40

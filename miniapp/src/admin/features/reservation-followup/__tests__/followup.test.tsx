@@ -13,7 +13,12 @@ const time = '2026-09-14T01:00:00Z'
 const snapshot = { reservation_id: 31, kind: 'contact', eligible: true, completed: false, revision: 0, latest: null, server_now: time }
 const record = { id: 1, revision: 1, outcome: 'retry', label: '待重试', note: '未接通，明日重试', operator_id: 2, created_at: time }
 const page = { items: [], total: 0, page: 1, page_size: 20, pages: 0 }
-const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve() })
+// Taro 的 Web Component 在动画帧提交；仅清空 Promise 队列不能保证 DOM 已就绪。
+const flush = async () => {
+  await act(async () => { await Promise.resolve() })
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await act(async () => { await Promise.resolve() })
+}
 
 function input(util: ReactTestUtil, value: string) {
   const fire = util.fireEvent as unknown as (element: Element, event: Event) => void

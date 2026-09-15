@@ -21,7 +21,12 @@ const event = { id: 15, event_type: 'order_manual_paid', label: '门店已确认
 const snapshot = { server_now: time, events: [event] }
 const adjustment = { ...event, id: 22, event_type: 'wallet_adjusted', label: '门店已调整余额', message: '余额减少 ¥5.00，调整后余额 ¥95.00。', session_no: null,
   wallet_transaction: { id: 91, change_amount: '-5.00', before_balance: '100.00', after_balance: '95.00', reason: '订单差额纠正' } }
-const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve() })
+// Taro 的 Web Component 在动画帧提交；仅清空 Promise 队列不能保证 DOM 已就绪。
+const flush = async () => {
+  await act(async () => { await Promise.resolve() })
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await act(async () => { await Promise.resolve() })
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
