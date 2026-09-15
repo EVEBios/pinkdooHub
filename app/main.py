@@ -55,6 +55,7 @@ from app.api.v1.admin_tables import router as admin_tables_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.attention import router as attention_router, admin_router as admin_attention_router
 from app.api.v1.reservation_followups import router as reservation_followups_router
+from app.api.v1.store_bead_stock import router as store_bead_stock_router
 from app.api.v1.router import router as v1_router
 from app.api.v1.products import router as products_router
 from app.api.v1.reservations import router as reservations_router
@@ -229,6 +230,7 @@ app.include_router(admin_refunds_router, prefix="/api/v1")
 app.include_router(attention_router, prefix="/api/v1")
 app.include_router(admin_attention_router, prefix="/api/v1")
 app.include_router(reservation_followups_router, prefix="/api/v1")
+app.include_router(store_bead_stock_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────

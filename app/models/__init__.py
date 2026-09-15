@@ -30,3 +30,4 @@ from app.models.table_session import (  # noqa: F401
 )
 
 from app.models.reservation_followup import ReservationFollowup  # noqa: F401
+from app.models.store_bead_stock import StoreBeadStock, StoreBeadStockBatch, StoreBeadStockEntry  # noqa: F401
