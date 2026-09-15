@@ -1,5 +1,5 @@
-"""外部对象存储适配器。"""
+"""图片存储端口与适配器。"""
 
-from app.storage.image import LocalImageStorage, StoredImage
+from app.storage.image import ImageStorage, LocalImageStorage, StoredImage
 
-__all__ = ["LocalImageStorage", "StoredImage"]
+__all__ = ["ImageStorage", "LocalImageStorage", "StoredImage"]

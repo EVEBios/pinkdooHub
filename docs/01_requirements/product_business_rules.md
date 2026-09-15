@@ -1,11 +1,11 @@
 # Product Module Business Rules
 
-> **Document Version:** v2.2
+> **Document Version:** v3.1
 > **Module:** Product
-> **Phase:** 4.1 Product Module
-> **Last Updated:** 2026-08-12
+> **Phase:** 4.1 Product Module + M6 Color-selectable Kit
+> **Last Updated:** 2026-09-09
 >
-> 本文档定义 Product 模块的业务规则。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
+> 本文档定义 Product 模块的业务规则。Phase 4.1 固定套装与 M6 自选颜色套装已完成仓库实现；M8 将来源 HEX 收口为正式颜色字段并将客户端切换为直接绘制。M8 已完成隔离 MySQL 候选验证、四端自动化与当前本地持久 SQLite 应用；持久 Gate A 已到 M7并含 221 色/兼容 PNG，只有 M8 仍待受控应用，且共享、预发布和生产 MySQL 均未因该证据迁移。微信开发者工具模拟器验证也不等于真实 iOS/Android 真机验收。所有数据库设计、API 设计、Service 实现均应遵循本规则。业务变化时优先修改本文档，再调整代码。
 >
 > 模块需求概要见 [product_module.md](./product_module.md)。
 
@@ -13,10 +13,12 @@
 
 ## 1. Domain Model
 
-核心原则：**UI ≠ 数据模型**。用户在前端看到的是一个商品（如"拼豆体验"），在详情页选择时长、人数、日期类型后看到对应价格。但数据库层面，这是两张表：
+核心原则：**UI ≠ 数据模型**。用户在前端看到的是一个商品；体验配置、Kit 形态与自选颜色是该商品聚合内的不同结构，不应被拆成数百个 Product：
 
 ```
 Product（商品） 1 ──→ N ExperienceOption（体验配置）
+Product（Kit） 1 ──→ 1 ProductKit
+Product（color_selectable Kit） 1 ──→ 221 ProductKitColor ──→ 221 个全局 BeadColor 槽
 ```
 
 ### 1.1 Experience Product（拼豆体验）
@@ -63,11 +65,20 @@ GET /products/1
 
 **未来扩展：** 新增 3 人配置只需创建一条 ExperienceOption；如果相同组合曾被逻辑删除，则恢复原记录。无需重建其他组合。
 
-**当前阶段不考虑：** 多种体验主题、预约日期 / 时间段、包场模式。
+**模块边界：** Product 只定义 ExperienceOption 的时长、人数、`day_type` 与当前价格，不拥有具体日期、时段或营业日历。Reservation N1 已负责未来第 0–30 日、半小时时段、默认周一但可由 ADMIN+ 配置的每周固定店休、自定义单日店休和完整 Option 创建快照；详见 [Reservation Module](reservation_module.md)。Product 当前仍不考虑多种体验主题和包场模式。
 
 ### 1.2 Kit Product（拼豆套装）
 
-套装商品为固定内容商品，一个 Product 对应一个固定价格。不需要 Option 表。
+Kit 继续是 `product_type=kit`，一个 Product 对应一条 ProductKit。M6 在 ProductKit 上增加不可变 `kit_kind`，不复用 ExperienceOption：
+
+| `kit_kind` | 配置结构 | 价格与销售单位 | 权威库存 |
+|------------|----------|----------------|----------|
+| `fixed` | 固定内容，无颜色选择 | `product_kits.price` 为每套价格；`sale_unit_grams=NULL` | `product_kits.stock`，单位为套 |
+| `color_selectable` | 商品关联全局 221 个颜色槽，按商品启用可售颜色 | `product_kits.price` 为所有颜色统一的每 10g 价格；`sale_unit_grams=10` | `product_kit_colors.stock_units`，单位为 10g |
+
+`kit_kind` 创建后不可修改。M6 前已经存在的所有 Kit 均解释为 `fixed`，默认值和响应行为必须向后兼容。
+
+全局 `bead_colors` 固定预留 `slot_no=1..221`；它是颜色目录，不保存任何商品的共享库存。每个 `color_selectable` Product 创建时，在同一事务中创建恰好 221 条 ProductKitColor 关联，初始 `is_enabled=false`、`stock_units=0`。M6 占位阶段颜色名称、业务编码和 `swatch_hex` 允许为空；颜色只有在 code/name/规范 HEX 全部完整时才算已配置，未配置或未启用颜色不得出现在用户可售列表或被下单。
 
 | 属性 | 说明 |
 |------|------|
@@ -95,7 +106,7 @@ GET /products/1
 
 ### 2.2 为什么库存不放在 Product 模块？
 
-Phase 4.1 的 Product 模块在 `product_kits.stock` 中保存并展示套装的当前库存，管理员暂时通过“设置最终值”方式维护它。库存扣减、恢复、流水、并发控制等库存**业务流程**属于 Order / Payment / Inventory 模块，不在 Product Service 中提前实现。详见 §10 Inventory Dependency。
+余额字段随商品聚合保存：`fixed` 使用 `product_kits.stock`，`color_selectable` 使用 `product_kit_colors.stock_units`。但库存扣减、恢复、调整、流水、并发控制等库存**业务流程**属于 Order / Payment / Inventory 模块，Product Service 不得直接修改余额。详见 §10 Inventory Dependency。
 
 ### 2.3 为什么 ExperienceOption 不加 status 字段？
 
@@ -106,6 +117,25 @@ Phase 4.1 的 Product 模块在 `product_kits.stock` 中保存并展示套装的
 | 降低复杂度 | 不加 status 意味着 Option 只有 CRUD，没有状态流转逻辑 |
 
 > 如果未来确实出现需要独立上下架某个 Option 的需求，再扩展 Option 的生命周期会更合理。届时可以给 Option 增加 `status` 字段（active / inactive），与 Product 的 `status` 形成双重控制。
+
+### 2.4 为什么颜色目录全局共享、库存不全局共享？
+
+221 种颜色是稳定的店铺目录，名称、编码和可选色板资源不应在每个商品中复制；因此使用全局 BeadColor 槽。是否可售和当前库存则受具体商品的包装、采购和运营影响，必须保存在 ProductKitColor 中。两个商品引用同一个 BeadColor 时，扣减其中一个商品的颜色库存不得改变另一个商品。
+
+全局 BeadColor 以 `swatch_hex` 作为纯数字色块的权威表示：非空值必须规范化为大写 `#RRGGBB`。小程序直接用 `backgroundColor` 绘制，不为纯色块发起独立图片请求。
+
+`swatch_image_url` 仍是全局 BeadColor 的可选展示属性，不是 Product 公共图，也不是 ProductKitColor 的库存属性。它只用于未来在统一光照、白平衡和实体校色后拍摄的真实色样照片；建议使用 192×192 或 256×256 sRGB WebP，目标不超过 25 KiB/张、64 KiB/张软上限、128 KiB/张硬上限，存放在对象存储/CDN 并按需加载，不进入小程序包。Product/Option 商品照片同样优先采用 WebP；不得为已有 HEX 的纯色块另造 WebP。
+
+2026-09-07 指定的 MARD 221 来源页只公开 A1–M15 的 HEX/RGB CSS 色块，没有逐色原图。仓库因此冻结 `app/tasks/manifests/mard_221.json`，以来源顺序映射 `slot_no/sort=1..221`，并令 `color_code=name=页面色号`；清单保存来源 URL、抓取时间、HTML SHA-256、HEX/RGB 和确定性图片名。M8 以该版本化清单将 221 个 HEX 精确回填到 `bead_colors.swatch_hex`。
+
+2026-09-07 已生成的 256×256 sRGB PNG 在客户端迁移期间保留为兼容回退，不批量转换为 WebP，也不在 M8 中删除。`scripts/local/import_mard_bead_colors.py` 继续以默认 dry-run、显式 `--apply --confirm-local-only`、写前备份、事务回滚和文件补偿管理这批兼容资源，并额外核验 HEX 与清单一致。只有在已发布客户端切换和回滚窗口结束均得到独立证据后，才能另行评估删除；该本地导入不创建 ProductKitColor、不启用商品颜色、不写库存，也不构成 MySQL/对象存储发布证据。
+
+Gate A 内部测试候选另提供 `app.tasks.gatea_mard_publish`：只在停写、新 Backup/Restore
+已验证且已按 M3→M4→Wallet→M5→M6→M7→M8 完成的持久 MySQL 上，以 preview 的
+manifest SHA-256 显式确认 apply；221 张
+确定性 PNG 原子写入受 Nginx 只读挂载的持久卷并使用 `0644`，BeadColor 元数据在单
+事务中锁定、批量更新和回读，失败补偿本轮新文件，重放零写入。它仍不创建或启用
+商品颜色、不调整库存；Gate B 正式公开环境继续要求对象存储/CDN 选型和独立验收。
 
 ---
 
@@ -123,7 +153,8 @@ Phase 4.1 的 Product 模块在 `product_kits.stock` 中保存并展示套装的
 
 | 规则 | 说明 |
 |------|------|
-| 创建后不可修改 | 商品类型决定业务结构（experience 关联 Option 表），修改类型可能导致关联数据失效 |
+| 创建后不可修改 | 商品类型决定业务结构（experience 关联 Option；kit 关联 ProductKit），修改类型可能导致关联数据失效 |
+| KitKind 创建后不可修改 | `fixed` 与 `color_selectable` 的销售单位、库存余额行和订单输入不同，不支持原地转换 |
 
 ### 3.3 Product Status
 
@@ -179,7 +210,9 @@ draft ──→ online ──→ offline
 
 ### 4.4 Kit Pricing
 
-套装商品为单一价格，存储在 `product_kits.price`。创建后允许修改，但仍遵守 Product 写操作的状态限制：`online` 时须先下架。系统支持创建多个套装 Product，每个 Product 对应一条 ProductKit 并独立定价。
+套装商品的单一价格存储在 `product_kits.price`。`fixed` 的价格单位为一套；`color_selectable` 的价格单位固定为 10g，所有启用颜色共用同一个价格，不允许在 ProductKitColor 上保存颜色级价格。用户选择某色 `quantity=N` 时，该行金额为 `product_kits.price × N`，代表 `N × 10g`。
+
+价格创建后允许修改，但仍遵守 Product 写操作的状态限制：`online` 时须先下架。系统支持创建多个套装 Product，每个 Product 独立定价；即使两个自选颜色商品都引用同一 BeadColor，其价格和库存也互不共享。
 
 ### 4.5 Batch Price Update
 
@@ -346,18 +379,20 @@ Service 返回领域结果 `ExperienceOptionCreationResult(option, restored)`，
 
 > **实现状态：** ExperienceOption 逻辑删除 Service、Mapper 与 ADMIN+ 路由均已实现，并有资源/状态优先级、Draft/Offline、最后一项删除、Product 状态保留、权限、图片外键保留、快照审计及真实回滚测试。
 
-### 7.8 ProductKit 价格与库存修改事务
+### 7.8 ProductKit 价格修改与 Inventory 边界
 
-`update_kit_price(product_id, *, price, operator_id, ip_address)` 和 `update_kit_stock(product_id, *, stock, operator_id, ip_address)` 共享 Kit 聚合前置检查：
+`update_kit_price(product_id, *, price, operator_id, ip_address)` 保留在 Product 模块：
 
 - 使用 `get_product_by_id(..., include_deleted=True)`，依次处理 `ProductNotFound(40401)`、`ProductIsDeleted(40903)`、非 Kit 的 `ProductTypeMismatch(40001)` 和 `OnlineProductCannotBeModified(40905)`；只有 Draft/Offline Kit 可继续修改。
 - Product 确为可修改 Kit 后，再使用 `get_kit_by_product_id()` 加载一对一扩展；扩展记录缺失抛已登记的 `ProductKitNotFound`（`40404`, `Product kit not found`），不得伪造默认价格或库存。
-- 价格接口只修改 `ProductKit.price` 并写 `UPDATE_PRICE`；库存接口采用 Phase 4.1 的最终值设置模式，只修改 `ProductKit.stock` 并写 `UPDATE_STOCK`。价格快照使用两位小数字符串，库存快照使用整数，均以紧凑 JSON 写入现有 `AuditLog.description`。
-- Kit 更新和对应审计共享同一事务连接，更新失败不审计，审计失败回滚字段修改。两个流程都不加载完整 Product 聚合、不调用 ProductValidator，也不提前实现库存流水、扣减、恢复或并发库存控制。
+- 价格接口只修改 `ProductKit.price` 并写 `UPDATE_PRICE`；价格快照使用两位小数字符串，以紧凑 JSON 写入现有 `AuditLog.description`。
+- Kit 价格更新和对应审计共享同一事务连接，更新失败不审计，审计失败回滚字段修改。该流程不加载完整 Product 聚合，也不调用 ProductValidator。
 
-Service 返回更新后的 `ProductKit`；API Mapper 使用 `product_id` 作为 `KitPriceOut` / `KitStockOut` 的 `id`，不会把 ProductKit 内部主键暴露为 Product ID。
+Service 返回更新后的 `ProductKit`；API Mapper 使用 `product_id` 作为 `KitPriceOut` 的 `id`，不会把 ProductKit 内部主键暴露为 Product ID。
 
-> **实现状态：** Kit 价格与库存修改 Service、Mapper、ADMIN+ 路由及 `40404 ProductKitNotFound` 均已实现，并有资源/状态优先级、Draft/Offline、零库存、字段互不覆盖、权限、快照审计、Validator 隔离和真实事务回滚测试。
+Phase 4.3.10 已从 Product 模块移除直接库存设置路由、请求/响应 Schema、Mapper 与 Service 用例，也从 Kit 创建请求移除 `stock`。新 fixed Kit 从 0 开始；新 color_selectable Kit 的 221 个商品颜色也分别从 0 开始且聚合 stock 为 null。管理员库存变化统一使用对应 Inventory adjustment。ProductRepository 保留通用持久化原语，但业务层不得绕过 Inventory 流水直接修改余额。
+
+> **实现状态：** Kit 价格修改 Service、Mapper、ADMIN+ 路由及 `40404 ProductKitNotFound` 均已实现；Inventory adjustment 已替代旧库存写入口。
 
 ### 7.9 ProductImage 生命周期事务
 
@@ -403,13 +438,15 @@ python -m app.tasks.product_image_cleanup --before 2026-08-01T00:00:00+08:00 --b
 
 ## 8. Aggregate Rules（聚合规则）
 
-> Product 与 ExperienceOption 构成一个聚合（Aggregate），Product 为聚合根（Aggregate Root）。聚合规则定义了两者的生命周期关系，是 Service 设计、事务设计、API 设计的核心依据。
+> Product 是聚合根（Aggregate Root）。Experience Product 聚合有效 ExperienceOption；Kit Product 聚合 ProductKit，`color_selectable` 还聚合 ProductKitColor。全局 BeadColor 是被引用的颜色目录，不归某个 Product 独占。
 
 ### 8.1 Aggregate Boundary（聚合边界）
 
 ```
 Product（聚合根）
-  └── ExperienceOption × N
+  ├── ExperienceOption × N（仅 experience）
+  └── ProductKit × 1（仅 kit）
+        └── ProductKitColor × 221（仅 color_selectable，引用全局 BeadColor）
 ```
 
 | 问题 | 答案 | 原因 |
@@ -420,6 +457,9 @@ Product（聚合根）
 | 一个 Product 至少需要几个 Option 才能上线？ | ≥ 1 | 保证商品可售 |
 | Option 可以单独新增、修改、删除吗？ | ✅ 可以 | 便于后台维护 |
 | 删除最后一个 Option 后还能保持 Online 吗？ | ❌ 不可以 | Online 商品不允许删除 Option。须先下架。
+| M6 前的 Kit 属于哪种？ | `fixed` | 迁移默认值保证历史商品和请求保持原语义 |
+| 自选颜色商品是否复制 221 份价格？ | ❌ 不可以 | 所有颜色共用 ProductKit 的每 10g 价格 |
+| 两个商品的同一颜色是否共用库存？ | ❌ 不可以 | ProductKitColor 是商品级余额 |
 
 ### 8.2 Status × Option Completeness Matrix
 
@@ -470,6 +510,10 @@ PUT /products/1/offline  → Product (offline)
 | 删除最后 Option 后保持原状态 | 仅 `draft` / `offline` 允许删除 Option；重新上架时由 Validator 拒绝空 Option 集合 |
 | FK 约束 | `ON DELETE RESTRICT`，数据库层兜底 |
 | 事务边界 | 上线、下线、Option 增删均在单次请求内完成，无需跨请求事务 |
+| 自选颜色初始化 | Product、ProductKit、221 条 ProductKitColor 与 CREATE_PRODUCT 审计在同一创建事务中提交或回滚 |
+| 颜色目录唯一性 | `slot_no` 全局唯一；非空 `color_code` 全局唯一；同一 Product 与 BeadColor 仅一条 ProductKitColor |
+| 上架与颜色开关互斥 | 上架和商品颜色启停都先锁同一 Product 行，再在同一事务内重载、复验聚合，避免“上架通过后最后一色被禁用” |
+| 全局色板引用保护 | 全局颜色修改按 Product ID 升序锁定全部引用 Product，再锁 BeadColor 与当前启用关联；锁后复验 Online 引用 |
 
 ### 8.5 Online Validation（上架校验）
 
@@ -477,11 +521,12 @@ PUT /products/1/offline  → Product (offline)
 
 `validate_before_online(product) -> None` 是**同步、纯计算**接口：成功时返回 `None`，失败时一次性收集全部缺项并抛出 `ProductNotReadyForOnline`，不返回 bool。Validator 不查询或写入数据库，不调用 Repository、Service、Redis，不开启事务，不校验权限，不写审计日志，也不修改 Product 聚合中的任何对象。
 
-Service 必须使用 `ProductRepository.get_product_detail(product_id, include_deleted=True)` 加载聚合后再调用 Validator；这样才能先区分“不存在”和“已经逻辑删除”，基础查询 `get_product_by_id()` 不满足输入契约。已加载聚合包含：
+Service 必须在写事务内先通过 `get_product_for_update()` 锁定 Product，再使用同一连接调用 `ProductRepository.get_product_detail(product_id, include_deleted=True, using_db=connection)` 重载聚合并调用 Validator；这样才能先区分“不存在”和“已经逻辑删除”，同时确保上架校验和颜色开关使用同一 Product 互斥点。基础查询 `get_product_by_id()` 不满足输入契约。已加载聚合包含：
 
 ```text
 Product
 ├── kit
+│   └── color_selectable 时预加载按 BeadColor.slot_no 排序的 ProductKitColor 与 BeadColor
 ├── 有效 ExperienceOption（is_deleted = false）
 ├── 有效 Product 公共图片（is_deleted = false 且 experience_option_id IS NULL）
 └── 每个有效 Option 的有效专属图片（is_deleted = false）
@@ -510,17 +555,17 @@ async def online_product(
 
 执行顺序必须固定为：
 
-1. `ProductRepository.get_product_detail(product_id, include_deleted=True)` 加载完整聚合；返回 `None` 时抛 `ProductNotFound`（`40401`, `Product not found`）。
-2. `is_deleted = true` 时抛 `ProductIsDeleted`（`40903`, `Product is deleted`）。删除状态优先于当前 ProductStatus 判断。
-3. `status = online` 时抛 `ProductAlreadyOnline`（`40901`, `Product is already online`）。
+1. 开启事务，通过 `ProductRepository.get_product_for_update(product_id, using_db=connection)` 锁定 Product；返回 `None` 时抛 `ProductNotFound`（`40401`, `Product not found`）。
+2. 对锁后 Product 复验：`is_deleted = true` 抛 `ProductIsDeleted`（`40903`），其优先于状态；`status = online` 抛 `ProductAlreadyOnline`（`40901`）。
+3. 使用同一事务连接调用 `get_product_detail(..., include_deleted=True, using_db=connection)` 重载完整聚合。
 4. 同步调用 `ProductValidator.validate_before_online(product)`；`42201`、未预加载关系和未知 ProductType 等异常原样传播，不捕获或改写。
-5. 校验通过后开启事务，通过 `ProductRepository.update_product(..., status=ProductStatus.ONLINE, using_db=connection)` 更新状态。
-6. 在同一事务连接上通过 `AuditLogService.log(..., action="ONLINE_PRODUCT", target_type="product", target_id=product.id, using_db=connection)` 写审计；状态更新或审计任一失败时，两者全部回滚。
-7. 事务提交后返回更新后的 Product；校验和所有前置冲突均发生在写事务前，不写状态、不写审计。
+5. 通过 `ProductRepository.update_product(..., status=ProductStatus.ONLINE, using_db=connection)` 更新状态。
+6. 在同一事务连接上通过 `AuditLogService.log(..., action="ONLINE_PRODUCT", target_type="product", target_id=product.id, using_db=connection)` 写审计；锁后校验、状态更新或审计任一失败时全部回滚。
+7. 事务提交后返回更新后的 Product。
 
 为支持步骤 6，现有共享审计边界必须向后兼容地增加可选 `using_db: BaseDBAsyncClient | None = None`，由 `AuditLogService.log()` 透传给 `AuditLogRepository.create()` 和 `AuditLog.create(using_db=...)`。不提供时保持现有用户模块的顺序审计行为；Product 上架必须提供当前事务连接。Product Service 通过构造函数接收 `ProductRepository` 和 `AuditLogService`，不得在方法内部实例化 Repository，也不得直接操作 Product 或 AuditLog Model。
 
-本阶段不增加行锁、条件更新或跨请求幂等键；两个并发上架请求仍可能都通过事务前状态检查，属于后续并发策略需要处理的已知限制。单次请求内的状态与审计原子性是本阶段强制契约。
+上架、ProductKitColor 启停和全局 BeadColor 维护统一使用 Product 行作为聚合级互斥点。单 Product 操作锁一个 Product；全局颜色维护先确定稳定引用集合，按 Product ID 升序锁定，再锁 BeadColor，最后锁该颜色当前启用的 ProductKitColor 行。所有状态与配置判断都在锁后、同一事务连接上执行。该顺序禁止反向获取 BeadColor → Product，既防止上架/禁用竞态，也为后续 MySQL 真实并发门槛提供可观察的固定锁序；跨请求幂等键仍不属于 Product 上架契约。
 
 > **实现状态：** 上述 Service 上架编排、ADMIN+ 权限依赖、路由和 `ProductOnlineOut` 序列化均已实现。专项测试覆盖 Draft/Offline、Experience/Kit、404/409/422 前置失败、精确调用顺序、同一事务连接、权限、状态更新失败不审计，以及审计失败时真实数据库状态回滚。
 
@@ -592,6 +637,16 @@ product_images
 | 逻辑删除 Option | 关联图片保持不动，随已删除 Option 从正常查询中隐藏；恢复 Option 时重新可见 |
 | 异常物理删除 Option | FK 的 `ON DELETE SET NULL` 将关联图片归入 Product 公共图片，仅作数据库兜底 |
 
+**上传文件规范化：** 上传原始文件仍必须不超过 2 MiB，声明 MIME 只接受 `image/jpeg`、`image/png`、`image/webp`，并与内容格式一致。标准 JPEG 以 `FF D8 FF` 开始、以 `FF D9` 结束。为兼容已验证的微信导出文件，存储层还接受以下精确尾部：
+
+```text
+<标准 JPEG，含 FF D9>
+17 4D A1 01 00 00 00 00
+<JPEG 本体的 16-byte MD5>
+```
+
+只有固定 8 字节前缀、JPEG 本体结束标记和 16 字节摘要全部匹配时才剥离 24 字节尾部，并只保存规范化后的标准 JPEG；MD5 只作为该导出格式的完整性标记，不构成认证或安全摘要。错误摘要、伪造前缀、任意尾随内容仍使用 `42221 invalid_image_content` 拒绝。大小限制按收到的原始上传文件计算，不能依靠剥离尾部绕过 2 MiB。
+
 **Kit 上架检查项：**
 
 公共检查项之后按以下顺序继续收集：
@@ -602,7 +657,9 @@ product_images
 | 5 | `price <= 0` 或 `price > 99999` | `kit price must be greater than 0 and no more than 99999` |
 | 6 | `stock < 0` | `kit stock must be non-negative` |
 
-如果 ProductKit 扩展记录缺失，只追加 `kit configuration is required`，不再追加价格或库存 issue；记录不存在与字段值非法不是同一问题。`stock = 0` 允许上架。Kit 的图片完整性目前只有公共封面规则，不额外要求第二项“至少一张公共图片”。
+对于 `fixed`，上述既有检查保持不变；`stock = 0` 允许上架。对于 `color_selectable`，M6/M8 还必须校验 `sale_unit_grams=10`、聚合 `stock=null`、221 条颜色关联完整，并至少存在一个已启用颜色；每个启用色均须全局激活且名称/编码/`swatch_hex` 完整。颜色余额 `stock_units=0` 仍允许上架，但下单会因库存不足而失败。新增 issue 依稳定顺序为：`color-selectable kit sale unit must be 10 grams`、`color-selectable kit stock must be null`、`color-selectable kit must link all 221 bead color slots`、`at least one product kit color must be enabled`、`enabled product kit colors must be active and configured`、`product kit color stock must be non-negative`。Gate A 已完成 M6/M7 的真实 MySQL/目录部署；M8 HEX 迁移与 Runtime 现场验收仍为 Pending。
+
+如果 ProductKit 扩展记录缺失，只追加 `kit configuration is required`，不再追加价格或库存 issue；记录不存在与字段值非法不是同一问题。Kit 的图片完整性目前只有公共封面规则，不要求 221 个颜色槽都配置图片，也不把颜色色板图算作 Product 公共封面。
 
 **设计原则：** `draft` 状态允许不完整（逐步完善），`online` 状态必须完整（校验通过）。这是聚合完整性的最终体现。
 
@@ -635,9 +692,20 @@ product_id + Duration + Participants + Day Type
 
 ### 9.2 Price Snapshot
 
-- 订单创建时快照当前 Option 价格
-- 快照价格与 Option 当前价格解耦
-- Option 价格变更不影响已有订单
+- Experience 订单创建时快照当前 Option 价格。
+- `fixed` Kit 快照每套价格；`color_selectable` Kit 的每个颜色行快照统一的每 10g 价格、颜色 ID/编码/名称和 `sale_unit_grams=10`。
+- 快照价格与当前 Option/ProductKit 价格解耦，颜色目录后续改名或改码也不覆盖历史订单。
+
+### 9.3 Bead Color 与商品颜色唯一性
+
+- `bead_colors.slot_no` 必须覆盖且只覆盖 1..221，每个槽全局唯一。
+- `color_code`、`name` 在占位阶段允许为空；非空 `color_code` 全局唯一。
+- `sort` 使用有符号 SMALLINT，HTTP 请求、响应和 Model 统一限制为 `0..32767`。
+- 每个 `color_selectable` Product 与每个 BeadColor 恰有一条 ProductKitColor，联合键 `(product_id, bead_color_id)` 唯一。
+- ProductKitColor 只保存商品级 `is_enabled` 与 `stock_units`，不复制颜色名称、编码、价格或全局图片。
+- `fixed` Product 不得拥有 ProductKitColor；`color_selectable` Product 不得用 `product_kits.stock` 作为可售余额。
+- Draft/Offline 管理详情必须原样表达 `is_enabled=true` 但全局 inactive 或未配置的历史/并发诊断状态；只有启用操作、上架校验和公共输出要求颜色 sale-ready。管理员可据此先禁用或补齐元数据，不能把异常事实映射成 500。
+- `UPDATE_BEAD_COLOR` 审计以固定 `changed_fields` 顺序及与之对齐的 `before`/`after` 数组保存。完整 JSON 超过 `AuditLog.description` 256 字符时，字符串值替换为 `{len, sha256}` 有界摘要，其中 `sha256` 保存 12 位十六进制前缀；禁止直接截断 JSON。
 
 ---
 
@@ -645,19 +713,20 @@ product_id + Duration + Participants + Day Type
 
 拼豆体验不涉及库存。
 
-拼豆套装在 **Phase 4.1** 即使用 `product_kits.stock` 保存当前库存，支持管理端直接设置最终值，并在用户详情中派生 `available = stock > 0`。这一阶段不引入库存流水，也不在 Product Service 中实现订单驱动的扣减或恢复。
-
-完整库存业务将在 **Inventory 模块（Phase 4.3）** 中实现：
+Phase 4.3 已把 `fixed` Kit 切换为余额 + 流水模式，`product_kits.stock` 是其权威当前余额。M6 为 `color_selectable` 新增商品颜色余额 `product_kit_colors.stock_units`；两类余额的调整、扣减与恢复都必须由 Inventory/Order 协调，Product Service 不直接写库存。
 
 | 库存操作 | 所属模块 | 触发时机 |
 |----------|----------|----------|
-| 当前库存最终值设置 | Product（Phase 4.1） | 管理员维护套装时 |
-| 库存扣减 | Order / Payment + Inventory | 支付成功后 |
-| 库存恢复 | Order + Inventory | 订单取消时 |
-| 库存不足拒绝 | Order + Inventory | 下单 / 支付确认时 |
-| 库存流水与调整原因 | Inventory | Phase 4.3 |
+| 固定套装当前余额 | ProductKit + Inventory | `product_kits.stock`，单位为套 |
+| 自选颜色当前余额 | ProductKitColor + Inventory | 每个商品颜色独立的 `stock_units`，单位为 10g；不跨商品共享 |
+| 管理员调整 | Inventory | ADMIN+ 提交调整量、原因和幂等键；允许 Online Kit |
+| 库存扣减 | Order + Inventory | 创建 Pending Kit/混合订单时 |
+| 库存恢复 | Order + Inventory | Pending 订单取消时 |
+| 支付与完成 | Order | 不再改变库存 |
+| 库存不足拒绝 | Order + Inventory | 创建订单并锁后校验时 |
+| 库存流水 | Inventory | 与余额、Order 和 Audit 在相应事务内原子提交 |
 
-Product 模块只负责当前库存值的保存、展示和管理端直接设置，不负责扣减、恢复、流水及并发库存控制。
+Phase 4.3 已采用余额表 + 流水表模式：余额表保存当前值，Inventory 解释并控制每次变化。Phase 4.3.10 已移除管理员直接设置最终值的旧端点和 Kit 创建 `stock` 输入；M6 后 `fixed` 从 `product_kits.stock=0` 开始，`color_selectable` 的 221 个 `stock_units` 均从 0 开始，统一通过对应 Inventory adjustment 入库。Product 的价格、内容、颜色启用和图片仍遵守 Product 状态限制，库存调整是独立 Inventory 行为。
 
 ---
 
@@ -667,10 +736,11 @@ Product 模块只负责当前库存值的保存、展示和管理端直接设置
 |------|----------|------------|
 | Product（体验/套装） | Draft → Online → Offline → 逻辑删除 | Phase 4.1 |
 | ExperienceOption | 创建 / 恢复 → 修改 → 逻辑删除（无独立状态，跟随 Product） | Phase 4.1 |
-| Kit Product | 与 Product 相同，共用 Product 生命周期 | Phase 4.1 |
-| Order | 待后续 Phase 4.2 设计 | Phase 4.2 |
-| Kit 当前库存值 | 创建 → 管理员直接设置 → 展示 | Phase 4.1 |
-| Inventory 流水与自动变更 | 待后续 Phase 4.3 设计 | Phase 4.3 |
+| fixed Kit | 与 Product 相同，共用 Product 生命周期；历史 Kit 默认归入该类 | Phase 4.1 已实现，M6 保持兼容 |
+| color_selectable Kit / ProductKitColor | 创建 221 个禁用零库存槽 → 配置/启用 → 随 Product 对用户可见 | M6 仓库、本地/真实 MySQL 验证与当前 Gate A M7 已完成；其他环境待单独部署 |
+| Order | Pending → Paid → Completed；Pending → Cancelled | Phase 4.2 已实现 |
+| Kit 当前库存值 | fixed 按套；color_selectable 按商品颜色的 10g 单位 | fixed 与 M6 颜色库存均已完成仓库/真实 MySQL 验证并进入当前 Gate A M7 |
+| Inventory 流水与自动变更 | 管理调整、下单扣减、取消/PAID 退款恢复 | fixed 与 M6 颜色流水均已完成仓库/真实 MySQL 验证并进入当前 Gate A M7 |
 
 > **关于 ExperienceOption 的 status：** 当前不设独立状态。Option 仅作为 Product 的配置项存在，Product 的状态（draft/online/offline）已覆盖了"该配置是否对用户可见"的需求。如需独立控制某个 Option 的可见性，后续再扩展。
 
@@ -713,6 +783,19 @@ Product 模块只负责当前库存值的保存、展示和管理端直接设置
 | Option 可删除 | 仅 draft/offline；逻辑删除后立即影响未来订单，历史订单保持快照 |
 | Option 可恢复 | 再次创建相同已删除组合时恢复原 ID、更新价格并保留图片关联 |
 
+### Kit Constraints
+
+| 规则 | 说明 |
+|------|------|
+| KitKind | `fixed` / `color_selectable`，创建后不可修改；历史 Kit 默认 `fixed` |
+| 全局颜色槽 | `slot_no=1..221`，名称/编码/`swatch_hex` 可在 M6 占位阶段为空；M8 从冻结清单回填 HEX |
+| 商品颜色初始化 | 每个 color_selectable Product 恰有 221 条 ProductKitColor，初始禁用且 `stock_units=0` |
+| 销售单位 | color_selectable 固定 10g；Order Item `quantity=N` 表示该颜色 `N×10g` |
+| 统一价格 | 同一 color_selectable 商品所有颜色共用 `product_kits.price`，单位为每 10g |
+| 库存隔离 | ProductKitColor 按商品保存余额，同一 BeadColor 在不同商品之间不共享库存 |
+| 用户可见颜色 | 只返回 code/name/规范 `#RRGGBB` 完整且 `is_enabled=true` 的颜色；下单仍锁后重检启用状态与库存 |
+| 颜色表示 | 纯数字色块以 `swatch_hex` 直绘；`swatch_image_url` 只保留未来实拍校色 WebP 和迁移回退，现有 PNG 不转 WebP、不在本迁移删除 |
+
 ### Audit Constraints
 
 以下操作必须记录 Audit Log（复用 Phase 3 审计系统）：
@@ -734,18 +817,20 @@ Product 模块只负责当前库存值的保存、展示和管理端直接设置
 
 ## 13. Future Expansion
 
-当前阶段支持：
+当前已实现基线支持：
 
 - 体验商品：新增时长、新增人数配置（通过新增 Option 实现）
 - 套装商品：创建多款套装、独立定价
 - 商品搜索、排序、分页
 
-**当前不考虑（将在后续业务版本扩展）：**
+M6 已完成仓库实现、本地/真实 MySQL 门槛及当前 Gate A 持久发布：`fixed` / `color_selectable` KitKind、221 个全局颜色槽、商品级颜色启用/库存、10g 销售单位、颜色订单快照与库存流水。该事实仅覆盖当前 Gate A M7；共享、预发布、生产及 M8 HEX 仍须分别迁移、部署和验收。
+
+**当前不由 Product 负责或将在后续业务版本扩展：**
 
 | 功能 | 所属模块 | 计划版本 |
 |------|----------|----------|
 | 多种体验主题 | Product | 待定 |
-| 预约日期 / 时间段 | Product | 待定 |
+| 具体预约日期 / 时间段、营业日历 | Reservation | N1 仓库实现完成；M5 已进入当前 Gate A M7，其他持久环境仍须分别执行 |
 | 包场模式 | Product | 待定 |
 | 库存流水、并发扣减与库存调整单 | Inventory | Phase 4.3 |
 | 商品评价 | Review | 待定 |
@@ -755,7 +840,7 @@ Product 模块只负责当前库存值的保存、展示和管理端直接设置
 
 ## 14. Business Rule Summary
 
-> **核心原则：** UI 展示一个商品，数据库用 Product + ExperienceOption 实现多配置管理。Option 不是商品，是可选用法组合。
+> **核心原则：** UI 展示一个商品，数据库按 ProductType/KitKind 使用 ExperienceOption 或 ProductKitColor 表达配置。ExperienceOption 和 ProductKitColor 都不是独立 Product；全局 BeadColor 只定义颜色身份，不承载共享库存。
 
 | 分类 | 规则 |
 |------|------|
@@ -764,10 +849,10 @@ Product 模块只负责当前库存值的保存、展示和管理端直接设置
 | 商品状态 | `draft` → `online` → `offline`；重新上架保持原 ID；`online` 必须先下架再删除 |
 | 商品价格 | `0 < Price ≤ 99999`，支持批量修改 |
 | 体验商品 | Product 1 → N ExperienceOption；每个 Option = 时长 + 人数 + 日期类型 + 价格；同 Product 内组合唯一；Draft 允许无 Option，Online 至少一个 |
-| 套装商品 | 单一价格，支持多款套装独立定价 |
+| 套装商品 | `fixed` 按套销售；`color_selectable` 从 221 色目录选择、每色一行、每 10g 统一价 |
 | Option 生命周期 | 可新增、恢复、修改、逻辑删除；删除后立即影响未来订单，历史订单保持快照 |
 | 价格修改 | 仅影响未来订单，历史订单保留创建时价格快照 |
-| 库存 | Phase 4.1 保存/展示 Kit 当前库存并允许管理员直接设值；Phase 4.3 实现流水、自动扣减/恢复与并发控制 |
+| 库存 | fixed 使用 `product_kits.stock`；color_selectable 使用商品级 `product_kit_colors.stock_units`，不全局共享；所有变化由 Inventory 流水控制 |
 | 用户可见性 | 普通用户仅可见 `online` 商品 |
 | 管理员权限 | 当前统一 ADMIN；后续敏感操作可提升至 SUPER_ADMIN |
 | 删除规则 | 逻辑删除，禁止物理删除；`online` 商品需先下架 |

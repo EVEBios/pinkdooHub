@@ -1,0 +1,185 @@
+/* stylelint-disable at-rule-no-unknown, selector-class-pattern -- 复用项目 Sass 与 BEM。 */
+@use '../../styles/patterns' as pd;
+@use '../../admin/styles/surface' as admin;
+
+.attention-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  font-size: var(--pd-font-body-size);
+  line-height: 1.55;
+
+  &__header { @include admin.page-header(true, center 45%); }
+  &__title { @include admin.header-title; }
+  &__description { @include admin.header-subtitle; }
+
+  &__filter-panel {
+    @include pd.section-panel;
+    @include admin.filter-panel;
+
+    margin-bottom: 26px;
+  }
+
+  &__filters {
+    display: flex;
+    gap: 10px;
+  }
+
+  &__filter {
+    @include pd.chip;
+
+    min-width: 0;
+    flex: 1;
+    gap: 8px;
+    padding-inline: 10px;
+    white-space: nowrap;
+
+    &--selected { @include pd.chip-active; }
+  }
+
+  &__filter-count {
+    font-variant-numeric: tabular-nums;
+    font-size: var(--pd-font-caption);
+    opacity: 0.85;
+  }
+
+  &__filter-hint {
+    display: block;
+    margin-top: 20px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.6;
+  }
+
+  &__state {
+    @include pd.section-panel(42px 24px);
+
+    display: flex;
+    min-height: 250px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    text-align: center;
+  }
+
+  &__state-title {
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__state-description {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__retry {
+    @include pd.secondary-button(999px);
+
+    width: auto;
+    margin-top: 12px;
+  }
+
+  &__list-heading {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 5px;
+    margin-bottom: 15px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__item {
+    @include pd.record-card;
+    @include pd.tappable-card;
+
+    display: block;
+    width: 100%;
+    margin: 0 0 18px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.6;
+    text-align: left;
+
+    &::after { border: 0; }
+  }
+
+  &__item-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__status {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: var(--pd-color-warning-soft);
+    color: var(--pd-color-warning);
+    font-size: var(--pd-font-caption);
+
+    &--overdue {
+      color: var(--pd-color-ink-soft);
+      background: var(--pd-color-surface-muted);
+    }
+  }
+
+  &__item-meta {
+    display: block;
+    margin-top: 12px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    overflow-wrap: anywhere;
+  }
+
+  &__item-time {
+    display: block;
+    margin-top: 18px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__item-message {
+    display: block;
+    margin-top: 10px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__item-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--pd-color-line);
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__item-action {
+    color: var(--pd-color-primary-strong);
+    font-weight: 700;
+  }
+
+  &__pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 24px 0;
+  }
+
+  &__all {
+    @include pd.secondary-button(999px);
+
+    width: auto;
+    margin: 30px auto 0;
+    padding-inline: 32px;
+    background: transparent;
+  }
+}

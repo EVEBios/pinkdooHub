@@ -1,0 +1,32 @@
+/* stylelint-disable selector-class-pattern -- 沿用项目 BEM 命名。 */
+.table-history-countdowns {
+  &__group {
+    margin-top: 26px;
+    padding-top: 24px;
+    border-top: 1px solid var(--pd-color-line);
+  }
+
+  &__label {
+    display: block;
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+  }
+
+  &__value {
+    display: block;
+    margin-top: 10px;
+    color: var(--pd-color-primary-strong);
+    font-size: 56px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 12px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    overflow-wrap: anywhere;
+  }
+}

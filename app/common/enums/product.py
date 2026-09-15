@@ -23,6 +23,13 @@ class ProductStatus(str, Enum):
     OFFLINE = "offline"
 
 
+class KitKind(str, Enum):
+    """套装商品的销售形态。"""
+
+    FIXED = "fixed"
+    COLOR_SELECTABLE = "color_selectable"
+
+
 class DayType(str, Enum):
     """体验 Option 的日期类型。"""
 

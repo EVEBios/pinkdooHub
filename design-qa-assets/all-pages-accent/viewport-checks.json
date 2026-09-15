@@ -1,0 +1,354 @@
+[
+  {
+    "name": "admin-reservation-detail",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-orders",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-products",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-detail",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-configuration",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-images",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-tables",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-table-session-detail",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-audit",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-inventory",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-reservations",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-users",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-inventory-transactions",
+    "width": 320,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 320,
+        "width": 320,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-reservation-detail",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-orders",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-products",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-detail",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-configuration",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-images",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-tables",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-table-session-detail",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-audit",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-product-inventory",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-reservations",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-users",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "admin-inventory-transactions",
+    "width": 768,
+    "overflow": false,
+    "pages": [
+      {
+        "scroll": 768,
+        "width": 768,
+        "x": 0
+      }
+    ]
+  },
+  {
+    "name": "customer-order-detail",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "name": "customer-reservation-detail",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "name": "customer-order-detail",
+    "width": 320,
+    "overflow": false
+  },
+  {
+    "name": "customer-reservation-detail",
+    "width": 320,
+    "overflow": false
+  },
+  {
+    "name": "customer-login",
+    "width": 320,
+    "overflow": false
+  },
+  {
+    "name": "customer-register",
+    "width": 320,
+    "overflow": false
+  },
+  {
+    "name": "customer-login",
+    "width": 768,
+    "overflow": false
+  },
+  {
+    "name": "customer-register",
+    "width": 768,
+    "overflow": false
+  }
+]

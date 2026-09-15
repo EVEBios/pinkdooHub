@@ -22,13 +22,15 @@ from app.api.mappers.product import (
     map_admin_experience_product_detail,
     map_admin_kit_product_detail,
     map_admin_product_page,
+    map_admin_product_kit_color,
+    map_bead_color,
+    map_bead_color_page,
     map_deleted_resource,
     map_experience_option,
     map_experience_option_base,
     map_experience_product_create,
     map_kit_price,
     map_kit_product_create,
-    map_kit_stock,
     map_product_basic_info,
     map_product_image_by_owner,
     map_product_offline,
@@ -43,13 +45,15 @@ from app.common.response import success
 from app.models.user import User
 from app.schemas.product import (
     AdminProductListQuery,
+    BeadColorListQuery,
+    BeadColorUpdate,
     ExperienceOptionCreate,
     ExperienceOptionUpdate,
     ExperienceProductCreate,
     KitPriceUpdate,
     KitProductCreate,
-    KitStockUpdate,
     ProductImageUpdate,
+    ProductKitColorUpdate,
     ProductUpdate,
 )
 from app.schemas.audit import AuditLogListQuery
@@ -58,13 +62,14 @@ from app.schemas.product_response import (
     AdminExperienceProductDetailOut,
     AdminKitProductDetailOut,
     AdminProductListItemOut,
+    AdminProductKitColorOut,
+    BeadColorOut,
     DeletedResourceOut,
     ExperienceOptionBaseOut,
     ExperienceOptionOut,
     ExperienceProductCreateOut,
     KitPriceOut,
     KitProductCreateOut,
-    KitStockOut,
     OptionImageOut,
     ProductBasicInfoOut,
     ProductImageOut,
@@ -72,7 +77,7 @@ from app.schemas.product_response import (
     ProductOnlineOut,
 )
 from app.services.product_service import ProductService
-from app.storage.image import LocalImageStorage
+from app.storage.image import ImageStorage
 from app.utils.request import get_client_ip
 
 router = APIRouter(
@@ -83,13 +88,15 @@ router = APIRouter(
 ProductId = Annotated[int, Path(gt=0)]
 OptionId = Annotated[int, Path(gt=0)]
 ImageId = Annotated[int, Path(gt=0)]
+BeadColorId = Annotated[int, Path(gt=0)]
+KitColorId = Annotated[int, Path(gt=0)]
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
 ProductServiceDependency = Annotated[
     ProductService,
     Depends(get_product_service),
 ]
 ProductImageStorageDependency = Annotated[
-    LocalImageStorage,
+    ImageStorage,
     Depends(get_product_image_storage),
 ]
 
@@ -115,6 +122,73 @@ async def list_admin_products(
         include_deleted=query.include_deleted,
     )
     return success(data=map_admin_product_page(page).model_dump(mode="json"))
+
+
+@router.get(
+    "/bead-colors",
+    response_model=None,
+    responses=success_responses(Page[BeadColorOut]),
+)
+async def list_bead_colors(
+    query: Annotated[BeadColorListQuery, Query()],
+    current_admin: CurrentAdmin,
+    service: ProductServiceDependency,
+) -> dict:
+    """分页查询全局 221 槽拼豆颜色目录。"""
+
+    page = await service.list_bead_colors(
+        page=query.page,
+        page_size=query.page_size,
+    )
+    return success(data=map_bead_color_page(page).model_dump(mode="json"))
+
+
+@router.patch(
+    "/bead-colors/{bead_color_id}",
+    response_model=None,
+    responses=success_responses(BeadColorOut),
+)
+async def update_bead_color(
+    bead_color_id: BeadColorId,
+    data: BeadColorUpdate,
+    request: Request,
+    current_admin: CurrentAdmin,
+    service: ProductServiceDependency,
+) -> dict:
+    """修改全局颜色槽的元数据、排序或激活状态。"""
+
+    bead_color = await service.update_bead_color(
+        bead_color_id,
+        updates=data.model_dump(exclude_unset=True),
+        operator_id=current_admin.id,
+        ip_address=get_client_ip(request),
+    )
+    return success(data=map_bead_color(bead_color).model_dump(mode="json"))
+
+
+@router.patch(
+    "/product-kit-colors/{kit_color_id}",
+    response_model=None,
+    responses=success_responses(AdminProductKitColorOut),
+)
+async def update_product_kit_color(
+    kit_color_id: KitColorId,
+    data: ProductKitColorUpdate,
+    request: Request,
+    current_admin: CurrentAdmin,
+    service: ProductServiceDependency,
+) -> dict:
+    """启用或禁用一个自选颜色 Kit 的商品颜色。"""
+
+    kit_color = await service.update_product_kit_color(
+        kit_color_id,
+        is_enabled=data.is_enabled,
+        operator_id=current_admin.id,
+        ip_address=get_client_ip(request),
+    )
+    return success(
+        data=map_admin_product_kit_color(kit_color).model_dump(mode="json")
+    )
 
 
 @router.get(
@@ -229,11 +303,16 @@ async def create_kit_product(
         name=data.name,
         description=data.description,
         price=data.price,
-        stock=data.stock,
+        kit_kind=data.kit_kind,
         operator_id=current_admin.id,
         ip_address=get_client_ip(request),
     )
-    return success(data=map_kit_product_create(product).model_dump(mode="json"))
+    return success(
+        data=map_kit_product_create(
+            product,
+            kit_kind=data.kit_kind,
+        ).model_dump(mode="json")
+    )
 
 
 @router.post(
@@ -293,29 +372,6 @@ async def update_kit_price(
         ip_address=get_client_ip(request),
     )
     return success(data=map_kit_price(kit).model_dump(mode="json"))
-
-
-@router.patch(
-    "/products/kit/{product_id}/stock",
-    response_model=None,
-    responses=success_responses(KitStockOut),
-)
-async def update_kit_stock(
-    product_id: ProductId,
-    data: KitStockUpdate,
-    request: Request,
-    current_admin: CurrentAdmin,
-    service: ProductServiceDependency,
-) -> dict:
-    """直接设置 Kit 当前库存最终值。"""
-
-    kit = await service.update_kit_stock(
-        product_id,
-        stock=data.stock,
-        operator_id=current_admin.id,
-        ip_address=get_client_ip(request),
-    )
-    return success(data=map_kit_stock(kit).model_dump(mode="json"))
 
 
 @router.patch(

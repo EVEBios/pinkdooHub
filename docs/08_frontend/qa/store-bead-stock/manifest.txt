@@ -1,0 +1,2 @@
+WeChat artifact verified: files=215 main=1042085 subpackages=642384 total=1684469 release_eligible=false
+Manifest SHA-256: e7b16ac74d7a7b9e5ca12c8e0dd2cc4a60bc107feafa6a20ae2e11cb1206adf1

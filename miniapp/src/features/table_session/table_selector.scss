@@ -1,0 +1,66 @@
+/* stylelint-disable at-rule-no-unknown -- 复用项目 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+
+.table-selector {
+  @include pd.section-panel;
+
+  margin: 20px 0;
+
+  &__title {
+    display: block;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__hint {
+    @include pd.page-subtitle;
+  }
+
+  &__actions,
+  &__entry {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 14px -6px 0;
+
+    button {
+      @include pd.secondary-button;
+
+      flex: 1;
+      min-width: 180px;
+      margin: 6px;
+    }
+  }
+
+  &__input {
+    @include pd.field;
+
+    flex: 1;
+    min-width: 180px;
+    margin: 6px;
+  }
+
+  &__clear {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 14px;
+  }
+
+  &__error {
+    display: block;
+    margin-top: 14px;
+    color: var(--pd-color-danger);
+    font-size: var(--pd-font-body-size);
+  }
+}
+
+.shopping-table-banner {
+  margin: 16px 0;
+  padding: 16px 20px;
+  color: var(--pd-color-primary-strong);
+  font-size: var(--pd-font-body-size);
+  font-weight: 700;
+  line-height: 1.5;
+  background: var(--pd-color-primary-soft);
+  border-radius: var(--pd-radius-medium);
+}
