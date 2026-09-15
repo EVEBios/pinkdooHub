@@ -2093,7 +2093,7 @@ def _container_ids_for_project(runner: CommandRunner, project: str) -> list[str]
     ]
 
 
-def _remove_exact_resources(state: DrillState) -> list[str]:
+def _remove_exact_resources(state: DrillState, *, include_bootstrap: bool = True) -> list[str]:
     runner = state.command_runner
     errors: list[str] = []
     paths = state.paths
@@ -2115,8 +2115,8 @@ def _remove_exact_resources(state: DrillState) -> list[str]:
             main_command = gatea.compose_command(
                 config_file=paths.config_file,
                 mode="loopback",
-                include_bootstrap=True,
-                profiles=("operations", "bootstrap"),
+                include_bootstrap=include_bootstrap,
+                profiles=("operations", "bootstrap") if include_bootstrap else ("operations",),
                 arguments=("down", "--volumes", "--remove-orphans"),
             )
             result = runner.run(main_command, environment=environment, timeout=300)

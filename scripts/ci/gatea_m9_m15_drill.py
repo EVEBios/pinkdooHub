@@ -106,7 +106,8 @@ def cleanup(state: shared.DrillState, profile: str) -> dict[str, Any]:
             or owner.get("source_backup_id") != state.source_backup_id
             or owner.get("target_backup_id") != state.target_backup_id):
         raise shared.DrillError("M15 cleanup ownership does not match this run")
-    errors = shared._remove_exact_resources(state)
+    # 本演练直接使用冻结数据夹具，没有 bootstrap 服务或其用户名配置。
+    errors = shared._remove_exact_resources(state, include_bootstrap=False)
     if state.paths.work_root.exists():
         if state.paths.work_root != paths().work_root or state.paths.work_root.is_symlink():
             raise shared.DrillError("M15 cleanup root is unsafe")
@@ -122,6 +123,10 @@ def cleanup(state: shared.DrillState, profile: str) -> dict[str, Any]:
     passed = not errors and not any(residual.values()) and shared._port_available(shared.LOOPBACK_PORT)
     result = {"schema_version": 1, "record_type": "gatea-m9-m15-cleanup", "passed": passed,
               "owned_resources_removed": passed, **residual}
+    if not passed:
+        failure_path = ROOT / "artifacts/gatea-m9-m15-cleanup-failure.json"
+        if not failure_path.exists():
+            candidate._write_json_exclusive(failure_path, {"errors": errors, "first_result": result})
     shared._write_json(state.paths.artifact_dir / "cleanup-report.json", result)
     return result
 

@@ -71,3 +71,15 @@ def test_cleanup_rejects_mismatched_owner_before_docker_or_filesystem(monkeypatc
     monkeypatch.setattr(drill.shared, "_remove_exact_resources", lambda _: pytest.fail("must reject before Docker cleanup"))
     with pytest.raises(drill.shared.DrillError, match="ownership"):
         drill.cleanup(SimpleNamespace(target_sha="a" * 40), "local")
+
+
+@pytest.mark.parametrize("bootstrap", (False, True))
+def test_cleanup_loads_only_services_that_the_drill_used(tmp_path, bootstrap):
+    from tests.release.test_gatea_m7_m8_drill import _state, FakeRunner
+    runner = FakeRunner()
+    state = _state(tmp_path, runner=runner, ownership_acquired=True)
+    state.paths.config_file.parent.mkdir(parents=True, exist_ok=True)
+    state.paths.config_file.write_text(f"GATEA_APP_IMAGE={state.target_image}\n")
+    assert drill.shared._remove_exact_resources(state, include_bootstrap=bootstrap) == []
+    command = next(call for call in runner.calls if call[:2] == ("docker", "compose"))
+    assert any(str(value).endswith("compose.bootstrap.yml") for value in command) is bootstrap
