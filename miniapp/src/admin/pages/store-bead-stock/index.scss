@@ -1,0 +1,574 @@
+/* stylelint-disable-next-line at-rule-no-unknown -- 引入项目共享 Sass 按钮模式。 */
+@use '../../../styles/patterns' as pd;
+
+.bead-stock {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 32px 24px 48px;
+  color: var(--pd-color-ink);
+  font-size: var(--pd-font-body-size);
+  background: var(--pd-color-surface);
+
+  &--editing,
+  &--review { padding-bottom: calc(220px + env(safe-area-inset-bottom)); }
+
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 30px;
+  }
+
+  &__title {
+    display: block;
+    font-size: 48px;
+    font-weight: 750;
+    line-height: 1.25;
+  }
+
+  &__subtitle {
+    display: block;
+    margin-top: 12px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.6;
+  }
+
+  &__header-action {
+    /* stylelint-disable-next-line at-rule-no-unknown -- 复用跨端按钮居中与行高重置。 */
+    @include pd.button-base(var(--pd-radius-small));
+
+    flex-shrink: 0;
+    margin: 0 0 0 16px;
+    padding: 0 22px;
+    border: 1px solid var(--pd-color-line-strong);
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-button-compact);
+    text-align: center;
+    background: var(--pd-color-surface);
+    width: auto;
+  }
+
+  &__filters {
+    padding: 22px 18px;
+    border-radius: var(--pd-radius-medium);
+    background: #fcf3f7;
+  }
+
+  &__filter-label {
+    display: block;
+    margin: 0 0 12px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-label);
+    font-weight: 650;
+  }
+
+  &__states,
+  &__groups {
+    display: grid;
+    gap: 12px;
+  }
+  &__states { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  &__groups { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  &__states + &__filter-label { margin-top: 24px; }
+
+  &__filter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: var(--pd-control-height);
+    margin: 0;
+    padding: 8px 0;
+    border: 1px solid #efdce4;
+    border-radius: 20px;
+    font-size: var(--pd-font-button-compact);
+    font-weight: 650;
+    line-height: 1.3;
+    color: var(--pd-color-ink-soft);
+    background: var(--pd-color-surface);
+  }
+
+  &__filter--active {
+    border-color: var(--pd-color-primary);
+    color: var(--pd-color-surface);
+    background: var(--pd-color-primary);
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 24px 0 14px;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+    font-weight: 650;
+  }
+
+  &__text-action {
+    margin: 0;
+    padding: 12px 0;
+    min-height: var(--pd-control-height);
+    font-size: var(--pd-font-label);
+    font-weight: 650;
+    color: var(--pd-color-primary-strong);
+    background: transparent;
+    width: auto;
+  }
+  &__text-action::after { border: 0; }
+
+  &__uninitialized,
+  &__loading {
+    display: block;
+    margin-bottom: 20px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+  &__uninitialized { margin: 24px 0 0; }
+
+  &__ledger-head {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  &__ledger-column {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 16px;
+    border-radius: 18px 18px 0 0;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    background: #fcf3f7;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: hidden;
+    border-radius: 0 0 var(--pd-radius-medium) var(--pd-radius-medium);
+  }
+
+  &__card {
+    box-sizing: border-box;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-height: 112px;
+    padding: 22px 16px;
+    background: var(--pd-color-surface);
+  }
+
+  /* 明确按可见行交替，与库存值无关，也不依赖 WXSS 复杂伪类。 */
+  &__card--stripe { background: #fcf3f7; }
+
+  &__card--editing {
+    display: block;
+    padding: 16px 12px;
+  }
+
+  &__color-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 6px 10px;
+  }
+
+  &__changed {
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: var(--pd-font-caption);
+    color: var(--pd-color-primary-strong);
+    background: var(--pd-color-primary-soft);
+  }
+
+  &__color {
+    display: block;
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    overflow-wrap: anywhere;
+  }
+
+  &__name {
+    display: block;
+    margin-top: 6px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    overflow-wrap: anywhere;
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  &__quantity {
+    display: block;
+    margin-left: 8px;
+    font-size: var(--pd-font-title);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  &__unit {
+    font-size: var(--pd-font-body-size);
+    font-weight: 400;
+    color: var(--pd-color-ink-soft);
+  }
+
+  &__stepper {
+    align-items: center;
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: var(--pd-control-height) minmax(0, 1fr) var(--pd-control-height);
+    gap: 6px;
+  }
+
+  &__step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 var(--pd-control-height);
+    min-height: var(--pd-control-height);
+    margin: 0;
+    padding: 0;
+    border-radius: 14px;
+    font-size: var(--pd-font-price);
+    font-weight: 650;
+    line-height: 1;
+    color: var(--pd-color-primary-strong);
+    background: var(--pd-color-primary-soft);
+    width: 100%;
+  }
+
+  &__step::after { border: 0; }
+
+  &__input {
+    flex: 1;
+    min-width: 0;
+    height: var(--pd-control-height);
+    text-align: center;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0;
+    border: 1px solid var(--pd-color-line);
+    border-radius: 12px;
+    background: var(--pd-color-surface);
+    font-size: var(--pd-font-input);
+  }
+
+  /* H5 内层原生输入与小程序输入保持同样的垂直居中。 */
+  &__input .weui-input {
+    height: 100%;
+    padding: 0;
+    text-align: center;
+    font: inherit;
+  }
+
+  &__draft {
+    display: block;
+    margin-top: 8px;
+    font-size: var(--pd-font-caption);
+    color: var(--pd-color-ink-soft);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  &__empty {
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--pd-color-ink-soft);
+  }
+
+  &__reason {
+    margin-top: 28px;
+    margin-bottom: 24px;
+    border-radius: var(--pd-radius-medium);
+    overflow: hidden;
+    background: #fcf3f7;
+  }
+
+  &__reason-row {
+    display: flex;
+    align-items: baseline;
+    padding: 22px 24px;
+    gap: 24px;
+  }
+
+  &__reason-row + &__reason-row { border-top: 2px solid var(--pd-color-surface); }
+
+  &__reason-label {
+    flex-shrink: 0;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-label);
+  }
+
+  &__reason-value {
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  &__editor-reason { margin: 16px 0; }
+
+  &__picker {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 8px 20px;
+    min-height: var(--pd-control-height);
+    border-radius: 18px;
+    background: #fcf3f7;
+  }
+
+  &__picker-action {
+    font-size: var(--pd-font-caption);
+    color: var(--pd-color-primary-strong);
+  }
+
+  &__note-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    margin-top: 8px;
+    padding: 0 20px;
+    border-radius: 18px;
+    background: #fcf3f7;
+  }
+
+  &__note-row &__reason-label {
+    display: flex;
+    align-items: center;
+    min-height: var(--pd-control-height);
+  }
+
+  &__note {
+    box-sizing: border-box;
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    min-height: var(--pd-control-height);
+    padding: 22px 0;
+    font-size: var(--pd-font-input);
+    line-height: 1.5;
+    background: transparent;
+  }
+
+  /* 类选择器避免 H5 构建将 textarea 标签改写为宿主组件。 */
+  &__note .taro-textarea {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    resize: none;
+    background: transparent;
+  }
+
+  &__save-hint {
+    display: block;
+    margin-top: 40px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__message {
+    display: flex;
+    flex-direction: column;
+    margin: 0 0 24px;
+    padding: 20px 24px;
+    border-radius: var(--pd-radius-small);
+    background: var(--pd-color-surface-muted);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+
+  &__footer {
+    position: fixed;
+    z-index: 20;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    padding: 24px 24px calc(24px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--pd-color-line);
+    background: var(--pd-color-surface);
+  }
+
+
+  &__footer-count {
+    flex-shrink: 0;
+    min-width: 160px;
+    font-size: var(--pd-font-body-size);
+    font-weight: 650;
+    color: var(--pd-color-ink);
+  }
+
+  &__primary,
+  &__secondary {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: var(--pd-control-height);
+    margin: 0;
+    padding: 16px;
+    border-radius: var(--pd-radius-small);
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  &__primary {
+    color: var(--pd-color-surface);
+    background: var(--pd-gradient-primary);
+  }
+
+  &__secondary {
+    border: 1px solid #edcbd8;
+    color: var(--pd-color-primary-strong);
+    background: var(--pd-color-primary-soft);
+  }
+
+  &__totals {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 0 28px;
+    padding: 28px 24px;
+    border-radius: var(--pd-radius-medium);
+    background: var(--pd-color-primary-soft);
+    color: var(--pd-color-primary-strong);
+    font-size: 30px;
+  }
+
+  &__section-title {
+    display: block;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__totals &__section-title {
+    color: var(--pd-color-primary-strong);
+    font-size: 40px;
+  }
+
+  &__changes {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  &__change {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px;
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-medium);
+    background: var(--pd-color-surface);
+  }
+
+  &__change-note {
+    display: block;
+    margin-top: 8px;
+    font-size: var(--pd-font-body-size);
+    color: var(--pd-color-primary-strong);
+  }
+
+  &__change-value {
+    margin-left: 20px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+    font-size: 30px;
+  }
+
+  &__history-item {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin: 0 0 18px;
+    padding: 24px;
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-medium);
+    text-align: left;
+    font-size: var(--pd-font-caption);
+    color: var(--pd-color-ink-soft);
+    background: var(--pd-color-surface);
+    line-height: 1.8;
+  }
+
+  &__pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 24px;
+  }
+
+  /* 行内按钮保留自身宽度，页脚间距放在按钮 margin 重置之后。 */
+  &__header-copy {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__secondary + &__primary,
+  &__footer-count + &__primary {
+    margin-left: 20px;
+  }
+
+  &__header-action[disabled],
+  &__step[disabled],
+  &__primary[disabled],
+  &__secondary[disabled] {
+    color: var(--pd-color-ink-soft);
+    background: var(--pd-color-surface-muted);
+    opacity: 1;
+    box-shadow: none;
+  }
+}
+
+/* 窄屏给六位数独立输入行，双列与 44px 加减触控范围同时保留。 */
+@media (width <= 360px) {
+  .bead-stock {
+    &__stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    &__input {
+      grid-row: 1;
+      grid-column: 1 / -1;
+    }
+    &__step { grid-row: 2; }
+
+    &__card {
+      padding-right: 12px;
+      padding-left: 12px;
+    }
+    &__meta { font-size: var(--pd-font-label); }
+  }
+}
+
+@media (width >= 768px) {
+  .bead-stock {
+    max-width: 980px;
+    margin: 0 auto;
+    padding-right: 40px;
+    padding-left: 40px;
+
+    &__footer {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { STORE_STOCK_PATH } from '@/navigation/store_stock_route'
 import { isAdminRole } from './role'
 
 export const MALL_PATH = '/pages/index/index'
@@ -39,6 +40,7 @@ export type LoginRedirect =
   | typeof ADMIN_PRODUCT_LIST_PATH
   | typeof ADMIN_USER_LIST_PATH
   | typeof ADMIN_INVENTORY_LIST_PATH
+  | typeof STORE_STOCK_PATH
   | typeof ADMIN_TABLES_PATH
   | typeof MEMBER_PATH
   | typeof WALLET_RECHARGE_PATH
@@ -57,6 +59,7 @@ const ALLOWED_REDIRECTS = new Set<LoginRedirect>([
   ADMIN_USER_LIST_PATH,
   ADMIN_INVENTORY_LIST_PATH,
   ADMIN_TABLES_PATH,
+  STORE_STOCK_PATH,
   MEMBER_PATH,
   WALLET_RECHARGE_PATH,
   WALLET_TRANSACTION_LIST_PATH,
@@ -71,6 +74,7 @@ const ADMIN_REDIRECTS = new Set<LoginRedirect>([
   ADMIN_USER_LIST_PATH,
   ADMIN_INVENTORY_LIST_PATH,
   ADMIN_TABLES_PATH,
+  STORE_STOCK_PATH,
 ])
 
 export function buildLoginUrl(redirect?: LoginRedirect): string {

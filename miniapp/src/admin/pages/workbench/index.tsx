@@ -1,3 +1,4 @@
+import { STORE_STOCK_PATH } from '@/navigation/store_stock_route'
 import { FollowupEntry } from '@/admin/features/reservation-followup/entry'
 import { Button, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
@@ -42,6 +43,7 @@ const WORKBENCH_GROUPS = [
     actions: [
       { label: '商品管理', meta: '商品、价格与配置', url: ADMIN_PRODUCT_LIST_PATH },
       { label: '库存流水', meta: '变动记录与来源', url: ADMIN_INVENTORY_LIST_PATH },
+      { label: '用豆库存', meta: '未拆封整包 · 盘点与批量调整', url: STORE_STOCK_PATH },
     ],
   },
   {

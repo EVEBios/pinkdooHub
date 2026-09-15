@@ -1,0 +1,34 @@
+p24-backend-full-final.log
+.............................................ssssssssss................. [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+................sssssssss............................................... [ 99%]
+.......                                                                  [100%]
+3234 passed, 85 skipped in 202.11s (0:03:22)
+
+p24-migration-ci-tests.log
+.......ss..........                                                      [100%]
+17 passed, 2 skipped in 1.82s
+
+p24-jest-all-final.log
+PASS src/utils/__tests__/format.test.ts
+
+Test Suites: 123 passed, 123 total
+Tests:       939 passed, 939 total
+Snapshots:   0 total
+Time:        17.162 s, estimated 21 s
+Ran all test suites.
+
+p24-jest-scope-final.log
+PASS src/admin/features/store-bead-stock/__tests__/model.test.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       26 passed, 26 total
+Snapshots:   0 total
+Time:        1.312 s, estimated 2 s
+Ran all test suites matching /src\/admin\/features\/store-bead-stock\/__tests__|src\/api\/endpoints\/__tests__\/store_bead_stock.test.ts|src\/admin\/pages\/workbench\/__tests__\/index.test.tsx/i.
+
+p24-artifact.log
+WeChat artifact verified: files=215 main=1042085 subpackages=642384 total=1684469 release_eligible=false
+Manifest SHA-256: e7b16ac74d7a7b9e5ca12c8e0dd2cc4a60bc107feafa6a20ae2e11cb1206adf1

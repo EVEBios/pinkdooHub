@@ -99,7 +99,7 @@ describe('店铺工作台', () => {
     ])
 
     const actions = Array.from(testUtils.queries.querySelectorAll('.workbench-action'))
-    expect(actions).toHaveLength(8)
+    expect(actions).toHaveLength(9)
     expect(actions.map((action) => [
       action.querySelector('.workbench-action__label')?.textContent,
       action.querySelector('.workbench-action__meta')?.textContent,
@@ -109,6 +109,7 @@ describe('店铺工作台', () => {
       ['预约跟进', '店休待联系 0 · 过期待跟进 0'],
       ['商品管理', '商品、价格与配置'],
       ['库存流水', '变动记录与来源'],
+      ['用豆库存', '未拆封整包 · 盘点与批量调整'],
       ['营业日历', '固定店休与单日店休'],
       ['桌台工作台', '待收款 0 · 到时提醒 0'],
       ['用户与权限', '账号状态与资金入口'],
@@ -120,6 +121,7 @@ describe('店铺工作台', () => {
       '/admin/pages/reservation-followups/index',
       '/admin/pages/products/index',
       '/admin/pages/inventory-transactions/index',
+      '/admin/pages/store-bead-stock/index',
       '/admin/pages/store-closures/index',
       '/admin/pages/tables/index',
       '/admin/pages/users/index',

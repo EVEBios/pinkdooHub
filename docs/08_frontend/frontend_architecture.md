@@ -649,6 +649,7 @@ business page
 
 - 使用 SCSS Token 管理颜色、间距、字号、圆角和层级；
 - `src/styles/theme.scss` 是视觉 primitive 的权威代码来源，`src/styles/_patterns.scss` 只组合可复用模式；页面保留业务语义类名，不复制一套局部主题；
+- 普通居中文字按钮必须复用 `_patterns.scss` 的 `button-base`／主次按钮模式，局部改尺寸时保留双向居中及原生行高重置；不要只写高度和字号后依赖平台默认值。例外及验证规则统一见 [DESIGN.md — Buttons](../../DESIGN.md#buttons)，不在页面另造修补规则；
 - 设计稿源值按 Taro `designWidth: 750` 使用 rpx 语义；H5 在明确媒体条件下把正文、输入、按钮和 88 rpx 控件高度映射为固定 CSS `PX`，避免根字号与屏宽把桌面控件异常放大；
 - 避免依赖只在浏览器成立的 DOM/CSS 行为；
 - 不在业务逻辑中读取布局结果来决定权威业务状态；

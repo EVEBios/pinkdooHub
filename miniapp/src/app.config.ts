@@ -53,6 +53,7 @@ export default defineAppConfig({
       'pages/user-wallet/index',
       'pages/wallet-order/index',
       'pages/inventory-transactions/index',
+      'pages/store-bead-stock/index',
       'pages/tables/index',
       'pages/table-session-detail/index'
     ]
