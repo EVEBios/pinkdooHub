@@ -1,6 +1,12 @@
 # M9 日志失败与已付款恢复（2026-09-15）
 
-## 最新现场检查点：G 已就绪，等待管理员凭据
+## 最新现场检查点：G/M9 已 finalized
+
+用户完成 TTY 输入后，本轮核验 G schema 2 acceptance `44988d334c81bc8e256e2d528032b6698c52779f74d9409b2efea55cd5b04018` 通过：日志脱敏、商品下架、两类 session 撤销、2 条 closed Session、0 占用与钱包对账零异常。绑定该验收的韧性 Record `5135d316049bf8c80fc9ef2612421dd33d8bebda123c07edc4eb72756092ec29` 通过。验收后新 Backup `20260915t140743z` 与同 ID 独立 Restore 通过，正式 finalize 完成。
+
+最终只读复核 current/live 同为 G `232919cc57efe4250195ab721104d62ae5e08d34`，五服务健康、无 pending，恢复容器/网络/卷零残留。M9 迁移恢复主链已收口；微信发布及 M15 完成不能由此推断。以下是管理员输入前的历史检查点。
+
+## G 就绪与管理员凭据交接记录
 
 2026-09-15 21:35（上海时间）前，G head `c615fd00a7c05e24e51df7e4ae953e3207cab586`、PR #5 merge target `232919cc57efe4250195ab721104d62ae5e08d34` 已由 [Run 34973496065](https://github.com/EVEBios/pinkdooHub/actions/runs/34973496065) attempt 1 取得 9/9。不能使用此前 a9f1009 的初次 G Run。
 
