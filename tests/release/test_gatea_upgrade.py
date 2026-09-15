@@ -4390,6 +4390,7 @@ def test_adoption_bound_record_requires_single_root_owned_link(tmp_path: Path) -
 def _takeover_archive_case(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    *, paid: bool = False,
 ) -> dict[str, object]:
     _allow_local_bound_records(monkeypatch)
     release_record_dir = tmp_path / "release-records"
@@ -4441,6 +4442,17 @@ def _takeover_archive_case(
         "secret_values_recorded": False,
         "source_volume_restored": False,
     }
+    if paid:
+        from tests.release.test_gatea_candidate import _paid_failure_payload
+        from scripts.release import gatea_candidate as candidate
+        failed_acceptance = _paid_failure_payload()
+        failed_acceptance.update(candidate_sha=SOURCE_SHA, operations_sha=SOURCE_SHA,
+            source_candidate_sha=LINEAGE_SHA, image_id=source_image_id)
+        attempt_id = failed_acceptance['attempt_id']
+        attempt_id_sha256 = failed_acceptance['attempt_id_sha256']
+        monkeypatch.setattr(candidate, 'ROOT_UID', os.getuid())
+        monkeypatch.setattr(candidate, 'ROOT_GID', os.getgid())
+        monkeypatch.setattr(candidate, '_require_root_file', lambda *args: None)
     acceptance_bytes = upgrade._canonical_json_bytes(failed_acceptance)
     failed_acceptance_sha256 = upgrade.hashlib.sha256(
         acceptance_bytes
@@ -4869,10 +4881,12 @@ def test_m9_adoption_lineage_accepts_schema3_takeover_and_reopens_archives(
 
 
 @pytest.mark.parametrize("paid_predecessor", [False, True])
+@pytest.mark.parametrize("prepared_takeover", [False, True])
 def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     paid_predecessor: bool,
+    prepared_takeover: bool,
 ) -> None:
     source_image_id = "sha256:" + "1" * 64
     lineage_image_id = "sha256:" + "6" * 64
@@ -5076,6 +5090,21 @@ def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
         reopened = []
         monkeypatch.setattr(candidate, "_load_adoption_context", lambda **kwargs: reopened.append(kwargs) or {})
 
+    if prepared_takeover:
+        if not paid_predecessor:
+            retirement['live_verification']['business_verification']['schema_version'] = 2
+        stage = records['candidate stage record']
+        takeover_fields = {'recovery_kind': upgrade.TAKEOVER_RECOVERY_KIND,
+            'superseded_retirement_candidate_sha': 'c' * 40,
+            'superseded_retirement_stage_record_sha256': 'c' * 64,
+            'superseded_retirement_pending_sha256': 'd' * 64}
+        stage.update(schema_version=3, **takeover_fields)
+        retirement.update(schema_version=2, **takeover_fields,
+            superseded_retirement_image_id='sha256:'+'c'*64,
+            superseded_retirement_archive_path=str(tmp_path/'retirement-failure.json'),
+            superseded_retirement_archive_sha256='d'*64)
+        monkeypatch.setattr(upgrade, '_validate_takeover_retirement_archive', lambda **kwargs: None)
+
     monkeypatch.setattr(
         upgrade,
         "_load_bound_json_with_sha256",
@@ -5123,3 +5152,14 @@ def test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement(
         assert reopened[0]["source_candidate_sha"] == SOURCE_SHA
         assert reopened[0]["target_sha"] == TARGET_SHA
         assert reopened[0]["lineage_source_candidate_sha"] == LINEAGE_SHA
+
+
+@pytest.mark.parametrize('paid_profile', [True, False])
+def test_paid_takeover_archive_requires_paid_live_profile(monkeypatch, tmp_path, paid_profile):
+    case = _takeover_archive_case(monkeypatch, tmp_path, paid=True)
+    case['retirement']['live_verification'] = {'business_verification': {'schema_version': 3 if paid_profile else 2}}
+    if paid_profile:
+        _validate_takeover_archive_case(case)
+    else:
+        with pytest.raises(upgrade.GateAUpgradeError, match='paid acceptance archive'):
+            _validate_takeover_archive_case(case)
