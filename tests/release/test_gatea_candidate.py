@@ -6017,6 +6017,7 @@ def _retirement_live_evidence() -> dict[str, object]:
 def _retirement_case(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    *, paid: bool = False,
 ) -> SimpleNamespace:
     old_sha = "a" * 40
     release_root = tmp_path / "releases"
@@ -6026,7 +6027,7 @@ def _retirement_case(
     for directory in (release_root, release_records, acceptance_records):
         directory.mkdir()
     canonical = candidate._acceptance_pending_path(acceptance_records, old_sha)
-    failed_payload = _preclaim_failure_payload(old_sha)
+    failed_payload = _paid_failure_payload() if paid else _preclaim_failure_payload(old_sha)
     failed_digest = _write_preclaim_failure(canonical, failed_payload)
     target_stage_path = candidate._stage_record_path(
         release_records, TARGET_SHA
@@ -6055,7 +6056,11 @@ def _retirement_case(
         "failed_acceptance_sha256": failed_digest,
         "image_id": IMAGE_ID,
     }
-    source_stage = {"schema_version": 1, "ci_run_id": RUN_ID}
+    source_stage = {"schema_version": 3 if paid else 1, "ci_run_id": RUN_ID}
+    if paid:
+        (release_records / f"{old_sha}.existing-database-upgrade.json").write_text(
+            json.dumps({"schema_version": 2}), encoding="utf-8"
+        )
     live_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(candidate, "ROOT_UID", os.getuid())
@@ -6114,7 +6119,13 @@ def _retirement_case(
 
     def live_verification(**kwargs: object) -> dict[str, object]:
         live_calls.append(kwargs)
-        return _retirement_live_evidence()
+        live = _retirement_live_evidence()
+        if paid:
+            live['business_verification'].update(schema_version=3,
+                counts=candidate.PAID_ACCEPTANCE_BUSINESS_COUNTS,
+                evidence_sha256=candidate.PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256)
+            live['table_reconcile']['scanned'] = 1
+        return live
 
     monkeypatch.setattr(
         candidate, "_retirement_live_verification", live_verification
@@ -6165,8 +6176,9 @@ def _retirement_case(
 def _takeover_retirement_case(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    *, paid: bool = False,
 ) -> SimpleNamespace:
-    case = _retirement_case(monkeypatch, tmp_path)
+    case = _retirement_case(monkeypatch, tmp_path, paid=paid)
     superseded_sha = "c" * 40
     superseded_image_id = "sha256:" + "c" * 64
     retirement_archive_dir = tmp_path / "retirement-failures"
@@ -6337,11 +6349,13 @@ def test_prepared_retirement_takeover_stage_requires_pristine_exact_b(
         )
 
 
+@pytest.mark.parametrize('paid', [False, True])
 def test_retire_failed_acceptance_takes_over_exact_prepared_retirement(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    paid: bool,
 ) -> None:
-    case = _takeover_retirement_case(monkeypatch, tmp_path)
+    case = _takeover_retirement_case(monkeypatch, tmp_path, paid=paid)
     original_acceptance = case.canonical.read_bytes()
     original_superseded = case.superseded_pending.read_bytes()
 
@@ -6367,7 +6381,12 @@ def test_retire_failed_acceptance_takes_over_exact_prepared_retirement(
     assert len(case.live_calls) == 1
     assert case.runtime_events == ["stopped", "restored"]
 
+    def reject_installed_runtime():
+        raise AssertionError("pre-install lineage must not import installed runtime")
+
+    monkeypatch.setattr(candidate, "_runtime_modules", reject_installed_runtime)
     adoption = candidate._load_adoption_context(
+        gatea_module=gatea_operations,
         release_root=case.release_root,
         release_record_dir=case.release_records,
         source_candidate_sha=case.arguments["source_candidate_sha"],
@@ -6401,12 +6420,14 @@ def test_retire_failed_acceptance_takes_over_exact_prepared_retirement(
         "own-pending-unlinked",
     ),
 )
+@pytest.mark.parametrize('paid', [False, True])
 def test_takeover_retirement_recovers_every_durable_boundary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    paid: bool,
     failure_point: str,
 ) -> None:
-    case = _takeover_retirement_case(monkeypatch, tmp_path)
+    case = _takeover_retirement_case(monkeypatch, tmp_path, paid=paid)
     fsync_calls: list[Path] = []
     monkeypatch.setattr(
         candidate,

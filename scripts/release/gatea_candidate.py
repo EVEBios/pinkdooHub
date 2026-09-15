@@ -4844,6 +4844,7 @@ def _load_paid_recovery_predecessor_binding(
             or source_upgrade.get("lineage_source_candidate_sha") != lineage_source_candidate_sha):
         raise GateACandidateError("Gate A paid recovery ancestry is not the supported M7/M9/adoption chain")
     binding = _load_adoption_context(
+        gatea_module=gatea,
         release_root=release_root, release_record_dir=release_record_dir,
         source_candidate_sha=parent_sha, lineage_source_candidate_sha=lineage_source_candidate_sha,
         target_sha=source_candidate_sha,
@@ -5300,8 +5301,11 @@ def _validate_retirement_live_verification(
     payload: object,
     *,
     allowed_business_schema_versions: frozenset[int] = frozenset({1, 2, 3}),
+    gatea_module: Any | None = None,
 ) -> dict[str, Any]:
-    gatea, _, _ = _runtime_modules()
+    gatea = gatea_module
+    if gatea is None:
+        gatea, _, _ = _runtime_modules()
     business = (
         payload.get("business_verification")
         if isinstance(payload, dict)
@@ -5357,6 +5361,7 @@ def _validate_retirement_journal(
     *,
     expected: Mapping[str, Any],
     final: bool,
+    gatea_module: Any | None = None,
 ) -> dict[str, Any]:
     takeover = expected.get("recovery_kind") == "prepared-retirement-takeover"
     expected_keys = (
@@ -5410,8 +5415,9 @@ def _validate_retirement_journal(
     else:
         _validate_retirement_live_verification(
             payload.get("live_verification"),
+            gatea_module=gatea_module,
             allowed_business_schema_versions=(
-                frozenset({2}) if takeover else frozenset({1, 2, 3})
+                frozenset({2, 3}) if takeover else frozenset({1, 2, 3})
             ),
         )
     return dict(payload)
@@ -5738,6 +5744,7 @@ def _load_retirement_record(
     target_sha: str,
     expected_sha256: str,
     expected_binding: Mapping[str, Any] | None = None,
+    gatea_module: Any | None = None,
 ) -> dict[str, Any]:
     _validate_sha256(expected_sha256, "acceptance retirement record digest")
     path = _retirement_record_path(release_record_dir, target_sha)
@@ -5765,7 +5772,9 @@ def _load_retirement_record(
             "Gate A failed acceptance retirement record is invalid"
         )
     expected = dict(expected_binding or {})
-    return _validate_retirement_journal(payload, expected=expected, final=True)
+    return _validate_retirement_journal(
+        payload, expected=expected, final=True, gatea_module=gatea_module
+    )
 
 
 def _validate_adoption_retirement_archive(
@@ -5829,6 +5838,7 @@ def _load_adoption_context(
     acceptance_record_dir: Path,
     acceptance_failure_archive_dir: Path,
     retirement_failure_archive_dir: Path,
+    gatea_module: Any | None = None,
 ) -> dict[str, Any]:
     successful_acceptance = acceptance_record_dir / (
         f"gatea-m9-runtime-acceptance-{source_candidate_sha}.json"
@@ -5846,6 +5856,7 @@ def _load_adoption_context(
         target_sha=target_sha,
     )
     predecessor = _load_adoption_predecessor_binding(
+        gatea_module=gatea_module,
         release_root=release_root,
         release_record_dir=release_record_dir,
         source_candidate_sha=source_candidate_sha,
@@ -5957,6 +5968,7 @@ def _load_adoption_context(
     takeover_context: dict[str, Any] | None = None
     if takeover:
         takeover_context = _validate_prepared_retirement_takeover(
+            gatea_module=gatea_module,
             release_root=release_root,
             release_record_dir=release_record_dir,
             acceptance_failure_archive_dir=acceptance_failure_archive_dir,
@@ -6005,14 +6017,14 @@ def _load_adoption_context(
             }
         )
     retirement = _load_retirement_record(
+        gatea_module=gatea_module,
         release_record_dir=release_record_dir,
         target_sha=target_sha,
         expected_sha256=acceptance_retirement_record_sha256,
         expected_binding=expected_retirement,
     )
     paid = archived_acceptance.get("payment_committed") is True
-    if (paid != (retirement["live_verification"]["business_verification"]["schema_version"] == 3)
-            or (paid and takeover)):
+    if paid != (retirement["live_verification"]["business_verification"]["schema_version"] == 3):
         raise GateACandidateError("Gate A paid retirement profile does not match its predecessor")
     if paid:
         source_upgrade = _load_json(

@@ -12,7 +12,15 @@ import sys
 
 from tortoise import Tortoise
 
-from app.common.constants.wallet import WALLET_ORDER_PAYMENT_REASON, WALLET_ORDER_TRANSACTION_KEY
+from app.common.constants.table_session import (
+    TABLE_CLAIM_IDEMPOTENCY_PREFIX,
+    TABLE_RELEASE_IDEMPOTENCY_PREFIX,
+)
+from app.common.constants.wallet import (
+    WALLET_ORDER_PAYMENT_REASON,
+    WALLET_ORDER_TRANSACTION_KEY,
+    WALLET_PAYMENT_IDEMPOTENCY_PREFIX,
+)
 from app.common.enums.order import OrderStatus
 from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
 from app.common.enums.wallet import PaymentMethod, PaymentPurpose, PaymentStatus, WalletTransactionType, WalletStatus
@@ -77,7 +85,7 @@ async def verify_paid_acceptance(**data) -> dict:
              and payment.status == PaymentStatus.SUCCEEDED and payment.amount == Decimal("5.00")
              and payment.succeeded_at == data["succeeded_at"]
              and hashlib.sha256(payment.payment_no.encode()).hexdigest() == data["payment_no_sha256"]
-             and payment.idempotency_key == f"gatea-m9-wallet-{data['acceptance_attempt_id']}-v1"
+             and payment.idempotency_key == f"{WALLET_PAYMENT_IDEMPOTENCY_PREFIX}gatea-m9-wallet-{data['acceptance_attempt_id']}-v1"
              and payment.recharge_order_id is None and payment.provider_transaction_id is None)
     settlements = await PaymentSettlement.filter(order_id=data["order_id"])
     _require(len(settlements) == 1 and settlements[0].payment_id == payment.id
@@ -104,8 +112,8 @@ async def verify_paid_acceptance(**data) -> dict:
              and session.closed_by_user_id is not None
              and session.claimed_at <= payment.succeeded_at < session.payment_deadline_at
              and payment.succeeded_at <= session.closed_at
-             and session.claim_idempotency_key == f"gatea-m9-claim-{data['acceptance_attempt_id']}-v1"
-             and session.release_idempotency_key == f"gatea-m9-release-{data['acceptance_attempt_id']}-v1"
+             and session.claim_idempotency_key == f"{TABLE_CLAIM_IDEMPOTENCY_PREFIX}gatea-m9-claim-{data['acceptance_attempt_id']}-v1"
+             and session.release_idempotency_key == f"{TABLE_RELEASE_IDEMPOTENCY_PREFIX}gatea-m9-release-{data['acceptance_attempt_id']}-v1"
              and session.admin_close_reason == "Gate A M9 controlled internal acceptance release"
              and hashlib.sha256(session.session_no.encode()).hexdigest() == data["session_no_sha256"]
              and (session.payment_deadline_at - session.claimed_at).total_seconds() == 900

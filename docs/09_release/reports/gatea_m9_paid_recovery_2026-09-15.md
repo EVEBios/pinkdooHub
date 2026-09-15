@@ -1,5 +1,45 @@
 # M9 日志失败与已付款恢复（2026-09-15）
 
+## 当前执行授权与下一候选 G
+
+用户已明确授权按规划持续修复、提交、推送和执行 Gate A 迁移至 M15，只有需要输入密码时交接。该授权覆盖本轮后续候选，不扩大到其他持久环境、真实微信资金或小程序发布；数据与受保护证据约束继续有效。
+
+G 本地补齐 E paid failure + F prepared 的接管：安装前已经验证的 operations 模块显式传入嵌套 lineage、旧 retirement 与 live evidence 校验，避免回到 installed runtime；已付款 takeover 使用 schema 3 业务核验，并继续精确匹配失败归档的付款状态及首次 adoption ancestry。没有放宽任意更深候选链。
+
+本地前置验证：
+
+- 使用实际 S/A/B/E/F Git archive 和只读复制的发布记录，在断网的 Python 3.10 Linux root 容器重开完整 E/F/S 关联。保留真实内容/权限/digest 检查；Docker inspect 使用只读采集的白名单镜像元数据替代外部 Docker 边界。禁止 installed runtime 导入；检查通过，未复制数据库或 Secret，不是现场 stage。
+- 双 pending 归档测试同时覆盖未付款与已付款，包含各耐久写入边界的故障恢复；相关 40 项通过。成功路径另外禁止 installed runtime fallback。这组测试加入完整 updater 之前的快速 CI。
+- 新真实服务夹具在可销毁 MySQL 8.0.46 的实际 M0–M9 链上通过 paid verifier 与并发 QR 两项测试（0.45 秒）。容器与 tmpfs 存储清理并复核。首次本地 MySQL 就绪探测误命中初始化的 socket 服务，已改为指定库的 TCP 查询；失败发生于迁移前，该临时实例已清理。
+
+发布关联完整本地回归为 `1119 passed`（29.52 秒），CI 工作流契约 `8 passed`，实际 YAML 解析与差异检查通过。未新增依赖、数据库结构或版本 tag。
+
+G 仍需冻结自身提交、取得独立 CI，再以 E failure、F stage 和 F prepared 三摘要执行正式 stage/retirement。成功前不能继续 activation 或 QR rotation。
+
+## 最新现场检查点：F retirement 被拦截
+
+2026-09-15，本次 F head `f975086d1d3fd5a4611b5c5ade582e9b3c9cfd47`、merge target `9ae975eb9ab624d81ca2f17d48cae174e2d5ab02` 已由 PR #4 / Run `34968651961` attempt 1 完成 9/9。服务器重新验证 GitHub provenance、源码与 artifact 后，F schema 2 stage 成功，未切换 live 配置。
+
+F 的 `retire-failed-acceptance` 在只读 paid verifier 返回 `DEPENDENT_FACTS` 后停止；工具恢复 E 五服务。现场只读诊断确认付款 ID、用户、方式、用途、状态、金额、时间、编号摘要均匹配，付款幂等键比较失败。付款、claim、release 的实际持久键均精确匹配正式业务的命名空间前缀。没有用原始敏感值或日志行作为诊断输出。
+
+根因是 verifier 按客户端请求键比较数据库字段，漏掉既有 `WALLET_PAYMENT_IDEMPOTENCY_PREFIX`、`TABLE_CLAIM_IDEMPOTENCY_PREFIX` 和 `TABLE_RELEASE_IDEMPOTENCY_PREFIX`。此前 SQLite/MySQL 测试直接建 Payment/Session，重复了相同错误，因此真实数据库测试没有覆盖真实业务写入契约。
+
+本次本地修正复用三个正式常量；成功夹具改为真实 `create_session` → `pay_order_with_wallet` → `release_session`，不直接拼付款/会话事实。先用新夹具复现旧 verifier 同一行失败，再修复并通过两个相关文件的 90 项测试（3.16 秒）；增加三类键缺前缀或串到另一 attempt 的六个拒绝用例，继续断言零写入。既有快速 CI 已运行这些文件，MySQL 用例也复用改后的真实服务夹具。本轮尚未重新执行 MySQL / 新候选 CI；旧 F 9/9 不代表新修复通过。
+
+现场必须保留：
+
+| 证据 | SHA-256 / 状态 |
+|---|---|
+| E failure pending | `114ff14dccc760c41677d9c72028d870e40e3e1fe1fd12911aa1cb1206bebd4c`，`fixtures_offline` |
+| F stage Record | `630e277cec3a0842526da25f7605ff2ff4df849a71a34448b782d8cdfec01cb9`，passed |
+| F retirement pending | `83db942ba45404b113bacdac59668f5c2b09bb66f14f3696a0221470da38a853`，`prepared` |
+
+live 仍是 E/M9，current 仍是 S；E 已付款订单未修改。未做本轮 source Backup/Restore、activation、adoption、QR rotation 或新验收。后续新候选必须先在写入前验证 **E paid failure + F prepared retirement + S→A→E lineage** 的双 pending 接管，再取得自身 CI。下方原单 pending 顺序不能直接用于这个新检查点；不得手改已安装 F、删除 pending 或借用 F CI。
+
+资源检查：本轮远端输入目录已按精确摘要核验后删除，stage 临时目录为空，诊断 one-off 容器已退出并删除，五服务健康；F 安装及镜像、E/F 受保护记录为恢复依赖保留。Gate A 仍为 **No-Go**。
+
+## 以下为 F 冻结前记录
+
 ## 状态与证据边界
 
 本轮在独立 `codex/m9-paid-recovery` 分支修复四项阻塞。这里只记录仓库实现及隔离验证；新候选 F 尚未冻结、取得自身 CI 或部署。Gate A 仍为 **No-Go**。

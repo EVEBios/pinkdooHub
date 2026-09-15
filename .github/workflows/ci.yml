@@ -216,7 +216,9 @@ jobs:
             tests/users/test_auth.py::test_auth_logs_keep_event_without_credentials \
             tests/release/test_gatea_log_safety.py \
             tests/release/test_gatea_m9_paid_recovery.py \
-            tests/release/test_gatea_m9_failed_acceptance_verify.py
+            tests/release/test_gatea_m9_failed_acceptance_verify.py \
+            tests/release/test_gatea_candidate.py::test_retire_failed_acceptance_takes_over_exact_prepared_retirement \
+            tests/release/test_gatea_candidate.py::test_takeover_retirement_recovers_every_durable_boundary
 
       - name: Rehearse the complete Gate A M7 to M9 updater
         run: |

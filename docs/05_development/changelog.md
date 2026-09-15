@@ -4,6 +4,13 @@
 
 ---
 
+## M9 paid verifier 幂等键契约修正（本地，2026-09-15）
+
+- 修复 F retirement 现场暴露的付款、claim、release 持久键前缀遗漏，复用正式业务常量，不改业务数据。
+- 成功测试通过真实开台/钱包付款/管理员释放服务生成事实；补六种无前缀或错误 attempt 拒绝，相关 90 项测试通过。
+- 补齐已付款双 pending 接管及安装前 operations 显式传递，40 项归档/故障恢复检查、实际发布记录的断网本地检查及一次性 MySQL 两项检查通过；相关快速 CI 前置。
+- F 已 stage，但 retirement 留在 prepared；live E/M9 与 current S 未变，双 pending 保留。新候选 CI/现场接管尚未完成，详见[最新检查点](../09_release/reports/gatea_m9_paid_recovery_2026-09-15.md)。
+
 ## M9 日志修复与已付款失败恢复（仓库候选，2026-09-15）
 
 - 注册/登录日志移除 username；Nginx 每个 server 显式覆盖默认 access log，消除 main 与 gatea 双写。
