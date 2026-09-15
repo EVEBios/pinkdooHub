@@ -1523,9 +1523,11 @@ def test_plan_upgrade_forwards_both_guarded_takeover_archive_directories(
     assert calls[0]["acceptance_retirement_record_sha256"] == "f" * 64
 
 
+@pytest.mark.parametrize("version", (9, 15))
 def test_stage_writes_immutable_source_image_and_ci_record(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, version: int
 ) -> None:
+    load_stage = candidate._load_stage
     _mock_host_guards(monkeypatch)
     release_root = tmp_path / "releases"
     staging_root = tmp_path / "staging"
@@ -1535,13 +1537,25 @@ def test_stage_writes_immutable_source_image_and_ci_record(
     launcher = tmp_path / "launcher.py"
     launcher.write_bytes(b"candidate launcher\n")
     source = tmp_path / "source.tar"
-    _write_source_tar(source, members=_source_members(launcher.read_bytes()))
+    members = _source_members(launcher.read_bytes())
+    if version == 15:
+        root = Path(__file__).resolve().parents[2]
+        paths = [*root.joinpath("migrations/models").glob("*.py"), root / "app/tasks/gatea_m15_snapshot.py",
+                 root / "app/tasks/gatea_migrate_step.py", root / "app/tasks/manifests/gatea_m9_m15_schema.json"]
+        members.update({p.relative_to(root).as_posix(): p.read_bytes() for p in paths})
+        monkeypatch.setattr(candidate, "ROOT_UID", os.geteuid())
+        monkeypatch.setattr(candidate, "ROOT_GID", os.getegid())
+    _write_source_tar(source, members=members)
     artifact = tmp_path / "artifact.zip"
-    _write_ci_zip(artifact)
+    if version == 15:
+        from tests.release.test_gatea_m15_artifact import artifact_records, write_artifact
+        write_artifact(artifact, artifact_records(TARGET_SHA, HEAD_SHA, RUN_ID, ATTEMPT))
+    else:
+        _write_ci_zip(artifact)
     monkeypatch.setattr(
         candidate,
         "_verify_github_provenance",
-        lambda **kwargs: _github_stage_evidence(artifact),
+        lambda **kwargs: {**_github_stage_evidence(artifact), "github_blob_count": len(members)},
     )
     monkeypatch.setattr(candidate, "_image_exists", lambda image: False)
     monkeypatch.setattr(
@@ -1572,7 +1586,8 @@ def test_stage_writes_immutable_source_image_and_ci_record(
         source_head_sha=HEAD_SHA,
         ci_run_id=RUN_ID,
         ci_run_attempt=ATTEMPT,
-        ci_artifact_name=ARTIFACT_NAME,
+        ci_artifact_name=candidate._ci_artifact_name(TARGET_SHA, RUN_ID, ATTEMPT, version),
+        target_version=version,
         confirmed_required_jobs=9,
         release_root=release_root,
         staging_root=staging_root,
@@ -1580,7 +1595,11 @@ def test_stage_writes_immutable_source_image_and_ci_record(
         lock_file=tmp_path / "lock",
     )
 
-    assert set(result) == candidate.STAGE_RECORD_KEYS
+    expected_keys = candidate.STAGE_RECORD_KEYS if version == 9 else ((candidate.STAGE_RECORD_KEYS - {"source_m7_sha"}) | candidate.M15_STAGE_FIELDS)
+    assert set(result) == expected_keys
+    if version == 15:
+        assert result["schema_version"] == 4
+        assert result["source_m9_sha"] == candidate.SOURCE_M9_SHA
     assert result["passed"] is True
     assert result["candidate_sha"] == TARGET_SHA
     assert result["image_id"] == IMAGE_ID
@@ -1589,6 +1608,8 @@ def test_stage_writes_immutable_source_image_and_ci_record(
     assert result["required_jobs_verified"] == len(candidate.GITHUB_REQUIRED_JOBS)
     assert (release_root / TARGET_SHA).is_dir()
     assert (record_dir / f"{TARGET_SHA}.source-sha").read_text().strip() == TARGET_SHA
+    loaded = load_stage(release_root=release_root, release_record_dir=record_dir, target_sha=TARGET_SHA)
+    assert loaded == result
     assert any(command[:2] == ("docker", "build") and "--pull" in command for command in commands)
 
 

@@ -98,6 +98,19 @@ ROOT_UID = 0
 ROOT_GID = 0
 STAGE_OPERATIONS_PATH = PurePosixPath("scripts/release/gatea_operations.py")
 
+SOURCE_M9_SHA = "232919cc57efe4250195ab721104d62ae5e08d34"
+M15_STAGE_FIELDS = frozenset({"source_m9_sha", "target_version", "transition_kind"})
+M15_CI_FILES = frozenset({"summary.json", "cleanup-report.json", "target-backup.json",
+    "target-restore.json", "runtime-verification.json", *(f"state-{v}.json" for v in range(9, 16))})
+
+
+def _ci_artifact_name(target_sha: str, run_id: str, attempt: int, version: int = 9) -> str:
+    if type(version) is not int or version not in {9, 15}:
+        raise GateACandidateError("Gate A target version is unsupported")
+    prefix = "gatea-m9-m15-updater" if version == 15 else "gatea-m7-m9-updater"
+    return f"{prefix}-{target_sha}-{run_id}-{attempt}"
+
+
 GITHUB_API_ORIGIN = "https://api.github.com"
 GITHUB_API_VERSION = "2022-11-28"
 GITHUB_REPOSITORY = "EVEBios/pinkdooHub"
@@ -1284,6 +1297,7 @@ def _verify_github_provenance(
     run_id: str,
     run_attempt: int,
     artifact_name: str,
+    target_version: int = 9,
 ) -> dict[str, Any]:
     target_sha = _validate_sha(target_sha, "target SHA")
     source_head_sha = _validate_sha(source_head_sha, "source head SHA")
@@ -1296,7 +1310,7 @@ def _verify_github_provenance(
         or type(run_attempt) is not int
         or run_attempt <= 0
         or artifact_name
-        != f"gatea-m7-m9-updater-{target_sha}-{run_id}-{run_attempt}"
+        != _ci_artifact_name(target_sha, run_id, run_attempt, target_version)
         or _sha256(ci_artifact) != ci_artifact_sha256
     ):
         raise GateACandidateError("GitHub provenance inputs are invalid")
@@ -1710,6 +1724,115 @@ def _zip_json(archive: zipfile.ZipFile, name: str) -> dict[str, Any]:
     return payload
 
 
+def _validate_m15_ci_artifact(path: Path, *, target_sha: str, source_head_sha: str,
+                              run_id: str, run_attempt: int) -> dict[str, Any]:
+    """独立 M9→M15 制品契约；不能用旧 M7→M9 演练证明新链。"""
+    if path.stat().st_size > MAX_CI_BYTES:
+        raise GateACandidateError("M15 artifact is too large")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            members = archive.infolist()
+            if len(members) != len(M15_CI_FILES) or {m.filename for m in members} != M15_CI_FILES:
+                raise GateACandidateError("M15 artifact inventory differs")
+            total = 0
+            data = {}
+            raw_files = {}
+            for member in members:
+                if (member.flag_bits & 1 or stat.S_IFMT(member.external_attr >> 16) not in {0, stat.S_IFREG}
+                        or not 0 < member.file_size <= MAX_JSON_BYTES):
+                    raise GateACandidateError("M15 artifact member is unsafe")
+                total += member.file_size
+                if total > MAX_CI_BYTES:
+                    raise GateACandidateError("M15 artifact is too large")
+                raw = archive.read(member)
+                if re.search(rb'"(?:password|access_token|refresh_token|qr_token|jwt_secret|db_password)"\s*:|Authorization\s*:\s*Bearer|mysql(?:\+[^:]+)?://|redis://:|PINKDOOHUB_TABLE:v1:', raw, re.IGNORECASE):
+                    raise GateACandidateError("M15 artifact contains a forbidden sensitive pattern")
+                raw_files[member.filename] = raw
+                value = json.loads(raw, object_pairs_hook=_json_object_without_duplicates)
+                if not isinstance(value, dict):
+                    raise GateACandidateError("M15 artifact record is not an object")
+                data[member.filename] = value
+    except (OSError, zipfile.BadZipFile, RuntimeError, ValueError) as error:
+        raise GateACandidateError("M15 artifact cannot be read safely") from error
+    summary = data["summary.json"]
+    expected_summary = {
+        "schema_version": 1, "record_type": "gatea-m9-m15-drill", "passed": True,
+        "source_sha": SOURCE_M9_SHA, "target_sha": target_sha, "source_version": 9,
+        "target_version": 15, "reported_pr_head_sha": source_head_sha,
+        "ci_run_id": run_id, "ci_run_attempt": run_attempt, "scope": "github-hosted-disposable-linux",
+        "production_secrets_used": False, "persistent_gatea_authorized": False,
+        "migration_steps": list(range(10, 16)), "cleanup_passed": True,
+        "artifact_sha256": {name: _sha256_bytes(raw) for name, raw in raw_files.items() if name != "summary.json"},
+    }
+    if _canonical_json_sha256(summary) != _canonical_json_sha256(expected_summary):
+        raise GateACandidateError("M15 artifact does not prove this exact candidate")
+    cleanup = data["cleanup-report.json"]
+    if cleanup != {"schema_version": 1, "record_type": "gatea-m9-m15-cleanup", "passed": True,
+                   "owned_resources_removed": True, "containers": [], "volumes": [], "networks": [],
+                   "images": [], "temporary_paths": []}:
+        raise GateACandidateError("M15 drill cleanup is incomplete")
+    source = data["state-9.json"]
+    legacy = source.get("m9_preserved")
+    if (not isinstance(legacy, dict) or len(legacy) != 25
+            or legacy.get("payments", {}).get("rows", 0) < 1
+            or legacy.get("table_sessions", {}).get("rows", 0) < 1):
+        raise GateACandidateError("M15 drill lacks paid M9 representative data")
+    for version in range(9, 16):
+        state = data[f"state-{version}.json"]
+        if (state.get("schema_version") != 1 or state.get("version") != version
+                or state.get("profile") != "gatea-m9-m15-state-v1"
+                or state.get("m9_preserved") != legacy
+                or state.get("new_session_fields_nondefault") != 0
+                or state.get("secret_values_recorded") is not False or state.get("raw_rows_recorded") is not False
+                or SHA256_PATTERN.fullmatch(str(state.get("structure_sha256", ""))) is None):
+            raise GateACandidateError("M15 drill changed historical content or structure contract")
+    target = data["state-15.json"]
+    backup = data["target-backup.json"]
+    restore = data["target-restore.json"]
+    runtime = data["runtime-verification.json"]
+    if (backup.get("passed") is not True or backup.get("candidate_sha") != target_sha
+            or backup.get("m15_content_snapshot") != target
+            or restore.get("candidate_sha") != target_sha
+            or restore.get("backup_id") != backup.get("backup_id")
+            or restore.get("m15_content_snapshot") != target
+            or any(restore.get(key) is not True for key in ("passed", "database_matches", "images_match",
+                "m15_content_matches", "restore_app_ready", "redis_started_empty", "temporary_resources_removed"))
+            or runtime.get("passed") is not True or runtime.get("candidate_sha") != target_sha
+            or runtime.get("target_version") != 15 or runtime.get("loopback_only") is not True):
+        raise GateACandidateError("M15 drill runtime or independent restore is incomplete")
+    return {"artifact_file_count": len(data), "artifact_uncompressed_bytes": total,
+            "artifact_scan_passed": True, "ci_cleanup_passed": True, "ci_run_attempt": run_attempt,
+            "ci_run_id": run_id, "reported_pr_head_sha": source_head_sha}
+
+
+def _validate_m15_stage_snapshots(source_root: Path, artifact: Path, target_sha: str) -> None:
+    """完整 GitHub 源码验证后，从确切源码重开结构和内容验证器。"""
+    path = source_root / "app/tasks/gatea_m15_snapshot.py"
+    mode = stat.S_IMODE(path.lstat().st_mode)
+    raw, _ = _read_stable_protected_bytes(path, mode=mode, max_bytes=MAX_ARCHIVE_MEMBER_BYTES,
+                                         description="verified M15 snapshot validator")
+    if mode not in {0o644, 0o755}:
+        raise GateACandidateError("M15 snapshot validator mode differs")
+    module_name = f"_pinkdoohub_gatea_m15_snapshot_{target_sha}"
+    if module_name in sys.modules:
+        raise GateACandidateError("M15 snapshot validator is already loaded")
+    module = ModuleType(module_name)
+    module.__file__ = str(path)
+    module.__package__ = ""
+    sys.modules[module_name] = module
+    try:
+        exec(compile(raw, str(path), "exec", dont_inherit=True), module.__dict__)
+        with zipfile.ZipFile(artifact) as archive:
+            source = _zip_json(archive, "state-9.json")
+            module.validate_snapshot(source, 9)
+            for version in range(10, 16):
+                module.require_preserved(source, _zip_json(archive, f"state-{version}.json"), target=version)
+    except (ValueError, KeyError, OSError, AttributeError, zipfile.BadZipFile) as error:
+        raise GateACandidateError("M15 drill snapshots differ from verified source contract") from error
+    finally:
+        sys.modules.pop(module_name, None)
+
+
 def _validate_ci_artifact(
     path: Path,
     *,
@@ -1717,7 +1840,13 @@ def _validate_ci_artifact(
     source_head_sha: str,
     run_id: str,
     run_attempt: int,
+    target_version: int = 9,
 ) -> dict[str, Any]:
+    if target_version == 15:
+        return _validate_m15_ci_artifact(path, target_sha=target_sha, source_head_sha=source_head_sha,
+                                         run_id=run_id, run_attempt=run_attempt)
+    if target_version != 9:
+        raise GateACandidateError("Gate A artifact target version is unsupported")
     try:
         if path.stat().st_size > MAX_CI_BYTES:
             raise GateACandidateError("Gate A CI artifact ZIP is too large")
@@ -2622,7 +2751,10 @@ def _validate_stage_pending(
         if adoption
         else STAGE_PENDING_KEYS
     )
-    expected_schema = 3 if takeover else 2 if adoption else 1
+    m15 = expected.get("target_version") == 15 and expected.get("transition_kind") == "m9-m15-upgrade"
+    if m15:
+        expected_keys = (STAGE_PENDING_KEYS - {"source_m7_sha"}) | M15_STAGE_FIELDS
+    expected_schema = 4 if m15 else 3 if takeover else 2 if adoption else 1
     if (
         set(payload) != expected_keys
         or payload.get("schema_version") != expected_schema
@@ -2666,6 +2798,7 @@ def stage_candidate(
     ci_run_attempt: int,
     ci_artifact_name: str,
     confirmed_required_jobs: int,
+    target_version: int = 9,
     release_root: Path,
     staging_root: Path,
     release_record_dir: Path,
@@ -2748,9 +2881,11 @@ def stage_candidate(
             raise GateACandidateError(
                 "Gate A takeover candidates must be distinct"
             )
-    expected_artifact_name = (
-        f"gatea-m7-m9-updater-{target_sha}-{ci_run_id}-{ci_run_attempt}"
-    )
+    expected_artifact_name = _ci_artifact_name(target_sha, ci_run_id, ci_run_attempt, target_version)
+    if target_version == 15 and superseded_candidate_sha is not None:
+        raise GateACandidateError("M15 requires a finalized M9 source without recovery allowances")
+    profile = ({"source_m9_sha": SOURCE_M9_SHA, "target_version": 15, "transition_kind": "m9-m15-upgrade"}
+               if target_version == 15 else {"source_m7_sha": SOURCE_M7_SHA})
     if ci_artifact_name != expected_artifact_name:
         raise GateACandidateError("Gate A CI artifact name does not match the run")
     _require_root_directory(release_root, 0o755, "Gate A release root")
@@ -2799,6 +2934,7 @@ def stage_candidate(
         source_head_sha=source_head_sha,
         run_id=ci_run_id,
         run_attempt=ci_run_attempt,
+        **({"target_version": 15} if target_version == 15 else {}),
     )
 
     release_dir = release_root / target_sha
@@ -2829,6 +2965,7 @@ def stage_candidate(
                 run_id=ci_run_id,
                 run_attempt=ci_run_attempt,
                 artifact_name=ci_artifact_name,
+                **({"target_version": 15} if target_version == 15 else {}),
             )
             source_manifest = {
                 key: source_evidence[key]
@@ -2838,6 +2975,10 @@ def stage_candidate(
                     "source_manifest_sha256",
                 )
             }
+            if target_version == 15:
+                _validate_m15_stage_snapshots(temporary_dir, ci_artifact, target_sha)
+                if _source_manifest(temporary_dir) != source_manifest:
+                    raise GateACandidateError("M15 source changed during snapshot validation")
             if takeover:
                 # GitHub provenance may take long enough for an out-of-band
                 # operator to change a blocker.  Re-scan under the operation
@@ -2899,7 +3040,7 @@ def stage_candidate(
             expected_pending = {
                 "candidate_sha": target_sha,
                 "source_head_sha": source_head_sha,
-                "source_m7_sha": SOURCE_M7_SHA,
+                **profile,
                 "source_archive_sha256": source_archive_sha256,
                 "launcher_sha256": launcher_sha256,
                 "ci_artifact_sha256": ci_artifact_sha256,
@@ -3011,7 +3152,7 @@ def stage_candidate(
                     )
                 pending = {
                     "schema_version": (
-                        3
+                        4 if target_version == 15 else 3
                         if takeover
                         else 2
                         if superseded_candidate_sha is not None
@@ -3130,7 +3271,7 @@ def stage_candidate(
             )
             payload = {
                 "schema_version": (
-                    3
+                    4 if target_version == 15 else 3
                     if takeover
                     else 2
                     if superseded_candidate_sha is not None
@@ -3140,7 +3281,7 @@ def stage_candidate(
                 "passed": True,
                 "candidate_sha": target_sha,
                 "source_head_sha": source_head_sha,
-                "source_m7_sha": SOURCE_M7_SHA,
+                **profile,
                 "source_archive_sha256": source_archive_sha256,
                 "launcher_sha256": launcher_sha256,
                 "ci_artifact_sha256": ci_artifact_sha256,
@@ -3240,15 +3381,21 @@ def _load_stage(
         if adoption
         else STAGE_RECORD_KEYS
     )
+    m15 = (schema_version == 4 and payload.get("target_version") == 15
+           and payload.get("transition_kind") == "m9-m15-upgrade"
+           and payload.get("source_m9_sha") == SOURCE_M9_SHA)
+    if m15:
+        expected_keys = (STAGE_RECORD_KEYS - {"source_m7_sha"}) | M15_STAGE_FIELDS
     if (
         set(payload) != expected_keys
-        or schema_version not in {1, 2, 3}
+        or schema_version not in {1, 2, 3, 4}
         or (schema_version == 2 and not adoption)
         or (schema_version == 3 and not takeover)
+        or (schema_version == 4 and not m15)
         or payload.get("record_type") != "gatea-candidate-stage"
         or payload.get("passed") is not True
         or payload.get("candidate_sha") != target_sha
-        or payload.get("source_m7_sha") != SOURCE_M7_SHA
+        or (not m15 and payload.get("source_m7_sha") != SOURCE_M7_SHA)
         or not isinstance(source_head_sha, str)
         or SHA_PATTERN.fullmatch(source_head_sha) is None
         or payload.get("reported_pr_head_sha") != source_head_sha
@@ -3257,7 +3404,7 @@ def _load_stage(
         or type(ci_run_attempt) is not int
         or ci_run_attempt <= 0
         or payload.get("ci_artifact_name")
-        != f"gatea-m7-m9-updater-{target_sha}-{ci_run_id}-{ci_run_attempt}"
+        != _ci_artifact_name(target_sha, ci_run_id, ci_run_attempt, 15 if m15 else 9)
         or any(
             SHA256_PATTERN.fullmatch(str(payload.get(field, ""))) is None
             for field in (
@@ -3306,7 +3453,7 @@ def _load_stage(
         or payload.get("artifact_scan_passed") is not True
         or payload.get("ci_cleanup_passed") is not True
         or type(payload.get("artifact_file_count")) is not int
-        or payload["artifact_file_count"] < len(CI_REQUIRED_FILES)
+        or (payload["artifact_file_count"] != len(M15_CI_FILES) if m15 else payload["artifact_file_count"] < len(CI_REQUIRED_FILES))
         or type(payload.get("artifact_uncompressed_bytes")) is not int
         or payload["artifact_uncompressed_bytes"] <= 0
         or not _is_utc_timestamp(payload.get("completed_at"))
@@ -8892,6 +9039,7 @@ def _parser() -> argparse.ArgumentParser:
     stage.add_argument("--launcher", type=Path, default=Path(__file__).resolve())
     stage.add_argument("--confirm-launcher-sha256", required=True)
     stage.add_argument("--target-sha", required=True)
+    stage.add_argument("--target-version", type=int, choices=(9, 15), default=9)
     stage.add_argument("--source-head-sha", required=True)
     stage.add_argument("--ci-run-id", required=True)
     stage.add_argument("--ci-run-attempt", type=int, required=True)
@@ -9121,6 +9269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ci_run_attempt=args.ci_run_attempt,
                 ci_artifact_name=args.ci_artifact_name,
                 confirmed_required_jobs=args.confirm_required_jobs,
+                target_version=args.target_version,
                 release_root=args.release_root,
                 staging_root=args.staging_root,
                 release_record_dir=args.release_record_dir,
