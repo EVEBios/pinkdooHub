@@ -47,6 +47,7 @@ DEFAULT_M9_ACCEPTANCE_RECORD_DIR = Path(
 DEFAULT_OPERATION_LOCK_FILE = Path("/run/lock/pinkdoohub-gatea-operation.lock")
 CURRENT_FINALIZATION_PENDING_SUFFIX = "current-finalization.pending.json"
 CANDIDATE_TRANSITION_PENDING_KINDS = (
+    ("m15-upgrade", "m15-upgrade.pending.json"),
     ("candidate-stage", "candidate-stage.pending.json"),
     ("config-activation", "config-activation.pending.json"),
     ("config-rollback", "config-rollback.pending.json"),
@@ -2002,6 +2003,10 @@ def _require_upgrade_record(
         payload.get("schema_version"),
         payload.get("transition_kind") if "transition_kind" in payload else None,
     )
+    if schema_transition == (3, "m9-m15-upgrade"):
+        from scripts.release.gatea_m15_upgrade import require_upgrade_record
+        return require_upgrade_record(payload, record_dir=record_dir,
+                                      candidate_sha=candidate_sha, image_id=image_id)
     if schema_transition == (2, M9_ADOPTION_TRANSITION_KIND):
         return _require_m9_adoption_upgrade_record(
             payload,
@@ -2627,7 +2632,7 @@ def app_up(
     _termination_controller: _OperationTerminationController | None = None,
     _start_new_session: bool = False,
 ) -> None:
-    """Record 匹配后启动 App/Nginx，并默认严格要求 M9 sweeper。"""
+    """Record 匹配后启动 App/Nginx；桌台清理器仅允许完整 M9 或 M15。"""
 
     _require_loopback_write_mode(mode)
     subprocess_options = (
@@ -2771,9 +2776,19 @@ def app_up(
             "Gate A legacy app command recovery requires the exact M7 chain"
         )
     if include_table_sweeper:
-        if live_versions != list(APPROVED_TARGET_M9_CHAIN):
+        m15 = live_versions == list(APPROVED_TARGET_M15_CHAIN)
+        if not m15 and live_versions != list(APPROVED_TARGET_M9_CHAIN):
             raise GateAError("Gate A table sweeper requires the exact M9 chain")
-        if deployment_record.get("record_type") == "existing-database-upgrade":
+        if m15:
+            from scripts.release.gatea_m15_upgrade import read_state, require_replay
+            if deployment_record.get("transition_kind") != "m9-m15-upgrade":
+                raise GateAError("Gate A M15 runtime requires its verified M9-to-M15 upgrade")
+            require_replay(record_dir=record_dir, candidate_sha=candidate_sha,
+                           image_id=image_id, upgrade_record=deployment_record)
+            # 只验证完整结构/列契约；允许验收和业务运行后新增合法数据。
+            read_state({**values, "GATEA_APP_IMAGE": image_id}, config_file, secret_dir, 15,
+                       **subprocess_options)
+        elif deployment_record.get("record_type") == "existing-database-upgrade":
             _require_m9_upgrade_replay_record(
                 record_dir=record_dir,
                 candidate_sha=candidate_sha,

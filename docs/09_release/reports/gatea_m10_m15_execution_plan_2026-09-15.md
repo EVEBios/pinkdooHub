@@ -55,3 +55,11 @@ M10 无套餐预约与 M11–M15 的现有迁移契约定向检查另有 `18 pas
 新增 schema 4 的 M9→M15 stage profile，固定 source 为已 finalized G，并要求当前候选自身的 `gatea-m9-m15-updater` 制品。制品必须包含逐步快照、目标备份/恢复、运行核验、完整清理结果和互相绑定的文件摘要；旧 M7→M9 制品不能替代。GitHub source tree 核验后，再用安装源码中的标准库快照契约检查迁移 manifest 和保留内容。历史三种 stage profile 保持原含义。
 
 原 candidate 测试 258 项通过；新制品拒绝路径与 M9/M15 实际 stage 写入共 11 项通过。额外验证两种安装记录重新从磁盘读取，确认新格式可被后续入口使用。升级编排和 CI 生成器尚待接入，仍不可将当前开发分支直接用于持久升级。
+
+### 本地第四步：停写升级与 M15 启动门槛
+
+新增 `scripts.release.gatea_m15_upgrade`：默认只读计划；apply 绑定 G/M9 finalized、当前/live 指针、新鲜同 ID 备份/独立恢复、M15 stage 与镜像。停写后再次比较备份内容，逐条执行 M10–M15 并耐久保存每一步快照；全部保留校验通过后仅切换镜像配置，发布升级与只读重放记录，业务服务继续保持停止，由受控 app-up 启动。失败时不降级、不重跑，不删除 pending。
+
+operations/candidate 均识别 `m15-upgrade.pending`，任何遗留记录阻止其他发布操作和启动。M15 app-up 要求真实升级/重放及完整结构契约，同时允许升级后增加合法业务数据。升级记录绑定 source finalized、stage、配置切换、源备份和恢复记录摘要，历史 M9 读取路径保持原义。宿主入口使用纯标准库，已在关闭 site-packages 的 Python 中验证导入。
+
+release 定向回归 489 项通过。新增整段编排用例首次因 macOS 测试环境不允许 root 文件归属操作而失败；仅模拟该系统调用后六条成功/失败/只读路径通过。后续升级与快照契约 56 项通过，源 finalized/current/live/依赖校验新增 6 项通过。实际容器级 M15 备份恢复、CI 制品生成和 M15 验收/finalize 仍未完成，当前分支不可持久部署。

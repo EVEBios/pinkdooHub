@@ -105,7 +105,7 @@ def validate_snapshot(value: dict[str, Any], version: int) -> None:
     keys = {"schema_version", "profile", "version", "aerich_versions", "structure_sha256",
             "m9_preserved", "complete_content", "new_session_fields_nondefault",
             "secret_values_recorded", "raw_rows_recorded"}
-    if (set(value) != keys or value.get("schema_version") != 1
+    if (set(value) != keys or type(value.get("schema_version")) is not int or value["schema_version"] != 1
             or value.get("profile") != "gatea-m9-m15-state-v1" or type(value.get("version")) is not int
             or value["version"] != version
             or value.get("aerich_versions") != list(APPROVED_MIGRATIONS[:version + 1])

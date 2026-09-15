@@ -29,7 +29,7 @@ def test_added_columns_do_not_change_legacy_projection(version):
     state.require_preserved(before, after, target=version)
 
 
-@pytest.mark.parametrize("change", ("row", "count", "missing", "chain", "schema", "profile", "default", "raw", "bool_count"))
+@pytest.mark.parametrize("change", ("row", "count", "missing", "chain", "schema", "profile", "default", "raw", "bool_count", "bool_schema"))
 def test_content_and_contract_changes_are_rejected(change):
     before, after = snapshot(9), snapshot(15)
     if change == "row": after["m9_preserved"]["payments"]["sha256"] = "c" * 64
@@ -41,6 +41,7 @@ def test_content_and_contract_changes_are_rejected(change):
     if change == "default": after["new_session_fields_nondefault"] = 1
     if change == "raw": after["raw_rows_recorded"] = True
     if change == "bool_count": after["m9_preserved"]["payments"]["rows"] = True
+    if change == "bool_schema": after["schema_version"] = True
     with pytest.raises(state.M15SnapshotError): state.require_preserved(before, after, target=15)
 
 
