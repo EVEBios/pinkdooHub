@@ -202,6 +202,16 @@ FAILED_ACCEPTANCE_CLEANUP_KEYS = frozenset(
 FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 = (
     "9f262cb7c7a500cfd3b245f045c9ff8a887a640a6576539b421a61add81c1012"
 )
+PAID_ACCEPTANCE_BUSINESS_COUNTS = {
+    **FAILED_ACCEPTANCE_BUSINESS_COUNTS,
+    "payments": 1, "settlements": 1, "wallet_transactions": 1,
+    "table_sessions": 1, "cancellation_restores": 0,
+}
+PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 = hashlib.sha256(
+    json.dumps(PAID_ACCEPTANCE_BUSINESS_COUNTS, ensure_ascii=True,
+               sort_keys=True, separators=(",", ":")).encode()
+).hexdigest()
+
 RUNTIME_PREFLIGHT_COMMAND = """import json
 from app.core.config import settings
 print(json.dumps({
@@ -1261,8 +1271,9 @@ def _validate_m9_adoption_lineage(
             paths["predecessor_stage"], "predecessor stage record"
         )
     )
+    nested_predecessor = predecessor_stage.get("schema_version") in {2, 3}
     if (
-        predecessor_stage.get("schema_version") != 1
+        predecessor_stage.get("schema_version") not in {1, 2, 3}
         or predecessor_stage.get("record_type") != "gatea-candidate-stage"
         or predecessor_stage.get("passed") is not True
         or predecessor_stage.get("candidate_sha") != source_candidate_sha
@@ -1281,18 +1292,18 @@ def _validate_m9_adoption_lineage(
         candidate_sha=source_candidate_sha,
         image_id=source_image_id,
     )
-    lineage_source_image_id = predecessor_upgrade.get("source_image_id")
+    lineage_source_image_id = predecessor_upgrade.get("lineage_source_image_id" if nested_predecessor else "source_image_id")
     if (
         predecessor_upgrade != predecessor_upgrade_raw
-        or predecessor_upgrade.get("schema_version") != 1
-        or "transition_kind" in predecessor_upgrade
-        or predecessor_upgrade.get("source_version") != 7
-        or predecessor_upgrade.get("source_candidate_sha")
+        or predecessor_upgrade.get("schema_version") != (2 if nested_predecessor else 1)
+        or (predecessor_upgrade.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND if nested_predecessor else "transition_kind" in predecessor_upgrade)
+        or predecessor_upgrade.get("source_version") != (9 if nested_predecessor else 7)
+        or predecessor_upgrade.get("lineage_source_candidate_sha" if nested_predecessor else "source_candidate_sha")
         != lineage_source_candidate_sha
         or not isinstance(lineage_source_image_id, str)
         or not lineage_source_image_id
         or predecessor_upgrade.get("source_aerich_versions")
-        != _expected_versions(7)
+        != _expected_versions(9 if nested_predecessor else 7)
         or predecessor_upgrade.get("target_aerich_versions")
         != _expected_versions(9)
     ):
@@ -1304,12 +1315,12 @@ def _validate_m9_adoption_lineage(
         )
     )
     if (
-        predecessor_activation.get("schema_version") != 1
-        or "transition_kind" in predecessor_activation
+        predecessor_activation.get("schema_version") != (2 if nested_predecessor else 1)
+        or (predecessor_activation.get("transition_kind") != M9_ADOPTION_TRANSITION_KIND if nested_predecessor else "transition_kind" in predecessor_activation)
         or predecessor_activation.get("record_type") != "gatea-config-activation"
         or predecessor_activation.get("passed") is not True
         or predecessor_activation.get("source_candidate_sha")
-        != lineage_source_candidate_sha
+        != predecessor_upgrade.get("source_candidate_sha")
         or predecessor_activation.get("candidate_sha") != source_candidate_sha
         or predecessor_activation.get("image_id") != source_image_id
         or predecessor_activation.get("stage_record_sha256")
@@ -1358,6 +1369,20 @@ def _validate_m9_adoption_lineage(
         ),
     }
 
+    if nested_predecessor:
+        from scripts.release import gatea_candidate as candidate
+        verified_predecessor = candidate._load_adoption_predecessor_binding(
+            release_root=gatea.REPOSITORY_ROOT.parent, release_record_dir=release_record_dir,
+            source_candidate_sha=source_candidate_sha,
+            lineage_source_candidate_sha=lineage_source_candidate_sha,
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
+        )
+        if (verified_predecessor["source_image_id"] != source_image_id
+                or verified_predecessor["lineage_source_image_id"] != lineage_source_image_id
+                or any(verified_predecessor[key] != value for key, value in predecessor_digests.items())):
+            raise GateAUpgradeError("Gate A paid recovery predecessor binding is invalid")
+
     retirement, retirement_record_sha256 = _load_bound_json_with_sha256(
         paths["retirement"], "acceptance retirement record"
     )
@@ -1383,6 +1408,7 @@ def _validate_m9_adoption_lineage(
         else None
     )
     takeover_retirement = retirement.get("schema_version") == 2
+    paid_retirement = isinstance(live_business, dict) and live_business.get("schema_version") == 3
     if (
         set(retirement)
         != (
@@ -1442,11 +1468,11 @@ def _validate_m9_adoption_lineage(
             "secret_values_recorded",
         }
         or live_business.get("schema_version")
-        not in ({2} if takeover_retirement else {1, 2})
+        not in ({2} if takeover_retirement else {1, 2, 3})
         or live_business.get("passed") is not True
-        or live_business.get("counts") != FAILED_ACCEPTANCE_BUSINESS_COUNTS
+        or live_business.get("counts") != (PAID_ACCEPTANCE_BUSINESS_COUNTS if paid_retirement else FAILED_ACCEPTANCE_BUSINESS_COUNTS)
         or live_business.get("evidence_sha256")
-        != FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+        != (PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256 if paid_retirement else FAILED_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256)
         or live_business.get("secret_values_recorded") is not False
         or not isinstance(live_database, dict)
         or live_database.get("aerich_versions") != _expected_versions(9)
@@ -1490,7 +1516,7 @@ def _validate_m9_adoption_lineage(
     ):
         raise GateAUpgradeError("Gate A acceptance retirement record is invalid")
     _validate_adoption_table_reconcile_result(live_reconcile)
-    if any(live_reconcile.values()):
+    if any(value != (1 if paid_retirement and key == "scanned" else 0) for key, value in live_reconcile.items()):
         raise GateAUpgradeError("Gate A acceptance retirement record is invalid")
     _parse_utc_timestamp(live_verification.get("checked_at"), "retirement check")
     retirement_started_at = _parse_utc_timestamp(
@@ -1515,6 +1541,19 @@ def _validate_m9_adoption_lineage(
             lineage_source_candidate_sha=lineage_source_candidate_sha,
             lineage_source_image_id=str(lineage_source_image_id),
             predecessor_digests=predecessor_digests,
+        )
+
+    if nested_predecessor or paid_retirement:
+        from scripts.release import gatea_candidate as candidate
+        if not (nested_predecessor and paid_retirement and not takeover_retirement):
+            raise GateAUpgradeError("Gate A paid recovery must bind the supported adoption predecessor")
+        candidate._load_adoption_context(
+            release_root=gatea.REPOSITORY_ROOT.parent, release_record_dir=release_record_dir,
+            source_candidate_sha=source_candidate_sha, lineage_source_candidate_sha=lineage_source_candidate_sha,
+            target_sha=candidate_sha, acceptance_retirement_record_sha256=acceptance_retirement_record_sha256,
+            acceptance_record_dir=gatea.DEFAULT_M9_ACCEPTANCE_RECORD_DIR,
+            acceptance_failure_archive_dir=acceptance_failure_archive_dir,
+            retirement_failure_archive_dir=retirement_failure_archive_dir,
         )
 
     activation_record_sha256: str | None = None

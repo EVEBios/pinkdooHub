@@ -4,6 +4,35 @@ import pytest
 from httpx import AsyncClient
 
 
+async def test_auth_logs_keep_event_without_credentials(client: AsyncClient, caplog):
+    """真实注册/登录日志不得泄露验收扫描器保护的身份与凭据。"""
+    username = "log_privacy_user"
+    password = "LogPrivacy-Test-8361"
+    phone = "13900139021"
+    with caplog.at_level("INFO", logger="app.services.auth_service"):
+        registered = await client.post(
+            "/api/v1/auth/register",
+            json={"username": username, "password": password,
+                  "nickname": "Privacy", "phone": phone},
+        )
+        assert registered.status_code == 201
+        logged_in = await client.post(
+            "/api/v1/auth/login", json={"username": username, "password": password},
+        )
+        assert logged_in.status_code == 200
+    tokens = logged_in.json()["data"]
+    for value in (username, password, phone, tokens["access_token"], tokens["refresh_token"]):
+        assert value not in caplog.text
+    assert "User registered: user_id=" in caplog.text
+    assert "User logged in: user_id=" in caplog.text
+    from scripts.release.gatea_resilience import inspect_log_text
+
+    scan = inspect_log_text(caplog.text, (username, password, phone,
+                                        tokens["access_token"], tokens["refresh_token"]))
+    assert scan["exact_secret_matches"] == 0
+    assert scan["forbidden_pattern_matches"] == 0
+
+
 class TestRegister:
     """POST /auth/register"""
 

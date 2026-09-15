@@ -1,5 +1,7 @@
 # Phase 9.2 CI Gate Matrix
 
+> **2026-09-15 恢复更新：** D 的真实 stage 已因归档 `0755`／加载器 `0644` 契约不一致在 pending/Image/Release 写入前失败；下文 D 的待执行描述为历史状态。当前独立 M9 修复候选为 E，绑定解压后的精确模式并新增源码前置检查；E 自身远端 CI 与现场证据尚未取得，Gate A 保持 No-Go。历史交接来源、测试边界与执行顺序以 [M9 恢复记录](reports/gatea_m9_recovery_preflight_2026-09-15.md) 为准，本文不把旧 Run 或旧现场状态视为本轮通过证据。
+
 > **Status:** Phase 9.2 historical baseline complete；live Gate A is predecessor A/M9 while `current` remains finalized lineage S/M7；B remains at prepared, C passed 9/9 but failed isolated pre-install stage without persistent writes, and only a fresh D 9/9 may continue
 > **Last Updated:** 2026-09-12
 > **Current Provider:** GitHub Actions（[Draft PR #2](https://github.com/EVEBios/pinkdooHub/pull/2) / historical M8 success [Run 34288613644](https://github.com/EVEBios/pinkdooHub/actions/runs/34288613644), attempt 2 / latest M9 CI diagnostic [Run 34616037853](https://github.com/EVEBios/pinkdooHub/actions/runs/34616037853)）

@@ -1,5 +1,10 @@
 # pinkdooHub 发布文档
 
+> **2026-09-15 E 验收失败更新：** E 已完成自身 CI 与 adoption，但管理员辅助验收因认证 username、Nginx 双写原始 QR URL 而失败；真实付款与已关闭会话必须保留。当前新候选的四项修复、受控 paid recovery 及验证边界以 [已付款恢复记录](reports/gatea_m9_paid_recovery_2026-09-15.md) 为准，以下较早的 C/D/E 待执行叙述属于历史；Gate A 仍为 No-Go。
+
+
+> **2026-09-15 恢复更新：** D 的真实 stage 已因归档 `0755`／加载器 `0644` 契约不一致在 pending/Image/Release 写入前失败；下文 D 的待执行描述为历史状态。当前独立 M9 修复候选为 E，绑定解压后的精确模式并新增源码前置检查；E 自身远端 CI 与现场证据尚未取得，Gate A 保持 No-Go。历史交接来源、测试边界与执行顺序以 [M9 恢复记录](reports/gatea_m9_recovery_preflight_2026-09-15.md) 为准，本文不把旧 Run 或旧现场状态视为本轮通过证据。
+
 > **Current Phase:** M9 仓库实现已完成；持久 Gate A live config、数据库与五服务为旧候选 A/M9，`current` 仍是 M7 lineage S，B 留有 `prepared` retirement pending。候选 C 虽由 Run 34616037853 取得 9/9，真实 isolated stage 却在任何 C pending/Image/Release 写入前失败并已清理。当前只允许全新候选 D 自身取得 9/9 后走 A→B→D 八阶段 takeover、A→D 的 M9→M9 零迁移 adoption、D 验收/韧性/数据后恢复与 finalization；禁止复用 C、删 pending、注入 Secret 或回退 M9 数据库 — Gate A/Gate B 均保持 No-Go
 > **Phase 9.1 Status:** Complete — Yijie Shen 于 2026-08-29 完成 Review
 > **Last Updated:** 2026-09-12

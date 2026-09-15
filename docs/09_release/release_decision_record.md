@@ -1,5 +1,7 @@
 # RDR-001：微信小程序发布目标
 
+> **2026-09-15 恢复更新：** D 的真实 stage 已因归档 `0755`／加载器 `0644` 契约不一致在 pending/Image/Release 写入前失败；下文 D 的待执行描述为历史状态。当前独立 M9 修复候选为 E，绑定解压后的精确模式并新增源码前置检查；E 自身远端 CI 与现场证据尚未取得，Gate A 保持 No-Go。历史交接来源、测试边界与执行顺序以 [M9 恢复记录](reports/gatea_m9_recovery_preflight_2026-09-15.md) 为准，本文不把旧 Run 或旧现场状态视为本轮通过证据。
+
 > **Decision ID:** P9-RDR-001
 > **Status:** Accepted for Gate A
 > **Decision Date:** 2026-08-29

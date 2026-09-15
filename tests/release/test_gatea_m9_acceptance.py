@@ -3161,3 +3161,54 @@ def test_compose_failure_is_redacted(
 
     assert secret_output not in str(raised.value)
     assert "command failed safely" in str(raised.value)
+
+
+def test_paid_predecessor_acceptance_uses_bound_balance_and_preserves_history(monkeypatch, tmp_path):
+    from dataclasses import replace
+    context = replace(_context(tmp_path),
+        paid_recovery={'predecessor_candidate_sha': 'e' * 40, 'failed_acceptance_sha256': 'f' * 64,
+                       'rotation_record_sha256': 'd' * 64},
+        pre_reconcile=_zero_reconcile(scanned=1))
+    _patch_execute_dependencies(monkeypatch)
+    original = _FakeClient.json_request
+    def paid_http(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        data = result.get('data')
+        if isinstance(data, dict):
+            if isinstance(data.get('wallet'), dict) and 'balance' in data['wallet']:
+                data['wallet']['balance'] = {'160.00':'155.00','155.00':'150.00'}[data['wallet']['balance']]
+            if 'post_payment_balance' in data:
+                data['post_payment_balance'] = '150.00'
+        return result
+    monkeypatch.setattr(_FakeClient, 'json_request', paid_http)
+    monkeypatch.setattr(acceptance, '_run_table_reconcile', lambda context: _zero_reconcile(scanned=2))
+    result = acceptance.execute(context, admin_username='admin-user-secret', admin_password='admin-password-secret')
+    assert result['schema_version'] == 2
+    assert result['scenario']['post_payment_balance'] == '150.00'
+    assert result['pre_reconcile']['scanned'] == 1
+    assert result['post_reconcile']['scanned'] == 2
+    acceptance._validate_success_record(result)
+    acceptance._validate_success_binding(context, result)
+    with pytest.raises(acceptance.M9AcceptanceError, match='binding'):
+        acceptance._validate_success_binding(replace(context, paid_recovery=None), result)
+
+
+@pytest.mark.parametrize('mutation', ['money','history','missing_rotation','wrong_schema'])
+def test_paid_acceptance_schema_rejects_unbound_shortcuts(monkeypatch,tmp_path,mutation):
+    record = _valid_success_record(tmp_path,monkeypatch)
+    record.update(schema_version=2, paid_recovery={'predecessor_candidate_sha':'e'*40,
+        'failed_acceptance_sha256':'f'*64, 'rotation_record_sha256':'d'*64})
+    record['scenario']['post_payment_balance']='150.00'
+    record['pre_reconcile']['scanned']=1
+    record['post_reconcile']['scanned']=2
+    acceptance._validate_success_record(record)
+    if mutation=='money':
+        record['scenario']['post_payment_balance']='155.00'
+    elif mutation=='history':
+        record['pre_reconcile']['scanned']=0
+    elif mutation=='missing_rotation':
+        del record['paid_recovery']['rotation_record_sha256']
+    else:
+        record['schema_version']=1
+    with pytest.raises(acceptance.M9AcceptanceError):
+        acceptance._validate_success_record(record)

@@ -393,6 +393,19 @@ class PreparedContext:
     attempt_id: str
     pending: Mapping[str, Any] | None = None
     staged_success: Mapping[str, Any] | None = None
+    paid_recovery: Mapping[str, str] | None = None
+
+    @property
+    def wallet_before(self) -> str:
+        return "155.00" if self.paid_recovery else EXPECTED_WALLET_BALANCE
+
+    @property
+    def wallet_after(self) -> str:
+        return "150.00" if self.paid_recovery else EXPECTED_POST_PAYMENT_BALANCE
+
+    @property
+    def prior_sessions(self) -> int:
+        return 1 if self.paid_recovery else 0
 
     @property
     def record_path(self) -> Path:
@@ -1483,12 +1496,6 @@ def _verify_log_redaction(
 ) -> dict[str, Any]:
     """扫描五服务日志；只返回计数，绝不返回原文或命中值。"""
 
-    logs = resilience._compose_logs(
-        values=context.values,
-        config_file=context.config_file,
-        secret_dir=context.secret_dir,
-        services=M9_SERVICES,
-    )
     deployment_secrets: list[str] = []
     try:
         for secret_name in gatea.EXPECTED_SECRET_FILES:
@@ -1509,15 +1516,29 @@ def _verify_log_redaction(
         for value in (*deployment_secrets, *transient_secrets)
         if isinstance(value, str) and len(value) >= 6
     ]
-    if not logs.strip():
+    scans: dict[str, dict[str, int]] = {}
+    for service in M9_SERVICES:
+        logs = resilience._compose_logs(
+            values=context.values,
+            config_file=context.config_file,
+            secret_dir=context.secret_dir,
+            services=(service,),
+        )
+        scans[service] = resilience.inspect_log_text(logs, exact_values)
+    if not any(scan["line_count"] for scan in scans.values()):
         raise M9AcceptanceError("Gate A M9 logs are empty after runtime acceptance")
-    if any(value in logs for value in exact_values):
-        raise M9AcceptanceError("Gate A M9 logs contain an exact sensitive value")
-    if any(pattern.search(logs) for pattern in resilience.FORBIDDEN_LOG_PATTERNS):
-        raise M9AcceptanceError("Gate A M9 logs contain a sensitive pattern")
+    for field, description in (
+        ("exact_secret_matches", "an exact sensitive value"),
+        ("forbidden_pattern_matches", "a sensitive pattern"),
+    ):
+        matches = [(service, scan[field]) for service, scan in scans.items() if scan[field]]
+        if matches:
+            # service 来自固定 M9_SERVICES，计数为整数；不从命中行生成诊断文本。
+            detail = ", ".join(f"{service}={count}" for service, count in matches)
+            raise M9AcceptanceError(f"Gate A M9 logs contain {description} ({detail})")
     return {
         "window": "24h",
-        "combined_line_count": len(logs.splitlines()),
+        "combined_line_count": sum(scan["line_count"] for scan in scans.values()),
         "services_scanned": list(M9_SERVICES),
         "exact_secret_matches": 0,
         "forbidden_pattern_matches": 0,
@@ -1541,7 +1562,7 @@ def _ensure_m9_services(context: PreparedContext) -> None:
     )
 
 
-def _validate_resume_runtime_snapshot(snapshot: Mapping[str, Any]) -> None:
+def _validate_resume_runtime_snapshot(snapshot: Mapping[str, Any], *, prior_sessions: int = 0) -> None:
     """续跑允许一条验收历史，但桌台 bootstrap 结构仍必须精确。"""
 
     for key, expected in upgrade.M9_EMPTY_TABLE_INVARIANTS[:8]:
@@ -1552,6 +1573,9 @@ def _validate_resume_runtime_snapshot(snapshot: Mapping[str, Any]) -> None:
             )
     session_count = snapshot.get("table_sessions")
     timer_count = snapshot.get("table_session_timers")
+    if type(session_count) is int and type(timer_count) is int:
+        session_count -= prior_sessions
+        timer_count -= 2 * prior_sessions
     occupancy_count = snapshot.get("table_occupancies")
     if (
         type(session_count) is not int
@@ -1574,6 +1598,7 @@ def _validate_resume_reconcile(
     pending: Mapping[str, Any],
     reconcile: Mapping[str, int],
 ) -> None:
+    prior = pending.get("pre_reconcile", {}).get("scanned", 0)
     if (
         set(reconcile) != RECONCILE_KEYS
         or any(type(value) is not int or value < 0 for value in reconcile.values())
@@ -1581,7 +1606,7 @@ def _validate_resume_reconcile(
         or reconcile.get("closed_with_occupancy") != 0
         or reconcile.get("awaiting_with_timers") != 0
         or reconcile.get("active_without_timers") != 0
-        or reconcile.get("scanned") not in {0, 1}
+        or reconcile.get("scanned") not in {prior, prior + 1}
         or reconcile.get("open_sessions") not in {0, 1}
         or reconcile.get("occupancies") != reconcile.get("open_sessions")
     ):
@@ -1591,8 +1616,8 @@ def _validate_resume_reconcile(
     has_bound_session = pending.get("session_no_sha256") is not None
     has_bound_order = pending.get("order_id") is not None
     if (
-        (has_bound_session and reconcile["scanned"] != 1)
-        or (not has_bound_order and reconcile["scanned"] != 0)
+        (has_bound_session and reconcile["scanned"] != prior + 1)
+        or (not has_bound_order and reconcile["scanned"] != prior)
         or (pending.get("session_released") is True and reconcile["open_sessions"] != 0)
     ):
         raise M9AcceptanceError(
@@ -1701,6 +1726,10 @@ def prepare(
         source_candidate_sha=source_candidate_sha,
         source_image_id=source_image_id,
     )
+    from scripts.release import gatea_m9_paid_recovery as recovery
+    paid_recovery = recovery.acceptance_binding(
+        release_record_dir=release_record_dir, deployment=upgrade_record,
+    )
     context = PreparedContext(
         values=values,
         config_file=config_file,
@@ -1723,6 +1752,7 @@ def prepare(
         pre_wallet_reconcile={},
         started_at=_utc_now(),
         attempt_id=secrets.token_hex(16),
+        paid_recovery=paid_recovery,
     )
     if context.pending_path.exists() or context.pending_path.is_symlink():
         pending, _ = _read_protected_json(
@@ -1855,12 +1885,16 @@ def prepare(
     current_wallet_reconcile = _run_wallet_reconcile(context)
     if context.pending is None and context.staged_success is None:
         try:
-            upgrade._validate_empty_m9_table_snapshot(snapshot)
+            baseline = dict(snapshot)
+            if context.paid_recovery:
+                baseline["table_sessions"] -= 1
+                baseline["table_session_timers"] -= 2
+            upgrade._validate_empty_m9_table_snapshot(baseline)
         except upgrade.GateAUpgradeError as error:
             raise M9AcceptanceError(
                 "Gate A M9 acceptance requires the fresh 30-table empty baseline"
             ) from error
-        if any(current_reconcile.values()):
+        if any(value != (context.prior_sessions if key == "scanned" else 0) for key, value in current_reconcile.items()):
             raise M9AcceptanceError(
                 "Gate A M9 acceptance requires no prior table session history"
             )
@@ -1869,7 +1903,7 @@ def prepare(
             pre_reconcile=current_reconcile,
             pre_wallet_reconcile=current_wallet_reconcile,
         )
-    _validate_resume_runtime_snapshot(snapshot)
+    _validate_resume_runtime_snapshot(snapshot, prior_sessions=context.prior_sessions)
     if context.staged_success is not None:
         if (
             current_reconcile != context.staged_success.get("post_reconcile")
@@ -2108,8 +2142,8 @@ def _validate_pending_payload(
     if (
         updated_at < started_at
         or any(
-            type(value) is not int or value != 0
-            for value in payload["pre_reconcile"].values()
+            type(value) is not int or value != (context.prior_sessions if key == "scanned" else 0)
+            for key, value in payload["pre_reconcile"].items()
         )
         or any(
             type(value) is not int for value in payload["pre_wallet_reconcile"].values()
@@ -2645,6 +2679,8 @@ def _assert_no_forbidden_record_keys(value: object) -> None:
 def _validate_success_semantics(payload: Mapping[str, Any]) -> None:
     """校验安装器依赖的绑定，以及业务结论对应的冻结数值。"""
 
+    prior = 1 if payload.get("schema_version") == 2 else 0
+    wallet_after = "150.00" if prior else EXPECTED_POST_PAYMENT_BALANCE
     fixture = payload["fixture"]
     scenario = payload["scenario"]
     pre_reconcile = payload["pre_reconcile"]
@@ -2738,7 +2774,7 @@ def _validate_success_semantics(payload: Mapping[str, Any]) -> None:
         or scenario.get("payment_deadline_offset_seconds") != 900
         or scenario.get("awaiting_timer_count") != 0
         or scenario.get("payment_statuses") != [201, 200]
-        or scenario.get("post_payment_balance") != EXPECTED_POST_PAYMENT_BALANCE
+        or scenario.get("post_payment_balance") != wallet_after
         or scenario.get("active_timer_durations_minutes") != [60, 120]
         or scenario.get("active_timer_buffer_minutes") != [10, 10]
         or scenario.get("active_timer_experience_item_counts") != [2, 1]
@@ -2767,9 +2803,9 @@ def _validate_success_semantics(payload: Mapping[str, Any]) -> None:
         or scenario.get("final_order_status") != "paid"
     )
     invalid_consistency = (
-        any(type(value) is not int or value != 0 for value in pre_reconcile.values())
+        any(type(value) is not int or value != (prior if key == "scanned" else 0) for key, value in pre_reconcile.items())
         or any(type(value) is not int for value in post_reconcile.values())
-        or post_reconcile.get("scanned") != 1
+        or post_reconcile.get("scanned") != prior + 1
         or any(value != 0 for key, value in post_reconcile.items() if key != "scanned")
         or any(type(value) is not int for value in pre_wallet.values())
         or any(type(value) is not int for value in post_wallet.values())
@@ -2824,8 +2860,8 @@ def _validate_success_semantics(payload: Mapping[str, Any]) -> None:
 
 def _validate_success_record(payload: Mapping[str, Any]) -> None:
     if (
-        set(payload) != SUCCESS_RECORD_KEYS
-        or payload.get("schema_version") != 1
+        set(payload) != (SUCCESS_RECORD_KEYS | {"paid_recovery"} if payload.get("schema_version") == 2 else SUCCESS_RECORD_KEYS)
+        or payload.get("schema_version") not in {1, 2}
         or payload.get("record_type") != "gatea-m9-runtime-acceptance"
         or payload.get("environment") != "gatea"
         or payload.get("ci_job_name") != CI_JOB_NAME
@@ -2873,6 +2909,14 @@ def _validate_success_record(payload: Mapping[str, Any]) -> None:
         or payload.get("log_redaction", {}).get("passed") is not True
     ):
         raise M9AcceptanceError("Gate A M9 success record shape is invalid")
+    if payload.get("schema_version") == 2:
+        recovery = payload.get("paid_recovery")
+        if (not isinstance(recovery, dict)
+                or set(recovery) != {"predecessor_candidate_sha", "failed_acceptance_sha256", "rotation_record_sha256"}
+                or gatea.GIT_SHA_PATTERN.fullmatch(str(recovery.get("predecessor_candidate_sha", ""))) is None
+                or any(gatea.SHA256_PATTERN.fullmatch(str(recovery.get(k, ""))) is None
+                       for k in ("failed_acceptance_sha256", "rotation_record_sha256"))):
+            raise M9AcceptanceError("Gate A M9 paid recovery success binding is invalid")
     _validate_success_semantics(payload)
     _assert_no_forbidden_record_keys(payload)
 
@@ -2885,7 +2929,9 @@ def _validate_success_binding(
 ) -> dict[str, Any]:
     _validate_success_record(payload)
     if (
-        payload.get("candidate_sha") != context.candidate_sha
+        payload.get("paid_recovery") != context.paid_recovery
+        or payload.get("schema_version") != (2 if context.paid_recovery else 1)
+        or payload.get("candidate_sha") != context.candidate_sha
         or payload.get("image_id") != context.image_id
         or payload.get("operations_sha") != context.operations_sha
         or payload.get("ci_run_id") != context.ci_run_id
@@ -4314,12 +4360,13 @@ def _verify_wallet_payment_result(
     *,
     order_id: int,
     step: str,
+    expected_balance: str = EXPECTED_POST_PAYMENT_BALANCE,
 ) -> tuple[dict[str, Any], datetime]:
     payment = payload.get("payment")
     if (
         payload.get("order_id") != order_id
         or _enum_value(payload, "order_status") != "paid"
-        or payload.get("post_payment_balance") != EXPECTED_POST_PAYMENT_BALANCE
+        or payload.get("post_payment_balance") != expected_balance
         or not isinstance(payment, dict)
     ):
         raise M9AcceptanceError(f"Gate A M9 step {step} payment is invalid")
@@ -4572,7 +4619,7 @@ def _execute_active_acceptance(
         )
         if not isinstance(wallet.get("wallet"), dict) or (
             wallet["wallet"].get("balance")
-            not in {EXPECTED_WALLET_BALANCE, EXPECTED_POST_PAYMENT_BALANCE}
+            not in {context.wallet_before, context.wallet_after}
             or wallet["wallet"].get("status") != "active"
         ):
             raise M9AcceptanceError("Gate A M9 synthetic wallet baseline is invalid")
@@ -4830,7 +4877,7 @@ def _execute_active_acceptance(
         pre_payment_balance = wallet["wallet"].get("balance")
         if live_payment_evidence is None:
             if (
-                pre_payment_balance != EXPECTED_WALLET_BALANCE
+                pre_payment_balance != context.wallet_before
                 or _enum_value(existing_session or claimed, "status")
                 != "awaiting_payment"
             ):
@@ -4862,9 +4909,10 @@ def _execute_active_acceptance(
                     paid,
                     order_id=order_id,
                     step="pay-mixed-order-with-wallet",
+                    expected_balance=context.wallet_after,
                 )
             )
-        elif pre_payment_balance != EXPECTED_POST_PAYMENT_BALANCE:
+        elif pre_payment_balance != context.wallet_after:
             raise M9AcceptanceError("Gate A M9 resumed wallet balance is invalid")
         payment_committed = True
         if (
@@ -4893,6 +4941,7 @@ def _execute_active_acceptance(
             replayed_paid,
             order_id=order_id,
             step="replay-wallet-payment",
+            expected_balance=context.wallet_after,
         )
         if (
             replay_evidence != payment_evidence
@@ -5016,7 +5065,7 @@ def _execute_active_acceptance(
         if (
             post_reconcile.get("open_sessions") != 0
             or post_reconcile.get("occupancies") != 0
-            or post_reconcile.get("scanned") != 1
+            or post_reconcile.get("scanned") != context.prior_sessions + 1
             or post_reconcile.get("violations") != 0
         ):
             raise M9AcceptanceError("Gate A M9 post-release reconciliation is invalid")
@@ -5033,7 +5082,7 @@ def _execute_active_acceptance(
         if (
             not isinstance(post_wallet.get("wallet"), dict)
             or post_wallet["wallet"].get("balance")
-            != EXPECTED_POST_PAYMENT_BALANCE
+            != context.wallet_after
         ):
             raise M9AcceptanceError("Gate A M9 post-payment wallet is invalid")
         _ensure_fixture_products_not_online(
@@ -5110,7 +5159,7 @@ def _execute_active_acceptance(
             "awaiting_timer_count": 0,
             "payment_statuses": [201, 200],
             "payment_replay_same_payment": True,
-            "post_payment_balance": EXPECTED_POST_PAYMENT_BALANCE,
+            "post_payment_balance": context.wallet_after,
             "active_timer_durations_minutes": timer_evidence["durations"],
             "active_timer_buffer_minutes": timer_evidence["buffers"],
             "active_timer_experience_item_counts": timer_evidence["item_counts"],
@@ -5143,7 +5192,8 @@ def _execute_active_acceptance(
             "pending_record_retained": False,
         }
         success_payload = {
-            "schema_version": 1,
+            "schema_version": 2 if context.paid_recovery else 1,
+            **({"paid_recovery": dict(context.paid_recovery)} if context.paid_recovery else {}),
             "record_type": "gatea-m9-runtime-acceptance",
             "environment": "gatea",
             "candidate_sha": context.candidate_sha,

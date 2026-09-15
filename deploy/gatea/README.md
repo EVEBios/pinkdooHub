@@ -1,5 +1,7 @@
 # Gate A 持久部署
 
+> **2026-09-15 恢复更新：** D 的真实 stage 已因归档 `0755`／加载器 `0644` 契约不一致在 pending/Image/Release 写入前失败；下文 D 的待执行描述为历史状态。当前独立 M9 修复候选为 E，绑定解压后的精确模式并新增源码前置检查；E 自身远端 CI 与现场证据尚未取得，Gate A 保持 No-Go。历史交接来源、测试边界与执行顺序以 [M9 恢复记录](../../docs/09_release/reports/gatea_m9_recovery_preflight_2026-09-15.md) 为准，本文不把旧 Run 或旧现场状态视为本轮通过证据。
+
 > **Status:** live Gate A 是旧候选 A/M9，`current` 仍指向 M7 lineage S；候选 B 留下 `prepared` retirement pending，候选 C 的 pre-install isolated stage 在零现场写入前失败并已清理，当前只允许全新候选 D 在自身 9/9 后执行受控 A→B→D takeover 与 M9→M9 零迁移前滚，DNS/HTTPS 和真机仍待完成
 > **Scope:** 微信小程序受邀内部测试环境；不是 Gate B 正式生产
 

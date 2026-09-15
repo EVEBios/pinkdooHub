@@ -200,6 +200,25 @@
 - 创建／日历接口支持省略 Option，套餐摘要及结束时间严格全空；顾客端和管理端兼容新旧预约及不同确认文案。账户注销继续保护未过预约日打烊时刻的无套餐预约。
 - 新增 M10 MySQL 离线迁移及降级空值阻断，同步需求、API、数据库/DBML、前端契约和测试；未应用任何持久数据库迁移，未改变 Gate A 状态。
 
+## M9 paid verifier 幂等键契约修正（本地，2026-09-15）
+
+- 修复 F retirement 现场暴露的付款、claim、release 持久键前缀遗漏，复用正式业务常量，不改业务数据。
+- 成功测试通过真实开台/钱包付款/管理员释放服务生成事实；补六种无前缀或错误 attempt 拒绝，相关 90 项测试通过。
+- 补齐已付款双 pending 接管及安装前 operations 显式传递，40 项归档/故障恢复检查、实际发布记录的断网本地检查及一次性 MySQL 两项检查通过；相关快速 CI 前置。
+- F 已 stage，但 retirement 留在 prepared；live E/M9 与 current S 未变，双 pending 保留。新候选 CI/现场接管尚未完成，详见[最新检查点](../09_release/reports/gatea_m9_paid_recovery_2026-09-15.md)。
+
+## M9 日志修复与已付款失败恢复（仓库候选，2026-09-15）
+
+- 注册/登录日志移除 username；Nginx 每个 server 显式覆盖默认 access log，消除 main 与 gatea 双写。
+- 正式扫描器增加安全的服务/次数反馈，真实 auth 与官方 Nginx 镜像验证前移到完整演练之前。
+- 增加 E 已付款并释放终态的只读核验和受控退休，绑定 S→A→E lineage；提供有 journal、摘要比较与事务保护的 T01 轮换，并以新 acceptance schema 2 绑定 155→150 钱包及 1→2 会话基线。
+- Resilience/finalize 重开恢复证据。未新增数据库结构或依赖；新候选尚未冻结或部署，详情及隔离验证见 [已付款恢复记录](../09_release/reports/gatea_m9_paid_recovery_2026-09-15.md)。
+
+## M9 恢复候选 E：精确模式与流水线前置检查（2026-09-15）
+
+- 安全解压同时冻结 operations 内容 SHA-256 与 `0644`/`0755` 精确模式；加载前继续执行原有所有权、文件类型、单链接、稳定身份和 digest 校验。修复 D 的合法 Git 执行位被误拒绝的问题，不修改现场权限或 Record schema。
+- 测试归档保留真实 Git 模式，补双向 mode drift、异常清理与真实 archive/Linux root 检查；隔离测试使用 `-I -B`，移除 PYTHONPATH 测试注入。
+- 新增只读源码契约预检，在 updater 安装依赖前拒绝超出 M9 发布器能力的迁移树。详细状态见 [M9 恢复记录](../09_release/reports/gatea_m9_recovery_preflight_2026-09-15.md)；尚无 E 的 CI/stage/finalize 成功证据。
 
 ## M9 二维码开台与多时长计时（仓库实现候选，2026-09-10）
 

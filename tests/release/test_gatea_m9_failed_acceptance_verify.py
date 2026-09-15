@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -977,3 +978,97 @@ def test_main_emits_safe_internal_refusal_without_error_or_database_output(
             "private",
         )
     )
+
+
+async def _seed_paid_failure():
+    from tests.table_sessions.test_table_session_service import _services
+
+    seed = await _seed_clean_failure()
+    await InventoryTransaction.filter(transaction_type=InventoryTransactionType.ORDER_CANCELLATION_RESTORE).delete()
+    await ProductKit.filter(id=seed.kit.id).update(stock=9)
+    await Order.filter(id=seed.order.id).update(status=OrderStatus.PENDING.value)
+    now = datetime(2026, 9, 15, 11, 25, 30, tzinfo=timezone.utc)
+    await WalletAccount.create(user=seed.user, balance=Decimal('160.00'))
+    table = await StoreTable.create(table_no='T01', display_name='T01', qr_token='A' * 32)
+    # 用真实写入方生成付款/会话事实，避免夹具与 verifier 共享错误的持久化假设。
+    table_service, payment_service = _services(now=now-timedelta(seconds=10), payment_now=now)
+    claim = await table_service.create_session(
+        user=seed.user, qr_token=table.qr_token, order_id=seed.order.id,
+        idempotency_key=f'gatea-m9-claim-{ACCEPTANCE_ATTEMPT_ID}-v1', ip_address='127.0.0.1',
+    )
+    payment_result = await payment_service.pay_order_with_wallet(
+        seed.order.id, user=seed.user, table_session_no=claim.session.session_no,
+        idempotency_key=f'gatea-m9-wallet-{ACCEPTANCE_ATTEMPT_ID}-v1', ip_address='127.0.0.1',
+    )
+    release_service, _ = _services(now=now+timedelta(seconds=1))
+    await release_service.release_session(
+        session_no=claim.session.session_no, operator_id=seed.admin.id,
+        reason='Gate A M9 controlled internal acceptance release',
+        idempotency_key=f'gatea-m9-release-{ACCEPTANCE_ATTEMPT_ID}-v1', ip_address='127.0.0.1',
+    )
+    payment = payment_result.payment
+    session = claim.session
+    data = dict(candidate_sha=CANDIDATE_SHA, acceptance_attempt_id=ACCEPTANCE_ATTEMPT_ID,
+        order_id=seed.order.id, experience_product_id=seed.experience_product.id,
+        kit_product_id=seed.kit_product.id, experience_items=seed.experience_items,
+        kit_item_id=seed.kit_item_id, kit_price=Decimal('1.00'), payment_id=payment.id,
+        payment_no_sha256=hashlib.sha256(payment.payment_no.encode()).hexdigest(),
+        session_no_sha256=hashlib.sha256(session.session_no.encode()).hexdigest(), succeeded_at=now)
+    return seed, data
+
+
+async def test_paid_failure_verifier_reads_real_payment_and_preserves_database():
+    from app.tasks import gatea_m9_paid_acceptance_verify as paid
+    from scripts.release import gatea_candidate as candidate
+    _, data = await _seed_paid_failure()
+    before = await _read_footprint()
+    result = await paid.verify_paid_acceptance(**data)
+    assert result['schema_version'] == 3
+    assert result['counts'] == candidate.PAID_ACCEPTANCE_BUSINESS_COUNTS
+    assert result['evidence_sha256'] == candidate.PAID_ACCEPTANCE_BUSINESS_EVIDENCE_SHA256
+    assert await _read_footprint() == before
+
+
+@pytest.mark.parametrize('drift', ['wallet', 'stock', 'payment_amount', 'payment_hash', 'session_hash', 'timer', 'release', 'order'])
+async def test_paid_failure_verifier_rejects_real_fact_drift(drift):
+    from app.tasks import gatea_m9_paid_acceptance_verify as paid
+    from app.models.table_session import TableSessionTimer
+    seed, data = await _seed_paid_failure()
+    if drift == 'wallet':
+        await WalletAccount.all().update(balance=Decimal('160.00'))
+    elif drift == 'stock':
+        await ProductKit.filter(id=seed.kit.id).update(stock=10)
+    elif drift == 'payment_amount':
+        await Payment.all().update(amount=Decimal('4.00'))
+    elif drift == 'payment_hash':
+        data['payment_no_sha256'] = '0' * 64
+    elif drift == 'session_hash':
+        data['session_no_sha256'] = '0' * 64
+    elif drift == 'timer':
+        await TableSessionTimer.filter(duration_minutes=60).update(buffer_minutes=1)
+    elif drift == 'release':
+        await TableSession.all().update(status=TableSessionStatus.ACTIVE)
+    else:
+        await Order.filter(id=seed.order.id).update(status=OrderStatus.CANCELLED.value)
+    before = await _read_footprint()
+    with pytest.raises(verifier.GateAM9FailedAcceptanceVerificationError):
+        await paid.verify_paid_acceptance(**data)
+    assert await _read_footprint() == before
+
+
+@pytest.mark.parametrize('field', ['payment', 'claim', 'release'])
+@pytest.mark.parametrize('drift', ['missing_prefix', 'different_attempt'])
+async def test_paid_failure_rejects_unscoped_or_unbound_idempotency_keys(field, drift):
+    from app.tasks import gatea_m9_paid_acceptance_verify as paid
+
+    seed, data = await _seed_paid_failure()
+    model = Payment if field == 'payment' else TableSession
+    column = 'idempotency_key' if field == 'payment' else f'{field}_idempotency_key'
+    row = await model.get(order_id=seed.order.id)
+    stored = getattr(row, column)
+    changed = stored[stored.index('gatea-m9-'):] if drift == 'missing_prefix' else stored.replace(ACCEPTANCE_ATTEMPT_ID, 'd' * 32)
+    await model.filter(id=row.id).update(**{column: changed})
+    before = await _read_footprint()
+    with pytest.raises(verifier.GateAM9FailedAcceptanceVerificationError):
+        await paid.verify_paid_acceptance(**data)
+    assert await _read_footprint() == before

@@ -2,6 +2,8 @@
 
 本文件只保留每次在仓库工作都需要的边界、开发约定和文档导航；全局通用规则见 `~/.codex/AGENTS.md`。具体业务、API、迁移和发布事实以对应权威文档及实际代码/测试为准，不从历史摘要推断当前环境状态。
 
+> 本轮 Gate A 恢复以[已付款恢复记录](docs/09_release/reports/gatea_m9_paid_recovery_2026-09-15.md)的最新检查点为准；较早的 A/B/C/D 摘要属于历史，不能替代现场证据。
+
 ## 项目与当前边界
 
 pinkdooHub 是拼豆店管理系统。后端使用 FastAPI、Tortoise ORM、Pydantic、Redis、MySQL（生产）/SQLite（开发）；前端为 Taro 小程序。精确依赖版本以 `requirements.txt`、`miniapp/package.json` 和锁文件为准，测试配置以 `pyproject.toml` 为准。
