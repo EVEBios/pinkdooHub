@@ -36,6 +36,12 @@ APPROVED_MIGRATIONS = (
     "7_20260907190000_add_reservation_settings.py",
     "8_20260908140000_add_bead_color_swatch_hex.py",
     "9_20260910180000_add_table_sessions.py",
+    "10_20260913115858_optional_reservation_package.py",
+    "11_20260914120000_direct_table_sessions.py",
+    "12_20260914163509_attention_events.py",
+    "13_20260914183218_commerce_attention.py",
+    "14_20260915000723_reservation_followups.py",
+    "15_20260915044318_store_bead_stock.py",
 )
 APPROVED_TARGETS = tuple(range(3, len(APPROVED_MIGRATIONS)))
 
@@ -56,9 +62,9 @@ def _validate_sources() -> None:
     actual = tuple(
         sorted(path.name for path in MIGRATION_SOURCE.glob("[0-9]*_*.py"))
     )
-    if actual != APPROVED_MIGRATIONS:
+    if actual != tuple(sorted(APPROVED_MIGRATIONS)):
         raise GateAMigrationStepError(
-            "repository migration files do not match the approved M0-M9 chain"
+            "repository migration files do not match the approved M0-M15 chain"
         )
 
 
@@ -75,7 +81,7 @@ async def apply_migration_step(target_version: int) -> MigrationStepResult:
     """从精确前一版本应用目标迁移；已在目标版本时严格 no-op。"""
 
     if target_version not in APPROVED_TARGETS:
-        raise GateAMigrationStepError("target version must be one of M3 through M9")
+        raise GateAMigrationStepError("target version must be one of M3 through M15")
     if settings.app_env != "production" or settings.db_engine != "mysql":
         raise GateAMigrationStepError(
             "Gate A migration steps require production MySQL semantics"

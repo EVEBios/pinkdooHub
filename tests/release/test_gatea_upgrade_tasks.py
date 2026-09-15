@@ -20,31 +20,32 @@ class _FakeSettings:
     db_engine = "mysql"
 
 
-@pytest.mark.parametrize("target", (2, 10))
+@pytest.mark.parametrize("target", (2, 16))
 async def test_migration_step_rejects_unapproved_targets(target: int) -> None:
-    with pytest.raises(migration_step.GateAMigrationStepError, match="M3 through M9"):
+    with pytest.raises(migration_step.GateAMigrationStepError, match="M3 through M15"):
         await migration_step.apply_migration_step(target)
 
 
+@pytest.mark.parametrize("target", (3, 10, 11, 12, 13, 14, 15))
 async def test_migration_step_applies_only_the_next_approved_file(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, target: int,
 ) -> None:
-    versions = [migration_step.APPROVED_MIGRATIONS[:3]]
+    versions = [migration_step.APPROVED_MIGRATIONS[:target]]
     migrated: list[str] = []
 
     class FakeCommand:
         def __init__(self, **kwargs: object) -> None:
             location = Path(str(kwargs["location"])) / "models"
             assert tuple(sorted(path.name for path in location.glob("*.py"))) == (
-                migration_step.APPROVED_MIGRATIONS[:4]
+                tuple(sorted(migration_step.APPROVED_MIGRATIONS[: target + 1]))
             )
 
         async def init(self) -> None:
             return None
 
         async def upgrade(self) -> list[str]:
-            migrated.append(migration_step.APPROVED_MIGRATIONS[3])
-            versions[0] = migration_step.APPROVED_MIGRATIONS[:4]
+            migrated.append(migration_step.APPROVED_MIGRATIONS[target])
+            versions[0] = migration_step.APPROVED_MIGRATIONS[: target + 1]
             return migrated.copy()
 
         async def aclose(self) -> None:
@@ -59,12 +60,30 @@ async def test_migration_step_applies_only_the_next_approved_file(
         lambda: _async_value(versions[0]),
     )
 
-    result = await migration_step.apply_migration_step(3)
+    result = await migration_step.apply_migration_step(target)
 
     assert result.applied is True
-    assert result.migration == migration_step.APPROVED_MIGRATIONS[3]
-    assert result.aerich_versions == migration_step.APPROVED_MIGRATIONS[:4]
-    assert migrated == [migration_step.APPROVED_MIGRATIONS[3]]
+    assert result.migration == migration_step.APPROVED_MIGRATIONS[target]
+    assert result.aerich_versions == migration_step.APPROVED_MIGRATIONS[: target + 1]
+    assert migrated == [migration_step.APPROVED_MIGRATIONS[target]]
+
+
+@pytest.mark.parametrize("invalid", (None, "missing", "unexpected"))
+def test_migration_source_inventory_covers_two_digit_versions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid: str | None,
+) -> None:
+    for name in migration_step.APPROVED_MIGRATIONS:
+        (tmp_path / name).write_text("# synthetic migration source\n")
+    if invalid == "missing":
+        (tmp_path / migration_step.APPROVED_MIGRATIONS[10]).unlink()
+    elif invalid == "unexpected":
+        (tmp_path / "16_20260916000000_unapproved.py").write_text("# unapproved\n")
+    monkeypatch.setattr(migration_step, "MIGRATION_SOURCE", tmp_path)
+    if invalid is None:
+        migration_step._validate_sources()
+    else:
+        with pytest.raises(migration_step.GateAMigrationStepError, match="M0-M15"):
+            migration_step._validate_sources()
 
 
 async def _async_value(value: object) -> object:
