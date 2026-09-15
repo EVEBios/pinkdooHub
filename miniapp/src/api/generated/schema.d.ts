@@ -44,6 +44,91 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/attention": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Admin Summary */
+        readonly get: operations["admin_summary_api_v1_admin_attention_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/attention/acknowledge": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Admin Acknowledge */
+        readonly post: operations["admin_acknowledge_api_v1_admin_attention_acknowledge_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/attention/commerce/{scope}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Admin Commerce */
+        readonly get: operations["admin_commerce_api_v1_admin_attention_commerce__scope__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/attention/reservations": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Admin Reservations */
+        readonly get: operations["admin_reservations_api_v1_admin_attention_reservations_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/attention/reservations/{reservation_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Admin Snapshot */
+        readonly get: operations["admin_snapshot_api_v1_admin_attention_reservations__reservation_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/bead-colors": {
         readonly parameters: {
             readonly query?: never;
@@ -670,6 +755,75 @@ export interface paths {
         readonly patch: operations["update_kit_price_api_v1_admin_products_kit__product_id__price_patch"];
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/reservation-followups": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Queue */
+        readonly get: operations["list_queue_api_v1_admin_reservation_followups_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservation-followups/{reservation_id}/{kind}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Detail */
+        readonly get: operations["detail_api_v1_admin_reservation_followups__reservation_id___kind__get"];
+        readonly put?: never;
+        /** Write */
+        readonly post: operations["write_api_v1_admin_reservation_followups__reservation_id___kind__post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservation-followups/{reservation_id}/{kind}/history": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** History */
+        readonly get: operations["history_api_v1_admin_reservation_followups__reservation_id___kind__history_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/reservation-followups/summary": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Counts */
+        readonly get: operations["counts_api_v1_admin_reservation_followups_summary_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/reservation-settings": {
         readonly parameters: {
             readonly query?: never;
@@ -792,6 +946,75 @@ export interface paths {
         readonly patch: operations["reject_reservation_api_v1_admin_reservations__reservation_id__reject_patch"];
         readonly trace?: never;
     };
+    readonly "/api/v1/admin/store-bead-stock": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Stock */
+        readonly get: operations["list_stock_api_v1_admin_store_bead_stock_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/store-bead-stock/batches": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** History */
+        readonly get: operations["history_api_v1_admin_store_bead_stock_batches_get"];
+        readonly put?: never;
+        /** Write */
+        readonly post: operations["write_api_v1_admin_store_bead_stock_batches_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/store-bead-stock/batches/{batch_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Detail */
+        readonly get: operations["detail_api_v1_admin_store_bead_stock_batches__batch_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/store-bead-stock/batches/by-request/{request_key}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** By Request */
+        readonly get: operations["by_request_api_v1_admin_store_bead_stock_batches_by_request__request_key__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/admin/store-closures": {
         readonly parameters: {
             readonly query?: never;
@@ -822,6 +1045,23 @@ export interface paths {
         readonly post?: never;
         /** Reopen Store Day */
         readonly delete: operations["reopen_store_day_api_v1_admin_store_closures__business_date__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/table-duration-options": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Direct Table Durations */
+        readonly get: operations["list_direct_table_durations_api_v1_admin_table_duration_options_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -910,6 +1150,23 @@ export interface paths {
         readonly head?: never;
         /** Update Admin Table */
         readonly patch: operations["update_admin_table_api_v1_admin_tables__table_id__patch"];
+        readonly trace?: never;
+    };
+    readonly "/api/v1/admin/tables/{table_id}/direct-sessions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Direct Table Session */
+        readonly post: operations["create_direct_table_session_api_v1_admin_tables__table_id__direct_sessions_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
         readonly trace?: never;
     };
     readonly "/api/v1/admin/users": {
@@ -1015,6 +1272,179 @@ export interface paths {
         };
         /** List Admin User Wallet Transactions */
         readonly get: operations["list_admin_user_wallet_transactions_api_v1_admin_users__user_id__wallet_transactions_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Summary */
+        readonly get: operations["customer_summary_api_v1_attention_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/commerce/{scope}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Commerce */
+        readonly get: operations["customer_commerce_api_v1_attention_commerce__scope__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/orders/{order_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Order Snapshot */
+        readonly get: operations["customer_order_snapshot_api_v1_attention_orders__order_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/read": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Customer Read */
+        readonly post: operations["customer_read_api_v1_attention_read_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/reservations": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Reservations */
+        readonly get: operations["customer_reservations_api_v1_attention_reservations_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/reservations/{reservation_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Snapshot */
+        readonly get: operations["customer_snapshot_api_v1_attention_reservations__reservation_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/table-sessions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Customer Table Sessions
+         * @description 顾客本人的全部开台记录；已付款或结果已读后仍可查询。
+         */
+        readonly get: operations["customer_table_sessions_api_v1_attention_table_sessions_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/tables/{session_no}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Table Snapshot */
+        readonly get: operations["customer_table_snapshot_api_v1_attention_tables__session_no__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/wallet": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Wallet Results */
+        readonly get: operations["customer_wallet_results_api_v1_attention_wallet_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/attention/wallet/{event_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Customer Wallet Snapshot */
+        readonly get: operations["customer_wallet_snapshot_api_v1_attention_wallet__event_id__get"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1657,6 +2087,40 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/v1/table-sessions/history/{session_no}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get User Table Session */
+        readonly get: operations["get_user_table_session_api_v1_table_sessions_history__session_no__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/v1/tables/by-number/{table_no}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Resolve Table Number */
+        readonly get: operations["resolve_table_number_api_v1_tables_by_number__table_no__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/v1/users/me": {
         readonly parameters: {
             readonly query?: never;
@@ -2167,6 +2631,7 @@ export interface components {
             readonly current_order_no?: string | null;
             /** Current Session No */
             readonly current_session_no?: string | null;
+            readonly current_source?: components["schemas"]["TableSessionSource"] | null;
             readonly current_status?: components["schemas"]["TableEnumOut"] | null;
             /** Current User Id */
             readonly current_user_id?: number | null;
@@ -2178,11 +2643,29 @@ export interface components {
             readonly is_enabled: boolean;
             /** Payment Deadline At */
             readonly payment_deadline_at?: string | null;
+            /** Service Ends At */
+            readonly service_ends_at?: string | null;
             readonly state: components["schemas"]["AdminTableState"];
             /** Table No */
             readonly table_no: string;
             /** Table Release At */
             readonly table_release_at?: string | null;
+            /**
+             * Timer Count
+             * @default 0
+             */
+            readonly timer_count: number;
+            /** Timers */
+            readonly timers?: readonly components["schemas"]["AdminTableTimerOut"][];
+        };
+        /** AdminTableSessionCreate */
+        readonly AdminTableSessionCreate: {
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /** Note */
+            readonly note?: string | null;
+            /** Option Id */
+            readonly option_id: number;
         };
         /** AdminTableSessionListItemOut */
         readonly AdminTableSessionListItemOut: {
@@ -2199,16 +2682,15 @@ export interface components {
             /** Minimum Duration Minutes */
             readonly minimum_duration_minutes?: number | null;
             /** Order Id */
-            readonly order_id: number;
+            readonly order_id?: number | null;
             /** Order No */
-            readonly order_no: string;
-            /**
-             * Payment Deadline At
-             * Format: date-time
-             */
-            readonly payment_deadline_at: string;
+            readonly order_no?: string | null;
+            /** Payment Deadline At */
+            readonly payment_deadline_at: string | null;
             /** Session No */
             readonly session_no: string;
+            /** @default order */
+            readonly source: components["schemas"]["TableSessionSource"];
             /** Started At */
             readonly started_at?: string | null;
             readonly status: components["schemas"]["TableEnumOut"];
@@ -2218,9 +2700,9 @@ export interface components {
             /** Timer Count */
             readonly timer_count: number;
             /** User Id */
-            readonly user_id: number;
+            readonly user_id?: number | null;
             /** User Nickname */
-            readonly user_nickname: string;
+            readonly user_nickname?: string | null;
         };
         /** AdminTableSessionOut */
         readonly AdminTableSessionOut: {
@@ -2236,15 +2718,22 @@ export interface components {
             readonly closed_at?: string | null;
             /** Closed By User Id */
             readonly closed_by_user_id?: number | null;
+            /** Direct Duration Minutes */
+            readonly direct_duration_minutes?: number | null;
+            /** Opened By User Id */
+            readonly opened_by_user_id?: number | null;
+            /** Opening Note */
+            readonly opening_note?: string | null;
+            /** Order Experience Durations */
+            readonly order_experience_durations?: readonly number[];
             /** Order Id */
-            readonly order_id: number;
+            readonly order_id?: number | null;
             /** Order No */
-            readonly order_no: string;
-            /**
-             * Payment Deadline At
-             * Format: date-time
-             */
-            readonly payment_deadline_at: string;
+            readonly order_no?: string | null;
+            /** Order Total Amount */
+            readonly order_total_amount?: string | null;
+            /** Payment Deadline At */
+            readonly payment_deadline_at: string | null;
             /** Payment Id */
             readonly payment_id?: number | null;
             /**
@@ -2254,6 +2743,10 @@ export interface components {
             readonly server_now: string;
             /** Session No */
             readonly session_no: string;
+            /** @default order */
+            readonly source: components["schemas"]["TableSessionSource"];
+            /** Source Option Id */
+            readonly source_option_id?: number | null;
             /** Started At */
             readonly started_at?: string | null;
             readonly status: components["schemas"]["TableEnumOut"];
@@ -2261,22 +2754,71 @@ export interface components {
             /** Table Release At */
             readonly table_release_at?: string | null;
             /** Timers */
-            readonly timers: readonly components["schemas"]["TableSessionTimerOut"][];
+            readonly timers: readonly components["schemas"]["AdminTableSessionTimerOut"][];
             /** User Id */
-            readonly user_id: number;
+            readonly user_id?: number | null;
             /** User Nickname */
-            readonly user_nickname: string;
+            readonly user_nickname?: string | null;
         };
         /** AdminTableSessionRelease */
         readonly AdminTableSessionRelease: {
             /** Reason */
             readonly reason: string;
         };
+        /** AdminTableSessionTimerOut */
+        readonly AdminTableSessionTimerOut: {
+            /**
+             * Buffer Minutes
+             * @constant
+             */
+            readonly buffer_minutes: 10;
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /** Ended At */
+            readonly ended_at?: string | null;
+            /** Experience Items */
+            readonly experience_items?: readonly components["schemas"]["TimerExperienceItemOut"][];
+            /**
+             * Grace Ends At
+             * Format: date-time
+             */
+            readonly grace_ends_at: string;
+            /** Id */
+            readonly id: number;
+            readonly phase: components["schemas"]["TableEnumOut"];
+            /**
+             * Service Ends At
+             * Format: date-time
+             */
+            readonly service_ends_at: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            readonly started_at: string;
+        };
         /**
          * AdminTableState
          * @enum {string}
          */
         readonly AdminTableState: "available" | "awaiting_payment" | "active" | "disabled";
+        /** AdminTableTimerOut */
+        readonly AdminTableTimerOut: {
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /**
+             * Grace Ends At
+             * Format: date-time
+             */
+            readonly grace_ends_at: string;
+            /** Id */
+            readonly id: number;
+            /**
+             * Service Ends At
+             * Format: date-time
+             */
+            readonly service_ends_at: string;
+        };
         /** AdminTableUpdate */
         readonly AdminTableUpdate: {
             /** Is Enabled */
@@ -2298,6 +2840,64 @@ export interface components {
              * @example 80.00
              */
             readonly post_payment_balance: string;
+        };
+        /** AttentionEventOut */
+        readonly AttentionEventOut: {
+            readonly event_type: components["schemas"]["AttentionEventType"];
+            /** Id */
+            readonly id: number;
+            /** Label */
+            readonly label: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            readonly occurred_at: string;
+        };
+        /**
+         * AttentionEventType
+         * @enum {string}
+         */
+        readonly AttentionEventType: "order_assisted_wallet_paid" | "order_wallet_refunded" | "order_manual_refunded" | "wallet_adjusted" | "order_manual_paid" | "order_wallet_paid" | "order_completed" | "session_payment_timeout" | "session_time_expired" | "session_admin_released" | "reservation_confirmed" | "reservation_rejected" | "reservation_store_closed" | "reservation_customer_cancelled";
+        /** AttentionReadRequest */
+        readonly AttentionReadRequest: {
+            /** Event Ids */
+            readonly event_ids: readonly number[];
+        };
+        /** AttentionSummaryOut */
+        readonly AttentionSummaryOut: {
+            /** Order Fulfillment */
+            readonly order_fulfillment: number;
+            /** Order Pending */
+            readonly order_pending: number;
+            /** Order Total */
+            readonly order_total: number;
+            /** Order Unread */
+            readonly order_unread: number;
+            /** Reservation Actionable */
+            readonly reservation_actionable: number;
+            /** Reservation Overdue */
+            readonly reservation_overdue: number;
+            /** Reservation Total */
+            readonly reservation_total: number;
+            /** Reservation Unread */
+            readonly reservation_unread: number;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            readonly server_now: string;
+            /** Table Pending */
+            readonly table_pending: number;
+            /** Table Total */
+            readonly table_total: number;
+            /** Table Unread */
+            readonly table_unread: number;
+            /**
+             * Wallet Unread
+             * @default 0
+             */
+            readonly wallet_unread: number;
         };
         /**
          * AuditLogOut
@@ -2364,6 +2964,65 @@ export interface components {
             /** Swatch Hex */
             readonly swatch_hex?: string | null;
         };
+        /** CommerceAttentionEventOut */
+        readonly CommerceAttentionEventOut: {
+            readonly event_type: components["schemas"]["AttentionEventType"];
+            /** Id */
+            readonly id: number;
+            /** Label */
+            readonly label: string;
+            /** Message */
+            readonly message: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            readonly occurred_at: string;
+            /** Read */
+            readonly read: boolean;
+            /** Session No */
+            readonly session_no: string | null;
+            readonly wallet_transaction?: components["schemas"]["WalletAttentionTransactionOut"] | null;
+        };
+        /** CommerceAttentionItemOut */
+        readonly CommerceAttentionItemOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Order Id */
+            readonly order_id: number | null;
+            /** Payment Deadline At */
+            readonly payment_deadline_at: string | null;
+            /** Reference */
+            readonly reference: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            readonly scope: "orders" | "tables" | "wallet";
+            /** Session No */
+            readonly session_no: string | null;
+            /** Status Label */
+            readonly status_label: string;
+            /** Title */
+            readonly title: string;
+            /** Unread */
+            readonly unread: boolean;
+        };
+        /** CommerceAttentionSnapshotOut */
+        readonly CommerceAttentionSnapshotOut: {
+            /** Events */
+            readonly events: readonly components["schemas"]["CommerceAttentionEventOut"][];
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            readonly server_now: string;
+        };
         /**
          * DayType
          * @description 体验 Option 的日期类型。
@@ -2398,6 +3057,24 @@ export interface components {
              * @enum {string}
              */
             readonly redis: "up" | "down";
+        };
+        /** DirectTableDurationListOut */
+        readonly DirectTableDurationListOut: {
+            /**
+             * Buffer Minutes
+             * @default 10
+             * @constant
+             */
+            readonly buffer_minutes: 10;
+            /** Items */
+            readonly items: readonly components["schemas"]["DirectTableDurationOut"][];
+        };
+        /** DirectTableDurationOut */
+        readonly DirectTableDurationOut: {
+            /** Duration Minutes */
+            readonly duration_minutes: number;
+            /** Option Id */
+            readonly option_id: number;
         };
         /** EligibleDurationGroupOut */
         readonly EligibleDurationGroupOut: {
@@ -2589,6 +3266,105 @@ export interface components {
              * @constant
              */
             readonly provider: "wechat_miniprogram";
+        };
+        /** FollowupCounts */
+        readonly FollowupCounts: {
+            /** Contact Pending */
+            readonly contact_pending: number;
+            /** Overdue Pending */
+            readonly overdue_pending: number;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            readonly server_now: string;
+        };
+        /** FollowupItemOut */
+        readonly FollowupItemOut: {
+            /** Completed */
+            readonly completed: boolean;
+            /** Customer Name */
+            readonly customer_name: string;
+            /** Eligible */
+            readonly eligible: boolean;
+            readonly kind: components["schemas"]["FollowupKind"];
+            readonly latest: components["schemas"]["FollowupRecordOut"] | null;
+            /** Product Name */
+            readonly product_name: string | null;
+            /** Reservation Id */
+            readonly reservation_id: number;
+            /** Revision */
+            readonly revision: number;
+            /**
+             * Scheduled Start At
+             * Format: date-time
+             */
+            readonly scheduled_start_at: string;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            readonly server_now: string;
+        };
+        /**
+         * FollowupKind
+         * @enum {string}
+         */
+        readonly FollowupKind: "contact" | "overdue";
+        /**
+         * FollowupOutcome
+         * @enum {string}
+         */
+        readonly FollowupOutcome: "retry" | "unreachable" | "contacted" | "resolved";
+        /** FollowupRecordOut */
+        readonly FollowupRecordOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Label */
+            readonly label: string;
+            /** Note */
+            readonly note: string;
+            /** Operator Id */
+            readonly operator_id: number;
+            readonly outcome: components["schemas"]["FollowupOutcome"];
+            /** Revision */
+            readonly revision: number;
+        };
+        /** FollowupSnapshotOut */
+        readonly FollowupSnapshotOut: {
+            /** Completed */
+            readonly completed: boolean;
+            /** Eligible */
+            readonly eligible: boolean;
+            readonly kind: components["schemas"]["FollowupKind"];
+            readonly latest: components["schemas"]["FollowupRecordOut"] | null;
+            /** Reservation Id */
+            readonly reservation_id: number;
+            /** Revision */
+            readonly revision: number;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            readonly server_now: string;
+        };
+        /** FollowupWrite */
+        readonly FollowupWrite: {
+            /** Expected Revision */
+            readonly expected_revision: number;
+            /** Note */
+            readonly note: string;
+            readonly outcome: components["schemas"]["FollowupOutcome"];
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            readonly request_key: string;
         };
         /**
          * InventoryAdjustmentCreate
@@ -3014,6 +3790,10 @@ export interface components {
             readonly items: readonly components["schemas"]["OrderItemCreate"][];
             /** Remark */
             readonly remark?: string | null;
+            /** Table Checkout Key */
+            readonly table_checkout_key?: string | null;
+            /** Table No */
+            readonly table_no?: string | null;
         };
         /**
          * OrderDayTypeOut
@@ -3258,10 +4038,49 @@ export interface components {
             /** Total */
             readonly total: number;
         };
+        /** Page[CommerceAttentionItemOut] */
+        readonly Page_CommerceAttentionItemOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["CommerceAttentionItemOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
         /** Page[EligibleOrderListItemOut] */
         readonly Page_EligibleOrderListItemOut_: {
             /** Items */
             readonly items: readonly components["schemas"]["EligibleOrderListItemOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
+        /** Page[FollowupItemOut] */
+        readonly Page_FollowupItemOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["FollowupItemOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
+        /** Page[FollowupRecordOut] */
+        readonly Page_FollowupRecordOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["FollowupRecordOut"][];
             /** Page */
             readonly page: number;
             /** Page Size */
@@ -3314,6 +4133,32 @@ export interface components {
         readonly Page_ReservationOut_: {
             /** Items */
             readonly items: readonly components["schemas"]["ReservationOut"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
+        /** Page[StoreBeadStockBatchSummary] */
+        readonly Page_StoreBeadStockBatchSummary_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["StoreBeadStockBatchSummary"][];
+            /** Page */
+            readonly page: number;
+            /** Page Size */
+            readonly page_size: number;
+            /** Pages */
+            readonly pages: number;
+            /** Total */
+            readonly total: number;
+        };
+        /** Page[StoreBeadStockOut] */
+        readonly Page_StoreBeadStockOut_: {
+            /** Items */
+            readonly items: readonly components["schemas"]["StoreBeadStockOut"][];
             /** Page */
             readonly page: number;
             /** Page Size */
@@ -3682,6 +4527,28 @@ export interface components {
          * @enum {string}
          */
         readonly RefundStatus: "pending" | "succeeded" | "failed";
+        /** ReservationAttentionSnapshotOut */
+        readonly ReservationAttentionSnapshotOut: {
+            /** Events */
+            readonly events: readonly components["schemas"]["AttentionEventOut"][];
+            /** Reservation Id */
+            readonly reservation_id: number;
+            /**
+             * Reservation Updated At
+             * Format: date-time
+             */
+            readonly reservation_updated_at: string;
+            /**
+             * Server Now
+             * Format: date-time
+             */
+            readonly server_now: string;
+        };
+        /**
+         * ReservationAttentionView
+         * @enum {string}
+         */
+        readonly ReservationAttentionView: "actionable" | "unread" | "overdue";
         /**
          * ReservationBookingDateOut
          * @description 一个可预约上海本地日期及其半小时时段。
@@ -3863,6 +4730,12 @@ export interface components {
             readonly label: string;
             readonly value: components["schemas"]["ReservationRejectionReason"];
         };
+        /**
+         * ReservationReviewTiming
+         * @description 未处理预约按服务端时间区分；不改变持久化状态。
+         * @enum {string}
+         */
+        readonly ReservationReviewTiming: "actionable" | "overdue";
         /** ReservationSettingsOut */
         readonly ReservationSettingsOut: {
             /**
@@ -3909,6 +4782,116 @@ export interface components {
             readonly health: string;
             /** Version */
             readonly version: string;
+        };
+        /** StoreBeadStockBatchOut */
+        readonly StoreBeadStockBatchOut: {
+            /** Changed Colors */
+            readonly changed_colors: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Items */
+            readonly items: readonly components["schemas"]["StoreBeadStockEntryOut"][];
+            /** Note */
+            readonly note: string;
+            /** Operator Id */
+            readonly operator_id: number;
+            /** Operator Name */
+            readonly operator_name: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            readonly reason: "stocktake" | "restock" | "opening" | "other";
+        };
+        /** StoreBeadStockBatchSummary */
+        readonly StoreBeadStockBatchSummary: {
+            /** Changed Colors */
+            readonly changed_colors: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Id */
+            readonly id: number;
+            /** Note */
+            readonly note: string;
+            /** Operator Id */
+            readonly operator_id: number;
+            /** Operator Name */
+            readonly operator_name: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            readonly reason: "stocktake" | "restock" | "opening" | "other";
+        };
+        /** StoreBeadStockChange */
+        readonly StoreBeadStockChange: {
+            /** Bead Color Id */
+            readonly bead_color_id: number;
+            /** Expected Revision */
+            readonly expected_revision: number;
+            /** Packs */
+            readonly packs: number;
+        };
+        /** StoreBeadStockEntryOut */
+        readonly StoreBeadStockEntryOut: {
+            /** After Packs */
+            readonly after_packs: number;
+            /** Bead Color Id */
+            readonly bead_color_id: number;
+            /** Before Packs */
+            readonly before_packs: number | null;
+            /** Color Code */
+            readonly color_code: string | null;
+            /** Color Name */
+            readonly color_name: string | null;
+            /** Revision */
+            readonly revision: number;
+            /** Slot No */
+            readonly slot_no: number;
+        };
+        /** StoreBeadStockOut */
+        readonly StoreBeadStockOut: {
+            /** Bead Color Id */
+            readonly bead_color_id: number;
+            /** Color Code */
+            readonly color_code: string | null;
+            /** Color Name */
+            readonly color_name: string | null;
+            /** Packs */
+            readonly packs: number | null;
+            /** Revision */
+            readonly revision: number;
+            /** Slot No */
+            readonly slot_no: number;
+        };
+        /** StoreBeadStockWrite */
+        readonly StoreBeadStockWrite: {
+            /** Items */
+            readonly items: readonly components["schemas"]["StoreBeadStockChange"][];
+            /**
+             * Note
+             * @default
+             */
+            readonly note: string;
+            /**
+             * Reason
+             * @default stocktake
+             * @enum {string}
+             */
+            readonly reason: "stocktake" | "restock" | "opening" | "other";
+            /**
+             * Request Key
+             * Format: uuid
+             */
+            readonly request_key: string;
         };
         /** StoreBusinessDayOut */
         readonly StoreBusinessDayOut: {
@@ -4097,6 +5080,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[AttentionSummaryOut] */
+        readonly SuccessResponse_AttentionSummaryOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["AttentionSummaryOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[BeadColorOut] */
         readonly SuccessResponse_BeadColorOut_: {
             /**
@@ -4112,6 +5110,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[CommerceAttentionSnapshotOut] */
+        readonly SuccessResponse_CommerceAttentionSnapshotOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["CommerceAttentionSnapshotOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[DeletedResourceOut] */
         readonly SuccessResponse_DeletedResourceOut_: {
             /**
@@ -4121,6 +5134,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["DeletedResourceOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[DirectTableDurationListOut] */
+        readonly SuccessResponse_DirectTableDurationListOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["DirectTableDurationListOut"];
             /**
              * Message
              * @default success
@@ -4211,6 +5239,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["ExternalIdentityOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[FollowupCounts] */
+        readonly SuccessResponse_FollowupCounts_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["FollowupCounts"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[FollowupSnapshotOut] */
+        readonly SuccessResponse_FollowupSnapshotOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["FollowupSnapshotOut"];
             /**
              * Message
              * @default success
@@ -4503,6 +5561,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[Page[CommerceAttentionItemOut]] */
+        readonly SuccessResponse_Page_CommerceAttentionItemOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_CommerceAttentionItemOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[Page[EligibleOrderListItemOut]] */
         readonly SuccessResponse_Page_EligibleOrderListItemOut__: {
             /**
@@ -4512,6 +5585,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["Page_EligibleOrderListItemOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[Page[FollowupItemOut]] */
+        readonly SuccessResponse_Page_FollowupItemOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_FollowupItemOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[Page[FollowupRecordOut]] */
+        readonly SuccessResponse_Page_FollowupRecordOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_FollowupRecordOut_"];
             /**
              * Message
              * @default success
@@ -4572,6 +5675,36 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["Page_ReservationOut_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[Page[StoreBeadStockBatchSummary]] */
+        readonly SuccessResponse_Page_StoreBeadStockBatchSummary__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_StoreBeadStockBatchSummary_"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[Page[StoreBeadStockOut]] */
+        readonly SuccessResponse_Page_StoreBeadStockOut__: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["Page_StoreBeadStockOut_"];
             /**
              * Message
              * @default success
@@ -4743,6 +5876,21 @@ export interface components {
              */
             readonly message: string;
         };
+        /** SuccessResponse[ReservationAttentionSnapshotOut] */
+        readonly SuccessResponse_ReservationAttentionSnapshotOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["ReservationAttentionSnapshotOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
         /** SuccessResponse[ReservationBookingOptionsOut] */
         readonly SuccessResponse_ReservationBookingOptionsOut_: {
             /**
@@ -4782,6 +5930,21 @@ export interface components {
              */
             readonly code: 0;
             readonly data: components["schemas"]["ReservationSettingsOut"];
+            /**
+             * Message
+             * @default success
+             */
+            readonly message: string;
+        };
+        /** SuccessResponse[StoreBeadStockBatchOut] */
+        readonly SuccessResponse_StoreBeadStockBatchOut_: {
+            /**
+             * Code
+             * @default 0
+             * @constant
+             */
+            readonly code: 0;
+            readonly data: components["schemas"]["StoreBeadStockBatchOut"];
             /**
              * Message
              * @default success
@@ -4956,7 +6119,9 @@ export interface components {
             /** Order Id */
             readonly order_id: number;
             /** Qr Token */
-            readonly qr_token: string;
+            readonly qr_token?: string | null;
+            /** Table No */
+            readonly table_no?: string | null;
         };
         /** TableSessionOut */
         readonly TableSessionOut: {
@@ -4993,6 +6158,11 @@ export interface components {
             /** Timers */
             readonly timers: readonly components["schemas"]["TableSessionTimerOut"][];
         };
+        /**
+         * TableSessionSource
+         * @enum {string}
+         */
+        readonly TableSessionSource: "order" | "direct";
         /**
          * TableSessionStatus
          * @enum {string}
@@ -5187,6 +6357,28 @@ export interface components {
         readonly WalletAdjustmentOut: {
             readonly transaction: components["schemas"]["WalletTransactionOut"];
             readonly wallet: components["schemas"]["WalletSummaryOut"];
+        };
+        /** WalletAttentionTransactionOut */
+        readonly WalletAttentionTransactionOut: {
+            /**
+             * After Balance
+             * @example 80.00
+             */
+            readonly after_balance: string;
+            /**
+             * Before Balance
+             * @example 80.00
+             */
+            readonly before_balance: string;
+            /**
+             * Change Amount
+             * @example 100.00
+             */
+            readonly change_amount: string;
+            /** Id */
+            readonly id: number;
+            /** Reason */
+            readonly reason: string;
         };
         /** WalletCapabilitiesOut */
         readonly WalletCapabilitiesOut: {
@@ -5386,6 +6578,347 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": unknown;
+                };
+            };
+        };
+    };
+    readonly admin_summary_api_v1_admin_attention_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AttentionSummaryOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly admin_acknowledge_api_v1_admin_attention_acknowledge_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AttentionReadRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly admin_commerce_api_v1_admin_attention_commerce__scope__get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly view?: "all" | "pending" | "fulfillment" | "unread";
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly scope: "orders" | "tables";
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_CommerceAttentionItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly admin_reservations_api_v1_admin_attention_reservations_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly view?: components["schemas"]["ReservationAttentionView"];
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_AdminReservationListItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly admin_snapshot_api_v1_admin_attention_reservations__reservation_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationAttentionSnapshotOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -8077,6 +9610,397 @@ export interface operations {
             };
         };
     };
+    readonly list_queue_api_v1_admin_reservation_followups_get: {
+        readonly parameters: {
+            readonly query: {
+                readonly kind: components["schemas"]["FollowupKind"];
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly view?: "pending" | "completed";
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_FollowupItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly detail_api_v1_admin_reservation_followups__reservation_id___kind__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly kind: components["schemas"]["FollowupKind"];
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_FollowupSnapshotOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly write_api_v1_admin_reservation_followups__reservation_id___kind__post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly kind: components["schemas"]["FollowupKind"];
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["FollowupWrite"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_FollowupSnapshotOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly history_api_v1_admin_reservation_followups__reservation_id___kind__history_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly kind: components["schemas"]["FollowupKind"];
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_FollowupRecordOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly counts_api_v1_admin_reservation_followups_summary_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_FollowupCounts_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly get_reservation_settings_api_v1_admin_reservation_settings_get: {
         readonly parameters: {
             readonly query?: never;
@@ -8236,6 +10160,7 @@ export interface operations {
                 readonly page?: number;
                 readonly page_size?: number;
                 readonly product_id?: number | null;
+                readonly review_timing?: components["schemas"]["ReservationReviewTiming"] | null;
                 readonly status?: components["schemas"]["ReservationStatus"] | null;
                 readonly user_id?: number | null;
             };
@@ -8617,6 +10542,390 @@ export interface operations {
             };
         };
     };
+    readonly list_stock_api_v1_admin_store_bead_stock_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_StoreBeadStockOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly history_api_v1_admin_store_bead_stock_batches_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_StoreBeadStockBatchSummary__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly write_api_v1_admin_store_bead_stock_batches_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["StoreBeadStockWrite"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_StoreBeadStockBatchOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly detail_api_v1_admin_store_bead_stock_batches__batch_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly batch_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_StoreBeadStockBatchOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly by_request_api_v1_admin_store_bead_stock_batches_by_request__request_key__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly request_key: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_StoreBeadStockBatchOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     readonly list_store_closures_api_v1_admin_store_closures_get: {
         readonly parameters: {
             readonly query?: {
@@ -8800,6 +11109,80 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["SuccessResponse_StoreClosureMutationOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly list_direct_table_durations_api_v1_admin_table_duration_options_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_DirectTableDurationListOut_"];
                 };
             };
             /** @description Bad Request */
@@ -9196,6 +11579,88 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["SuccessResponse_TableSummaryOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_direct_table_session_api_v1_admin_tables__table_id__direct_sessions_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header: {
+                readonly "Idempotency-Key": string;
+            };
+            readonly path: {
+                readonly table_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AdminTableSessionCreate"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AdminTableSessionOut_"];
                 };
             };
             /** @description Bad Request */
@@ -9737,6 +12202,685 @@ export interface operations {
             };
             /** @description Service Unavailable */
             readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_summary_api_v1_attention_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_AttentionSummaryOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_commerce_api_v1_attention_commerce__scope__get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly view?: "all" | "pending" | "fulfillment" | "unread";
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly scope: "orders" | "tables";
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_CommerceAttentionItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_order_snapshot_api_v1_attention_orders__order_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly order_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_CommerceAttentionSnapshotOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_read_api_v1_attention_read_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AttentionReadRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_reservations_api_v1_attention_reservations_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly view?: "unread";
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_ReservationOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_snapshot_api_v1_attention_reservations__reservation_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly reservation_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_ReservationAttentionSnapshotOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_table_sessions_api_v1_attention_table_sessions_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_CommerceAttentionItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_table_snapshot_api_v1_attention_tables__session_no__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly session_no: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_CommerceAttentionSnapshotOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_wallet_results_api_v1_attention_wallet_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+                readonly page_size?: number;
+                readonly view?: "all" | "unread";
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_Page_CommerceAttentionItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly customer_wallet_snapshot_api_v1_attention_wallet__event_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly event_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_CommerceAttentionSnapshotOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -10531,6 +13675,15 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Not Found */
             readonly 404: {
                 headers: {
@@ -10551,6 +13704,24 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -10600,6 +13771,15 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Not Found */
             readonly 404: {
                 headers: {
@@ -10620,6 +13800,24 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -10667,6 +13865,15 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Not Found */
             readonly 404: {
                 headers: {
@@ -10687,6 +13894,24 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -10734,6 +13959,15 @@ export interface operations {
                     readonly "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Not Found */
             readonly 404: {
                 headers: {
@@ -10754,6 +13988,24 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
@@ -11967,6 +15219,194 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["SuccessResponse_Page_EligibleOrderListItemOut__"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly get_user_table_session_api_v1_table_sessions_history__session_no__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly session_no: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_TableSessionOut_"];
+                };
+            };
+            /** @description Bad Request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            readonly 429: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly resolve_table_number_api_v1_tables_by_number__table_no__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly table_no: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SuccessResponse_PublicTableCodeOut_"];
                 };
             };
             /** @description Bad Request */

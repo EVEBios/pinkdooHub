@@ -1186,6 +1186,16 @@
             ],
             "title": "Current Session No"
           },
+          "current_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableSessionSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "current_status": {
             "anyOf": [
               {
@@ -1235,6 +1245,18 @@
             ],
             "title": "Payment Deadline At"
           },
+          "service_ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Ends At"
+          },
           "state": {
             "$ref": "#/components/schemas/AdminTableState"
           },
@@ -1254,6 +1276,19 @@
               }
             ],
             "title": "Table Release At"
+          },
+          "timer_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Timer Count",
+            "type": "integer"
+          },
+          "timers": {
+            "items": {
+              "$ref": "#/components/schemas/AdminTableTimerOut"
+            },
+            "title": "Timers",
+            "type": "array"
           }
         },
         "required": [
@@ -1264,6 +1299,39 @@
           "state"
         ],
         "title": "AdminTableOut",
+        "type": "object"
+      },
+      "AdminTableSessionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_minutes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "option_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Option Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "option_id",
+          "duration_minutes"
+        ],
+        "title": "AdminTableSessionCreate",
         "type": "object"
       },
       "AdminTableSessionListItemOut": {
@@ -1321,24 +1389,49 @@
             "title": "Minimum Duration Minutes"
           },
           "order_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Order Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
           },
           "order_no": {
-            "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
-            "title": "Order No",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order No"
           },
           "payment_deadline_at": {
-            "format": "date-time",
-            "title": "Payment Deadline At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Deadline At"
           },
           "session_no": {
             "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session No",
             "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TableSessionSource",
+            "default": "order"
           },
           "started_at": {
             "anyOf": [
@@ -1376,23 +1469,33 @@
             "type": "integer"
           },
           "user_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "User Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           },
           "user_nickname": {
-            "minLength": 1,
-            "title": "User Nickname",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Nickname"
           }
         },
         "required": [
           "session_no",
           "table",
-          "order_id",
-          "order_no",
-          "user_id",
-          "user_nickname",
           "status",
           "timer_count",
           "claimed_at",
@@ -1456,20 +1559,100 @@
             ],
             "title": "Closed By User Id"
           },
+          "direct_duration_minutes": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direct Duration Minutes"
+          },
+          "opened_by_user_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened By User Id"
+          },
+          "opening_note": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Note"
+          },
+          "order_experience_durations": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Order Experience Durations",
+            "type": "array"
+          },
           "order_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Order Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
           },
           "order_no": {
-            "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
-            "title": "Order No",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^OD[0-9A-HJKMNP-TV-Z]{26}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order No"
+          },
+          "order_total_amount": {
+            "anyOf": [
+              {
+                "description": "固定两位小数的订单金额字符串",
+                "examples": [
+                  "497.00"
+                ],
+                "pattern": "^\\d+\\.\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Total Amount"
           },
           "payment_deadline_at": {
-            "format": "date-time",
-            "title": "Payment Deadline At",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Deadline At"
           },
           "payment_id": {
             "anyOf": [
@@ -1492,6 +1675,22 @@
             "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session No",
             "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TableSessionSource",
+            "default": "order"
+          },
+          "source_option_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Option Id"
           },
           "started_at": {
             "anyOf": [
@@ -1525,34 +1724,44 @@
           },
           "timers": {
             "items": {
-              "$ref": "#/components/schemas/TableSessionTimerOut"
+              "$ref": "#/components/schemas/AdminTableSessionTimerOut"
             },
             "title": "Timers",
             "type": "array"
           },
           "user_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "User Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           },
           "user_nickname": {
-            "minLength": 1,
-            "title": "User Nickname",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Nickname"
           }
         },
         "required": [
           "session_no",
           "table",
-          "order_id",
-          "order_no",
           "status",
           "claimed_at",
           "payment_deadline_at",
           "timers",
-          "server_now",
-          "user_id",
-          "user_nickname"
+          "server_now"
         ],
         "title": "AdminTableSessionOut",
         "type": "object"
@@ -1573,6 +1782,74 @@
         "title": "AdminTableSessionRelease",
         "type": "object"
       },
+      "AdminTableSessionTimerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "buffer_minutes": {
+            "const": 10,
+            "title": "Buffer Minutes",
+            "type": "integer"
+          },
+          "duration_minutes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "experience_items": {
+            "items": {
+              "$ref": "#/components/schemas/TimerExperienceItemOut"
+            },
+            "title": "Experience Items",
+            "type": "array"
+          },
+          "grace_ends_at": {
+            "format": "date-time",
+            "title": "Grace Ends At",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/TableEnumOut"
+          },
+          "service_ends_at": {
+            "format": "date-time",
+            "title": "Service Ends At",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "duration_minutes",
+          "buffer_minutes",
+          "started_at",
+          "service_ends_at",
+          "grace_ends_at",
+          "phase"
+        ],
+        "title": "AdminTableSessionTimerOut",
+        "type": "object"
+      },
       "AdminTableState": {
         "enum": [
           "available",
@@ -1582,6 +1859,39 @@
         ],
         "title": "AdminTableState",
         "type": "string"
+      },
+      "AdminTableTimerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_minutes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "grace_ends_at": {
+            "format": "date-time",
+            "title": "Grace Ends At",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "service_ends_at": {
+            "format": "date-time",
+            "title": "Service Ends At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "duration_minutes",
+          "service_ends_at",
+          "grace_ends_at"
+        ],
+        "title": "AdminTableTimerOut",
+        "type": "object"
       },
       "AdminTableUpdate": {
         "additionalProperties": false,
@@ -1643,6 +1953,162 @@
           "post_payment_balance"
         ],
         "title": "AssistedWalletOrderOut",
+        "type": "object"
+      },
+      "AttentionEventOut": {
+        "properties": {
+          "event_type": {
+            "$ref": "#/components/schemas/AttentionEventType"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "label",
+          "occurred_at"
+        ],
+        "title": "AttentionEventOut",
+        "type": "object"
+      },
+      "AttentionEventType": {
+        "enum": [
+          "order_assisted_wallet_paid",
+          "order_wallet_refunded",
+          "order_manual_refunded",
+          "wallet_adjusted",
+          "order_manual_paid",
+          "order_wallet_paid",
+          "order_completed",
+          "session_payment_timeout",
+          "session_time_expired",
+          "session_admin_released",
+          "reservation_confirmed",
+          "reservation_rejected",
+          "reservation_store_closed",
+          "reservation_customer_cancelled"
+        ],
+        "title": "AttentionEventType",
+        "type": "string"
+      },
+      "AttentionReadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "event_ids": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Event Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "event_ids"
+        ],
+        "title": "AttentionReadRequest",
+        "type": "object"
+      },
+      "AttentionSummaryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "order_fulfillment": {
+            "minimum": 0.0,
+            "title": "Order Fulfillment",
+            "type": "integer"
+          },
+          "order_pending": {
+            "minimum": 0.0,
+            "title": "Order Pending",
+            "type": "integer"
+          },
+          "order_total": {
+            "minimum": 0.0,
+            "title": "Order Total",
+            "type": "integer"
+          },
+          "order_unread": {
+            "minimum": 0.0,
+            "title": "Order Unread",
+            "type": "integer"
+          },
+          "reservation_actionable": {
+            "minimum": 0.0,
+            "title": "Reservation Actionable",
+            "type": "integer"
+          },
+          "reservation_overdue": {
+            "minimum": 0.0,
+            "title": "Reservation Overdue",
+            "type": "integer"
+          },
+          "reservation_total": {
+            "minimum": 0.0,
+            "title": "Reservation Total",
+            "type": "integer"
+          },
+          "reservation_unread": {
+            "minimum": 0.0,
+            "title": "Reservation Unread",
+            "type": "integer"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          },
+          "table_pending": {
+            "minimum": 0.0,
+            "title": "Table Pending",
+            "type": "integer"
+          },
+          "table_total": {
+            "minimum": 0.0,
+            "title": "Table Total",
+            "type": "integer"
+          },
+          "table_unread": {
+            "minimum": 0.0,
+            "title": "Table Unread",
+            "type": "integer"
+          },
+          "wallet_unread": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Wallet Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "server_now",
+          "reservation_actionable",
+          "reservation_unread",
+          "reservation_overdue",
+          "reservation_total",
+          "order_pending",
+          "order_fulfillment",
+          "order_unread",
+          "order_total",
+          "table_pending",
+          "table_unread",
+          "table_total"
+        ],
+        "title": "AttentionSummaryOut",
         "type": "object"
       },
       "AuditLogOut": {
@@ -1873,6 +2339,175 @@
         "title": "BeadColorUpdate",
         "type": "object"
       },
+      "CommerceAttentionEventOut": {
+        "properties": {
+          "event_type": {
+            "$ref": "#/components/schemas/AttentionEventType"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          },
+          "session_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session No"
+          },
+          "wallet_transaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalletAttentionTransactionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "label",
+          "occurred_at",
+          "message",
+          "session_no",
+          "read"
+        ],
+        "title": "CommerceAttentionEventOut",
+        "type": "object"
+      },
+      "CommerceAttentionItemOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "payment_deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Deadline At"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "orders",
+              "tables",
+              "wallet"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "session_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session No"
+          },
+          "status_label": {
+            "title": "Status Label",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unread": {
+            "title": "Unread",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "reference",
+          "title",
+          "status_label",
+          "order_id",
+          "session_no",
+          "unread",
+          "created_at",
+          "payment_deadline_at"
+        ],
+        "title": "CommerceAttentionItemOut",
+        "type": "object"
+      },
+      "CommerceAttentionSnapshotOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/CommerceAttentionEventOut"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_now",
+          "events"
+        ],
+        "title": "CommerceAttentionSnapshotOut",
+        "type": "object"
+      },
       "DayType": {
         "description": "体验 Option 的日期类型。",
         "enum": [
@@ -1929,6 +2564,50 @@
           "redis"
         ],
         "title": "DependencyChecksOut",
+        "type": "object"
+      },
+      "DirectTableDurationListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "buffer_minutes": {
+            "const": 10,
+            "default": 10,
+            "title": "Buffer Minutes",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DirectTableDurationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DirectTableDurationListOut",
+        "type": "object"
+      },
+      "DirectTableDurationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_minutes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "option_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Option Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "option_id",
+          "duration_minutes"
+        ],
+        "title": "DirectTableDurationOut",
         "type": "object"
       },
       "EligibleDurationGroupOut": {
@@ -2412,6 +3091,246 @@
           "bound_at"
         ],
         "title": "ExternalIdentityOut",
+        "type": "object"
+      },
+      "FollowupCounts": {
+        "properties": {
+          "contact_pending": {
+            "minimum": 0.0,
+            "title": "Contact Pending",
+            "type": "integer"
+          },
+          "overdue_pending": {
+            "minimum": 0.0,
+            "title": "Overdue Pending",
+            "type": "integer"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_now",
+          "contact_pending",
+          "overdue_pending"
+        ],
+        "title": "FollowupCounts",
+        "type": "object"
+      },
+      "FollowupItemOut": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FollowupKind"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FollowupRecordOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "reservation_id": {
+            "title": "Reservation Id",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "scheduled_start_at": {
+            "format": "date-time",
+            "title": "Scheduled Start At",
+            "type": "string"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservation_id",
+          "kind",
+          "eligible",
+          "completed",
+          "revision",
+          "latest",
+          "server_now",
+          "product_name",
+          "customer_name",
+          "scheduled_start_at"
+        ],
+        "title": "FollowupItemOut",
+        "type": "object"
+      },
+      "FollowupKind": {
+        "enum": [
+          "contact",
+          "overdue"
+        ],
+        "title": "FollowupKind",
+        "type": "string"
+      },
+      "FollowupOutcome": {
+        "enum": [
+          "retry",
+          "unreachable",
+          "contacted",
+          "resolved"
+        ],
+        "title": "FollowupOutcome",
+        "type": "string"
+      },
+      "FollowupRecordOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "operator_id": {
+            "title": "Operator Id",
+            "type": "integer"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowupOutcome"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "outcome",
+          "label",
+          "note",
+          "operator_id",
+          "created_at"
+        ],
+        "title": "FollowupRecordOut",
+        "type": "object"
+      },
+      "FollowupSnapshotOut": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FollowupKind"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FollowupRecordOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reservation_id": {
+            "title": "Reservation Id",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservation_id",
+          "kind",
+          "eligible",
+          "completed",
+          "revision",
+          "latest",
+          "server_now"
+        ],
+        "title": "FollowupSnapshotOut",
+        "type": "object"
+      },
+      "FollowupWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "note": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FollowupOutcome"
+          },
+          "request_key": {
+            "format": "uuid",
+            "title": "Request Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "request_key",
+          "outcome",
+          "note"
+        ],
+        "title": "FollowupWrite",
         "type": "object"
       },
       "InventoryAdjustmentCreate": {
@@ -3618,6 +4537,31 @@
               }
             ],
             "title": "Remark"
+          },
+          "table_checkout_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Checkout Key"
+          },
+          "table_no": {
+            "anyOf": [
+              {
+                "pattern": "^T(?:0[1-9]|[12][0-9]|30)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table No"
           }
         },
         "required": [
@@ -4309,6 +5253,42 @@
         "title": "Page[BeadColorOut]",
         "type": "object"
       },
+      "Page_CommerceAttentionItemOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommerceAttentionItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[CommerceAttentionItemOut]",
+        "type": "object"
+      },
       "Page_EligibleOrderListItemOut_": {
         "properties": {
           "items": {
@@ -4343,6 +5323,78 @@
           "pages"
         ],
         "title": "Page[EligibleOrderListItemOut]",
+        "type": "object"
+      },
+      "Page_FollowupItemOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FollowupItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[FollowupItemOut]",
+        "type": "object"
+      },
+      "Page_FollowupRecordOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FollowupRecordOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[FollowupRecordOut]",
         "type": "object"
       },
       "Page_InventoryTransactionListItem_": {
@@ -4487,6 +5539,78 @@
           "pages"
         ],
         "title": "Page[ReservationOut]",
+        "type": "object"
+      },
+      "Page_StoreBeadStockBatchSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StoreBeadStockBatchSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[StoreBeadStockBatchSummary]",
+        "type": "object"
+      },
+      "Page_StoreBeadStockOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StoreBeadStockOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "Page[StoreBeadStockOut]",
         "type": "object"
       },
       "Page_StoreBusinessDayOut_": {
@@ -5299,6 +6423,49 @@
         "title": "RefundStatus",
         "type": "string"
       },
+      "ReservationAttentionSnapshotOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AttentionEventOut"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "reservation_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Reservation Id",
+            "type": "integer"
+          },
+          "reservation_updated_at": {
+            "format": "date-time",
+            "title": "Reservation Updated At",
+            "type": "string"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservation_id",
+          "reservation_updated_at",
+          "server_now",
+          "events"
+        ],
+        "title": "ReservationAttentionSnapshotOut",
+        "type": "object"
+      },
+      "ReservationAttentionView": {
+        "enum": [
+          "actionable",
+          "unread",
+          "overdue"
+        ],
+        "title": "ReservationAttentionView",
+        "type": "string"
+      },
       "ReservationBookingDateOut": {
         "description": "一个可预约上海本地日期及其半小时时段。",
         "properties": {
@@ -5834,6 +7001,15 @@
         "title": "ReservationRejectionReasonOut",
         "type": "object"
       },
+      "ReservationReviewTiming": {
+        "description": "未处理预约按服务端时间区分；不改变持久化状态。",
+        "enum": [
+          "actionable",
+          "overdue"
+        ],
+        "title": "ReservationReviewTiming",
+        "type": "string"
+      },
       "ReservationSettingsOut": {
         "properties": {
           "updated_at": {
@@ -5940,6 +7116,313 @@
           "health"
         ],
         "title": "RootResponse",
+        "type": "object"
+      },
+      "StoreBeadStockBatchOut": {
+        "properties": {
+          "changed_colors": {
+            "title": "Changed Colors",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StoreBeadStockEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "operator_id": {
+            "title": "Operator Id",
+            "type": "integer"
+          },
+          "operator_name": {
+            "title": "Operator Name",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "stocktake",
+              "restock",
+              "opening",
+              "other"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "operator_id",
+          "operator_name",
+          "created_at",
+          "reason",
+          "note",
+          "changed_colors",
+          "items"
+        ],
+        "title": "StoreBeadStockBatchOut",
+        "type": "object"
+      },
+      "StoreBeadStockBatchSummary": {
+        "properties": {
+          "changed_colors": {
+            "title": "Changed Colors",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "operator_id": {
+            "title": "Operator Id",
+            "type": "integer"
+          },
+          "operator_name": {
+            "title": "Operator Name",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "stocktake",
+              "restock",
+              "opening",
+              "other"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "operator_id",
+          "operator_name",
+          "created_at",
+          "reason",
+          "note",
+          "changed_colors"
+        ],
+        "title": "StoreBeadStockBatchSummary",
+        "type": "object"
+      },
+      "StoreBeadStockChange": {
+        "additionalProperties": false,
+        "properties": {
+          "bead_color_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Bead Color Id",
+            "type": "integer"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "packs": {
+            "maximum": 999999.0,
+            "minimum": 0.0,
+            "title": "Packs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bead_color_id",
+          "expected_revision",
+          "packs"
+        ],
+        "title": "StoreBeadStockChange",
+        "type": "object"
+      },
+      "StoreBeadStockEntryOut": {
+        "properties": {
+          "after_packs": {
+            "maximum": 999999.0,
+            "minimum": 0.0,
+            "title": "After Packs",
+            "type": "integer"
+          },
+          "bead_color_id": {
+            "title": "Bead Color Id",
+            "type": "integer"
+          },
+          "before_packs": {
+            "anyOf": [
+              {
+                "maximum": 999999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Packs"
+          },
+          "color_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "color_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Name"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "slot_no": {
+            "title": "Slot No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bead_color_id",
+          "slot_no",
+          "color_code",
+          "color_name",
+          "before_packs",
+          "after_packs",
+          "revision"
+        ],
+        "title": "StoreBeadStockEntryOut",
+        "type": "object"
+      },
+      "StoreBeadStockOut": {
+        "properties": {
+          "bead_color_id": {
+            "title": "Bead Color Id",
+            "type": "integer"
+          },
+          "color_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Code"
+          },
+          "color_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Name"
+          },
+          "packs": {
+            "anyOf": [
+              {
+                "maximum": 999999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packs"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "slot_no": {
+            "title": "Slot No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bead_color_id",
+          "slot_no",
+          "color_code",
+          "color_name",
+          "packs",
+          "revision"
+        ],
+        "title": "StoreBeadStockOut",
+        "type": "object"
+      },
+      "StoreBeadStockWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StoreBeadStockChange"
+            },
+            "maxItems": 221,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Note",
+            "type": "string"
+          },
+          "reason": {
+            "default": "stocktake",
+            "enum": [
+              "stocktake",
+              "restock",
+              "opening",
+              "other"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_key": {
+            "format": "uuid",
+            "title": "Request Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_key",
+          "items"
+        ],
+        "title": "StoreBeadStockWrite",
         "type": "object"
       },
       "StoreBusinessDayOut": {
@@ -6255,6 +7738,30 @@
         "title": "SuccessResponse[AssistedWalletOrderOut]",
         "type": "object"
       },
+      "SuccessResponse_AttentionSummaryOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AttentionSummaryOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[AttentionSummaryOut]",
+        "type": "object"
+      },
       "SuccessResponse_BeadColorOut_": {
         "additionalProperties": false,
         "properties": {
@@ -6279,6 +7786,30 @@
         "title": "SuccessResponse[BeadColorOut]",
         "type": "object"
       },
+      "SuccessResponse_CommerceAttentionSnapshotOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CommerceAttentionSnapshotOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[CommerceAttentionSnapshotOut]",
+        "type": "object"
+      },
       "SuccessResponse_DeletedResourceOut_": {
         "additionalProperties": false,
         "properties": {
@@ -6301,6 +7832,30 @@
           "data"
         ],
         "title": "SuccessResponse[DeletedResourceOut]",
+        "type": "object"
+      },
+      "SuccessResponse_DirectTableDurationListOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DirectTableDurationListOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[DirectTableDurationListOut]",
         "type": "object"
       },
       "SuccessResponse_ExperienceOptionBaseOut_": {
@@ -6445,6 +8000,54 @@
           "data"
         ],
         "title": "SuccessResponse[ExternalIdentityOut]",
+        "type": "object"
+      },
+      "SuccessResponse_FollowupCounts_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FollowupCounts"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[FollowupCounts]",
+        "type": "object"
+      },
+      "SuccessResponse_FollowupSnapshotOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FollowupSnapshotOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[FollowupSnapshotOut]",
         "type": "object"
       },
       "SuccessResponse_InventoryAdjustmentOut_": {
@@ -6904,6 +8507,30 @@
         "title": "SuccessResponse[Page[BeadColorOut]]",
         "type": "object"
       },
+      "SuccessResponse_Page_CommerceAttentionItemOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_CommerceAttentionItemOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[CommerceAttentionItemOut]]",
+        "type": "object"
+      },
       "SuccessResponse_Page_EligibleOrderListItemOut__": {
         "additionalProperties": false,
         "properties": {
@@ -6926,6 +8553,54 @@
           "data"
         ],
         "title": "SuccessResponse[Page[EligibleOrderListItemOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_FollowupItemOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_FollowupItemOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[FollowupItemOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_FollowupRecordOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_FollowupRecordOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[FollowupRecordOut]]",
         "type": "object"
       },
       "SuccessResponse_Page_InventoryTransactionListItem__": {
@@ -7022,6 +8697,54 @@
           "data"
         ],
         "title": "SuccessResponse[Page[ReservationOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_StoreBeadStockBatchSummary__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_StoreBeadStockBatchSummary_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[StoreBeadStockBatchSummary]]",
+        "type": "object"
+      },
+      "SuccessResponse_Page_StoreBeadStockOut__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_StoreBeadStockOut_"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[Page[StoreBeadStockOut]]",
         "type": "object"
       },
       "SuccessResponse_Page_StoreBusinessDayOut__": {
@@ -7288,6 +9011,30 @@
         "title": "SuccessResponse[RefundOut]",
         "type": "object"
       },
+      "SuccessResponse_ReservationAttentionSnapshotOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReservationAttentionSnapshotOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[ReservationAttentionSnapshotOut]",
+        "type": "object"
+      },
       "SuccessResponse_ReservationBookingOptionsOut_": {
         "additionalProperties": false,
         "properties": {
@@ -7358,6 +9105,30 @@
           "data"
         ],
         "title": "SuccessResponse[ReservationSettingsOut]",
+        "type": "object"
+      },
+      "SuccessResponse_StoreBeadStockBatchOut_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": 0,
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StoreBeadStockBatchOut"
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SuccessResponse[StoreBeadStockBatchOut]",
         "type": "object"
       },
       "SuccessResponse_StoreClosureMutationOut_": {
@@ -7657,13 +9428,31 @@
             "type": "integer"
           },
           "qr_token": {
-            "pattern": "^[A-Za-z0-9]{32}$",
-            "title": "Qr Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Token"
+          },
+          "table_no": {
+            "anyOf": [
+              {
+                "pattern": "^T(?:0[1-9]|[12][0-9]|30)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table No"
           }
         },
         "required": [
-          "qr_token",
           "order_id"
         ],
         "title": "TableSessionCreate",
@@ -7775,6 +9564,14 @@
         ],
         "title": "TableSessionOut",
         "type": "object"
+      },
+      "TableSessionSource": {
+        "enum": [
+          "order",
+          "direct"
+        ],
+        "title": "TableSessionSource",
+        "type": "string"
       },
       "TableSessionStatus": {
         "enum": [
@@ -8270,6 +10067,54 @@
         "title": "WalletAdjustmentOut",
         "type": "object"
       },
+      "WalletAttentionTransactionOut": {
+        "properties": {
+          "after_balance": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "After Balance",
+            "type": "string"
+          },
+          "before_balance": {
+            "examples": [
+              "80.00"
+            ],
+            "pattern": "^\\d+\\.\\d{2}$",
+            "title": "Before Balance",
+            "type": "string"
+          },
+          "change_amount": {
+            "examples": [
+              "100.00"
+            ],
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "title": "Change Amount",
+            "type": "string"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "change_amount",
+          "before_balance",
+          "after_balance",
+          "reason"
+        ],
+        "title": "WalletAttentionTransactionOut",
+        "type": "object"
+      },
       "WalletCapabilitiesOut": {
         "properties": {
           "refund_enabled": {
@@ -8763,6 +10608,494 @@
           }
         },
         "summary": "Admin Only"
+      }
+    },
+    "/api/v1/admin/attention": {
+      "get": {
+        "operationId": "admin_summary_api_v1_admin_attention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AttentionSummaryOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Summary",
+        "tags": [
+          "admin-attention"
+        ]
+      }
+    },
+    "/api/v1/admin/attention/acknowledge": {
+      "post": {
+        "operationId": "admin_acknowledge_api_v1_admin_attention_acknowledge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttentionReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Acknowledge",
+        "tags": [
+          "admin-attention"
+        ]
+      }
+    },
+    "/api/v1/admin/attention/commerce/{scope}": {
+      "get": {
+        "operationId": "admin_commerce_api_v1_admin_attention_commerce__scope__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "orders",
+                "tables"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "pending",
+                "fulfillment",
+                "unread"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_CommerceAttentionItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Commerce",
+        "tags": [
+          "admin-attention"
+        ]
+      }
+    },
+    "/api/v1/admin/attention/reservations": {
+      "get": {
+        "operationId": "admin_reservations_api_v1_admin_attention_reservations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReservationAttentionView",
+              "default": "actionable"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_AdminReservationListItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Reservations",
+        "tags": [
+          "admin-attention"
+        ]
+      }
+    },
+    "/api/v1/admin/attention/reservations/{reservation_id}": {
+      "get": {
+        "operationId": "admin_snapshot_api_v1_admin_attention_reservations__reservation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationAttentionSnapshotOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Snapshot",
+        "tags": [
+          "admin-attention"
+        ]
       }
     },
     "/api/v1/admin/bead-colors": {
@@ -12889,6 +15222,574 @@
         ]
       }
     },
+    "/api/v1/admin/reservation-followups": {
+      "get": {
+        "operationId": "list_queue_api_v1_admin_reservation_followups_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FollowupKind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "completed"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_FollowupItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Queue",
+        "tags": [
+          "admin-reservation-followups"
+        ]
+      }
+    },
+    "/api/v1/admin/reservation-followups/summary": {
+      "get": {
+        "operationId": "counts_api_v1_admin_reservation_followups_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_FollowupCounts_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Counts",
+        "tags": [
+          "admin-reservation-followups"
+        ]
+      }
+    },
+    "/api/v1/admin/reservation-followups/{reservation_id}/{kind}": {
+      "get": {
+        "operationId": "detail_api_v1_admin_reservation_followups__reservation_id___kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FollowupKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_FollowupSnapshotOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detail",
+        "tags": [
+          "admin-reservation-followups"
+        ]
+      },
+      "post": {
+        "operationId": "write_api_v1_admin_reservation_followups__reservation_id___kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FollowupKind"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowupWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_FollowupSnapshotOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Write",
+        "tags": [
+          "admin-reservation-followups"
+        ]
+      }
+    },
+    "/api/v1/admin/reservation-followups/{reservation_id}/{kind}/history": {
+      "get": {
+        "operationId": "history_api_v1_admin_reservation_followups__reservation_id___kind__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FollowupKind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_FollowupRecordOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "History",
+        "tags": [
+          "admin-reservation-followups"
+        ]
+      }
+    },
     "/api/v1/admin/reservation-settings": {
       "get": {
         "operationId": "get_reservation_settings_api_v1_admin_reservation_settings_get",
@@ -13112,6 +16013,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "review_timing",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReservationReviewTiming"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Timing"
             }
           },
           {
@@ -13665,6 +16582,518 @@
         ]
       }
     },
+    "/api/v1/admin/store-bead-stock": {
+      "get": {
+        "operationId": "list_stock_api_v1_admin_store_bead_stock_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 221,
+              "maximum": 221,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_StoreBeadStockOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Stock",
+        "tags": [
+          "admin-store-bead-stock"
+        ]
+      }
+    },
+    "/api/v1/admin/store-bead-stock/batches": {
+      "get": {
+        "operationId": "history_api_v1_admin_store_bead_stock_batches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_StoreBeadStockBatchSummary__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "History",
+        "tags": [
+          "admin-store-bead-stock"
+        ]
+      },
+      "post": {
+        "operationId": "write_api_v1_admin_store_bead_stock_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreBeadStockWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StoreBeadStockBatchOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Write",
+        "tags": [
+          "admin-store-bead-stock"
+        ]
+      }
+    },
+    "/api/v1/admin/store-bead-stock/batches/by-request/{request_key}": {
+      "get": {
+        "operationId": "by_request_api_v1_admin_store_bead_stock_batches_by_request__request_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StoreBeadStockBatchOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "By Request",
+        "tags": [
+          "admin-store-bead-stock"
+        ]
+      }
+    },
+    "/api/v1/admin/store-bead-stock/batches/{batch_id}": {
+      "get": {
+        "operationId": "detail_api_v1_admin_store_bead_stock_batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_StoreBeadStockBatchOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detail",
+        "tags": [
+          "admin-store-bead-stock"
+        ]
+      }
+    },
     "/api/v1/admin/store-closures": {
       "get": {
         "operationId": "list_store_closures_api_v1_admin_store_closures_get",
@@ -14028,6 +17457,92 @@
         "summary": "Close Store Day",
         "tags": [
           "admin-reservations"
+        ]
+      }
+    },
+    "/api/v1/admin/table-duration-options": {
+      "get": {
+        "operationId": "list_direct_table_durations_api_v1_admin_table_duration_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_DirectTableDurationListOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Direct Table Durations",
+        "tags": [
+          "admin-table-sessions"
         ]
       }
     },
@@ -14665,6 +18180,125 @@
           }
         ],
         "summary": "Update Admin Table",
+        "tags": [
+          "admin-table-sessions"
+        ]
+      }
+    },
+    "/api/v1/admin/tables/{table_id}/direct-sessions": {
+      "post": {
+        "operationId": "create_direct_table_session_api_v1_admin_tables__table_id__direct_sessions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "table_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Table Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTableSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AdminTableSessionOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Direct Table Session",
         "tags": [
           "admin-table-sessions"
         ]
@@ -15398,6 +19032,977 @@
         "summary": "List Admin User Wallet Transactions",
         "tags": [
           "admin-wallet"
+        ]
+      }
+    },
+    "/api/v1/attention": {
+      "get": {
+        "operationId": "customer_summary_api_v1_attention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_AttentionSummaryOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Summary",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/commerce/{scope}": {
+      "get": {
+        "operationId": "customer_commerce_api_v1_attention_commerce__scope__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "orders",
+                "tables"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "pending",
+                "fulfillment",
+                "unread"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_CommerceAttentionItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Commerce",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/orders/{order_id}": {
+      "get": {
+        "operationId": "customer_order_snapshot_api_v1_attention_orders__order_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Order Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_CommerceAttentionSnapshotOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Order Snapshot",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/read": {
+      "post": {
+        "operationId": "customer_read_api_v1_attention_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttentionReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Read",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/reservations": {
+      "get": {
+        "operationId": "customer_reservations_api_v1_attention_reservations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "const": "unread",
+              "default": "unread",
+              "title": "View",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_ReservationOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Reservations",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/reservations/{reservation_id}": {
+      "get": {
+        "operationId": "customer_snapshot_api_v1_attention_reservations__reservation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservation_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Reservation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_ReservationAttentionSnapshotOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Snapshot",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/table-sessions": {
+      "get": {
+        "description": "顾客本人的全部开台记录；已付款或结果已读后仍可查询。",
+        "operationId": "customer_table_sessions_api_v1_attention_table_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_CommerceAttentionItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Table Sessions",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/tables/{session_no}": {
+      "get": {
+        "operationId": "customer_table_snapshot_api_v1_attention_tables__session_no__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_no",
+            "required": true,
+            "schema": {
+              "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Session No",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_CommerceAttentionSnapshotOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Table Snapshot",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/wallet": {
+      "get": {
+        "operationId": "customer_wallet_results_api_v1_attention_wallet_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "unread",
+              "enum": [
+                "all",
+                "unread"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Page_CommerceAttentionItemOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Wallet Results",
+        "tags": [
+          "attention"
+        ]
+      }
+    },
+    "/api/v1/attention/wallet/{event_id}": {
+      "get": {
+        "operationId": "customer_wallet_snapshot_api_v1_attention_wallet__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Event Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_CommerceAttentionSnapshotOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Customer Wallet Snapshot",
+        "tags": [
+          "attention"
         ]
       }
     },
@@ -16335,6 +20940,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -16364,6 +20979,26 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -16420,6 +21055,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -16449,6 +21094,26 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -16509,6 +21174,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -16538,6 +21213,26 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -16598,6 +21293,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -16627,6 +21332,26 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -18371,6 +23096,242 @@
           }
         ],
         "summary": "List Eligible Orders",
+        "tags": [
+          "table-sessions"
+        ]
+      }
+    },
+    "/api/v1/table-sessions/history/{session_no}": {
+      "get": {
+        "operationId": "get_user_table_session_api_v1_table_sessions_history__session_no__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_no",
+            "required": true,
+            "schema": {
+              "pattern": "^TS[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Session No",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_TableSessionOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get User Table Session",
+        "tags": [
+          "table-sessions"
+        ]
+      }
+    },
+    "/api/v1/tables/by-number/{table_no}": {
+      "get": {
+        "operationId": "resolve_table_number_api_v1_tables_by_number__table_no__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "table_no",
+            "required": true,
+            "schema": {
+              "pattern": "^T(?:0[1-9]|[12][0-9]|30)$",
+              "title": "Table No",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_PublicTableCodeOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resolve Table Number",
         "tags": [
           "table-sessions"
         ]
