@@ -25,7 +25,9 @@ from app.schemas.table_session import (
     EligibleOrderListQuery,
     TableIdempotencyKey,
     TableQrToken,
+    TableNumber,
     TableSessionCreate,
+    TableSessionNumber,
 )
 from app.schemas.table_session_response import (
     EligibleOrderListItemOut,
@@ -66,6 +68,19 @@ async def resolve_table_code(
             is_available=result.is_available,
         ).model_dump(mode="json")
     )
+
+@router.get("/tables/by-number/{table_no}", response_model=None,
+            responses=success_responses(PublicTableCodeOut))
+async def resolve_table_number(
+    table_no: Annotated[TableNumber, Path()], request: Request,
+    current_user: CurrentCustomer, service: TableService,
+) -> dict:
+    await TableRateLimiter().check(TABLE_USER_READ_POLICY, f"number:{current_user.id}")
+    result = await service.resolve_table_number(table_no)
+    return success(data=map_public_table_code(
+        result.table, is_available=result.is_available,
+    ).model_dump(mode="json"))
+
 
 @router.get(
     "/table-sessions/eligible-orders",
@@ -111,6 +126,7 @@ async def create_table_session(
     result = await service.create_session(
         user=current_user,
         qr_token=data.qr_token,
+        **({"table_no": data.table_no} if data.table_no is not None else {}),
         order_id=data.order_id,
         idempotency_key=idempotency_key,
         ip_address=client_ip,
@@ -168,3 +184,14 @@ async def get_order_table_session(
             else None
         )
     )
+
+
+@router.get("/table-sessions/history/{session_no}", response_model=None,
+            responses=success_responses(TableSessionOut))
+async def get_user_table_session(
+    session_no: Annotated[TableSessionNumber, Path()],
+    current_user: CurrentCustomer, service: TableService,
+) -> dict:
+    await TableRateLimiter().check(TABLE_USER_READ_POLICY, f"history:{current_user.id}")
+    session = await service.get_user_session(session_no, user_id=current_user.id)
+    return success(data=map_table_session(session, server_now=service.now_provider()).model_dump(mode="json"))

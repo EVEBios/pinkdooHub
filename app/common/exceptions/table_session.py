@@ -113,3 +113,8 @@ class TableOrderIneligible(UnprocessableEntityException):
 class TableRateLimitExceeded(TooManyRequestsException):
     def __init__(self) -> None:
         super().__init__(code=42961, message="Too many table requests")
+
+
+class TableDurationUnavailable(UnprocessableEntityException):
+    def __init__(self) -> None:
+        super().__init__(code=42262, message="所选体验时长已不可用，请重新选择")

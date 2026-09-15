@@ -3,6 +3,11 @@
 from enum import Enum
 
 
+class TableSessionSource(str, Enum):
+    ORDER = "order"
+    DIRECT = "direct"
+
+
 class TableSessionStatus(str, Enum):
     AWAITING_PAYMENT = "awaiting_payment"
     ACTIVE = "active"

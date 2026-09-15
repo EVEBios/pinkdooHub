@@ -238,6 +238,8 @@ class ReservationRepository:
         business_date: date | None = None,
         user_id: int | None = None,
         product_id: int | None = None,
+        scheduled_after: datetime | None = None,
+        scheduled_through: datetime | None = None,
     ) -> Page[Reservation]:
         query = Reservation.all()
         if status is not None:
@@ -248,6 +250,10 @@ class ReservationRepository:
             query = query.filter(user_id=user_id)
         if product_id is not None:
             query = query.filter(product_id=product_id)
+        if scheduled_after is not None:
+            query = query.filter(scheduled_start_at__gt=scheduled_after)
+        if scheduled_through is not None:
+            query = query.filter(scheduled_start_at__lte=scheduled_through)
         return await self._paginate_reservations(
             query,
             page=page,

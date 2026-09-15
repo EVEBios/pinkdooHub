@@ -17,6 +17,8 @@ from app.common.constants.inventory import (
 )
 from app.common.constants.table_session import (
     TABLE_AUDIT_ACTION_CREATE,
+    TABLE_AUDIT_ACTION_DIRECT,
+    TABLE_DIRECT_IDEMPOTENCY_PREFIX,
     TABLE_AUDIT_ACTION_RELEASE,
     TABLE_AUDIT_ACTION_UPDATE,
     TABLE_AUDIT_TARGET_TYPE,
@@ -26,13 +28,15 @@ from app.common.constants.table_session import (
     TABLE_SESSION_NO_GENERATION_MAX_ATTEMPTS,
     TABLE_SWEEP_BATCH_SIZE,
 )
-from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
+from app.common.enums.table_session import TableSessionCloseReason, TableSessionSource, TableSessionStatus
+from app.common.enums.product import ProductStatus, ProductType
 from app.common.enums.user import UserRole, UserStatus
 from app.common.exceptions import OrderNotFound, UserDeleted, UserDisabled
 from app.common.exceptions.table_session import (
     OrderTableSessionConflict,
     StoreTableNotFound,
     TableCodeNotFound,
+    TableDurationUnavailable,
     TableIdempotencyConflict,
     TableSessionNotFound,
     TableSessionStatusConflict,
@@ -43,12 +47,15 @@ from app.common.pagination import Page
 from app.common.table_session_number import generate_table_session_number
 from app.core.config import settings
 from app.core.exceptions import PermissionException, ServiceUnavailableException
-from app.domain.table_session import automatic_close_for
+from app.domain.attention import session_closed_event
+from app.repositories.attention_repo import AttentionRepository
+from app.domain.table_session import automatic_close_for, build_timer_specs
 from app.models.order import Order
 from app.models.table_session import StoreTable, TableSession
 from app.models.user import User
 from app.repositories.order_repo import OrderRepository
 from app.repositories.payment_repo import PaymentRepository
+from app.repositories.product_repo import ProductRepository
 from app.repositories.table_session_repo import (
     TableSessionCreateData,
     TableSessionRepository,
@@ -90,9 +97,12 @@ class TableSessionService:
         payment_repository: PaymentRepository,
         audit_log_service: AuditLogService,
         *,
+        product_repository: ProductRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
         session_number_generator: Callable[[], str] = generate_table_session_number,
     ) -> None:
+        self.product_repository = product_repository
+        self.attention_repository = AttentionRepository()
         self.table_repository = table_repository
         self.order_repository = order_repository
         self.user_repository = user_repository
@@ -132,6 +142,13 @@ class TableSessionService:
             is_available=table.is_enabled and occupancy is None,
         )
 
+    async def resolve_table_number(self, table_no: str) -> TableCodeResolution:
+        self._ensure_claims_available()
+        table = await self.table_repository.get_table_by_number(table_no)
+        if table is None:
+            raise TableCodeNotFound()
+        return await self.resolve_table_code(table.qr_token)
+
     async def list_eligible_orders(
         self,
         *,
@@ -153,11 +170,19 @@ class TableSessionService:
         self,
         *,
         user: User,
-        qr_token: str,
+        qr_token: str | None = None,
         order_id: int,
         idempotency_key: str,
         ip_address: str,
+        table_no: str | None = None,
     ) -> TableSessionCreateResult:
+        if table_no is not None:
+            table = await self.table_repository.get_table_by_number(table_no)
+            if table is None:
+                raise TableCodeNotFound()
+            qr_token = table.qr_token
+        if qr_token is None:
+            raise TableCodeNotFound()
         internal_key = f"{TABLE_CLAIM_IDEMPOTENCY_PREFIX}{idempotency_key}"
         fingerprint = self._fingerprint(
             user_id=user.id,
@@ -379,6 +404,140 @@ class TableSessionService:
                 raise RuntimeError("Created table session not found")
             return TableSessionCreateResult(session=detail, is_replay=False)
 
+    async def list_direct_duration_options(self) -> list[dict[str, int]]:
+        self._ensure_claims_available()
+        if self.product_repository is None:
+            raise RuntimeError("ProductRepository is required for direct table opening")
+        options = await self.product_repository.list_table_duration_options()
+        by_duration: dict[int, int] = {}
+        for option in options:
+            by_duration.setdefault(option.duration, option.id)
+        return [
+            {"option_id": option_id, "duration_minutes": duration}
+            for duration, option_id in sorted(by_duration.items())
+        ]
+
+    async def create_direct_session(
+        self, *, table_id: int, option_id: int, duration_minutes: int,
+        note: str | None, operator_id: int, idempotency_key: str, ip_address: str,
+    ) -> TableSessionCreateResult:
+        internal_key = f"{TABLE_DIRECT_IDEMPOTENCY_PREFIX}{idempotency_key}"
+        normalized_note = (note or "").strip() or None
+        intent = {
+            "table_id": table_id, "option_id": option_id,
+            "duration_minutes": duration_minutes, "note": normalized_note,
+            "operator_id": operator_id,
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(intent, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        replay = await self._resolve_claim_replay(
+            internal_key=internal_key, fingerprint=fingerprint,
+        )
+        if replay is not None:
+            return replay
+        self._ensure_claims_available()
+        if self.product_repository is None:
+            raise RuntimeError("ProductRepository is required for direct table opening")
+        option = await self.product_repository.get_option_by_id(option_id)
+        if option is None:
+            raise TableDurationUnavailable()
+        for attempt in range(1, TABLE_SESSION_NO_GENERATION_MAX_ATTEMPTS + 1):
+            session_no = self.session_number_generator()
+            try:
+                return await self._create_direct_session_once(
+                    table_id=table_id, product_id=option.product_id, option_id=option_id,
+                    duration_minutes=duration_minutes, note=normalized_note,
+                    operator_id=operator_id, internal_key=internal_key,
+                    fingerprint=fingerprint, session_no=session_no, ip_address=ip_address,
+                )
+            except IntegrityError:
+                replay = await self._resolve_claim_replay(
+                    internal_key=internal_key, fingerprint=fingerprint,
+                )
+                if replay is not None:
+                    return replay
+                table = await self.table_repository.get_table_by_id(table_id)
+                if table is not None and await self.table_repository.get_occupancy_by_table_id(table_id):
+                    raise TableUnavailable(table_no=table.table_no, reason="occupied")
+                if (attempt >= TABLE_SESSION_NO_GENERATION_MAX_ATTEMPTS
+                    or not await self.table_repository.session_number_exists(session_no)):
+                    raise
+            except OperationalError as exc:
+                if (get_database_error_code(exc) not in INVENTORY_RETRYABLE_MYSQL_ERROR_CODES
+                    or attempt >= INVENTORY_TRANSACTION_MAX_ATTEMPTS):
+                    raise
+                logger.warning("Retrying direct table opening after MySQL lock error: table_id=%d attempt=%d", table_id, attempt)
+        raise RuntimeError("Direct table opening retry loop exhausted")
+
+    async def _create_direct_session_once(
+        self, *, table_id: int, product_id: int, option_id: int, duration_minutes: int,
+        note: str | None, operator_id: int, internal_key: str, fingerprint: str,
+        session_no: str, ip_address: str,
+    ) -> TableSessionCreateResult:
+        if self.product_repository is None:
+            raise RuntimeError("ProductRepository is required for direct table opening")
+        async with in_transaction() as connection:
+            # 与商品配置修改共用 Product → Option 锁序，再取得桌台与会话锁。
+            product = await self.product_repository.get_product_for_update(product_id, using_db=connection)
+            option = await self.product_repository.get_option_for_update(option_id, using_db=connection)
+            if (product is None or product.is_deleted
+                or product.product_type != ProductType.EXPERIENCE
+                or product.status not in (ProductStatus.ONLINE, ProductStatus.OFFLINE)
+                or option is None or option.is_deleted or option.product_id != product_id
+                or option.duration != duration_minutes or duration_minutes <= 0):
+                raise TableDurationUnavailable()
+            table = await self.table_repository.get_table_for_update(table_id, using_db=connection)
+            if table is None:
+                raise StoreTableNotFound()
+            # 等待桌台锁期间另一个相同请求可能已经完成；先识别重放。
+            existing = await self.table_repository.get_session_by_claim_idempotency_key(
+                internal_key, using_db=connection,
+            )
+            if existing is not None:
+                if existing.claim_request_fingerprint != fingerprint:
+                    raise TableIdempotencyConflict()
+                detail = await self.table_repository.get_session_detail(existing.id, using_db=connection)
+                if detail is None:
+                    raise TableSessionNotFound()
+                return TableSessionCreateResult(session=detail, is_replay=True)
+            self._ensure_claims_available()
+            if not table.is_enabled:
+                raise TableUnavailable(table_no=table.table_no, reason="disabled")
+            now = self.now_provider()
+            await self._converge_locked_table_occupancy(table_id=table_id, now=now, using_db=connection)
+            if await self.table_repository.get_occupancy_by_table_id(table_id, using_db=connection):
+                raise TableUnavailable(table_no=table.table_no, reason="occupied")
+            specs = build_timer_specs([duration_minutes], started_at=now)
+            session = await self.table_repository.create_session(
+                data=TableSessionCreateData(
+                    session_no=session_no, table_id=table_id, user_id=None, order_id=None,
+                    source=TableSessionSource.DIRECT, opened_by_user_id=operator_id,
+                    source_option_id=option_id, direct_duration_minutes=duration_minutes,
+                    opening_note=note, claim_idempotency_key=internal_key,
+                    claim_request_fingerprint=fingerprint, claimed_at=now, payment_deadline_at=None,
+                ), using_db=connection,
+            )
+            await self.table_repository.update_session_active(
+                session, payment_id=None, started_at=now,
+                table_release_at=specs[0].grace_ends_at, using_db=connection,
+            )
+            await self.table_repository.bulk_create_timers(session_id=session.id, specs=specs, using_db=connection)
+            await self.table_repository.create_occupancy(
+                session_id=session.id, table_id=table_id, user_id=None, order_id=None, using_db=connection,
+            )
+            await self.audit_log_service.log(
+                operator_id=operator_id, action=TABLE_AUDIT_ACTION_DIRECT,
+                target_type=TABLE_AUDIT_TARGET_TYPE, target_id=session.id, ip_address=ip_address,
+                description=json.dumps({"table_id": table_id, "option_id": option_id,
+                                        "duration_minutes": duration_minutes, "note": note}, ensure_ascii=False),
+                using_db=connection,
+            )
+            detail = await self.table_repository.get_session_detail(session.id, using_db=connection)
+            if detail is None:
+                raise TableSessionNotFound()
+            return TableSessionCreateResult(session=detail, is_replay=False)
+
     async def _converge_locked_table_occupancy(
         self,
         *,
@@ -417,6 +576,12 @@ class TableSessionService:
             release_idempotency_key=None,
             using_db=using_db,
         )
+        event = session_closed_event(
+            user_id=session.user_id, session_id=session.id,
+            reason=session.close_reason, closed_at=session.closed_at,
+        )
+        if event is not None:
+            await self.attention_repository.create_commerce_event(**event, using_db=using_db)
 
     async def _resolve_claim_replay(
         self,
@@ -498,14 +663,14 @@ class TableSessionService:
         if visible is None:
             return False
         async with in_transaction() as connection:
-            await self.user_repository.get_for_update(
-                visible.user_id,
-                using_db=connection,
-            )
-            await self.order_repository.get_order_for_update(
-                visible.order_id,
-                using_db=connection,
-            )
+            if visible.user_id is not None:
+                await self.user_repository.get_for_update(
+                    visible.user_id, using_db=connection,
+                )
+            if visible.order_id is not None:
+                await self.order_repository.get_order_for_update(
+                    visible.order_id, using_db=connection,
+                )
             await self.table_repository.get_table_for_update(
                 visible.table_id,
                 using_db=connection,
@@ -533,6 +698,12 @@ class TableSessionService:
                 release_idempotency_key=None,
                 using_db=connection,
             )
+            event = session_closed_event(
+                user_id=session.user_id, session_id=session.id,
+                reason=session.close_reason, closed_at=session.closed_at,
+            )
+            if event is not None:
+                await self.attention_repository.create_commerce_event(**event, using_db=connection)
             logger.info(
                 "Table session converged: session_id=%d reason=%s",
                 session.id,
@@ -586,6 +757,16 @@ class TableSessionService:
             await self.converge_session(session.id)
             session = await self.table_repository.get_session_detail(session.id)
         return session
+
+    async def get_user_session(self, session_no: str, *, user_id: int) -> TableSession:
+        session = await self.table_repository.get_session_detail_by_no(session_no)
+        if session is None or session.user_id != user_id:
+            raise TableSessionNotFound()
+        await self.converge_session(session.id)
+        detail = await self.table_repository.get_session_detail(session.id)
+        if detail is None:
+            raise TableSessionNotFound()
+        return detail
 
     async def list_admin_tables(self) -> list[StoreTable]:
         await self.sweep_due_sessions()
@@ -724,14 +905,14 @@ class TableSessionService:
         ip_address: str,
     ) -> TableSessionReleaseResult:
         async with in_transaction() as connection:
-            await self.user_repository.get_for_update(
-                visible.user_id,
-                using_db=connection,
-            )
-            await self.order_repository.get_order_for_update(
-                visible.order_id,
-                using_db=connection,
-            )
+            if visible.user_id is not None:
+                await self.user_repository.get_for_update(
+                    visible.user_id, using_db=connection,
+                )
+            if visible.order_id is not None:
+                await self.order_repository.get_order_for_update(
+                    visible.order_id, using_db=connection,
+                )
             await self.table_repository.get_table_for_update(
                 visible.table_id,
                 using_db=connection,
@@ -775,6 +956,12 @@ class TableSessionService:
                 release_idempotency_key=internal_key,
                 using_db=connection,
             )
+            event = session_closed_event(
+                user_id=session.user_id, session_id=session.id,
+                reason=session.close_reason, closed_at=session.closed_at,
+            )
+            if event is not None:
+                await self.attention_repository.create_commerce_event(**event, using_db=connection)
             await self.audit_log_service.log(
                 operator_id=operator_id,
                 action=TABLE_AUDIT_ACTION_RELEASE,

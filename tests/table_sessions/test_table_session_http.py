@@ -151,7 +151,20 @@ async def test_public_claim_wallet_timer_and_admin_visibility(client: AsyncClien
     )
     assert admin_tables.status_code == 200
     assert len(admin_tables.json()["data"]["items"]) == 30
-    assert admin_tables.json()["data"]["items"][0]["state"] == "active"
+    listing = admin_tables.json()["data"]["items"][0]
+    assert listing["state"] == "active"
+    assert listing["timer_count"] == 2
+    assert listing["timers"] == [
+        {key: timer[key] for key in ("id", "duration_minutes", "service_ends_at", "grace_ends_at")}
+        for timer in active["timers"]
+    ]
+    assert admin_tables.json()["data"]["items"][1]["timers"] == []
+    table.is_enabled = False
+    await table.save(update_fields=["is_enabled"])
+    disabled = (await client.get("/api/v1/admin/tables", headers=_headers(admin))).json()["data"]["items"][0]
+    assert disabled["state"] == "disabled"
+    assert disabled["current_status"]["value"] == "active"
+    assert disabled["timers"] == listing["timers"]
 
     completed = await client.patch(
         f"/api/v1/admin/orders/{order.id}/complete",

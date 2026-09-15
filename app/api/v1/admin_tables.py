@@ -19,11 +19,13 @@ from app.schemas.table_session import (
     AdminTableSessionListQuery,
     AdminTableSessionRelease,
     AdminTableUpdate,
+    AdminTableSessionCreate,
     TableIdempotencyKey,
     TableSessionNumber,
 )
 from app.schemas.table_session_response import (
     AdminTableListOut,
+    DirectTableDurationListOut,
     AdminTableSessionListItemOut,
     AdminTableSessionOut,
     TableSummaryOut,
@@ -55,6 +57,32 @@ async def list_admin_tables(
 ) -> dict:
     tables = await service.list_admin_tables()
     return success(data=map_admin_table_list(tables).model_dump(mode="json"))
+
+
+@router.get(
+    "/table-duration-options", response_model=None,
+    responses=success_responses(DirectTableDurationListOut),
+)
+async def list_direct_table_durations(current_admin: CurrentAdmin, service: TableService) -> dict:
+    items = await service.list_direct_duration_options()
+    return success(data=DirectTableDurationListOut(items=items).model_dump(mode="json"))
+
+
+@router.post(
+    "/tables/{table_id}/direct-sessions", response_model=None,
+    responses=success_responses(AdminTableSessionOut),
+)
+async def create_direct_table_session(
+    table_id: Annotated[int, Path(gt=0)], data: AdminTableSessionCreate,
+    idempotency_key: IdempotencyKeyHeader, request: Request,
+    current_admin: CurrentAdmin, service: TableService,
+) -> dict:
+    result = await service.create_direct_session(
+        table_id=table_id, option_id=data.option_id, duration_minutes=data.duration_minutes,
+        note=data.note, operator_id=current_admin.id, idempotency_key=idempotency_key,
+        ip_address=get_client_ip(request),
+    )
+    return success(data=map_admin_table_session(result.session).model_dump(mode="json"))
 
 
 @router.patch(

@@ -54,3 +54,10 @@ class StoreClosureDateUnavailableReason(str, Enum):
 
     PAST_DATE = "past_date"
     WEEKLY_CLOSED = "weekly_closed"
+
+
+class ReservationReviewTiming(str, Enum):
+    """未处理预约按服务端时间区分；不改变持久化状态。"""
+
+    ACTIONABLE = "actionable"
+    OVERDUE = "overdue"

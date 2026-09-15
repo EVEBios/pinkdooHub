@@ -166,6 +166,10 @@ Kit Item 不得进入 `experience_items`。Timer Mapper 必须使用已经预加
 | `current_session_no` | string / null | 当前 Occupancy 对应 Session |
 | `current_status` | object / null | 当前会话状态 |
 | `current_order_no` | string / null | 当前订单号 |
+| `current_source` | string / null | `order` / `direct` |
+| `service_ends_at` | datetime / null | 当前会话最长体验结束时间 |
+| `timer_count` | integer | 当前计时组数 |
+| `timers` | array[`AdminTableTimerOut`] | 全部计时组的轻量摘要，按时长、ID 升序；无计时组时为空 |
 | `current_user_id` | integer / null | 当前顾客 ID |
 | `claimed_at` | datetime / null | 当前占台时间 |
 | `payment_deadline_at` | datetime / null | 待支付截止 |
@@ -179,6 +183,10 @@ Kit Item 不得进入 `experience_items`。Timer Mapper 必须使用已经预加
 | `server_now` | datetime | 全部桌台共用的一次 UTC 当前时间 |
 
 该有界列表不使用分页。
+
+`AdminTableTimerOut` 仅含正整数 `id`、`duration_minutes` 和 UTC `service_ends_at`、`grace_ends_at`。组数与 `timer_count` 一致，保留已走完但会话尚未全部结束的短组，由客户端根据时间判断当前是否预警。不会返回商品、参与人或 QR Token；沿用现有 timers 预加载，无逐桌额外查询。
+
+P2.3 为增加响应字段，旧客户端可以继续读取原摘要；新客户端需要全部组摘要，缺少 `timers`、数量／唯一性／时间不一致时按响应契约错误处理，不能退化为仅计算最长组。应先更新后端再使用新客户端；只回退后端时需同步回退客户端。无数据库迁移。
 
 ### 3.7 AdminTableSessionOut
 
@@ -282,7 +290,7 @@ Body：
 
 校验：
 
-- `qr_token` 必填，精确匹配格式。
+- `qr_token` 与 `table_no` 二选一；二维码 Token 精确匹配格式，桌号严格为 T01–T30。
 - `order_id` 必填且为正整数。
 - 未知字段拒绝。
 - Idempotency-Key 缺失、空白、过长或含不可打印字符返回全局 HTTP 422 / code `422`。
@@ -354,11 +362,11 @@ Table-Session-No: TS01K4FF7V3J5KQ0P2M9R8A6C1DE
 1. 桌台计时页发起付款时必须携带该 Header。
 2. Header 存在时，Session 必须属于当前用户和 Path 中的 Order，处于 `AWAITING_PAYMENT`，且可信付款时间 `succeeded_at <= payment_deadline_at`；否则资金零写入并返回稳定业务错误。
 3. Header 不存在但 Order 当前有有效的唯一待支付 Session 时，后端自动关联并激活，兼容现有付款入口。
-4. Header 不存在且没有未关闭 Session 时，保持现有普通订单付款行为，不创建 Timer。
+4. Header 不存在时读取订单最新 Session；若已超时/已结束则拒绝付款，顾客需重新选桌。只有从未关联 Session 的订单保持普通付款，不创建 Timer。
 5. Header 指向已经超时关闭的历史 Session 时返回 `40966`，不得退化为普通付款；桌台页应提示重新扫码绑定。
 6. 付款成功响应继续使用现有 `PaymentOut`，客户端随后查询 `/orders/{order_id}/table-session` 获取计时详情，避免扩张资金响应契约。
 
-现有 `PATCH /admin/orders/{order_id}/paid` 同样增加可选 `Table-Session-No` Header。管理桌台页发起人工结算时必须携带它并执行与钱包相同的 Session/Order/截止时间校验；现有普通订单管理页不携带 Header 时，后端在锁定订单后只自动关联唯一、未超时的待支付 Session，没有未关闭 Session 时保持普通人工结算。已经关闭的历史 Session 绝不自动启动计时。
+现有 `PATCH /admin/orders/{order_id}/paid` 同样增加可选 `Table-Session-No` Header。管理桌台页发起人工结算时必须携带它并执行与钱包相同的 Session/Order/截止时间校验；现有普通订单管理页不携带 Header 时，后端在锁定订单后只自动关联唯一、未超时的待支付 Session，从未关联 Session 的订单保持普通人工结算；最新 Session 已结束的待付款订单必须先重新绑定，不能普通收款后不计时。已经关闭的历史 Session 绝不自动启动计时。
 
 ---
 
@@ -575,3 +583,40 @@ M9 首版默认阈值：
 6. 真实 MySQL 8 同桌、同用户、同订单、付款/超时并发门槛通过。
 7. OpenAPI、前端生成类型和小程序真机扫码通过。
 8. 新占台开关关闭时解析、可选订单和创建 Session 稳定 503 零写入；既有 Session 仍可排空、查询和应急释放。
+
+
+## 12. 管理桌台运营扩展（M11）
+
+对应需求见 [管理桌台运营扩展](../01_requirements/table_session_module.md#14-管理桌台运营扩展m112026-09-14)。本节取代旧首版中管理会话必有 user/order、所有 Timer 必有订单明细的限制；顾客接口保持原约束。
+
+### 时长选项与直接开台
+
+- `GET /api/v1/admin/table-duration-options`：ADMIN+；返回 `{items:[{option_id,duration_minutes}],buffer_minutes:10}`。分钟升序、去重，空配置返回空列表；新开台开关关闭时 503。
+- `POST /api/v1/admin/tables/{table_id}/direct-sessions`：ADMIN+；必需 `Idempotency-Key`，JSON 为 `{option_id:正整数,duration_minutes:正整数,note:可选字符串或null}`，note 最多 200 字，去首尾空白后空串归一为 null。禁止额外字段、布尔型整数、客户端开始/结束时间。
+- 成功与幂等重放均 HTTP 200，返回完整 `AdminTableSessionOut`。首次直接进入 active；重放可能返回已关闭的历史会话。
+- 使用既有 40463 桌台不存在、40961 占用/停用、40965 幂等冲突、503 新开台关闭；新增 HTTP 422 / `42262` 表示配置不存在、已删除、商品不处于 online/offline 或请求分钟与现有配置不一致。
+
+### 响应扩展
+
+`AdminTableOut` 新增 `current_source: order|direct|null`、`service_ends_at: UTC|null`（当前会话最长体验结束）、`timer_count: >=0`。已有 `table_release_at` 为缓冲全部结束时间。停用桌仍返回其 current_status 与计时数据。
+
+管理会话详情/列表新增 `source: order|direct`；`order_id/order_no/user_id/user_nickname/payment_deadline_at` 允许 direct 来源返回 null。详情新增 `order_total_amount`（订单整单金额字符串）、`order_experience_durations`（去重分钟列表）、`opened_by_user_id/source_option_id/direct_duration_minutes/opening_note`；后四项用于直接开台溯源。direct 计时器的 `experience_items=[]`，详情必须恰好一个 Timer，分钟等于 direct_duration_minutes。order 来源仍要求顾客、订单、付款截止及已激活 Timer 的订单明细完整。
+
+顾客 `TableSessionOut` 与 `TableSessionTimerOut` 不放宽 user/order/体验明细规则；直接开台会话不会通过顾客个人会话接口返回。匿名扫码只显示桌台是否可用，不披露操作者、备注或订单。
+
+### 管理桌台人工收款
+
+复用 `PATCH /api/v1/admin/orders/{order_id}/paid`，无请求体，必携带 `Table-Session-No`。确认前通过会话详情展示整单应收与时长；正常成功后刷新桌台与会话。重复确认可返回订单状态冲突，客户端应读取原会话，不能把重复请求理解为重新开始计时。此入口不调用微信支付 Provider。
+
+## P1.2 精确历史会话查询
+
+GET `/api/v1/table-sessions/history/{session_no}`，仅普通 USER 可用，沿用 TableSessionNumber 格式校验、桌台用户读取限流与 TableSessionOut 白名单。只允许 session.user_id 等于当前用户；非本人/不存在均返回 TableSessionNotFound（40462），direct 会话不能被顾客访问。校验归属后按既有锁序收敛这一精确会话，再返回该记录；不得替换成当前会话或订单最新会话。读取不标结果已读，提醒摘要和阅读协议见 [提醒 API](attention_api.md)。
+
+
+## 统一结算补充（2026-09-14）
+
+- `GET /tables/by-number/{table_no}`：普通顾客鉴权，`table_no` 严格为 T01–T30；返回与二维码解析相同的 `PublicTableCodeOut`（桌号、显示名、启用/可用状态），不返回二维码 Token。复用用户读取限流和桌台关闭开关。
+- `POST /table-sessions`：`order_id` 必填；`qr_token`、`table_no` 二选一，不能同时提供或同时缺失。保留 `Idempotency-Key` Header、所有权和待付款体验资格校验。桌号在服务端解析为同一桌台后计算既有 claim 指纹。
+- 新订单及占台使用 `POST /orders` 的可选 `table_no` / `table_checkout_key`，见 [Order API](order_api.md)。复用创建桌台的账号/IP 限流；关闭开台能力时新提交 503，已经提交的同键结果可读取。
+- 所有付款入口均以关联 Session 为服务端事实。最新 Session 过期返回 `40966`，其他不允许付款的 Session 状态返回 `40962`；Order、余额、Payment、Settlement、Timer 零写入。自动释放可由已有读取/清理任务收敛。
+- 管理员订单详情读取按订单过滤的桌台历史，并在确认收款前重新获取最新状态，有关联时携带精确的 `Table-Session-No`；最终资格仍由付款事务锁后校验，前端查询不占台、不作为并发授权。

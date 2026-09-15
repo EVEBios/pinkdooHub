@@ -200,6 +200,7 @@ def get_reservation_service(
 
 
 def get_table_session_service(
+    product_repository: ProductRepository = Depends(),
     table_repository: TableSessionRepository = Depends(),
     order_repository: OrderRepository = Depends(),
     user_repository: UserRepository = Depends(),
@@ -214,6 +215,7 @@ def get_table_session_service(
         user_repository,
         payment_repository,
         AuditLogService(audit_log_repository),
+        product_repository=product_repository,
     )
 
 

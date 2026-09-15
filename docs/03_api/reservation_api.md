@@ -88,7 +88,7 @@ Authorization: Bearer <access_token>
 |------|-------|-------|
 | ReservationStatus | `pending` | 待门店确认 |
 | ReservationStatus | `confirmed` | 已确认 |
-| ReservationStatus | `rejected` | 未能确认 |
+| ReservationStatus | `rejected` | 已拒绝 |
 | ReservationStatus | `cancelled` | 已取消 |
 | ReservationRejectionReason | `no_capacity` | 当前时段无空位 |
 | ReservationCancellationReason | `customer_request` | 顾客取消 |
@@ -398,12 +398,12 @@ PATCH /api/v1/admin/reservations/{reservation_id}/reject
 
 ```json
 {
-  "status": { "value": "rejected", "label": "未能确认" },
+  "status": { "value": "rejected", "label": "已拒绝" },
   "rejection_reason": {
     "value": "no_capacity",
     "label": "当前时段无空位"
   },
-  "customer_message": "很抱歉，您选择的时段当前已无空位，本次预约未能确认。您可以选择其他日期或时段重新预约。"
+  "customer_message": "很抱歉，您选择的时段当前已无空位，本次预约已被门店拒绝。您可以选择其他日期或时段重新预约。"
 }
 ```
 
@@ -572,3 +572,9 @@ M9 二维码开台与 Reservation API 保持独立：预约端点不新增 table
 ## 10. v1.1 兼容与迁移
 
 请求兼容旧的完整 Option 提交；响应对原来必有值的套餐字段放宽为 nullable，因此旧客户端不能读取新型记录。按 [业务规则 §17](../01_requirements/reservation_module.md#17-可选套餐创建页与兼容发布) 协调顾客端、管理端和后端发布。新增 M10 仅在仓库生成，未对持久环境执行；不得把旧 Gate A 验收证据外推到本轮。
+
+## 管理列表 review_timing 增量（2026-09-14）
+
+`GET /api/v1/admin/reservations` 增加可选 `review_timing`（ReservationReviewTiming）：`actionable` 为 scheduled_start_at > 服务端当前时间，`overdue` 为 scheduled_start_at <= 当前时间，均在分页前筛选且沿用原排序、日期/用户/商品组合条件。传入时必须同时指定 `status=pending`，不符组合或非法枚举返回 422。省略时原 status 查询语义保持不变，不新增持久化状态。OpenAPI 及小程序生成类型已同步。
+
+新管理页面默认 `status=pending&review_timing=actionable`；“已过期”使用 `status=pending&review_timing=overdue`。顾客列表原 HTTP 协议不变，过期标签为页面展示派生；confirm/reject/cancel 继续执行既有服务端状态、权限与时间校验。

@@ -69,12 +69,14 @@ def automatic_close_for(
     *,
     status: TableSessionStatus,
     now: datetime,
-    payment_deadline_at: datetime,
+    payment_deadline_at: datetime | None,
     table_release_at: datetime | None,
 ) -> AutomaticClose | None:
     """根据绝对边界推导首次自动关闭事实。"""
 
     if status is TableSessionStatus.AWAITING_PAYMENT:
+        if payment_deadline_at is None:
+            raise ValueError("awaiting payment session requires payment deadline")
         if now > payment_deadline_at:
             return AutomaticClose(
                 reason=TableSessionCloseReason.PAYMENT_TIMEOUT,

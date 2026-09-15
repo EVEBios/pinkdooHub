@@ -46,7 +46,7 @@ RESERVATION_LOCAL_TIME_PATTERN = r"^(?:[01]\d|2[0-3]):(?:00|30)$"
 RESERVATION_STATUS_LABELS = {
     ReservationStatus.PENDING: "待门店确认",
     ReservationStatus.CONFIRMED: "已确认",
-    ReservationStatus.REJECTED: "未能确认",
+    ReservationStatus.REJECTED: "已拒绝",
     ReservationStatus.CANCELLED: "已取消",
 }
 RESERVATION_REJECTION_REASON_LABELS = {
@@ -63,7 +63,7 @@ RESERVATION_CUSTOMER_MESSAGES = {
         "到店支付。"
     ),
     ReservationStatus.REJECTED: (
-        "很抱歉，您选择的时段当前已无空位，本次预约未能确认。"
+        "很抱歉，您选择的时段当前已无空位，本次预约已被门店拒绝。"
         "您可以选择其他日期或时段重新预约。"
     ),
     ReservationCancellationReason.CUSTOMER_REQUEST: (

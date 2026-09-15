@@ -35,6 +35,8 @@ from app.common.enums.inventory import (
     InventoryTransactionType,
 )
 from app.common.enums.order import OrderStatus
+from app.common.enums.attention import AttentionEventType
+from app.repositories.attention_repo import AttentionRepository
 from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
 from app.common.enums.user import UserRole, UserStatus
 from app.common.enums.wallet import (
@@ -120,6 +122,7 @@ class RefundService:
         self.user_repository = user_repository
         self.audit_log_service = audit_log_service
         self.table_session_repository = table_session_repository
+        self.attention_repository = AttentionRepository()
 
     async def refund_order(
         self,
@@ -384,6 +387,17 @@ class RefundService:
                     separators=(",", ":"),
                 ),
                 using_db=connection,
+            )
+            wallet_refund = payment.method is PaymentMethod.WALLET
+            message = (f"退款 ¥{refund.amount:.2f} 已退回会员余额。" if wallet_refund
+                       else f"门店已登记线下退款 ¥{refund.amount:.2f}，具体到账请与门店核实。")
+            if closed_session_no:
+                message += "本次桌台已结束。"
+            await self.attention_repository.create_commerce_event(
+                event_type=AttentionEventType.ORDER_WALLET_REFUNDED if wallet_refund else AttentionEventType.ORDER_MANUAL_REFUNDED,
+                user_id=owner.id, order_id=order.id,
+                session_id=table_session.id if closed_session_no and table_session is not None else None,
+                message=message, occurred_at=succeeded_at, using_db=connection,
             )
             return RefundResult(
                 order=order,

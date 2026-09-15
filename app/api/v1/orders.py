@@ -22,11 +22,12 @@ from app.schemas.order_response import (
 )
 from app.services.order_service import OrderItemInput, OrderService
 from app.utils.request import get_client_ip
+from app.core.rate_limit import TableRateLimiter, TABLE_CREATE_IP_POLICY, TABLE_CREATE_USER_POLICY
 
 router = APIRouter(
     prefix="/orders",
     tags=["orders"],
-    responses=error_responses(400, 401, 404, 409, 422),
+    responses=error_responses(400, 401, 403, 404, 409, 422, 429, 503),
 )
 OrderId = Annotated[int, Path(gt=0)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -47,6 +48,11 @@ async def create_order(
 ) -> dict:
     """创建当前用户的 Experience、Kit 或混合订单。"""
 
+    if data.table_no is not None:
+        limiter = TableRateLimiter()
+        await limiter.check(TABLE_CREATE_USER_POLICY, str(current_user.id))
+        await limiter.check(TABLE_CREATE_IP_POLICY, get_client_ip(request))
+
     order = await service.create_order(
         user_id=current_user.id,
         items=[
@@ -59,6 +65,8 @@ async def create_order(
             for item in data.items
         ],
         remark=data.remark,
+        **({"table_no": data.table_no, "table_checkout_key": data.table_checkout_key}
+           if data.table_no is not None else {}),
         ip_address=get_client_ip(request),
     )
     return success(

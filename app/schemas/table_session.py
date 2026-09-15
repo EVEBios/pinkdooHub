@@ -18,6 +18,7 @@ from app.common.constants.table_session import (
     TABLE_ADMIN_REASON_MAX_LENGTH,
     TABLE_IDEMPOTENCY_KEY_MAX_LENGTH,
     TABLE_QR_TOKEN_PATTERN,
+    TABLE_NO_PATTERN,
     TABLE_SESSION_NO_PATTERN,
 )
 from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
@@ -44,6 +45,8 @@ TableQrToken = Annotated[
     str,
     Field(strict=True, pattern=TABLE_QR_TOKEN_PATTERN),
 ]
+TableNumber = Annotated[str, Field(strict=True, pattern=TABLE_NO_PATTERN)]
+
 TableSessionNumber = Annotated[
     str,
     Field(strict=True, pattern=TABLE_SESSION_NO_PATTERN),
@@ -74,8 +77,16 @@ class _TableRequest(BaseModel):
 
 
 class TableSessionCreate(_TableRequest):
-    qr_token: TableQrToken
+    qr_token: TableQrToken | None = None
+    table_no: TableNumber | None = None
     order_id: int = Field(strict=True, gt=0)
+
+
+    @model_validator(mode="after")
+    def require_one_table_locator(self) -> "TableSessionCreate":
+        if (self.qr_token is None) == (self.table_no is None):
+            raise ValueError("Provide exactly one of qr_token or table_no")
+        return self
 
 
 class AdminTableUpdate(_TableRequest):
@@ -85,6 +96,12 @@ class AdminTableUpdate(_TableRequest):
 
 class AdminTableSessionRelease(_TableRequest):
     reason: TableAdminReason
+
+
+class AdminTableSessionCreate(_TableRequest):
+    option_id: int = Field(strict=True, gt=0)
+    duration_minutes: int = Field(strict=True, gt=0)
+    note: str | None = Field(default=None, max_length=TABLE_ADMIN_REASON_MAX_LENGTH)
 
 
 class EligibleOrderListQuery(PageParams):

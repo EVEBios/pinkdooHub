@@ -317,7 +317,7 @@ async def test_wallet_payment_accepts_exact_deadline_and_rejects_later_time() ->
     assert await PaymentSettlement.all().count() == 1
 
 
-async def test_late_sessionless_payment_releases_table_but_explicit_history_fails() -> None:
+async def test_late_sessionless_and_explicit_payments_both_require_rebinding() -> None:
     claimed_at = datetime(2026, 9, 10, 2, 0, tzinfo=timezone.utc)
     late_at = claimed_at + timedelta(minutes=15, microseconds=1)
 
@@ -340,21 +340,22 @@ async def test_late_sessionless_payment_releases_table_but_explicit_history_fail
         ip_address="127.0.0.1",
     )
 
-    paid = await ordinary_payment_service.pay_order_with_wallet(
-        ordinary_order.id,
-        user=ordinary_user,
-        idempotency_key="late-ordinary-payment",
-        ip_address="127.0.0.1",
-    )
+    with pytest.raises(TablePaymentWindowExpired):
+        await ordinary_payment_service.pay_order_with_wallet(
+            ordinary_order.id, user=ordinary_user,
+            idempotency_key="late-ordinary-payment", ip_address="127.0.0.1",
+        )
 
     ordinary_detail = await TableSessionRepository().get_session_detail(
         ordinary_session.session.id
     )
     assert ordinary_detail is not None
-    assert paid.order.status == OrderStatus.PAID.value
-    assert ordinary_detail.close_reason is TableSessionCloseReason.PAYMENT_TIMEOUT
+    await ordinary_order.refresh_from_db()
+    assert ordinary_order.status == OrderStatus.PENDING.value
+    assert ordinary_detail.close_reason is None
     assert list(ordinary_detail.timers) == []
-    assert not await TableOccupancy.filter(session_id=ordinary_detail.id).exists()
+    assert await TableOccupancy.filter(session_id=ordinary_detail.id).exists()
+    assert (await WalletAccount.get(user_id=ordinary_user.id)).balance == Decimal("500.00")
 
     explicit_user = await _user("late-explicit-history-customer")
     explicit_order = await _order(explicit_user, sequence=13, durations=[(90, 1)])

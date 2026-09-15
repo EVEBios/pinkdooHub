@@ -26,6 +26,7 @@ from app.common.constants.order import (
 from app.common.constants.product import PRODUCT_NAME_MAX_LENGTH
 from app.common.enums.order import OrderStatusValue
 from app.common.pagination import PageParams
+from app.schemas.table_session import TableNumber, TableIdempotencyKey
 
 PositiveOrderResourceId = Annotated[int, Field(strict=True, gt=0)]
 
@@ -102,6 +103,15 @@ class OrderCreate(_OrderRequest):
         max_length=ORDER_ITEMS_MAX_COUNT,
     )
     remark: OrderRemark | None = None
+
+    table_no: TableNumber | None = None
+    table_checkout_key: TableIdempotencyKey | None = None
+
+    @model_validator(mode="after")
+    def require_table_checkout_key(self) -> "OrderCreate":
+        if (self.table_no is None) != (self.table_checkout_key is None):
+            raise ValueError("table_no and table_checkout_key must be provided together")
+        return self
 
     @field_validator("remark", mode="after")
     @classmethod

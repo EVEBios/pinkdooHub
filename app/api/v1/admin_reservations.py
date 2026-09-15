@@ -116,6 +116,7 @@ async def list_admin_reservations(
         business_date=query.business_date,
         user_id=query.user_id,
         product_id=query.product_id,
+        review_timing=query.review_timing,
     )
     return success(data=map_admin_reservation_page(page).model_dump(mode="json"))
 

@@ -21,6 +21,7 @@ from app.common.enums.table_session import (
     AdminTableState,
     TableSessionCloseReason,
     TableSessionStatus,
+    TableSessionSource,
     TableTimerPhase,
 )
 from app.common.pagination import Page
@@ -148,7 +149,8 @@ class TableSessionOut(_TableOut):
                 != TABLE_CLOSE_REASON_LABELS[self.close_reason.value]
             ):
                 raise ValueError("table close reason label mismatch")
-        if self.payment_deadline_at != self.claimed_at + timedelta(
+        source = getattr(self, "source", TableSessionSource.ORDER)
+        if source == TableSessionSource.ORDER and self.payment_deadline_at != self.claimed_at + timedelta(
             minutes=TABLE_PAYMENT_WINDOW_MINUTES
         ):
             raise ValueError("table payment deadline mismatch")
@@ -191,6 +193,13 @@ class TableSessionOut(_TableOut):
         return self
 
 
+class AdminTableTimerOut(_TableOut):
+    id: int = Field(strict=True, gt=0)
+    duration_minutes: int = Field(strict=True, gt=0)
+    service_ends_at: TableUtcDatetimeOut
+    grace_ends_at: TableUtcDatetimeOut
+
+
 class AdminTableOut(TableSummaryOut):
     state: AdminTableState
     current_session_no: str | None = Field(
@@ -198,6 +207,10 @@ class AdminTableOut(TableSummaryOut):
     )
     current_status: TableEnumOut | None = None
     current_order_no: str | None = Field(default=None, pattern=ORDER_NO_PATTERN)
+    current_source: TableSessionSource | None = None
+    service_ends_at: TableUtcDatetimeOut | None = None
+    timer_count: int = Field(default=0, ge=0)
+    timers: list[AdminTableTimerOut] = Field(default_factory=list)
     current_user_id: int | None = Field(default=None, strict=True, gt=0)
     claimed_at: TableUtcDatetimeOut | None = None
     payment_deadline_at: TableUtcDatetimeOut | None = None
@@ -212,23 +225,34 @@ class AdminTableListOut(_TableOut):
 class AdminTableSessionListItemOut(_TableOut):
     session_no: str = Field(strict=True, pattern=TABLE_SESSION_NO_PATTERN)
     table: TableSummaryOut
-    order_id: int = Field(strict=True, gt=0)
-    order_no: str = Field(strict=True, pattern=ORDER_NO_PATTERN)
-    user_id: int = Field(strict=True, gt=0)
-    user_nickname: str = Field(strict=True, min_length=1)
+    source: TableSessionSource = TableSessionSource.ORDER
+    order_id: int | None = Field(default=None, strict=True, gt=0)
+    order_no: str | None = Field(default=None, strict=True, pattern=ORDER_NO_PATTERN)
+    user_id: int | None = Field(default=None, strict=True, gt=0)
+    user_nickname: str | None = Field(default=None, strict=True, min_length=1)
     status: TableEnumOut
     close_reason: TableEnumOut | None = None
     timer_count: int = Field(strict=True, ge=0)
     minimum_duration_minutes: int | None = Field(default=None, strict=True, gt=0)
     maximum_duration_minutes: int | None = Field(default=None, strict=True, gt=0)
     claimed_at: TableUtcDatetimeOut
-    payment_deadline_at: TableUtcDatetimeOut
+    payment_deadline_at: TableUtcDatetimeOut | None
     started_at: TableUtcDatetimeOut | None = None
     table_release_at: TableUtcDatetimeOut | None = None
     closed_at: TableUtcDatetimeOut | None = None
 
     @model_validator(mode="after")
     def validate_list_item(self) -> "AdminTableSessionListItemOut":
+        if self.source == TableSessionSource.DIRECT:
+            if (self.order_id is not None or self.order_no is not None
+                or self.user_id is not None or self.user_nickname is not None
+                or self.payment_deadline_at is not None
+                or self.status.value == TableSessionStatus.AWAITING_PAYMENT.value
+                or self.timer_count != 1):
+                raise ValueError("direct table session list identity mismatch")
+        elif (self.order_id is None or self.order_no is None or self.user_id is None
+              or self.user_nickname is None or self.payment_deadline_at is None):
+            raise ValueError("order table session list identity mismatch")
         if self.status.value not in TABLE_STATUS_LABELS:
             raise ValueError("invalid table session status")
         if self.status.label != TABLE_STATUS_LABELS[self.status.value]:
@@ -277,17 +301,62 @@ class AdminTableSessionListItemOut(_TableOut):
         return self
 
 
+class AdminTableSessionTimerOut(TableSessionTimerOut):
+    experience_items: list[TimerExperienceItemOut] = Field(default_factory=list)
+
+
 class AdminTableSessionOut(TableSessionOut):
-    user_id: int = Field(strict=True, gt=0)
-    user_nickname: str = Field(strict=True, min_length=1)
+    source: TableSessionSource = TableSessionSource.ORDER
+    order_id: int | None = Field(default=None, strict=True, gt=0)
+    order_no: str | None = Field(default=None, strict=True, pattern=ORDER_NO_PATTERN)
+    order_total_amount: OrderAmountOut | None = None
+    order_experience_durations: list[int] = Field(default_factory=list)
+    user_id: int | None = Field(default=None, strict=True, gt=0)
+    user_nickname: str | None = Field(default=None, strict=True, min_length=1)
+    payment_deadline_at: TableUtcDatetimeOut | None
+    timers: list[AdminTableSessionTimerOut]
     payment_id: int | None = Field(default=None, strict=True, gt=0)
+    opened_by_user_id: int | None = Field(default=None, strict=True, gt=0)
+    source_option_id: int | None = Field(default=None, strict=True, gt=0)
+    direct_duration_minutes: int | None = Field(default=None, strict=True, gt=0)
+    opening_note: str | None = Field(default=None, max_length=TABLE_ADMIN_REASON_MAX_LENGTH)
     closed_by_user_id: int | None = Field(default=None, strict=True, gt=0)
     admin_close_reason: str | None = Field(
-        default=None,
-        strict=True,
-        min_length=1,
-        max_length=TABLE_ADMIN_REASON_MAX_LENGTH,
+        default=None, strict=True, min_length=1, max_length=TABLE_ADMIN_REASON_MAX_LENGTH,
     )
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "AdminTableSessionOut":
+        if self.source == TableSessionSource.DIRECT:
+            if (self.order_id is not None or self.order_no is not None
+                or self.order_total_amount is not None or self.order_experience_durations or self.user_id is not None
+                or self.user_nickname is not None or self.payment_id is not None
+                or self.payment_deadline_at is not None or self.opened_by_user_id is None
+                or self.source_option_id is None or self.direct_duration_minutes is None
+                or self.status.value == TableSessionStatus.AWAITING_PAYMENT.value
+                or len(self.timers) != 1 or self.started_at != self.claimed_at
+                or self.timers[0].duration_minutes != self.direct_duration_minutes
+                or any(timer.experience_items for timer in self.timers)
+                or (self.close_reason is not None and self.close_reason.value not in (
+                    TableSessionCloseReason.TIME_EXPIRED.value, TableSessionCloseReason.ADMIN_RELEASED.value,
+                ))):
+                raise ValueError("direct table session shape mismatch")
+        elif (self.order_id is None or self.order_no is None or self.user_id is None
+              or self.user_nickname is None or self.payment_deadline_at is None
+              or self.source_option_id is not None or self.direct_duration_minutes is not None
+              or any(not timer.experience_items for timer in self.timers)):
+            raise ValueError("order table session shape mismatch")
+        return self
+
+
+class DirectTableDurationOut(_TableOut):
+    option_id: int = Field(strict=True, gt=0)
+    duration_minutes: int = Field(strict=True, gt=0)
+
+
+class DirectTableDurationListOut(_TableOut):
+    items: list[DirectTableDurationOut]
+    buffer_minutes: Literal[TABLE_TIMER_BUFFER_MINUTES] = TABLE_TIMER_BUFFER_MINUTES
 
 
 EligibleOrderPageOut = Page[EligibleOrderListItemOut]

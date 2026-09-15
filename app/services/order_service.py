@@ -1,10 +1,11 @@
 """Order Service —— 订单查询与后续写用例的业务编排层。"""
 
+import hashlib
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from tortoise.backends.base.client import BaseDBAsyncClient
@@ -64,12 +65,21 @@ from app.common.enums.wallet import (
 from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
 from app.common.constants.table_session import (
     TABLE_AUDIT_ACTION_ACTIVATE,
+    TABLE_AUDIT_ACTION_CREATE,
+    TABLE_PAYMENT_WINDOW_MINUTES,
+    TABLE_CHECKOUT_IDEMPOTENCY_PREFIX,
     TABLE_AUDIT_ACTION_RELEASE,
     TABLE_AUDIT_TARGET_TYPE,
 )
 from app.common.exceptions.table_session import (
     TableSessionNotFound,
+    TableCodeNotFound,
+    TableIdempotencyConflict,
+    TableUnavailable,
+    UserTableSessionConflict,
 )
+from app.common.enums.attention import AttentionEventType
+from app.repositories.attention_repo import AttentionRepository
 from app.domain.table_session import automatic_close_for, build_timer_specs
 from app.common.exceptions import (
     InsufficientStock,
@@ -119,10 +129,12 @@ from app.repositories.wallet_repo import (
     WalletRepository,
     WalletTransactionCreateData,
 )
-from app.repositories.table_session_repo import TableSessionRepository
+from app.repositories.table_session_repo import TableSessionRepository, TableSessionCreateData
 from app.services.audit_log_service import AuditLogService
 from app.utils.database import get_database_error_code
-from app.validators.table_session import validate_payment_activation
+from app.validators.table_session import validate_payment_activation, validate_order_eligible
+from app.common.table_session_number import generate_table_session_number
+from app.domain.attention import session_closed_event
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +177,7 @@ class OrderService:
         table_session_repository: TableSessionRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
+        self.attention_repository = AttentionRepository()
         self.order_repository = order_repository
         self.product_repository = product_repository
         self.inventory_repository = inventory_repository
@@ -466,6 +479,12 @@ class OrderService:
             )
             if loaded is None:
                 raise RuntimeError("Persisted assisted order not found")
+            await self.attention_repository.create_commerce_event(
+                event_type=AttentionEventType.ORDER_ASSISTED_WALLET_PAID,
+                user_id=target.id, order_id=order.id, session_id=None,
+                message=f"门店已代您创建订单，并从会员余额扣除 ¥{total_amount:.2f}；扣款后余额 ¥{after_balance:.2f}。请核对本订单商品与资金记录。",
+                occurred_at=payment.succeeded_at, using_db=connection,
+            )
             return AssistedWalletOrderResult(
                 order=loaded,
                 payment=payment,
@@ -587,8 +606,34 @@ class OrderService:
         items: list[OrderItemInput],
         remark: str | None,
         ip_address: str,
+        table_no: str | None = None,
+        table_checkout_key: str | None = None,
     ) -> Order:
         """校验 Experience/Kit Items，并原子创建订单、扣减、快照与审计。"""
+
+        checkout = None
+        if table_no is not None:
+            if not table_checkout_key or self.table_session_repository is None:
+                raise TableIdempotencyConflict()
+            fingerprint = hashlib.sha256(json.dumps({
+                "user_id": user_id, "table_no": table_no, "remark": remark,
+                "items": sorted([asdict(item) for item in items],
+                                key=lambda item: json.dumps(item, sort_keys=True)),
+            }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            checkout = (table_no, f"{TABLE_CHECKOUT_IDEMPOTENCY_PREFIX}{table_checkout_key}", fingerprint)
+            async with in_transaction() as connection:
+                user = await self.user_repository.get_for_update(user_id, using_db=connection)
+                if user is None or user.status == UserStatus.DELETED:
+                    raise UserDeleted()
+                if user.status == UserStatus.DISABLED:
+                    raise UserDisabled()
+                if user.role != UserRole.USER or user.status != UserStatus.NORMAL:
+                    raise PermissionException(message="Customer account required")
+                replay = await self._table_checkout_replay(checkout, user_id=user_id, using_db=connection)
+                if replay is not None:
+                    return replay
+            if not settings.table_session_claims_available:
+                raise ServiceUnavailableException(message="Table session claims are temporarily disabled")
 
         snapshots, total_amount, kit_items = await self._build_order_snapshots(
             items
@@ -613,8 +658,13 @@ class OrderService:
                     remark=remark,
                     ip_address=ip_address,
                     audit_description=audit_description,
+                    **({"checkout": checkout} if checkout is not None else {}),
                 )
             except IntegrityError:
+                if checkout is not None:
+                    replay = await self._table_checkout_replay(checkout, user_id=user_id)
+                    if replay is not None:
+                        return replay
                 is_order_number_collision = (
                     await self.order_repository.order_number_exists(order_no)
                 )
@@ -646,6 +696,7 @@ class OrderService:
         remark: str | None,
         ip_address: str,
         audit_description: str,
+        checkout: tuple[str, str, str] | None = None,
     ) -> Order:
         """仅对 MySQL 锁瞬态错误以全新事务重试完整创建写集。"""
 
@@ -660,6 +711,7 @@ class OrderService:
                     remark=remark,
                     ip_address=ip_address,
                     audit_description=audit_description,
+                    **({"checkout": checkout} if checkout is not None else {}),
                 )
             except IntegrityError:
                 raise
@@ -691,6 +743,7 @@ class OrderService:
         remark: str | None,
         ip_address: str,
         audit_description: str,
+        checkout: tuple[str, str, str] | None = None,
     ) -> Order:
         """在一条事务中写入 Order、库存、Items、Audit 并重载详情。"""
 
@@ -709,6 +762,12 @@ class OrderService:
                 raise PermissionException(
                     message="Customer account status does not allow order creation"
                 )
+            if checkout is not None:
+                replay = await self._table_checkout_replay(
+                    checkout, user_id=user_id, using_db=connection,
+                )
+                if replay is not None:
+                    return replay
             order = await self.order_repository.create_order(
                 order_no=order_no,
                 user_id=user_id,
@@ -716,17 +775,23 @@ class OrderService:
                 remark=remark,
                 using_db=connection,
             )
-            await self._deduct_kit_stock(
-                order_id=order.id,
-                user_id=user_id,
-                kit_items=kit_items,
-                using_db=connection,
-            )
+            if checkout is None:
+                await self._deduct_kit_stock(
+                    order_id=order.id, user_id=user_id, kit_items=kit_items,
+                    using_db=connection,
+                )
             await self.order_repository.bulk_create_items(
-                order=order,
-                items=snapshots,
-                using_db=connection,
+                order=order, items=snapshots, using_db=connection,
             )
+            if checkout is not None:
+                await self._claim_checkout_table(
+                    order=order, checkout=checkout, ip_address=ip_address,
+                    using_db=connection,
+                )
+                await self._deduct_kit_stock(
+                    order_id=order.id, user_id=user_id, kit_items=kit_items,
+                    using_db=connection,
+                )
             await self.audit_log_service.log(
                 operator_id=user_id,
                 action=ORDER_AUDIT_ACTION_CREATE,
@@ -744,6 +809,97 @@ class OrderService:
             if loaded is None:
                 raise RuntimeError("Persisted order not found")
             return loaded
+
+    async def _table_checkout_replay(
+        self, checkout: tuple[str, str, str], *, user_id: int,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> Order | None:
+        repository = self.table_session_repository
+        if repository is None:
+            raise TableSessionNotFound()
+        session = await repository.get_session_by_claim_idempotency_key(
+            checkout[1], using_db=using_db,
+        )
+        if session is None:
+            return None
+        if session.user_id != user_id or session.claim_request_fingerprint != checkout[2]:
+            raise TableIdempotencyConflict()
+        order = await self.order_repository.get_order_detail(
+            session.order_id, user_id=user_id, using_db=using_db,
+        )
+        if order is None:
+            raise OrderNotFound()
+        return order
+
+    async def _claim_checkout_table(
+        self, *, order: Order, checkout: tuple[str, str, str],
+        ip_address: str, using_db: BaseDBAsyncClient,
+    ) -> None:
+        """用户、订单锁后锁桌台；占台与新订单/库存共用外层事务。"""
+        repository = self.table_session_repository
+        if repository is None:
+            raise TableSessionNotFound()
+        table = await repository.get_table_by_number(checkout[0], using_db=using_db)
+        if table is None:
+            raise TableCodeNotFound()
+        previous = await repository.get_occupancy_by_user_id(order.user_id, using_db=using_db)
+        table_ids = {table.id}
+        if previous is not None:
+            table_ids.add(previous.table_id)
+        for table_id in sorted(table_ids):
+            locked = await repository.get_table_for_update(table_id, using_db=using_db)
+            if table_id == table.id:
+                table = locked
+            occupancy = await repository.get_occupancy_by_table_id(
+                table_id, using_db=using_db, for_update=True,
+            )
+            if occupancy is not None:
+                session = await repository.get_session_for_update(occupancy.session_id, using_db=using_db)
+                close = automatic_close_for(
+                    status=TableSessionStatus(session.status), now=self.now_provider(),
+                    payment_deadline_at=session.payment_deadline_at,
+                    table_release_at=session.table_release_at,
+                )
+                if close is not None:
+                    await repository.close_session(
+                        session, reason=close.reason, closed_at=close.closed_at,
+                        closed_by_user_id=None, admin_close_reason=None,
+                        release_idempotency_key=None, using_db=using_db,
+                    )
+                    event = session_closed_event(
+                        user_id=session.user_id, session_id=session.id,
+                        reason=close.reason, closed_at=close.closed_at,
+                    )
+                    if event is not None:
+                        await self.attention_repository.create_commerce_event(**event, using_db=using_db)
+        if table is None or not table.is_enabled:
+            raise TableUnavailable(table_no=checkout[0], reason="disabled")
+        if await repository.get_occupancy_by_user_id(order.user_id, using_db=using_db) is not None:
+            raise UserTableSessionConflict()
+        if await repository.get_occupancy_by_table_id(table.id, using_db=using_db, for_update=True) is not None:
+            raise TableUnavailable(table_no=table.table_no, reason="occupied")
+        items = await repository.get_order_item_snapshots(order.id, using_db=using_db)
+        validate_order_eligible(order_id=order.id, order_status=order.status,
+                                has_settlement=False, items=items)
+        claimed_at = self.now_provider()
+        session = await repository.create_session(data=TableSessionCreateData(
+            session_no=generate_table_session_number(), table_id=table.id,
+            user_id=order.user_id, order_id=order.id,
+            claim_idempotency_key=checkout[1], claim_request_fingerprint=checkout[2],
+            claimed_at=claimed_at,
+            payment_deadline_at=claimed_at + timedelta(minutes=TABLE_PAYMENT_WINDOW_MINUTES),
+        ), using_db=using_db)
+        await repository.create_occupancy(
+            session_id=session.id, table_id=table.id, user_id=order.user_id,
+            order_id=order.id, using_db=using_db,
+        )
+        await self.audit_log_service.log(
+            operator_id=order.user_id, action=TABLE_AUDIT_ACTION_CREATE,
+            target_type=TABLE_AUDIT_TARGET_TYPE, target_id=session.id,
+            ip_address=ip_address,
+            description=json.dumps({"order_id": order.id, "table_id": table.id}),
+            using_db=using_db,
+        )
 
     async def _deduct_kit_stock(
         self,
@@ -1446,6 +1602,8 @@ class OrderService:
                 using_db=connection,
             )
 
+            result_session = table_session
+
             if self.payment_repository is not None:
                 settlement = (
                     await self.payment_repository.get_settlement_by_order_id(
@@ -1457,23 +1615,6 @@ class OrderService:
                     if settlement is not None:
                         raise PaymentSettlementConflict()
                     succeeded_at = self.now_provider()
-                    if (
-                        table_session is not None
-                        and table_session_no is None
-                        and TableSessionStatus(table_session.status)
-                        is TableSessionStatus.AWAITING_PAYMENT
-                        and succeeded_at > table_session.payment_deadline_at
-                    ):
-                        await self.table_session_repository.close_session(
-                            table_session,
-                            reason=TableSessionCloseReason.PAYMENT_TIMEOUT,
-                            closed_at=table_session.payment_deadline_at,
-                            closed_by_user_id=None,
-                            admin_close_reason=None,
-                            release_idempotency_key=None,
-                            using_db=connection,
-                        )
-                        table_session = None
                     payment = await self.payment_repository.create_payment(
                         data=PaymentCreateData(
                             payment_no=self.payment_number_generator(),
@@ -1568,6 +1709,16 @@ class OrderService:
                 ),
                 using_db=connection,
             )
+            await self.attention_repository.create_commerce_event(
+                event_type=(AttentionEventType.ORDER_MANUAL_PAID if operation == ORDER_OPERATION_MARK_PAID
+                            else AttentionEventType.ORDER_COMPLETED),
+                user_id=order.user_id, order_id=order.id,
+                session_id=result_session.id if result_session is not None else None,
+                message=(f"门店已确认收款 ¥{order.total_amount:.2f}。"
+                         + ("本次桌台已开始计时。" if table_session is not None else "原占台已超时，未启动计时；请重新扫码开台。" if result_session is not None else "")
+                         if operation == ORDER_OPERATION_MARK_PAID else "门店已完成本次订单服务。"),
+                occurred_at=self.now_provider(), using_db=connection,
+            )
             loaded = await self.order_repository.get_order_by_id(
                 order.id,
                 using_db=connection,
@@ -1600,7 +1751,7 @@ class OrderService:
             if visible is None or visible.order_id != order_id:
                 raise TableSessionNotFound()
         else:
-            visible = await self.table_session_repository.get_open_session_by_order_id(
+            visible = await self.table_session_repository.get_latest_session_by_order_id(
                 order_id,
                 using_db=using_db,
             )

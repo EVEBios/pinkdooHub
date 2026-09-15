@@ -22,6 +22,7 @@ from app.common.exceptions import (
     OrderNotFound,
     OrderStatusConflict,
 )
+from app.repositories.attention_repo import AttentionRepository
 from app.repositories.inventory_repo import InventoryRepository
 from app.repositories.order_repo import OrderCancellationItemData, OrderRepository
 from app.repositories.payment_repo import PaymentRepository
@@ -53,6 +54,7 @@ def _service() -> tuple[OrderService, AsyncMock, AsyncMock, AsyncMock]:
         user_repository=user_repository,
         payment_repository=payment_repository,
     )
+    service.attention_repository = AsyncMock(spec=AttentionRepository)
     return service, order_repository, inventory_repository, audit_service
 
 

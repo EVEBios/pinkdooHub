@@ -14,7 +14,7 @@ from pydantic import (
 
 from app.common.constants.product import PRODUCT_NAME_MAX_LENGTH
 from app.common.constants.reservation import RESERVATION_LOCAL_TIME_PATTERN
-from app.common.enums.reservation import ReservationStatus, ReservationWeekday
+from app.common.enums.reservation import ReservationReviewTiming, ReservationStatus, ReservationWeekday
 from app.common.pagination import PageParams
 
 
@@ -91,9 +91,16 @@ class ReservationListQuery(PageParams):
 class AdminReservationListQuery(ReservationListQuery):
     """管理端预约分页与组合筛选。"""
 
+    review_timing: ReservationReviewTiming | None = None
     business_date: ReservationBusinessDate | None = None
     user_id: PositiveReservationQueryId | None = None
     product_id: PositiveReservationQueryId | None = None
+
+    @model_validator(mode="after")
+    def validate_review_timing(self) -> "AdminReservationListQuery":
+        if self.review_timing is not None and self.status is not ReservationStatus.PENDING:
+            raise ValueError("review_timing requires status=pending")
+        return self
 
 
 class StoreClosureListQuery(PageParams):

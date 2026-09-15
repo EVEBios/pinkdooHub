@@ -18,6 +18,7 @@ from app.common.constants.wallet import (
     WALLET_BALANCE_MIN,
 )
 from app.common.enums.user import UserRole, UserStatus
+from app.repositories.attention_repo import AttentionRepository
 from app.common.enums.wallet import (
     WalletStatus,
     WalletTransactionSourceType,
@@ -69,6 +70,7 @@ class WalletService:
         self.user_repository = user_repository
         self.audit_log_service = audit_log_service
         self.payment_repository = payment_repository or PaymentRepository()
+        self.attention_repository = AttentionRepository()
 
     async def get_member_wallet(self, user: User) -> WalletAccount:
         self._ensure_wallet_owner(user)
@@ -316,6 +318,11 @@ class WalletService:
             )
             if detail is None:
                 raise RuntimeError("Created wallet transaction not found")
+            await self.attention_repository.create_wallet_event(
+                transaction_id=transaction.id, user_id=target.id,
+                message=f"余额{'增加' if change > 0 else '减少'} ¥{abs(change):.2f}，调整后余额 ¥{after_balance:.2f}。",
+                occurred_at=transaction.created_at, using_db=connection,
+            )
             return WalletAdjustmentResult(
                 account=account,
                 transaction=detail,

@@ -10,7 +10,7 @@ from datetime import timedelta
 from tortoise import Tortoise
 
 from app.common.constants.table_session import TABLE_TIMER_BUFFER_MINUTES
-from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
+from app.common.enums.table_session import TableSessionCloseReason, TableSessionSource, TableSessionStatus
 from app.common.enums.wallet import PaymentStatus
 from app.db.database import TORTOISE_ORM
 from app.repositories.table_session_repo import TableSessionRepository
@@ -37,7 +37,19 @@ async def reconcile(repository: TableSessionRepository) -> dict[str, int]:
             occupancies = list(session.occupancy)
             timers = list(session.timers)
             payment = session.payment
-            violations += int(session.order.user_id != session.user_id)
+            direct = session.source == TableSessionSource.DIRECT
+            if direct:
+                violations += int(
+                    session.order_id is not None or session.user_id is not None
+                    or session.payment_id is not None or session.payment_deadline_at is not None
+                    or session.opened_by_user_id is None or session.source_option_id is None
+                    or session.direct_duration_minutes is None
+                    or status == TableSessionStatus.AWAITING_PAYMENT
+                    or session.started_at != session.claimed_at
+                    or len(timers) != 1
+                )
+            else:
+                violations += int(session.order is None or session.order.user_id != session.user_id)
             if status is TableSessionStatus.CLOSED:
                 violations += int(bool(occupancies))
                 violations += int(
@@ -99,22 +111,25 @@ async def reconcile(repository: TableSessionRepository) -> dict[str, int]:
                 )
                 if session.close_reason is TableSessionCloseReason.TIME_EXPIRED:
                     violations += int(session.closed_at != session.table_release_at)
-            expected_durations = {
-                item.option_duration_minutes
-                for item in session.order.items
-                if item.experience_option_id is not None
-            }
-            violations += int(
-                not timers
-                or payment is None
-                or PaymentStatus(payment.status) is not PaymentStatus.SUCCEEDED
-                or payment.succeeded_at is None
-                or session.started_at != payment.succeeded_at
-                or payment.order_id != session.order_id
-                or payment.user_id != session.user_id
-                or {timer.duration_minutes for timer in timers}
-                != expected_durations
-            )
+            if direct:
+                violations += int({timer.duration_minutes for timer in timers} != {session.direct_duration_minutes})
+                if status is TableSessionStatus.CLOSED:
+                    violations += int(session.close_reason not in (
+                        TableSessionCloseReason.TIME_EXPIRED, TableSessionCloseReason.ADMIN_RELEASED,
+                    ))
+            else:
+                expected_durations = {
+                    item.option_duration_minutes
+                    for item in session.order.items
+                    if item.experience_option_id is not None
+                } if session.order is not None else set()
+                violations += int(
+                    not timers or payment is None
+                    or PaymentStatus(payment.status) is not PaymentStatus.SUCCEEDED
+                    or payment.succeeded_at is None or session.started_at != payment.succeeded_at
+                    or payment.order_id != session.order_id or payment.user_id != session.user_id
+                    or {timer.duration_minutes for timer in timers} != expected_durations
+                )
             if not timers:
                 continue
             for timer in timers:

@@ -51,6 +51,27 @@ Base URL：`/api/v1`。除特别说明外，全部端点要求 JWT Bearer Token�
 
 客户端不得提交名称、配置、颜色快照、销售单位、价格、小计或库存字段。同一订单中 `(product_id, experience_option_id, kit_color_id)` 不得重复；不自动合并重复行。`items` 总数为 1..30，其中 `kit_color_id` 非空的颜色行最多 20，其他 Experience/fixed 行最多 10。
 
+### 可选桌台结算参数（2026-09-14）
+
+`POST /orders` 的请求在既有 `items`、`remark` 外增加：
+
+| 字段 | 类型 | 规则 |
+|---|---|---|
+| `table_no` | string / null | 可选，严格 T01–T30；与 `table_checkout_key` 同时提供 |
+| `table_checkout_key` | string / null | 可选，1–128 个可打印 ASCII 字符；作为本次开台订单的幂等身份 |
+
+同时省略时保持普通下单。选桌时必须为正常普通顾客，含体验项目且桌台可用，创建订单、明细、占台、库存与审计原子提交，成功返回现有 OrderDetailOut/HTTP 201。重放同一账号、桌号、商品与备注返回原订单（仍为 HTTP 201），不重复扣库存；同键不同请求返回桌台幂等冲突。当前状态由 `GET /orders/{id}/table-session` 读取，不增加第二套订单桌号字段。
+
+```json
+{
+  "items": [{"product_id": 1, "experience_option_id": 2, "quantity": 1}],
+  "table_no": "T08",
+  "table_checkout_key": "checkout-example-unique-request"
+}
+```
+
+桌台错误复用 [Table Session API](table_session_api.md)；选桌请求额外受开台账号/IP 限流和开关保护（429/503）。曾关联桌台的待支付订单，在桌台失效后必须重新绑定才能付款。此项是超时付款语义调整，前后端应配套更新。
+
 ### 2.3 Order Item 响应
 
 | 字段 | 类型 | 说明 |

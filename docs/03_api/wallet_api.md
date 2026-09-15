@@ -448,3 +448,8 @@ M9 已为现有 `POST /api/v1/orders/{order_id}/payments/wallet` 与 `PATCH /api
 有效桌台付款仍返回当前 `PaymentOut`，不向资金响应混入 Timer。Payment/Settlement/钱包流水、Order Paid、Session Active 和 Timer 在同一事务提交；付款后客户端通过 Table Session API 读取计时。指定 Session 已超时、关闭或身份不匹配时必须资金零写入；具体使用 `40462`、`40962`、`40966` 或资源隐藏后的稳定错误，见 [二维码开台 API](table_session_api.md)。
 
 ADMIN+ 人工结算与全额退款的现有请求/响应形状不变，并分别在原事务内激活或关闭当前 Session。真实微信 Provider 仍固定 503 零写入并另行立项。
+
+
+## P1.3 资金结果联动（2026-09-14）
+
+既有调账、代客钱包下单、钱包／人工退款成功时，在同一事务记录站内结果；原资金 HTTP 请求与响应不变。新增余额结果列表/精确详情、汇总字段及明确已读协议见 [提醒 API P1.3](attention_api.md)。退款详情仍为资金权威，人工渠道只代表门店登记；通知内容不表示额外发生一次转账。无需新增数据库迁移，需已具备 M13 提醒结构。

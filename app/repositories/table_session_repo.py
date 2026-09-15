@@ -8,7 +8,7 @@ from tortoise.functions import Count, Max, Min
 from tortoise.queryset import QuerySet
 
 from app.common.enums.order import OrderStatus
-from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
+from app.common.enums.table_session import TableSessionCloseReason, TableSessionSource, TableSessionStatus
 from app.common.pagination import Page
 from app.domain.table_session import TimerSpec
 from app.models.order import Order
@@ -25,12 +25,17 @@ from app.models.table_session import (
 class TableSessionCreateData:
     session_no: str
     table_id: int
-    user_id: int
-    order_id: int
+    user_id: int | None
+    order_id: int | None
     claim_idempotency_key: str
     claim_request_fingerprint: str
     claimed_at: datetime
-    payment_deadline_at: datetime
+    payment_deadline_at: datetime | None
+    source: TableSessionSource = TableSessionSource.ORDER
+    opened_by_user_id: int | None = None
+    source_option_id: int | None = None
+    direct_duration_minutes: int | None = None
+    opening_note: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +71,14 @@ class TableSessionRepository:
             query = query.using_db(using_db)
         return await query.first()
 
+    async def get_table_by_number(
+        self, table_no: str, *, using_db: BaseDBAsyncClient | None = None,
+    ) -> StoreTable | None:
+        query = StoreTable.filter(table_no=table_no)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        return await query.first()
+
     async def get_table_by_id(
         self,
         table_id: int,
@@ -96,7 +109,7 @@ class TableSessionRepository:
         using_db: BaseDBAsyncClient | None = None,
     ) -> list[StoreTable]:
         query = StoreTable.all().order_by("table_no").prefetch_related(
-            "occupancy__session__order"
+            "occupancy__session__order", "occupancy__session__timers"
         )
         if using_db is not None:
             query = query.using_db(using_db)
@@ -186,6 +199,11 @@ class TableSessionRepository:
         using_db: BaseDBAsyncClient,
     ) -> TableSession:
         return await TableSession.create(
+            source=data.source,
+            opened_by_user_id=data.opened_by_user_id,
+            source_option_id=data.source_option_id,
+            direct_duration_minutes=data.direct_duration_minutes,
+            opening_note=data.opening_note,
             session_no=data.session_no,
             table_id=data.table_id,
             user_id=data.user_id,
@@ -202,8 +220,8 @@ class TableSessionRepository:
         *,
         session_id: int,
         table_id: int,
-        user_id: int,
-        order_id: int,
+        user_id: int | None,
+        order_id: int | None,
         using_db: BaseDBAsyncClient,
     ) -> TableOccupancy:
         return await TableOccupancy.create(
@@ -219,10 +237,14 @@ class TableSessionRepository:
         table_id: int,
         *,
         using_db: BaseDBAsyncClient | None = None,
+        for_update: bool = False,
     ) -> TableOccupancy | None:
-        query = TableOccupancy.filter(table_id=table_id).select_related(
-            "session", "session__order"
-        )
+        query = TableOccupancy.filter(table_id=table_id)
+        if for_update:
+            # 当前读不能沿用等待桌台锁之前的 RR 快照，也不联表锁其他用户订单。
+            query = query.select_for_update()
+        else:
+            query = query.select_related("session", "session__order")
         if using_db is not None:
             query = query.using_db(using_db)
         return await query.first()
@@ -393,7 +415,7 @@ class TableSessionRepository:
         self,
         session: TableSession,
         *,
-        payment_id: int,
+        payment_id: int | None,
         started_at: datetime,
         table_release_at: datetime,
         using_db: BaseDBAsyncClient,

@@ -53,6 +53,7 @@ from app.api.v1.admin_products import router as admin_products_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.admin_tables import router as admin_tables_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.attention import router as attention_router, admin_router as admin_attention_router
 from app.api.v1.router import router as v1_router
 from app.api.v1.products import router as products_router
 from app.api.v1.reservations import router as reservations_router
@@ -224,6 +225,8 @@ app.include_router(wallet_router, prefix="/api/v1")
 app.include_router(admin_wallet_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
 app.include_router(admin_refunds_router, prefix="/api/v1")
+app.include_router(attention_router, prefix="/api/v1")
+app.include_router(admin_attention_router, prefix="/api/v1")
 app.include_router(v1_router, prefix="/api/v1")
 
 # ── 全局异常处理 ────────────────────────────────

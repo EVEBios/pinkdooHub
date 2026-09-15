@@ -14,6 +14,7 @@ from app.schemas.table_session_response import (
     AdminTableOut,
     AdminTableSessionListItemOut,
     AdminTableSessionOut,
+    AdminTableSessionTimerOut,
     EligibleDurationGroupOut,
     EligibleOrderListItemOut,
     PublicTableCodeOut,
@@ -125,6 +126,7 @@ def _map_timer(
     timer: TableSessionTimer,
     *,
     server_now: datetime,
+    admin: bool = False,
 ) -> TableSessionTimerOut:
     status = TableSessionStatus(session.status)
     phase = timer_phase(
@@ -133,7 +135,8 @@ def _map_timer(
         service_ends_at=timer.service_ends_at,
         grace_ends_at=timer.grace_ends_at,
     )
-    return TableSessionTimerOut(
+    schema = AdminTableSessionTimerOut if admin else TableSessionTimerOut
+    return schema(
         id=timer.id,
         duration_minutes=timer.duration_minutes,
         buffer_minutes=timer.buffer_minutes,
@@ -147,7 +150,7 @@ def _map_timer(
             grace_ends_at=timer.grace_ends_at,
             closed_at=session.closed_at,
         ),
-        experience_items=_experience_items_for_timer(session, timer),
+        experience_items=_experience_items_for_timer(session, timer) if session.order_id is not None else [],
     )
 
 
@@ -187,13 +190,25 @@ def map_admin_table_session(
     *,
     server_now: datetime | None = None,
 ) -> AdminTableSessionOut:
-    public = map_table_session(session, server_now=server_now)
+    now = _now(server_now)
     return AdminTableSessionOut(
-        **public.model_dump(),
-        user_id=session.user_id,
-        user_nickname=session.user.nickname,
-        payment_id=session.payment_id,
-        closed_by_user_id=session.closed_by_user_id,
+        session_no=session.session_no, table=map_table_summary(session.table),
+        source=session.source, order_id=session.order_id,
+        order_no=session.order.order_no if session.order_id is not None else None,
+        order_total_amount=session.order.total_amount if session.order_id is not None else None,
+        order_experience_durations=sorted({item.option_duration_minutes for item in session.order.items
+            if item.experience_option_id is not None and item.option_duration_minutes is not None}) if session.order_id is not None else [],
+        status=enum_out(session.status), claimed_at=session.claimed_at,
+        payment_deadline_at=session.payment_deadline_at, started_at=session.started_at,
+        table_release_at=session.table_release_at, closed_at=session.closed_at,
+        close_reason=enum_out(session.close_reason) if session.close_reason is not None else None,
+        timers=[_map_timer(session, timer, server_now=now, admin=True)
+                for timer in sorted(session.timers, key=lambda value: (value.duration_minutes, value.id))],
+        server_now=now, user_id=session.user_id,
+        user_nickname=session.user.nickname if session.user_id is not None else None,
+        payment_id=session.payment_id, opened_by_user_id=session.opened_by_user_id,
+        source_option_id=session.source_option_id, direct_duration_minutes=session.direct_duration_minutes,
+        opening_note=session.opening_note, closed_by_user_id=session.closed_by_user_id,
         admin_close_reason=session.admin_close_reason,
     )
 
@@ -203,12 +218,13 @@ def map_admin_table_session_list_item(
 ) -> AdminTableSessionListItemOut:
     status = TableSessionStatus(session.status)
     return AdminTableSessionListItemOut(
+        source=session.source,
         session_no=session.session_no,
         table=map_table_summary(session.table),
         order_id=session.order_id,
-        order_no=session.order.order_no,
+        order_no=session.order.order_no if session.order_id is not None else None,
         user_id=session.user_id,
-        user_nickname=session.user.nickname,
+        user_nickname=session.user.nickname if session.user_id is not None else None,
         status=enum_out(status),
         close_reason=(
             enum_out(session.close_reason) if session.close_reason is not None else None
@@ -264,8 +280,23 @@ def map_admin_table_list(
                     else None
                 ),
                 current_order_no=(
-                    session.order.order_no if session is not None else None
+                    session.order.order_no if session is not None and session.order_id is not None else None
                 ),
+                current_source=session.source if session is not None else None,
+                service_ends_at=max((timer.service_ends_at for timer in session.timers), default=None) if session is not None else None,
+                timer_count=len(session.timers) if session is not None else 0,
+                timers=[
+                    {
+                        "id": timer.id,
+                        "duration_minutes": timer.duration_minutes,
+                        "service_ends_at": timer.service_ends_at,
+                        "grace_ends_at": timer.grace_ends_at,
+                    }
+                    for timer in sorted(
+                        session.timers,
+                        key=lambda item: (item.duration_minutes, item.id),
+                    )
+                ] if session is not None else [],
                 current_user_id=session.user_id if session is not None else None,
                 claimed_at=session.claimed_at if session is not None else None,
                 payment_deadline_at=(

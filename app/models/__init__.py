@@ -1,4 +1,5 @@
 from app.models.audit_log import AuditLog  # noqa: F401
+from app.models.attention import AttentionEvent  # noqa: F401
 from app.models.bead_color import BeadColor  # noqa: F401
 from app.models.external_identity import ExternalIdentity  # noqa: F401
 from app.models.experience_option import ExperienceOption  # noqa: F401

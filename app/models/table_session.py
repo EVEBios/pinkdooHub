@@ -18,7 +18,7 @@ from app.common.constants.table_session import (
     TABLE_SESSION_NO_PATTERN,
     TABLE_TIMER_BUFFER_MINUTES,
 )
-from app.common.enums.table_session import TableSessionCloseReason, TableSessionStatus
+from app.common.enums.table_session import TableSessionCloseReason, TableSessionSource, TableSessionStatus
 from app.db.indexes import UniqueIndex
 from app.models.base import BaseModel
 from app.models.fields import AsciiBinaryCharField
@@ -48,6 +48,20 @@ class StoreTable(BaseModel):
 
 
 class TableSession(BaseModel):
+    source = fields.CharEnumField(
+        TableSessionSource, max_length=20,
+        default=TableSessionSource.ORDER, db_default=TableSessionSource.ORDER.value,
+    )
+    opened_by_user = fields.ForeignKeyField(
+        "models.User", related_name="opened_table_sessions", on_delete=fields.RESTRICT,
+        null=True,
+    )
+    source_option = fields.ForeignKeyField(
+        "models.ExperienceOption", related_name="direct_table_sessions",
+        on_delete=fields.RESTRICT, null=True,
+    )
+    direct_duration_minutes = fields.IntField(null=True, validators=[MinValueValidator(1)])
+    opening_note = fields.CharField(max_length=TABLE_ADMIN_REASON_MAX_LENGTH, null=True)
     session_no = AsciiBinaryCharField(
         max_length=TABLE_SESSION_NO_LENGTH,
         validators=[RegexValidator(TABLE_SESSION_NO_PATTERN, flags=0)],
@@ -56,10 +70,10 @@ class TableSession(BaseModel):
         "models.StoreTable", related_name="sessions", on_delete=fields.RESTRICT
     )
     user = fields.ForeignKeyField(
-        "models.User", related_name="table_sessions", on_delete=fields.RESTRICT
+        "models.User", related_name="table_sessions", on_delete=fields.RESTRICT, null=True
     )
     order = fields.ForeignKeyField(
-        "models.Order", related_name="table_sessions", on_delete=fields.RESTRICT
+        "models.Order", related_name="table_sessions", on_delete=fields.RESTRICT, null=True
     )
     payment = fields.ForeignKeyField(
         "models.Payment",
@@ -87,7 +101,7 @@ class TableSession(BaseModel):
         validators=[MinLengthValidator(1)],
     )
     claimed_at = fields.DatetimeField()
-    payment_deadline_at = fields.DatetimeField()
+    payment_deadline_at = fields.DatetimeField(null=True)
     started_at = fields.DatetimeField(null=True)
     table_release_at = fields.DatetimeField(null=True)
     closed_at = fields.DatetimeField(null=True)
@@ -175,10 +189,10 @@ class TableOccupancy(BaseModel):
         "models.TableSession", related_name="occupancy", on_delete=fields.RESTRICT
     )
     user = fields.ForeignKeyField(
-        "models.User", related_name="table_occupancy", on_delete=fields.RESTRICT
+        "models.User", related_name="table_occupancy", on_delete=fields.RESTRICT, null=True
     )
     order = fields.ForeignKeyField(
-        "models.Order", related_name="table_occupancy", on_delete=fields.RESTRICT
+        "models.Order", related_name="table_occupancy", on_delete=fields.RESTRICT, null=True
     )
 
     class Meta:

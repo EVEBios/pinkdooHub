@@ -115,6 +115,8 @@ def test_order_create_normalizes_remark_and_preserves_items() -> None:
     assert schema.model_dump() == {
         "items": [_item()],
         "remark": "周五晚上到店",
+        "table_no": None,
+        "table_checkout_key": None,
     }
 
 

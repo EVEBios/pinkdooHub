@@ -51,6 +51,8 @@ from app.common.exceptions.wallet import (
 )
 from app.core.config import settings
 from app.core.exceptions import PermissionException, ServiceUnavailableException
+from app.common.enums.attention import AttentionEventType
+from app.repositories.attention_repo import AttentionRepository
 from app.domain.table_session import build_timer_specs
 from app.models.order import Order
 from app.models.payment import Payment, PaymentSettlement, Refund
@@ -104,6 +106,7 @@ class PaymentService:
         *,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
+        self.attention_repository = AttentionRepository()
         self.order_repository = order_repository
         self.payment_repository = payment_repository
         self.wallet_repository = wallet_repository
@@ -285,24 +288,8 @@ class PaymentService:
             ):
                 raise PaymentSettlementConflict()
 
+            result_session = table_session
             succeeded_at = self.now_provider()
-            if (
-                table_session is not None
-                and table_session_no is None
-                and TableSessionStatus(table_session.status)
-                is TableSessionStatus.AWAITING_PAYMENT
-                and succeeded_at > table_session.payment_deadline_at
-            ):
-                await self.table_session_repository.close_session(
-                    table_session,
-                    reason=TableSessionCloseReason.PAYMENT_TIMEOUT,
-                    closed_at=table_session.payment_deadline_at,
-                    closed_by_user_id=None,
-                    admin_close_reason=None,
-                    release_idempotency_key=None,
-                    using_db=connection,
-                )
-                table_session = None
             if table_session is not None:
                 validate_payment_activation(
                     session_no=table_session.session_no,
@@ -406,6 +393,14 @@ class PaymentService:
                     separators=(",", ":"),
                 ),
                 using_db=connection,
+            )
+            await self.attention_repository.create_commerce_event(
+                event_type=AttentionEventType.ORDER_WALLET_PAID,
+                user_id=order.user_id, order_id=order.id,
+                session_id=result_session.id if result_session is not None else None,
+                message=f"余额支付成功，已扣款 ¥{order.total_amount:.2f}。"
+                        + ("本次桌台已开始计时。" if table_session is not None else "原占台已超时，未启动计时；请重新扫码开台。" if result_session is not None else ""),
+                occurred_at=succeeded_at, using_db=connection,
             )
             detail = await self.wallet_repository.get_transaction_detail(
                 transaction.id,
@@ -576,7 +571,7 @@ class PaymentService:
             if visible is None or visible.order_id != order.id:
                 raise TableSessionNotFound()
         else:
-            visible = await self.table_session_repository.get_open_session_by_order_id(
+            visible = await self.table_session_repository.get_latest_session_by_order_id(
                 order.id,
                 using_db=using_db,
             )

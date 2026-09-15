@@ -30,11 +30,15 @@ from app.common.constants.reservation import (
     STORE_BUSINESS_DAY_AUDIT_ACTION_REOPEN,
     STORE_BUSINESS_DAY_AUDIT_TARGET_TYPE,
 )
+from app.common.enums.attention import AttentionEventType
+from app.repositories.attention_repo import AttentionRepository
+
 from app.common.enums.product import DayType, ProductStatus, ProductType
 from app.common.enums.reservation import (
     ReservationCancellationReason,
     ReservationRejectionReason,
     ReservationStatus,
+    ReservationReviewTiming,
     ReservationWeekday,
     StoreClosureDateUnavailableReason,
 )
@@ -123,6 +127,7 @@ class ReservationService:
         user_repository: UserRepository,
         audit_log_service: AuditLogService,
         *,
+        attention_repository: AttentionRepository | None = None,
         validator: ReservationValidator | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
@@ -130,6 +135,7 @@ class ReservationService:
         self.product_repository = product_repository
         self.user_repository = user_repository
         self.audit_log_service = audit_log_service
+        self.attention_repository = attention_repository or AttentionRepository()
         self.validator = validator or ReservationValidator()
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
 
@@ -339,7 +345,9 @@ class ReservationService:
         business_date: date | None = None,
         user_id: int | None = None,
         product_id: int | None = None,
+        review_timing: ReservationReviewTiming | None = None,
     ) -> Page[Reservation]:
+        now = self._now()
         return await self.reservation_repository.list_admin_reservations(
             page=page,
             page_size=page_size,
@@ -347,6 +355,8 @@ class ReservationService:
             business_date=business_date,
             user_id=user_id,
             product_id=product_id,
+            scheduled_after=now if review_timing is ReservationReviewTiming.ACTIONABLE else None,
+            scheduled_through=now if review_timing is ReservationReviewTiming.OVERDUE else None,
         )
 
     async def get_admin_reservation_detail(
@@ -411,6 +421,13 @@ class ReservationService:
                     description="reason=customer_request",
                     using_db=connection,
                 )
+                if current_status is ReservationStatus.CONFIRMED:
+                    await self.attention_repository.create_reservation_events(
+                        [(reservation.id, None)],
+                        event_type=AttentionEventType.RESERVATION_CUSTOMER_CANCELLED,
+                        occurred_at=now_utc,
+                        using_db=connection,
+                    )
                 return await self._reload(
                     reservation.id,
                     user_id=user_id,
@@ -517,6 +534,14 @@ class ReservationService:
                     ),
                     using_db=connection,
                 )
+                await self.attention_repository.create_reservation_events(
+                    [(reservation.id, reservation.user_id)],
+                    event_type=(AttentionEventType.RESERVATION_CONFIRMED
+                                if target_status is ReservationStatus.CONFIRMED
+                                else AttentionEventType.RESERVATION_REJECTED),
+                    occurred_at=now_utc,
+                    using_db=connection,
+                )
                 return await self._reload(
                     reservation.id,
                     using_db=connection,
@@ -585,6 +610,12 @@ class ReservationService:
                 await self.reservation_repository.bulk_cancel_for_store_closure(
                     reservations,
                     cancelled_at=now_utc,
+                    using_db=connection,
+                )
+                await self.attention_repository.create_reservation_events(
+                    [(item.id, item.user_id) for item in reservations],
+                    event_type=AttentionEventType.RESERVATION_STORE_CLOSED,
+                    occurred_at=now_utc,
                     using_db=connection,
                 )
                 audit_entries = [
@@ -755,6 +786,12 @@ class ReservationService:
                 await self.reservation_repository.bulk_cancel_for_store_closure(
                     reservations,
                     cancelled_at=now_utc,
+                    using_db=connection,
+                )
+                await self.attention_repository.create_reservation_events(
+                    [(item.id, item.user_id) for item in reservations],
+                    event_type=AttentionEventType.RESERVATION_STORE_CLOSED,
+                    occurred_at=now_utc,
                     using_db=connection,
                 )
                 entries = [

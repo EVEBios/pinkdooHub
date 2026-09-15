@@ -255,6 +255,15 @@ class ProductRepository:
             pages=pages,
         )
 
+    async def list_table_duration_options(self) -> list[ExperienceOption]:
+        """读取已发布或暂下架体验商品的有效配置，供业务层按时长去重。"""
+        return await ExperienceOption.filter(
+            is_deleted=False,
+            product__is_deleted=False,
+            product__product_type=ProductType.EXPERIENCE,
+            product__status__in=[ProductStatus.ONLINE, ProductStatus.OFFLINE],
+        ).order_by("duration", "id")
+
     async def get_option_by_id(
         self,
         option_id: int,
