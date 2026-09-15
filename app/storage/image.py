@@ -6,8 +6,10 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from hashlib import md5
+from hmac import compare_digest
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Protocol
 from uuid import uuid4
 
 from app.common.constants.product import (
@@ -18,6 +20,11 @@ from app.common.constants.product import (
 from app.common.exceptions import InvalidImageFile
 
 _STORAGE_KEY_PATTERN = re.compile(r"^[0-9a-f]{32}\.(?:jpg|png|webp)$")
+_JPEG_HASH_TRAILER_PREFIX = b"\x17\x4d\xa1\x01\x00\x00\x00\x00"
+_JPEG_HASH_TRAILER_DIGEST_BYTES = 16
+_JPEG_HASH_TRAILER_BYTES = (
+    len(_JPEG_HASH_TRAILER_PREFIX) + _JPEG_HASH_TRAILER_DIGEST_BYTES
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +37,25 @@ class StoredImage:
     size: int
 
 
-class LocalImageStorage:
+class ImageStorage(Protocol):
+    """上传链路依赖的最小存储端口；实现不得信任客户端文件名。"""
+
+    def save(
+        self,
+        source: BinaryIO,
+        *,
+        declared_media_type: str | None,
+    ) -> StoredImage:
+        """校验并写入图片，返回不可变公开引用。"""
+
+    def key_from_url(self, image_url: str) -> str | None:
+        """仅将当前适配器管理的 URL 解析为内部对象键。"""
+
+    def delete(self, storage_key: str) -> bool:
+        """幂等删除对象并报告是否实际存在。"""
+
+
+class LocalImageStorage(ImageStorage):
     """使用服务端 UUID 文件名的本地 Product 图片存储。"""
 
     def __init__(
@@ -63,7 +88,7 @@ class LocalImageStorage:
         if expected_extension is None:
             raise InvalidImageFile(reason="unsupported_media_type")
 
-        content = self._read_bounded(source)
+        content = _normalize_image_content(self._read_bounded(source))
         detected_extension = _detect_image_extension(content)
         if detected_extension is None:
             raise InvalidImageFile(reason="invalid_image_content")
@@ -173,3 +198,24 @@ def _detect_image_extension(content: bytes) -> str | None:
     ):
         return "webp"
     return None
+
+
+def _normalize_image_content(content: bytes) -> bytes:
+    """移除校验通过的 JPEG 哈希尾部，拒绝任意或伪造尾随数据。"""
+
+    if len(content) <= _JPEG_HASH_TRAILER_BYTES:
+        return content
+
+    jpeg_content = content[:-_JPEG_HASH_TRAILER_BYTES]
+    trailer = content[-_JPEG_HASH_TRAILER_BYTES:]
+    if (
+        not jpeg_content.startswith(b"\xff\xd8\xff")
+        or not jpeg_content.endswith(b"\xff\xd9")
+        or not trailer.startswith(_JPEG_HASH_TRAILER_PREFIX)
+    ):
+        return content
+
+    declared_digest = trailer[len(_JPEG_HASH_TRAILER_PREFIX):]
+    # 该 MD5 只用于识别导出器附加的完整性尾部，不是认证或安全摘要。
+    actual_digest = md5(jpeg_content, usedforsecurity=False).digest()
+    return jpeg_content if compare_digest(declared_digest, actual_digest) else content

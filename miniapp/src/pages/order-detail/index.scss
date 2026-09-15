@@ -1,0 +1,303 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
+
+.order-detail-page {
+  @include pd.page-shell(28px);
+  @include pd.content-width;
+
+  &--state {
+    @include pd.state-shell;
+
+    min-height: 100vh;
+  }
+
+  &__cancel,
+  &__back {
+    width: 100%;
+    margin-top: 18px;
+  }
+
+  &__cancel {
+    @include pd.danger-button(14px);
+  }
+
+  &__back {
+    @include pd.primary-button(14px);
+  }
+}
+
+.order-detail-heading {
+  @include customer.identity-panel(center 48%);
+
+  padding: 30px 26px;
+  text-align: center;
+  border-radius: var(--pd-radius-large);
+
+  text {
+    display: block;
+  }
+
+  &__title {
+    color: #fff;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.3;
+  }
+
+  &__number {
+    margin-top: 13px;
+    color: rgb(255 244 248 / 90%);
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  &__status {
+    width: fit-content;
+    margin: 15px auto 0;
+    padding: 5px 12px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-label);
+    font-weight: 700;
+    background: var(--pd-color-primary-soft);
+    border-radius: 999px;
+  }
+
+  &__total {
+    margin-top: 13px;
+    color: #fff;
+    font-size: var(--pd-font-display-size);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+  }
+
+  &__hint {
+    max-width: 28em;
+    margin: 10px auto 0;
+    color: rgb(255 244 248 / 84%);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+  }
+}
+
+.order-detail-list {
+  margin-top: 20px;
+}
+
+.order-detail-item {
+  @include pd.record-card(22px);
+
+  margin-bottom: 14px;
+
+  &__name,
+  &__configuration {
+    display: block;
+  }
+
+  &__name {
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.4;
+    overflow-wrap: break-word;
+  }
+
+  &__configuration {
+    margin-top: 8px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.5;
+  }
+
+  &__summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 14px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.order-detail-meta {
+  @include pd.section-panel(20px, 18px);
+  @include pd.meta-text;
+
+  text {
+    display: block;
+  }
+}
+
+.order-cancel-feedback {
+  text {
+    display: block;
+  }
+
+  &--failed {
+    @include pd.feedback-error;
+  }
+
+  &--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &--success {
+    @include pd.feedback-success;
+  }
+}
+
+.order-detail-state {
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button(999px);
+
+    margin-top: 26px;
+  }
+
+  &__back {
+    @include pd.secondary-button(999px);
+
+    margin-top: 12px;
+  }
+}
+
+@media (width >= 768px) {
+  .order-detail-page {
+    &__cancel,
+    &__back {
+      width: min(100%, 420px);
+      margin-right: auto;
+      margin-left: auto;
+    }
+  }
+
+  .order-detail-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .order-detail-item {
+    margin-bottom: 0;
+  }
+}
+
+.order-payment {
+  @include pd.section-panel(22px, var(--pd-radius-large));
+
+  margin-top: 18px;
+
+  &__heading,
+  &__method {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  &__title,
+  &__amount,
+  &__method-name,
+  &__method-meta,
+  &__method-state,
+  &__hint,
+  &__feedback,
+  &__footnote {
+    display: block;
+  }
+
+  &__title {
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__amount {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-body-size);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__method {
+    width: 100%;
+    min-height: 76px;
+    margin: 12px 0 0;
+    padding: 13px 16px;
+    color: var(--pd-color-ink);
+    text-align: left;
+    background: var(--pd-color-surface-muted);
+    border: 1px solid transparent;
+    border-radius: 14px;
+    box-sizing: border-box;
+
+    &--active {
+      background: var(--pd-color-primary-soft);
+      border-color: var(--pd-color-line-strong);
+    }
+
+    &--unavailable {
+      opacity: 0.68;
+    }
+  }
+
+  &__method-name {
+    font-size: var(--pd-font-body-size);
+    font-weight: 700;
+  }
+
+  &__method-meta {
+    margin-top: 5px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__method-state {
+    flex: 0 0 auto;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+  }
+
+  &__hint,
+  &__footnote {
+    margin-top: 14px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+
+  &__feedback--error,
+  &__feedback--failed {
+    @include pd.feedback-error;
+  }
+
+  &__feedback--unknown {
+    @include pd.feedback-warning;
+  }
+
+  &__retry {
+    @include pd.secondary-button;
+
+    margin-top: 12px;
+  }
+
+  &__submit {
+    @include pd.primary-button;
+
+    width: 100%;
+    margin-top: 18px;
+  }
+}

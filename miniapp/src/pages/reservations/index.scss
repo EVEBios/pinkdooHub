@@ -1,0 +1,212 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+@use '../../styles/customer' as customer;
+
+.reservations-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  padding-bottom: var(--pd-root-tab-page-clearance);
+
+  &--state {
+    @include pd.state-shell;
+
+    padding-bottom: var(--pd-root-tab-page-clearance);
+  }
+
+  &__header {
+    @include customer.page-header(center 43%);
+  }
+
+  &__title {
+    @include customer.title;
+  }
+
+  &__subtitle {
+    @include customer.subtitle;
+  }
+}
+
+.reservations-filters {
+  @include customer.ledger-panel;
+
+  display: flex;
+  gap: 9px;
+  margin: 22px 0;
+  padding: 10px;
+  overflow-x: auto;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: 18px;
+  box-shadow: var(--pd-shadow-small);
+
+  &__item {
+    @include pd.chip;
+
+    &--active {
+      @include pd.chip-active;
+    }
+  }
+}
+
+.reservations-content {
+  &__summary {
+    @include pd.list-summary;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__end {
+    display: block;
+    padding: 24px 0 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    text-align: center;
+  }
+
+  &__load-more {
+    @include pd.primary-button(999px);
+
+    width: 300px;
+    margin: 26px auto 0;
+  }
+}
+
+.reservation-card {
+  @include pd.record-card;
+  @include pd.tappable-card;
+  @include customer.ledger-panel(var(--pd-color-line-strong), 4px);
+
+  margin-bottom: 15px;
+
+  &__heading,
+  &__summary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  &__name {
+    min-width: 0;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+    line-height: 1.35;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+
+  &__status {
+    flex: 0 0 auto;
+    padding: 6px 11px;
+    color: var(--pd-color-warning);
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    background: var(--pd-color-warning-soft);
+    border-radius: 999px;
+
+    &--confirmed {
+      color: var(--pd-color-success);
+      background: var(--pd-color-success-soft);
+    }
+
+    &--rejected,
+    &--store-closed {
+      color: var(--pd-color-danger);
+      background: var(--pd-color-danger-soft);
+    }
+
+    &--cancelled {
+      color: var(--pd-color-ink-faint);
+      background: var(--pd-color-surface-muted);
+    }
+  }
+
+  &__date,
+  &__time {
+    display: block;
+    margin-top: 16px;
+    font-size: var(--pd-font-body-size);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+  }
+
+  &__time {
+    margin-top: 4px;
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-price);
+    font-weight: 750;
+  }
+
+  &__summary {
+    align-items: center;
+    margin-top: 17px;
+    padding-top: 15px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    border-top: 1px solid var(--pd-color-line);
+  }
+
+  &__price {
+    flex: 0 0 auto;
+    color: var(--pd-color-primary-strong);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__message {
+    display: block;
+    margin-top: 14px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+  }
+}
+
+.reservations-state {
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    margin-top: 24px;
+  }
+}
+
+.reservations-inline-state {
+  @include pd.state-shell;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .reservations-filters {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px) saturate(120%);
+  }
+}
+
+@media (width >= 768px) {
+  .reservations-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+
+    &__summary,
+    &__error,
+    &__end,
+    &__load-more {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .reservation-card {
+    margin-bottom: 0;
+  }
+}

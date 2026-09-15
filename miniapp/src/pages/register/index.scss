@@ -1,0 +1,129 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+
+.registration-page {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
+}
+
+.registration-card {
+  @include pd.section-panel(40px, var(--pd-radius-large));
+
+  width: 100%;
+  max-width: 640px;
+
+  &__eyebrow,
+  &__title,
+  &__subtitle,
+  &__notice {
+    display: block;
+  }
+
+  &__eyebrow {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-label);
+    font-weight: 750;
+    letter-spacing: -0.4px;
+  }
+
+  &__title {
+    max-width: 10ch;
+    margin-top: 28px;
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-display-size);
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.22;
+  }
+
+  &__subtitle {
+    max-width: 24em;
+    margin-top: 12px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.55;
+  }
+
+  &__login {
+    @include pd.quiet-button;
+
+    width: 100%;
+    margin-top: 16px;
+    color: var(--pd-color-primary-strong);
+    background: transparent;
+  }
+
+  &__notice {
+    max-width: 34em;
+    margin: 22px auto 0;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    line-height: 1.55;
+    text-align: center;
+  }
+}
+
+.registration-form {
+  display: block;
+  margin-top: 28px;
+
+  &__label {
+    @include pd.field-label;
+  }
+
+  &__input {
+    @include pd.field;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__submit {
+    @include pd.primary-button(16px);
+
+    width: 100%;
+    margin-top: 30px;
+  }
+}
+
+.registration-navigation {
+  margin-top: 24px;
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__retry {
+    @include pd.quiet-button;
+
+    width: 100%;
+    margin-top: 12px;
+    color: var(--pd-color-primary-strong);
+    background: transparent;
+  }
+}
+
+.registration-success {
+  &__description {
+    display: block;
+    max-width: 28em;
+    margin-top: 24px;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .registration-card {
+    background: rgb(255 253 253 / 82%);
+    backdrop-filter: blur(22px) saturate(118%);
+  }
+}

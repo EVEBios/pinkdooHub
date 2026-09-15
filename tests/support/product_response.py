@@ -64,6 +64,8 @@ def user_list_item() -> Payload:
         "product_type": product_type("experience", "拼豆体验"),
         "cover_image": "https://example.com/products/1.jpg",
         "display_price": Decimal("299.00"),
+        "kit_kind": None,
+        "sale_unit_grams": None,
     }
 
 
@@ -77,6 +79,8 @@ def admin_list_item() -> Payload:
         "display_price": None,
         "updated_at": NOW,
         "is_deleted": False,
+        "kit_kind": None,
+        "sale_unit_grams": None,
     }
 
 
@@ -102,6 +106,9 @@ def user_kit() -> Payload:
         "price": Decimal("599.00"),
         "stock": 20,
         "available": True,
+        "kit_kind": {"value": "fixed", "label": "固定套装"},
+        "sale_unit_grams": None,
+        "colors": [],
     }
 
 
@@ -135,6 +142,9 @@ def admin_kit() -> Payload:
         "images": [],
         "price": Decimal("99.90"),
         "stock": 0,
+        "kit_kind": {"value": "fixed", "label": "固定套装"},
+        "sale_unit_grams": None,
+        "colors": [],
         "created_at": NOW,
         "updated_at": NOW,
         "is_deleted": False,

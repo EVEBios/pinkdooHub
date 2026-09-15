@@ -1,0 +1,26 @@
+/* stylelint-disable at-rule-no-unknown, at-rule-prelude-no-invalid -- 顾客界面共用的纹理页头与账簿分区 mixin。 */
+@use './ribbon' as ribbon;
+
+@mixin page-header($position: center) {
+  @include ribbon.page-header($position);
+}
+
+@mixin title {
+  @include ribbon.title;
+}
+
+@mixin subtitle {
+  @include ribbon.subtitle;
+}
+
+@mixin eyebrow {
+  @include ribbon.eyebrow;
+}
+
+@mixin identity-panel($position: center) {
+  @include ribbon.texture-surface($position);
+}
+
+@mixin ledger-panel($accent: var(--pd-color-primary-strong), $width: 6px) {
+  @include ribbon.panel-accent($accent, $width);
+}
