@@ -48,6 +48,7 @@ DEFAULT_OPERATION_LOCK_FILE = Path("/run/lock/pinkdoohub-gatea-operation.lock")
 CURRENT_FINALIZATION_PENDING_SUFFIX = "current-finalization.pending.json"
 CANDIDATE_TRANSITION_PENDING_KINDS = (
     ("m15-upgrade", "m15-upgrade.pending.json"),
+    ("m15-acceptance", "m15-acceptance.pending.json"),
     ("candidate-stage", "candidate-stage.pending.json"),
     ("config-activation", "config-activation.pending.json"),
     ("config-rollback", "config-rollback.pending.json"),

@@ -110,8 +110,9 @@ def test_replay_binds_immutable_upgrade_and_exact_target_state(monkeypatch, bad)
     else: assert upgrade.require_replay(**args) == replay
 
 
-def test_m15_pending_blocks_app_start_before_image_or_docker(tmp_path, monkeypatch):
-    (tmp_path / f"{TARGET}.m15-upgrade.pending.json").write_text("{}")
+@pytest.mark.parametrize("kind", ("m15-upgrade", "m15-acceptance"))
+def test_m15_pending_blocks_app_start_before_image_or_docker(tmp_path, monkeypatch, kind):
+    (tmp_path / f"{TARGET}.{kind}.pending.json").write_text("{}")
     monkeypatch.setattr(gatea, "_validate_root_directory", lambda *args: None)
     monkeypatch.setattr(gatea, "_validated_inputs", lambda **kwargs: pytest.fail("must reject pending before config"))
     with pytest.raises(gatea.GateAError, match="pending"):

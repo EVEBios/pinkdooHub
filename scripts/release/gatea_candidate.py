@@ -2154,6 +2154,7 @@ def _final_pending_path(record_dir: Path, target_sha: str) -> Path:
 
 _CANDIDATE_PENDING_KINDS = (
     "m15-upgrade",
+    "m15-acceptance",
     "candidate-stage",
     "config-activation",
     "config-rollback",
