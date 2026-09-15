@@ -1,5 +1,23 @@
 # M9 日志失败与已付款恢复（2026-09-15）
 
+## 最新现场检查点：G 已就绪，等待管理员凭据
+
+2026-09-15 21:35（上海时间）前，G head `c615fd00a7c05e24e51df7e4ae953e3207cab586`、PR #5 merge target `232919cc57efe4250195ab721104d62ae5e08d34` 已由 [Run 34973496065](https://github.com/EVEBios/pinkdooHub/actions/runs/34973496065) attempt 1 取得 9/9。不能使用此前 a9f1009 的初次 G Run。
+
+现场正式流程已完成：
+
+- schema 3 stage：服务端重验 GitHub/source/artifact，绑定 E failure、F stage 和 F prepared；stage SHA-256 `34c68af8c707bca857d3dbacdf53e99be7859f7a02f13291dbc4914661b709f2`，新 image `sha256:b86fbe26ca3548c2c78ffd831d32946eafe6e12c66cb9c6db082c227db190496`。
+- 在归档前另用 G image 正式只读 verifier 检查 E 已付款事实，通过；正式停写 retirement 再次验证相同 schema 3 结果，钱包/桌台零违规。E acceptance 与 F prepared 均按原字节不可覆盖归档，旧 A/B 归档仍保留。新 retirement SHA-256 `18532987e03e7f8ab953212a963b6af8c0f0e51bba94a2635701bd6b2243e1fb`。
+- 新 source Backup `20260915t132711z` 与同 ID 独立 Restore 通过，临时容器/网络/卷已复核为零。
+- activation 仅改变 `GATEA_APP_IMAGE`；M9→M9 adoption/apply/replay 全通过，`database_changes_applied=false`、`migrations_applied=[]`，数据库/图片内容不变。G 五服务健康。
+- G paid recovery 成功，T01 旧码失效，新码只通过受控任务写入且记录只含摘要。付款与会话保留。最终没有 pending；验收 plan 返回 `ready_for_admin_assisted_acceptance=true`。
+
+现在需要用户在 `/dev/tty` 隐藏输入 SUPER_ADMIN 用户名/密码各两次，尚未执行新业务验收。后续已授权，但仍须按顺序完成 G acceptance、绑定韧性、验收后 Backup/Restore、finalize，再迁移 M15。current/finalized 仍为 S；live 为 G/M9，Gate A 仍 No-Go，不得写成 M9/M15 已全部完成。
+
+本轮本机证据位于 `pinkdooHub-m9-recovery-evidence/G-paid-key-contract/34973496065-1`，固定交接文件为该 evidence 根目录的 `管理员验收下一步.md`。服务器本次输入目录已按精确摘要清理，保护归档、安装镜像、备份及证据为后续恢复依赖保留。
+
+以下内容记录此前实现和失败检查点。
+
 ## 当前执行授权与下一候选 G
 
 用户已明确授权按规划持续修复、提交、推送和执行 Gate A 迁移至 M15，只有需要输入密码时交接。该授权覆盖本轮后续候选，不扩大到其他持久环境、真实微信资金或小程序发布；数据与受保护证据约束继续有效。
