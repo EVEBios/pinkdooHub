@@ -17,13 +17,15 @@ class User(BaseModel):
     """
 
     username = fields.CharField(max_length=32, unique=True)
-    password = fields.CharField(max_length=128)
+    password = fields.CharField(max_length=128, null=True)
     nickname = fields.CharField(max_length=32)
-    phone = fields.CharField(max_length=11, unique=True)
+    phone = fields.CharField(max_length=11, unique=True, null=True)
     avatar = fields.CharField(max_length=256, null=True)
     role = fields.SmallIntField(default=1)     # UserRole.USER
     status = fields.SmallIntField(default=1)   # UserStatus.NORMAL
     last_login_at = fields.DatetimeField(null=True)
+    auth_version = fields.IntField(default=0)
+    deleted_at = fields.DatetimeField(null=True)
 
     class Meta:
         table = "users"

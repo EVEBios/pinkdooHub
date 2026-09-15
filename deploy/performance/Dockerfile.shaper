@@ -1,0 +1,10 @@
+FROM alpine:3.21.3
+
+RUN apk add --no-cache iproute2 \
+    && command -v tc >/dev/null \
+    && tc -V
+
+COPY shaper-entrypoint.sh /usr/local/bin/performance-shaper
+RUN chmod 0755 /usr/local/bin/performance-shaper
+
+ENTRYPOINT ["/usr/local/bin/performance-shaper"]

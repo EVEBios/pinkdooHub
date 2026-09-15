@@ -1,0 +1,152 @@
+/* stylelint-disable selector-class-pattern, at-rule-no-unknown -- 提醒组件沿用项目 BEM 与 Sass mixin。 */
+@use '../../styles/patterns' as pd;
+
+.attention-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #a92f38;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.attention-entry {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 88px;
+  margin: 0 0 24px;
+  padding: 18px 24px;
+  border: 1px solid #ead8df;
+  border-radius: 16px;
+  background: #fffdfd;
+  color: #2d2429;
+  font-size: 27px;
+  text-align: left;
+}
+
+.attention-entry__hint {
+  flex: 1;
+  color: #67575f;
+  font-size: 23px;
+}
+
+/* 会员提醒融入身份区；首页继续使用原有的浅色入口。 */
+.customer-attention--member {
+  .attention-entry {
+    @include pd.quiet-button(24px);
+
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+    min-height: 156px;
+    margin: 0 0 28px;
+    padding: 24px;
+    gap: 0;
+    border: 1px solid rgb(255 205 225 / 40%);
+    background: rgb(255 235 244 / 8%);
+    color: #fff;
+    text-align: left;
+    box-shadow: none;
+
+    &::after { border: 0; }
+
+    &--pressed,
+    &:active { background: rgb(255 235 244 / 15%); }
+  }
+
+  .attention-entry__icon-seat {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 96px;
+    height: 96px;
+    flex: 0 0 96px;
+    margin-right: 24px;
+    border: 1px solid rgb(255 205 225 / 35%);
+    border-radius: 24px;
+    background: rgb(255 235 244 / 5%);
+  }
+
+  .attention-entry__icon {
+    width: 64px;
+    height: 64px;
+  }
+
+  .attention-entry__copy {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .attention-entry__title {
+    display: block;
+    font-size: 34px;
+    font-weight: 750;
+    line-height: 1.3;
+  }
+
+  .attention-entry__hint {
+    display: block;
+    margin-top: 8px;
+    color: #f5dbe5;
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.5;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
+  .attention-entry__trailing {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    margin-left: 16px;
+  }
+
+  .attention-badge {
+    min-width: 44px;
+    height: 44px;
+    background: #c83d4a;
+    font-size: 26px;
+  }
+
+  .attention-entry__chevron {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    margin-left: 16px;
+  }
+}
+
+.attention-feedback,
+.attention-receipt {
+  margin: 20px 0;
+  padding: 20px 24px;
+  border-radius: 16px;
+  background: #f8eef2;
+  color: #67575f;
+  font-size: 25px;
+  line-height: 1.6;
+}
+
+.attention-receipt__event { display: block; }
+
+.attention-feedback button,
+.attention-receipt__action {
+  @include pd.secondary-button;
+
+  width: 100%;
+  margin-top: 12px;
+}

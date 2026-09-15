@@ -1,0 +1,93 @@
+/* stylelint-disable selector-class-pattern, at-rule-no-unknown -- Taro 页面沿用项目 BEM 与 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+
+.admin-session-page {
+  @include pd.content-width;
+
+  min-height: 100vh;
+  padding: 24px;
+  color: var(--pd-color-ink);
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
+}
+
+.admin-session-page--state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-session-card,
+.admin-session-error {
+  display: flex;
+  max-width: 760px;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0 auto 18px;
+  padding: 22px;
+  font-size: var(--pd-font-body-size);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-large);
+  box-shadow: var(--pd-shadow-small);
+}
+
+.admin-session-card__title {
+  @include pd.section-heading-accent;
+
+  margin: -2px -2px 12px;
+  font-size: var(--pd-font-title);
+  font-weight: 750;
+}
+
+.admin-session-card button {
+  @include pd.danger-button;
+
+  width: 100%;
+  margin-top: 10px;
+}
+
+.admin-session-card input {
+  @include pd.field;
+
+  width: 100%;
+}
+
+.admin-session-card:first-child {
+  @include pd.soft-panel-accent;
+}
+
+.admin-session-card > text:first-child:not(.admin-session-card__title) {
+  @include pd.section-heading-accent;
+
+  font-weight: 700;
+}
+
+.admin-session-error {
+  color: var(--pd-color-danger);
+}
+
+.admin-session-card button.admin-session-card__pay {
+  @include pd.primary-button;
+
+  margin-top: 10px;
+}
+
+.admin-session-card__countdown {
+  font-size: var(--pd-font-title);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-session-card--warning {
+  border-color: var(--pd-color-warning);
+}
+
+.admin-session-card__warning {
+  color: var(--pd-color-warning);
+  font-weight: 700;
+}

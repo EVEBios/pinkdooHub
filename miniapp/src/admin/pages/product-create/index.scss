@@ -1,0 +1,27 @@
+/* stylelint-disable-next-line at-rule-no-unknown */
+@use '../../styles/product-form';
+
+.admin-product-form {
+  &__kind-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  &__kind {
+    min-height: var(--pd-control-height);
+    margin: 0;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-body-size);
+    background: var(--pd-color-surface-muted);
+    border: 1px solid var(--pd-color-line);
+    border-radius: var(--pd-radius-small);
+
+    &--active {
+      color: var(--pd-color-primary-strong);
+      font-weight: 700;
+      background: var(--pd-color-primary-soft);
+      border-color: var(--pd-color-line-strong);
+    }
+  }
+}

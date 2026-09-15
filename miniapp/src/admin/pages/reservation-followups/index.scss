@@ -1,0 +1,106 @@
+/* stylelint-disable at-rule-no-unknown, selector-class-pattern -- 项目 Sass 与 BEM。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
+.followup-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  font-size: var(--pd-font-body-size);
+  line-height: 1.6;
+
+  &__header {
+    @include admin.page-header(true, center 45%);
+  }
+
+  &__title {
+    @include admin.header-title;
+  }
+
+  &__subtitle {
+    @include admin.header-subtitle;
+  }
+
+  &__filters, &__state {
+    @include pd.section-panel;
+
+    margin-bottom: 24px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  &__tab {
+    @include pd.chip;
+
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__tab--active {
+    @include pd.chip-active;
+  }
+
+  &__hint {
+    display: block;
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+    margin-bottom: 14px;
+  }
+
+  &__item {
+    @include pd.record-card;
+    @include pd.tappable-card;
+
+    display: block;
+    width: 100%;
+    margin: 0 0 20px;
+    text-align: left;
+    line-height: 1.6;
+    color: var(--pd-color-ink);
+    font-size: var(--pd-font-body-size);
+  }
+
+  &__item-top {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: var(--pd-font-title);
+    font-weight: 700;
+  }
+
+  &__status {
+    color: var(--pd-color-primary-strong);
+    font-size: var(--pd-font-caption);
+  }
+
+  &__time {
+    display: block;
+    margin: 14px 0 8px;
+  }
+
+  &__note {
+    display: block;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  &__action {
+    display: block;
+    color: var(--pd-color-primary-strong);
+    font-weight: 700;
+    margin-top: 18px;
+  }
+
+  &__button {
+    @include pd.secondary-button;
+
+    flex: 1;
+    margin-top: 16px;
+  }
+}

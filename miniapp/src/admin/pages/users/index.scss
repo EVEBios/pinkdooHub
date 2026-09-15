@@ -1,0 +1,226 @@
+/* stylelint-disable at-rule-no-unknown -- 页面复用 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
+.admin-users-page {
+  @include pd.page-shell;
+  @include pd.content-width;
+
+  &__header {
+    @include admin.page-header(true, center 38%);
+  }
+
+  &__title {
+    @include admin.header-title;
+  }
+
+  &__subtitle {
+    @include admin.header-subtitle;
+  }
+
+  &__mutation-error {
+    @include pd.feedback-error;
+  }
+
+  &__verify {
+    @include pd.secondary-button;
+
+    width: 100%;
+    margin-top: 14px;
+  }
+}
+
+.admin-user-filters {
+  @include pd.section-panel;
+  @include admin.filter-panel;
+
+  margin: 24px 0;
+
+  &__label {
+    @include pd.field-label;
+
+    margin-top: 0;
+  }
+
+  &__row + &__label {
+    margin-top: 18px;
+  }
+
+  &__row {
+    display: flex;
+    overflow-x: auto;
+    gap: 9px;
+    padding-bottom: 2px;
+  }
+
+  &__choice {
+    @include pd.chip;
+  }
+
+  &__active {
+    @include pd.chip-active;
+  }
+}
+
+.admin-user-list {
+  &__summary {
+    @include pd.list-summary;
+  }
+
+  > button {
+    @include pd.secondary-button;
+
+    width: 100%;
+  }
+
+  &__error {
+    @include pd.feedback-error;
+  }
+
+  &__end {
+    display: block;
+    padding: 24px 0 8px;
+    color: var(--pd-color-ink-faint);
+    font-size: var(--pd-font-caption);
+    text-align: center;
+  }
+}
+
+.admin-user-card {
+  @include pd.record-card;
+
+  margin-bottom: 14px;
+
+  &__heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  &__nickname,
+  &__username,
+  &__role,
+  &__time {
+    display: block;
+  }
+
+  &__nickname {
+    max-width: 18ch;
+    color: var(--pd-color-ink);
+    font-family: var(--pd-font-display);
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    line-height: 1.35;
+  }
+
+  &__username,
+  &__role,
+  &__time {
+    @include pd.meta-text;
+
+    margin-top: 8px;
+  }
+
+  &__status {
+    flex: 0 0 auto;
+    padding: 6px 11px;
+    font-size: var(--pd-font-caption);
+    font-weight: 700;
+    border-radius: 999px;
+  }
+
+  &__status--normal {
+    color: var(--pd-color-success);
+    background: var(--pd-color-success-soft);
+  }
+
+  &__status--disabled {
+    color: var(--pd-color-danger);
+    background: var(--pd-color-danger-soft);
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 32px;
+  }
+
+  &__funds {
+    @include pd.primary-button;
+  }
+
+  &__funds--unavailable {
+    @include pd.quiet-button;
+
+    color: var(--pd-color-ink-faint);
+    border-color: var(--pd-color-line);
+
+    &[disabled] {
+      color: var(--pd-color-ink-faint);
+    }
+  }
+
+  &__disable {
+    @include pd.danger-button;
+
+    width: 100%;
+  }
+
+  &__disable--unavailable {
+    @include pd.quiet-button;
+
+    color: var(--pd-color-ink-faint);
+    border-color: var(--pd-color-line);
+
+    &[disabled] {
+      color: var(--pd-color-ink-faint);
+    }
+  }
+}
+
+.admin-users-state {
+  @include pd.state-shell;
+
+  &__title {
+    @include pd.state-title;
+  }
+
+  &__description {
+    @include pd.state-description;
+  }
+
+  &__action {
+    @include pd.primary-button;
+
+    width: min(100%, 360px);
+    margin-top: 20px;
+  }
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .admin-user-filters {
+    background: var(--pd-color-surface-glass);
+    backdrop-filter: blur(18px);
+  }
+}
+
+@media (width >= 768px) {
+  .admin-user-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+
+    &__summary,
+    &__error,
+    &__end,
+    > button {
+      grid-column: 1 / -1;
+    }
+
+    .admin-user-card {
+      margin-bottom: 0;
+    }
+  }
+}

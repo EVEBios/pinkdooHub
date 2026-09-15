@@ -1,0 +1,284 @@
+/* stylelint-disable selector-class-pattern, at-rule-no-unknown -- Taro 页面沿用项目 BEM 与 Sass mixin。 */
+@use '../../../styles/patterns' as pd;
+@use '../../styles/surface' as admin;
+
+.admin-tables-page {
+  @include pd.content-width;
+
+  min-height: 100vh;
+  padding: 24px;
+  color: var(--pd-color-ink);
+  background: var(--pd-gradient-canvas);
+  box-sizing: border-box;
+}
+
+.admin-tables-page--state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-tables-header {
+  @include admin.identity-panel;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  color: #fff;
+  font-weight: 700;
+  border-radius: var(--pd-radius-large);
+
+  > text:first-child {
+    flex: 1;
+    font-size: var(--pd-font-title);
+    line-height: 1.4;
+  }
+
+  > text:last-child {
+    max-width: 45%;
+    color: rgb(255 244 248 / 86%);
+    font-size: var(--pd-font-caption);
+    line-height: 1.5;
+    text-align: right;
+  }
+}
+
+.admin-tables-alert {
+  margin-top: 18px;
+  padding: 18px;
+  color: var(--pd-color-danger);
+  background: var(--pd-color-danger-soft);
+  border-radius: var(--pd-radius-medium);
+}
+
+.admin-tables-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.admin-table {
+  min-width: 0;
+  padding: 18px;
+  font-size: var(--pd-font-body-size);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-medium);
+  box-shadow: var(--pd-shadow-small);
+}
+
+.admin-table--active {
+  border-color: var(--pd-color-success);
+}
+
+.admin-table--awaiting_payment {
+  border-color: var(--pd-color-warning);
+}
+
+.admin-table--disabled {
+  opacity: 0.66;
+}
+
+.admin-table__heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -18px -18px 14px;
+  padding: 15px 18px;
+  font-weight: 750;
+  background: #faedf2;
+  border-bottom: 1px solid #edd5df;
+  border-radius: var(--pd-radius-medium) var(--pd-radius-medium) 0 0;
+
+  > text:last-child {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+}
+
+.admin-table button {
+  @include pd.secondary-button;
+
+  width: 100%;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 10px;
+  font-size: var(--pd-font-button-compact);
+}
+
+.admin-table--active .admin-table__heading {
+  background: var(--pd-color-success-soft);
+  border-bottom-color: var(--pd-color-success);
+}
+
+.admin-table--awaiting_payment .admin-table__heading {
+  background: var(--pd-color-warning-soft);
+  border-bottom-color: var(--pd-color-warning);
+}
+
+@media (width <= 700px) {
+  .admin-tables-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.admin-table__remaining {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  > text:first-child {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+
+  > text:nth-child(2) {
+    font-size: var(--pd-font-title);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  > text:last-child:not(:nth-child(2)) {
+    color: var(--pd-color-ink-soft);
+    font-size: var(--pd-font-caption);
+  }
+}
+
+.admin-table__meta {
+  display: block;
+  margin-top: 8px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-caption);
+}
+
+.admin-table button.admin-table__primary {
+  @include pd.primary-button;
+
+  width: 100%;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 10px;
+  font-size: var(--pd-font-button-compact);
+}
+
+.direct-open-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 24px;
+  padding: 24px;
+  background: var(--pd-color-surface);
+  border: 1px solid var(--pd-color-line);
+  border-radius: var(--pd-radius-medium);
+  font-size: var(--pd-font-body-size);
+
+  button {
+    @include pd.secondary-button;
+
+    margin: 0;
+  }
+
+  button.direct-open-form__submit,
+  button.is-selected {
+    @include pd.primary-button;
+  }
+}
+
+.direct-open-form__title {
+  font-size: var(--pd-font-title);
+  font-weight: 700;
+}
+
+.direct-open-form__note {
+  @include pd.field;
+
+  /* 原生输入框内部提示层不能参与 flex 收缩，否则会提前截断文案。 */
+  display: block;
+  min-width: 0;
+  height: var(--pd-control-height);
+  line-height: var(--pd-control-height);
+
+  .weui-input {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+  }
+}
+
+.direct-open-form__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-tables-attention {
+  margin-top: 24px;
+  font-size: var(--pd-font-caption);
+  line-height: 1.6;
+  color: var(--pd-color-ink-soft);
+
+  /* stylelint-disable-next-line no-descending-specificity -- 独立组件文字与页头无重叠。 */
+  > text { display: block; }
+}
+
+.admin-tables-attention__title {
+  margin-bottom: 6px;
+  font-size: var(--pd-font-body-size);
+  font-weight: 700;
+  color: var(--pd-color-ink);
+}
+
+.admin-tables-attention__filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+
+  button {
+    @include pd.secondary-button;
+
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+  }
+
+  button.is-selected {
+    @include pd.primary-button;
+  }
+}
+
+.admin-table--warning {
+  border-color: var(--pd-color-warning);
+
+  .admin-table__heading {
+    background: var(--pd-color-warning-soft);
+    border-bottom-color: var(--pd-color-warning);
+  }
+}
+
+.admin-table__warning {
+  margin-top: 14px;
+  padding-top: 12px;
+  color: var(--pd-color-warning);
+  font-size: var(--pd-font-caption);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--pd-color-line);
+
+  /* stylelint-disable-next-line no-descending-specificity -- 独立组件文字与页头无重叠。 */
+  > text { display: block; }
+}
+
+.admin-tables-empty {
+  margin-top: 24px;
+  color: var(--pd-color-ink-soft);
+  font-size: var(--pd-font-body-size);
+}

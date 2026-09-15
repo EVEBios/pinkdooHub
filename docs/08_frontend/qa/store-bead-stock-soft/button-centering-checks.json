@@ -1,0 +1,194 @@
+[
+  {
+    "case": "0",
+    "kind": "before",
+    "dx": 0,
+    "dy": 5
+  },
+  {
+    "case": "0",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "1",
+    "kind": "before",
+    "dx": 0,
+    "dy": 5
+  },
+  {
+    "case": "1",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "2",
+    "kind": "before",
+    "dx": 0,
+    "dy": 0.5546875
+  },
+  {
+    "case": "2",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "3",
+    "kind": "before",
+    "dx": 0,
+    "dy": 0.5546875
+  },
+  {
+    "case": "3",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "4",
+    "kind": "before",
+    "dx": 0,
+    "dy": 18
+  },
+  {
+    "case": "4",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "5",
+    "kind": "before",
+    "dx": 0,
+    "dy": 18
+  },
+  {
+    "case": "5",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "6",
+    "kind": "before",
+    "dx": 0,
+    "dy": 9
+  },
+  {
+    "case": "6",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "7",
+    "kind": "before",
+    "dx": 0,
+    "dy": 9
+  },
+  {
+    "case": "7",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "8",
+    "kind": "before",
+    "dx": 0,
+    "dy": 5
+  },
+  {
+    "case": "8",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "9",
+    "kind": "before",
+    "dx": 0,
+    "dy": 5
+  },
+  {
+    "case": "9",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "10",
+    "kind": "before",
+    "dx": 0,
+    "dy": 0.5546875
+  },
+  {
+    "case": "10",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "11",
+    "kind": "before",
+    "dx": 0,
+    "dy": 0.5546875
+  },
+  {
+    "case": "11",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "12",
+    "kind": "before",
+    "dx": 0,
+    "dy": 18
+  },
+  {
+    "case": "12",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "13",
+    "kind": "before",
+    "dx": 0,
+    "dy": 18
+  },
+  {
+    "case": "13",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "14",
+    "kind": "before",
+    "dx": 0,
+    "dy": 9
+  },
+  {
+    "case": "14",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  },
+  {
+    "case": "15",
+    "kind": "before",
+    "dx": 0,
+    "dy": 9
+  },
+  {
+    "case": "15",
+    "kind": "after",
+    "dx": 0,
+    "dy": 0
+  }
+]

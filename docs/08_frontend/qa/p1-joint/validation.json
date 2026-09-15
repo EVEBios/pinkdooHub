@@ -1,0 +1,68 @@
+{
+  "date": "2026-09-14",
+  "backend_full": {
+    "passed": 3216,
+    "mysql_skipped_in_sqlite_run": 76
+  },
+  "mysql": {
+    "version": "8.0.46",
+    "migrations": "M0–M13",
+    "passed": 77,
+    "failed": 0,
+    "persistent_environment": false,
+    "cleanup": "container removed and loopback port released"
+  },
+  "frontend": {
+    "suites": 115,
+    "passed": 886
+  },
+  "builds": [
+    "weapp",
+    "h5",
+    "alipay",
+    "tt"
+  ],
+  "weapp_test_artifact": {
+    "main_bytes": 1040672,
+    "admin_bytes": 581074,
+    "mode": "production compiler / testing business environment; not release eligible"
+  },
+  "h5": {
+    "member_refresh_page_x": 0,
+    "member_refresh_transform": "none",
+    "wallet_widths": [
+      320,
+      390
+    ]
+  },
+  "physical_device": {
+    "model": "iPhone 15 Pro Max",
+    "source": "user observation",
+    "passed": [
+      "password login",
+      "member center",
+      "wallet result detail",
+      "wallet badge cleared after reading",
+      "wallet payment",
+      "table access after payment",
+      "countdown",
+      "background return",
+      "reservation result read",
+      "logout and relogin preserves reads and table access"
+    ],
+    "pending": [],
+    "server_observation": {
+      "order_status": "paid",
+      "table_history_count": 1,
+      "all_customer_attention_counts": 0
+    }
+  },
+  "checks": {
+    "typescript": "passed",
+    "eslint": "passed",
+    "stylelint": "passed",
+    "artifact_guard_tests": 22,
+    "git_diff_check": "passed"
+  },
+  "status": "P1 local joint acceptance passed; release gate unchanged"
+}

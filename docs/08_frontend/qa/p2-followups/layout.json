@@ -1,0 +1,134 @@
+{
+  "source": "H5 production components; API responses from isolated service fixtures; no live API requests",
+  "metrics": [
+    {
+      "name": "list",
+      "width": 390,
+      "scrollWidth": 390,
+      "viewport": 390,
+      "buttons": [
+        {
+          "text": "店休联系",
+          "x": 25.9375,
+          "width": 165.421875,
+          "height": 44
+        },
+        {
+          "text": "过期跟进",
+          "x": 198.625,
+          "width": 165.4375,
+          "height": 44
+        },
+        {
+          "text": "待处理",
+          "x": 25.9375,
+          "width": 165.421875,
+          "height": 44
+        },
+        {
+          "text": "已完成",
+          "x": 198.625,
+          "width": 165.4375,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "name": "detail",
+      "width": 390,
+      "scrollWidth": 390,
+      "viewport": 390,
+      "buttons": [
+        {
+          "text": "已联系",
+          "x": 25.9375,
+          "width": 165.421875,
+          "height": 44
+        },
+        {
+          "text": "待重试",
+          "x": 198.625,
+          "width": 165.4375,
+          "height": 44
+        },
+        {
+          "text": "号码不可用",
+          "x": 25.9375,
+          "width": 165.421875,
+          "height": 44
+        },
+        {
+          "text": "结束跟进",
+          "x": 198.625,
+          "width": 165.4375,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "name": "list",
+      "width": 320,
+      "scrollWidth": 320,
+      "viewport": 320,
+      "buttons": [
+        {
+          "text": "店休联系",
+          "x": 25,
+          "width": 131.5,
+          "height": 44
+        },
+        {
+          "text": "过期跟进",
+          "x": 163.5,
+          "width": 131.5,
+          "height": 44
+        },
+        {
+          "text": "待处理",
+          "x": 25,
+          "width": 131.5,
+          "height": 44
+        },
+        {
+          "text": "已完成",
+          "x": 163.5,
+          "width": 131.5,
+          "height": 44
+        }
+      ]
+    },
+    {
+      "name": "detail",
+      "width": 320,
+      "scrollWidth": 320,
+      "viewport": 320,
+      "buttons": [
+        {
+          "text": "已联系",
+          "x": 25,
+          "width": 131.5,
+          "height": 44
+        },
+        {
+          "text": "待重试",
+          "x": 163.5,
+          "width": 131.5,
+          "height": 44
+        },
+        {
+          "text": "号码不可用",
+          "x": 25,
+          "width": 131.5,
+          "height": 44
+        },
+        {
+          "text": "结束跟进",
+          "x": 163.5,
+          "width": 131.5,
+          "height": 44
+        }
+      ]
+    }
+  ],
+  "unexpected": []
+}

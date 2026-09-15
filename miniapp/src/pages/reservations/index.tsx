@@ -1,0 +1,181 @@
+import { Button, Image, Text, View } from '@tarojs/components'
+import Taro from '@tarojs/taro'
+
+import type { Reservation } from '@/api/endpoints/reservations'
+import { buildLoginUrl, type AuthContextValue, isAdminRole, useAuth } from '@/auth'
+import {
+  buildReservationCreateUrl,
+  buildReservationDetailUrl,
+  formatReservationDate,
+  reservationStatusClass,
+  reservationStatusLabel,
+  reservationMessage,
+  useReservationNow,
+  RESERVATION_LIST_PATH,
+  type ReservationListStatusFilter,
+  useReservationList,
+} from '@/features/reservation'
+import { ROOT_TAB_INDEX, useRootTabSelection } from '@/navigation/root_tabs'
+import { AdminWorkbenchRedirect } from '@/navigation/admin_workbench_redirect'
+import { formatPrice } from '@/utils/format'
+
+import { CustomerAttention } from '@/features/attention'
+
+import './index.scss'
+
+const STATUS_FILTERS: ReadonlyArray<{ value: ReservationListStatusFilter; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'pending', label: '待确认' },
+  { value: 'confirmed', label: '已确认' },
+  { value: 'rejected', label: '已拒绝' },
+  { value: 'cancelled', label: '已取消' },
+]
+
+export default function ReservationsPage() {
+  const auth = useAuth()
+
+  if (auth.status === 'authenticated') {
+    if (!auth.user) {
+      return (
+        <ReservationsState standalone title='账户信息不完整' description='请重新检查登录状态后再查看预约'>
+          <Button className='reservations-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationsState>
+      )
+    }
+    if (isAdminRole(auth.user.role)) {
+      return <AdminWorkbenchRedirect />
+    }
+    if (auth.user.role !== 'user') {
+      return (
+        <ReservationsState standalone title='账户角色暂不支持' description='请重新检查登录状态后再查看预约'>
+          <Button className='reservations-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+        </ReservationsState>
+      )
+    }
+  }
+
+  return <CustomerReservationsPage auth={auth} />
+}
+
+function CustomerReservationsPage({ auth }: { readonly auth: AuthContextValue }) {
+  useRootTabSelection(ROOT_TAB_INDEX.reservations)
+  if (auth.status === 'initializing') {
+    return <ReservationsState standalone title='正在确认登录状态…' description='我的预约只对当前登录用户可见' />
+  }
+  if (auth.status === 'error') {
+    return (
+      <ReservationsState standalone title='登录状态暂不可用' description={auth.initializationError?.message ?? '请稍后重试'}>
+        <Button className='reservations-state__action' onClick={auth.retryInitialization}>重新检查</Button>
+      </ReservationsState>
+    )
+  }
+  if (auth.status === 'guest') {
+    return (
+      <ReservationsState standalone title='登录后查看我的预约' description='这里只显示当前账号登记的拼豆体验'>
+        <Button
+          className='reservations-state__action'
+          onClick={() => void Taro.navigateTo({ url: buildLoginUrl(RESERVATION_LIST_PATH) })}
+        >去登录</Button>
+      </ReservationsState>
+    )
+  }
+  return <AuthenticatedReservations />
+}
+
+export function AuthenticatedReservations() {
+  const now = useReservationNow()
+  const { loadNextPage, retry, setStatusFilter, state, statusFilter } = useReservationList()
+  return (
+    <View className='reservations-page'>
+      <View className='reservations-page__header'>
+        <Text className='reservations-page__title'>我的预约</Text>
+        <Text className='reservations-page__subtitle'>门店确认结果会显示在这里</Text>
+      </View>
+      <CustomerAttention reservationsOnly />
+      <View className='reservations-page__entry'>
+        <View className='reservations-page__entry-copy'>
+          <Text className='reservations-page__entry-title'>到店时间先约好</Text>
+          <Text className='reservations-page__entry-description'>体验项目可以到店选</Text>
+        </View>
+        <Button className='reservations-page__create' onClick={() => void Taro.navigateTo({ url: buildReservationCreateUrl() })}>
+          <Image className='reservations-page__create-icon' src='/assets/tab-bar/plus-outline-white.png' mode='scaleToFill' />
+          <Text>新建预约</Text>
+        </Button>
+      </View>
+      <View className='reservations-filters'>
+        {STATUS_FILTERS.map((filter) => (
+          <Button
+            key={filter.value}
+            className={`reservations-filters__item${statusFilter === filter.value ? ' reservations-filters__item--active' : ''}`}
+            onClick={() => setStatusFilter(filter.value)}
+          >{filter.label}</Button>
+        ))}
+      </View>
+      {state.status === 'loading' && <ReservationsState title='正在加载预约…' description='正在读取服务端最新状态' />}
+      {state.status === 'empty' && (
+        <ReservationsState title={statusFilter === 'all' ? '还没有预约' : '当前筛选下没有预约'} description='先选一个到店时间，体验项目可以到店再选' />
+      )}
+      {state.status === 'error' && (
+        <ReservationsState title='预约加载失败' description={state.errorMessage ?? '请稍后重试'}>
+          <Button className='reservations-state__action' onClick={retry}>重新加载</Button>
+        </ReservationsState>
+      )}
+      {state.status === 'content' && (
+        <View className='reservations-content'>
+          <View className='reservations-content__summary'>
+            <Text>已加载 {state.items.length} 条</Text>
+            <Text>共 {state.total} 条</Text>
+          </View>
+          {state.items.map((item) => <ReservationCard key={item.id} reservation={item} now={now} />)}
+          {state.errorMessage && <Text className='reservations-content__error'>{state.errorMessage}</Text>}
+          {state.page < state.pages ? (
+            <Button
+              className='reservations-content__load-more'
+              disabled={state.loadingMore}
+              onClick={loadNextPage}
+            >{state.loadingMore ? '正在加载…' : state.errorMessage ? '重试加载更多' : '加载更多'}</Button>
+          ) : <Text className='reservations-content__end'>已经到底了</Text>}
+        </View>
+      )}
+    </View>
+  )
+}
+
+function ReservationCard({ reservation, now }: { readonly reservation: Reservation; readonly now: number }) {
+  const statusClass = reservationStatusClass(reservation, now)
+  return (
+    <View
+      className='reservation-card'
+      onClick={() => void Taro.navigateTo({ url: buildReservationDetailUrl(reservation.id) })}
+    >
+      <View className='reservation-card__heading'>
+        <Text className='reservation-card__name'>{reservation.product_name ?? '到店预约'}</Text>
+        <Text className={`reservation-card__status reservation-card__status--${statusClass}`}>
+          {reservationStatusLabel(reservation, now)}
+        </Text>
+      </View>
+      <Text className='reservation-card__date'>{formatReservationDate(reservation.reservation_date)}</Text>
+      <Text className='reservation-card__time'>{reservation.start_time}{reservation.end_time ? `–${reservation.end_time}` : ' 到店'}</Text>
+      <View className='reservation-card__summary'>
+        <Text>{reservation.experience_option_id === null ? '体验项目到店选择 · 时长待定' : `${reservation.duration_minutes} 分钟 · ${reservation.participants} 人`}</Text>
+        <Text className='reservation-card__price'>{reservation.price === null ? '费用待确认' : `¥${formatPrice(reservation.price)}`}</Text>
+      </View>
+      <Text className='reservation-card__message'>{reservationMessage(reservation, now)}</Text>
+    </View>
+  )
+}
+
+function ReservationsState({ children, description, standalone = false, title }: {
+  readonly title: string
+  readonly description: string
+  readonly children?: React.ReactNode
+  readonly standalone?: boolean
+}) {
+  return (
+    <View className={standalone ? 'reservations-page reservations-page--state' : 'reservations-inline-state'}>
+      <Text className='reservations-state__title'>{title}</Text>
+      <Text className='reservations-state__description'>{description}</Text>
+      {children}
+    </View>
+  )
+}

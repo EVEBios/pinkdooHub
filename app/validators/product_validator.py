@@ -1,11 +1,15 @@
 """Product 聚合状态变迁校验器。"""
 
+from app.common.bead_color import is_bead_color_configured
 from app.common.constants.product import (
+    BEAD_COLOR_SLOT_COUNT,
+    BEAD_COLOR_SLOT_MIN,
+    COLOR_SELECTABLE_SALE_UNIT_GRAMS,
     MIN_STOCK,
     PRODUCT_PRICE_MAX,
     PRODUCT_PRICE_MIN_EXCLUSIVE,
 )
-from app.common.enums.product import ProductType
+from app.common.enums.product import KitKind, ProductType
 from app.common.exceptions import ProductNotReadyForOnline
 from app.models.product import Product
 
@@ -84,7 +88,51 @@ class ProductValidator:
             issues.append(
                 "kit price must be greater than 0 and no more than 99999"
             )
-        if kit.stock < MIN_STOCK:
-            issues.append("kit stock must be non-negative")
+        kit_kind = KitKind(getattr(kit, "kit_kind", KitKind.FIXED))
+        if kit_kind is KitKind.FIXED:
+            if getattr(kit, "sale_unit_grams", None) is not None:
+                issues.append("fixed kit sale unit must be null")
+            if kit.stock is None or kit.stock < MIN_STOCK:
+                issues.append("kit stock must be non-negative")
+            if list(getattr(product, "kit_colors", [])):
+                issues.append("fixed kit must not have color associations")
+            return issues
+
+        if kit.sale_unit_grams != COLOR_SELECTABLE_SALE_UNIT_GRAMS:
+            issues.append("color-selectable kit sale unit must be 10 grams")
+        if kit.stock is not None:
+            issues.append("color-selectable kit stock must be null")
+
+        colors = list(getattr(product, "kit_colors", []))
+        expected_slots = set(
+            range(BEAD_COLOR_SLOT_MIN, BEAD_COLOR_SLOT_COUNT + 1)
+        )
+        actual_slots = {color.bead_color.slot_no for color in colors}
+        if (
+            len(colors) != BEAD_COLOR_SLOT_COUNT
+            or actual_slots != expected_slots
+        ):
+            issues.append(
+                "color-selectable kit must link all 221 bead color slots"
+            )
+
+        enabled_colors = [color for color in colors if color.is_enabled]
+        if not enabled_colors:
+            issues.append("at least one product kit color must be enabled")
+        elif any(
+            not color.bead_color.is_active
+            or not is_bead_color_configured(
+                color_code=color.bead_color.color_code,
+                name=color.bead_color.name,
+                swatch_hex=color.bead_color.swatch_hex,
+            )
+            for color in enabled_colors
+        ):
+            issues.append(
+                "enabled product kit colors must be active and configured"
+            )
+
+        if any(color.stock_units < MIN_STOCK for color in colors):
+            issues.append("product kit color stock must be non-negative")
 
         return issues
