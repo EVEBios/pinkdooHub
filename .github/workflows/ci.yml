@@ -218,7 +218,9 @@ jobs:
             tests/release/test_gatea_m9_paid_recovery.py \
             tests/release/test_gatea_m9_failed_acceptance_verify.py \
             tests/release/test_gatea_candidate.py::test_retire_failed_acceptance_takes_over_exact_prepared_retirement \
-            tests/release/test_gatea_candidate.py::test_takeover_retirement_recovers_every_durable_boundary
+            tests/release/test_gatea_candidate.py::test_takeover_retirement_recovers_every_durable_boundary \
+            tests/release/test_gatea_upgrade.py::test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement \
+            tests/release/test_gatea_upgrade.py::test_paid_takeover_archive_requires_paid_live_profile
 
       - name: Rehearse the complete Gate A M7 to M9 updater
         run: |

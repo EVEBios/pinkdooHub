@@ -1141,6 +1141,23 @@ def _validate_takeover_retirement_archive(
             "acceptance archive",
         )
     )
+    if failed_acceptance.get("payment_committed") is True:
+        from scripts.release import gatea_candidate as candidate
+        validated, _, _ = candidate._validate_retireable_failed_acceptance(
+            path=expected_acceptance_archive,
+            expected_candidate_sha=source_candidate_sha,
+            expected_sha256=str(acceptance_archive_sha256),
+        )
+        if (
+            validated != failed_acceptance
+            or reopened_acceptance_sha256 != retirement.get("acceptance_pending_sha256")
+            or validated.get("source_candidate_sha") != lineage_source_candidate_sha
+            or validated.get("image_id") != source_image_id
+            or validated.get("attempt_id_sha256") != retirement.get("acceptance_attempt_id_sha256")
+            or retirement.get("live_verification", {}).get("business_verification", {}).get("schema_version") != 3
+        ):
+            raise GateAUpgradeError("Gate A paid acceptance archive binding is invalid")
+        return
     cleanup = failed_acceptance.get("cleanup")
     attempt_id = failed_acceptance.get("attempt_id")
     if (
@@ -1468,7 +1485,7 @@ def _validate_m9_adoption_lineage(
             "secret_values_recorded",
         }
         or live_business.get("schema_version")
-        not in ({2} if takeover_retirement else {1, 2, 3})
+        not in ({2, 3} if takeover_retirement else {1, 2, 3})
         or live_business.get("passed") is not True
         or live_business.get("counts") != (PAID_ACCEPTANCE_BUSINESS_COUNTS if paid_retirement else FAILED_ACCEPTANCE_BUSINESS_COUNTS)
         or live_business.get("evidence_sha256")
@@ -1545,7 +1562,7 @@ def _validate_m9_adoption_lineage(
 
     if nested_predecessor or paid_retirement:
         from scripts.release import gatea_candidate as candidate
-        if not (nested_predecessor and paid_retirement and not takeover_retirement):
+        if not (nested_predecessor and paid_retirement):
             raise GateAUpgradeError("Gate A paid recovery must bind the supported adoption predecessor")
         candidate._load_adoption_context(
             release_root=gatea.REPOSITORY_ROOT.parent, release_record_dir=release_record_dir,

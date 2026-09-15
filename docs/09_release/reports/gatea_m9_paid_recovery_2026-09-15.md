@@ -14,6 +14,8 @@ G 本地补齐 E paid failure + F prepared 的接管：安装前已经验证的 
 
 发布关联完整本地回归为 `1119 passed`（29.52 秒），CI 工作流契约 `8 passed`，实际 YAML 解析与差异检查通过。未新增依赖、数据库结构或版本 tag。
 
+升级入口另有独立的 takeover profile 校验，本轮同步允许与 nested predecessor 精确绑定的 paid schema 3；已付款归档重用完整候选校验器，不再按旧 pre-claim 字段拒绝。追加候选/升级/QR 关联验证 `401 passed`（9.89 秒），覆盖下游四种 paid/prepared 组合及真实归档的 paid profile 拒绝；这些契约也前置到 updater。初次 G CI 只绑定其旧提交，新增修正必须由更新后的提交重新取得 CI，尚未执行任何 G 现场安装。
+
 G 仍需冻结自身提交、取得独立 CI，再以 E failure、F stage 和 F prepared 三摘要执行正式 stage/retirement。成功前不能继续 activation 或 QR rotation。
 
 ## 最新现场检查点：F retirement 被拦截
