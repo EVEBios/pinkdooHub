@@ -1,5 +1,7 @@
 # pinkdooHub 发布文档
 
+> **2026-09-15 最新检查点：G/M9 已收口。** 管理员验收、韧性、数据后独立恢复及 finalization 已完成，current/live/finalized 均为 G；详见[已付款恢复记录](reports/gatea_m9_paid_recovery_2026-09-15.md)。M10–M15 按[执行与验证计划](reports/gatea_m10_m15_execution_plan_2026-09-15.md)推进；下方 A–F 未收口描述为历史，不能作为当前环境事实。M15 尚未持久升级，不外推到 Gate B 或公开发布。
+
 > **2026-09-15 E 验收失败更新：** E 已完成自身 CI 与 adoption，但管理员辅助验收因认证 username、Nginx 双写原始 QR URL 而失败；真实付款与已关闭会话必须保留。当前新候选的四项修复、受控 paid recovery 及验证边界以 [已付款恢复记录](reports/gatea_m9_paid_recovery_2026-09-15.md) 为准，以下较早的 C/D/E 待执行叙述属于历史；Gate A 仍为 No-Go。
 
 

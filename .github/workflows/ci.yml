@@ -28,6 +28,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -174,12 +175,12 @@ jobs:
           retention-days: 14
 
   # Keep the historical job id because branch protection keys required checks by name.
-  # The implementation and artifact below now exercise the complete M7→M8→M9 path.
+  # The implementation and artifact below now exercise the finalized G/M9→M15 path.
   gatea-m7-m8-updater:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      PINKDOOHUB_GATEA_M7_M9_DRILL: github-hosted-disposable-linux-v1
+      PINKDOOHUB_GATEA_M9_M15_DRILL: disposable-only-v1
     steps:
       - name: Check out the complete candidate history
         uses: actions/checkout@v7
@@ -223,28 +224,26 @@ jobs:
             tests/release/test_gatea_upgrade.py::test_m9_adoption_lineage_accepts_canonical_schema2_stage_and_retirement \
             tests/release/test_gatea_upgrade.py::test_paid_takeover_archive_requires_paid_live_profile
 
-      - name: Rehearse the complete Gate A M7 to M9 updater
+      - name: Rehearse the complete Gate A M9 to M15 updater
         run: |
-          mkdir -p artifacts/gatea-m7-m9-updater
-          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M9_DRILL \
+          mkdir -p artifacts
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M9_M15_DRILL \
             timeout --signal=TERM --kill-after=30s 40m \
-            "$(command -v python)" scripts/ci/gatea_m7_m8_drill.py run \
-            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m9-updater"
+            "$(command -v python)" scripts/ci/gatea_m9_m15_drill.py run --profile ci
 
       - name: Verify disposable Gate A resources are removed
         if: always()
         run: |
-          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M7_M9_DRILL \
+          sudo --preserve-env=GITHUB_ACTIONS,GITHUB_EVENT_NAME,GITHUB_EVENT_PATH,GITHUB_HEAD_REF,GITHUB_REF,GITHUB_RUN_ATTEMPT,GITHUB_RUN_ID,GITHUB_SHA,GITHUB_WORKSPACE,RUNNER_ARCH,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_TEMP,PINKDOOHUB_GATEA_M9_M15_DRILL \
             timeout --signal=TERM --kill-after=15s 8m \
-            "$(command -v python)" scripts/ci/gatea_m7_m8_drill.py cleanup \
-            --artifact-dir "${GITHUB_WORKSPACE}/artifacts/gatea-m7-m9-updater"
+            "$(command -v python)" scripts/ci/gatea_m9_m15_drill.py cleanup --profile ci
 
       - name: Save Gate A updater rehearsal evidence
-        if: ${{ always() && hashFiles('artifacts/gatea-m7-m9-updater/artifact-scan-passed.json') != '' }}
+        if: ${{ always() && hashFiles('artifacts/gatea-m9-m15-updater/summary.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
-          name: gatea-m7-m9-updater-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/gatea-m7-m9-updater/
+          name: gatea-m9-m15-updater-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gatea-m9-m15-updater/
           if-no-files-found: error
           retention-days: 14
 

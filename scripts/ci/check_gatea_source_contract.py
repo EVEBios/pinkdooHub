@@ -1,10 +1,11 @@
-"""在安装依赖、构建镜像前只读检查候选 Git 树与 M9 发布器契约。"""
+"""在安装依赖、构建镜像前只读检查候选 Git 树与 M9/M15 发布器契约。"""
 
 from __future__ import annotations
 
 import argparse
 import ast
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 
@@ -59,23 +60,38 @@ def check(repository: Path, ref: str = "HEAD") -> dict[str, object]:
         return _git(repository, "show", f"{sha}:{path}")
 
     approved = _constant(source("app/tasks/gatea_migrate_step.py"), "APPROVED_MIGRATIONS")
-    operations = _constant(
-        source("scripts/release/gatea_operations.py"), "APPROVED_TARGET_M9_CHAIN",
-    )
-    target = _constant(source("scripts/release/gatea_upgrade.py"), "TARGET_VERSION")
-    if (
-        not isinstance(approved, tuple) or approved != operations
-        or type(target) is not int or target != 9 or len(approved) != target + 1
-        or not all(isinstance(name, str) for name in approved)
-        or [int(name.split("_", 1)[0]) for name in approved] != list(range(target + 1))
-    ):
+    if not isinstance(approved, tuple) or len(approved) not in {10, 16}:
+        raise SourceContractError("unsupported migration target profile")
+    target_version = len(approved) - 1
+    operations = _constant(source("scripts/release/gatea_operations.py"),
+                           f"APPROVED_TARGET_M{target_version}_CHAIN")
+    upgrader = "gatea_m15_upgrade.py" if target_version == 15 else "gatea_upgrade.py"
+    target = _constant(source(f"scripts/release/{upgrader}"), "TARGET_VERSION")
+    if (approved != operations or type(target) is not int or target != target_version
+            or not all(isinstance(name, str) for name in approved)
+            or [int(name.split("_", 1)[0]) for name in approved] != list(range(target + 1))):
         raise SourceContractError("migration step, operations and upgrade contracts disagree")
-    actual = _git(
-        repository, "ls-tree", "-r", "--name-only", sha, "--", "migrations/models",
-    ).splitlines()
+    actual = _git(repository, "ls-tree", "-r", "--name-only", sha, "--", "migrations/models").splitlines()
     expected = [f"migrations/models/{name}" for name in approved]
     if sorted(actual) != sorted(expected):
-        raise SourceContractError("candidate Git tree is not the approved exact M0-M9 chain")
+        raise SourceContractError(f"candidate Git tree is not the approved exact M0-M{target} chain")
+    if target == 15:
+        # 只读取 Git blob/AST/JSON；不运行候选代码，也不依赖应用环境或 Secret。
+        source_sha = _constant(source("scripts/release/gatea_candidate.py"), "SOURCE_M9_SHA")
+        if source_sha != "232919cc57efe4250195ab721104d62ae5e08d34":
+            raise SourceContractError("M15 source is not the approved finalized G/M9")
+        _git(repository, "merge-base", "--is-ancestor", source_sha, sha)
+        old_chain = _constant(_git(repository, "show", f"{source_sha}:app/tasks/gatea_migrate_step.py"), "APPROVED_MIGRATIONS")
+        if approved[:10] != old_chain:
+            raise SourceContractError("M15 changed the frozen M9 migration chain")
+        manifest = json.loads(source("app/tasks/manifests/gatea_m9_m15_schema.json"))
+        digests = {name: hashlib.sha256(source(f"migrations/models/{name}").encode()).hexdigest() for name in approved}
+        if manifest.get("migration_sha256") != digests:
+            raise SourceContractError("M15 migration manifest differs from the candidate tree")
+        for module in ("app/tasks/gatea_m15_snapshot.py", "scripts/release/gatea_m15_acceptance.py",
+                       "scripts/release/gatea_m15_finalize.py", "scripts/ci/gatea_m9_m15_drill.py",
+                       "scripts/release/gatea_backup.py"):
+            ast.parse(source(module))
     mode_line = _git(
         repository, "ls-tree", sha, "--", "scripts/release/gatea_operations.py",
     ).strip()
