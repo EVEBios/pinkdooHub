@@ -131,6 +131,14 @@ APPROVED_TARGET_M8_CHAIN = APPROVED_TARGET_M7_CHAIN + (
 APPROVED_TARGET_M9_CHAIN = APPROVED_TARGET_M8_CHAIN + (
     "9_20260910180000_add_table_sessions.py",
 )
+APPROVED_TARGET_M15_CHAIN = APPROVED_TARGET_M9_CHAIN + (
+    "10_20260913115858_optional_reservation_package.py",
+    "11_20260914120000_direct_table_sessions.py",
+    "12_20260914163509_attention_events.py",
+    "13_20260914183218_commerce_attention.py",
+    "14_20260915000723_reservation_followups.py",
+    "15_20260915044318_store_bead_stock.py",
+)
 HOST_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"

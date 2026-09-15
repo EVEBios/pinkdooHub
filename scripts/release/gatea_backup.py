@@ -509,6 +509,7 @@ def _requires_table_sweeper(snapshot: Mapping[str, Any]) -> bool:
 
     aerich_versions = snapshot.get("aerich_versions")
     supported_chains = {
+        ",".join(gatea.APPROVED_TARGET_M15_CHAIN),
         ",".join(gatea.APPROVED_SOURCE_M2_CHAIN),
         ",".join(gatea.APPROVED_TARGET_M7_CHAIN),
         ",".join(gatea.APPROVED_TARGET_M8_CHAIN),
@@ -518,7 +519,7 @@ def _requires_table_sweeper(snapshot: Mapping[str, Any]) -> bool:
         raise gatea.GateAError(
             "Gate A backup database migration chain is not approved"
         )
-    return aerich_versions == ",".join(gatea.APPROVED_TARGET_M9_CHAIN)
+    return aerich_versions in {",".join(gatea.APPROVED_TARGET_M9_CHAIN), ",".join(gatea.APPROVED_TARGET_M15_CHAIN)}
 
 
 def _allows_legacy_m7_app_command(snapshot: Mapping[str, Any]) -> bool:
@@ -654,6 +655,37 @@ def _source_m9_table_content_snapshot(
         capture_output=True,
     )
     return _validate_m9_table_content_snapshot(_parse_snapshot(result.stdout))
+
+
+def _requires_m15_content_snapshot(snapshot: Mapping[str, Any]) -> bool:
+    return snapshot.get("aerich_versions") == ",".join(gatea.APPROVED_TARGET_M15_CHAIN)
+
+
+def _validate_m15_content_snapshot(payload: object) -> dict[str, Any]:
+    from app.tasks.gatea_m15_snapshot import validate_snapshot
+    if not isinstance(payload, dict):
+        raise gatea.GateAError("Gate A M15 snapshot must be an object")
+    try:
+        validate_snapshot(payload, 15)
+    except (ValueError, KeyError, OSError):
+        raise gatea.GateAError("Gate A M15 snapshot profile differs") from None
+    return payload
+
+
+def _source_m15_content_snapshot(values: Mapping[str, str], config_file: Path,
+                                 secret_dir: Path, mode: str) -> dict[str, Any]:
+    result = gatea._run_compose(values=values, config_file=config_file, secret_dir=secret_dir,
+        mode=mode, arguments=("run", "--rm", "--no-deps", "-T", "app", "python3", "-B", "-m",
+                              "app.tasks.gatea_m15_snapshot", "--version", "15"), capture_output=True)
+    return _validate_m15_content_snapshot(_parse_snapshot(result.stdout))
+
+
+def _restored_m15_content_snapshot(values: Mapping[str, str], config_file: Path,
+                                   secret_dir: Path, project: str) -> dict[str, Any]:
+    result = _run_restore(values=values, config_file=config_file, secret_dir=secret_dir, project=project,
+        arguments=("run", "--rm", "--no-deps", "-T", "restore-app", "python3", "-B", "-m",
+                   "app.tasks.gatea_m15_snapshot", "--version", "15"), capture_output=True)
+    return _validate_m15_content_snapshot(_parse_snapshot(result.stdout))
 
 
 def _source_snapshot(
@@ -900,6 +932,7 @@ def create_backup(
     m7_content_snapshot: dict[str, Any] | None = None
     m8_swatch_content_snapshot: dict[str, Any] | None = None
     m9_table_content_snapshot: dict[str, Any] | None = None
+    m15_content_snapshot: dict[str, Any] | None = None
     image_manifest: list[str] = []
     with _recovery_termination_controller("backup") as termination:
         try:
@@ -948,6 +981,8 @@ def create_backup(
                         secret_dir,
                         mode,
                     )
+                if _requires_m15_content_snapshot(snapshot):
+                    m15_content_snapshot = _source_m15_content_snapshot(values, config_file, secret_dir, mode)
                 image_manifest = _source_image_manifest(
                     values, config_file, secret_dir, mode
                 )
@@ -1090,6 +1125,7 @@ def create_backup(
             if m9_table_content_snapshot is not None
             else {}
         ),
+        **({"m15_content_snapshot": m15_content_snapshot} if m15_content_snapshot is not None else {}),
         "image_manifest": image_manifest,
         "artifacts": {
             "mysql": {
@@ -1172,6 +1208,11 @@ def _validate_loaded_backup_record(
                 raise ValueError
             _validate_m9_table_content_snapshot(m9_table_content_snapshot)
         elif m9_table_content_snapshot is not None:
+            raise ValueError
+        m15_content_snapshot = payload.get("m15_content_snapshot")
+        if _requires_m15_content_snapshot(database_snapshot):
+            _validate_m15_content_snapshot(m15_content_snapshot)
+        elif m15_content_snapshot is not None:
             raise ValueError
         for name, path in expected.items():
             metadata = artifacts[name]
@@ -1502,6 +1543,8 @@ def verify_restore(
     expected_m9_table_content_snapshot = payload.get(
         "m9_table_content_snapshot"
     )
+    restored_m15_content_snapshot = None
+    expected_m15_content_snapshot = payload.get("m15_content_snapshot")
     restored_images: list[str] = []
     redis_size = "unknown"
     passed = False
@@ -1603,6 +1646,8 @@ def verify_restore(
                     project,
                 )
             )
+        if expected_m15_content_snapshot is not None:
+            restored_m15_content_snapshot = _restored_m15_content_snapshot(values, config_file, secret_dir, project)
         if expected_m9_table_content_snapshot is not None:
             restored_m9_table_content_snapshot = (
                 _restored_m9_table_content_snapshot(
@@ -1646,6 +1691,8 @@ def verify_restore(
                 "'http://127.0.0.1:8000/api/v1/health/ready', timeout=3)",
             ),
         )
+        if restored_m15_content_snapshot != expected_m15_content_snapshot:
+            raise gatea.GateAError("Gate A restored M15 content snapshot does not match")
         if restored_snapshot != payload["database_snapshot"]:
             raise gatea.GateAError("Gate A restored database snapshot does not match")
         if restored_m7_content_snapshot != expected_m7_content_snapshot:
@@ -1777,6 +1824,8 @@ def verify_restore(
             ),
             "images_match": True,
             "restore_app_ready": True,
+            **({"m15_content_snapshot": restored_m15_content_snapshot,
+                "m15_content_matches": True} if restored_m15_content_snapshot is not None else {}),
             "redis_started_empty": True,
             "refresh_sessions_invalidated": True,
             "host_ports_published": False,

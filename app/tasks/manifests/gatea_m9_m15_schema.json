@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "mysql_version": "8.0.46",
+  "migration_sha256": {
+    "0_20260810101218_init.py": "3ee7b85aa4a9fa1d6b1eaed21e40d98d5bc55a1fcd72bf72f3c110823e5000f5",
+    "1_20260813130455_add_order_tables.py": "7c06c78f1a0f4fd8a1401d7c9b83b78aa6f310e1fc7ee3e09e56b21572f77190",
+    "2_20260814104655_add_inventory_transactions.py": "db7189ba1b387ef06b54d53a68f1dc26c1ee26a1625c5c7c243e5084d1ff8ca0",
+    "3_20260902125032_phase95_external_identity.py": "0ac27fba446f4cbe087e3c51b0f935201b57f04191a1708abcb231cf933c2e51",
+    "4_20260905162243_add_wallet_payment_refund.py": "bb31291016d4e2fec98e708389843900925b829bbb5491171f7a4cc872f4d114",
+    "5_20260906094653_add_reservations.py": "98ce26a4c0af39773c7c03ab9be82d67ab40b8e03fe8dba0fbedad6c208ae655",
+    "6_20260906123000_add_color_selectable_kits.py": "6320662d044202018fce5f0b9e280c9ee797957a33519ae758ada71ca0d6bf94",
+    "7_20260907190000_add_reservation_settings.py": "848ed94666496673808bd8a593324ac66443afd7c2391c4c2339a4859966afe2",
+    "8_20260908140000_add_bead_color_swatch_hex.py": "2a061eb6d0aea902b5439595a4b9447d3b314881a511d91b88c2b9cf348c2f09",
+    "9_20260910180000_add_table_sessions.py": "315960233b828f81304a6ea53175e973897865100c184cf4adefd8a53f11311d",
+    "10_20260913115858_optional_reservation_package.py": "08b3b0fcaddc0f82b7a133f64a6a304404ecc0156281eaa2a386e96ad006a269",
+    "11_20260914120000_direct_table_sessions.py": "0b4e7ac3b50449e47da82c99d939da629e6700b4f59396e5108d0bff95ef44cf",
+    "12_20260914163509_attention_events.py": "f695f1c6583e46d81c675b94f36b1ede5f97e4e7d212c81bfcbc1c25747a6f87",
+    "13_20260914183218_commerce_attention.py": "d8992d09f3ab7e808bb5ba957bbc82622d13635b2d1c051670ab9c6795a3e8fb",
+    "14_20260915000723_reservation_followups.py": "0896bc57885426302d59290235cc55ff5f87eed9347d0b99df646a8f92584a36",
+    "15_20260915044318_store_bead_stock.py": "cc65ec2e6dc48980ddee4568fe7603c2f8290e81589aefe62ad3fb5bfa7f5701"
+  },
+  "versions": {
+    "9": {
+      "structure_sha256": "8e748efeaa8c5b4328cd8ff4db84e342cb44d80fc1c5a62a643c59ddbb5a37c0",
+      "columns": 261,
+      "indexes": 207,
+      "foreign_key_columns": 42
+    },
+    "10": {
+      "structure_sha256": "1092b0b4d6a5a9036dbff9ebe0e6abff9d9f087d00557ac0da17d4953c59e60e",
+      "columns": 261,
+      "indexes": 207,
+      "foreign_key_columns": 42
+    },
+    "11": {
+      "structure_sha256": "b7308504fb34dd6963bd077eb1875dba7e8da4068faa055c05a79185cb475646",
+      "columns": 266,
+      "indexes": 209,
+      "foreign_key_columns": 44
+    },
+    "12": {
+      "structure_sha256": "97c62d6e41a53d94c29fe237799b1221f7ee042f95474d84ff0762c48ab20cb9",
+      "columns": 276,
+      "indexes": 218,
+      "foreign_key_columns": 47
+    },
+    "13": {
+      "structure_sha256": "5cf050fabf2b71dda401dd04b83987d4e896446a1c21f81c2447804696c515bb",
+      "columns": 279,
+      "indexes": 226,
+      "foreign_key_columns": 49
+    },
+    "14": {
+      "structure_sha256": "1877609e3fc7d59719dd3a51a4f6e6399fa9f06167faf2416edeb8d3fa530515",
+      "columns": 289,
+      "indexes": 237,
+      "foreign_key_columns": 51
+    },
+    "15": {
+      "structure_sha256": "b04cd9082abf5a5264101f2bb5962eea850bc8898e18171ad7e99f0fa72f9083",
+      "columns": 314,
+      "indexes": 249,
+      "foreign_key_columns": 55
+    }
+  }
+}

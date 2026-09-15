@@ -510,11 +510,15 @@ def test_create_backup_stops_writes_records_artifacts_and_restarts(
         assert path.stat().st_mode & 0o777 == 0o600
 
 
+@pytest.mark.parametrize("version", (9, 15))
 def test_create_m9_backup_stops_and_strictly_restarts_the_table_sweeper(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tmp_path: Path, version: int,
 ) -> None:
     backup_root, backup_records, _ = _directories(tmp_path)
+    from tests.release.test_gatea_m15_snapshot import snapshot as m15_snapshot
+    database = _m9_database_snapshot() if version == 9 else {"aerich_versions": ",".join(gatea.APPROVED_TARGET_M15_CHAIN)}
+    monkeypatch.setattr(backup, "_source_m15_content_snapshot", lambda *args: m15_snapshot(15))
     values = _values(backup_root)
     compose_commands: list[tuple[str, ...]] = []
     image_validation_flags: list[bool] = []
@@ -551,7 +555,7 @@ def test_create_m9_backup_stops_and_strictly_restarts_the_table_sweeper(
     monkeypatch.setattr(
         backup,
         "_source_snapshot",
-        lambda *args: _m9_database_snapshot(),
+        lambda *args: database,
     )
     monkeypatch.setattr(
         backup,
@@ -606,10 +610,12 @@ def test_create_m9_backup_stops_and_strictly_restarts_the_table_sweeper(
         (backup_records / "20260902t120001z.json").read_text(encoding="utf-8")
     )
     assert payload["table_sweeper_restarted"] is True
-    assert payload["m8_swatch_content_snapshot"] == (
-        _m8_swatch_content_snapshot()
-    )
-    assert payload["m9_table_content_snapshot"] == _m9_table_content_snapshot()
+    if version == 9:
+        assert payload["m8_swatch_content_snapshot"] == _m8_swatch_content_snapshot()
+        assert payload["m9_table_content_snapshot"] == _m9_table_content_snapshot()
+    else:
+        assert payload["m15_content_snapshot"] == m15_snapshot(15)
+        assert "m9_table_content_snapshot" not in payload
     assert not (backup_records / ".20260902t120001z.pending.json").exists()
 
 
@@ -1415,6 +1421,7 @@ def _write_backup_fixture(
     m7_content_snapshot: dict[str, object] | None = None,
     m8_swatch_content_snapshot: dict[str, object] | None = None,
     m9_table_content_snapshot: dict[str, object] | None = None,
+    m15_content_snapshot: dict[str, object] | None = None,
 ) -> dict[str, object]:
     database_path, image_path = backup._backup_paths(backup_root, backup_id)
     database_path.write_bytes(b"sql")
@@ -1451,6 +1458,8 @@ def _write_backup_fixture(
         payload["m8_swatch_content_snapshot"] = m8_swatch_content_snapshot
     if m9_table_content_snapshot is not None:
         payload["m9_table_content_snapshot"] = m9_table_content_snapshot
+    if m15_content_snapshot is not None:
+        payload["m15_content_snapshot"] = m15_content_snapshot
     (backup_records / f"{backup_id}.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
@@ -1635,20 +1644,29 @@ def test_load_backup_record_rejects_unknown_migration_chain(tmp_path: Path) -> N
         )
 
 
+@pytest.mark.parametrize("version, mismatch", ((9, False), (15, False), (15, True)))
 def test_verify_m9_restore_compares_and_always_removes_temporary_resources(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tmp_path: Path, version: int, mismatch: bool,
 ) -> None:
     backup_root, backup_records, restore_records = _directories(tmp_path)
+    from tests.release.test_gatea_m15_snapshot import snapshot as m15_snapshot
+    database = _m9_database_snapshot() if version == 9 else {"aerich_versions": ",".join(gatea.APPROVED_TARGET_M15_CHAIN)}
+    expected = m15_snapshot(15)
+    actual = m15_snapshot(15)
+    if mismatch:
+        actual["complete_content"]["store_bead_stock_entries"]["sha256"] = "f" * 64
+    monkeypatch.setattr(backup, "_restored_m15_content_snapshot", lambda *args: actual)
     backup_id = "20260902t120000z"
     _write_backup_fixture(
         backup_root,
         backup_records,
         backup_id,
-        database_snapshot=_m9_database_snapshot(),
-        m7_content_snapshot=_m7_content_snapshot(),
-        m8_swatch_content_snapshot=_m8_swatch_content_snapshot(),
-        m9_table_content_snapshot=_m9_table_content_snapshot(),
+        database_snapshot=database,
+        **({"m7_content_snapshot": _m7_content_snapshot(),
+            "m8_swatch_content_snapshot": _m8_swatch_content_snapshot(),
+            "m9_table_content_snapshot": _m9_table_content_snapshot()} if version == 9
+           else {"m15_content_snapshot": expected}),
     )
     values = _values(backup_root)
     commands: list[tuple[str, ...]] = []
@@ -1666,7 +1684,7 @@ def test_verify_m9_restore_compares_and_always_removes_temporary_resources(
     monkeypatch.setattr(
         backup,
         "_restore_snapshot",
-        lambda *args: _m9_database_snapshot(),
+        lambda *args: database,
     )
     monkeypatch.setattr(
         backup,
@@ -1700,21 +1718,27 @@ def test_verify_m9_restore_compares_and_always_removes_temporary_resources(
     monkeypatch.setattr(backup, "_run_restore", fake_restore)
 
     project = backup.restore_project(backup_id)
-    backup.verify_restore(
-        backup_id=backup_id,
-        confirm_project=project,
-        config_file=Path("/config.env"),
-        secret_dir=Path("/secrets"),
-        mode="loopback",
-        backup_root=backup_root,
-        backup_record_dir=backup_records,
-        restore_record_dir=restore_records,
-        wait_timeout=180,
-        release_record_dir=tmp_path / "releases",
-    )
+    from contextlib import nullcontext
+    with pytest.raises(gatea.GateAError, match="isolated restore verification failed") if mismatch else nullcontext():
+        backup.verify_restore(
+            backup_id=backup_id,
+            confirm_project=project,
+            config_file=Path("/config.env"),
+            secret_dir=Path("/secrets"),
+            mode="loopback",
+            backup_root=backup_root,
+            backup_record_dir=backup_records,
+            restore_record_dir=restore_records,
+            wait_timeout=180,
+            release_record_dir=tmp_path / "releases",
+        )
+
 
     assert commands[-1] == ("down", "--volumes", "--remove-orphans")
     assert absence_checks == [(project, False), (project, True)]
+    if mismatch:
+        assert not (restore_records / f"{backup_id}.json").exists()
+        return
     record = json.loads(
         (restore_records / f"{backup_id}.json").read_text(encoding="utf-8")
     )
@@ -1727,6 +1751,10 @@ def test_verify_m9_restore_compares_and_always_removes_temporary_resources(
     assert record["passed"] is True
     assert record["temporary_resources_removed"] is True
     assert record["refresh_sessions_invalidated"] is True
+    if version == 15:
+        assert record["m15_content_matches"] is True
+        assert record["m15_content_snapshot"] == expected
+        return
     assert record["m7_content_matches"] is True
     assert record["m7_content_snapshot"] == _m7_content_snapshot()
     assert record["m8_swatch_content_matches"] is True
