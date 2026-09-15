@@ -2,14 +2,14 @@
 
 本文件只保留每次在仓库工作都需要的边界、开发约定和文档导航；全局通用规则见 `~/.codex/AGENTS.md`。具体业务、API、迁移和发布事实以对应权威文档及实际代码/测试为准，不从历史摘要推断当前环境状态。
 
-> 本轮 Gate A 恢复以[已付款恢复记录](docs/09_release/reports/gatea_m9_paid_recovery_2026-09-15.md)的最新检查点为准；较早的 A/B/C/D 摘要属于历史，不能替代现场证据。
+> 当前 Gate A 的迁移/发布事实以[M15 完成报告](docs/09_release/reports/gatea_m15_completion_2026-09-16.md)和现场原始记录为准：截至 2026-09-16，M15 已 finalized。较早 A–G 恢复摘要属于历史，不能替代现场证据；微信公开发布仍需独立门槛。
 
 ## 项目与当前边界
 
 pinkdooHub 是拼豆店管理系统。后端使用 FastAPI、Tortoise ORM、Pydantic、Redis、MySQL（生产）/SQLite（开发）；前端为 Taro 小程序。精确依赖版本以 `requirements.txt`、`miniapp/package.json` 和锁文件为准，测试配置以 `pyproject.toml` 为准。
 
 - 当前代码为尚未发布的 v0.6.0 候选。Product、Order、Inventory、Wallet/Payment/Refund v1、Reservation N1、M6 自选颜色 Kit、M7 固定店休、M8 HEX 色块与 M9 二维码开台均已完成仓库实现；仓库实现、隔离测试和本地数据不能当作任何持久环境已迁移或可发布的证据。
-- 截至 2026-09-13，Gate A 仍为 **No-Go**：live 配置、数据库与五服务是旧候选 A/M9，但 `current` 和最后 finalized lineage 仍是 S/M7；A 验收失败的 pending 与 B 停在 `prepared` 的 retirement pending 必须保留。C 虽有远端 9/9，真实 stage 在写入前失败，不能复用。后续 D 的前滚、验收、恢复与收口必须以 [Release README](docs/09_release/README.md)、[Go/No-Go Checklist](docs/09_release/go_no_go_checklist.md) 和现场 Release Record 的最新状态为准；本段摘要不授权任何环境操作。
+- **历史检查点（2026-09-13，已由上方完成报告更新）：** 当时 Gate A 为 **No-Go**：live 配置、数据库与五服务是旧候选 A/M9，但 `current` 和最后 finalized lineage 仍是 S/M7；A 验收失败的 pending 与 B 停在 `prepared` 的 retirement pending 必须保留。C 虽有远端 9/9，真实 stage 在写入前失败，不能复用。后续 D 的前滚、验收、恢复与收口必须以 [Release README](docs/09_release/README.md)、[Go/No-Go Checklist](docs/09_release/go_no_go_checklist.md) 和现场 Release Record 的最新状态为准；本段摘要不授权任何环境操作。
 - 不得手工删除或修改受保护 pending、拼接旧证据、重跑 M7→M9、降级当前数据库、临时注入 Secret，或将 Gate A 证据外推到共享、预发布或生产环境。真实微信支付/充值/退款、正式微信小程序码、上传/灰度/发布与持久数据库迁移均需各自明确授权。
 - 开始相关任务时检查实际文件树、测试、迁移链和现场证据；规划文档、旧测试数字及已完成阶段的目录图不等于当前能力或环境事实。
 

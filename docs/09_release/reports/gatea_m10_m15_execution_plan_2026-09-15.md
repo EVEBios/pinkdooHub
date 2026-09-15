@@ -1,5 +1,7 @@
 # Gate A M10–M15 执行与验证计划
 
+> **2026-09-16 已完成：** M15 管理员验收、故障恢复、验收后独立恢复与最终收口均通过。当前状态以[完成报告](gatea_m15_completion_2026-09-16.md)为准；下方记录保留各步骤当时的状态。
+
 ## 范围与前置条件
 
 用户授权持续修复、提交、推送并按规划将 Gate A 迁移至 M15；需要密码时交接。当前持久状态以[已付款恢复记录](gatea_m9_paid_recovery_2026-09-15.md)及现场 records 为准。必须先完成 M9 的受保护恢复、验收、韧性、数据后独立恢复与 finalized lineage；不跨过失败记录直接迁移，不外推到共享或生产。
@@ -101,3 +103,31 @@ Review 范围为本轮发布工具、快照与 CI 连接：业务 API/层次和�
 PR #6 首轮 Run `34992278288` 的 M9→M15 完整 updater 通过，生成候选 `28a914fd5ccde2770bb90a38c252221a03568e40` 自身制品；其他 job 未全部通过，因此该候选和制品不用于持久 stage。
 
 MySQL job 在迁移完成后的检查阶段失败：旧断言仍把桌台外键数量固定为 M9 的 10 个，没有包含 M11 两个合法新增约束。现按最终候选校验 12 个具体名称和 RESTRICT 规则，缺失、规则改变、同数量替换或重复均拒绝；没有降低数据库约束。修正后在本地单独复现 MySQL job 的升级/回退合成夹具/重放/bootstrap/snapshot 步骤，全部通过，随后真实 MySQL 全部五组 `89 passed`（17.96 秒）。新增检查契约组 `8 passed`。本轮临时 MySQL 容器、tmpfs 数据和 13306 监听已回收并复核；未重复 Gate A 完整容器演练。
+
+
+## 持久环境检查点：M15 已升级，等待管理员验收
+
+截至北京时间 2026-09-16，本轮 PR #6 的 head 为 `410ba10563981a2fd744bbe715dbcf37e5208565`，冻结 merge target 为 `ff125a322374d9cd34728798f89cf3d02904dca3`。Run `34993499157` attempt 1 九项全部通过；专用 updater ZIP 摘要为 `6256fb77628cff582f251733828427d1767b951d520cd607533af225152e33e5`，本地按同一源码再次核验逐步快照及文件绑定。
+
+服务器新建 G/M9 源备份 `20260915t161237z` 并完成同 ID 独立恢复。备份记录摘要 `b9dc17bbb719a317a637a8b623071113a7d7a099852663e75b6592f7f95b5ff8`，恢复记录摘要 `72e601d700740eff8460e478aff03415e2094c2c4cd92ba9b0ab0de10fbea17d`。M15 stage、只读 plan、M10–M15 六次迁移及只读 replay、app-up 均已通过。
+
+- M15 镜像：`sha256:a42d2f421a8a21e083c39efb1755b74cc810e4ed18469998a83dee5a4a62d1a3`
+- Stage record：`d0a0a1e38a5e2c003efd06893c0c768e43482497a3976308e2d1512e63381f89`
+- Upgrade record：`a21730782276a7ec8facfde5bf924e414fe751d71e4f29de27a733456f127cac`
+- Replay record：`abcb0f2cb2c148f76fdd723176a5f00c8395e4d5d58fb7fd809451b7d7f3408a`
+- Activation record：`4ea7b43d17cd80e4c2c34ac248b56c79d63d1e4ac16e3d677236a6fe56bc1e7a`
+
+现场 live/database 为 M15，五服务 healthy，无 pending；current/最后 finalized 仍为 G/M9，这是等待 M15 验收和恢复收口的明确中间态。四份 A/B/E/F 保护归档摘要与 G 收口时相同。没有虚构盘点、执行真实微信资金或公开发布。
+
+下一步从该冻结 M15 Release 执行 `python3 -B -m scripts.release.gatea_m15_acceptance`，管理员凭据只经隐藏 TTY 输入。成功后绑定本次 acceptance 执行 `gatea_m15_finalize resilience`，创建验收后备份/同 ID 独立恢复，最后 `gatea_m15_finalize finalize` 并复核 current/live/finalized 一致。此时不可宣称 M15 完整收口。
+
+服务器 `/var/tmp/pinkdoohub-m15-input-34993499157-1` 已按原始文件摘要核验后删除，恢复临时资源无残留。本地全部一次性 Docker 资源已回收；固定凭据入口和证据保留。该现场检查点先保存于本地文档，避免在已冻结验收候选期间修改 PR head，最终收口后再提交文档。
+
+
+### 管理员交接前置目录修复（2026-09-16）
+
+首次运行 M15 管理员入口在读取凭据前报 `GateACandidateError`。逐项复用冻结安装版本的原始校验函数定位：配置/镜像/执行路径、保护 pending、升级和只读 replay 均通过，但 `/srv/pinkdoohub/gatea/records/m15-acceptance` 尚不存在。验收入口使用 `_require_root_directory`，不会自动创建目录；此前本地 API 验收与 CI 迁移演练未覆盖实际服务器的该目录前置条件。
+
+确认父目录非符号链接且 root:root/0755 后，调用冻结版本既有 `_ensure_root_directory` 补齐该目录，随后执行直到凭据读取前的全部八项检查，包含五服务/回环端口与只读 M15 完整快照，全部通过。没有读取凭据、管理员登录或业务写入，没有重跑迁移、CI，未修改冻结代码、既有记录或归档。复核 stage/upgrade/replay/activation 四份摘要和保护归档均不变，无 pending，五服务 healthy，快照临时容器已退出删除。
+
+后续交接必须先检查新阶段记录目录的存在性、root 归属、精确权限和非符号链接约束，并运行实际安装入口的全部凭据前检查；只验证 API 和迁移不能替代这一环境检查。此次修复为环境前置条件补齐，验证范围为上述实际前置检查及证据完整性复核，不重复业务全套测试。诊断与修复结果保存在固定证据目录 `runtime/acceptance-preflight-before-provision.json`、`runtime/acceptance-preflight-after-provision.json` 和 `runtime/m15-acceptance-directory-repair-audit.json`。管理员验收仍待重新执行，不能将前置检查通过视为 M15 已 finalized。
