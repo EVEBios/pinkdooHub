@@ -28,3 +28,5 @@ from app.models.table_session import (  # noqa: F401
     TableSession,
     TableSessionTimer,
 )
+
+from app.models.reservation_followup import ReservationFollowup  # noqa: F401
